@@ -1,0 +1,24 @@
+# Git and local artifacts
+.git
+.gitignore
+*.db
+*.db-wal
+*.db-shm
+/data/
+scrumboy.exe
+scrumboy*.tar
+nas_deploy.bat
+
+# Docs and scripts not needed in image
+*.md
+*.bat
+.github/
+
+# IDE and tools
+.tools
+*.exe
+
+# Node (used only in CI to build frontend; dist/ is committed or built in CI)
+internal/httpapi/web/node_modules
+internal/httpapi/web/package.json
+internal/httpapi/web/package-lock.json

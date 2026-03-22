@@ -1,0 +1,149 @@
+name: Build and Push to GHCR
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+concurrency:
+  group: docker-publish
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Required: Go binary embeds web/** at build time; Docker context must include built dist/
+      - name: Build frontend
+        run: |
+          cd internal/httpapi/web
+          npm install
+          npx tsc
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set package visibility to private
+        if: github.event_name != 'pull_request'
+        run: |
+          REPO_NAME="${{ github.event.repository.name }}"
+          OWNER="${{ github.repository_owner }}"
+          
+          # Wait a few seconds for package to be registered
+          echo "Waiting for package to be registered..."
+          sleep 5
+          
+          # Retry logic - try up to 3 times
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          SUCCESS=false
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "Attempt $RETRY_COUNT of $MAX_RETRIES..."
+            
+            # Try org endpoint first
+            ORG_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/${OWNER}/packages/container/${REPO_NAME}" \
+              -d '{"visibility":"private"}')
+            
+            HTTP_CODE=$(echo "$ORG_RESPONSE" | tail -n1)
+            RESPONSE_BODY=$(echo "$ORG_RESPONSE" | sed '$d')
+            
+            if [ "$HTTP_CODE" = "404" ]; then
+              # Try user endpoint
+              echo "Org endpoint returned 404, trying user endpoint..."
+              USER_RESPONSE=$(curl -s -w "\n%{http_code}" -X PATCH \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "https://api.github.com/users/${OWNER}/packages/container/${REPO_NAME}" \
+                -d '{"visibility":"private"}')
+              
+              USER_HTTP_CODE=$(echo "$USER_RESPONSE" | tail -n1)
+              USER_RESPONSE_BODY=$(echo "$USER_RESPONSE" | sed '$d')
+              
+              if [ "$USER_HTTP_CODE" = "200" ] || [ "$USER_HTTP_CODE" = "204" ]; then
+                echo "Package visibility set to private via user endpoint"
+                SUCCESS=true
+              elif [ "$USER_HTTP_CODE" = "404" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "Package not found yet, waiting 3 seconds before retry..."
+                sleep 3
+              else
+                echo "Error setting package visibility via user endpoint:"
+                echo "HTTP Code: $USER_HTTP_CODE"
+                echo "Response: $USER_RESPONSE_BODY"
+                if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                  echo "Max retries reached. Package may not exist yet, but this is non-fatal."
+                  echo "Note: Packages in private repos are private by default."
+                fi
+              fi
+            elif [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
+              echo "Package visibility set to private via org endpoint"
+              SUCCESS=true
+            elif [ "$HTTP_CODE" = "404" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "Package not found yet, waiting 3 seconds before retry..."
+              sleep 3
+            else
+              echo "Error setting package visibility via org endpoint:"
+              echo "HTTP Code: $HTTP_CODE"
+              echo "Response: $RESPONSE_BODY"
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "Max retries reached. Package may not exist yet, but this is non-fatal."
+                echo "Note: Packages in private repos are private by default."
+              fi
+            fi
+          done
+          
+          if [ "$SUCCESS" = false ]; then
+            echo "Warning: Could not set package visibility, but package is private by default in private repos."
+            echo "You can manually verify/update visibility in GitHub Packages settings."
+          fi

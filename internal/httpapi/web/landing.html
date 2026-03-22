@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="app-version" content="{{VERSION}}" />
+    <title>Scrumboy</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="google" content="notranslate" />
+    <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+    <link rel="apple-touch-icon" href="/icon-512.png" />
+    <link rel="stylesheet" href="/styles.css?v={{VERSION}}" />
+    <!-- Open Graph / Facebook / LinkedIn / WhatsApp -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Scrumboy" />
+    <meta property="og:description" content="Pastebin-style Kanban boards for quick collaboration. Create & share with zero sign-up." />
+    <meta property="og:image" content="https://scrumboy.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:url" content="https://scrumboy.com/" />
+    <meta property="og:site_name" content="Scrumboy" />
+    <meta property="og:locale" content="en_US" />
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Scrumboy" />
+    <meta name="twitter:description" content="Pastebin-style Kanban boards for quick collaboration. Create & share with zero sign-up." />
+    <meta name="twitter:image" content="https://scrumboy.com/og-image.png" />
+  </head>
+  <body class="landing-body">
+    <div class="page landing">
+      <div class="landing__halo landing__halo--left"></div>
+      <div class="landing__halo landing__halo--right"></div>
+
+      <main class="landing__content">
+        <img src="/scrumboytext.png" alt="Scrumboy" class="landing__logo" />
+        <p class="landing__intro">
+          Pastebin style Kanban boards for quick collaboration. Create & share, with zero sign-up, or <a href="https://github.com/markrai/scrumboy">deploy</a> the full version.
+        </p>
+        <img src="/boardpreviewlight.jpg" alt="Board preview" class="landing__preview" />
+        <a class="btn btn--cta" href="/anon" id="createAnonBtn">Create Anonymous Board</a>
+        <p class="landing__note">Share the link. Anyone can edit. Boards expire after 14 days of inactivity.</p>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      // Show toast if URL was copied
+      (function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const copied = urlParams.get("copied");
+        if (copied === "1") {
+          const toast = document.getElementById("toast");
+          toast.textContent = "Board URL copied to clipboard";
+          toast.classList.add("toast--show");
+          setTimeout(() => {
+            toast.classList.remove("toast--show");
+            // Clean up URL by removing query parameter
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, "", newUrl);
+          }, 2500);
+        } else if (copied === "0") {
+          const toast = document.getElementById("toast");
+          toast.textContent = "Failed to copy URL";
+          toast.classList.add("toast--show");
+          setTimeout(() => {
+            toast.classList.remove("toast--show");
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, "", newUrl);
+          }, 2500);
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "Scrumboy",
+  "short_name": "Scrumboy",
+  "description": "Pastebin-style Kanban boards for quick collaboration. Create & share with zero sign-up.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

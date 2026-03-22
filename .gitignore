@@ -1,0 +1,39 @@
+# Data and DB (self-hosted instance data)
+/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Build and tooling
+/.tools/
+/dist/
+# Go / Windows build outputs (never commit binaries)
+*.exe
+# Unix binary at repo root only (do not use bare "scrumboy" — that ignores cmd/scrumboy/)
+/scrumboy
+nas_deploy.bat
+scrumboy*.tar
+
+# Local 2FA encryption key (do not commit)
+scrumboy.env
+
+# TLS dev certs (mkcert; do not commit)
+cert.pem
+key.pem
+
+# Dependencies (npm install / go mod download on clone)
+node_modules/
+
+# IDE and OS junk (optional but keeps diffs clean)
+.cursor/
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test and coverage artifacts
+coverage.out
+*.cover
+*.test

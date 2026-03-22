@@ -1,0 +1,1 @@
+ALTER TABLE projects ADD COLUMN dominant_color TEXT NOT NULL DEFAULT '#888888';

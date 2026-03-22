@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  scrumboy:
+    build: .
+    container_name: scrumboy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - BIND_ADDR=:8080
+      - DATA_DIR=/data
+      - SQLITE_PATH=/data/app.db
+      - SQLITE_BUSY_TIMEOUT_MS=5000
+      - SQLITE_JOURNAL_MODE=WAL
+      - SQLITE_SYNCHRONOUS=FULL
+      - MAX_REQUEST_BODY_BYTES=1048576
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+

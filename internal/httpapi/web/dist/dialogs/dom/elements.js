@@ -1,0 +1,14 @@
+const app = document.getElementById("app");
+const toast = document.getElementById("toast");
+const todoDialog = document.getElementById("todoDialog");
+const todoForm = document.getElementById("todoForm");
+const todoDialogTitle = document.getElementById("todoDialogTitle");
+const todoTitle = document.getElementById("todoTitle");
+const todoBody = document.getElementById("todoBody");
+const todoTags = document.getElementById("todoTags");
+const todoStatus = document.getElementById("todoStatus");
+const deleteTodoBtn = document.getElementById("deleteTodoBtn");
+const closeTodoBtn = document.getElementById("closeTodoBtn");
+const settingsDialog = document.getElementById("settingsDialog");
+const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+export { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, todoStatus, deleteTodoBtn, closeTodoBtn, settingsDialog, closeSettingsBtn };
