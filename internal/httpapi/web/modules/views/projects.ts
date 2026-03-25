@@ -131,8 +131,9 @@ function renderWorkflowEditorBody(
         </div>
       `).join("")}
     </div>
-    <div class="row">
-      <input class="input" id="${escapeHTML(ghostId)}" placeholder="Add lane..." />
+    <div class="row" style="gap:8px;align-items:center;">
+      <input class="input" id="${escapeHTML(ghostId)}" placeholder="Add lane..." style="flex:1;min-width:0;" />
+      <button type="button" class="btn btn--small" id="workflowModalGhostAdd" aria-label="Add lane">Add</button>
     </div>
   `;
 }
@@ -201,6 +202,7 @@ function createWorkflowEditorRenderer() {
         });
       });
 
+      const ghostAddBtn = container.querySelector("#workflowModalGhostAdd") as HTMLButtonElement | null;
       if (ghostInput) {
         const commitGhostLane = () => {
           const text = (ghostInput.value || "").trim();
@@ -208,12 +210,15 @@ function createWorkflowEditorRenderer() {
           insertLaneBeforeDone(lanes, text);
           ghostInput.value = "";
           onLanesChange();
+          requestAnimationFrame(() => {
+            const next = container.querySelector(`#${ghostId}`) as HTMLInputElement | null;
+            next?.focus();
+          });
         };
         ghostInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") { e.preventDefault(); commitGhostLane(); }
         });
-        ghostInput.addEventListener("input", () => { commitGhostLane(); });
-        ghostInput.addEventListener("blur", () => { commitGhostLane(); });
+        ghostAddBtn?.addEventListener("click", () => { commitGhostLane(); });
       }
 
       if (list && typeof Sortable !== "undefined") {
