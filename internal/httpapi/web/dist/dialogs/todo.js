@@ -723,17 +723,19 @@ export async function openTodoDialog(opts) {
     setEditingTodo(mode === "edit" ? todo : null);
     bindDialogLinkLifecycle();
     // Compute permissions once (mode-aware so create never inherits stale assignment state)
-    const isMaintainer = (opts.role ?? "") === "maintainer";
+    const board = getBoard();
+    const anonymousBoard = isAnonymousBoard(board);
+    const isMaintainer = (opts.role ?? "") === "maintainer" || anonymousBoard;
     const currentUser = getUser();
     const isAssignedToMe = currentUser &&
         mode === "edit" &&
         Number(todo?.assigneeUserId) === Number(currentUser.id);
     permissions = {
-        canChangeSprint: isMaintainer,
+        canChangeSprint: isMaintainer && !anonymousBoard,
         canChangeEstimation: isMaintainer,
         canEditTags: isMaintainer,
-        canEditNotes: isMaintainer || (opts.role === "contributor" && !!isAssignedToMe),
-        canEditAssignment: isMaintainer,
+        canEditNotes: isMaintainer || (!anonymousBoard && opts.role === "contributor" && !!isAssignedToMe),
+        canEditAssignment: isMaintainer && !anonymousBoard,
         canDeleteTodo: isMaintainer,
     };
     // Fetch available tags for autocomplete
