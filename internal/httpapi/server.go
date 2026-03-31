@@ -20,6 +20,7 @@ type Options struct {
 	MaxRequestBody int64
 	ScrumboyMode   string // "full" or "anonymous"
 	AuthRateLimit  *ratelimit.Limiter
+	MCPHandler     http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
@@ -45,6 +46,7 @@ type Server struct {
 	indexHTML   []byte
 	landingHTML []byte
 	swJS        []byte // Service worker with version injected
+	mcpHandler  http.Handler
 }
 
 type storeAPI interface {
@@ -244,6 +246,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		indexHTML:                 indexHTML,
 		landingHTML:               landingHTML,
 		swJS:                      swJS,
+		mcpHandler:                opts.MCPHandler,
 	}
 }
 
@@ -269,6 +272,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/healthz" {
 		s.handleHealthz(w, r)
+		return
+	}
+
+	if s.mcpHandler != nil && (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) {
+		s.mcpHandler.ServeHTTP(w, r)
 		return
 	}
 

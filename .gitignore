@@ -39,6 +39,7 @@ coverage.out
 *.test
 
 # Development related
+/docs/draft/
 f.bat
 a.bat
 *.pem

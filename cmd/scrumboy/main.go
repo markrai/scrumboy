@@ -14,6 +14,7 @@ import (
 	"scrumboy/internal/crypto"
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
+	"scrumboy/internal/mcp"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
@@ -76,6 +77,7 @@ func main() {
 		Logger:         logger,
 		MaxRequestBody: cfg.MaxRequestBodyBytes,
 		ScrumboyMode:   cfg.ScrumboyMode,
+		MCPHandler:     mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode}),
 		EncryptionKey:  encKey,
 	})
 
