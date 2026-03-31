@@ -1073,7 +1073,7 @@ body {
 }
 @media (min-width: 768px) {
   #settingsDialog.dialog {
-    width: min(800px, calc(100vw - 48px));
+    width: min(960px, calc(100vw - 48px));
   }
   #settingsDialog .dialog__content {
     overflow-x: hidden;

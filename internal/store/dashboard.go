@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -95,6 +94,33 @@ type DashboardSummary struct {
 	OldestWip          *OldestWip
 }
 
+type dashboardWorkflowSemantics struct {
+	DoneKey       string
+	InProgressKey string
+	TestingKey    string
+}
+
+func buildDashboardWorkflowSemantics(cols []WorkflowColumn) dashboardWorkflowSemantics {
+	var sem dashboardWorkflowSemantics
+	nonDone := make([]WorkflowColumn, 0, len(cols))
+	for _, col := range cols {
+		if col.IsDone {
+			sem.DoneKey = col.Key
+			continue
+		}
+		nonDone = append(nonDone, col)
+	}
+	switch len(nonDone) {
+	case 0:
+	case 1:
+		sem.InProgressKey = nonDone[0].Key
+	default:
+		sem.InProgressKey = nonDone[len(nonDone)-2].Key
+		sem.TestingKey = nonDone[len(nonDone)-1].Key
+	}
+	return sem
+}
+
 func (s *Store) GetDashboardSummary(ctx context.Context, userID int64, timezone string) (DashboardSummary, error) {
 	// Assigned count and total points: per project, use sprint filter when ACTIVE sprint exists
 	// We'll compute after we have project list and active sprints
@@ -121,9 +147,10 @@ func (s *Store) GetDashboardSummary(ctx context.Context, userID int64, timezone 
 SELECT DISTINCT p.id, p.name, p.slug
 FROM todos t
 JOIN projects p ON p.id = t.project_id
-WHERE t.assignee_user_id = ? AND t.column_key != ?
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE t.assignee_user_id = ? AND wc.is_done = 0
 ORDER BY p.name
-`, userID, DefaultColumnDone)
+`, userID)
 	if err != nil {
 		return DashboardSummary{}, fmt.Errorf("list dashboard projects: %w", err)
 	}
@@ -145,6 +172,15 @@ ORDER BY p.name
 	projectRows.Close()
 	if err := projectRows.Err(); err != nil {
 		return DashboardSummary{}, fmt.Errorf("rows dashboard projects: %w", err)
+	}
+
+	workflowByProject, err := s.GetProjectWorkflows(ctx, projectIDs)
+	if err != nil {
+		return DashboardSummary{}, fmt.Errorf("get project workflows: %w", err)
+	}
+	workflowSemantics := make(map[int64]dashboardWorkflowSemantics, len(workflowByProject))
+	for _, projectID := range projectIDs {
+		workflowSemantics[projectID] = buildDashboardWorkflowSemantics(workflowByProject[projectID])
 	}
 
 	// Batched active sprints per project (MUST be null when no ACTIVE sprint)
@@ -188,7 +224,7 @@ ORDER BY p.name
 
 	if len(activeSprintIDs) > 0 {
 		ph := makePlaceholders(len(activeSprintIDs))
-		args := []any{userID, DefaultColumnDone}
+		args := []any{userID}
 		for i := 0; i < 4; i++ {
 			for _, id := range activeSprintIDs {
 				args = append(args, id)
@@ -201,8 +237,9 @@ SELECT
   COALESCE(SUM(CASE WHEN sprint_id IN `+ph+` THEN estimation_points ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN sprint_id IS NULL OR sprint_id NOT IN `+ph+` THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN sprint_id IS NULL OR sprint_id NOT IN `+ph+` THEN estimation_points ELSE 0 END), 0)
-FROM todos
-WHERE assignee_user_id = ? AND column_key != ?
+FROM todos t
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE assignee_user_id = ? AND wc.is_done = 0
 `, args...).Scan(&sprintCount, &spPts, &backlogCount, &blPts); err != nil {
 			return DashboardSummary{}, fmt.Errorf("assigned split: %w", err)
 		}
@@ -217,8 +254,9 @@ WHERE assignee_user_id = ? AND column_key != ?
 		var pUnsched sql.NullInt64
 		if err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*), COALESCE(SUM(estimation_points), 0)
-FROM todos
-WHERE assignee_user_id = ? AND column_key != ?`, userID, DefaultColumnDone).Scan(&backlogCount, &pUnsched); err != nil {
+FROM todos t
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE assignee_user_id = ? AND wc.is_done = 0`, userID).Scan(&backlogCount, &pUnsched); err != nil {
 			return DashboardSummary{}, fmt.Errorf("count assigned: %w", err)
 		}
 		if pUnsched.Valid {
@@ -247,12 +285,13 @@ WHERE assignee_user_id = ? AND column_key != ?`, userID, DefaultColumnDone).Scan
 		for _, id := range activeSprintIDs {
 			args = append(args, id)
 		}
-		args = append(args, userID, DefaultColumnDone)
+		args = append(args, userID)
 		if err := s.db.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(t.estimation_points), 0), COUNT(*)
 FROM todos t
+JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
 JOIN sprints s ON s.id = t.sprint_id AND s.state = ? AND s.id IN `+ph+`
-WHERE t.assignee_user_id = ? AND t.column_key = ?
+WHERE t.assignee_user_id = ?
   AND s.started_at IS NOT NULL
   AND t.done_at >= s.started_at AND t.done_at < COALESCE(s.closed_at, s.planned_end_at)
 `, args...).Scan(&pointsCompleted, &storiesCompleted); err != nil {
@@ -271,7 +310,7 @@ WHERE t.assignee_user_id = ? AND t.column_key = ?
 		}
 		if len(noSprintIDs) > 0 {
 			placeholders := makePlaceholders(len(noSprintIDs))
-			args := []any{userID, DefaultColumnDone, weekStartMs, weekEndMs}
+			args := []any{userID, weekStartMs, weekEndMs}
 			for _, pid := range noSprintIDs {
 				args = append(args, pid)
 			}
@@ -279,9 +318,10 @@ WHERE t.assignee_user_id = ? AND t.column_key = ?
 			var c int
 			if err := s.db.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(estimation_points), 0), COUNT(*)
-FROM todos
-WHERE assignee_user_id = ? AND column_key = ? AND done_at >= ? AND done_at < ?
-  AND project_id IN `+placeholders,
+FROM todos t
+JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
+WHERE assignee_user_id = ? AND done_at >= ? AND done_at < ?
+  AND t.project_id IN `+placeholders,
 				args...).Scan(&p, &c); err != nil {
 				return DashboardSummary{}, fmt.Errorf("points completed this week (no sprint): %w", err)
 			}
@@ -294,9 +334,10 @@ WHERE assignee_user_id = ? AND column_key = ? AND done_at >= ? AND done_at < ?
 	if len(projectIDsWithActive) == 0 {
 		if err := s.db.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(estimation_points), 0), COUNT(*)
-FROM todos
-WHERE assignee_user_id = ? AND column_key = ? AND done_at >= ? AND done_at < ?
-`, userID, DefaultColumnDone, weekStartMs, weekEndMs).Scan(&pointsCompleted, &storiesCompleted); err != nil {
+FROM todos t
+JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
+WHERE assignee_user_id = ? AND done_at >= ? AND done_at < ?
+`, userID, weekStartMs, weekEndMs).Scan(&pointsCompleted, &storiesCompleted); err != nil {
 			return DashboardSummary{}, fmt.Errorf("points completed this week: %w", err)
 		}
 	}
@@ -320,7 +361,7 @@ WHERE assignee_user_id = ? AND column_key = ? AND done_at >= ? AND done_at < ?
 		var totalPoints, donePoints int64
 		var totalAll, doneCountAll int
 		var totalPointsAll, donePointsAll int64
-		doneCond := `t.column_key = 'done' AND s.started_at IS NOT NULL AND t.done_at >= s.started_at AND t.done_at < COALESCE(s.closed_at, s.planned_end_at)`
+		doneCond := `done_wc.id IS NOT NULL AND s.started_at IS NOT NULL AND t.done_at >= s.started_at AND t.done_at < COALESCE(s.closed_at, s.planned_end_at)`
 		if err := s.db.QueryRowContext(ctx, `
 SELECT
   COALESCE(SUM(CASE WHEN t.assignee_user_id = ? THEN 1 ELSE 0 END), 0),
@@ -332,6 +373,7 @@ SELECT
   COALESCE(SUM(CASE WHEN `+doneCond+` THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN `+doneCond+` THEN t.estimation_points ELSE 0 END), 0)
 FROM todos t
+LEFT JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
 JOIN sprints s ON s.id = t.sprint_id AND s.state = ? AND s.id IN `+ph+`
 WHERE t.sprint_id IN `+ph,
 			args...).Scan(&total, &totalPoints, &doneCount, &donePoints, &totalAll, &totalPointsAll, &doneCountAll, &donePointsAll); err != nil {
@@ -352,14 +394,61 @@ WHERE t.sprint_id IN `+ph,
 	}
 
 	var wipInProgressCount, wipTestingCount int
-	if err := s.db.QueryRowContext(ctx, `
-SELECT
-  COALESCE(SUM(CASE WHEN column_key = ? THEN 1 ELSE 0 END), 0),
-  COALESCE(SUM(CASE WHEN column_key = ? THEN 1 ELSE 0 END), 0)
-FROM todos
-WHERE assignee_user_id = ? AND column_key IN (?, ?)
-`, DefaultColumnDoing, DefaultColumnTesting, userID, DefaultColumnDoing, DefaultColumnTesting).Scan(&wipInProgressCount, &wipTestingCount); err != nil {
-		return DashboardSummary{}, fmt.Errorf("wip split: %w", err)
+	wipRows, err := s.db.QueryContext(ctx, `
+SELECT t.project_id, t.column_key, t.local_id, t.title, t.updated_at, p.name, p.slug
+FROM todos t
+JOIN projects p ON p.id = t.project_id
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE t.assignee_user_id = ? AND wc.is_done = 0
+`, userID)
+	if err != nil {
+		return DashboardSummary{}, fmt.Errorf("wip rows: %w", err)
+	}
+	defer wipRows.Close()
+	var oldestWip *OldestWip
+	var oldestUpdatedAtMs int64
+	nowMs := time.Now().UTC().UnixMilli()
+	for wipRows.Next() {
+		var projectID int64
+		var columnKey string
+		var localID int64
+		var title string
+		var updatedAtMs int64
+		var projectName string
+		var projectSlug string
+		var projectSlugNull sql.NullString
+		if err := wipRows.Scan(&projectID, &columnKey, &localID, &title, &updatedAtMs, &projectName, &projectSlugNull); err != nil {
+			return DashboardSummary{}, fmt.Errorf("scan wip row: %w", err)
+		}
+		if projectSlugNull.Valid {
+			projectSlug = projectSlugNull.String
+		}
+		sem := workflowSemantics[projectID]
+		isInProgress := sem.InProgressKey != "" && columnKey == sem.InProgressKey
+		isTesting := sem.TestingKey != "" && columnKey == sem.TestingKey
+		if isInProgress {
+			wipInProgressCount++
+		}
+		if isTesting {
+			wipTestingCount++
+		}
+		if !isInProgress && !isTesting {
+			continue
+		}
+		if oldestWip == nil || updatedAtMs < oldestUpdatedAtMs {
+			oldestUpdatedAtMs = updatedAtMs
+			ageDays := int((nowMs - updatedAtMs) / 86400000)
+			oldestWip = &OldestWip{
+				LocalID:     localID,
+				Title:       title,
+				AgeDays:     ageDays,
+				ProjectName: projectName,
+				ProjectSlug: projectSlug,
+			}
+		}
+	}
+	if err := wipRows.Err(); err != nil {
+		return DashboardSummary{}, fmt.Errorf("rows wip: %w", err)
 	}
 	wipCount := wipInProgressCount + wipTestingCount
 
@@ -384,8 +473,9 @@ SELECT
   CAST((done_at - ?) / ? AS INTEGER) AS week_bucket,
   COUNT(*) AS stories,
   COALESCE(SUM(estimation_points), 0) AS points
-FROM todos
-WHERE assignee_user_id = ? AND column_key = 'done'
+FROM todos t
+JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
+WHERE assignee_user_id = ?
   AND done_at >= ? AND done_at < ?
 GROUP BY week_bucket
 ORDER BY week_bucket ASC
@@ -424,8 +514,9 @@ ORDER BY week_bucket ASC
 		if err := s.db.QueryRowContext(ctx, `
 SELECT AVG((t.done_at - t.created_at) / 86400000.0)
 FROM todos t
+JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
 JOIN sprints s ON s.id = t.sprint_id AND s.state = ? AND s.id IN `+ph+`
-WHERE t.assignee_user_id = ? AND t.column_key = 'done'
+WHERE t.assignee_user_id = ?
   AND s.started_at IS NOT NULL
   AND t.done_at >= s.started_at AND t.done_at < COALESCE(s.closed_at, s.planned_end_at)
 `, args...).Scan(&avg); err != nil {
@@ -439,47 +530,15 @@ WHERE t.assignee_user_id = ? AND t.column_key = 'done'
 		var avg sql.NullFloat64
 		if err := s.db.QueryRowContext(ctx, `
 SELECT AVG((done_at - created_at) / 86400000.0)
-FROM todos
-WHERE assignee_user_id = ? AND column_key = 'done' AND done_at >= ?
+FROM todos t
+JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
+WHERE assignee_user_id = ? AND done_at >= ?
 `, userID, thirtyDaysAgo).Scan(&avg); err != nil {
 			return DashboardSummary{}, fmt.Errorf("avg lead time fallback: %w", err)
 		}
 		if avg.Valid {
 			avgLeadTimeDays = &avg.Float64
 		}
-	}
-
-	// Aging WIP: fetch oldest updated WIP directly with ORDER BY/LIMIT.
-	var oldestWip *OldestWip
-	var localID sql.NullInt64
-	var title, projectName, projectSlug string
-	var projectSlugNull sql.NullString
-	var updatedAtMs int64
-	if err := s.db.QueryRowContext(ctx, `
-SELECT t.local_id, t.title, t.updated_at, p.name, p.slug
-FROM todos t
-JOIN projects p ON p.id = t.project_id
-WHERE t.assignee_user_id = ? AND t.column_key IN ('doing', 'testing')
-ORDER BY t.updated_at ASC
-LIMIT 1
-`, userID).Scan(&localID, &title, &updatedAtMs, &projectName, &projectSlugNull); err == nil {
-		if projectSlugNull.Valid {
-			projectSlug = projectSlugNull.String
-		}
-		ageDays := int((time.Now().UTC().UnixMilli() - updatedAtMs) / 86400000)
-		locID := int64(0)
-		if localID.Valid {
-			locID = localID.Int64
-		}
-		oldestWip = &OldestWip{
-			LocalID:     locID,
-			Title:       title,
-			AgeDays:     ageDays,
-			ProjectName: projectName,
-			ProjectSlug: projectSlug,
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return DashboardSummary{}, fmt.Errorf("oldest wip: %w", err)
 	}
 
 	return DashboardSummary{
@@ -588,12 +647,12 @@ SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.es
        wc.name AS status_name, wc.color AS status_color
 FROM todos t
 JOIN projects p ON p.id = t.project_id
-LEFT JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND t.column_key != ?
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE t.assignee_user_id = ? AND wc.is_done = 0
   AND (t.updated_at < ? OR (t.updated_at = ? AND t.id < ?))
 ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
-`, userID, DefaultColumnDone, updatedAtCursor, updatedAtCursor, idCursor, limit+1)
+`, userID, updatedAtCursor, updatedAtCursor, idCursor, limit+1)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
@@ -601,11 +660,11 @@ SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.es
        wc.name AS status_name, wc.color AS status_color
 FROM todos t
 JOIN projects p ON p.id = t.project_id
-LEFT JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND t.column_key != ?
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE t.assignee_user_id = ? AND wc.is_done = 0
 ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
-`, userID, DefaultColumnDone, limit+1)
+`, userID, limit+1)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("list dashboard todos: %w", err)

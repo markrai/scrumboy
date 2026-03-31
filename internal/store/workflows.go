@@ -179,6 +179,46 @@ ORDER BY position ASC, id ASC`, projectID)
 	return out, nil
 }
 
+func (s *Store) GetProjectWorkflows(ctx context.Context, projectIDs []int64) (map[int64][]WorkflowColumn, error) {
+	out := make(map[int64][]WorkflowColumn, len(projectIDs))
+	if len(projectIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(projectIDs))
+	seen := make(map[int64]struct{}, len(projectIDs))
+	for _, projectID := range projectIDs {
+		if _, ok := seen[projectID]; ok {
+			continue
+		}
+		seen[projectID] = struct{}{}
+		args = append(args, projectID)
+		out[projectID] = []WorkflowColumn{}
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, project_id, key, name, color, position, is_done, system
+FROM project_workflow_columns
+WHERE project_id IN `+makePlaceholders(len(args))+`
+ORDER BY project_id ASC, position ASC, id ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow columns for projects: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col WorkflowColumn
+		var isDone, isSystem int
+		if err := rows.Scan(&col.ID, &col.ProjectID, &col.Key, &col.Name, &col.Color, &col.Position, &isDone, &isSystem); err != nil {
+			return nil, fmt.Errorf("scan workflow column for project: %w", err)
+		}
+		col.IsDone = isDone == 1
+		col.System = isSystem == 1
+		out[col.ProjectID] = append(out[col.ProjectID], col)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows workflow columns for projects: %w", err)
+	}
+	return out, nil
+}
+
 func (s *Store) GetWorkflowDoneColumnKey(ctx context.Context, projectID int64) (string, error) {
 	var key string
 	if err := s.db.QueryRowContext(ctx, `
