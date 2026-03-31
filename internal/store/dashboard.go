@@ -102,21 +102,16 @@ type dashboardWorkflowSemantics struct {
 
 func buildDashboardWorkflowSemantics(cols []WorkflowColumn) dashboardWorkflowSemantics {
 	var sem dashboardWorkflowSemantics
-	nonDone := make([]WorkflowColumn, 0, len(cols))
 	for _, col := range cols {
 		if col.IsDone {
 			sem.DoneKey = col.Key
-			continue
 		}
-		nonDone = append(nonDone, col)
-	}
-	switch len(nonDone) {
-	case 0:
-	case 1:
-		sem.InProgressKey = nonDone[0].Key
-	default:
-		sem.InProgressKey = nonDone[len(nonDone)-2].Key
-		sem.TestingKey = nonDone[len(nonDone)-1].Key
+		if !col.IsDone && col.Key == DefaultColumnDoing {
+			sem.InProgressKey = col.Key
+		}
+		if !col.IsDone && col.Key == DefaultColumnTesting {
+			sem.TestingKey = col.Key
+		}
 	}
 	return sem
 }
@@ -393,7 +388,7 @@ WHERE t.sprint_id IN `+ph,
 		}
 	}
 
-	var wipInProgressCount, wipTestingCount int
+	var wipCount, wipInProgressCount, wipTestingCount int
 	wipRows, err := s.db.QueryContext(ctx, `
 SELECT t.project_id, t.column_key, t.local_id, t.title, t.updated_at, p.name, p.slug
 FROM todos t
@@ -423,6 +418,7 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0
 		if projectSlugNull.Valid {
 			projectSlug = projectSlugNull.String
 		}
+		wipCount++
 		sem := workflowSemantics[projectID]
 		isInProgress := sem.InProgressKey != "" && columnKey == sem.InProgressKey
 		isTesting := sem.TestingKey != "" && columnKey == sem.TestingKey
@@ -431,9 +427,6 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0
 		}
 		if isTesting {
 			wipTestingCount++
-		}
-		if !isInProgress && !isTesting {
-			continue
 		}
 		if oldestWip == nil || updatedAtMs < oldestUpdatedAtMs {
 			oldestUpdatedAtMs = updatedAtMs
@@ -450,7 +443,6 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0
 	if err := wipRows.Err(); err != nil {
 		return DashboardSummary{}, fmt.Errorf("rows wip: %w", err)
 	}
-	wipCount := wipInProgressCount + wipTestingCount
 
 	// Weekly throughput: last 4 full weeks + current partial week (5 buckets).
 	// Query once for the full range and bucket by week index to minimize DB round-trips.

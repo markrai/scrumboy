@@ -155,9 +155,10 @@ function renderDashboardContent() {
         <span class="dashboard-stats__label">Total assigned</span>
         <span class="dashboard-stats__value">${totalStoryPoints} pts</span>
       </div>`;
+    const showLegacyWipSplit = wipInProgressCount > 0 || wipTestingCount > 0;
     const wipRow = `<div class="dashboard-stats__row">
     <span class="dashboard-stats__label">WIP</span>
-    <span class="dashboard-stats__value">${typeof wipInProgressCount === 'number' && typeof wipTestingCount === 'number' ? `<span class="dashboard-stats__wip-in-progress">In progress</span>: ${wipInProgressCount} · <span class="dashboard-stats__wip-testing">Testing</span>: ${wipTestingCount}` : wipCount}</span>
+    <span class="dashboard-stats__value">${showLegacyWipSplit ? `<span class="dashboard-stats__wip-in-progress">In progress</span>: ${wipInProgressCount} · <span class="dashboard-stats__wip-testing">Testing</span>: ${wipTestingCount}` : wipCount}</span>
   </div>`;
     const oldestWipRow = oldestWip
         ? `<div class="dashboard-stats__row dashboard-stats__row--wip ${oldestWip.ageDays > 7 ? 'dashboard-stats__row--wip-warning' : ''}">

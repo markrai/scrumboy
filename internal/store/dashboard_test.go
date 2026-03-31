@@ -102,7 +102,7 @@ func TestDashboardSummary_CustomDoneKey(t *testing.T) {
 	}
 }
 
-func TestDashboardSummary_CustomWIPKeys_LastTwoNonDoneAreWip(t *testing.T) {
+func TestDashboardSummary_CustomWIPKeys_AllNonDoneCountAsWipWithoutLegacySplit(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()
 
@@ -153,6 +153,63 @@ func TestDashboardSummary_CustomWIPKeys_LastTwoNonDoneAreWip(t *testing.T) {
 		t.Fatalf("GetDashboardSummary: %v", err)
 	}
 
+	if summary.WipCount != 3 {
+		t.Fatalf("expected WIP count 3 for all non-done assigned work, got %d", summary.WipCount)
+	}
+	if summary.WipInProgressCount != 0 {
+		t.Fatalf("expected in-progress WIP split 0 without explicit %q lane, got %d", DefaultColumnDoing, summary.WipInProgressCount)
+	}
+	if summary.WipTestingCount != 0 {
+		t.Fatalf("expected testing WIP split 0 without explicit %q lane, got %d", DefaultColumnTesting, summary.WipTestingCount)
+	}
+	if summary.OldestWip == nil {
+		t.Fatal("expected oldest WIP")
+	}
+	if summary.OldestWip.LocalID != intakeTodo.LocalID {
+		t.Fatalf("expected oldest WIP local ID %d, got %+v", intakeTodo.LocalID, summary.OldestWip)
+	}
+	if summary.OldestWip.Title != intakeTodo.Title {
+		t.Fatalf("expected oldest WIP title %q, got %+v", intakeTodo.Title, summary.OldestWip)
+	}
+}
+
+func TestDashboardSummary_DefaultWIPKeys_PreserveLegacySplit(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx, user := dashboardTestContext(t, st)
+
+	project, err := st.CreateProject(ctx, "Default WIP")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	doingTodo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title:          "Doing todo",
+		ColumnKey:      DefaultColumnDoing,
+		AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo doing: %v", err)
+	}
+	testingTodo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title:          "Testing todo",
+		ColumnKey:      DefaultColumnTesting,
+		AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo testing: %v", err)
+	}
+
+	now := time.Now().UTC()
+	setTodoTimes(t, st, doingTodo.ID, now.Add(-5*24*time.Hour), now.Add(-5*24*time.Hour))
+	setTodoTimes(t, st, testingTodo.ID, now.Add(-2*24*time.Hour), now.Add(-2*24*time.Hour))
+
+	summary, err := st.GetDashboardSummary(ctx, user.ID, "UTC")
+	if err != nil {
+		t.Fatalf("GetDashboardSummary: %v", err)
+	}
+
 	if summary.WipCount != 2 {
 		t.Fatalf("expected WIP count 2, got %d", summary.WipCount)
 	}
@@ -165,11 +222,8 @@ func TestDashboardSummary_CustomWIPKeys_LastTwoNonDoneAreWip(t *testing.T) {
 	if summary.OldestWip == nil {
 		t.Fatal("expected oldest WIP")
 	}
-	if summary.OldestWip.LocalID != buildTodo.LocalID {
-		t.Fatalf("expected oldest WIP local ID %d, got %+v", buildTodo.LocalID, summary.OldestWip)
-	}
-	if summary.OldestWip.Title != buildTodo.Title {
-		t.Fatalf("expected oldest WIP title %q, got %+v", buildTodo.Title, summary.OldestWip)
+	if summary.OldestWip.LocalID != doingTodo.LocalID {
+		t.Fatalf("expected oldest WIP local ID %d, got %+v", doingTodo.LocalID, summary.OldestWip)
 	}
 }
 
