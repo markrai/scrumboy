@@ -1,4 +1,4 @@
-import { settingsDialog } from '../dom/elements.js';
+import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
 import { escapeHTML, showToast, getAppVersion, showConfirmDialog, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
@@ -60,6 +60,90 @@ let cachedRealBurndownData: any[] | null = null;
 let cachedTagsURL: string | null = null;
 let cachedRealBurndownURL: string | null = null;
 let cachedSprintsForCharts: { id: number; name: string; plannedStartAt: number; plannedEndAt: number; state?: string }[] | null = null;
+
+/** Settings → Workflow tab: server lane occupancy for delete gating (fail-closed). */
+type WorkflowLaneCountsState =
+  | { status: "loading" }
+  | { status: "ok"; counts: Record<string, number> }
+  | { status: "error" };
+
+let workflowLaneCountsCache: {
+  slug: string;
+  state: Exclude<WorkflowLaneCountsState, { status: "loading" }>;
+} | null = null;
+let workflowLaneCountsFetchGeneration = 0;
+
+/** Settings → Workflow: local draft for name/color (explicit Save Changes). */
+type WorkflowLaneDraft = { key: string; name: string; color: string; isDone: boolean };
+
+let workflowTabDraft: WorkflowLaneDraft[] | null = null;
+let workflowTabDraftBaseline: WorkflowLaneDraft[] | null = null;
+let workflowTabDraftSlug: string | null = null;
+
+function cloneWorkflowLanesFromBoard(): WorkflowLaneDraft[] {
+  const w = getBoard()?.columnOrder ?? [];
+  return w.map((l) => ({
+    key: l.key,
+    name: l.name,
+    color: normalizeWorkflowLaneColorForInput(l.color),
+    isDone: !!l.isDone,
+  }));
+}
+
+function ensureWorkflowDraftInitialized(): void {
+  const slug = getSlug();
+  if (!slug) return;
+  if (workflowTabDraftSlug !== slug || workflowTabDraft === null || workflowTabDraftBaseline === null) {
+    const lanes = cloneWorkflowLanesFromBoard();
+    workflowTabDraft = lanes;
+    workflowTabDraftBaseline = JSON.parse(JSON.stringify(lanes)) as WorkflowLaneDraft[];
+    workflowTabDraftSlug = slug;
+  }
+}
+
+function syncWorkflowDraftFromBoardAfterMutation(): void {
+  const lanes = cloneWorkflowLanesFromBoard();
+  workflowTabDraft = lanes;
+  workflowTabDraftBaseline = JSON.parse(JSON.stringify(lanes)) as WorkflowLaneDraft[];
+  workflowTabDraftSlug = getSlug() ?? null;
+}
+
+function resetWorkflowDraftToBaseline(): void {
+  if (workflowTabDraftBaseline && workflowTabDraftSlug === getSlug()) {
+    workflowTabDraft = JSON.parse(JSON.stringify(workflowTabDraftBaseline)) as WorkflowLaneDraft[];
+  } else {
+    ensureWorkflowDraftInitialized();
+  }
+}
+
+function clearWorkflowDraftState(): void {
+  workflowTabDraft = null;
+  workflowTabDraftBaseline = null;
+  workflowTabDraftSlug = null;
+}
+
+function isWorkflowDraftDirty(): boolean {
+  if (!workflowTabDraft || !workflowTabDraftBaseline) return false;
+  if (workflowTabDraft.length !== workflowTabDraftBaseline.length) return true;
+  for (let i = 0; i < workflowTabDraft.length; i++) {
+    const a = workflowTabDraft[i];
+    const b = workflowTabDraftBaseline[i];
+    if (a.key !== b.key) return true;
+    if (a.name.trim() !== b.name.trim()) return true;
+    if (a.color.trim().toLowerCase() !== b.color.trim().toLowerCase()) return true;
+  }
+  return false;
+}
+
+function updateWorkflowSaveFooter(): void {
+  const btn = document.querySelector("[data-workflow-save-changes]") as HTMLButtonElement | null;
+  if (btn) btn.disabled = !isWorkflowDraftDirty();
+}
+
+function invalidateWorkflowLaneCountsCache(): void {
+  workflowLaneCountsCache = null;
+  workflowLaneCountsFetchGeneration++;
+}
 
 // Helper function to invalidate tags cache (call when tags are modified)
 export function invalidateTagsCache(): void {
@@ -663,57 +747,117 @@ function normalizeWorkflowLaneColorForInput(color: string | undefined | null): s
   return s && /^#[0-9a-fA-F]{6}$/.test(s) ? s : DEFAULT_WORKFLOW_LANE_COLOR;
 }
 
-function renderWorkflowTabContent(): string {
+async function fetchWorkflowLaneCountsState(
+  slug: string
+): Promise<Exclude<WorkflowLaneCountsState, { status: "loading" }>> {
+  try {
+    const res = await apiFetch<{ countsByColumnKey?: Record<string, number> }>(
+      `/api/board/${encodeURIComponent(slug)}/workflow/counts`
+    );
+    if (!res || typeof res.countsByColumnKey !== "object" || res.countsByColumnKey === null) {
+      return { status: "error" };
+    }
+    return { status: "ok", counts: res.countsByColumnKey };
+  } catch {
+    return { status: "error" };
+  }
+}
+
+function renderWorkflowTabContent(countsState: WorkflowLaneCountsState): string {
   const board = getBoard();
-  const workflow = board?.columnOrder ?? [];
-  const canDeleteAnyLane = workflow.length > 2;
+  const col = board?.columnOrder ?? [];
   if (!getSlug()) {
     return `<div class="settings-section"><div class="muted">No project in context.</div></div>`;
   }
-  if (workflow.length === 0) {
+  if (col.length === 0) {
     return `<div class="settings-section"><div class="muted">Workflow lanes are unavailable.</div></div>`;
   }
+  ensureWorkflowDraftInitialized();
+  const workflow = workflowTabDraft ?? [];
+  const canDeleteAnyLane = workflow.length > 2;
+
+  const loadingBanner =
+    countsState.status === "loading"
+      ? `<div class="muted settings-workflow-counts-banner" style="margin-bottom:10px;">Checking lane occupancy…</div>`
+      : "";
+  const errorBanner =
+    countsState.status === "error"
+      ? `<div class="settings-workflow-counts-banner settings-workflow-counts-banner--error muted" style="margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+          Could not load lane occupancy. Delete stays disabled until this succeeds.
+          <button type="button" class="btn btn--ghost btn--small" data-workflow-counts-retry>Retry</button>
+        </div>`
+      : "";
+
+  const deleteCell = (lane: { key: string; name: string; isDone: boolean; color?: string }) => {
+    if (lane.isDone) {
+      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Done lane cannot be deleted">Delete</button>`;
+    }
+    if (!canDeleteAnyLane) {
+      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Workflow must keep at least 2 lanes">Delete</button>`;
+    }
+    if (countsState.status === "loading") {
+      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Checking lane occupancy…">Delete</button>`;
+    }
+    if (countsState.status === "error") {
+      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Could not verify lane is empty">Delete</button>`;
+    }
+    const n = countsState.counts[lane.key] ?? 0;
+    if (n > 0) {
+      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Lane must be empty to delete" aria-label="Lane must be empty to delete">Delete</button>`;
+    }
+    return `<button class="btn btn--danger btn--small" type="button" data-workflow-delete="${escapeHTML(lane.key)}">Delete</button>`;
+  };
+
+  const saveDisabled = !isWorkflowDraftDirty();
   return `
     <div class="settings-section">
       <div class="settings-section__title">Workflow</div>
-      <div class="settings-section__description muted">Rename lane labels and colors, or add a non-done lane inserted immediately before the done lane (whatever its label). Keys stay immutable.</div>
-      <div class="settings-workflow-create" style="display:flex; gap:12px; align-items:flex-end; margin-bottom:16px;">
-        <label class="field" style="flex:1; min-width:0; margin:0;">
-          <div class="field__label">New lane name</div>
-          <input
-            class="input"
-            data-workflow-new-name
-            maxlength="200"
-            placeholder="e.g. Review"
-            aria-label="New workflow lane name"
-          />
-        </label>
-        <button class="btn btn--small" type="button" data-workflow-add>Add Lane</button>
-      </div>
+      <div class="settings-section__description muted">Edit lane labels and colors, then save. New lanes are inserted before the done lane. Keys stay immutable.</div>
+      ${loadingBanner}
+      ${errorBanner}
       <div class="settings-workflow-list">
-        ${workflow.map((lane) => `
-          <div class="settings-workflow-row" data-workflow-key="${escapeHTML(lane.key)}" style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
-            <div class="muted" style="min-width:110px; font-family:monospace;">${escapeHTML(lane.key)}</div>
+        ${workflow
+          .map((lane) => {
+            const ic = normalizeWorkflowLaneColorForInput(lane.color);
+            return `
+          <div class="settings-workflow-row" data-workflow-key="${escapeHTML(lane.key)}" style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; padding-left:4px;">
             <input
               class="input"
               data-workflow-name="${escapeHTML(lane.key)}"
               value="${escapeHTML(lane.name)}"
               maxlength="200"
               aria-label="Lane label for ${escapeHTML(lane.key)}"
-              style="flex:1; min-width:0;"
+              style="flex:1; min-width:120px;"
             />
             <input
               type="color"
               class="settings-color-picker"
               data-workflow-color="${escapeHTML(lane.key)}"
-              value="${escapeHTML(normalizeWorkflowLaneColorForInput(lane.color))}"
+              value="${escapeHTML(ic)}"
               aria-label="Lane color for ${escapeHTML(lane.key)}"
               title="Lane color"
             />
-            <button class="btn btn--ghost btn--small" type="button" data-workflow-save="${escapeHTML(lane.key)}">Save</button>
-            ${lane.isDone ? `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Done lane cannot be deleted">Delete</button>` : `<button class="btn btn--danger btn--small" type="button" data-workflow-delete="${escapeHTML(lane.key)}" ${canDeleteAnyLane ? "" : `disabled aria-disabled="true" title="Workflow must keep at least 2 lanes"`}>Delete</button>`}
+            ${deleteCell(lane)}
           </div>
-        `).join("")}
+        `;
+          })
+          .join("")}
+      </div>
+      <div class="settings-workflow-add-row" style="display:flex; gap:8px; align-items:center; margin-top:12px;">
+        <input
+          class="input"
+          type="text"
+          data-workflow-ghost-input
+          maxlength="200"
+          placeholder="Add lane..."
+          aria-label="Add lane"
+          style="flex:1; min-width:0;"
+        />
+        <button type="button" class="btn btn--small" data-workflow-add>Add</button>
+      </div>
+      <div class="settings-workflow-footer">
+        <button type="button" class="btn btn--ghost" data-workflow-draft-cancel>Cancel</button>
+        <button type="button" class="btn" data-workflow-save-changes ${saveDisabled ? "disabled" : ""}>Save Changes</button>
       </div>
     </div>
   `;
@@ -736,7 +880,9 @@ async function addWorkflowLane(name: string): Promise<void> {
       method: "POST",
       body: JSON.stringify({ name: trimmed }),
     });
+    invalidateWorkflowLaneCountsCache();
     await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
+    syncWorkflowDraftFromBoardAfterMutation();
     await renderSettingsModal();
     showToast("Lane added");
   } catch (err: any) {
@@ -744,34 +890,40 @@ async function addWorkflowLane(name: string): Promise<void> {
   }
 }
 
-async function updateWorkflowLane(key: string, payload: { name: string; color: string }): Promise<void> {
+async function saveWorkflowDraftChanges(): Promise<void> {
   const slug = getSlug();
-  if (!slug) {
-    showToast("No project available");
-    return;
+  if (!slug || !workflowTabDraft || !workflowTabDraftBaseline) return;
+  for (const lane of workflowTabDraft) {
+    if (!lane.name.trim()) {
+      showToast("Lane name is required");
+      return;
+    }
   }
-  const trimmed = payload.name.trim();
-  if (!trimmed) {
-    showToast("Lane name is required");
-    return;
-  }
-  const color = payload.color.trim();
-  const lane = getBoard()?.columnOrder?.find((l) => l.key === key);
-  const prevColor = (lane?.color ?? DEFAULT_WORKFLOW_LANE_COLOR).toLowerCase();
-  if (trimmed === lane?.name?.trim() && color.toLowerCase() === prevColor) {
-    return;
-  }
+  const baselineByKey = new Map(workflowTabDraftBaseline.map((l) => [l.key, l]));
   try {
-    recordLocalMutation();
-    await apiFetch(`/api/board/${slug}/workflow/${encodeURIComponent(key)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ name: trimmed, color }),
-    });
+    for (const lane of workflowTabDraft) {
+      const base = baselineByKey.get(lane.key);
+      if (!base) continue;
+      const name = lane.name.trim();
+      const color = lane.color.trim();
+      if (
+        name === base.name.trim() &&
+        color.toLowerCase() === base.color.trim().toLowerCase()
+      ) {
+        continue;
+      }
+      recordLocalMutation();
+      await apiFetch(`/api/board/${slug}/workflow/${encodeURIComponent(lane.key)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, color }),
+      });
+    }
     await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
+    syncWorkflowDraftFromBoardAfterMutation();
     await renderSettingsModal();
-    showToast("Lane updated");
+    showToast("Workflow updated");
   } catch (err: any) {
-    showToast(err.message || "Failed to update lane");
+    showToast(err.message || "Failed to update workflow");
   }
 }
 
@@ -801,7 +953,9 @@ async function deleteWorkflowLane(key: string): Promise<void> {
     await apiFetch(`/api/board/${slug}/workflow/${encodeURIComponent(key)}`, {
       method: "DELETE",
     });
+    invalidateWorkflowLaneCountsCache();
     await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
+    syncWorkflowDraftFromBoardAfterMutation();
     await renderSettingsModal();
     showToast("Lane deleted");
   } catch (err: any) {
@@ -1336,9 +1490,28 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   if (showSprintsTab && getSettingsActiveTab() === "sprints") {
     sprintsHTML = await renderSprintsTabContent();
   }
-  const workflowHTML = showWorkflowTab && getSettingsActiveTab() === "workflow"
-    ? renderWorkflowTabContent()
-    : "";
+  let workflowHTML = "";
+  if (showWorkflowTab && getSettingsActiveTab() === "workflow" && slug) {
+    if (workflowLaneCountsCache && workflowLaneCountsCache.slug !== slug) {
+      invalidateWorkflowLaneCountsCache();
+    }
+    const cached =
+      workflowLaneCountsCache?.slug === slug ? workflowLaneCountsCache.state : null;
+    if (cached !== null) {
+      workflowHTML = renderWorkflowTabContent(cached);
+    } else {
+      workflowHTML = renderWorkflowTabContent({ status: "loading" });
+      const gen = workflowLaneCountsFetchGeneration;
+      void (async () => {
+        const state = await fetchWorkflowLaneCountsState(slug);
+        if (gen !== workflowLaneCountsFetchGeneration) return;
+        if (getSlug() !== slug) return;
+        workflowLaneCountsCache = { slug, state };
+        if (getSettingsActiveTab() !== "workflow") return;
+        await renderSettingsModal();
+      })();
+    }
+  }
 
   destroyBurndownChart();
   contentEl.innerHTML = `
@@ -1416,20 +1589,32 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   document.querySelectorAll(".settings-tab").forEach(tab => {
     tab.addEventListener("click", async (e) => {
       const tabName = (e.target as HTMLElement).getAttribute("data-tab");
-      if (tabName) {
-        setSettingsActiveTab(tabName);
-        await renderSettingsModal();
-        // Force dialog to recalculate height after content change
-        const dialog = document.getElementById("settingsDialog");
-        if (dialog && (dialog as HTMLDialogElement).open) {
-          // Reset height to force recalculation
-          const currentHeight = (dialog as HTMLElement).style.height;
-          (dialog as HTMLElement).style.height = "auto";
-          // Force a reflow
-          void (dialog as HTMLElement).offsetHeight;
-          // Reset to let CSS take over
-          (dialog as HTMLElement).style.height = currentHeight || "";
-        }
+      if (!tabName || tabName === getSettingsActiveTab()) return;
+      if (getSettingsActiveTab() === "workflow" && isWorkflowDraftDirty()) {
+        const discard = await showConfirmDialog(
+          "You have unsaved changes. Discard them?",
+          "Unsaved changes",
+          "Discard"
+        );
+        if (!discard) return;
+        resetWorkflowDraftToBaseline();
+      }
+      if (tabName === "workflow") {
+        invalidateWorkflowLaneCountsCache();
+        clearWorkflowDraftState();
+      }
+      setSettingsActiveTab(tabName);
+      await renderSettingsModal();
+      // Force dialog to recalculate height after content change
+      const dialog = document.getElementById("settingsDialog");
+      if (dialog && (dialog as HTMLDialogElement).open) {
+        // Reset height to force recalculation
+        const currentHeight = (dialog as HTMLElement).style.height;
+        (dialog as HTMLElement).style.height = "auto";
+        // Force a reflow
+        void (dialog as HTMLElement).offsetHeight;
+        // Reset to let CSS take over
+        (dialog as HTMLElement).style.height = currentHeight || "";
       }
     }, { signal });
   });
@@ -1443,7 +1628,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   }
 
   if (getSettingsActiveTab() === "workflow") {
-    const addInput = document.querySelector("[data-workflow-new-name]") as HTMLInputElement | null;
+    const addInput = document.querySelector("[data-workflow-ghost-input]") as HTMLInputElement | null;
     const addLane = () => {
       if (!addInput) return;
       addWorkflowLane(addInput.value);
@@ -1459,45 +1644,100 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         addLane();
       }, { signal });
     }
-    const saveWorkflowLane = (key: string) => {
-      const row = document.querySelector(`[data-workflow-key="${key}"]`) as HTMLElement | null;
-      const nameInput = row?.querySelector("[data-workflow-name]") as HTMLInputElement | null;
-      const colorInput = row?.querySelector("[data-workflow-color]") as HTMLInputElement | null;
-      if (!nameInput || !colorInput) return;
-      updateWorkflowLane(key, { name: nameInput.value, color: colorInput.value });
-    };
-    document.querySelectorAll("[data-workflow-save]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const key = (btn as HTMLElement).getAttribute("data-workflow-save");
-        if (!key) return;
-        saveWorkflowLane(key);
-      }, { signal });
-    });
     document.querySelectorAll("[data-workflow-name]").forEach((inputEl) => {
-      inputEl.addEventListener("keydown", (e) => {
-        if ((e as KeyboardEvent).key !== "Enter") return;
-        e.preventDefault();
-        const key = (inputEl as HTMLElement).getAttribute("data-workflow-name");
-        if (!key) return;
-        saveWorkflowLane(key);
+      const key = (inputEl as HTMLElement).getAttribute("data-workflow-name");
+      if (!key) return;
+      inputEl.addEventListener("input", () => {
+        const lane = workflowTabDraft?.find((l) => l.key === key);
+        if (lane) lane.name = (inputEl as HTMLInputElement).value;
+        updateWorkflowSaveFooter();
       }, { signal });
     });
     document.querySelectorAll("[data-workflow-color]").forEach((colorEl) => {
-      colorEl.addEventListener("keydown", (e) => {
-        if ((e as KeyboardEvent).key !== "Enter") return;
-        e.preventDefault();
-        const key = (colorEl as HTMLElement).getAttribute("data-workflow-color");
-        if (!key) return;
-        saveWorkflowLane(key);
+      const key = (colorEl as HTMLElement).getAttribute("data-workflow-color");
+      if (!key) return;
+      colorEl.addEventListener("input", () => {
+        const lane = workflowTabDraft?.find((l) => l.key === key);
+        if (lane) lane.color = (colorEl as HTMLInputElement).value || DEFAULT_WORKFLOW_LANE_COLOR;
+        updateWorkflowSaveFooter();
       }, { signal });
     });
     document.querySelectorAll("[data-workflow-delete]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const key = (btn as HTMLElement).getAttribute("data-workflow-delete");
         if (!key) return;
-        deleteWorkflowLane(key);
+        void deleteWorkflowLane(key);
       }, { signal });
     });
+    const saveChangesBtn = document.querySelector("[data-workflow-save-changes]");
+    if (saveChangesBtn) {
+      saveChangesBtn.addEventListener("click", () => {
+        void saveWorkflowDraftChanges();
+      }, { signal });
+    }
+    const cancelDraftBtn = document.querySelector("[data-workflow-draft-cancel]");
+    if (cancelDraftBtn) {
+      cancelDraftBtn.addEventListener(
+        "click",
+        () => {
+          resetWorkflowDraftToBaseline();
+          void renderSettingsModal();
+        },
+        { signal }
+      );
+    }
+    const retryCountsBtn = document.querySelector("[data-workflow-counts-retry]");
+    if (retryCountsBtn) {
+      retryCountsBtn.addEventListener(
+        "click",
+        () => {
+          invalidateWorkflowLaneCountsCache();
+          void renderSettingsModal();
+        },
+        { signal }
+      );
+    }
+  }
+
+  const settingsDlg = settingsDialog as HTMLDialogElement | null;
+  if (settingsDlg) {
+    const onDialogCancel = (e: Event) => {
+      if (getSettingsActiveTab() !== "workflow" || !isWorkflowDraftDirty()) return;
+      e.preventDefault();
+      void showConfirmDialog(
+        "You have unsaved changes. Discard them?",
+        "Unsaved changes",
+        "Discard"
+      ).then((discard) => {
+        if (discard) {
+          resetWorkflowDraftToBaseline();
+          clearWorkflowDraftState();
+          settingsDlg.close();
+        }
+      });
+    };
+    settingsDlg.addEventListener("cancel", onDialogCancel, { signal });
+    settingsDlg.addEventListener("close", () => clearWorkflowDraftState(), { signal });
+  }
+
+  if (closeSettingsBtn) {
+    const onCloseClick = (e: Event) => {
+      if (getSettingsActiveTab() !== "workflow" || !isWorkflowDraftDirty()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      void showConfirmDialog(
+        "You have unsaved changes. Discard them?",
+        "Unsaved changes",
+        "Discard"
+      ).then((discard) => {
+        if (discard) {
+          resetWorkflowDraftToBaseline();
+          clearWorkflowDraftState();
+          (settingsDialog as HTMLDialogElement).close();
+        }
+      });
+    };
+    closeSettingsBtn.addEventListener("click", onCloseClick, { capture: true, signal });
   }
 
   // Setup logout button — use form POST so browser processes Set-Cookie from document response

@@ -1069,6 +1069,34 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	// GET /api/board/{slug}/workflow/counts - unfiltered todo counts per lane (maintainer+).
+	if len(rest) == 3 && rest[1] == "workflow" && rest[2] == "counts" && r.Method == http.MethodGet {
+		ctx := s.requestContext(r)
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return
+		}
+		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
+		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+			return
+		}
+		counts, err := s.store.CountTodosByColumnKey(ctx, project.ID)
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return
+		}
+		if counts == nil {
+			counts = map[string]int{}
+		}
+		writeJSON(w, http.StatusOK, workflowLaneCountsJSON{
+			Slug:              project.Slug,
+			CountsByColumnKey: counts,
+		})
+		return
+	}
+
 	// POST /api/board/{slug}/workflow - add a new non-done lane before done.
 	if len(rest) == 2 && rest[1] == "workflow" && r.Method == http.MethodPost {
 		ctx := s.requestContext(r)

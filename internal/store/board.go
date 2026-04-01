@@ -636,6 +636,34 @@ AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE 
 	return count, nil
 }
 
+// CountTodosByColumnKey returns unfiltered todo counts per column_key for a project
+// (same notion as DeleteWorkflowColumn: all todos in that lane, no tag/search/sprint filter).
+// Column keys with zero todos are omitted from the map; callers treat missing keys as 0.
+// The query is satisfied by existing indexes with leading project_id and column_key
+// (e.g. idx_todos_project_column_key_rank_id from migration 038).
+func (s *Store) CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT column_key, COUNT(*) FROM todos WHERE project_id = ? GROUP BY column_key
+`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("count todos by column key: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]int)
+	for rows.Next() {
+		var key string
+		var n int
+		if err := rows.Scan(&key, &n); err != nil {
+			return nil, fmt.Errorf("scan count todos by column key: %w", err)
+		}
+		out[key] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows count todos by column key: %w", err)
+	}
+	return out, nil
+}
+
 // ParseLaneCursor parses "rank:id" cursor. Returns (0, 0) for empty or invalid.
 func ParseLaneCursor(cursor string) (rank, id int64) {
 	if cursor == "" {

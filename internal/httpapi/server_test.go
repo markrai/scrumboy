@@ -587,6 +587,111 @@ func TestDeleteLane_RequiresMaintainer(t *testing.T) {
 	}
 }
 
+func TestWorkflowLaneCounts_MaintainerGetsCounts(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	ownerClient := newCookieClient(t)
+	owner := bootstrapUserClient(t, ownerClient, ts.URL, "Owner", "owner@example.com", "password123")
+	ownerID := int64(owner["id"].(float64))
+
+	st := store.New(sqlDB, nil)
+	project, err := st.CreateProject(store.WithUserID(context.Background(), ownerID), "wf-counts-ok")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	var todo struct {
+		ID int64 `json:"id"`
+	}
+	resp, body := doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos", map[string]any{
+		"title":  "t",
+		"body":   "",
+		"tags":   []string{},
+		"status": "BACKLOG",
+	}, &todo)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var out struct {
+		Slug              string         `json:"slug"`
+		CountsByColumnKey map[string]int `json:"countsByColumnKey"`
+	}
+	resp, body = doJSON(t, ownerClient, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/workflow/counts", nil, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, string(body))
+	}
+	if out.Slug != project.Slug {
+		t.Fatalf("slug: want %q, got %q", project.Slug, out.Slug)
+	}
+	if out.CountsByColumnKey[store.DefaultColumnBacklog] != 1 {
+		t.Fatalf("backlog count: want 1, got %v", out.CountsByColumnKey)
+	}
+}
+
+func TestWorkflowLaneCounts_RequiresMaintainer(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	ownerClient := newCookieClient(t)
+	owner := bootstrapUserClient(t, ownerClient, ts.URL, "Owner", "owner@example.com", "password123")
+	ownerID := int64(owner["id"].(float64))
+
+	st := store.New(sqlDB, nil)
+	ctxOwner := store.WithUserID(context.Background(), ownerID)
+	project, err := st.CreateProject(ctxOwner, "wf-counts-auth")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	contributor, err := st.CreateUser(context.Background(), "wfcounts-contrib@example.com", "password123", "Contributor")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := st.AddProjectMember(ctxOwner, ownerID, project.ID, contributor.ID, store.RoleContributor); err != nil {
+		t.Fatalf("AddProjectMember: %v", err)
+	}
+
+	contributorClient := newCookieClient(t)
+	loginUserClient(t, contributorClient, ts.URL, "wfcounts-contrib@example.com", "password123")
+
+	resp, body := doJSON(t, contributorClient, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/workflow/counts", nil, nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", resp.StatusCode, string(body))
+	}
+}
+
+func TestWorkflowLaneCounts_NoSessionReturnsNotFound(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	ownerClient := newCookieClient(t)
+	owner := bootstrapUserClient(t, ownerClient, ts.URL, "Owner", "owner@example.com", "password123")
+	ownerID := int64(owner["id"].(float64))
+
+	st := store.New(sqlDB, nil)
+	project, err := st.CreateProject(store.WithUserID(context.Background(), ownerID), "wf-counts-nosession")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	// Board routes use writeStoreErr(..., hideUnauthorized=true): unauthenticated durable boards map to 404.
+	anonClient := &http.Client{}
+	resp, body := doJSON(t, anonClient, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/workflow/counts", nil, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", resp.StatusCode, string(body))
+	}
+	var errBody struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errBody); err != nil || errBody.Error.Code != "NOT_FOUND" {
+		t.Fatalf("expected NOT_FOUND error JSON, got %s", string(body))
+	}
+}
+
 func TestDeleteLane_BoardNoLongerShowsLane(t *testing.T) {
 	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
 	defer cleanup()

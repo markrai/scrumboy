@@ -3961,3 +3961,19 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     margin-right: auto;
   }
 }
+
+/* Settings → Workflow: draft actions */
+.settings-workflow-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+@media (max-width: 768px) {
+  .settings-workflow-footer {
+    justify-content: center;
+  }
+}
+

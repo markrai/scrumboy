@@ -84,6 +84,7 @@ type storeAPI interface {
 	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
 	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
 	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
+	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)

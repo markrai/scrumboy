@@ -505,6 +505,13 @@ type workflowColumnJSON struct {
 	Position int    `json:"position"`
 }
 
+// workflowLaneCountsJSON is the body for GET /api/board/{slug}/workflow/counts.
+// Zero-count lanes may be omitted from countsByColumnKey; clients treat a missing key as 0.
+type workflowLaneCountsJSON struct {
+	Slug              string         `json:"slug"`
+	CountsByColumnKey map[string]int `json:"countsByColumnKey"`
+}
+
 func boardToJSON(p store.Project, workflow []store.WorkflowColumn, tags []store.TagCount, cols map[string][]store.Todo) boardJSON {
 	return boardToJSONWithMeta(p, workflow, tags, cols, nil)
 }
