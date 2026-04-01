@@ -33,14 +33,6 @@ function bindAvatarButton() {
         await renderSettingsModal();
         settingsDialog.showModal();
     });
-    userAvatarBtn.addEventListener('keydown', async (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setSettingsActiveTab('profile');
-            await renderSettingsModal();
-            settingsDialog.showModal();
-        }
-    });
     userAvatarBtn[BOUND_FLAG] = true;
 }
 function renderLoadingShell() {

@@ -2084,15 +2084,6 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
       await renderSettingsModal();
       (settingsDialog as HTMLDialogElement).showModal();
     });
-    // Also handle keyboard (Enter/Space) for accessibility
-    userAvatarBtn.addEventListener("keydown", async (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        setSettingsActiveTab("profile");
-        await renderSettingsModal();
-        (settingsDialog as HTMLDialogElement).showModal();
-      }
-    });
     (userAvatarBtn as any)[BOUND_FLAG] = true;
   }
 

@@ -15,6 +15,8 @@ import { setupContextMenuButtonHandler } from './dist/features/context-menu-butt
 import { loadBoardBySlug, onTodoDialogClosed } from './dist/views/index.js';
 import { recordLocalMutation } from './dist/realtime/guard.js';
 import { registerPwaGlobals } from './dist/pwaUpdate.js';
+import { initKeybindings } from './dist/core/keybindings.js';
+import { initModalOutsideClickClose } from './dist/core/modal-outside-click.js';
 
 let tagInputHandlersSetup = false;
 const ALLOWED_ESTIMATION_POINTS = new Set([1, 2, 3, 5, 8, 13, 20, 40]);
@@ -29,6 +31,15 @@ initTheme();
 setupContextMenuCloseHandler();
 setupContextMenuButtonHandler();
 
+initModalOutsideClickClose();
+initKeybindings({
+  openSettings: async () => {
+    setSettingsActiveTab("profile");
+    await renderSettingsModal();
+    settingsDialog.showModal();
+  },
+});
+
 // User avatar button: delegated so it works on dashboard/projects/board even if a cached view bundle didn't bind it
 app.addEventListener("click", async (e) => {
   if (!e.target.closest("#userAvatarBtn")) return;
@@ -37,38 +48,9 @@ app.addEventListener("click", async (e) => {
   await renderSettingsModal();
   settingsDialog.showModal();
 });
-app.addEventListener("keydown", async (e) => {
-  if (!e.target.closest("#userAvatarBtn")) return;
-  if (e.key !== "Enter" && e.key !== " ") return;
-  e.preventDefault();
-  setSettingsActiveTab("profile");
-  await renderSettingsModal();
-  settingsDialog.showModal();
-});
 
-// ESC key handler: in full mode, pressing ESC on a board view returns to projects list
-document.addEventListener("keydown", (e) => {
-  // Only handle ESC key
-  if (e.key !== "Escape") return;
-  
-  // Check if members dialog is open
-  const membersDialog = document.getElementById("membersDialog");
-  const hasMembersDialogOpen = membersDialog && membersDialog.open;
-  
-  // Only in full mode (auth/status endpoint exists)
-  // Only when viewing a board (not projects list, not not found, not dialog open)
-  if (
-    getRoute() === "boardBySlug" &&
-    getBoard() &&
-    getAuthStatusAvailable() &&
-    !todoDialog.open && // Don't interfere with dialog ESC
-    !settingsDialog.open && // Don't interfere with settings dialog ESC
-    !hasMembersDialogOpen // Don't interfere with members dialog ESC
-  ) {
-    e.preventDefault();
-    navigate("/");
-  }
-});
+// Board back-to-projects (Esc) is handled by dist/core/keybindings.js (executeAction boardEscapeBack).
+// Avatar keyboard activation uses native <button> click (Enter/Space); no separate keydown listener.
 
 // renderAuth moved to modules/views/auth.ts
 // renderNotFound moved to modules/views/notfound.ts

@@ -127,9 +127,9 @@ export function renderUserAvatar(user, options) {
     const id = options?.id ?? 'userAvatarBtn';
     const ariaLabel = options?.ariaLabel ?? 'Open profile settings';
     return `
-    <div class="user-avatar" id="${escapeHTML(id)}" title="${escapeHTML(label)}" role="button" tabindex="0" aria-label="${escapeHTML(ariaLabel)}">
+    <button type="button" class="user-avatar" id="${escapeHTML(id)}" title="${escapeHTML(label)}" aria-label="${escapeHTML(ariaLabel)}">
       ${content}
-    </div>
+    </button>
   `;
 }
 /**
