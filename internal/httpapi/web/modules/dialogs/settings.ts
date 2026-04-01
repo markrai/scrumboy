@@ -38,9 +38,48 @@ import { invalidateBoard, refreshSprintsAndChips } from '../orchestration/board-
 import { emit } from '../events.js';
 import { normalizeSprints } from '../sprints.js';
 import { recordLocalMutation } from '../realtime/guard.js';
+import {
+  KEY_ACTION_LIST,
+  chordFromKeyboardEvent,
+  formatChordForDisplay,
+  getResolvedChordForAction,
+  reloadKeybindingsFromStorage,
+  saveKeybindingOverride,
+  setKeybindingsCaptureListening,
+  type KeyActionId,
+} from '../core/keybindings.js';
 
 // Import view functions - renderProjects is not needed here
 declare function renderProjects(): Promise<void>;
+
+/** Active keybinding capture listener (settings customization); removed when starting a new capture or on abort. */
+let keybindingCaptureKeydown: ((e: KeyboardEvent) => void) | null = null;
+
+function resetKeybindingCaptureUI(): void {
+  if (keybindingCaptureKeydown) {
+    window.removeEventListener("keydown", keybindingCaptureKeydown, true);
+    keybindingCaptureKeydown = null;
+  }
+  setKeybindingsCaptureListening(false);
+  document.querySelectorAll("[data-keybinding-capture]").forEach((b) => {
+    const id = (b as HTMLElement).getAttribute("data-keybinding-action") as KeyActionId | null;
+    if (id) (b as HTMLElement).textContent = formatChordForDisplay(getResolvedChordForAction(id));
+    b.classList.remove("keybinding-capture--listening", "keybinding-capture--error");
+  });
+}
+
+/** Avoid stacking `close` listeners if this module is re-evaluated (e.g. hot reload). */
+let settingsKeybindingCloseListenerInstalled = false;
+
+function installSettingsDialogCloseForKeybindingCaptureOnce(): void {
+  if (settingsKeybindingCloseListenerInstalled) return;
+  settingsKeybindingCloseListenerInstalled = true;
+  settingsDialog.addEventListener("close", () => {
+    resetKeybindingCaptureUI();
+  });
+}
+
+installSettingsDialogCloseForKeybindingCaptureOnce();
 
 // AbortController for per-render listener cleanup
 let settingsAbortController: AbortController | null = null;
@@ -1404,32 +1443,42 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     `;
   })();
 
+  reloadKeybindingsFromStorage();
+  const keybindingRowsHTML = KEY_ACTION_LIST.map((meta) => {
+    const chord = getResolvedChordForAction(meta.id);
+    return `
+      <div class="keybinding-row" data-keybinding-row="${meta.id}">
+        <span class="keybinding-row__label">${escapeHTML(meta.label)}</span>
+        <button type="button" class="btn btn--ghost keybinding-capture" data-keybinding-capture data-keybinding-action="${meta.id}">
+          ${escapeHTML(formatChordForDisplay(chord))}
+        </button>
+      </div>`;
+  }).join("");
+
   const customizationHTML = `
       <div class="settings-section">
         <div class="settings-section__title">Theme</div>
         <div class="settings-section__description muted">Choose your preferred color scheme.</div>
-        <div class="theme-selector">
-          <label class="theme-option">
-            <input type="radio" name="theme" value="system" ${getStoredTheme() === THEME_SYSTEM ? 'checked' : ''}>
-            <div>
-              <div>System</div>
-              <div class="theme-option__description">Follow your device's theme setting</div>
-            </div>
+        <div class="theme-selector theme-selector--inline">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="theme" value="system" ${getStoredTheme() === THEME_SYSTEM ? "checked" : ""}>
+            <span>System</span>
           </label>
-          <label class="theme-option">
-            <input type="radio" name="theme" value="dark" ${getStoredTheme() === THEME_DARK ? 'checked' : ''}>
-            <div>
-              <div>Dark</div>
-              <div class="theme-option__description">Always use dark mode</div>
-            </div>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="theme" value="dark" ${getStoredTheme() === THEME_DARK ? "checked" : ""}>
+            <span>Dark</span>
           </label>
-          <label class="theme-option">
-            <input type="radio" name="theme" value="light" ${getStoredTheme() === THEME_LIGHT ? 'checked' : ''}>
-            <div>
-              <div>Light</div>
-              <div class="theme-option__description">Always use light mode</div>
-            </div>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="theme" value="light" ${getStoredTheme() === THEME_LIGHT ? "checked" : ""}>
+            <span>Light</span>
           </label>
+        </div>
+      </div>
+      <div class="settings-section settings-section--keybindings">
+        <div class="settings-section__title">Keybindings</div>
+        <div class="settings-section__description muted">Click a key to record a new shortcut. Press Esc to cancel while listening.</div>
+        <div class="keybinding-list">
+          ${keybindingRowsHTML}
         </div>
       </div>
     `;
@@ -1531,6 +1580,11 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   `;
 
   // Abort previous listeners before attaching new ones
+  if (keybindingCaptureKeydown) {
+    window.removeEventListener("keydown", keybindingCaptureKeydown, true);
+    keybindingCaptureKeydown = null;
+  }
+  setKeybindingsCaptureListening(false);
   settingsAbortController?.abort();
   settingsAbortController = new AbortController();
   const signal = settingsAbortController.signal;
@@ -2151,6 +2205,55 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       handleThemeChange((e.target as HTMLInputElement).value);
     }, { signal });
   });
+
+  if (getSettingsActiveTab() === "customization") {
+    resetKeybindingCaptureUI();
+    document.querySelectorAll("[data-keybinding-capture]").forEach((btn) => {
+      btn.addEventListener(
+        "click",
+        () => {
+          resetKeybindingCaptureUI();
+          const actionId = (btn as HTMLElement).getAttribute("data-keybinding-action") as KeyActionId | null;
+          if (!actionId) return;
+          (btn as HTMLElement).classList.add("keybinding-capture--listening");
+          (btn as HTMLElement).textContent = "Press a key…";
+          setKeybindingsCaptureListening(true);
+          const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              resetKeybindingCaptureUI();
+              return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            const chord = chordFromKeyboardEvent(e);
+            if (!chord) return;
+            const saved = saveKeybindingOverride(actionId, chord);
+            // Teardown order: remove listener, clear ref, then flag (avoid global handler seeing capture off while listener still registered).
+            window.removeEventListener("keydown", onKey, true);
+            if (keybindingCaptureKeydown === onKey) {
+              keybindingCaptureKeydown = null;
+            }
+            setKeybindingsCaptureListening(false);
+            (btn as HTMLElement).classList.remove("keybinding-capture--listening");
+            const resolvedLabel = formatChordForDisplay(getResolvedChordForAction(actionId));
+            if (saved) {
+              (btn as HTMLElement).textContent = resolvedLabel;
+              (btn as HTMLElement).classList.remove("keybinding-capture--error");
+            } else {
+              // Previous binding unchanged in storage; show it immediately + error outline (no timed revert).
+              (btn as HTMLElement).textContent = resolvedLabel;
+              (btn as HTMLElement).classList.add("keybinding-capture--error");
+            }
+          };
+          keybindingCaptureKeydown = onKey;
+          window.addEventListener("keydown", onKey, true);
+        },
+        { signal }
+      );
+    });
+  }
 
   // Setup event listeners for color pickers (only if we have project access)
   if (hasProjectAccess) {

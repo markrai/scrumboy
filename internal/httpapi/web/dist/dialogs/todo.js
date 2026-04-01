@@ -1006,15 +1006,28 @@ export async function openTodoDialog(opts) {
     bindShareTodoButton();
     todoDialog.showModal();
     // On touch devices, avoid focusing the title input (causes keyboard to pop up).
-    // Use setTimeout so our focus runs after the browser's default focus behavior.
-    setTimeout(() => {
+    // Run after the next frame so default dialog focus/layout settle without arbitrary timer delay.
+    let userChoseFocus = false;
+    const ac = new AbortController();
+    todoDialog.addEventListener("pointerdown", () => {
+        userChoseFocus = true;
+    }, { capture: true, signal: ac.signal });
+    requestAnimationFrame(() => {
+        ac.abort();
+        if (userChoseFocus) {
+            return;
+        }
         if (window.matchMedia("(pointer: coarse)").matches) {
             closeTodoBtn?.focus();
+            return;
+        }
+        if (mode === "edit") {
+            todoStatus?.focus();
         }
         else {
             todoTitle.focus();
         }
-    }, 0);
+    });
 }
 /**
  * Reset assignee select on dialog close: clear all options, re-add only "Unassigned".

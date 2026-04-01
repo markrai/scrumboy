@@ -1943,15 +1943,6 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
             await renderSettingsModal();
             settingsDialog.showModal();
         });
-        // Also handle keyboard (Enter/Space) for accessibility
-        userAvatarBtn.addEventListener("keydown", async (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setSettingsActiveTab("profile");
-                await renderSettingsModal();
-                settingsDialog.showModal();
-            }
-        });
         userAvatarBtn[BOUND_FLAG] = true;
     }
     // Mobile tab switching

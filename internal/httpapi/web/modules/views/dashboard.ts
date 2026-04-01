@@ -52,14 +52,6 @@ function bindAvatarButton(): void {
     await renderSettingsModal();
     (settingsDialog as HTMLDialogElement).showModal();
   });
-  userAvatarBtn.addEventListener('keydown', async (e: KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setSettingsActiveTab('profile');
-      await renderSettingsModal();
-      (settingsDialog as HTMLDialogElement).showModal();
-    }
-  });
   (userAvatarBtn as any)[BOUND_FLAG] = true;
 }
 

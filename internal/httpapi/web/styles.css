@@ -980,6 +980,10 @@ body {
 .user-avatar {
   width: var(--s-36);
   height: var(--s-36);
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
   border-radius: 50%;
   background: var(--accent, #3B82F6);
   color: #ffffff;
@@ -1497,6 +1501,68 @@ body {
   font-size: var(--fs-12);
   color: var(--muted);
   margin-top: var(--s-2);
+}
+
+.theme-selector--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-8);
+}
+
+.theme-option.theme-option--inline {
+  padding: var(--s-8) var(--s-12);
+  flex-direction: row;
+  gap: var(--s-8);
+}
+
+.theme-option--inline .theme-option__description {
+  display: none;
+}
+
+.keybinding-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s-8);
+  margin-top: var(--s-12);
+  max-width: 100%;
+}
+
+@media (min-width: 560px) {
+  .keybinding-list {
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--s-24);
+    row-gap: var(--s-8);
+  }
+}
+
+.keybinding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-12);
+  min-width: 0;
+}
+
+.keybinding-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--fs-14);
+}
+
+.keybinding-capture.keybinding-capture--listening {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+}
+
+.keybinding-capture.keybinding-capture--error {
+  outline: 2px solid var(--danger, #dc2626);
+  outline-offset: 2px;
+}
+
+.settings-section--keybindings {
+  margin-top: var(--s-24);
 }
 
 .settings-backup-section {
