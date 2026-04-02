@@ -2,7 +2,21 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** unless noted below.
 
-Notable changes to Scrumboy, newest first.
+
+## [3.7.6] - 2026-04-02
+
+### Features
+
+- **API access tokens** - create/manage tokens for CLI, CI, and integrations
+- **Bearer Auth** - MCP now supports Bearer auth (`Authorization: Bearer sb_...`)
+
+---
+
+## [3.7.5] - 2026-04-02
+
+### Features
+
+- **MCP token** - Added MCP bearer token authentication support.
 
 ---
 

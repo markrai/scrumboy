@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 type storeAPI interface {
 	CountUsers(ctx context.Context) (int, error)
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
+	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProjectContextBySlug(ctx context.Context, slug string, mode store.Mode) (store.ProjectContext, error)
 	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
@@ -73,29 +75,76 @@ func New(st storeAPI, opts Options) *Adapter {
 	return a
 }
 
-func (a *Adapter) requestContext(r *http.Request) context.Context {
+// parseBearerAuthorization parses Authorization: Bearer. The credential is the segment after the first
+// ASCII space following "Bearer"; it is trimmed with strings.TrimSpace only (not the full header value).
+// If the scheme is Bearer (case-insensitive), ok is true and credential is "" when missing/blank after trim.
+// RFC 9110 expects at least one space between the scheme and token; a single run-on "Authorization:Bearer x"
+// is therefore not treated as Bearer here (optional future leniency could accept it).
+func parseBearerAuthorization(headerValue string) (ok bool, credential string) {
+	v := strings.TrimSpace(headerValue)
+	if v == "" {
+		return false, ""
+	}
+	i := strings.IndexByte(v, ' ')
+	if i < 0 {
+		if strings.EqualFold(v, "Bearer") {
+			return true, ""
+		}
+		return false, ""
+	}
+	if !strings.EqualFold(v[:i], "Bearer") {
+		return false, ""
+	}
+	return true, strings.TrimSpace(v[i+1:])
+}
+
+// requestAuthResult is the outcome of MCP request authentication.
+type requestAuthResult struct {
+	Ctx              context.Context
+	BearerAuthFailed bool
+	Err              error // non-nil store failure (caller should map to 500)
+}
+
+func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 	ctx := r.Context()
 
-	// Keep anonymous mode aligned with the existing HTTP API boundary:
-	// valid session cookies are ignored entirely.
+	// Anonymous mode: ignore Authorization and session cookies (same boundary as HTTP API).
 	if a.mode == "anonymous" {
-		return ctx
+		return requestAuthResult{Ctx: ctx}
+	}
+
+	isBearer, cred := parseBearerAuthorization(r.Header.Get("Authorization"))
+	if isBearer {
+		if cred == "" {
+			return requestAuthResult{Ctx: ctx, BearerAuthFailed: true}
+		}
+		u, err := a.store.GetUserByAPIToken(ctx, cred)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return requestAuthResult{Ctx: ctx, BearerAuthFailed: true}
+			}
+			return requestAuthResult{Ctx: ctx, Err: err}
+		}
+		ctx = store.WithUserID(ctx, u.ID)
+		ctx = store.WithUserEmail(ctx, u.Email)
+		ctx = store.WithUserName(ctx, u.Name)
+		return requestAuthResult{Ctx: ctx}
 	}
 
 	c, err := r.Cookie("scrumboy_session")
 	if err != nil || c == nil || c.Value == "" {
-		return ctx
+		return requestAuthResult{Ctx: ctx}
 	}
 
 	u, err := a.store.GetUserBySessionToken(ctx, c.Value)
 	if err != nil {
-		return ctx
+		return requestAuthResult{Ctx: ctx}
 	}
 
 	ctx = store.WithUserID(ctx, u.ID)
 	ctx = store.WithUserEmail(ctx, u.Email)
 	ctx = store.WithUserName(ctx, u.Name)
-	return ctx
+	return requestAuthResult{Ctx: ctx}
 }
 
 func (a *Adapter) authState(ctx context.Context) (authCapabilities, bool, *adapterError) {
@@ -129,6 +178,7 @@ func (a *Adapter) authState(ctx context.Context) (authCapabilities, bool, *adapt
 		Authenticated:            authenticated,
 		AuthenticatedToolsUsable: authUsable,
 		Reason:                   reason,
+		AuthMethods:              []string{"sessionCookie", "bearer"},
 	}, bootstrapAvailable, nil
 }
 

@@ -1,13 +1,13 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.7.4-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.7.6-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
 </p>
 
-#### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration
+#### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP support
 
 
 <img width="2975" height="1078" alt="image" src="internal/httpapi/web/github_preview.jpg" />
@@ -113,6 +113,39 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
 
 ---
+
+## Integrations & API Access
+
+Scrumboy supports API access tokens for automation, integrations, and AI agents.
+
+You can create a token from the API and use it to call MCP directly — no browser session or cookies required.
+
+**Create a token (requires login session):**
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
+  -H "Content-Type: application/json" \
+  -H "X-Scrumboy: 1" \
+  -d '{"name":"cli"}'
+```
+
+Response includes a one-time token (starts with sb_).
+
+Use it with MCP:
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sb_your_token_here" \
+  -d '{"tool":"projects.list","input":{}}'
+```
+This enables:
+
+- CLI usage
+- CI/CD automation
+- AI agents (Claude, etc.)
+- Scripting/integrations without login flows
+
 
 # Config
 

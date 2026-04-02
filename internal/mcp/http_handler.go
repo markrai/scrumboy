@@ -1,11 +1,27 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 )
+
+// resolveAndValidateAuth runs MCP auth resolution and writes JSON errors when auth cannot proceed.
+// On success, ok is true and ctx is ready for tool handlers. On failure, ok is false (response already sent).
+func (a *Adapter) resolveAndValidateAuth(w http.ResponseWriter, r *http.Request) (ctx context.Context, ok bool) {
+	authRes := a.resolveRequestAuth(r)
+	if authRes.Err != nil {
+		writeError(w, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": authRes.Err.Error()}))
+		return nil, false
+	}
+	if authRes.BearerAuthFailed {
+		writeError(w, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Authentication required", nil))
+		return nil, false
+	}
+	return authRes.Ctx, true
+}
 
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
@@ -16,7 +32,10 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		ctx := a.requestContext(r)
+		ctx, ok := a.resolveAndValidateAuth(w, r)
+		if !ok {
+			return
+		}
 		data, meta, err := a.handleSystemGetCapabilities(ctx, nil)
 		if err != nil {
 			writeError(w, err)
@@ -47,7 +66,10 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := a.requestContext(r)
+	ctx, ok := a.resolveAndValidateAuth(w, r)
+	if !ok {
+		return
+	}
 	data, meta, toolErr := handler(ctx, req.Input)
 	if toolErr != nil {
 		writeError(w, toolErr)

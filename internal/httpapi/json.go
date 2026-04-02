@@ -151,6 +151,35 @@ func userToJSON(u store.User) userJSON {
 	}
 }
 
+type apiTokenListItemJSON struct {
+	ID         int64      `json:"id"`
+	Name       *string    `json:"name,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
+}
+
+type apiTokenCreateJSON struct {
+	ID        int64     `json:"id"`
+	Name      *string   `json:"name,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	Token     string    `json:"token"`
+}
+
+func apiTokensToJSON(tokens []store.APITokenMeta) []apiTokenListItemJSON {
+	out := make([]apiTokenListItemJSON, 0, len(tokens))
+	for _, t := range tokens {
+		out = append(out, apiTokenListItemJSON{
+			ID:         t.ID,
+			Name:       t.Name,
+			CreatedAt:  t.CreatedAt,
+			LastUsedAt: t.LastUsedAt,
+			RevokedAt:  t.RevokedAt,
+		})
+	}
+	return out
+}
+
 type projectMemberJSON struct {
 	UserID    int64     `json:"userId"`
 	Name      string    `json:"name"`

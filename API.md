@@ -77,19 +77,25 @@ Responses use `Cache-Control: no-store` and `Content-Type: application/json; cha
 
 **Server mode** (`SCRUMBOY_MODE` / config): `full` or `anonymous`.
 
-**Session:** In `full` mode, the adapter reads the `scrumboy_session` cookie and loads the user into request context when the cookie is valid. In `anonymous` mode, cookies are **not** applied for MCP (same rule as the documented HTTP API boundary).
+**Session (cookie):** In `full` mode, the adapter reads the `scrumboy_session` cookie and loads the user into request context when the cookie is valid.
+
+**Bearer (API access token):** In `full` mode, clients may send `Authorization: Bearer <token>` using an opaque secret minted via [`/api/me/tokens`](#api-access-tokens-rest) (prefix `sb_`, stored as a hash server-side).
+
+**Precedence:** If the request includes a **`Bearer` authorization attempt** (scheme `Bearer` per RFC 9110, with the credential in the segment after the first space; trim applies **only** to that credential string), the adapter validates that token and **does not** fall back to the session cookie when validation fails. A failed Bearer attempt yields **401** with `AUTH_REQUIRED` for the **entire** MCP request (including `GET /mcp` and `system.getCapabilities` over GET). If there is no Bearer attempt, the adapter uses the session cookie as before.
+
+**Anonymous mode:** Session cookies and Bearer tokens are **not** applied for MCP (same anonymous boundary as the documented HTTP API for cookies).
 
 **Bootstrap:** If there are **no users** in the database, authenticated MCP tools are treated as unavailable until bootstrap completes (`CountUsers == 0`).
 
-**Typical codes:** `AUTH_REQUIRED` when a tool needs a signed-in user but the session is missing or invalid. `CAPABILITY_UNAVAILABLE` when the server is in **anonymous mode**, or **before bootstrap** (no users yet), or the tool is otherwise gated as unavailable.
+**Capabilities `auth` object:** Field **`mode`** keeps the existing meaning (`sessionCookie` or `disabled`). Field **`authMethods`** (e.g. `["sessionCookie","bearer"]` in `full` mode) lists mechanisms the adapter supports; clients should not treat `mode` as an exhaustive list of auth options.
 
-**Practical rule:** Almost all project-scoped tools (todos, sprints, tags, members, board) require **full mode**, **post-bootstrap**, and a **valid session**. Capabilities (`GET /mcp` / `system.getCapabilities`) still run without sign-in so clients can inspect the server.
+**Typical codes:** `AUTH_REQUIRED` when the transport rejects the principal (failed Bearer, or tool needs a signed-in user but none is in context) or when a tool requires sign-in without a session/API token. `CAPABILITY_UNAVAILABLE` when the server is in **anonymous mode**, or **before bootstrap** (no users yet), or the tool is otherwise gated as unavailable.
 
-**`system.getCapabilities`** and **`GET /mcp`** do not require sign-in; they report `auth`, `bootstrapAvailable`, `serverMode`, and `implementedTools`.
+**Practical rule:** Almost all project-scoped tools (todos, sprints, tags, members, board) require **full mode**, **post-bootstrap**, and a **valid session or valid API bearer token**. When no `Authorization: Bearer` header is sent, **`GET /mcp`** / **`system.getCapabilities`** still run without sign-in so clients can inspect the server; **if** a Bearer attempt is present and invalid, that rule does not apply - the request fails at **401** first.
 
 ## Authentication example (curl)
 
-Use cookie-jar mode for authenticated MCP tools.
+Use cookie-jar mode for authenticated MCP tools, or a bearer token (see [API access tokens](#api-access-tokens-rest)).
 
 If the server is not bootstrapped yet (no users), create the first user:
 
@@ -114,6 +120,34 @@ Then call MCP with the session cookie:
 ```bash
 curl -b cookies.txt -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
+  -d '{"tool":"projects.list","input":{}}'
+```
+
+### API access tokens (REST)
+
+Manage opaque MCP/API tokens while logged in (session cookie). Mutating endpoints require `X-Scrumboy: 1` like other `/api` writes.
+
+| Method | Path | Body | Success |
+|--------|------|------|---------|
+| `GET` | `/api/me/tokens` | — | `200` JSON `{ "items": [ { "id", "name?", "createdAt", "lastUsedAt?", "revokedAt?" } ] }` (no secret) |
+| `POST` | `/api/me/tokens` | `{ "name": "optional label" }` | `201` JSON `{ "id", "name?", "createdAt", "token" }` — **`token` is shown only on create** |
+| `DELETE` | `/api/me/tokens/{id}` | — | `204` (revoke / soft-delete) |
+
+Create a token (after login, with session + header):
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
+  -H "Content-Type: application/json" \
+  -H "X-Scrumboy: 1" \
+  -d '{"name":"Claude"}'
+```
+
+Then call MCP with **Bearer** (no cookie required for this path):
+
+```bash
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sb_paste_token_from_create_response" \
   -d '{"tool":"projects.list","input":{}}'
 ```
 
@@ -178,7 +212,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 Conventions:
 
 - Inputs use **camelCase** JSON keys matching the Go structs; unknown keys are rejected where `decodeInput` is used.
-- Auth gates omitted below repeat: **anonymous mode** → `CAPABILITY_UNAVAILABLE`; **pre-bootstrap** → `CAPABILITY_UNAVAILABLE`; **no session** → `AUTH_REQUIRED` for tools that require it.
+- Auth gates omitted below repeat: **anonymous mode** → `CAPABILITY_UNAVAILABLE`; **pre-bootstrap** → `CAPABILITY_UNAVAILABLE`; **no authenticated principal** (no valid session or API token on the request) → `AUTH_REQUIRED` for tools that require it.
 
 ### `system.getCapabilities`
 

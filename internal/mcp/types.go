@@ -25,10 +25,11 @@ type requestEnvelope struct {
 }
 
 type authCapabilities struct {
-	Mode                     string  `json:"mode"`
-	Authenticated            bool    `json:"authenticated"`
-	AuthenticatedToolsUsable bool    `json:"authenticatedToolsUsable"`
-	Reason                   *string `json:"reason,omitempty"`
+	Mode                     string   `json:"mode"`
+	Authenticated            bool     `json:"authenticated"`
+	AuthenticatedToolsUsable bool     `json:"authenticatedToolsUsable"`
+	Reason                   *string  `json:"reason,omitempty"`
+	AuthMethods              []string `json:"authMethods,omitempty"`
 }
 
 type identityCapabilities struct {

@@ -69,6 +69,9 @@ type storeAPI interface {
 	DeleteSession(ctx context.Context, token string) error
 	DeleteSessionsByUserID(ctx context.Context, userID int64) error
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
+	CreateUserAPIToken(ctx context.Context, userID int64, name *string) (id int64, plaintext string, createdAt time.Time, err error)
+	ListUserAPITokens(ctx context.Context, userID int64) ([]store.APITokenMeta, error)
+	RevokeUserAPIToken(ctx context.Context, userID, tokenID int64) error
 
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)
