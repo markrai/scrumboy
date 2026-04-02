@@ -1,4 +1,11 @@
-<img width="372" height="270" alt="image" src="internal/httpapi/web/scrumboytext.png" />
+<p align="center">
+  <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
+  <br />
+  <img src="https://img.shields.io/badge/version-v3.7.3-blue" alt="version" />
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
+  </a>
+</p>
 
 #### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration
 
