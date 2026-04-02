@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -76,6 +77,31 @@ func doMCP(t *testing.T, client *http.Client, url string, body any) (*http.Respo
 	}
 	defer resp.Body.Close()
 
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode mcp response: %v", err)
+	}
+	return resp, out
+}
+
+// postMCPWithBearer POSTs to /mcp with Authorization: Bearer <token> (full secret including sb_ prefix).
+func postMCPWithBearer(t *testing.T, client *http.Client, baseURL, bearerToken string, body any) (*http.Response, map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		t.Fatalf("encode mcp body: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", &buf)
+	if err != nil {
+		t.Fatalf("new mcp request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do mcp request: %v", err)
+	}
+	defer resp.Body.Close()
 	var out map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode mcp response: %v", err)
@@ -338,6 +364,47 @@ func TestMCP_InvalidBearerDoesNotFallBackToSessionCookie(t *testing.T) {
 			t.Fatalf("expected AUTH_REQUIRED, got %#v", errObj["code"])
 		}
 	})
+}
+
+func TestMCP_BearerTokenEndToEnd(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	cookieClient := newCookieClient(t, ts)
+	bootstrapUser(t, cookieClient, ts.URL)
+
+	var created map[string]any
+	resp := doJSON(t, cookieClient, http.MethodPost, ts.URL+"/api/me/tokens", map[string]any{"name": "e2e"}, &created)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/me/tokens: status=%d", resp.StatusCode)
+	}
+	token := created["token"].(string)
+	id := int64(created["id"].(float64))
+
+	mcpBody := map[string]any{"tool": "projects.list", "input": map[string]any{}}
+	// No session cookie: Bearer alone must authenticate.
+	bareClient := newStatelessClient(ts)
+	resp, out := postMCPWithBearer(t, bareClient, ts.URL, token, mcpBody)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("MCP with valid bearer: status=%d %#v", resp.StatusCode, out)
+	}
+	if ok, _ := out["ok"].(bool); !ok {
+		t.Fatalf("expected ok true, got %#v", out)
+	}
+
+	resp = doJSON(t, cookieClient, http.MethodDelete, fmt.Sprintf("%s/api/me/tokens/%d", ts.URL, id), nil, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE /api/me/tokens/{id}: status=%d", resp.StatusCode)
+	}
+
+	resp, out = postMCPWithBearer(t, bareClient, ts.URL, token, mcpBody)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("MCP after revoke: status=%d want 401", resp.StatusCode)
+	}
+	errObj, _ := out["error"].(map[string]any)
+	if errObj == nil || errObj["code"] != "AUTH_REQUIRED" {
+		t.Fatalf("expected AUTH_REQUIRED, got %#v", out)
+	}
 }
 
 func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {

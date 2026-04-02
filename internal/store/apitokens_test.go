@@ -33,7 +33,7 @@ func TestCreateUserAPITokenAndGetUserByAPIToken(t *testing.T) {
 	}
 
 	name := "ci"
-	plain, err := st.CreateUserAPIToken(ctx, u.ID, &name)
+	_, plain, _, err := st.CreateUserAPIToken(ctx, u.ID, &name)
 	if err != nil {
 		t.Fatalf("create api token: %v", err)
 	}

@@ -53,6 +53,8 @@ func newTestHTTPServer(t *testing.T, mode string) (*httptest.Server, *sql.DB, fu
 	}
 }
 
+// doJSON sends an application/json request with X-Scrumboy: 1 on every call, matching mutating /api/* CSRF rules
+// (GETs include the header too; handlers that do not require it ignore it).
 func doJSON(t *testing.T, client *http.Client, method, url string, body any, out any) (*http.Response, []byte) {
 	t.Helper()
 
@@ -110,6 +112,52 @@ func bootstrapUserClient(t *testing.T, client *http.Client, baseURL, name, email
 		t.Fatalf("bootstrap status=%d body=%s", resp.StatusCode, string(body))
 	}
 	return user
+}
+
+func TestMeAPITokensCRUD(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "tok@example.com", "password123")
+
+	// POST and DELETE require X-Scrumboy: 1; doJSON always sets it (see doJSON doc comment).
+	var created map[string]any
+	resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/me/tokens", map[string]any{"name": "cli"}, &created)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /api/me/tokens: status=%d", resp.StatusCode)
+	}
+	if created["token"] == nil || created["token"].(string) == "" {
+		t.Fatal("expected non-empty token in create response")
+	}
+	id := int64(created["id"].(float64))
+
+	var list map[string]any
+	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/me/tokens", nil, &list)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/me/tokens: status=%d", resp.StatusCode)
+	}
+	items := list["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 token, got %d", len(items))
+	}
+
+	resp, _ = doJSON(t, client, http.MethodDelete, fmt.Sprintf("%s/api/me/tokens/%d", ts.URL, id), nil, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("DELETE /api/me/tokens/{id}: status=%d", resp.StatusCode)
+	}
+
+	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/me/tokens", nil, &list)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/me/tokens after revoke: status=%d", resp.StatusCode)
+	}
+	items = list["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 token row after revoke, got %d", len(items))
+	}
+	meta := items[0].(map[string]any)
+	if meta["revokedAt"] == nil {
+		t.Fatal("expected revokedAt on revoked token")
+	}
 }
 
 func loginUserClient(t *testing.T, client *http.Client, baseURL, email, password string) {

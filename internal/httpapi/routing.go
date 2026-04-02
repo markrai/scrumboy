@@ -60,7 +60,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		s.handleAuth(w, r, parts[2:])
 		return
 	case "me":
-		s.handleMe(w, r)
+		s.handleMe(w, r, parts[2:])
 		return
 	case "backup":
 		s.handleBackup(w, r, parts[2:])
@@ -109,13 +109,23 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request, rest []strin
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 }
 
-func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, rest []string) {
 	ctx := s.requestContext(r)
 	userID, ok := store.UserIDFromContext(ctx)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 		return
 	}
+
+	if len(rest) >= 1 && rest[0] == "tokens" {
+		s.handleMeTokens(w, r, ctx, userID, rest[1:])
+		return
+	}
+	if len(rest) > 0 {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		u, err := s.store.GetUser(ctx, userID)
@@ -168,6 +178,73 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
+	}
+}
+
+func (s *Server) handleMeTokens(w http.ResponseWriter, r *http.Request, ctx context.Context, userID int64, rest []string) {
+	switch len(rest) {
+	case 0:
+		switch r.Method {
+		case http.MethodGet:
+			tokens, err := s.store.ListUserAPITokens(ctx, userID)
+			if err != nil {
+				writeStoreErr(w, err, false)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"items": apiTokensToJSON(tokens)})
+			return
+		case http.MethodPost:
+			var in struct {
+				Name *string `json:"name"`
+			}
+			if err := readJSON(w, r, s.maxBody, &in); err != nil {
+				return
+			}
+			var namePtr *string
+			if in.Name != nil {
+				n := strings.TrimSpace(*in.Name)
+				if n != "" {
+					namePtr = &n
+				}
+			}
+			id, plain, createdAt, err := s.store.CreateUserAPIToken(ctx, userID, namePtr)
+			if err != nil {
+				writeStoreErr(w, err, false)
+				return
+			}
+			writeJSON(w, http.StatusCreated, apiTokenCreateJSON{
+				ID:        id,
+				Name:      namePtr,
+				CreatedAt: createdAt,
+				Token:     plain,
+			})
+			return
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+			return
+		}
+	case 1:
+		if r.Method != http.MethodDelete {
+			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+			return
+		}
+		tokenID, err := strconv.ParseInt(rest[0], 10, 64)
+		if err != nil || tokenID <= 0 {
+			writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid token id", map[string]any{"field": "id"})
+			return
+		}
+		if err := s.store.RevokeUserAPIToken(ctx, userID, tokenID); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+				return
+			}
+			writeStoreErr(w, err, false)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	default:
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 	}
 }
 
