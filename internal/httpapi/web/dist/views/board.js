@@ -1047,6 +1047,7 @@ async function handleProjectImageUpload(projectId) {
                 method: "PATCH",
                 body: JSON.stringify({ image: finalDataUrl }),
             });
+            syncTopbarFromBoard({ project: { image: finalDataUrl } });
             if (getSlug()) {
                 await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl());
             }
@@ -1061,6 +1062,29 @@ async function handleProjectImageUpload(projectId) {
         }
     };
     input.click();
+}
+/** Sync #projectImageBtn children from board.project.image (incremental board updates). */
+function syncTopbarFromBoard(board) {
+    const btn = document.getElementById("projectImageBtn");
+    if (!btn)
+        return;
+    const img = btn.querySelector("img.project-image-topbar") ?? btn.querySelector("img");
+    if (board.project.image) {
+        const src = board.project.image;
+        if (img) {
+            img.src = src;
+        }
+        else {
+            btn.innerHTML = `<img src="${escapeHTML(src)}" alt="" class="project-image-topbar" />`;
+        }
+    }
+    else {
+        if (img)
+            img.remove();
+        if (!btn.querySelector(".project-image-topbar-placeholder")) {
+            btn.innerHTML = `<span class="project-image-topbar-placeholder">📷</span>`;
+        }
+    }
 }
 // Full board + filters update. Use for SSE refresh, filter change, search.
 // For chips-only updates (e.g. deferred sprints load), use updateChipsOnly instead.
@@ -1232,6 +1256,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
     const existingBoardContainer = document.querySelector(".board");
     if (existingBoardContainer) {
         updateBoardContent(board, tag, search, sprintId);
+        syncTopbarFromBoard(board);
         return;
     }
     // Update tag colors from board data

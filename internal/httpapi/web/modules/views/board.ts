@@ -1142,6 +1142,7 @@ async function handleProjectImageUpload(projectId: number): Promise<void> {
         method: "PATCH",
         body: JSON.stringify({ image: finalDataUrl }),
       });
+      syncTopbarFromBoard({ project: { image: finalDataUrl } });
       if (getSlug()) {
         await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl());
       } else {
@@ -1154,6 +1155,28 @@ async function handleProjectImageUpload(projectId: number): Promise<void> {
     }
   };
   input.click();
+}
+
+/** Sync #projectImageBtn children from board.project.image (incremental board updates). */
+function syncTopbarFromBoard(board: { project: { image?: string } }): void {
+  const btn = document.getElementById("projectImageBtn");
+  if (!btn) return;
+
+  const img = btn.querySelector<HTMLImageElement>("img.project-image-topbar") ?? btn.querySelector("img");
+
+  if (board.project.image) {
+    const src = board.project.image;
+    if (img) {
+      img.src = src;
+    } else {
+      btn.innerHTML = `<img src="${escapeHTML(src)}" alt="" class="project-image-topbar" />`;
+    }
+  } else {
+    if (img) img.remove();
+    if (!btn.querySelector(".project-image-topbar-placeholder")) {
+      btn.innerHTML = `<span class="project-image-topbar-placeholder">📷</span>`;
+    }
+  }
 }
 
 // Full board + filters update. Use for SSE refresh, filter change, search.
@@ -1345,6 +1368,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   const existingBoardContainer = document.querySelector(".board");
   if (existingBoardContainer) {
     updateBoardContent(board, tag, search, sprintId);
+    syncTopbarFromBoard(board);
     return;
   }
 
