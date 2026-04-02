@@ -18,4 +18,31 @@ const shareTodoBtn = document.getElementById("shareTodoBtn");
 const settingsDialog = document.getElementById("settingsDialog");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 
-export { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, addTagBtn, todoStatus, todoEstimationField, todoEstimationPoints, deleteTodoBtn, closeTodoBtn, shareTodoBtn, settingsDialog, closeSettingsBtn };
+const bulkEditBar = document.getElementById("bulkEditBar");
+const bulkEditBarBtn = document.getElementById("bulkEditBarBtn");
+const bulkEditDialog = document.getElementById("bulkEditDialog");
+const bulkEditForm = document.getElementById("bulkEditForm");
+
+export {
+  app,
+  toast,
+  todoDialog,
+  todoForm,
+  todoDialogTitle,
+  todoTitle,
+  todoBody,
+  todoTags,
+  addTagBtn,
+  todoStatus,
+  todoEstimationField,
+  todoEstimationPoints,
+  deleteTodoBtn,
+  closeTodoBtn,
+  shareTodoBtn,
+  settingsDialog,
+  closeSettingsBtn,
+  bulkEditBar,
+  bulkEditBarBtn,
+  bulkEditDialog,
+  bulkEditForm,
+};

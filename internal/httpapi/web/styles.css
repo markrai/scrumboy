@@ -3192,6 +3192,54 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   transition: box-shadow 0.2s ease;
 }
 
+.card--selected {
+  box-shadow: 0 0 0 2px var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.bulk-edit-bar {
+  position: fixed;
+  bottom: var(--s-24);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: var(--s-8) var(--s-12);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  box-shadow: var(--shadow);
+}
+
+.bulk-edit-bar__btn {
+  white-space: nowrap;
+}
+
+.bulk-edit-dialog__hint {
+  margin: 0 0 var(--s-12);
+  font-size: var(--fs-14);
+}
+
+.bulk-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+  margin-bottom: var(--s-16);
+}
+
+.bulk-edit-field__check {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--fs-14);
+}
+
+.bulk-edit-field__check input {
+  margin: 0;
+}
+
 .card__title-row {
   display: flex;
   align-items: baseline;

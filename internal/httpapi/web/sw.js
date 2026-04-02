@@ -29,6 +29,7 @@ const urlsToCache = [
   '/dist/views/projects.js',
   '/dist/dialogs/settings.js',
   '/dist/dialogs/todo.js',
+  '/dist/dialogs/bulk-edit.js',
   '/dist/features/drag-drop.js',
   '/dist/features/context-menu.js',
   '/dist/features/context-menu-button.js',

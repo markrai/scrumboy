@@ -32,6 +32,85 @@
   <body>
     <div id="app"></div>
 
+    <div id="bulkEditBar" class="bulk-edit-bar" style="display: none" aria-live="polite">
+      <button type="button" class="btn bulk-edit-bar__btn" id="bulkEditBarBtn"></button>
+    </div>
+
+    <dialog id="bulkEditDialog" class="dialog">
+      <form method="dialog" class="dialog__form" id="bulkEditForm">
+        <div class="dialog__header">
+          <div class="dialog__title" id="bulkEditDialogTitle">Bulk edit</div>
+          <button class="btn btn--ghost" type="button" id="closeBulkEditBtn" aria-label="Close">✕</button>
+        </div>
+        <p class="muted bulk-edit-dialog__hint" id="bulkEditHint"></p>
+
+        <div class="bulk-edit-field" id="bulkEditAssigneeRow" style="display: none;">
+          <label class="bulk-edit-field__check">
+            <input type="checkbox" id="bulkApplyAssignee" />
+            <span>Assign user</span>
+          </label>
+          <select class="select" id="bulkAssignee" aria-label="Assign to">
+            <option value="">Unassigned</option>
+          </select>
+        </div>
+
+        <div class="bulk-edit-field" id="bulkEditSprintRow" style="display: none;">
+          <label class="bulk-edit-field__check">
+            <input type="checkbox" id="bulkApplySprint" />
+            <span>Assign sprint</span>
+          </label>
+          <select class="select" id="bulkSprint" aria-label="Sprint">
+            <option value="">—</option>
+          </select>
+        </div>
+
+        <div class="bulk-edit-field">
+          <label class="bulk-edit-field__check">
+            <input type="checkbox" id="bulkApplyStatus" />
+            <span>Change status</span>
+          </label>
+          <select class="select" id="bulkStatus" aria-label="Status"></select>
+        </div>
+
+        <div class="bulk-edit-field" id="bulkEditTagsRow" style="display: none;">
+          <label class="bulk-edit-field__check">
+            <input type="checkbox" id="bulkApplyTags" />
+            <span>Add tags</span>
+          </label>
+          <div class="tags-input-container">
+            <div class="tags-input-row">
+              <input class="input tags-input" id="bulkTagsInput" autocomplete="off" placeholder="Type tag and press Enter" />
+              <button class="btn tags-add-btn" type="button" id="bulkAddTagBtn">Add</button>
+            </div>
+            <div class="tags-chips" id="bulkTagsChips"></div>
+          </div>
+        </div>
+
+        <div class="bulk-edit-field" id="bulkEditEstimationRow" style="display: none;">
+          <label class="bulk-edit-field__check">
+            <input type="checkbox" id="bulkApplyEstimation" />
+            <span>Set estimation points</span>
+          </label>
+          <select class="select" id="bulkEstimation" aria-label="Estimation points">
+            <option value="">No estimate</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+            <option value="13">13</option>
+            <option value="20">20</option>
+            <option value="40">40</option>
+          </select>
+        </div>
+
+        <div class="dialog__footer">
+          <button class="btn btn--ghost" type="button" id="cancelBulkEditBtn">Cancel</button>
+          <button class="btn" type="submit" id="saveBulkEditBtn" disabled>Apply</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="todoDialog" class="dialog">
       <form method="dialog" class="dialog__form" id="todoForm">
         <div class="dialog__header">

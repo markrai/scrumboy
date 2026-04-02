@@ -48,7 +48,7 @@ type LinkedStoriesResponse = {
 let currentLinks: LinkedStoriesResponse = { outbound: [], inbound: [] };
 let linkAutocompleteSuggestion: LinkedStoryItem | null = null;
 
-function resolveColumnKey(raw: string | undefined | null): string {
+export function resolveColumnKey(raw: string | undefined | null): string {
   const v = (raw || "").trim();
   if (!v) return "";
   const upper = v.toUpperCase();
@@ -96,7 +96,7 @@ export function getTagsFromChips(): string[] {
   return Array.from(chipsContainer.querySelectorAll(".tag-chip")).map(chip => chip.getAttribute("data-tag") || "");
 }
 
-function normalizeTagName(tagName: string): string {
+export function normalizeTagName(tagName: string): string {
   // Check if there's an existing tag with the same name (case-insensitive)
   const lowerTag = tagName.toLowerCase();
   if (getAvailableTagsMap()[lowerTag]) {

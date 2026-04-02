@@ -23,7 +23,7 @@ let lastLoadedLinksForTodo = null;
 let dialogLinkLifecycleBound = false;
 let currentLinks = { outbound: [], inbound: [] };
 let linkAutocompleteSuggestion = null;
-function resolveColumnKey(raw) {
+export function resolveColumnKey(raw) {
     const v = (raw || "").trim();
     if (!v)
         return "";
@@ -67,7 +67,7 @@ export function getTagsFromChips() {
         return [];
     return Array.from(chipsContainer.querySelectorAll(".tag-chip")).map(chip => chip.getAttribute("data-tag") || "");
 }
-function normalizeTagName(tagName) {
+export function normalizeTagName(tagName) {
     // Check if there's an existing tag with the same name (case-insensitive)
     const lowerTag = tagName.toLowerCase();
     if (getAvailableTagsMap()[lowerTag]) {

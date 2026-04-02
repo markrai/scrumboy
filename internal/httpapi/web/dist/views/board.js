@@ -13,7 +13,8 @@ import { setContextMenuStatus, setContextMenuRole } from '../features/context-me
 import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { normalizeSprints } from '../sprints.js';
 import { emit, on, off } from '../events.js';
-import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, recordLocalMutation, } from '../realtime/guard.js';
+import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, recordLocalMutation, isBulkUpdating, } from '../realtime/guard.js';
+import { initBulkEditDialog, openBulkEditDialog } from '../dialogs/bulk-edit.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -45,6 +46,9 @@ let lastSuccessfulBoardLoadSlug = null;
 /** Slug for which initial load is in flight; onopen must not refetch while this is set. */
 let initialBoardLoadInFlight = null;
 const SSE_ONOPEN_SKIP_MS = 2000;
+/** Multi-select todo ids (numeric `data-todo-id`) for bulk edit. */
+let selectedTodoIds = new Set();
+let bulkEditUiInitialized = false;
 const DEBUG_BOARD_LOAD = typeof localStorage !== "undefined" && localStorage.getItem("scrumboy_debug_board_load") === "1";
 function debugLog(msg, slug) {
     if (DEBUG_BOARD_LOAD) {
@@ -224,6 +228,8 @@ function disconnectBoardEvents() {
     clearBoardPointerReleaseTimer();
     boardPointerInteractionActive = false;
     todoDialogOpeningInProgress = false;
+    clearTodoMultiSelection();
+    updateBulkEditBar();
     if (boardEventsSource) {
         boardEventsSource.close();
         boardEventsSource = null;
@@ -231,6 +237,8 @@ function disconnectBoardEvents() {
     boardEventsSlug = null;
 }
 function refetchBoardFromRealtime(slug) {
+    if (isBulkUpdating())
+        return;
     if (pendingRealtimeRefreshSlug === slug)
         return;
     pendingRealtimeRefreshSlug = slug;
@@ -250,6 +258,8 @@ function connectBoardEvents(slug) {
     boardEventsSlug = slug;
     source.onopen = () => {
         debugLog("SSE onopen fired", slug);
+        if (isBulkUpdating())
+            return;
         if (boardEventsSource !== source || getSlug() !== slug) {
             debugLog("SSE onopen refetch skipped: source/slug mismatch", slug);
             return;
@@ -285,6 +295,8 @@ function connectBoardEvents(slug) {
                 emit("members-updated", { projectId: payload.projectId });
                 return;
             }
+            if (isBulkUpdating())
+                return;
             if (payload.type === "refresh_needed") {
                 refetchBoardFromRealtime(slug);
                 return;
@@ -292,7 +304,8 @@ function connectBoardEvents(slug) {
             refetchBoardFromRealtime(slug);
         }
         catch {
-            refetchBoardFromRealtime(slug);
+            if (!isBulkUpdating())
+                refetchBoardFromRealtime(slug);
         }
     };
     source.onerror = () => {
@@ -551,6 +564,69 @@ function attachBoardInteractionListeners() {
     });
 }
 /** Attach delegated handlers for card click, load-more, and context menu. Call once when board is created. */
+function clearTodoMultiSelection() {
+    selectedTodoIds.clear();
+    const bar = document.getElementById("bulkEditBar");
+    const btn = document.getElementById("bulkEditBarBtn");
+    if (bar)
+        bar.style.display = "none";
+    if (btn)
+        btn.textContent = "";
+    document.querySelectorAll(".board .card--selected").forEach((el) => el.classList.remove("card--selected"));
+}
+function updateBulkEditBar() {
+    const bar = document.getElementById("bulkEditBar");
+    const btn = document.getElementById("bulkEditBarBtn");
+    if (!bar || !btn)
+        return;
+    const n = selectedTodoIds.size;
+    if (n >= 2) {
+        bar.style.display = "";
+        btn.textContent = `Edit ${n} selected`;
+    }
+    else {
+        bar.style.display = "none";
+        btn.textContent = "";
+    }
+}
+function toggleTodoSelection(id) {
+    if (selectedTodoIds.has(id))
+        selectedTodoIds.delete(id);
+    else
+        selectedTodoIds.add(id);
+    updateBulkEditBar();
+    const card = document.querySelector(`[data-todo-id="${id}"]`);
+    if (card)
+        card.classList.toggle("card--selected", selectedTodoIds.has(id));
+}
+function ensureBulkEditUi() {
+    if (bulkEditUiInitialized)
+        return;
+    bulkEditUiInitialized = true;
+    initBulkEditDialog(() => {
+        clearTodoMultiSelection();
+        updateBulkEditBar();
+    });
+    const barBtn = document.getElementById("bulkEditBarBtn");
+    barBtn?.addEventListener("click", () => {
+        void openBulkEditDialog(Array.from(selectedTodoIds), {
+            role: currentUserProjectRole,
+            onPruned: (remaining) => {
+                selectedTodoIds = new Set(remaining);
+                updateBulkEditBar();
+                const boardEl = document.querySelector(".board");
+                if (!boardEl)
+                    return;
+                boardEl.querySelectorAll("[data-todo-id]").forEach((el) => {
+                    const id = Number(el.getAttribute("data-todo-id"));
+                    if (!Number.isFinite(id))
+                        return;
+                    el.classList.toggle("card--selected", selectedTodoIds.has(id));
+                });
+            },
+        });
+    });
+}
 function attachBoardDelegationHandlers() {
     const boardEl = document.querySelector(".board");
     if (!boardEl)
@@ -566,10 +642,19 @@ function attachBoardDelegationHandlers() {
                 return;
             if (dragInProgress || dragJustEnded)
                 return;
+            const me = e;
             const id = Number(card.getAttribute("data-todo-id"));
             const todo = findTodoInBoard(id);
-            if (todo)
-                openTodoFromCard(todo);
+            if (!todo)
+                return;
+            if (me.ctrlKey || me.metaKey) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleTodoSelection(id);
+                return;
+            }
+            clearTodoMultiSelection();
+            openTodoFromCard(todo);
             return;
         }
         const loadMore = e.target.closest("[data-load-more]");
@@ -604,6 +689,7 @@ function attachBoardDelegationHandlers() {
             contextMenu.style.top = `${mouseEvent.pageY}px`;
         }
     });
+    ensureBulkEditUi();
 }
 function attachChipsDelegatedHandler() {
     const tagChipsEl = document.getElementById("tagChips");
@@ -779,8 +865,9 @@ function renderTodoCard(t, columnColor, membersByUserId, opts) {
         : '';
     const pointsHTML = showPoints ? `<span class="card__points" aria-label="Estimation points">${t.estimationPoints}</span>` : "";
     const footerContent = pointsHTML + avatarHTML;
+    const selectedClass = opts?.selectedIds?.has(t.id) ? " card--selected" : "";
     return `
-    <button class="card card--${t.status.toLowerCase()}"${borderStyle} data-todo-id="${t.id}" data-todo-local-id="${t.localId}"${t.assigneeUserId != null ? ` data-assignee-user-id="${t.assigneeUserId}"` : ""} id="todo_${t.id}" type="button">
+    <button class="card card--${t.status.toLowerCase()}${selectedClass}"${borderStyle} data-todo-id="${t.id}" data-todo-local-id="${t.localId}"${t.assigneeUserId != null ? ` data-assignee-user-id="${t.assigneeUserId}"` : ""} id="todo_${t.id}" type="button">
       <div class="card__content">
         <div class="card__title-row">
           <span class="card__id-inline">#${t.localId}</span>
@@ -915,7 +1002,7 @@ async function handleLoadMore(status) {
             const membersByUserId = getMembersByUserId();
             const tagColors = getTagColors();
             const showPointsMode = isModifiedFibonacciModeEnabled();
-            const cardOpts = { tagColors, showPointsMode };
+            const cardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
             items.forEach((t) => {
                 const card = document.createElement("div");
                 card.innerHTML = renderTodoCard(t, columnColor, membersByUserId, cardOpts);
@@ -1148,7 +1235,7 @@ function updateBoardContent(board, tag, search, sprintId) {
         }
         const boardCols = getBoardColumns(board);
         setDnDColumns(boardCols.map((c) => ({ key: c.key, title: c.title, color: c.color })));
-        const cardOpts = { tagColors, showPointsMode };
+        const cardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
         boardEl.innerHTML = boardCols
             .map((c) => {
             const todos = board.columns[c.key] || [];
@@ -1379,7 +1466,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
           ${(() => {
         const membersByUserId = getMembersByUserId();
         const showPointsMode = isModifiedFibonacciModeEnabled();
-        const cardOpts = { tagColors, showPointsMode };
+        const cardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
         return boardCols
             .map((c) => {
             const todos = board.columns[c.key] || [];
