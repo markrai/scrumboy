@@ -115,6 +115,8 @@ func (a *Adapter) serveJSONRPC(w http.ResponseWriter, r *http.Request) {
 		}
 		// Spec: notifications get no response body.
 		w.WriteHeader(http.StatusNoContent)
+	case "tools/list":
+		a.handleJSONRPCToolsList(w, &req)
 	default:
 		writeJSONRPCError(w, req.ID, jsonRPCMethodNotFound, "method not found")
 	}
@@ -155,6 +157,16 @@ func writeJSONRPCResult(w http.ResponseWriter, id any, result any) {
 		JSONRPC: "2.0",
 		ID:      id,
 		Result:  result,
+	})
+}
+
+func (a *Adapter) handleJSONRPCToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
+	if req.ID == nil {
+		writeJSONRPCError(w, nil, jsonRPCInvalidRequest, "tools/list must be a request (requires id)")
+		return
+	}
+	writeJSONRPCResult(w, req.ID, map[string]any{
+		"tools": toolCatalog(),
 	})
 }
 

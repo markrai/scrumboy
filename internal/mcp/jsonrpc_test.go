@@ -301,6 +301,251 @@ func TestJSONRPC_MissingMethodReturnsInvalidRequest(t *testing.T) {
 	}
 }
 
+func TestJSONRPC_ToolsList_ReturnsCoreFourTools(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+
+	if out["error"] != nil {
+		t.Fatalf("unexpected error: %v", out["error"])
+	}
+	result, ok := out["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected result object, got %v", out["result"])
+	}
+	tools, ok := result["tools"].([]any)
+	if !ok {
+		t.Fatalf("expected tools array, got %v", result["tools"])
+	}
+	if len(tools) != 4 {
+		t.Fatalf("expected 4 tools, got %d", len(tools))
+	}
+
+	byName := make(map[string]map[string]any, len(tools))
+	for _, raw := range tools {
+		tool := raw.(map[string]any)
+		name, _ := tool["name"].(string)
+		if name == "" {
+			t.Fatalf("tool entry missing name: %#v", tool)
+		}
+		byName[name] = tool
+	}
+
+	expectedNames := []string{"projects.list", "todos.create", "todos.get", "todos.update"}
+	for _, name := range expectedNames {
+		tool, ok := byName[name]
+		if !ok {
+			t.Fatalf("missing tool %q in tools/list", name)
+		}
+		if tool["description"] == nil || tool["description"] == "" {
+			t.Fatalf("tool %q missing description", name)
+		}
+		if tool["inputSchema"] == nil {
+			t.Fatalf("tool %q missing inputSchema", name)
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		if schema["type"] != "object" {
+			t.Fatalf("tool %q inputSchema.type expected object, got %v", name, schema["type"])
+		}
+		if schema["additionalProperties"] != false {
+			t.Fatalf("tool %q inputSchema.additionalProperties expected false, got %v", name, schema["additionalProperties"])
+		}
+	}
+}
+
+func TestJSONRPC_ToolsList_TodosCreateSchema(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+
+	result := out["result"].(map[string]any)
+	tools := result["tools"].([]any)
+
+	var todosCreate map[string]any
+	for _, t2 := range tools {
+		tool := t2.(map[string]any)
+		if tool["name"] == "todos.create" {
+			todosCreate = tool
+			break
+		}
+	}
+	if todosCreate == nil {
+		t.Fatal("todos.create not found in tools/list")
+	}
+
+	schema := todosCreate["inputSchema"].(map[string]any)
+	if schema["additionalProperties"] != false {
+		t.Fatalf("todos.create root additionalProperties expected false, got %v", schema["additionalProperties"])
+	}
+	props := schema["properties"].(map[string]any)
+
+	requiredFields := []string{"projectSlug", "title"}
+	required, ok := schema["required"].([]any)
+	if !ok {
+		t.Fatalf("expected required array, got %v", schema["required"])
+	}
+	if len(required) != len(requiredFields) {
+		t.Fatalf("expected %d required fields, got %d", len(requiredFields), len(required))
+	}
+	for i, field := range requiredFields {
+		if required[i] != field {
+			t.Fatalf("required[%d] expected %q, got %q", i, field, required[i])
+		}
+	}
+
+	expectedProps := []string{"projectSlug", "title", "body", "tags", "columnKey", "estimationPoints", "sprintId", "assigneeUserId", "position"}
+	for _, prop := range expectedProps {
+		if props[prop] == nil {
+			t.Fatalf("todos.create schema missing property %q", prop)
+		}
+	}
+
+	tags := props["tags"].(map[string]any)
+	if tags["type"] != "array" {
+		t.Fatalf("tags expected array type, got %v", tags["type"])
+	}
+
+	position := props["position"].(map[string]any)
+	if position["additionalProperties"] != false {
+		t.Fatalf("position additionalProperties expected false, got %v", position["additionalProperties"])
+	}
+	posProps := position["properties"].(map[string]any)
+	if posProps["afterLocalId"] == nil || posProps["beforeLocalId"] == nil {
+		t.Fatal("position missing afterLocalId or beforeLocalId")
+	}
+}
+
+func TestJSONRPC_ToolsList_TodosUpdateSchema(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+
+	result := out["result"].(map[string]any)
+	tools := result["tools"].([]any)
+
+	var todosUpdate map[string]any
+	for _, t2 := range tools {
+		tool := t2.(map[string]any)
+		if tool["name"] == "todos.update" {
+			todosUpdate = tool
+			break
+		}
+	}
+	if todosUpdate == nil {
+		t.Fatal("todos.update not found in tools/list")
+	}
+
+	schema := todosUpdate["inputSchema"].(map[string]any)
+	if schema["additionalProperties"] != false {
+		t.Fatalf("todos.update root additionalProperties expected false, got %v", schema["additionalProperties"])
+	}
+	props := schema["properties"].(map[string]any)
+
+	required := schema["required"].([]any)
+	requiredFields := []string{"projectSlug", "localId", "patch"}
+	if len(required) != len(requiredFields) {
+		t.Fatalf("expected %d required fields, got %d", len(requiredFields), len(required))
+	}
+	for i, field := range requiredFields {
+		if required[i] != field {
+			t.Fatalf("required[%d] expected %q, got %q", i, field, required[i])
+		}
+	}
+
+	patch := props["patch"].(map[string]any)
+	if patch["additionalProperties"] != false {
+		t.Fatalf("patch additionalProperties expected false, got %v", patch["additionalProperties"])
+	}
+	patchProps := patch["properties"].(map[string]any)
+	expectedPatchFields := []string{"title", "body", "tags", "estimationPoints", "assigneeUserId", "sprintId"}
+	for _, field := range expectedPatchFields {
+		if patchProps[field] == nil {
+			t.Fatalf("todos.update patch missing field %q", field)
+		}
+	}
+}
+
+func TestJSONRPC_ToolsList_ProjectsListSchema(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+
+	result := out["result"].(map[string]any)
+	tools := result["tools"].([]any)
+
+	var projectsList map[string]any
+	for _, t2 := range tools {
+		tool := t2.(map[string]any)
+		if tool["name"] == "projects.list" {
+			projectsList = tool
+			break
+		}
+	}
+	if projectsList == nil {
+		t.Fatal("projects.list not found in tools/list")
+	}
+
+	schema := projectsList["inputSchema"].(map[string]any)
+	if schema["type"] != "object" {
+		t.Fatalf("projects.list inputSchema.type expected object, got %v", schema["type"])
+	}
+	if schema["additionalProperties"] != false {
+		t.Fatalf("projects.list additionalProperties expected false, got %v", schema["additionalProperties"])
+	}
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("projects.list expected properties object, got %v", schema["properties"])
+	}
+	if len(props) != 0 {
+		t.Fatalf("projects.list expected empty properties, got %v", props)
+	}
+}
+
+func TestJSONRPC_ToolsList_WithoutInitialize(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+
+	if out["error"] != nil {
+		t.Fatalf("tools/list without prior initialize should succeed, got error: %v", out["error"])
+	}
+	result := out["result"].(map[string]any)
+	tools := result["tools"].([]any)
+	if len(tools) == 0 {
+		t.Fatal("tools/list returned empty tools array")
+	}
+}
+
 func TestJSONRPC_ResponsePreservesID(t *testing.T) {
 	ts, _, cleanup := newTestServer(t, "full")
 	defer cleanup()
