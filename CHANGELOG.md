@@ -1,7 +1,26 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** unless noted below.
 
+
+## [3.9.0] - 2026-04-03
+
+### Features
+
+- **OIDC / SSO (optional)** — Single sign-on when all four env vars are set: **`SCRUMBOY_OIDC_ISSUER`**, **`SCRUMBOY_OIDC_CLIENT_ID`**, **`SCRUMBOY_OIDC_CLIENT_SECRET`**, **`SCRUMBOY_OIDC_REDIRECT_URL`**. Uses OAuth 2.0 Authorization Code with **PKCE (S256)** and a confidential client; **OIDC Discovery** and **JWKS** for the ID token; claims from the ID token only (no Userinfo). Successful login creates a normal **`scrumboy_session`** (no JWTs in the browser). Endpoints: **`GET /api/auth/oidc/login`** (optional **`return_to`**), **`GET /api/auth/oidc/callback`**. **`GET /api/auth/status`** adds **`oidcEnabled`** and **`localAuthEnabled`**. Optional **`SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`** disables password bootstrap/login while OIDC is configured. In **anonymous** mode, OIDC routes return **404** like other auth actions.
+- **Auth UI** — **Continue with SSO** when OIDC is enabled; **`oidc_error`** query handling for failed callbacks.
+- **Database** — New **`user_oidc_identities`** table (**`UNIQUE(issuer, subject)`**); **`users.password_hash`** is nullable for OIDC-only users (migration **049**).
+
+### Documentation
+
+- **`docs/oidc.md`** — Self-hosted operator guide: env vars, flow, constraints, reverse proxy, troubleshooting, security notes, explicit non-goals.
+- **`API.md`**, **`README.md`**, **`SECURITY.md`** — OIDC endpoints, configuration, and session/security summary.
+
+### Dependencies
+
+- **`github.com/coreos/go-oidc/v3`**, **`golang.org/x/oauth2`** (OIDC client and token exchange); **`github.com/go-jose/go-jose/v4`** (integration tests for stub IdP JWTs).
+
+---
 
 ## [3.8.0] - 2026-04-03
 
