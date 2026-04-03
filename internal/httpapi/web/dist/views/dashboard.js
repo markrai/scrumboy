@@ -2,10 +2,40 @@ import { app, settingsDialog } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { navigate } from '../router.js';
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
-import { getDashboardLoading, getDashboardNextCursor, getDashboardSummary, getDashboardTodos, getProjects, getUser, } from '../state/selectors.js';
-import { appendDashboardTodos, setDashboardLoading, setDashboardNextCursor, setProjectsTab, setSettingsActiveTab, setDashboardSummary, setDashboardTodos, } from '../state/mutations.js';
+import { getDashboardLoading, getDashboardNextCursor, getDashboardSummary, getDashboardTodos, getDashboardTodoSort, getProjects, getUser, } from '../state/selectors.js';
+import { appendDashboardTodos, setDashboardLoading, setDashboardNextCursor, setDashboardTodoSort, setProjectsTab, setSettingsActiveTab, setDashboardSummary, setDashboardTodos, } from '../state/mutations.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 const BOUND_FLAG = Symbol('bound');
+const DASHBOARD_SORT_HINT = "Order matches each project's board: column, then drag order. Projects appear in a fixed order (not alphabetical or by activity).";
+function dashboardTodosQueryString() {
+    let q = 'limit=20';
+    if (getDashboardTodoSort() === 'board') {
+        q += '&sort=board';
+    }
+    return q;
+}
+/** Narrow viewports use a shorter board option label so the select can stay compact. */
+function boardOrderOptionText() {
+    return typeof window !== 'undefined' && window.innerWidth <= 767 ? 'Board Order' : 'Board Order (per project)';
+}
+function renderDashboardPanelHeader() {
+    const sort = getDashboardTodoSort();
+    const hint = escapeHTML(DASHBOARD_SORT_HINT);
+    const titleAttr = escapeHTML(DASHBOARD_SORT_HINT);
+    const boardLabel = escapeHTML(boardOrderOptionText());
+    return `
+          <div class="panel__header panel__header--dashboard">
+            <div class="panel__title">Dashboard</div>
+            <div class="dashboard-sort">
+              <label class="dashboard-sort__label" for="dashboardTodoSort">Sort</label>
+              <select id="dashboardTodoSort" class="dashboard-sort__select" aria-describedby="dashboardSortHint" title="${titleAttr}">
+                <option value="activity" ${sort === 'activity' ? 'selected' : ''}>Activity</option>
+                <option value="board" ${sort === 'board' ? 'selected' : ''}>${boardLabel}</option>
+              </select>
+            </div>
+          </div>
+          <p id="dashboardSortHint" class="dashboard-sort__hint muted">${hint}</p>`;
+}
 function renderTopTabs() {
     const projects = getProjects() || [];
     const durableProjects = projects.filter((p) => !p.expiresAt);
@@ -47,9 +77,7 @@ function renderLoadingShell() {
       </div>
       <div class="container">
         <div class="panel">
-          <div class="panel__header">
-            <div class="panel__title">Dashboard</div>
-          </div>
+          ${renderDashboardPanelHeader()}
           ${renderTopTabs()}
           <div class="list">
             <div class="list__item"><div class="muted">Loading assigned todos...</div></div>
@@ -61,6 +89,7 @@ function renderLoadingShell() {
     </div>
   `;
     bindTopNav();
+    bindDashboardSort();
     bindAvatarButton();
 }
 function renderDashboardContent() {
@@ -205,9 +234,7 @@ function renderDashboardContent() {
       </div>
       <div class="container">
         <div class="panel">
-          <div class="panel__header">
-            <div class="panel__title">Dashboard</div>
-          </div>
+          ${renderDashboardPanelHeader()}
           ${renderTopTabs()}
           ${contentMarkup}
         </div>
@@ -216,6 +243,7 @@ function renderDashboardContent() {
   `;
     bindTopNav();
     bindLoadMore();
+    bindDashboardSort();
     bindAvatarButton();
 }
 function hexToRgba(hex, alpha) {
@@ -381,6 +409,41 @@ function bindTopNav() {
         }
     });
 }
+function bindDashboardSort() {
+    const sel = document.getElementById('dashboardTodoSort');
+    if (!sel || sel[BOUND_FLAG]) {
+        return;
+    }
+    sel.addEventListener('change', async () => {
+        const next = sel.value === 'board' ? 'board' : 'activity';
+        const prev = getDashboardTodoSort();
+        if (next === prev) {
+            return;
+        }
+        setDashboardTodoSort(next);
+        setDashboardLoading(true);
+        renderDashboardContent();
+        try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const [summary, todosResp] = await Promise.all([
+                apiFetch(`/api/dashboard/summary?tz=${encodeURIComponent(tz)}`),
+                apiFetch(`/api/dashboard/todos?${dashboardTodosQueryString()}`),
+            ]);
+            setDashboardSummary(summary);
+            setDashboardTodos(todosResp.items || []);
+            setDashboardNextCursor(todosResp.nextCursor || null);
+        }
+        catch (err) {
+            setDashboardTodoSort(prev);
+            console.error('Dashboard refetch failed:', err);
+        }
+        finally {
+            setDashboardLoading(false);
+            renderDashboardContent();
+        }
+    });
+    sel[BOUND_FLAG] = true;
+}
 function bindLoadMore() {
     const loadMoreBtn = document.getElementById('dashboardLoadMoreBtn');
     if (!loadMoreBtn || loadMoreBtn[BOUND_FLAG]) {
@@ -394,7 +457,7 @@ function bindLoadMore() {
         renderDashboardContent();
         try {
             const cursor = getDashboardNextCursor();
-            const resp = await apiFetch(`/api/dashboard/todos?limit=20&cursor=${encodeURIComponent(cursor || '')}`);
+            const resp = await apiFetch(`/api/dashboard/todos?${dashboardTodosQueryString()}&cursor=${encodeURIComponent(cursor || '')}`);
             appendDashboardTodos(resp.items || []);
             setDashboardNextCursor(resp.nextCursor || null);
         }
@@ -412,7 +475,7 @@ export async function renderDashboard() {
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
         const [summary, todosResp] = await Promise.all([
             apiFetch(`/api/dashboard/summary?tz=${encodeURIComponent(tz)}`),
-            apiFetch('/api/dashboard/todos?limit=20'),
+            apiFetch(`/api/dashboard/todos?${dashboardTodosQueryString()}`),
         ]);
         setDashboardSummary(summary);
         setDashboardTodos(todosResp.items || []);

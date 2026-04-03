@@ -3,6 +3,19 @@
 > **Upgrades:** No breaking changes in **3.7.x** unless noted below.
 
 
+## [3.7.7] - 2026-04-03
+
+### Features
+
+- **Dashboard todo sort** - Sort assigned todos by **Activity** (recently updated, default) or **Board order** (per project: workflow column position, then lane rank). **`GET /api/dashboard/todos`** supports optional query **`sort=activity`** or **`sort=board`**; pagination **`cursor`** is tied to the active sort, and a cursor from the wrong mode is rejected with **400** **`VALIDATION_ERROR`**.
+
+### Improvements
+
+- **Todo dialog (mobile)** - New/edit todo form scrolls inside the modal on narrow viewports so header, fields, and Save stay usable (aligned with Settings-style scrolling).
+- **Dashboard sort preference (signed-in)** - Choice is saved under **`user_preferences`** key **`dashboardTodoSort`** and restored after login (still mirrored in **localStorage** for fast defaults). Server hydrate skips applying the stored value when it already matches in-memory state, and does not overwrite a sort the user changed locally before preferences finish loading.
+
+---
+
 ## [3.7.6] - 2026-04-02
 
 ### Features

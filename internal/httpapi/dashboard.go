@@ -58,9 +58,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request, rest []
 			cursor = &rawCursor
 		}
 
-		items, nextCursor, err := s.store.ListDashboardTodos(ctx, userID, limit, cursor)
+		sort := strings.TrimSpace(r.URL.Query().Get("sort"))
+
+		items, nextCursor, err := s.store.ListDashboardTodos(ctx, userID, limit, cursor, sort)
 		if err != nil {
-			writeInternal(w, err)
+			writeStoreErr(w, err, false)
 			return
 		}
 		writeJSON(w, http.StatusOK, dashboardTodosToJSON(items, nextCursor))

@@ -41,6 +41,8 @@ export interface State {
   dashboardTodos: DashboardTodo[];
   dashboardNextCursor: string | null;
   dashboardLoading: boolean;
+  /** Assigned-todo ordering on the dashboard: activity (updated_at) or board (per project lane + rank). */
+  dashboardTodoSort: 'activity' | 'board';
   boardLaneMeta: Record<TodoStatus, { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number }>;
 }
 
@@ -69,6 +71,16 @@ let _current: State = {
   dashboardTodos: [],
   dashboardNextCursor: null,
   dashboardLoading: false,
+  dashboardTodoSort: ((): 'activity' | 'board' => {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('scrumboy.dashboardTodoSort') === 'board') {
+        return 'board';
+      }
+    } catch {
+      /* ignore */
+    }
+    return 'activity';
+  })(),
   boardLaneMeta: { BACKLOG: { hasMore: false, nextCursor: null, loading: false }, NOT_STARTED: { hasMore: false, nextCursor: null, loading: false }, IN_PROGRESS: { hasMore: false, nextCursor: null, loading: false }, TESTING: { hasMore: false, nextCursor: null, loading: false }, DONE: { hasMore: false, nextCursor: null, loading: false } },
 };
 

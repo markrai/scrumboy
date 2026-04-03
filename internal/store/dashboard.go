@@ -617,7 +617,85 @@ func (s *Store) listSprintSectionsForProjects(ctx context.Context, projectIDs []
 	return out, nil
 }
 
-func (s *Store) ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
+const (
+	dashboardTodoSortActivity = "activity"
+	dashboardTodoSortBoard    = "board"
+)
+
+// NormalizeDashboardTodoSort maps query values to activity (default) or board.
+func NormalizeDashboardTodoSort(raw string) string {
+	s := strings.TrimSpace(strings.ToLower(raw))
+	if s == dashboardTodoSortBoard {
+		return dashboardTodoSortBoard
+	}
+	return dashboardTodoSortActivity
+}
+
+func dashboardCursorRaw(cursor *string) string {
+	if cursor == nil {
+		return ""
+	}
+	return strings.TrimSpace(*cursor)
+}
+
+func parseActivityCursorValues(raw string) (updatedAtMs, id int64, ok bool) {
+	parts := strings.Split(raw, ":")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	var err error
+	updatedAtMs, err = strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	id, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	return updatedAtMs, id, true
+}
+
+func parseBoardCursorValues(raw string) (projectID, wcPos, rank, todoID int64, ok bool) {
+	parts := strings.Split(raw, ":")
+	if len(parts) != 4 {
+		return 0, 0, 0, 0, false
+	}
+	var err error
+	projectID, err = strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0, 0, 0, 0, false
+	}
+	wcPos, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, 0, 0, false
+	}
+	rank, err = strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return 0, 0, 0, 0, false
+	}
+	todoID, err = strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		return 0, 0, 0, 0, false
+	}
+	return projectID, wcPos, rank, todoID, true
+}
+
+func encodeDashboardCursor(updatedAtMs int64, id int64) string {
+	return strconv.FormatInt(updatedAtMs, 10) + ":" + strconv.FormatInt(id, 10)
+}
+
+func encodeDashboardBoardCursor(projectID, wcPos, rank, todoID int64) string {
+	return strconv.FormatInt(projectID, 10) + ":" + strconv.FormatInt(wcPos, 10) + ":" + strconv.FormatInt(rank, 10) + ":" + strconv.FormatInt(todoID, 10)
+}
+
+func (s *Store) ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]DashboardTodo, *string, error) {
+	if NormalizeDashboardTodoSort(sort) == dashboardTodoSortBoard {
+		return s.listDashboardTodosBoard(ctx, userID, limit, cursor)
+	}
+	return s.listDashboardTodosActivity(ctx, userID, limit, cursor)
+}
+
+func (s *Store) listDashboardTodosActivity(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -625,14 +703,16 @@ func (s *Store) ListDashboardTodos(ctx context.Context, userID int64, limit int,
 		limit = 100
 	}
 
+	raw := dashboardCursorRaw(cursor)
 	var (
 		rows *sql.Rows
 		err  error
 	)
-
-	updatedAtCursor, idCursor, hasCursor := parseDashboardCursor(cursor)
-
-	if hasCursor {
+	if raw != "" {
+		updatedAtCursor, idCursor, ok := parseActivityCursorValues(raw)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w: invalid dashboard cursor", ErrValidation)
+		}
 		rows, err = s.db.QueryContext(ctx, `
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
        p.name, p.slug, p.image, p.dominant_color,
@@ -696,7 +776,6 @@ LIMIT ?
 			v := sprintID.Int64
 			t.SprintID = &v
 		}
-		// StatusName/StatusColor: use workflow column values, fallback to humanized key and default color
 		if statusName.Valid && statusName.String != "" {
 			t.StatusName = statusName.String
 		} else {
@@ -723,31 +802,129 @@ LIMIT ?
 	return page, &next, nil
 }
 
-func encodeDashboardCursor(updatedAtMs int64, id int64) string {
-	return strconv.FormatInt(updatedAtMs, 10) + ":" + strconv.FormatInt(id, 10)
+type dashboardBoardRow struct {
+	todo  DashboardTodo
+	wcPos int64
+	rank  int64
 }
 
-func parseDashboardCursor(cursor *string) (updatedAtMs int64, id int64, ok bool) {
-	if cursor == nil {
-		return 0, 0, false
+func (s *Store) listDashboardTodosBoard(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
+	if limit <= 0 {
+		limit = 20
 	}
-	raw := strings.TrimSpace(*cursor)
-	if raw == "" {
-		return 0, 0, false
-	}
-
-	parts := strings.Split(raw, ":")
-	if len(parts) != 2 {
-		return 0, 0, false
+	if limit > 100 {
+		limit = 100
 	}
 
-	updatedAtMs, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return 0, 0, false
+	raw := dashboardCursorRaw(cursor)
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if raw != "" {
+		pid, wcPos, rank, todoID, ok := parseBoardCursorValues(raw)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w: invalid dashboard cursor", ErrValidation)
+		}
+		rows, err = s.db.QueryContext(ctx, `
+SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
+       t.rank, wc.position,
+       p.name, p.slug, p.image, p.dominant_color,
+       wc.name AS status_name, wc.color AS status_color
+FROM todos t
+JOIN projects p ON p.id = t.project_id
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE t.assignee_user_id = ? AND wc.is_done = 0
+  AND (t.project_id, wc.position, t.rank, t.id) > (?, ?, ?, ?)
+ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
+LIMIT ?
+`, userID, pid, wcPos, rank, todoID, limit+1)
+	} else {
+		rows, err = s.db.QueryContext(ctx, `
+SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
+       t.rank, wc.position,
+       p.name, p.slug, p.image, p.dominant_color,
+       wc.name AS status_name, wc.color AS status_color
+FROM todos t
+JOIN projects p ON p.id = t.project_id
+JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
+WHERE t.assignee_user_id = ? AND wc.is_done = 0
+ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
+LIMIT ?
+`, userID, limit+1)
 	}
-	id, err = strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return 0, 0, false
+		return nil, nil, fmt.Errorf("list dashboard todos: %w", err)
 	}
-	return updatedAtMs, id, true
+	defer rows.Close()
+
+	out := make([]dashboardBoardRow, 0, limit+1)
+	for rows.Next() {
+		var (
+			t           DashboardTodo
+			columnKey   string
+			updatedAtMs int64
+			todoRank    int64
+			wcPos       int64
+		)
+		var projectImage sql.NullString
+		var localID sql.NullInt64
+		var estimationPoints sql.NullInt64
+		var sprintID sql.NullInt64
+		var statusName sql.NullString
+		var statusColor sql.NullString
+		if err := rows.Scan(&t.ID, &localID, &t.Title, &t.ProjectID, &columnKey, &updatedAtMs, &estimationPoints, &sprintID,
+			&todoRank, &wcPos,
+			&t.ProjectName, &t.ProjectSlug, &projectImage, &t.ProjectDominantColor, &statusName, &statusColor); err != nil {
+			return nil, nil, fmt.Errorf("scan dashboard todo: %w", err)
+		}
+		if !localID.Valid {
+			return nil, nil, fmt.Errorf("%w: todos.local_id is NULL (migration incomplete)", ErrConflict)
+		}
+		t.LocalID = localID.Int64
+		t.ColumnKey = columnKey
+		t.UpdatedAt = time.UnixMilli(updatedAtMs).UTC()
+		if estimationPoints.Valid {
+			v := estimationPoints.Int64
+			t.EstimationPoints = &v
+		}
+		if projectImage.Valid && projectImage.String != "" {
+			t.ProjectImage = &projectImage.String
+		}
+		if sprintID.Valid {
+			v := sprintID.Int64
+			t.SprintID = &v
+		}
+		if statusName.Valid && statusName.String != "" {
+			t.StatusName = statusName.String
+		} else {
+			t.StatusName = HumanizeColumnKey(columnKey)
+		}
+		if statusColor.Valid && statusColor.String != "" {
+			t.StatusColor = statusColor.String
+		} else {
+			t.StatusColor = "#64748b"
+		}
+		out = append(out, dashboardBoardRow{todo: t, wcPos: wcPos, rank: todoRank})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("rows dashboard todos: %w", err)
+	}
+
+	if len(out) <= limit {
+		todos := make([]DashboardTodo, len(out))
+		for i := range out {
+			todos[i] = out[i].todo
+		}
+		return todos, nil, nil
+	}
+
+	pageRows := out[:limit]
+	todos := make([]DashboardTodo, len(pageRows))
+	for i := range pageRows {
+		todos[i] = pageRows[i].todo
+	}
+	last := pageRows[len(pageRows)-1]
+	next := encodeDashboardBoardCursor(last.todo.ProjectID, last.wcPos, last.rank, last.todo.ID)
+	return todos, &next, nil
 }

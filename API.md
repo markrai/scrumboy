@@ -310,6 +310,24 @@ Invalid column keys in `cursorByColumn` or malformed cursors → `VALIDATION_ERR
 
 ---
 
+## REST: Dashboard assigned todos (`GET /api/dashboard/todos`)
+
+The web app and other REST clients use this endpoint (separate from MCP). In **full** mode it requires a valid **session cookie** or **`Authorization: Bearer`** API token.
+
+Query parameters:
+
+- **`limit`** (optional): page size; default **20**, maximum **100**.
+- **`sort`** (optional): **`activity`** (default) or **`board`**. Invalid or empty values are treated as **`activity`** (backward compatible).
+- **`cursor`** (optional): pagination token from the previous JSON response’s **`nextCursor`** field.
+
+**Activity sort** (default): rows are ordered by **`updated_at` DESC, `id` DESC**. The cursor is **`updatedAtMs:id`** (two integers, colon-separated, Unix ms for the todo’s `updated_at`).
+
+**Board sort** (`sort=board`): rows are ordered by **`project_id` ASC, workflow column `position` ASC, `rank` ASC, `id` ASC**, matching board order within each project. Cross-project order follows numeric project id, not name or recency. The cursor is **`projectId:wcPosition:rank:todoId`** (four integers, colon-separated).
+
+A **`cursor`** that does not match the selected **`sort`** (for example, an activity cursor while `sort=board`) is rejected with **HTTP 400** and error code **`VALIDATION_ERROR`**.
+
+---
+
 ## Error codes
 
 - **`AUTH_REQUIRED`** - Sign-in required (including some store unauthorized paths mapped from the store layer).

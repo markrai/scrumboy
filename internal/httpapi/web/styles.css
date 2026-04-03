@@ -698,6 +698,75 @@ body {
   margin: 0;
 }
 
+.panel__header--dashboard {
+  flex-wrap: wrap;
+  gap: var(--s-8);
+}
+
+.dashboard-sort {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: min(100%, 320px);
+}
+
+.dashboard-sort__label {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--muted);
+  align-self: flex-start;
+}
+
+.dashboard-sort__select {
+  min-width: 200px;
+  max-width: 100%;
+  font-size: var(--fs-14);
+  border-radius: var(--radius-8);
+  padding: 6px 10px;
+}
+
+.dashboard-sort__hint {
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0 0 var(--s-12) 0;
+  max-width: 48rem;
+}
+
+@media (max-width: 767px) {
+  .panel__header--dashboard {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--s-10);
+  }
+
+  .panel__header--dashboard .panel__title {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .dashboard-sort {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    max-width: none;
+    flex: 0 0 auto;
+  }
+
+  .dashboard-sort__label {
+    align-self: center;
+    white-space: nowrap;
+  }
+
+  .dashboard-sort__select {
+    min-width: 0;
+    width: auto;
+    max-width: min(148px, 46vw);
+    font-size: var(--fs-12);
+    padding: 4px 8px;
+  }
+}
+
 .view-toggle {
   display: flex;
   gap: var(--s-4);
@@ -1217,6 +1286,37 @@ body {
   .dialog {
     width: calc(100vw - 16px);
     max-height: calc(100vh - 16px);
+  }
+
+  /* Todo modal: header + footer fixed; fields scroll (same idea as Settings .dialog__content). */
+  #todoDialog.dialog {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #todoDialog .dialog__form {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  #todoDialog .dialog__header {
+    flex-shrink: 0;
+  }
+
+  #todoDialog .todo-dialog__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    overscroll-behavior-y: contain;
+  }
+
+  #todoDialog .dialog__footer {
+    flex-shrink: 0;
   }
 
   .dialog__form {

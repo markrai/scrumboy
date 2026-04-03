@@ -7,6 +7,7 @@ import {
   getDashboardNextCursor,
   getDashboardSummary,
   getDashboardTodos,
+  getDashboardTodoSort,
   getProjects,
   getUser,
 } from '../state/selectors.js';
@@ -14,6 +15,7 @@ import {
   appendDashboardTodos,
   setDashboardLoading,
   setDashboardNextCursor,
+  setDashboardTodoSort,
   setProjectsTab,
   setSettingsActiveTab,
   setDashboardSummary,
@@ -23,6 +25,41 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { DashboardProject, DashboardSummary, DashboardTodo, DashboardTodosResponse, SprintSectionInfo } from '../types.js';
 
 const BOUND_FLAG = Symbol('bound');
+
+const DASHBOARD_SORT_HINT =
+  "Order matches each project's board: column, then drag order. Projects appear in a fixed order (not alphabetical or by activity).";
+
+function dashboardTodosQueryString(): string {
+  let q = 'limit=20';
+  if (getDashboardTodoSort() === 'board') {
+    q += '&sort=board';
+  }
+  return q;
+}
+
+/** Narrow viewports use a shorter board option label so the select can stay compact. */
+function boardOrderOptionText(): string {
+  return typeof window !== 'undefined' && window.innerWidth <= 767 ? 'Board Order' : 'Board Order (per project)';
+}
+
+function renderDashboardPanelHeader(): string {
+  const sort = getDashboardTodoSort();
+  const hint = escapeHTML(DASHBOARD_SORT_HINT);
+  const titleAttr = escapeHTML(DASHBOARD_SORT_HINT);
+  const boardLabel = escapeHTML(boardOrderOptionText());
+  return `
+          <div class="panel__header panel__header--dashboard">
+            <div class="panel__title">Dashboard</div>
+            <div class="dashboard-sort">
+              <label class="dashboard-sort__label" for="dashboardTodoSort">Sort</label>
+              <select id="dashboardTodoSort" class="dashboard-sort__select" aria-describedby="dashboardSortHint" title="${titleAttr}">
+                <option value="activity" ${sort === 'activity' ? 'selected' : ''}>Activity</option>
+                <option value="board" ${sort === 'board' ? 'selected' : ''}>${boardLabel}</option>
+              </select>
+            </div>
+          </div>
+          <p id="dashboardSortHint" class="dashboard-sort__hint muted">${hint}</p>`;
+}
 
 function renderTopTabs(): string {
   const projects = getProjects() || [];
@@ -67,9 +104,7 @@ function renderLoadingShell(): void {
       </div>
       <div class="container">
         <div class="panel">
-          <div class="panel__header">
-            <div class="panel__title">Dashboard</div>
-          </div>
+          ${renderDashboardPanelHeader()}
           ${renderTopTabs()}
           <div class="list">
             <div class="list__item"><div class="muted">Loading assigned todos...</div></div>
@@ -81,6 +116,7 @@ function renderLoadingShell(): void {
     </div>
   `;
   bindTopNav();
+  bindDashboardSort();
   bindAvatarButton();
 }
 
@@ -240,9 +276,7 @@ function renderDashboardContent(): void {
       </div>
       <div class="container">
         <div class="panel">
-          <div class="panel__header">
-            <div class="panel__title">Dashboard</div>
-          </div>
+          ${renderDashboardPanelHeader()}
           ${renderTopTabs()}
           ${contentMarkup}
         </div>
@@ -251,6 +285,7 @@ function renderDashboardContent(): void {
   `;
   bindTopNav();
   bindLoadMore();
+  bindDashboardSort();
   bindAvatarButton();
 }
 
@@ -431,6 +466,40 @@ function bindTopNav(): void {
   });
 }
 
+function bindDashboardSort(): void {
+  const sel = document.getElementById('dashboardTodoSort') as HTMLSelectElement | null;
+  if (!sel || (sel as any)[BOUND_FLAG]) {
+    return;
+  }
+  sel.addEventListener('change', async () => {
+    const next = sel.value === 'board' ? 'board' : 'activity';
+    const prev = getDashboardTodoSort();
+    if (next === prev) {
+      return;
+    }
+    setDashboardTodoSort(next);
+    setDashboardLoading(true);
+    renderDashboardContent();
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const [summary, todosResp] = await Promise.all([
+        apiFetch<DashboardSummary>(`/api/dashboard/summary?tz=${encodeURIComponent(tz)}`),
+        apiFetch<DashboardTodosResponse>(`/api/dashboard/todos?${dashboardTodosQueryString()}`),
+      ]);
+      setDashboardSummary(summary);
+      setDashboardTodos(todosResp.items || []);
+      setDashboardNextCursor(todosResp.nextCursor || null);
+    } catch (err: unknown) {
+      setDashboardTodoSort(prev);
+      console.error('Dashboard refetch failed:', err);
+    } finally {
+      setDashboardLoading(false);
+      renderDashboardContent();
+    }
+  });
+  (sel as any)[BOUND_FLAG] = true;
+}
+
 function bindLoadMore(): void {
   const loadMoreBtn = document.getElementById('dashboardLoadMoreBtn');
   if (!loadMoreBtn || (loadMoreBtn as any)[BOUND_FLAG]) {
@@ -444,7 +513,9 @@ function bindLoadMore(): void {
     renderDashboardContent();
     try {
       const cursor = getDashboardNextCursor();
-      const resp = await apiFetch<DashboardTodosResponse>(`/api/dashboard/todos?limit=20&cursor=${encodeURIComponent(cursor || '')}`);
+      const resp = await apiFetch<DashboardTodosResponse>(
+        `/api/dashboard/todos?${dashboardTodosQueryString()}&cursor=${encodeURIComponent(cursor || '')}`,
+      );
       appendDashboardTodos(resp.items || []);
       setDashboardNextCursor(resp.nextCursor || null);
     } finally {
@@ -462,7 +533,7 @@ export async function renderDashboard(): Promise<void> {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const [summary, todosResp] = await Promise.all([
       apiFetch<DashboardSummary>(`/api/dashboard/summary?tz=${encodeURIComponent(tz)}`),
-      apiFetch<DashboardTodosResponse>('/api/dashboard/todos?limit=20'),
+      apiFetch<DashboardTodosResponse>(`/api/dashboard/todos?${dashboardTodosQueryString()}`),
     ]);
     setDashboardSummary(summary);
     setDashboardTodos(todosResp.items || []);

@@ -1,8 +1,13 @@
+import { apiFetch } from '../api.js';
 import { current } from './state.js';
+import { getUser } from './selectors.js';
 import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus } from '../types.js';
 import type { BoardMember } from './state.js';
 
 const DEFAULT_LANE_META = (): Record<TodoStatus, { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number }> => ({});
+
+/** True after the user changes dashboard sort (not server hydrate). Skips applying stored preference so a fast local change is not overwritten when the GET returns. */
+let dashboardTodoSortUserTouched = false;
 
 const VALID_ROUTES = new Set<RouteName>(['projects', 'dashboard', 'boardBySlug', 'reset-password', 'notfound']);
 const VALID_PROJECT_VIEWS = new Set<ProjectView>(['list', 'grid']);
@@ -160,6 +165,42 @@ export function setDashboardLoading(loading: boolean): void {
   current.dashboardLoading = loading;
 }
 
+export function setDashboardTodoSort(
+  sort: 'activity' | 'board',
+  opts?: { skipRemote?: boolean },
+): void {
+  const next = sort === 'board' ? 'board' : 'activity';
+  if (current.dashboardTodoSort === next) {
+    return;
+  }
+  if (!opts?.skipRemote) {
+    dashboardTodoSortUserTouched = true;
+  }
+  current.dashboardTodoSort = next;
+  try {
+    localStorage.setItem('scrumboy.dashboardTodoSort', next);
+  } catch {
+    /* ignore */
+  }
+  if (opts?.skipRemote || !getUser()) {
+    return;
+  }
+  void apiFetch('/api/user/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ key: 'dashboardTodoSort', value: next }),
+  }).catch(() => {
+    /* ignore */
+  });
+}
+
+/** Apply stored preference after login only if the user has not already changed sort this session. */
+export function hydrateDashboardTodoSortFromServer(sort: 'activity' | 'board'): void {
+  if (dashboardTodoSortUserTouched) {
+    return;
+  }
+  setDashboardTodoSort(sort, { skipRemote: true });
+}
+
 export function resetDashboard(): void {
   current.dashboardSummary = null;
   current.dashboardTodos = [];
@@ -189,4 +230,5 @@ export function resetUserScopedState(): void {
   current.dashboardNextCursor = null;
   current.dashboardLoading = false;
   current.boardLaneMeta = DEFAULT_LANE_META();
+  dashboardTodoSortUserTouched = false;
 }

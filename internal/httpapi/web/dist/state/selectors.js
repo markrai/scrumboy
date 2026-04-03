@@ -94,6 +94,9 @@ export function getDashboardNextCursor() {
 export function getDashboardLoading() {
     return !!current.dashboardLoading;
 }
+export function getDashboardTodoSort() {
+    return current.dashboardTodoSort === 'board' ? 'board' : 'activity';
+}
 export function getBoardLaneMeta() {
     return current.boardLaneMeta ?? {
         BACKLOG: { hasMore: false, nextCursor: null, loading: false },

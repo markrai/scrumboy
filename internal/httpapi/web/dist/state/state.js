@@ -22,6 +22,17 @@ let _current = {
     dashboardTodos: [],
     dashboardNextCursor: null,
     dashboardLoading: false,
+    dashboardTodoSort: (() => {
+        try {
+            if (typeof localStorage !== 'undefined' && localStorage.getItem('scrumboy.dashboardTodoSort') === 'board') {
+                return 'board';
+            }
+        }
+        catch {
+            /* ignore */
+        }
+        return 'activity';
+    })(),
     boardLaneMeta: { BACKLOG: { hasMore: false, nextCursor: null, loading: false }, NOT_STARTED: { hasMore: false, nextCursor: null, loading: false }, IN_PROGRESS: { hasMore: false, nextCursor: null, loading: false }, TESTING: { hasMore: false, nextCursor: null, loading: false }, DONE: { hasMore: false, nextCursor: null, loading: false } },
 };
 // DEPRECATED: Direct access to current is deprecated. Use selectors/mutations instead.

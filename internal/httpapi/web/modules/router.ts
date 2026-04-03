@@ -1,7 +1,7 @@
 import { apiFetch } from './api.js';
 import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderNotFound, stopBoardEvents } from './views/index.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
@@ -133,6 +133,16 @@ async function routeOnce(): Promise<void> {
         const projectsTabResp = await apiFetch<{ value: string }>("/api/user/preferences?key=projectsTab");
         if (projectsTabResp && projectsTabResp.value) {
           localStorage.setItem("projectsTab", projectsTabResp.value);
+        }
+      } catch (err) {
+        // Ignore errors
+      }
+
+      try {
+        const sortResp = await apiFetch<{ value: string }>('/api/user/preferences?key=dashboardTodoSort');
+        const v = sortResp?.value;
+        if (v === 'board' || v === 'activity') {
+          hydrateDashboardTodoSortFromServer(v);
         }
       } catch (err) {
         // Ignore errors

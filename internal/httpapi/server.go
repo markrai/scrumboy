@@ -101,7 +101,7 @@ type storeAPI interface {
 	ListTagCounts(ctx context.Context, pc *store.ProjectContext) ([]store.TagCount, error)
 	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, sprintFilter store.SprintFilter) ([]store.Todo, string, bool, error)
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
-	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string) ([]store.DashboardTodo, *string, error)
+	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]store.DashboardTodo, *string, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
 	GetRealBurndown(ctx context.Context, projectID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
 	GetRealBurndownForSprint(ctx context.Context, projectID, sprintID int64, mode store.Mode) ([]store.RealBurndownPoint, error)

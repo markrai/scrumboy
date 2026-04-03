@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -262,7 +263,7 @@ func TestListDashboardTodos_CustomDoneKeyExcludesDone(t *testing.T) {
 		t.Fatalf("MoveTodo done: %v", err)
 	}
 
-	items, _, err := st.ListDashboardTodos(ctx, user.ID, 10, nil)
+	items, _, err := st.ListDashboardTodos(ctx, user.ID, 10, nil, "")
 	if err != nil {
 		t.Fatalf("ListDashboardTodos: %v", err)
 	}
@@ -274,5 +275,216 @@ func TestListDashboardTodos_CustomDoneKeyExcludesDone(t *testing.T) {
 	}
 	if items[0].StatusName != "Build" {
 		t.Fatalf("expected workflow status name Build, got %+v", items[0])
+	}
+}
+
+func TestListDashboardTodos_BoardOrderByProjectID(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx, user := dashboardTestContext(t, st)
+
+	p1, err := st.CreateProject(ctx, "First")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	p2, err := st.CreateProject(ctx, "Second")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	t1, err := st.CreateTodo(ctx, p1.ID, CreateTodoInput{
+		Title:          "Older project todo",
+		ColumnKey:      DefaultColumnDoing,
+		AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo t1: %v", err)
+	}
+	t2, err := st.CreateTodo(ctx, p2.ID, CreateTodoInput{
+		Title:          "Newer project todo",
+		ColumnKey:      DefaultColumnDoing,
+		AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo t2: %v", err)
+	}
+	now := time.Now().UTC()
+	setTodoTimes(t, st, t1.ID, now.Add(-2*time.Hour), now.Add(-2*time.Hour))
+	setTodoTimes(t, st, t2.ID, now, now)
+
+	byActivity, _, err := st.ListDashboardTodos(ctx, user.ID, 10, nil, "activity")
+	if err != nil {
+		t.Fatalf("ListDashboardTodos activity: %v", err)
+	}
+	if len(byActivity) != 2 || byActivity[0].ID != t2.ID {
+		t.Fatalf("activity order: want newer project first, got %+v", byActivity)
+	}
+
+	byBoard, _, err := st.ListDashboardTodos(ctx, user.ID, 10, nil, "board")
+	if err != nil {
+		t.Fatalf("ListDashboardTodos board: %v", err)
+	}
+	if len(byBoard) != 2 || byBoard[0].ID != t1.ID {
+		t.Fatalf("board order: want lower project_id first, got %+v", byBoard)
+	}
+}
+
+func TestListDashboardTodos_BoardOrderLanesAndRankTiebreaker(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx, user := dashboardTestContext(t, st)
+
+	project, err := st.CreateProjectWithWorkflow(ctx, "Lanes", []WorkflowColumn{
+		{Key: "lane_a", Name: "A", Color: "#9CA3AF", Position: 0},
+		{Key: "lane_b", Name: "B", Color: "#10B981", Position: 1},
+		{Key: "done_lane", Name: "Done", Color: "#EF4444", Position: 2, IsDone: true},
+	})
+	if err != nil {
+		t.Fatalf("CreateProjectWithWorkflow: %v", err)
+	}
+
+	tBacklog, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title: "Backlog item", ColumnKey: "lane_a", AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo backlog: %v", err)
+	}
+	tBuild, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title: "Build item", ColumnKey: "lane_b", AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo build: %v", err)
+	}
+
+	items, _, err := st.ListDashboardTodos(ctx, user.ID, 10, nil, "board")
+	if err != nil {
+		t.Fatalf("ListDashboardTodos: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 todos, got %d", len(items))
+	}
+	if items[0].ID != tBacklog.ID || items[1].ID != tBuild.ID {
+		t.Fatalf("expected lane order lane_a then lane_b, got ids %v, %v", items[0].ID, items[1].ID)
+	}
+
+	tLate, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title: "Later id", ColumnKey: "lane_b", AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo late: %v", err)
+	}
+	tEarly, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title: "Earlier id", ColumnKey: "lane_b", AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo early: %v", err)
+	}
+	r := int64(999)
+	if _, err := st.db.ExecContext(ctx, `UPDATE todos SET rank = ? WHERE id IN (?, ?)`, r, tEarly.ID, tLate.ID); err != nil {
+		t.Fatalf("set equal rank: %v", err)
+	}
+
+	items2, _, err := st.ListDashboardTodos(ctx, user.ID, 10, nil, "board")
+	if err != nil {
+		t.Fatalf("ListDashboardTodos: %v", err)
+	}
+	// Same lane + equal rank → t.id ASC: lower internal id first.
+	pos := func(id int64) int {
+		for i, it := range items2 {
+			if it.ID == id {
+				return i
+			}
+		}
+		return -1
+	}
+	pE, pL := pos(tEarly.ID), pos(tLate.ID)
+	if pE < 0 || pL < 0 {
+		t.Fatalf("missing todos in board list: %+v", items2)
+	}
+	if (tEarly.ID < tLate.ID && pE > pL) || (tLate.ID < tEarly.ID && pL > pE) {
+		t.Fatalf("equal rank same lane: want lower todo id first, positions %d vs %d for ids %d and %d", pE, pL, tEarly.ID, tLate.ID)
+	}
+}
+
+func TestListDashboardTodos_BoardCursorRoundTrip(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx, user := dashboardTestContext(t, st)
+
+	p1, err := st.CreateProject(ctx, "P1")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	p2, err := st.CreateProject(ctx, "P2")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	for _, pid := range []int64{p1.ID, p2.ID} {
+		_, err := st.CreateTodo(ctx, pid, CreateTodoInput{
+			Title: "Todo", ColumnKey: DefaultColumnDoing, AssigneeUserID: &user.ID,
+		}, ModeFull)
+		if err != nil {
+			t.Fatalf("CreateTodo: %v", err)
+		}
+		_, err = st.CreateTodo(ctx, pid, CreateTodoInput{
+			Title: "Todo2", ColumnKey: DefaultColumnDoing, AssigneeUserID: &user.ID,
+		}, ModeFull)
+		if err != nil {
+			t.Fatalf("CreateTodo: %v", err)
+		}
+	}
+
+	page1, cur, err := st.ListDashboardTodos(ctx, user.ID, 1, nil, "board")
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(page1) != 1 || cur == nil || *cur == "" {
+		t.Fatalf("expected one item and cursor, got len=%d cur=%v", len(page1), cur)
+	}
+	page2, _, err := st.ListDashboardTodos(ctx, user.ID, 10, cur, "board")
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(page2) != 3 {
+		t.Fatalf("expected 3 todos on second page, got %d", len(page2))
+	}
+	seen := map[int64]bool{page1[0].ID: true}
+	for _, it := range page2 {
+		if seen[it.ID] {
+			t.Fatalf("duplicate id %d across pages", it.ID)
+		}
+		seen[it.ID] = true
+	}
+}
+
+func TestListDashboardTodos_CursorSortMismatch(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx, user := dashboardTestContext(t, st)
+	project, err := st.CreateProject(ctx, "P")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	_, err = st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title: "T", ColumnKey: DefaultColumnDoing, AssigneeUserID: &user.ID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo: %v", err)
+	}
+
+	activityCursor := "12:34"
+	_, _, err = st.ListDashboardTodos(ctx, user.ID, 10, &activityCursor, "board")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("board sort + activity-shaped cursor: want ErrValidation, got %v", err)
+	}
+
+	boardCursor := "1:2:3:4"
+	_, _, err = st.ListDashboardTodos(ctx, user.ID, 10, &boardCursor, "activity")
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("activity sort + board-shaped cursor: want ErrValidation, got %v", err)
 	}
 }

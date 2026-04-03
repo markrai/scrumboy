@@ -128,6 +128,10 @@ export function getDashboardLoading(): boolean {
   return !!current.dashboardLoading;
 }
 
+export function getDashboardTodoSort(): 'activity' | 'board' {
+  return current.dashboardTodoSort === 'board' ? 'board' : 'activity';
+}
+
 export function getBoardLaneMeta(): Record<TodoStatus, { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number }> {
   return current.boardLaneMeta ?? {
     BACKLOG: { hasMore: false, nextCursor: null, loading: false },
