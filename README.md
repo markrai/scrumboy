@@ -1,13 +1,13 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.7.8-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.8.0-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
 </p>
 
-#### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP support
+#### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP-compatible client support
 
 
 <img width="2975" height="1078" alt="image" src="internal/httpapi/web/github_preview.jpg" />
@@ -116,9 +116,9 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 ## Integrations & API Access
 
-Scrumboy supports API access tokens for automation, integrations, and AI agents.
+Scrumboy supports API access tokens for automation, integrations, and programmatic MCP access (legacy HTTP and JSON-RPC — see below).
 
-You can create a token from the API and use it to call MCP directly — no browser session or cookies required.
+You can create a token from the API and use it to call MCP endpoints directly — no browser session or cookies required.
 
 **Create a token (requires login session):**
 
@@ -139,11 +139,62 @@ curl -X POST http://localhost:8080/mcp \
   -H "Authorization: Bearer sb_your_token_here" \
   -d '{"tool":"projects.list","input":{}}'
 ```
+
+### MCP (JSON-RPC) for AI agents
+
+Scrumboy exposes a **Model Context Protocol (MCP) compatible JSON-RPC endpoint** for AI agents (Claude, etc.) and MCP-compatible clients.
+
+**Endpoint:** `POST /mcp/rpc`
+
+This is separate from the `/mcp` HTTP endpoint above and follows **JSON-RPC 2.0** (`initialize`, `tools/list`, `tools/call`, etc.). See [`API.md`](API.md) for full detail.
+
+#### Example: `initialize`
+
+```bash
+curl -X POST http://localhost:8080/mcp/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+```
+
+#### Example: list tools
+
+```bash
+curl -X POST http://localhost:8080/mcp/rpc \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+```
+
+#### Example: call a tool
+
+```bash
+curl -X POST http://localhost:8080/mcp/rpc \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sb_your_token_here" \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":3,
+    "method":"tools/call",
+    "params":{
+      "name":"todos.create",
+      "arguments":{
+        "projectSlug":"my-project",
+        "title":"Created via MCP"
+      }
+    }
+  }'
+```
+
+**Notes**
+
+- Compatible with MCP clients that support **HTTP JSON-RPC** to this URL.
+- Some MCP clients expect **stdio**-based servers — those are **not** supported here.
+- Authentication works via **session cookie** or **Bearer** token (same rules as `/mcp`).
+
 This enables:
 
 - CLI usage
 - CI/CD automation
-- AI agents (Claude, etc.)
+- AI agents and MCP clients (use **`POST /mcp/rpc`** for JSON-RPC; **`POST /mcp`** remains available for the legacy `{ "tool", "input" }` envelope)
 - Scripting/integrations without login flows
 
 

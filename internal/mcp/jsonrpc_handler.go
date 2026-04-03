@@ -117,6 +117,8 @@ func (a *Adapter) serveJSONRPC(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	case "tools/list":
 		a.handleJSONRPCToolsList(w, &req)
+	case "tools/call":
+		a.handleJSONRPCToolsCall(w, r, &req)
 	default:
 		writeJSONRPCError(w, req.ID, jsonRPCMethodNotFound, "method not found")
 	}
@@ -166,7 +168,158 @@ func (a *Adapter) handleJSONRPCToolsList(w http.ResponseWriter, req *jsonRPCRequ
 		return
 	}
 	writeJSONRPCResult(w, req.ID, map[string]any{
-		"tools": toolCatalog(),
+		"tools": a.toolCatalog(),
+	})
+}
+
+// tools/call params shape per MCP spec.
+type toolsCallParams struct {
+	Name      string         `json:"name"`
+	Arguments map[string]any `json:"arguments"`
+}
+
+// MCP text content block for tool results.
+type mcpTextContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func (a *Adapter) handleJSONRPCToolsCall(w http.ResponseWriter, r *http.Request, req *jsonRPCRequest) {
+	if req.ID == nil {
+		writeJSONRPCError(w, nil, jsonRPCInvalidRequest, "tools/call must be a request (requires id)")
+		return
+	}
+
+	if req.Params == nil {
+		writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "missing params")
+		return
+	}
+	var params toolsCallParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "invalid params")
+		return
+	}
+	if params.Name == "" {
+		writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "missing params.name")
+		return
+	}
+
+	handler, ok := a.tools[params.Name]
+	if !ok {
+		writeJSONRPCToolErrorResult(w, req.ID, "tool not found")
+		return
+	}
+
+	args := params.Arguments
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	if err := validateRequiredFields(params.Name, args); err != "" {
+		writeJSONRPCToolErrorResult(w, req.ID, err)
+		return
+	}
+
+	authRes := a.resolveRequestAuth(r)
+	if authRes.Err != nil {
+		writeJSONRPCToolErrorResult(w, req.ID, "internal error")
+		return
+	}
+	if authRes.BearerAuthFailed {
+		writeJSONRPCToolErrorResult(w, req.ID, "authentication required")
+		return
+	}
+
+	data, _, toolErr := handler(authRes.Ctx, args)
+	if toolErr != nil {
+		writeJSONRPCToolErrorResult(w, req.ID, toolErr.Message)
+		return
+	}
+
+	writeJSONRPCToolSuccessResult(w, req.ID, data)
+}
+
+// requiredFieldNamesFromSchema extracts the "required" keyword from a JSON Schema object.
+// Accepts []string (in-memory catalog) and []any (e.g. after JSON round-trip).
+func requiredFieldNamesFromSchema(schema map[string]any) []string {
+	raw := schema["required"]
+	switch v := raw.(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, el := range v {
+			s, ok := el.(string)
+			if !ok || s == "" {
+				continue
+			}
+			out = append(out, s)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// validateRequiredFields checks that required fields from the tool catalog are present.
+// Returns an error message string, or "" if valid.
+func validateRequiredFields(toolName string, args map[string]any) string {
+	def, ok := toolCatalogDefinitions()[toolName]
+	if !ok {
+		return ""
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		return ""
+	}
+	required := requiredFieldNamesFromSchema(schema)
+	if len(required) == 0 {
+		return ""
+	}
+	for _, field := range required {
+		if _, exists := args[field]; !exists {
+			return "missing required field: " + field
+		}
+	}
+	return ""
+}
+
+func toolResultText(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func writeJSONRPCToolSuccessResult(w http.ResponseWriter, id any, data any) {
+	writeJSONRPCResult(w, id, map[string]any{
+		"content": []mcpTextContent{
+			{Type: "text", Text: toolResultText(data)},
+		},
+		"structuredContent": data,
+	})
+}
+
+func writeJSONRPCToolErrorResult(w http.ResponseWriter, id any, message string) {
+	writeJSONRPCResult(w, id, map[string]any{
+		"content": []mcpTextContent{
+			{Type: "text", Text: message},
+		},
+		"isError": true,
+	})
+}
+
+func writeJSONRPCErrorWithData(w http.ResponseWriter, id any, code int, message string, data any) {
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Error: &jsonRPCError{
+			Code:    code,
+			Message: message,
+			Data:    data,
+		},
 	})
 }
 

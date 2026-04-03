@@ -1,13 +1,31 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** unless noted below.
 
+
+## [3.8.0] - 2026-04-03
+
+### Features
+
+- **MCP JSON-RPC: `tools/list` and `tools/call`** on **`POST /mcp/rpc`** — Completes the spec-oriented MCP loop alongside existing **`initialize`** / **`notifications/initialized`**. **`tools/list`** returns tools with **`name`**, **`description`**, and **`inputSchema`** (JSON Schema with **`required`** and tight objects where defined); the catalog starts with four tools (**`projects.list`**, **`todos.create`**, **`todos.get`**, **`todos.update`**) and will grow over time. **`tools/call`** accepts **`params.name`** and **`params.arguments`**, reuses the same tool handlers as legacy **`POST /mcp`**, and returns success as **`result.content[]`** with **`type: "json"`** and the tool payload in **`json`**. Discovery and invocation are **stateless** (no **`initialize`** required for **`tools/list`** or **`tools/call`**). Errors use JSON-RPC codes (**`-32601`** unknown tool, **`-32602`** invalid params / validation, **`-32603`** internal); unknown tools may include **`error.data`** with **`name`**.
+
+### Improvements
+
+- **Catalog `required` handling** — Pre-call checks read the **`required`** array whether it is stored as **`[]string`** (in-memory catalog) or **`[]any`** (e.g. after JSON round-trip), avoiding silent skips.
+- **`tools/call` shape errors** — Clearer **`missing params`** / **`missing params.name`** messages for invalid requests.
+
+### Documentation
+
+- **`API.md`** — New **JSON-RPC MCP endpoint (spec-compatible)** section for **`POST /mcp/rpc`**: protocol rules, supported methods, response shapes, auth (same as **`/mcp`**), and how this differs from the legacy **`/mcp`** envelope.
+- **`README.md`** — **MCP (JSON-RPC) for AI agents** subsection with **`curl`** examples (**`initialize`**, **`tools/list`**, **`tools/call`**), pointer to **`API.md`**, and notes on HTTP JSON-RPC vs stdio MCP clients.
+
+---
 
 ## [3.7.8] - 2026-04-03
 
 ### Features
 
-- **MCP JSON-RPC (Phase 1)** - New **`POST /mcp/rpc`** endpoint using **JSON-RPC 2.0** alongside the existing **`/mcp`** `{ "tool", "input" }` API (unchanged). Supports **`initialize`** (protocol version **2024-11-05**, `capabilities.tools`, `serverInfo`), **`notifications/initialized`** and **`initialized`** as notifications (**204** empty body), and spec error codes (e.g. **-32601** method not found). **`tools/list`** and **`tools/call`** are planned for a follow-up release.
+- **MCP JSON-RPC (Phase 1)** - New **`POST /mcp/rpc`** endpoint using **JSON-RPC 2.0** alongside the existing **`/mcp`** `{ "tool", "input" }` API (unchanged). Supports **`initialize`** (protocol version **2024-11-05**, `capabilities.tools`, `serverInfo`), **`notifications/initialized`** and **`initialized`** as notifications (**204** empty body), and spec error codes (e.g. **-32601** method not found). **`tools/list`** and **`tools/call`** added in **3.8.0**.
 
 ---
 

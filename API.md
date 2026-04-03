@@ -39,6 +39,114 @@ Responses use `Cache-Control: no-store` and `Content-Type: application/json; cha
 
 ---
 
+## JSON-RPC MCP endpoint (spec-compatible)
+
+In addition to the **`/mcp`** HTTP interface above, Scrumboy exposes a Model Context Protocol (MCP) oriented endpoint that speaks **JSON-RPC 2.0**. This is a **separate** transport from the legacy `{ "tool", "input" }` POST body; both are mounted on the same MCP adapter.
+
+**Endpoint:** `POST /mcp/rpc` (trailing slash `/mcp/rpc/` is accepted).
+
+**Intended use:** MCP-style clients (e.g. Claude Desktop, agent frameworks) that expect JSON-RPC framing.
+
+### Protocol
+
+- Uses **JSON-RPC 2.0**.
+- **`jsonrpc`:** must be the string `"2.0"`.
+- **`method`:** required (string).
+- **`id`:** required for **requests** that expect a JSON body (`initialize`, `tools/list`, `tools/call`). Omitted for **notifications** (see below). For **parse errors**, the response uses `"id": null` per JSON-RPC.
+- **`params`:** optional for `initialize` and `tools/list` (may be omitted or an object). For **`tools/call`**, `params` must be a JSON object (see below).
+
+**Non-POST** requests receive a JSON-RPC error (`id` null). **HTTP status** for normal JSON-RPC replies is **200** for both success and error objects in the body (errors are not signaled only by HTTP status). The **`notifications/initialized`** (or **`initialized`**) notification is answered with **204 No Content** and an empty body.
+
+**Example request:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {}
+}
+```
+
+### Supported methods
+
+**`initialize`** — Initial handshake. Requires `id`. Returns `protocolVersion` (currently `2024-11-05`), `capabilities`, `serverInfo`, and optional `instructions`. `params` may be omitted or empty.
+
+**`notifications/initialized`** or **`initialized`** — Client acknowledgment after `initialize`. Must be sent **without** `id` (notification). Server responds with **204** and no JSON body. If an `id` is present, the server rejects the call.
+
+**`tools/list`** — Requires `id`. Returns `{ "tools": [ ... ] }`. Each entry has `name`, `description`, and `inputSchema` (JSON Schema object). **Today** the list includes **four** tools with full schemas (`projects.list`, `todos.create`, `todos.get`, `todos.update`); more entries will be added over time. **`tools/list` does not require a prior `initialize`.**
+
+**`tools/call`** — Invokes a tool by name. Requires `id` and a **`params` object** containing:
+
+- **`name`** (string, required): exact registered tool name (same names as `POST /mcp`’s `tool` field).
+- **`arguments`** (object, optional): tool input; if omitted, treated as `{}`.
+
+**`tools/call` uses the same tool registry as `POST /mcp`**, so any implemented tool may be invoked even if it does not yet appear in `tools/list`. For tools that **do** appear in `tools/list`, the server performs a **lightweight check** that JSON Schema `required` top-level properties are present in `arguments` before calling the handler; full JSON Schema validation is not performed. Unknown tool names yield JSON-RPC **`method not found`** (`-32601`); optional `error.data` may include `{ "name": "<tool>" }`.
+
+**Example `tools/call`:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "todos.create",
+    "arguments": {
+      "projectSlug": "my-project",
+      "title": "New todo"
+    }
+  }
+}
+```
+
+### Response format
+
+All JSON-RPC **responses with a body** include `"jsonrpc": "2.0"` and preserve the request `id` (except parse errors → `id: null`). This endpoint **does not** use the legacy `ok` / `data` / `meta` envelope.
+
+**Success (`tools/call` result shape):**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "content": [
+      {
+        "type": "json",
+        "json": {}
+      }
+    ]
+  }
+}
+```
+
+The `json` object is the tool’s result value (same conceptual payload as legacy `data`, including nested shapes such as `{ "todo": { ... } }` where the tool returns that).
+
+**Error:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "error": {
+    "code": -32602,
+    "message": "invalid params"
+  }
+}
+```
+
+**Typical JSON-RPC error codes:** `-32700` parse error, `-32600` invalid request, `-32601` method/tool not found, `-32602` invalid params / validation, `-32603` internal error. The `message` string is human-readable; some errors include optional `data`.
+
+### Notes
+
+- **Stateless HTTP:** there is no server-side session between requests; behavior does not depend on having called `initialize` first for `tools/list` or `tools/call`.
+- **`initialize` is supported** for clients that expect the handshake; it is **not** enforced before discovery or tool calls on this server.
+- **Authentication** follows the same rules as **`/mcp`** (session cookie and Bearer token in `full` mode; anonymous mode boundary unchanged). See [Authentication and capability model](#authentication-and-capability-model).
+- The **legacy `GET` / `POST /mcp`** endpoint remains **unchanged** and is documented in the sections above.
+
+---
+
 ## Response envelopes
 
 ### Success
