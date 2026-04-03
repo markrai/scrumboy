@@ -3,6 +3,14 @@
 > **Upgrades:** No breaking changes in **3.7.x** unless noted below.
 
 
+## [3.7.8] - 2026-04-03
+
+### Features
+
+- **MCP JSON-RPC (Phase 1)** - New **`POST /mcp/rpc`** endpoint using **JSON-RPC 2.0** alongside the existing **`/mcp`** `{ "tool", "input" }` API (unchanged). Supports **`initialize`** (protocol version **2024-11-05**, `capabilities.tools`, `serverInfo`), **`notifications/initialized`** and **`initialized`** as notifications (**204** empty body), and spec error codes (e.g. **-32601** method not found). **`tools/list`** and **`tools/call`** are planned for a follow-up release.
+
+---
+
 ## [3.7.7] - 2026-04-03
 
 ### Features

@@ -26,6 +26,11 @@ func (a *Adapter) resolveAndValidateAuth(w http.ResponseWriter, r *http.Request)
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
+	if r.URL.Path == "/mcp/rpc" || r.URL.Path == "/mcp/rpc/" {
+		a.serveJSONRPC(w, r)
+		return
+	}
+
 	if r.URL.Path != "/mcp" && r.URL.Path != "/mcp/" {
 		writeError(w, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil))
 		return
