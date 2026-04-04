@@ -80,6 +80,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case "dashboard":
 		s.handleDashboard(w, r, parts[2:])
 		return
+	case "webhooks":
+		s.handleWebhooks(w, r, parts[2:])
+		return
 	default:
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return
@@ -691,7 +694,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(projectID, "project_deleted")
+			s.emitRefreshNeeded(r.Context(), projectID, "project_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case http.MethodPatch:
@@ -731,7 +734,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 				return
 			}
 			if in.Name != nil || in.Image != nil {
-				s.emitRefreshNeeded(projectID, "project_updated")
+				s.emitRefreshNeeded(r.Context(), projectID, "project_updated")
 			}
 			writeJSON(w, http.StatusOK, projectToJSON(project))
 			return
@@ -838,7 +841,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitMembersUpdated(projectID)
+		s.emitMembersUpdated(r.Context(), projectID)
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return
 	}
@@ -867,7 +870,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitMembersUpdated(projectID)
+		s.emitMembersUpdated(r.Context(), projectID)
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return
 	}
@@ -915,7 +918,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitMembersUpdated(projectID)
+		s.emitMembersUpdated(r.Context(), projectID)
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return
 	}
@@ -991,7 +994,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(projectID, "tag_color_updated")
+		s.emitRefreshNeeded(r.Context(), projectID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1021,7 +1024,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(projectID, "tag_deleted")
+		s.emitRefreshNeeded(r.Context(), projectID, "tag_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1165,7 +1168,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "project_settings_updated")
+		s.emitRefreshNeeded(r.Context(), project.ID, "project_settings_updated")
 		writeJSON(w, http.StatusOK, map[string]any{"defaultSprintWeeks": *in.DefaultSprintWeeks})
 		return
 	}
@@ -1233,7 +1236,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "workflow_column_added")
+		s.emitRefreshNeeded(r.Context(), project.ID, "workflow_column_added")
 		writeJSON(w, http.StatusCreated, workflowColumnJSON{
 			Key:      col.Key,
 			Name:     col.Name,
@@ -1292,7 +1295,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "workflow_column_updated")
+		s.emitRefreshNeeded(r.Context(), project.ID, "workflow_column_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1319,7 +1322,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "workflow_column_deleted")
+		s.emitRefreshNeeded(r.Context(), project.ID, "workflow_column_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1371,7 +1374,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "board_claimed")
+		s.emitRefreshNeeded(r.Context(), project.ID, "board_claimed")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1429,7 +1432,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "todo_created")
+		if !todo.AssignmentChanged {
+			s.emitRefreshNeeded(r.Context(), project.ID, "todo_created")
+		}
 		writeJSON(w, http.StatusCreated, todoToJSON(todo))
 		return
 	}
@@ -1562,7 +1567,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				}
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "todo_links_updated")
+			s.emitRefreshNeeded(r.Context(), project.ID, "todo_links_updated")
 			w.WriteHeader(http.StatusNoContent)
 			return
 
@@ -1584,7 +1589,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				}
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "todo_links_updated")
+			s.emitRefreshNeeded(r.Context(), project.ID, "todo_links_updated")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -1671,7 +1676,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "todo_updated")
+			if !todo.AssignmentChanged {
+				s.emitRefreshNeeded(r.Context(), project.ID, "todo_updated")
+			}
 			writeJSON(w, http.StatusOK, todoToJSON(todo))
 			return
 		case http.MethodDelete:
@@ -1683,7 +1690,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "todo_deleted")
+			s.emitRefreshNeeded(r.Context(), project.ID, "todo_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -1723,7 +1730,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "todo_moved")
+		s.emitRefreshNeeded(r.Context(), project.ID, "todo_moved")
 		writeJSON(w, http.StatusOK, todoToJSON(todo))
 		return
 	}
@@ -1778,7 +1785,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "sprint_created")
+		s.emitRefreshNeeded(r.Context(), project.ID, "sprint_created")
 		writeJSON(w, http.StatusCreated, sprintToJSON(sprint))
 		return
 	}
@@ -1854,7 +1861,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "sprint_updated")
+			s.emitRefreshNeeded(r.Context(), project.ID, "sprint_updated")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		case http.MethodDelete:
@@ -1873,7 +1880,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "sprint_deleted")
+			s.emitRefreshNeeded(r.Context(), project.ID, "sprint_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -1917,7 +1924,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "sprint_activated")
+		s.emitRefreshNeeded(r.Context(), project.ID, "sprint_activated")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -1944,7 +1951,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "sprint_closed")
+		s.emitRefreshNeeded(r.Context(), project.ID, "sprint_closed")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -2009,7 +2016,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "tag_color_updated")
+		s.emitRefreshNeeded(r.Context(), project.ID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -2040,7 +2047,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "tag_color_updated")
+		s.emitRefreshNeeded(r.Context(), project.ID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -2059,7 +2066,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "tag_deleted")
+		s.emitRefreshNeeded(r.Context(), project.ID, "tag_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -2081,7 +2088,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(project.ID, "tag_deleted")
+			s.emitRefreshNeeded(r.Context(), project.ID, "tag_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -2103,7 +2110,7 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(project.ID, "tag_deleted")
+		s.emitRefreshNeeded(r.Context(), project.ID, "tag_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -2185,7 +2192,9 @@ func (s *Server) handleTodos(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(todo.ProjectID, "todo_updated")
+			if !todo.AssignmentChanged {
+				s.emitRefreshNeeded(r.Context(), todo.ProjectID, "todo_updated")
+			}
 			writeJSON(w, http.StatusOK, todoToJSON(todo))
 			return
 
@@ -2199,7 +2208,7 @@ func (s *Server) handleTodos(w http.ResponseWriter, r *http.Request, rest []stri
 				writeStoreErr(w, err, true)
 				return
 			}
-			s.emitRefreshNeeded(projectID, "todo_deleted")
+			s.emitRefreshNeeded(r.Context(), projectID, "todo_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return
 
@@ -2233,7 +2242,7 @@ func (s *Server) handleTodos(w http.ResponseWriter, r *http.Request, rest []stri
 			writeStoreErr(w, err, true)
 			return
 		}
-		s.emitRefreshNeeded(todo.ProjectID, "todo_moved")
+		s.emitRefreshNeeded(r.Context(), todo.ProjectID, "todo_moved")
 		writeJSON(w, http.StatusOK, todoToJSON(todo))
 		return
 	}

@@ -291,6 +291,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			t := time.UnixMilli(*doneAt).UTC()
 			todo.DoneAt = &t
 		}
+		hadAssignee := in.AssigneeUserID != nil && !isAnonymousBoard
+		todo.AssignmentChanged = hadAssignee
+		if s.todoAssignedPublisher != nil && hadAssignee {
+			actorID, _ := UserIDFromContext(ctx)
+			s.todoAssignedPublisher(ctx, projectID, todoID, localID, nil, in.AssigneeUserID, actorID)
+		}
 		return todo, nil
 	}
 
@@ -692,6 +698,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		_ = err // Log but don't fail
 	}
 
+	oldAssignee := existing.AssigneeUserID
 	existing.Title = in.Title
 	existing.Body = in.Body
 	existing.AssigneeUserID = cloneInt64Ptr(in.AssigneeUserID)
@@ -704,6 +711,13 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 	}
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
+	existing.AssignmentChanged = assignmentChanged
+
+	if s.todoAssignedPublisher != nil && assignmentChanged && !isAnonymousBoard {
+		actorID, _ := UserIDFromContext(ctx)
+		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, oldAssignee, in.AssigneeUserID, actorID)
+	}
+
 	return existing, nil
 }
 

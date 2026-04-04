@@ -5,9 +5,13 @@ import (
 	"database/sql"
 )
 
+// TodoAssignedFunc is called after a successful commit when a todo's assignee changes.
+type TodoAssignedFunc func(ctx context.Context, projectID, todoID, localID int64, from, to *int64, actorUserID int64)
+
 type Store struct {
-	db            *sql.DB
-	encryptionKey []byte // 32-byte key for TOTP secret encryption; nil if 2FA encryption disabled
+	db                    *sql.DB
+	encryptionKey         []byte // 32-byte key for TOTP secret encryption; nil if 2FA encryption disabled
+	todoAssignedPublisher TodoAssignedFunc
 }
 
 type StoreOptions struct {
@@ -20,6 +24,10 @@ func New(db *sql.DB, opts *StoreOptions) *Store {
 		s.encryptionKey = opts.EncryptionKey
 	}
 	return s
+}
+
+func (s *Store) SetTodoAssignedPublisher(fn TodoAssignedFunc) {
+	s.todoAssignedPublisher = fn
 }
 
 func (s *Store) Health(ctx context.Context) error {

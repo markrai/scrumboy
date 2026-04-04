@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/store"
@@ -35,8 +37,11 @@ type Server struct {
 	logger  *log.Logger
 	maxBody int64
 	mode    string // "full" or "anonymous"
-	hub     *Hub
-	sink    EventSink
+	hub            *Hub
+	sink           EventSink
+	fanout         *eventbus.Fanout
+	webhookQueue   *webhookQueue
+	webhookCancel  context.CancelFunc
 
 	authRateLimit *ratelimit.Limiter
 
@@ -181,6 +186,12 @@ type storeAPI interface {
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)
 	DecryptTOTPSecret(encrypted string) ([]byte, error)
+
+	// Webhooks
+	CreateWebhook(ctx context.Context, userID int64, in store.CreateWebhookInput) (store.Webhook, error)
+	ListWebhooks(ctx context.Context, userID int64) ([]store.Webhook, error)
+	DeleteWebhook(ctx context.Context, userID, webhookID int64) error
+	ListWebhooksByProject(ctx context.Context, projectID int64) ([]store.WebhookRow, error)
 }
 
 //go:embed web/**
@@ -237,6 +248,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 		authRateLimit = ratelimit.New(10, time.Minute)
 	}
 	hub := NewHub(defaultSubscriberBuffer)
+	sseBridgeConsumer := newSSEBridge(hub)
+	whQueue := newWebhookQueue(logger)
+	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
+	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher)
+	whWorker := newWebhookWorker(whQueue, logger)
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	go whWorker.Run(workerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
 
 	var encKey []byte
@@ -251,6 +269,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		mode:                      mode,
 		hub:                       hub,
 		sink:                      hub,
+		fanout:                    fanout,
+		webhookQueue:              whQueue,
+		webhookCancel:             workerCancel,
 		authRateLimit:             authRateLimit,
 		encryptionKey:             encKey,
 		oidcService:               opts.OIDCService,
@@ -334,4 +355,45 @@ func (s *Server) storeMode() store.Mode {
 		return store.ModeFull // Default
 	}
 	return mode
+}
+
+// Close cancels background workers. Call from main on shutdown.
+func (s *Server) Close() {
+	if s.webhookCancel != nil {
+		s.webhookCancel()
+	}
+}
+
+// PublishEvent sends an event through the fanout to all consumers (SSE bridge, webhooks, etc.).
+// Best-effort: callers should not fail HTTP requests on publish errors.
+func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
+	if s.fanout == nil {
+		return
+	}
+	_ = s.fanout.Publish(ctx, e)
+}
+
+// PublishTodoAssigned emits a "todo.assigned" event through the event bus.
+// Designed to be passed to store.SetTodoAssignedPublisher.
+func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, from, to *int64, actorUserID int64) {
+	payload, _ := json.Marshal(struct {
+		ProjectID        int64  `json:"projectId"`
+		TodoID           int64  `json:"todoId"`
+		LocalID          int64  `json:"localId"`
+		FromAssigneeUID  *int64 `json:"fromAssigneeUserId"`
+		ToAssigneeUID    *int64 `json:"toAssigneeUserId"`
+		ActorUserID      int64  `json:"actorUserId"`
+	}{
+		ProjectID:       projectID,
+		TodoID:          todoID,
+		LocalID:         localID,
+		FromAssigneeUID: from,
+		ToAssigneeUID:   to,
+		ActorUserID:     actorUserID,
+	})
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      "todo.assigned",
+		ProjectID: projectID,
+		Payload:   payload,
+	})
 }

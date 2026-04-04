@@ -94,6 +94,7 @@ func main() {
 		EncryptionKey:  encKey,
 		OIDCService:    oidcSvc,
 	})
+	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 
 	httpServer := &http.Server{
 		Addr:              cfg.BindAddr,
@@ -177,9 +178,12 @@ func main() {
 
 	<-stop
 
+	// Drain in-flight HTTP requests first so any final todo.assigned events
+	// are published and enqueued before the webhook worker is stopped.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Printf("shutdown: %v", err)
 	}
+	srv.Close()
 }

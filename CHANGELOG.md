@@ -1,7 +1,26 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** unless noted below.
 
+
+## [3.10.0] - 2026-04-04
+
+### Features
+
+- **Event bus + SSE** — **`internal/eventbus`** fanout; **`PublishEvent`** on the server. Board refresh / members events go through the bus; **`sseBridge`** keeps the same SSE JSON as before.
+- **`todo.assigned`** — Published after commit from **`CreateTodo`** / **`UpdateTodo`** when assignee changes (non-anonymous temp boards). SSE uses reason **`todo_assigned`**; handlers skip duplicate **`todo_created`** / **`todo_updated`** refresh when **`AssignmentChanged`**.
+- **Webhooks (full mode)** — **`POST` / `GET` / `DELETE`** **`/api/webhooks`** (maintainer, session; **404** in anonymous mode). Migration **050**; optional HMAC **`X-Scrumboy-Signature`**; async queue + worker, retries, JSON envelope with event **`id`** (for idempotency). Dispatcher enqueues in a goroutine with a detached context so SSE is not blocked.
+
+### Fixes
+
+- **Shutdown** — HTTP **`Shutdown`** before cancelling the webhook worker.
+- **CreateTodo** — Same **`!isAnonymousBoard`** gate as **`UpdateTodo`** for assignment events.
+
+### Other
+
+- Tests: **`eventbus_regression_test.go`**. Docs: README webhooks section + TOC. Dep: **`github.com/google/uuid`**.
+
+---
 
 ## [3.9.4] - 2026-04-04
 

@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.9.4-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.10.0-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
@@ -11,6 +11,34 @@
 
 
 <img width="2975" height="1078" alt="image" src="internal/httpapi/web/github_preview.jpg" />
+
+## Table of contents
+
+- [Quick Start](#quick-start)
+  - [Run with Docker](#run-with-docker)
+  - [Run from source](#run-from-source)
+- [Optional Configuration](#optional-configuration)
+  - [Environment variables](#environment-variables)
+  - [Encryption key (optional)](#encryption-key-optional)
+  - [OIDC / SSO login (optional)](#oidc--sso-login-optional)
+  - [TLS / HTTPS (optional)](#tls--https-optional)
+  - [Frontend build note](#frontend-build-note)
+- [Why Scrumboy?](#why-scrumboy)
+- [Who is this for?](#who-is-this-for)
+- [Modes](#modes)
+- [Features](#features)
+- [Integrations & API Access](#integrations--api-access)
+  - [MCP (JSON-RPC) for AI agents](#mcp-json-rpc-for-ai-agents)
+  - [Webhooks (outbound HTTP)](#webhooks-outbound-http)
+- [Config](#config)
+- [Roles](#roles)
+  - [System roles (instance-wide)](#system-roles-instance-wide)
+  - [Project roles (per project)](#project-roles-per-project)
+- [Export scope](#export-scope)
+- [Import modes](#import-modes)
+- [Code layout (reference)](#code-layout-reference)
+- [Documentation](#documentation)
+- [License and Contributions](#license-and-contributions)
 
 ## Quick Start
 
@@ -117,6 +145,8 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Realtime SSE enabled boards for instant multi-user actions.
 
+- **Webhooks (API-only, full mode):** Register URLs per project so Scrumboy can POST JSON when subscribed domain events fire (e.g. `todo.assigned`). For your own automations—not in-app or browser notifications. See [Integrations](#integrations--api-access).
+
 - Customizable Tags: Users can inherit and customize tag colors.
 
 - Advanced filtering: Search todos based on text or tags.
@@ -217,6 +247,26 @@ This enables:
 - CI/CD automation
 - AI agents and MCP clients (use **`POST /mcp/rpc`** for JSON-RPC; **`POST /mcp`** remains available for the legacy `{ "tool", "input" }` envelope)
 - Scripting/integrations without login flows
+
+### Webhooks (outbound HTTP)
+
+Scrumboy can **POST JSON to URLs you register** when certain events occur. This is for **server-side integrations** (your script, gateway, queue worker, etc.). It does **not** add notifications inside the Scrumboy UI; live boards still update via **SSE** as before.
+
+- **Availability:** **Full mode only** (endpoints are disabled in anonymous mode).
+- **Who can configure:** Project **maintainers**, via the HTTP API only—there is **no settings screen** for webhooks yet.
+- **API:** `POST /api/webhooks` (create), `GET /api/webhooks` (list yours), `DELETE /api/webhooks/{id}` — same session cookie / CSRF header rules as other mutating `/api/*` calls.
+- **Events:** Subscribe to specific types (e.g. `todo.assigned`) or `*` for all delivered types. The set may grow over time; unused types in your list are harmless.
+- **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body).
+- **Semantics:** Best-effort delivery with retries on failure; not a durable external queue—design for idempotent receivers using the event `id` in the JSON body.
+
+Example create (replace cookie / project id / URL):
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8080/api/webhooks \
+  -H "Content-Type: application/json" \
+  -H "X-Scrumboy: 1" \
+  -d '{"projectId":1,"url":"https://example.com/scrumboy-hook","events":["todo.assigned"],"secret":"optional-shared-secret"}'
+```
 
 
 # Config

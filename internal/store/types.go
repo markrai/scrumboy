@@ -223,6 +223,10 @@ type Todo struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	DoneAt           *time.Time // Last completion time (Unix ms). Set on transition into DONE; never cleared on reopen.
+
+	// AssignmentChanged is set by UpdateTodo when the assignee was modified in this mutation.
+	// Not persisted; used by callers to gate SSE emissions.
+	AssignmentChanged bool `json:"-"`
 }
 
 // Sprint time terminology (see Sprint struct in sprints.go):

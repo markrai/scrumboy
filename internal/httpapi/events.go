@@ -1,6 +1,11 @@
 package httpapi
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+
+	"scrumboy/internal/eventbus"
+)
 
 type refreshNeededEvent struct {
 	Type      string `json:"type"`
@@ -13,31 +18,20 @@ type membersUpdatedEvent struct {
 	ProjectID int64  `json:"projectId"`
 }
 
-func (s *Server) emitRefreshNeeded(projectID int64, reason string) {
-	if s.sink == nil {
-		return
-	}
-	payload, err := json.Marshal(refreshNeededEvent{
-		Type:      "refresh_needed",
+func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason string) {
+	payload, _ := json.Marshal(struct {
+		Reason string `json:"reason"`
+	}{Reason: reason})
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      "board.refresh_needed",
 		ProjectID: projectID,
-		Reason:    reason,
+		Payload:   payload,
 	})
-	if err != nil {
-		return
-	}
-	s.sink.Emit(projectID, payload)
 }
 
-func (s *Server) emitMembersUpdated(projectID int64) {
-	if s.sink == nil {
-		return
-	}
-	payload, err := json.Marshal(membersUpdatedEvent{
-		Type:      "members_updated",
+func (s *Server) emitMembersUpdated(ctx context.Context, projectID int64) {
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      "board.members_updated",
 		ProjectID: projectID,
 	})
-	if err != nil {
-		return
-	}
-	s.sink.Emit(projectID, payload)
 }
