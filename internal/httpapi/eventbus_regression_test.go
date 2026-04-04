@@ -137,7 +137,7 @@ func TestEventbus_CreateWithoutAssignee_SingleRefresh(t *testing.T) {
 	}
 }
 
-// --- Test 2: create todo with assignee => exactly one refresh event ---
+// --- Test 2: create todo with assignee => refresh_needed + todo.assigned on hub ---
 
 func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 	srv, st, collector := newTestServerWithCollector(t)
@@ -179,7 +179,6 @@ func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 		t.Fatalf("expected 0 board.refresh_needed through fanout (gated), got %d", len(fanoutRefreshEvents))
 	}
 
-	// Exactly one SSE message should have arrived on the hub (from the bridge)
 	select {
 	case msg := <-hubCh:
 		var ev struct {
@@ -199,10 +198,36 @@ func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 		t.Fatalf("timed out waiting for hub event")
 	}
 
-	// No second message
 	select {
 	case msg := <-hubCh:
-		t.Fatalf("unexpected second hub event: %s", string(msg))
+		var ev struct {
+			Type      string `json:"type"`
+			ProjectID int64  `json:"projectId"`
+			Payload   struct {
+				TodoID     int64  `json:"todoId"`
+				Title      string `json:"title"`
+				AssigneeID int64  `json:"assigneeId"`
+			} `json:"payload"`
+		}
+		if err := json.Unmarshal(msg, &ev); err != nil {
+			t.Fatalf("unmarshal hub msg 2: %v", err)
+		}
+		if ev.Type != "todo.assigned" {
+			t.Fatalf("expected SSE type todo.assigned, got %s", ev.Type)
+		}
+		if ev.Payload.Title != "with assignee" {
+			t.Fatalf("expected title in payload, got %q", ev.Payload.Title)
+		}
+		if ev.Payload.AssigneeID != user.ID {
+			t.Fatalf("assigneeId mismatch")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for todo.assigned hub event")
+	}
+
+	select {
+	case msg := <-hubCh:
+		t.Fatalf("unexpected third hub event: %s", string(msg))
 	case <-time.After(100 * time.Millisecond):
 	}
 }
@@ -266,7 +291,7 @@ func TestEventbus_UpdateWithoutAssigneeChange_SingleRefresh(t *testing.T) {
 	}
 }
 
-// --- Test 4: update todo with assignee change => exactly one refresh, not two ---
+// --- Test 4: update todo with assignee change => refresh_needed + todo.assigned (no duplicate refresh via fanout) ---
 
 func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 	srv, st, collector := newTestServerWithCollector(t)
@@ -315,7 +340,6 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 		t.Fatalf("expected 0 board.refresh_needed through fanout (gated), got %d; double-refresh detected", len(fanoutRefreshEvents))
 	}
 
-	// Exactly one SSE message on the hub
 	select {
 	case msg := <-hubCh:
 		var ev struct {
@@ -335,10 +359,35 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 		t.Fatalf("timed out waiting for hub event")
 	}
 
-	// No second message
 	select {
 	case msg := <-hubCh:
-		t.Fatalf("unexpected second hub event: %s", string(msg))
+		var ev struct {
+			Type    string `json:"type"`
+			Payload struct {
+				TodoID     int64  `json:"todoId"`
+				Title      string `json:"title"`
+				AssigneeID int64  `json:"assigneeId"`
+			} `json:"payload"`
+		}
+		if err := json.Unmarshal(msg, &ev); err != nil {
+			t.Fatalf("unmarshal hub msg 2: %v", err)
+		}
+		if ev.Type != "todo.assigned" {
+			t.Fatalf("expected todo.assigned, got %s", ev.Type)
+		}
+		if ev.Payload.Title != "assigned" {
+			t.Fatalf("expected title assigned, got %q", ev.Payload.Title)
+		}
+		if ev.Payload.AssigneeID != user.ID {
+			t.Fatalf("assigneeId mismatch")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for todo.assigned hub event")
+	}
+
+	select {
+	case msg := <-hubCh:
+		t.Fatalf("unexpected third hub event: %s", string(msg))
 	case <-time.After(100 * time.Millisecond):
 	}
 }

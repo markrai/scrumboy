@@ -6,7 +6,7 @@ import (
 )
 
 // TodoAssignedFunc is called after a successful commit when a todo's assignee changes.
-type TodoAssignedFunc func(ctx context.Context, projectID, todoID, localID int64, from, to *int64, actorUserID int64)
+type TodoAssignedFunc func(ctx context.Context, projectID, todoID, localID int64, title string, from, to *int64, actorUserID int64)
 
 type Store struct {
 	db                    *sql.DB

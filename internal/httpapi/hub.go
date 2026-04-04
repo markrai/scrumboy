@@ -30,6 +30,7 @@ func (s *subscriber) close() {
 type Hub struct {
 	mu            sync.RWMutex
 	byProjectID   map[int64]map[*subscriber]struct{}
+	byUserID      map[int64]map[*subscriber]struct{}
 	channelBuffer int
 }
 
@@ -39,6 +40,7 @@ func NewHub(channelBuffer int) *Hub {
 	}
 	return &Hub{
 		byProjectID:   make(map[int64]map[*subscriber]struct{}),
+		byUserID:      make(map[int64]map[*subscriber]struct{}),
 		channelBuffer: channelBuffer,
 	}
 }
@@ -82,6 +84,46 @@ func (h *Hub) Emit(projectID int64, event []byte) {
 	}
 }
 
+// SubscribeUser registers a subscriber for user-scoped SSE events (e.g. todo.assigned to assignee).
+func (h *Hub) SubscribeUser(userID int64) (<-chan []byte, func()) {
+	sub := &subscriber{
+		ch: make(chan []byte, h.channelBuffer),
+	}
+	h.mu.Lock()
+	if _, ok := h.byUserID[userID]; !ok {
+		h.byUserID[userID] = make(map[*subscriber]struct{})
+	}
+	h.byUserID[userID][sub] = struct{}{}
+	h.mu.Unlock()
+
+	return sub.ch, func() {
+		h.removeUser(userID, sub)
+	}
+}
+
+// EmitUser delivers an event to all subscribers for userID (same backpressure policy as Emit).
+func (h *Hub) EmitUser(userID int64, event []byte) {
+	h.mu.RLock()
+	subs, ok := h.byUserID[userID]
+	if !ok || len(subs) == 0 {
+		h.mu.RUnlock()
+		return
+	}
+	snapshot := make([]*subscriber, 0, len(subs))
+	for sub := range subs {
+		snapshot = append(snapshot, sub)
+	}
+	h.mu.RUnlock()
+
+	for _, sub := range snapshot {
+		select {
+		case sub.ch <- event:
+		default:
+			h.removeUser(userID, sub)
+		}
+	}
+}
+
 func (h *Hub) remove(projectID int64, sub *subscriber) {
 	h.mu.Lock()
 	projectSubs, ok := h.byProjectID[projectID]
@@ -90,6 +132,21 @@ func (h *Hub) remove(projectID int64, sub *subscriber) {
 			delete(projectSubs, sub)
 			if len(projectSubs) == 0 {
 				delete(h.byProjectID, projectID)
+			}
+		}
+	}
+	h.mu.Unlock()
+	sub.close()
+}
+
+func (h *Hub) removeUser(userID int64, sub *subscriber) {
+	h.mu.Lock()
+	userSubs, ok := h.byUserID[userID]
+	if ok {
+		if _, exists := userSubs[sub]; exists {
+			delete(userSubs, sub)
+			if len(userSubs) == 0 {
+				delete(h.byUserID, userID)
 			}
 		}
 	}

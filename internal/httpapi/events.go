@@ -8,12 +8,14 @@ import (
 )
 
 type refreshNeededEvent struct {
+	ID        string `json:"id,omitempty"`
 	Type      string `json:"type"`
 	ProjectID int64  `json:"projectId"`
 	Reason    string `json:"reason,omitempty"`
 }
 
 type membersUpdatedEvent struct {
+	ID        string `json:"id,omitempty"`
 	Type      string `json:"type"`
 	ProjectID int64  `json:"projectId"`
 }

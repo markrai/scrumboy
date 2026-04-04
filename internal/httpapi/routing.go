@@ -124,6 +124,10 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, rest []string)
 		s.handleMeTokens(w, r, ctx, userID, rest[1:])
 		return
 	}
+	if len(rest) == 1 && rest[0] == "realtime" && r.Method == http.MethodGet {
+		s.handleMeRealtime(w, r, ctx, userID)
+		return
+	}
 	if len(rest) > 0 {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return

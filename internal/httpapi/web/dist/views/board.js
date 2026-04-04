@@ -15,6 +15,7 @@ import { normalizeSprints } from '../sprints.js';
 import { emit, on, off } from '../events.js';
 import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, recordLocalMutation, isBulkUpdating, } from '../realtime/guard.js';
 import { initBulkEditDialog, openBulkEditDialog } from '../dialogs/bulk-edit.js';
+import { playAssignmentSound, showAssignmentDesktopNotification } from '../core/assignmentNotify.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -28,6 +29,10 @@ let highlightRafId = null;
 let highlightTimeoutId = null;
 let boardEventsSource = null;
 let boardEventsSlug = null;
+/** Logged-in path: listen on app bus instead of owning EventSource. */
+let boardRealtimeBound = false;
+const assignmentTodoDebounceMs = 1500;
+const assignmentToastLastByTodoId = new Map();
 let realtimeRefetchTimeoutId = null;
 let realtimeForceRefreshTimeoutId = null;
 let pendingRealtimeRefreshSlug = null;
@@ -144,6 +149,41 @@ async function getRenderProjects() {
         return window.renderProjects || renderProjects;
     }
 }
+function useMergedGlobalRealtime() {
+    return !!(getAuthStatusAvailable() && getUser());
+}
+function onBoardRealtimeEvent(_payload) {
+    const slug = boardEventsSlug;
+    if (!slug || getSlug() !== slug)
+        return;
+    const payload = _payload;
+    const currentProjectID = getProjectId();
+    if (typeof payload.projectId === 'number' && currentProjectID !== null && payload.projectId !== currentProjectID) {
+        return;
+    }
+    // Assignment toast/sound/unread are handled in core/realtime.ts (after id dedupe).
+    if (payload.type === 'todo.assigned') {
+        return;
+    }
+    try {
+        if (payload.type === 'members_updated') {
+            invalidateMembersCache(payload.projectId);
+            emit('members-updated', { projectId: payload.projectId });
+            return;
+        }
+        if (isBulkUpdating())
+            return;
+        if (payload.type === 'refresh_needed') {
+            refetchBoardFromRealtime(slug);
+            return;
+        }
+        refetchBoardFromRealtime(slug);
+    }
+    catch {
+        if (!isBulkUpdating())
+            refetchBoardFromRealtime(slug);
+    }
+}
 function clearRealtimeRefetchTimer() {
     if (realtimeRefetchTimeoutId !== null) {
         clearTimeout(realtimeRefetchTimeoutId);
@@ -230,6 +270,10 @@ function disconnectBoardEvents() {
     todoDialogOpeningInProgress = false;
     clearTodoMultiSelection();
     updateBulkEditBar();
+    if (boardRealtimeBound) {
+        off('realtime:event', onBoardRealtimeEvent);
+        boardRealtimeBound = false;
+    }
     if (boardEventsSource) {
         boardEventsSource.close();
         boardEventsSource = null;
@@ -247,15 +291,20 @@ function refetchBoardFromRealtime(slug) {
     ensureRealtimeForceRefreshTimer();
 }
 function connectBoardEvents(slug) {
-    if (boardEventsSource && boardEventsSlug === slug) {
+    if (boardEventsSlug === slug && (boardEventsSource !== null || boardRealtimeBound)) {
         debugLog("connectBoardEvents skipped (already connected for slug)", slug);
         return;
     }
     disconnectBoardEvents();
     debugLog("connectBoardEvents running", slug);
+    boardEventsSlug = slug;
+    if (useMergedGlobalRealtime()) {
+        on('realtime:event', onBoardRealtimeEvent);
+        boardRealtimeBound = true;
+        return;
+    }
     const source = new EventSource(`/api/board/${slug}/events`);
     boardEventsSource = source;
-    boardEventsSlug = slug;
     source.onopen = () => {
         debugLog("SSE onopen fired", slug);
         if (isBulkUpdating())
@@ -288,6 +337,33 @@ function connectBoardEvents(slug) {
             const payload = JSON.parse(event.data);
             const currentProjectID = getProjectId();
             if (typeof payload.projectId === "number" && currentProjectID !== null && payload.projectId !== currentProjectID) {
+                return;
+            }
+            if (payload.type === "todo.assigned") {
+                const inner = payload.payload;
+                if (!inner || typeof inner.todoId !== "number") {
+                    return;
+                }
+                const me = getUser();
+                if (!me) {
+                    return;
+                }
+                if (Number(inner.assigneeId) !== Number(me.id)) {
+                    return;
+                }
+                if (typeof inner.actorUserId === "number" && Number(inner.actorUserId) === Number(me.id)) {
+                    return;
+                }
+                const now = Date.now();
+                const last = assignmentToastLastByTodoId.get(inner.todoId);
+                if (last !== undefined && now - last < assignmentTodoDebounceMs) {
+                    return;
+                }
+                assignmentToastLastByTodoId.set(inner.todoId, now);
+                const t = typeof inner.title === "string" ? inner.title : "";
+                showToast(`Assigned: ${t || "Todo"}`);
+                playAssignmentSound();
+                showAssignmentDesktopNotification(t || "Todo");
                 return;
             }
             if (payload.type === "members_updated") {

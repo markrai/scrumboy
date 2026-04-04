@@ -77,3 +77,63 @@ func TestHub_UnsubscribeClosesSubscriberChannel(t *testing.T) {
 		t.Fatalf("timed out waiting for unsubscribe close")
 	}
 }
+
+func TestHub_EmitUserDeliversToUserSubscribers(t *testing.T) {
+	h := NewHub(4)
+	ch, _ := h.SubscribeUser(99)
+
+	h.EmitUser(99, []byte(`{"type":"todo.assigned","id":"x"}`))
+
+	select {
+	case msg := <-ch:
+		if string(msg) == "" {
+			t.Fatalf("expected non-empty event payload")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for user event")
+	}
+}
+
+func TestHub_EmitUserIsUserScoped(t *testing.T) {
+	h := NewHub(4)
+	chA, _ := h.SubscribeUser(1)
+	chB, _ := h.SubscribeUser(2)
+
+	h.EmitUser(1, []byte(`hello`))
+
+	select {
+	case msg := <-chA:
+		if string(msg) != "hello" {
+			t.Fatalf("unexpected payload %q", string(msg))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected event for user subscriber")
+	}
+
+	select {
+	case <-chB:
+		t.Fatalf("did not expect event for different user")
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+func TestHub_EmitUserBackpressureDropsSlowSubscriber(t *testing.T) {
+	h := NewHub(1)
+	ch, _ := h.SubscribeUser(5)
+
+	h.EmitUser(5, []byte("first"))
+	h.EmitUser(5, []byte("second"))
+
+	msg, ok := <-ch
+	if !ok {
+		t.Fatalf("expected buffered message before closure")
+	}
+	if string(msg) != "first" {
+		t.Fatalf("expected first buffered message, got %q", string(msg))
+	}
+
+	_, ok = <-ch
+	if ok {
+		t.Fatalf("expected subscriber channel to be closed after overflow")
+	}
+}

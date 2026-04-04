@@ -11,6 +11,7 @@ import { emit } from '../events.js';
 import { normalizeSprints } from '../sprints.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
+import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, } from '../core/assignmentNotify.js';
 /** Active keybinding capture listener (settings customization); removed when starting a new capture or on abort. */
 let keybindingCaptureKeydown = null;
 function resetKeybindingCaptureUI() {
@@ -1355,6 +1356,7 @@ export async function renderSettingsModal(options) {
         </button>
       </div>`;
     }).join("");
+    const desktopNotifyGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
     const customizationHTML = `
       <div class="settings-section">
         <div class="settings-section__title">Theme</div>
@@ -1373,6 +1375,12 @@ export async function renderSettingsModal(options) {
             <span>Light</span>
           </label>
         </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section__title">Desktop notifications</div>
+        <div class="settings-section__description muted">OS-level alerts when someone assigns you a todo (works when this tab is in the background).</div>
+        <p class="muted" style="margin: 8px 0;">${escapeHTML(getDesktopNotificationStatusDescription())}</p>
+        <button type="button" class="btn" id="desktopNotifyEnableBtn" ${desktopNotifyGranted ? "disabled" : ""}>${desktopNotifyGranted ? "Notifications enabled" : "Enable notifications"}</button>
       </div>
       <div class="settings-section settings-section--keybindings">
         <div class="settings-section__title">Keybindings</div>
@@ -2091,6 +2099,22 @@ export async function renderSettingsModal(options) {
         }, { signal });
     });
     if (getSettingsActiveTab() === "customization") {
+        const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
+        if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {
+            desktopNotifyBtn.addEventListener("click", async () => {
+                const r = await requestDesktopNotificationPermission();
+                if (r === "granted") {
+                    showToast("Desktop notifications enabled");
+                }
+                else if (r === "denied") {
+                    showToast("Notifications blocked — you can allow them in your browser settings for this site");
+                }
+                else {
+                    showToast("Notification permission not granted");
+                }
+                await renderSettingsModal();
+            }, { signal });
+        }
         resetKeybindingCaptureUI();
         document.querySelectorAll("[data-keybinding-capture]").forEach((btn) => {
             btn.addEventListener("click", () => {

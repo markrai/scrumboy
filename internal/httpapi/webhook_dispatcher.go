@@ -26,6 +26,8 @@ func (d *webhookDispatcher) OnEvent(_ context.Context, e eventbus.Event) {
 	if e.Type == "board.refresh_needed" || e.Type == "board.members_updated" {
 		return
 	}
+	// Fanout calls consumers synchronously in order (SSE bridge first). Do not block this path on
+	// DB or other slow work — enqueue in a goroutine so webhook ListWebhooksByProject cannot delay SSE.
 	go d.enqueueWork(e)
 }
 
