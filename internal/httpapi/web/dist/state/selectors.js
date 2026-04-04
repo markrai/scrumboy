@@ -64,6 +64,12 @@ export function getAuthStatusChecked() {
 export function getBootstrapAvailable() {
     return current._bootstrapAvailable;
 }
+export function getOidcEnabled() {
+    return !!current._oidcEnabled;
+}
+export function getLocalAuthEnabled() {
+    return current._localAuthEnabled !== false;
+}
 export function getProjectsTab() {
     return current.projectsTab;
 }

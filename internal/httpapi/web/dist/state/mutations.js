@@ -72,6 +72,12 @@ export function setAuthStatusChecked(checked) {
 export function setBootstrapAvailable(available) {
     current._bootstrapAvailable = available;
 }
+export function setOidcEnabled(enabled) {
+    current._oidcEnabled = enabled;
+}
+export function setLocalAuthEnabled(enabled) {
+    current._localAuthEnabled = enabled;
+}
 export function setProjectsTab(tab) {
     current.projectsTab = tab;
 }

@@ -3,6 +3,14 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** unless noted below.
 
 
+## [3.9.1] - 2026-04-04
+
+### Fixes
+
+- **OIDC auth UI (embedded `dist/`)** — Rebuilt **`internal/httpapi/web/dist/`** so the compiled bundle matches **`modules/`**: router applies **`oidcEnabled`** / **`localAuthEnabled`** from **`GET /api/auth/status`**, and the login screen shows **Continue with SSO** when OIDC is configured (previously only TypeScript sources were updated in **3.9.0**, so production builds loading **`dist/router.js`** did not surface the SSO button).
+
+---
+
 ## [3.9.0] - 2026-04-03
 
 ### Features
