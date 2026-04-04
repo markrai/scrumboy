@@ -1,7 +1,21 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
+
+## [3.11.0] - 2026-04-04
+
+### Features
+
+- **App-wide realtime (full mode)** — **`GET /api/me/realtime`** merges the user hub stream with **`hub.Subscribe`** for every project from **`ListProjects`** (one **`EventSource`** while logged in). **`Hub`** adds **`SubscribeUser`** / **`EmitUser`**; **`sseBridge`** duplicates **`todo.assigned`** to the assignee’s user channel (same JSON as the project emit). Wire events include stable **`id`** for client dedupe; **`refresh_needed`** from the assignment path uses a distinct composite id so it does not collide with the assignment payload.
+- **Frontend** — **`core/realtime.ts`**: global stream, **`seenEvents`** dedupe before side effects, **`emit('realtime:event')`**. Logged-in boards listen on the bus only (no per-board **`EventSource`**); anonymous boards keep **`/api/board/{slug}/events`**. Strict rule: never both connections at once.
+- **Unread badge** — **`core/notifications.ts`**: count, optional per-user **`localStorage`**, **`#global-notification-badge`** (bottom-right), **`notifications:updated`** bus; increments only after dedupe and assignee match; skips increment when already on that project’s board; clear on badge click; hydrate/clear on user change in **`router.ts`**.
+
+### Other
+
+- **Settings / Customization** — Desktop notification status copy uses a regular hyphen after **Enabled** (was an em dash). Assignment badge hover **`title`** / **`aria-label`**: *N todos have been assigned to you* (singular phrasing for count **1**).
+
+---
 
 ## [3.10.0] - 2026-04-04
 

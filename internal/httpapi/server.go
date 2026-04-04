@@ -375,18 +375,12 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 
 // PublishTodoAssigned emits a "todo.assigned" event through the event bus.
 // Designed to be passed to store.SetTodoAssignedPublisher.
-func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, from, to *int64, actorUserID int64) {
-	payload, _ := json.Marshal(struct {
-		ProjectID        int64  `json:"projectId"`
-		TodoID           int64  `json:"todoId"`
-		LocalID          int64  `json:"localId"`
-		FromAssigneeUID  *int64 `json:"fromAssigneeUserId"`
-		ToAssigneeUID    *int64 `json:"toAssigneeUserId"`
-		ActorUserID      int64  `json:"actorUserId"`
-	}{
+func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title string, from, to *int64, actorUserID int64) {
+	payload, _ := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:       projectID,
 		TodoID:          todoID,
 		LocalID:         localID,
+		Title:           title,
 		FromAssigneeUID: from,
 		ToAssigneeUID:   to,
 		ActorUserID:     actorUserID,

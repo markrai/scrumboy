@@ -295,7 +295,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		todo.AssignmentChanged = hadAssignee
 		if s.todoAssignedPublisher != nil && hadAssignee {
 			actorID, _ := UserIDFromContext(ctx)
-			s.todoAssignedPublisher(ctx, projectID, todoID, localID, nil, in.AssigneeUserID, actorID)
+			s.todoAssignedPublisher(ctx, projectID, todoID, localID, in.Title, nil, in.AssigneeUserID, actorID)
 		}
 		return todo, nil
 	}
@@ -715,7 +715,8 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 
 	if s.todoAssignedPublisher != nil && assignmentChanged && !isAnonymousBoard {
 		actorID, _ := UserIDFromContext(ctx)
-		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, oldAssignee, in.AssigneeUserID, actorID)
+		// Use committed title (existing.Title), not in.Title — partial PATCH may omit title.
+		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, oldAssignee, in.AssigneeUserID, actorID)
 	}
 
 	return existing, nil

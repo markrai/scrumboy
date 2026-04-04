@@ -1,5 +1,7 @@
 import { apiFetch } from './api.js';
 import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderNotFound, stopBoardEvents } from './views/index.js';
+import { startGlobalRealtime, stopGlobalRealtime } from './core/realtime.js';
+import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled } from './state/selectors.js';
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setOidcEnabled, setLocalAuthEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import type { Board } from './types.js';
@@ -88,8 +90,9 @@ async function routeOnce(): Promise<void> {
     if (oldUserId !== newUserId) {
       // User changed (logout, login as different user, or initial load)
       resetUserScopedState();
+      stopGlobalRealtime();
     }
-    
+
     setUser(newUser);
     setBootstrapAvailable(!!(st && st.bootstrapAvailable));
     setOidcEnabled(!!(st && st.oidcEnabled));
@@ -149,6 +152,21 @@ async function routeOnce(): Promise<void> {
       } catch (err) {
         // Ignore errors
       }
+    }
+
+    if (getAuthStatusAvailable()) {
+      initNotificationBadge();
+      const sessionUser = getUser();
+      if (sessionUser) {
+        hydrateNotificationsForUser(sessionUser.id);
+        startGlobalRealtime();
+      } else {
+        stopGlobalRealtime();
+        hydrateNotificationsForUser(null);
+      }
+    } else {
+      stopGlobalRealtime();
+      hydrateNotificationsForUser(null);
     }
   }
 

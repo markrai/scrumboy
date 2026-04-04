@@ -224,8 +224,8 @@ type Todo struct {
 	UpdatedAt        time.Time
 	DoneAt           *time.Time // Last completion time (Unix ms). Set on transition into DONE; never cleared on reopen.
 
-	// AssignmentChanged is set by UpdateTodo when the assignee was modified in this mutation.
-	// Not persisted; used by callers to gate SSE emissions.
+	// AssignmentChanged is set when this mutation changed assignee handling: CreateTodo (initial assignee on create)
+	// or UpdateTodo (assignee field changed). Not persisted; used by callers to gate SSE emissions.
 	AssignmentChanged bool `json:"-"`
 }
 
