@@ -16,7 +16,14 @@ let permissions = {
     canEditNotes: false,
     canEditAssignment: false,
     canDeleteTodo: false,
+    canEditTitle: false,
+    canEditStatus: false,
+    canSubmitTodo: false,
+    canEditLinks: false,
 };
+export function getTodoFormPermissions() {
+    return { ...permissions };
+}
 let linksSearchDebounce = null;
 let linksSearchController = null;
 let lastLoadedLinksForTodo = null;
@@ -514,12 +521,17 @@ function renderLinksChips(slug, currentLocalId, onNavigateToLinkedTodo) {
     const container = document.getElementById("linksChips");
     if (!container)
         return;
-    const outbound = currentLinks.outbound.map((item) => `
+    const outbound = currentLinks.outbound.map((item) => {
+        const removeBtn = permissions.canEditLinks
+            ? `<button type="button" class="tag-chip-remove" data-link-remove="${item.localId}" aria-label="Remove link">×</button>`
+            : "";
+        return `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="outbound">
       <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
-      <button type="button" class="tag-chip-remove" data-link-remove="${item.localId}" aria-label="Remove link">×</button>
+      ${removeBtn}
     </span>
-  `).join("");
+  `;
+    }).join("");
     const inbound = currentLinks.inbound.map((item) => `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="inbound">
       <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
@@ -591,6 +603,13 @@ function setupLinkedStoriesSearch(slug, currentLocalId, onNavigateToLinkedTodo) 
     linkAutocompleteSuggestion = null;
     removeLinksAutocompleteOverlay();
     clearLinkSearchInFlight();
+    if (!permissions.canEditLinks) {
+        input.disabled = true;
+        input.placeholder = "";
+        if (addBtn)
+            addBtn.disabled = true;
+        return;
+    }
     const submitLinkFromInput = async () => {
         const directLocalID = parseLocalIDFromLinkInput(input.value);
         const target = linkAutocompleteSuggestion?.localId ?? directLocalID;
@@ -726,17 +745,29 @@ export async function openTodoDialog(opts) {
     const board = getBoard();
     const anonymousBoard = isAnonymousBoard(board);
     const isMaintainer = (opts.role ?? "") === "maintainer" || anonymousBoard;
+    const roleNorm = (opts.role ?? "").toLowerCase();
+    const isContributor = roleNorm === "contributor" || roleNorm === "editor";
     const currentUser = getUser();
     const isAssignedToMe = currentUser &&
         mode === "edit" &&
         Number(todo?.assigneeUserId) === Number(currentUser.id);
+    const canEditTitle = isMaintainer;
+    const canEditStatus = isMaintainer;
+    const canSubmitTodo = mode === "create"
+        ? isMaintainer || anonymousBoard
+        : isMaintainer || (!anonymousBoard && isContributor && !!isAssignedToMe);
+    const canEditLinks = isMaintainer || (!anonymousBoard && isContributor);
     permissions = {
         canChangeSprint: isMaintainer && !anonymousBoard,
         canChangeEstimation: isMaintainer,
         canEditTags: isMaintainer,
-        canEditNotes: isMaintainer || (!anonymousBoard && opts.role === "contributor" && !!isAssignedToMe),
+        canEditNotes: isMaintainer || (!anonymousBoard && isContributor && !!isAssignedToMe),
         canEditAssignment: isMaintainer && !anonymousBoard,
         canDeleteTodo: isMaintainer,
+        canEditTitle,
+        canEditStatus,
+        canSubmitTodo,
+        canEditLinks,
     };
     // Fetch available tags for autocomplete
     // Authenticated boards: fetch ALL user-owned tags from full library (/api/tags/mine)
@@ -959,7 +990,7 @@ export async function openTodoDialog(opts) {
         setDates(undefined, undefined);
     }
     else {
-        todoDialogTitle.textContent = "Edit Todo";
+        todoDialogTitle.textContent = permissions.canSubmitTodo ? "Edit Todo" : "View Todo";
         todoTitle.value = todo.title || "";
         todoBody.value = todo.body || "";
         todoTags.value = "";
@@ -993,6 +1024,11 @@ export async function openTodoDialog(opts) {
     if (addTagBtn)
         addTagBtn.disabled = !permissions.canEditTags;
     todoBody.readOnly = !permissions.canEditNotes;
+    todoTitle.readOnly = !permissions.canEditTitle;
+    todoStatus.disabled = !permissions.canEditStatus;
+    const saveTodoBtn = document.getElementById("saveTodoBtn");
+    if (saveTodoBtn)
+        saveTodoBtn.disabled = !permissions.canSubmitTodo;
     // 4. Tag chips: clear and re-render so old chips (with "×" from previous maintainer open) are not reused
     const tagsChips = document.getElementById("tagsChips");
     if (tagsChips)
@@ -1022,7 +1058,12 @@ export async function openTodoDialog(opts) {
             return;
         }
         if (mode === "edit") {
-            todoStatus?.focus();
+            if (!permissions.canSubmitTodo) {
+                closeTodoBtn?.focus();
+            }
+            else {
+                todoStatus?.focus();
+            }
         }
         else {
             todoTitle.focus();

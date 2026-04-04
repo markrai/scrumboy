@@ -3,6 +3,20 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.1] - 2026-04-04
+
+### Fixes
+
+- **Project list** — Invited users now see **authenticated** temporary boards (with a creator) they belong to via **`project_members`**. The membership branch does not apply when **`creator_user_id`** is null, so anonymous paste boards never appear from stray membership rows alone.
+- **Todo dialog (roles)** — **Viewers:** read-only title, status, body, links; Save off; “View Todo” when nothing to save. **Contributors:** title and status locked (body-only when assigned, same as API). Submit handler checks permissions; viewers no longer enter bulk-select via Ctrl/Cmd+click on cards.
+
+### Other
+
+- **Keycloak (local dev)** — `docs/keycloak/realm-scrumboy-local.json` import + `docs/keycloak/README.md` (issuer env, public-client secret placeholder).
+- **Tests** — `internal/store/list_projects_test.go` for temp-board listing.
+
+---
+
 ## [3.11.0] - 2026-04-04
 
 ### Features

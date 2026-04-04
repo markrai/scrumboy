@@ -822,6 +822,11 @@ function attachBoardDelegationHandlers(): void {
       const todo = findTodoInBoard(id);
       if (!todo) return;
       if (me.ctrlKey || me.metaKey) {
+        if (currentUserProjectRole === "viewer") {
+          clearTodoMultiSelection();
+          openTodoFromCard(todo);
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         toggleTodoSelection(id);

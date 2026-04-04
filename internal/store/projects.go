@@ -259,18 +259,23 @@ func (s *Store) ListProjects(ctx context.Context) ([]ProjectListEntry, error) {
 		if !ok {
 			return nil, ErrUnauthorized
 		}
-		// Full mode: show creator's temp boards + user's durable projects (via project_members).
-		// Include current user's role: temp boards => maintainer; durable => from project_members.
-		// IMPORTANT: Anonymous temp boards (creator_user_id IS NULL) are intentionally excluded.
+		// Full mode: show creator's temp boards + authenticated temp boards shared via project_members + durable projects (via project_members).
+		// Role: temp creator => maintainer; otherwise use project_members (covers invited maintainers/contributors/viewers).
+		// IMPORTANT: Anonymous temp boards (creator_user_id IS NULL) stay out of listings — including the membership branch below
+		// so orphan project_members rows cannot surface unowned paste boards in a user's project list.
 		rows, err = s.db.QueryContext(ctx, `
 SELECT p.id, p.name, p.image, p.slug, p.dominant_color, p.estimation_mode, p.default_sprint_weeks, p.owner_user_id, p.creator_user_id, p.last_activity_at, p.expires_at, p.created_at, p.updated_at,
-  CASE WHEN p.expires_at IS NOT NULL THEN 'maintainer' ELSE (SELECT pm.role FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ? LIMIT 1) END AS role
+  CASE
+    WHEN p.expires_at IS NOT NULL AND p.creator_user_id = ? THEN 'maintainer'
+    ELSE (SELECT pm.role FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ? LIMIT 1)
+  END AS role
 FROM projects p
 WHERE (
   (p.expires_at IS NOT NULL AND p.creator_user_id = ?) OR
-  (p.expires_at IS NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?))
+  (p.expires_at IS NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?)) OR
+  (p.expires_at IS NOT NULL AND p.creator_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?))
 ) AND p.import_batch_id IS NULL
-ORDER BY p.updated_at DESC, p.id DESC`, userID, userID, userID)
+ORDER BY p.updated_at DESC, p.id DESC`, userID, userID, userID, userID, userID)
 	} else {
 		// Anonymous mode: no authenticated project listings - return empty result explicitly
 		rows, err = s.db.QueryContext(ctx, `

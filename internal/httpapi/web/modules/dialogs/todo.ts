@@ -12,14 +12,21 @@ const BOUND_FLAG = Symbol('bound');
 // Module-level state for tag autocomplete
 let tagInputHandlersSetup = false;
 
-// Permission map computed on each dialog open (used only in this file for UI state)
-type TodoDialogPermissions = {
+// Permission map computed on each dialog open (used by this module and app.js submit guard)
+export type TodoDialogPermissions = {
   canChangeSprint: boolean;
   canChangeEstimation: boolean;
   canEditTags: boolean;
   canEditNotes: boolean;
   canEditAssignment: boolean;
   canDeleteTodo: boolean;
+  /** Title and workflow column (status); maintainers (and anonymous boards) only — not contributors/viewers. */
+  canEditTitle: boolean;
+  canEditStatus: boolean;
+  /** POST/PATCH/move from the dialog; contributors only when assigned (body edit); viewers never. */
+  canSubmitTodo: boolean;
+  /** Add/remove linked stories; contributor+ on authenticated boards, or anonymous-board maintainer-equivalent. */
+  canEditLinks: boolean;
 };
 let permissions: TodoDialogPermissions = {
   canChangeSprint: false,
@@ -28,7 +35,15 @@ let permissions: TodoDialogPermissions = {
   canEditNotes: false,
   canEditAssignment: false,
   canDeleteTodo: false,
+  canEditTitle: false,
+  canEditStatus: false,
+  canSubmitTodo: false,
+  canEditLinks: false,
 };
+
+export function getTodoFormPermissions(): Readonly<TodoDialogPermissions> {
+  return { ...permissions };
+}
 let linksSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 let linksSearchController: AbortController | null = null;
 let lastLoadedLinksForTodo: { slug: string; localId: number } | null = null;
@@ -576,12 +591,17 @@ function renderLinksChips(
   const container = document.getElementById("linksChips");
   if (!container) return;
 
-  const outbound = currentLinks.outbound.map((item) => `
+  const outbound = currentLinks.outbound.map((item) => {
+    const removeBtn = permissions.canEditLinks
+      ? `<button type="button" class="tag-chip-remove" data-link-remove="${item.localId}" aria-label="Remove link">×</button>`
+      : "";
+    return `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="outbound">
       <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
-      <button type="button" class="tag-chip-remove" data-link-remove="${item.localId}" aria-label="Remove link">×</button>
+      ${removeBtn}
     </span>
-  `).join("");
+  `;
+  }).join("");
 
   const inbound = currentLinks.inbound.map((item) => `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="inbound">
@@ -659,6 +679,13 @@ function setupLinkedStoriesSearch(
   linkAutocompleteSuggestion = null;
   removeLinksAutocompleteOverlay();
   clearLinkSearchInFlight();
+
+  if (!permissions.canEditLinks) {
+    input.disabled = true;
+    input.placeholder = "";
+    if (addBtn) addBtn.disabled = true;
+    return;
+  }
 
   const submitLinkFromInput = async (): Promise<void> => {
     const directLocalID = parseLocalIDFromLinkInput(input.value);
@@ -794,18 +821,31 @@ export async function openTodoDialog(opts: { mode: string; todo?: any; status?: 
   const board = getBoard();
   const anonymousBoard = isAnonymousBoard(board);
   const isMaintainer = (opts.role ?? "") === "maintainer" || anonymousBoard;
+  const roleNorm = (opts.role ?? "").toLowerCase();
+  const isContributor = roleNorm === "contributor" || roleNorm === "editor";
   const currentUser = getUser();
   const isAssignedToMe =
     currentUser &&
     mode === "edit" &&
     Number(todo?.assigneeUserId) === Number(currentUser.id);
+  const canEditTitle = isMaintainer;
+  const canEditStatus = isMaintainer;
+  const canSubmitTodo =
+    mode === "create"
+      ? isMaintainer || anonymousBoard
+      : isMaintainer || (!anonymousBoard && isContributor && !!isAssignedToMe);
+  const canEditLinks = isMaintainer || (!anonymousBoard && isContributor);
   permissions = {
     canChangeSprint: isMaintainer && !anonymousBoard,
     canChangeEstimation: isMaintainer,
     canEditTags: isMaintainer,
-    canEditNotes: isMaintainer || (!anonymousBoard && opts.role === "contributor" && !!isAssignedToMe),
+    canEditNotes: isMaintainer || (!anonymousBoard && isContributor && !!isAssignedToMe),
     canEditAssignment: isMaintainer && !anonymousBoard,
     canDeleteTodo: isMaintainer,
+    canEditTitle,
+    canEditStatus,
+    canSubmitTodo,
+    canEditLinks,
   };
 
   // Fetch available tags for autocomplete
@@ -1025,7 +1065,7 @@ export async function openTodoDialog(opts: { mode: string; todo?: any; status?: 
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "none";
     setDates(undefined, undefined);
   } else {
-    (todoDialogTitle as HTMLElement).textContent = "Edit Todo";
+    (todoDialogTitle as HTMLElement).textContent = permissions.canSubmitTodo ? "Edit Todo" : "View Todo";
     (todoTitle as HTMLInputElement).value = todo.title || "";
     (todoBody as HTMLTextAreaElement).value = todo.body || "";
     (todoTags as HTMLInputElement).value = "";
@@ -1056,6 +1096,10 @@ export async function openTodoDialog(opts: { mode: string; todo?: any; status?: 
   if (tagInput) tagInput.disabled = !permissions.canEditTags;
   if (addTagBtn) (addTagBtn as HTMLButtonElement).disabled = !permissions.canEditTags;
   (todoBody as HTMLTextAreaElement).readOnly = !permissions.canEditNotes;
+  (todoTitle as HTMLInputElement).readOnly = !permissions.canEditTitle;
+  (todoStatus as HTMLSelectElement).disabled = !permissions.canEditStatus;
+  const saveTodoBtn = document.getElementById("saveTodoBtn") as HTMLButtonElement | null;
+  if (saveTodoBtn) saveTodoBtn.disabled = !permissions.canSubmitTodo;
 
   // 4. Tag chips: clear and re-render so old chips (with "×" from previous maintainer open) are not reused
   const tagsChips = document.getElementById("tagsChips");
@@ -1092,7 +1136,11 @@ export async function openTodoDialog(opts: { mode: string; todo?: any; status?: 
       return;
     }
     if (mode === "edit") {
-      (todoStatus as HTMLSelectElement)?.focus();
+      if (!permissions.canSubmitTodo) {
+        (closeTodoBtn as HTMLButtonElement)?.focus();
+      } else {
+        (todoStatus as HTMLSelectElement)?.focus();
+      }
     } else {
       (todoTitle as HTMLInputElement).focus();
     }
