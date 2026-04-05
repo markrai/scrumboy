@@ -18,7 +18,9 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request, rest []strin
 			writeError(w, http.StatusServiceUnavailable, "PUSH_UNAVAILABLE", "Web Push is not configured", nil)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"publicKey": s.vapidPublicKey})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"publicKey": s.vapidPublicKey,
+		})
 		return
 	}
 

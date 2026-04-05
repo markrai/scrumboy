@@ -3,6 +3,28 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.3] - 2026-04-05
+
+### Features
+
+- **Board (mobile)** — When a todo drag starts, lane tabs briefly flash (**300ms**) so it is obvious they accept drops; tab labels stay readable above the drop overlays.
+- **Web Push (PWA)** — After sign-in, the client auto-subscribes when **both** VAPID keys are set on the server; **`SCRUMBOY_PUSH_BY_DEFAULT_IF_VAPID`** removed (VAPID presence is the operator signal). Per-user autosub progress in **localStorage** with resilient retry when the permission prompt is dismissed vs blocked.
+
+### Fixes
+
+- **Board (drag-and-drop)** — Success toast **“Todo moved to …”** only when the todo changes **lane**; same-lane reorder no longer shows a redundant toast (lane titles still come from the board workflow, not hardcoded names).
+
+### Improvements
+
+- **Settings → Customization** — **Background notifications (PWA)** is grayed out with a one-line notice when Web Push is unavailable (no VAPID on the server, or anonymous board mode).
+
+### Documentation
+
+- **`docs/mcp.md`** — MCP documentation added/expanded.
+- **`docs/pwa.md`** — Push flow and env vars aligned with streamlined enablement; key generation note includes **[VapidKeys.com](https://vapidkeys.com/)**.
+
+---
+
 ## [3.11.2] - 2026-04-04
 
 ### Fixes

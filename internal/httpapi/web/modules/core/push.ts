@@ -1,11 +1,36 @@
 /**
- * Web Push subscription (VAPID). Enable only from explicit user action (e.g. Settings toggle).
+ * Web Push subscription (VAPID). After login, auto-subscribe when the server exposes a VAPID public key
+ * (both keys configured). Optional override: Settings -> turn Web Push off or back on for this browser.
  */
 
 import { apiFetch } from '../api.js';
 import { getAppVersion } from '../utils.js';
 
 const LS_PUSH = 'scrumboy_push_enabled';
+/** Per signed-in user: durable auto-subscribe outcomes only (`done` | `denied`). See maybeAutoSubscribePushAfterLogin. */
+const LS_PUSH_AUTOSUB_USER_PREFIX = 'scrumboy_push_autosub_v1_u';
+const AUTOSUB_STATE_DONE = 'done';
+const AUTOSUB_STATE_DENIED = 'denied';
+
+function autosubKeyForUser(userId: number): string {
+  return `${LS_PUSH_AUTOSUB_USER_PREFIX}${userId}`;
+}
+
+function getAutosubState(userId: number): string | null {
+  try {
+    return localStorage.getItem(autosubKeyForUser(userId));
+  } catch {
+    return null;
+  }
+}
+
+function setAutosubState(userId: number, state: typeof AUTOSUB_STATE_DONE | typeof AUTOSUB_STATE_DENIED): void {
+  try {
+    localStorage.setItem(autosubKeyForUser(userId), state);
+  } catch {
+    /* ignore */
+  }
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -37,6 +62,78 @@ function pushDebug(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * If GET /api/push/vapid-public-key returns a public key (VAPID configured), attempt automatic
+ * subscription for this user (may prompt for notification permission). Scoped per `userId` in
+ * localStorage; only marks a durable outcome for success, already subscribed, or explicit permission
+ * denied - not for transient failures or dismissed prompts (`default`), so a later visit can retry.
+ */
+export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<void> {
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return;
+  }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return;
+  }
+
+  const prior = getAutosubState(userId);
+  if (prior === AUTOSUB_STATE_DONE || prior === AUTOSUB_STATE_DENIED) {
+    return;
+  }
+
+  try {
+    const keyResp = await fetch('/api/push/vapid-public-key', { credentials: 'same-origin' });
+    if (!keyResp.ok) {
+      return;
+    }
+    const j = (await keyResp.json()) as { publicKey?: string };
+    if (!j.publicKey) {
+      return;
+    }
+  } catch {
+    return;
+  }
+
+  try {
+    if (await isPushSubscribed()) {
+      setAutosubState(userId, AUTOSUB_STATE_DONE);
+      return;
+    }
+  } catch {
+    /* ignore - treat as transient, do not persist */
+  }
+
+  if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+    setAutosubState(userId, AUTOSUB_STATE_DENIED);
+    return;
+  }
+
+  let ok = false;
+  try {
+    ok = await subscribeToPush();
+  } catch {
+    /* network / server errors during subscribe POST - retry on a later load */
+    return;
+  }
+
+  if (ok) {
+    setAutosubState(userId, AUTOSUB_STATE_DONE);
+    return;
+  }
+
+  if (typeof Notification !== 'undefined') {
+    if (Notification.permission === 'denied') {
+      setAutosubState(userId, AUTOSUB_STATE_DENIED);
+      return;
+    }
+    if (Notification.permission === 'default') {
+      /* dismissed prompt or still undecided - allow retry on a future page load */
+      return;
+    }
+  }
+  /* granted but subscribe failed (e.g. SW registration, push subscribe) - retry later */
 }
 
 /** True if this browser has an active push subscription for our SW. */

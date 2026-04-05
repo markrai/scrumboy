@@ -1358,6 +1358,24 @@ export async function renderSettingsModal(options) {
       </div>`;
     }).join("");
     const desktopNotifyGranted = typeof Notification !== "undefined" && Notification.permission === "granted";
+    let pushVapidServerReady = false;
+    if (showProfileTab) {
+        try {
+            const r = await fetch('/api/push/vapid-public-key', { credentials: 'same-origin' });
+            if (r.ok) {
+                const j = await r.json();
+                pushVapidServerReady = !!(j && typeof j.publicKey === 'string' && j.publicKey.trim() !== '');
+            }
+        }
+        catch {
+            pushVapidServerReady = false;
+        }
+    }
+    const pushPwaDisabledNotice = !pushVapidServerReady
+        ? (showProfileTab
+            ? 'Web Push needs VAPID keys set - See pwa.md)'
+            : 'Web Push is not available in anonymous mode.')
+        : '';
     const customizationHTML = `
       <div class="settings-section">
         <div class="settings-section__title">Theme</div>
@@ -1383,12 +1401,13 @@ export async function renderSettingsModal(options) {
         <p class="muted" style="margin: 8px 0;">${escapeHTML(getDesktopNotificationStatusDescription())}</p>
         <button type="button" class="btn" id="desktopNotifyEnableBtn" ${desktopNotifyGranted ? "disabled" : ""}>${desktopNotifyGranted ? "Notifications enabled" : "Enable notifications"}</button>
       </div>
-      <div class="settings-section">
+      ${pushPwaDisabledNotice ? `<p class="settings-push-vapid-notice" role="status">${escapeHTML(pushPwaDisabledNotice)}</p>` : ''}
+      <div class="settings-section settings-section--push-pwa${!pushVapidServerReady ? ' settings-section--push-pwa-disabled' : ''}">
         <div class="settings-section__title">Background notifications (PWA)</div>
-        <div class="settings-section__description muted">Alerts when someone assigns you a todo while this app is in the background or closed (best on an installed PWA). Requires the server to be configured with VAPID keys.</div>
+        <div class="settings-section__description muted">Alerts when someone assigns you a todo while this app is in the background or closed (best on an installed PWA). Requires VAPID keys on the server. When configured, sign-in triggers an automatic subscribe attempt (the browser may ask for permission). Use the toggle to turn Web Push off or back on for this browser only.</div>
         <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
-          <input type="checkbox" id="pushNotifyToggle" />
-          <span>Enable Web Push</span>
+          <input type="checkbox" id="pushNotifyToggle" ${!pushVapidServerReady ? 'disabled' : ''} />
+          <span>Web Push on this device</span>
         </label>
         <p class="muted" id="pushNotifyHint" style="margin:8px 0 0 0;font-size:13px;"></p>
       </div>
@@ -2128,7 +2147,13 @@ export async function renderSettingsModal(options) {
         const pushToggle = document.getElementById("pushNotifyToggle");
         const pushHint = document.getElementById("pushNotifyHint");
         if (pushToggle) {
-            if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+            if (!pushVapidServerReady) {
+                pushToggle.checked = false;
+                if (pushHint) {
+                    pushHint.textContent = "";
+                }
+            }
+            else if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
                 pushToggle.disabled = true;
                 if (pushHint) {
                     pushHint.textContent = "Web Push is not supported in this browser.";

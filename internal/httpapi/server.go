@@ -303,8 +303,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		swJS:                      swJS,
 		mcpHandler:                opts.MCPHandler,
 		vapidPublicKey:            vapidPub,
-		pushVapidConfigured:       pushVapidConfigured,
-		pushDebug:                 pushDebug,
+		pushVapidConfigured: pushVapidConfigured,
+		pushDebug:           pushDebug,
 	}
 }
 

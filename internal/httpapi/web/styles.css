@@ -1438,6 +1438,23 @@ body {
   font-size: var(--fs-13);
 }
 
+.settings-push-vapid-notice {
+  margin: 0 0 var(--s-16) 0;
+  padding: var(--s-10) var(--s-12);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  border-radius: var(--radius-8);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.settings-section--push-pwa-disabled {
+  opacity: 0.48;
+  pointer-events: none;
+  user-select: none;
+}
+
 .settings-tabs {
   display: flex;
   gap: var(--s-8);
@@ -3134,6 +3151,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     pointer-events: auto;
   }
 
+  /* Labels above the tinted drop overlays; hits pass through to .mobile-tab-drop */
+  .mobile-board-wrapper.dragging .mobile-tab {
+    z-index: 11;
+    pointer-events: none;
+  }
+
   .mobile-board-wrapper.dragging .mobile-tab-drop {
     pointer-events: auto;
     opacity: 0.3;
@@ -3143,6 +3166,13 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   /* On hover-over during drag, glow using the tab's lane color */
   .mobile-tab-drop.sortable-drag-over,
   .mobile-tab-drop:has(.card--ghost-tab) {
+    opacity: 1 !important;
+    background: var(--lane-color) !important;
+    box-shadow: 0 0 16px 6px var(--lane-shadow);
+  }
+
+  /* At drag start: all tabs pulse at full hover glow briefly (mobile discoverability) */
+  .mobile-board-wrapper.dragging #mobileTabDropZones.mobile-tab-drops--intro-glow .mobile-tab-drop {
     opacity: 1 !important;
     background: var(--lane-color) !important;
     box-shadow: 0 0 16px 6px var(--lane-shadow);
