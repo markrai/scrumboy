@@ -3,6 +3,19 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.4] - 2026-04-05
+
+### Features
+
+- **Assignments — notification panel** — The bottom-right badge **toggles** an inbox panel (`#global-notification-panel`) instead of clearing the count on click. **localStorage** list **`scrumboy_notifications_v1_{userId}`** stores up to **100** assignment rows (prepend, dedupe by event **id** or **projectId + todoId + type**), with **read/unread** state and **“Mark all as read”**. Rows open **`/{slug}?openTodoId={id}`** via the SPA router when a project slug is known; slugs are filled from the existing **projects** cache (dashboard / project list / board load) or resolved on demand when needed.
+- **Web Push (PWA)** — **Service worker** **`notificationclick`** opens **`/{projectSlug}?openTodoId={todoId}`** when the push payload includes both fields (otherwise **`/`**), focusing an existing window and using **`WindowClient.navigate`** when supported.
+
+### Improvements
+
+- **Assignments — performance** — Inbox updates stay off the realtime hot path: **no `GET /api/projects`** during **`todo.assigned`** handling; **debounced** persistence and **`notifications:updated`** emissions reduce **localStorage** and UI churn during bursty SSE. Legacy **`incrementUnread()`** / **`scrumboy_unread_v1_`** remain for migration; the badge count is driven by **unread rows in the inbox list**.
+
+---
+
 ## [3.11.3] - 2026-04-05
 
 ### Features

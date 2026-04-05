@@ -1,5 +1,6 @@
 import { app, settingsDialog } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
+import { ingestProjectsFromApp } from '../core/notifications.js';
 import { navigate } from '../router.js';
 import type { Board } from '../types.js';
 import { escapeHTML, showToast, renderUserAvatar } from '../utils.js';
@@ -369,6 +370,7 @@ export async function renderProjects(): Promise<void> {
   }
   // Cache for settings modal: in full mode tags are global but the legacy tag APIs require a project id.
   setProjects(projects);
+  ingestProjectsFromApp(projects);
   if (!getProjectsTab()) {
     setProjectsTab(localStorage.getItem("projectsTab") || "projects");
   }

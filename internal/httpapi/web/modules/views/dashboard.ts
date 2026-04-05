@@ -22,6 +22,7 @@ import {
   setDashboardSummary,
   setDashboardTodos,
 } from '../state/mutations.js';
+import { ingestProjectsFromApp } from '../core/notifications.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { DashboardProject, DashboardSummary, DashboardTodo, DashboardTodosResponse, Project, SprintSectionInfo } from '../types.js';
 import { temporaryBoardsNavLabel } from '../nav-labels.js';
@@ -543,6 +544,7 @@ export async function renderDashboard(): Promise<void> {
     setDashboardNextCursor(todosResp.nextCursor || null);
     if (projects) {
       setProjects(projects);
+      ingestProjectsFromApp(projects);
     }
   } catch (err: unknown) {
     const e = err as Error & { data?: { error?: { details?: { detail?: string } } } };

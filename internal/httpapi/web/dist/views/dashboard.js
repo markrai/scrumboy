@@ -4,6 +4,7 @@ import { navigate } from '../router.js';
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { getDashboardLoading, getDashboardNextCursor, getDashboardSummary, getDashboardTodos, getDashboardTodoSort, getProjects, getUser, } from '../state/selectors.js';
 import { appendDashboardTodos, setDashboardLoading, setDashboardNextCursor, setDashboardTodoSort, setProjects, setProjectsTab, setSettingsActiveTab, setDashboardSummary, setDashboardTodos, } from '../state/mutations.js';
+import { ingestProjectsFromApp } from '../core/notifications.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { temporaryBoardsNavLabel } from '../nav-labels.js';
 const BOUND_FLAG = Symbol('bound');
@@ -484,6 +485,7 @@ export async function renderDashboard() {
         setDashboardNextCursor(todosResp.nextCursor || null);
         if (projects) {
             setProjects(projects);
+            ingestProjectsFromApp(projects);
         }
     }
     catch (err) {

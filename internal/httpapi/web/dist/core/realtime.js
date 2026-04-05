@@ -6,7 +6,7 @@ import { emit } from '../events.js';
 import { getAuthStatusAvailable, getProjectId, getUser } from '../state/selectors.js';
 import { showToast } from '../utils.js';
 import { playAssignmentSound, showAssignmentDesktopNotification } from './assignmentNotify.js';
-import { incrementUnread } from './notifications.js';
+import { appendTodoAssignedNotification, incrementUnread } from './notifications.js';
 import { isSseDebugEnabled, SseConnectionManager } from './sse-client.js';
 import { scheduleResumeResync } from './foreground-resume.js';
 const MAX_SEEN_IDS = 500;
@@ -147,6 +147,7 @@ function handleTodoAssignedSideEffects(parsed) {
     showToast(`Assigned: ${t || 'Todo'}`);
     playAssignmentSound();
     showAssignmentDesktopNotification(t || 'Todo');
+    appendTodoAssignedNotification(parsed);
     const pid = typeof parsed.projectId === 'number' ? parsed.projectId : null;
     const cur = getProjectId();
     if (pid !== null && cur !== null && pid === cur) {

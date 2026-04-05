@@ -1,5 +1,6 @@
 import { app, settingsDialog } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
+import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
 import { escapeHTML, showToast, renderUserAvatar, renderAvatarContent, processImageFile, sanitizeHexColor } from '../utils.js';
@@ -1517,6 +1518,9 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   const minimalTopbar = !!opts.minimalTopbar;
   setProjectId(projectId);
   setBoard(board);
+  if (board.project?.id != null && board.project.slug) {
+    ingestProjectsFromApp([board.project]);
+  }
 
   // Role is now resolved in loadBoardBySlug before calling renderBoardFromData.
   // Initialize DnD if user is maintainer (role already set).

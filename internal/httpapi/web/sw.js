@@ -109,11 +109,29 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Tap opens/focuses the app generically. No per-project or per-todo routing until a notification center exists.
+// Tap: deep-link to assigned todo when push data includes projectSlug + todoId; else home.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil(
     (async () => {
+      const d = event.notification.data || {};
+      const slug = d.projectSlug;
+      const todoId = d.todoId;
+      const slugOk = typeof slug === 'string' && slug.length > 0;
+      const todoOk =
+        (typeof todoId === 'number' && Number.isFinite(todoId)) ||
+        (typeof todoId === 'string' && todoId.length > 0);
+      let targetUrl = self.location.origin + '/';
+      if (slugOk && todoOk) {
+        const idPart = typeof todoId === 'number' ? String(todoId) : todoId;
+        targetUrl =
+          self.location.origin +
+          '/' +
+          encodeURIComponent(slug) +
+          '?openTodoId=' +
+          encodeURIComponent(idPart);
+      }
+
       const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       for (const client of clientsArr) {
         try {
@@ -121,6 +139,11 @@ self.addEventListener('notificationclick', (event) => {
           if (u.origin === self.location.origin) {
             const focused = await client.focus();
             if (focused) {
+              if (typeof focused.navigate === 'function') {
+                await focused.navigate(targetUrl);
+              } else {
+                await self.clients.openWindow(targetUrl);
+              }
               return focused;
             }
           }
@@ -128,7 +151,7 @@ self.addEventListener('notificationclick', (event) => {
           /* ignore */
         }
       }
-      return self.clients.openWindow(self.location.origin + '/');
+      return self.clients.openWindow(targetUrl);
     })()
   );
 });
