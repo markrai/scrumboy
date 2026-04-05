@@ -37,6 +37,12 @@ type Config struct {
 	OIDCClientSecret     string
 	OIDCRedirectURL      string // Absolute callback URL
 	OIDCLocalAuthDisabled bool   // If true, disable password login/bootstrap when OIDC is configured
+
+	// Web Push VAPID (optional). Both public and private must be set for push subscribe and assignment notifications.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubscriber string // mailto: URL for VAPID JWT sub (e.g. mailto:ops@example.com)
+	PushDebug       bool   // SCRUMBOY_DEBUG_PUSH=1
 }
 
 func FromEnv() Config {
@@ -74,6 +80,11 @@ func FromEnv() Config {
 		OIDCClientSecret:     strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_SECRET")),
 		OIDCRedirectURL:      strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_REDIRECT_URL")),
 		OIDCLocalAuthDisabled: strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED"))) == "true",
+
+		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PUBLIC_KEY")),
+		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PRIVATE_KEY")),
+		VAPIDSubscriber: strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_SUBSCRIBER")),
+		PushDebug:       strings.TrimSpace(os.Getenv("SCRUMBOY_DEBUG_PUSH")) == "1",
 	}
 }
 

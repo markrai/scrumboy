@@ -71,6 +71,68 @@ self.addEventListener('message', (event) => {
   }
 });
 
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    (async () => {
+      let data = {};
+      try {
+        if (event.data) {
+          data = await event.data.json();
+        }
+      } catch (e) {
+        /* ignore */
+      }
+      if (data.type !== 'todo_assigned' && !data.scrumboyPush) {
+        return;
+      }
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientsList) {
+        if (client.visibilityState === 'visible' && client.focused) {
+          if (data.debug) {
+            console.log('[push] skipped (foreground window focused)');
+          }
+          return;
+        }
+      }
+      const title = data.title || 'Scrumboy';
+      const body = typeof data.body === 'string' ? data.body : '';
+      // Stash payload for a future cross-project notification center / deep-links — not used for click routing yet.
+      await self.registration.showNotification(title, {
+        body: body || undefined,
+        data: {
+          type: data.type,
+          projectSlug: data.projectSlug,
+          todoId: data.todoId,
+        },
+      });
+    })()
+  );
+});
+
+// Tap opens/focuses the app generically. No per-project or per-todo routing until a notification center exists.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    (async () => {
+      const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of clientsArr) {
+        try {
+          const u = new URL(client.url);
+          if (u.origin === self.location.origin) {
+            const focused = await client.focus();
+            if (focused) {
+              return focused;
+            }
+          }
+        } catch (e) {
+          /* ignore */
+        }
+      }
+      return self.clients.openWindow(self.location.origin + '/');
+    })()
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;

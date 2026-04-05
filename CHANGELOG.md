@@ -3,6 +3,27 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.2] - 2026-04-04
+
+### Fixes
+
+- **Web Push (PWA)** — **`notificationclick`** focuses an existing same-origin app window or opens **`/`**; no navigation by **`projectSlug`** / **`todoId`** (payload fields kept for a future notification center). **`focus()`** that does not return a client still falls through to **`openWindow('/')`**.
+- **Assignment chime (mobile)** — **`notify.mp3`** added; **`assignmentNotify`** uses **`<audio><source>`** with **MP3 first** and **Ogg** second so **iOS Safari** (no Vorbis/Ogg decode) can play the sound. Toast and unread badge behavior unchanged.
+
+### Improvements
+
+- **Web Push API** — **`GET /api/push/vapid-public-key`** and **`POST /api/push/subscribe`** return **503** when VAPID is incomplete (either public or private key missing). **`DELETE /api/push/unsubscribe`** unchanged so rows can still be removed if keys are later disabled.
+- **Router (anonymous mode)** — Initial load no longer calls **`unsubscribeFromPush`** (push is unavailable in anonymous mode; avoids pointless local churn).
+
+### Other
+
+- **README** — VAPID-related env table dashes normalized (encoding-safe).
+- **Dependencies** — **`github.com/SherClockHolmes/webpush-go`** listed as a direct module dependency; **`go mod tidy`**.
+- **Comments** — **`router.ts`**: logged-out push cleanup is best-effort per device; server DELETE may fail after auth teardown; stale DB rows are pruned when send fails.
+- **Tests** — **`internal/httpapi/push_routes_test.go`**, **`push_notify_test.go`** for push routes and notifier edge cases.
+
+---
+
 ## [3.11.1] - 2026-04-04
 
 ### Fixes

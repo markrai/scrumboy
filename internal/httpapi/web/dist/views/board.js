@@ -16,6 +16,8 @@ import { emit, on, off } from '../events.js';
 import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, recordLocalMutation, isBulkUpdating, } from '../realtime/guard.js';
 import { initBulkEditDialog, openBulkEditDialog } from '../dialogs/bulk-edit.js';
 import { playAssignmentSound, showAssignmentDesktopNotification } from '../core/assignmentNotify.js';
+import { SseConnectionManager } from '../core/sse-client.js';
+import { registerAnonymousSseRestart } from '../core/realtime.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -27,7 +29,7 @@ let boardLoadSequence = 0;
 let resolverController = null;
 let highlightRafId = null;
 let highlightTimeoutId = null;
-let boardEventsSource = null;
+let boardAnonSseManager = null;
 let boardEventsSlug = null;
 /** Logged-in path: listen on app bus instead of owning EventSource. */
 let boardRealtimeBound = false;
@@ -274,9 +276,9 @@ function disconnectBoardEvents() {
         off('realtime:event', onBoardRealtimeEvent);
         boardRealtimeBound = false;
     }
-    if (boardEventsSource) {
-        boardEventsSource.close();
-        boardEventsSource = null;
+    if (boardAnonSseManager) {
+        boardAnonSseManager.stop();
+        boardAnonSseManager = null;
     }
     boardEventsSlug = null;
 }
@@ -291,7 +293,7 @@ function refetchBoardFromRealtime(slug) {
     ensureRealtimeForceRefreshTimer();
 }
 function connectBoardEvents(slug) {
-    if (boardEventsSlug === slug && (boardEventsSource !== null || boardRealtimeBound)) {
+    if (boardEventsSlug === slug && (boardAnonSseManager !== null || boardRealtimeBound)) {
         debugLog("connectBoardEvents skipped (already connected for slug)", slug);
         return;
     }
@@ -303,96 +305,101 @@ function connectBoardEvents(slug) {
         boardRealtimeBound = true;
         return;
     }
-    const source = new EventSource(`/api/board/${slug}/events`);
-    boardEventsSource = source;
-    source.onopen = () => {
-        debugLog("SSE onopen fired", slug);
-        if (isBulkUpdating())
-            return;
-        if (boardEventsSource !== source || getSlug() !== slug) {
-            debugLog("SSE onopen refetch skipped: source/slug mismatch", slug);
-            return;
-        }
-        // Slug-aware: do not refetch if we navigated to a different board.
-        if (lastSuccessfulBoardLoadSlug !== slug) {
-            debugLog("SSE onopen refetch skipped: lastSuccessfulBoardLoadSlug !== slug", slug);
-            return;
-        }
-        // Do not refetch while initial load for this slug is still in flight.
-        if (initialBoardLoadInFlight === slug) {
-            debugLog("SSE onopen refetch skipped: initialBoardLoadInFlight for slug", slug);
-            return;
-        }
-        // Skip refetch if we just loaded (avoids duplicate fetch ~400ms after navigation).
-        if (Date.now() - lastBoardLoadTimestamp < SSE_ONOPEN_SKIP_MS) {
-            debugLog("SSE onopen refetch skipped: within SSE_ONOPEN_SKIP_MS", slug);
-            return;
-        }
-        refetchBoardFromRealtime(slug);
-    };
-    source.onmessage = (event) => {
-        if (boardEventsSource !== source || getSlug() !== slug)
-            return;
-        try {
-            const payload = JSON.parse(event.data);
-            const currentProjectID = getProjectId();
-            if (typeof payload.projectId === "number" && currentProjectID !== null && payload.projectId !== currentProjectID) {
-                return;
-            }
-            if (payload.type === "todo.assigned") {
-                const inner = payload.payload;
-                if (!inner || typeof inner.todoId !== "number") {
-                    return;
-                }
-                const me = getUser();
-                if (!me) {
-                    return;
-                }
-                if (Number(inner.assigneeId) !== Number(me.id)) {
-                    return;
-                }
-                if (typeof inner.actorUserId === "number" && Number(inner.actorUserId) === Number(me.id)) {
-                    return;
-                }
-                const now = Date.now();
-                const last = assignmentToastLastByTodoId.get(inner.todoId);
-                if (last !== undefined && now - last < assignmentTodoDebounceMs) {
-                    return;
-                }
-                assignmentToastLastByTodoId.set(inner.todoId, now);
-                const t = typeof inner.title === "string" ? inner.title : "";
-                showToast(`Assigned: ${t || "Todo"}`);
-                playAssignmentSound();
-                showAssignmentDesktopNotification(t || "Todo");
-                return;
-            }
-            if (payload.type === "members_updated") {
-                invalidateMembersCache(payload.projectId);
-                emit("members-updated", { projectId: payload.projectId });
-                return;
-            }
+    const url = new URL(`/api/board/${slug}/events`, window.location.origin).toString();
+    const manager = new SseConnectionManager(url, {
+        label: `board/${slug}/events`,
+        onOpen: () => {
+            debugLog("SSE onopen fired", slug);
             if (isBulkUpdating())
                 return;
-            if (payload.type === "refresh_needed") {
-                refetchBoardFromRealtime(slug);
+            if (boardAnonSseManager !== manager || getSlug() !== slug) {
+                debugLog("SSE onopen refetch skipped: manager/slug mismatch", slug);
+                return;
+            }
+            if (lastSuccessfulBoardLoadSlug !== slug) {
+                debugLog("SSE onopen refetch skipped: lastSuccessfulBoardLoadSlug !== slug", slug);
+                return;
+            }
+            if (initialBoardLoadInFlight === slug) {
+                debugLog("SSE onopen refetch skipped: initialBoardLoadInFlight for slug", slug);
+                return;
+            }
+            if (Date.now() - lastBoardLoadTimestamp < SSE_ONOPEN_SKIP_MS) {
+                debugLog("SSE onopen refetch skipped: within SSE_ONOPEN_SKIP_MS", slug);
                 return;
             }
             refetchBoardFromRealtime(slug);
-        }
-        catch {
-            if (!isBulkUpdating())
+        },
+        onMessage: (event) => {
+            if (boardAnonSseManager !== manager || getSlug() !== slug)
+                return;
+            try {
+                const payload = JSON.parse(event.data);
+                if (payload.type === "ping") {
+                    return;
+                }
+                const currentProjectID = getProjectId();
+                if (typeof payload.projectId === "number" && currentProjectID !== null && payload.projectId !== currentProjectID) {
+                    return;
+                }
+                if (payload.type === "todo.assigned") {
+                    const inner = payload.payload;
+                    if (!inner || typeof inner.todoId !== "number") {
+                        return;
+                    }
+                    const me = getUser();
+                    if (!me) {
+                        return;
+                    }
+                    if (Number(inner.assigneeId) !== Number(me.id)) {
+                        return;
+                    }
+                    if (typeof inner.actorUserId === "number" && Number(inner.actorUserId) === Number(me.id)) {
+                        return;
+                    }
+                    const now = Date.now();
+                    const last = assignmentToastLastByTodoId.get(inner.todoId);
+                    if (last !== undefined && now - last < assignmentTodoDebounceMs) {
+                        return;
+                    }
+                    assignmentToastLastByTodoId.set(inner.todoId, now);
+                    const t = typeof inner.title === "string" ? inner.title : "";
+                    showToast(`Assigned: ${t || "Todo"}`);
+                    playAssignmentSound();
+                    showAssignmentDesktopNotification(t || "Todo");
+                    return;
+                }
+                if (payload.type === "members_updated") {
+                    invalidateMembersCache(payload.projectId);
+                    emit("members-updated", { projectId: payload.projectId });
+                    return;
+                }
+                if (isBulkUpdating())
+                    return;
+                if (payload.type === "refresh_needed") {
+                    refetchBoardFromRealtime(slug);
+                    return;
+                }
                 refetchBoardFromRealtime(slug);
-        }
-    };
-    source.onerror = () => {
-        // Browser handles reconnect automatically for EventSource.
-        if (boardEventsSource !== source)
-            return;
-    };
+            }
+            catch {
+                if (!isBulkUpdating())
+                    refetchBoardFromRealtime(slug);
+            }
+        },
+    });
+    boardAnonSseManager = manager;
+    manager.open();
 }
 export function stopBoardEvents() {
     disconnectBoardEvents();
 }
+// One registration for app lifetime: handler always reads current `boardAnonSseManager` (null when disconnected).
+registerAnonymousSseRestart((reason) => {
+    if (useMergedGlobalRealtime())
+        return;
+    boardAnonSseManager?.restartRequested(reason);
+});
 // Helper function for tag color
 function getTagColor(tagName) {
     return getTagColors()[tagName] || null;

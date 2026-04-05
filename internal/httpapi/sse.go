@@ -2,12 +2,25 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 )
 
 const heartbeatInterval = 25 * time.Second
+
+// ssePingPayload is sent as a data: line on the heartbeat ticker so browser EventSource
+// clients can observe keepalives (comment-only : heartbeat is not exposed as onmessage).
+var ssePingPayload = mustJSON(map[string]string{"type": "ping"})
+
+func mustJSON(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
 
 func (s *Server) handleBoardEvents(w http.ResponseWriter, r *http.Request, projectID int64) {
 	flusher, ok := w.(http.Flusher)
@@ -35,6 +48,9 @@ func (s *Server) handleBoardEvents(w http.ResponseWriter, r *http.Request, proje
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", ssePingPayload); err != nil {
+				return
+			}
 			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
 				return
 			}
@@ -125,6 +141,9 @@ func (s *Server) handleMeRealtime(w http.ResponseWriter, r *http.Request, ctx co
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", ssePingPayload); err != nil {
+				return
+			}
 			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
 				return
 			}

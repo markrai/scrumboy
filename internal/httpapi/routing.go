@@ -83,6 +83,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case "webhooks":
 		s.handleWebhooks(w, r, parts[2:])
 		return
+	case "push":
+		s.handlePush(w, r, parts[2:])
+		return
 	default:
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return

@@ -2,6 +2,14 @@ let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: stri
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
 let boardLimitPerLaneFloor = 20;
 
+/** Coalesce rapid invalidates (e.g. resume resync + SSE-driven refresh) to reduce duplicate fetches. */
+const INVALIDATE_COALESCE_MS = 700;
+let lastInvalidate: { key: string; at: number } | null = null;
+
+function invalidateCoalesceKey(slug: string, tag?: string, search?: string, sprintId?: string | null): string {
+  return `${slug}\t${tag ?? ''}\t${search ?? ''}\t${sprintId ?? ''}`;
+}
+
 export function registerBoardRefresher(
   fn: (slug: string, tag?: string, search?: string, sprintId?: string | null) => Promise<void>
 ) {
@@ -14,6 +22,12 @@ export function registerSprintsRefresher(fn: (slug: string) => Promise<void>) {
 
 export async function invalidateBoard(slug: string, tag?: string, search?: string, sprintId?: string | null) {
   if (!refreshBoard) return;
+  const now = Date.now();
+  const key = invalidateCoalesceKey(slug, tag, search, sprintId);
+  if (lastInvalidate && lastInvalidate.key === key && now - lastInvalidate.at < INVALIDATE_COALESCE_MS) {
+    return;
+  }
+  lastInvalidate = { key, at: now };
   await refreshBoard(slug, tag, search, sprintId);
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
+	"scrumboy/internal/tlsredirect"
 )
 
 func main() {
@@ -93,6 +95,10 @@ func main() {
 		MCPHandler:     mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode}),
 		EncryptionKey:  encKey,
 		OIDCService:    oidcSvc,
+		VAPIDPublicKey:   cfg.VAPIDPublicKey,
+		VAPIDPrivateKey:  cfg.VAPIDPrivateKey,
+		VAPIDSubscriber:  cfg.VAPIDSubscriber,
+		PushDebug:        cfg.PushDebug,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 
@@ -125,12 +131,30 @@ func main() {
 		logger.Printf("  Intranet: %s://%s:%s/", protocol, cfg.IntranetIP, port)
 		if useTLS {
 			logger.Printf("HTTPS enabled (secure context).")
+			logger.Printf("Plain http:// on this port is redirected to https:// (same host and path).")
 		} else {
 			logger.Printf("HTTP mode. To enable HTTPS for intranet: install mkcert, run mkcert -install, then mkcert %s localhost", cfg.IntranetIP)
 		}
 		var err error
 		if useTLS {
-			err = httpServer.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+			cert, tlsErr := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+			if tlsErr != nil {
+				logger.Fatalf("load tls: %v", tlsErr)
+			}
+			tlsCfg := &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS12,
+			}
+			baseLn, listenErr := net.Listen("tcp", cfg.BindAddr)
+			if listenErr != nil {
+				logger.Fatalf("listen: %v", listenErr)
+			}
+			ln := &tlsredirect.Listener{
+				Inner:     baseLn,
+				TLSConfig: tlsCfg,
+				Log:       logger,
+			}
+			err = httpServer.Serve(ln)
 		} else {
 			err = httpServer.ListenAndServe()
 		}

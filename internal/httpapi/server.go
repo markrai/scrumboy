@@ -29,23 +29,29 @@ type Options struct {
 	EncryptionKey []byte
 
 	OIDCService *oidc.Service // nil when OIDC is not configured
+
+	// Web Push (optional). When public/private VAPID keys are empty, push APIs and notify consumer are disabled.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubscriber string // VAPID JWT "sub" (e.g. mailto:ops@example.com); default in notifier if empty
+	PushDebug       bool   // Log push send/skip (also SCRUMBOY_DEBUG_PUSH in config)
 }
 
 type Server struct {
 	store storeAPI
 
-	logger  *log.Logger
-	maxBody int64
-	mode    string // "full" or "anonymous"
-	hub            *Hub
-	sink           EventSink
-	fanout         *eventbus.Fanout
-	webhookQueue   *webhookQueue
-	webhookCancel  context.CancelFunc
+	logger        *log.Logger
+	maxBody       int64
+	mode          string // "full" or "anonymous"
+	hub           *Hub
+	sink          EventSink
+	fanout        *eventbus.Fanout
+	webhookQueue  *webhookQueue
+	webhookCancel context.CancelFunc
 
 	authRateLimit *ratelimit.Limiter
 
-	encryptionKey []byte // for password reset tokens; nil if not configured
+	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
 
 	passwordResetAdminLimiter *ratelimit.Limiter // 10 resets/min per admin
@@ -56,6 +62,10 @@ type Server struct {
 	landingHTML []byte
 	swJS        []byte // Service worker with version injected
 	mcpHandler  http.Handler
+
+	vapidPublicKey      string
+	pushVapidConfigured bool // both public and private keys non-empty; subscribe and push notify use this
+	pushDebug           bool
 }
 
 type storeAPI interface {
@@ -192,6 +202,11 @@ type storeAPI interface {
 	ListWebhooks(ctx context.Context, userID int64) ([]store.Webhook, error)
 	DeleteWebhook(ctx context.Context, userID, webhookID int64) error
 	ListWebhooksByProject(ctx context.Context, projectID int64) ([]store.WebhookRow, error)
+
+	UpsertPushSubscription(ctx context.Context, userID int64, endpoint, p256dh, auth string, userAgent *string) error
+	DeletePushSubscription(ctx context.Context, userID int64, endpoint string) error
+	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error
+	ListPushSubscriptionsByUser(ctx context.Context, userID int64) ([]store.PushSubscription, error)
 }
 
 //go:embed web/**
@@ -251,7 +266,12 @@ func NewServer(st storeAPI, opts Options) *Server {
 	sseBridgeConsumer := newSSEBridge(hub)
 	whQueue := newWebhookQueue(logger)
 	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
-	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher)
+	pushDebug := opts.PushDebug
+	vapidPub := strings.TrimSpace(opts.VAPIDPublicKey)
+	vapidPriv := strings.TrimSpace(opts.VAPIDPrivateKey)
+	pushVapidConfigured := vapidPub != "" && vapidPriv != ""
+	pushNotifier := newPushNotifier(st, logger, opts.VAPIDPublicKey, opts.VAPIDPrivateKey, opts.VAPIDSubscriber, pushDebug)
+	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier)
 	whWorker := newWebhookWorker(whQueue, logger)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	go whWorker.Run(workerCtx)
@@ -282,6 +302,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		landingHTML:               landingHTML,
 		swJS:                      swJS,
 		mcpHandler:                opts.MCPHandler,
+		vapidPublicKey:            vapidPub,
+		pushVapidConfigured:       pushVapidConfigured,
+		pushDebug:                 pushDebug,
 	}
 }
 

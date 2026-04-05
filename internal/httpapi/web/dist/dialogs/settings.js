@@ -12,6 +12,7 @@ import { normalizeSprints } from '../sprints.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, } from '../core/assignmentNotify.js';
+import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 /** Active keybinding capture listener (settings customization); removed when starting a new capture or on abort. */
 let keybindingCaptureKeydown = null;
 function resetKeybindingCaptureUI() {
@@ -1382,6 +1383,15 @@ export async function renderSettingsModal(options) {
         <p class="muted" style="margin: 8px 0;">${escapeHTML(getDesktopNotificationStatusDescription())}</p>
         <button type="button" class="btn" id="desktopNotifyEnableBtn" ${desktopNotifyGranted ? "disabled" : ""}>${desktopNotifyGranted ? "Notifications enabled" : "Enable notifications"}</button>
       </div>
+      <div class="settings-section">
+        <div class="settings-section__title">Background notifications (PWA)</div>
+        <div class="settings-section__description muted">Alerts when someone assigns you a todo while this app is in the background or closed (best on an installed PWA). Requires the server to be configured with VAPID keys.</div>
+        <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="pushNotifyToggle" />
+          <span>Enable Web Push</span>
+        </label>
+        <p class="muted" id="pushNotifyHint" style="margin:8px 0 0 0;font-size:13px;"></p>
+      </div>
       <div class="settings-section settings-section--keybindings">
         <div class="settings-section__title">Keybindings</div>
         <div class="settings-section__description muted">Click a key to record a new shortcut. Press Esc to cancel while listening.</div>
@@ -2114,6 +2124,40 @@ export async function renderSettingsModal(options) {
                 }
                 await renderSettingsModal();
             }, { signal });
+        }
+        const pushToggle = document.getElementById("pushNotifyToggle");
+        const pushHint = document.getElementById("pushNotifyHint");
+        if (pushToggle) {
+            if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+                pushToggle.disabled = true;
+                if (pushHint) {
+                    pushHint.textContent = "Web Push is not supported in this browser.";
+                }
+            }
+            else {
+                isPushSubscribed()
+                    .then((on) => {
+                    pushToggle.checked = on;
+                })
+                    .catch(() => { });
+                pushToggle.addEventListener("change", async () => {
+                    if (pushToggle.checked) {
+                        const ok = await subscribeToPush();
+                        if (!ok) {
+                            pushToggle.checked = false;
+                            showToast("Could not enable Web Push. Allow notifications or check server VAPID configuration.");
+                        }
+                        else {
+                            showToast("Web Push enabled");
+                        }
+                    }
+                    else {
+                        await unsubscribeFromPush();
+                        showToast("Web Push disabled");
+                    }
+                    await renderSettingsModal();
+                }, { signal });
+            }
         }
         resetKeybindingCaptureUI();
         document.querySelectorAll("[data-keybinding-capture]").forEach((btn) => {

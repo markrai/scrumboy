@@ -1,10 +1,13 @@
 import { apiFetch } from './api.js';
 import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderNotFound, stopBoardEvents } from './views/index.js';
-import { startGlobalRealtime, stopGlobalRealtime } from './core/realtime.js';
+import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from './core/realtime.js';
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
+import { unsubscribeFromPush } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled } from './state/selectors.js';
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setOidcEnabled, setLocalAuthEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { loadUserTheme } from './theme.js';
+// Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
+initForegroundLifecycle();
 let isRouting = false;
 let rerouteRequested = false;
 let lastHandledBoardRoute = null;
@@ -144,9 +147,15 @@ async function routeOnce() {
             else {
                 stopGlobalRealtime();
                 hydrateNotificationsForUser(null);
+                // Logged-out (full mode): best-effort remove this browser's push endpoint only. Server DELETE may
+                // fail after auth is gone (harmless); local PushManager.unsubscribe still runs. A stale DB row is
+                // acceptable—backend prunes the endpoint on failed send (4xx from the push service). Swallow errors
+                // so startup routing never depends on push teardown.
+                void unsubscribeFromPush().catch(() => { });
             }
         }
         else {
+            // Anonymous mode: push API is unavailable; do not call unsubscribe here (would local-unsub without a server delete and is unnecessary).
             stopGlobalRealtime();
             hydrateNotificationsForUser(null);
         }

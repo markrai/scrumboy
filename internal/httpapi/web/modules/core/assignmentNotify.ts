@@ -6,9 +6,18 @@ let audio: HTMLAudioElement | null = null;
 
 function getNotifyAudio(): HTMLAudioElement {
   if (!audio) {
-    audio = new Audio();
-    audio.src = "/static/sounds/notify.ogg";
+    // iOS Safari does not decode Ogg/Vorbis; MP3 first so mobile gets a playable source. Desktop keeps Ogg as fallback.
+    audio = document.createElement("audio");
     audio.preload = "auto";
+    const mp3 = document.createElement("source");
+    mp3.src = "/static/sounds/notify.mp3";
+    mp3.type = "audio/mpeg";
+    const ogg = document.createElement("source");
+    ogg.src = "/static/sounds/notify.ogg";
+    ogg.type = "audio/ogg";
+    audio.appendChild(mp3);
+    audio.appendChild(ogg);
+    audio.load();
   }
   return audio;
 }

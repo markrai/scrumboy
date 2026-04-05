@@ -29,32 +29,26 @@ if exist "cert.pem" (
 where mkcert >nul 2>&1
 if %ERRORLEVEL% neq 0 (
   echo mkcert not found - will use HTTP.
-  echo To enable HTTPS for intranet: install mkcert, run mkcert -install, then mkcert 192.168.1.250 localhost
+  echo To enable HTTPS for intranet: install mkcert, run mkcert -install, then:
+  echo   mkcert -cert-file cert.pem -key-file key.pem 192.168.1.250 localhost
   echo.
   goto :show_urls
 )
-if not exist "cert.pem" (
-  echo Generating HTTPS certificates...
-  mkcert 192.168.1.250 localhost
-  if %ERRORLEVEL% neq 0 (
-    echo WARNING: Certificate generation failed - will use HTTP
-  ) else (
-    for %%f in ("192.168.1.250+*.pem") do ( if not exist "cert.pem" move "%%f" "cert.pem" >nul 2>&1 )
-    for %%f in ("192.168.1.250+*-key.pem") do ( if not exist "key.pem" move "%%f" "key.pem" >nul 2>&1 )
-    for %%f in ("localhost*.pem") do ( if not exist "cert.pem" move "%%f" "cert.pem" >nul 2>&1 )
-    for %%f in ("localhost*-key.pem") do ( if not exist "key.pem" move "%%f" "key.pem" >nul 2>&1 )
-    if exist "cert.pem" if exist "key.pem" set USE_HTTPS=1
-  )
-  echo.
+REM Write straight to cert.pem/key.pem. Wildcard rename breaks on Windows ^(see f.bat^).
+echo Generating HTTPS certificates ^(or refreshing if one of cert.pem/key.pem is missing^)...
+mkcert -cert-file cert.pem -key-file key.pem 192.168.1.250 localhost
+if %ERRORLEVEL% neq 0 (
+  echo WARNING: Certificate generation failed - will use HTTP
 ) else (
-  set USE_HTTPS=1
+  if exist "cert.pem" if exist "key.pem" set USE_HTTPS=1
 )
+echo.
 
 :show_urls
 if %USE_HTTPS%==1 (
   echo Server URLs ^(HTTPS^):
-  echo   Local:    http://127.0.0.1:8080/
-  echo   Intranet: http://192.168.1.250:8080/
+  echo   Local:    https://127.0.0.1:8080/
+  echo   Intranet: https://192.168.1.250:8080/
 ) else (
   echo Server URLs ^(HTTP^):
   echo   Local:    http://127.0.0.1:8080/

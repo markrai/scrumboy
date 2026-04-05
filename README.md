@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.11.1-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.11.2-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
@@ -288,6 +288,10 @@ None of these are required for basic startup.
 | `SCRUMBOY_TLS_CERT` | `./cert.pem` - TLS cert for HTTPS |
 | `SCRUMBOY_TLS_KEY` | `./key.pem` - TLS key for HTTPS |
 | `SCRUMBOY_INTRANET_IP` | `192.168.1.250` - LAN IP to log for intranet access |
+| `SCRUMBOY_VAPID_PUBLIC_KEY` | (empty) - **Web Push.** VAPID public key (URL-safe base64). Required together with private key for PWA background assignment notifications. |
+| `SCRUMBOY_VAPID_PRIVATE_KEY` | (empty) - VAPID private key (URL-safe base64). |
+| `SCRUMBOY_VAPID_SUBSCRIBER` | (empty) - Contact URL for VAPID `sub` claim (e.g. `mailto:ops@example.com`). Defaults to `mailto:scrumboy@localhost` if unset. |
+| `SCRUMBOY_DEBUG_PUSH` | (empty) - Set to `1` to log push send/prune on the server. |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 
