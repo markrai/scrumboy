@@ -9,6 +9,7 @@ export let dragJustEnded = false;
 let moveInFlight = false;
 let activeSortables = [];
 let boardColumns = columnsSpec();
+let mobileTabIntroGlowTimer = null;
 // Board column specification
 export function columnsSpec() {
     return [
@@ -40,6 +41,24 @@ function setMobileDragging(active) {
     const wrapper = document.querySelector(".mobile-board-wrapper");
     if (wrapper)
         wrapper.classList.toggle("dragging", active);
+}
+function clearMobileTabIntroGlow() {
+    if (mobileTabIntroGlowTimer != null) {
+        clearTimeout(mobileTabIntroGlowTimer);
+        mobileTabIntroGlowTimer = null;
+    }
+    document.getElementById("mobileTabDropZones")?.classList.remove("mobile-tab-drops--intro-glow");
+}
+function startMobileTabIntroGlow() {
+    const zones = document.getElementById("mobileTabDropZones");
+    if (!zones)
+        return;
+    clearMobileTabIntroGlow();
+    zones.classList.add("mobile-tab-drops--intro-glow");
+    mobileTabIntroGlowTimer = setTimeout(() => {
+        mobileTabIntroGlowTimer = null;
+        zones.classList.remove("mobile-tab-drops--intro-glow");
+    }, 500);
 }
 function parseLocalId(el) {
     if (!el)
@@ -94,6 +113,7 @@ async function getFilteredLaneEndMove(status) {
     return { afterId, beforeId };
 }
 export function initDnD() {
+    clearMobileTabIntroGlow();
     // Destroy previous instances to prevent duplicate handlers
     for (const s of activeSortables) {
         try {
@@ -107,6 +127,7 @@ export function initDnD() {
         dragInProgress = false;
         dragJustEnded = true;
         setTimeout(() => { dragJustEnded = false; }, 250);
+        clearMobileTabIntroGlow();
         setMobileDragging(false);
         recordBoardInteraction();
         if (moveInFlight)
@@ -187,6 +208,7 @@ export function initDnD() {
                 dragInProgress = true;
                 dragJustEnded = false;
                 setMobileDragging(true);
+                startMobileTabIntroGlow();
                 recordBoardInteraction();
             },
             onEnd: handleEnd,

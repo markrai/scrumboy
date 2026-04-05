@@ -14,6 +14,7 @@ export let dragJustEnded = false;
 let moveInFlight = false;
 let activeSortables: any[] = [];
 let boardColumns: Array<{ key: string; title: string; color?: string }> = columnsSpec();
+let mobileTabIntroGlowTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Board column specification
 export function columnsSpec(): Array<{ key: string; title: string; color?: string }> {
@@ -49,6 +50,25 @@ function updateCardColorOptimistic(card: Element, targetKey: string, targetColor
 function setMobileDragging(active: boolean): void {
   const wrapper = document.querySelector(".mobile-board-wrapper");
   if (wrapper) wrapper.classList.toggle("dragging", active);
+}
+
+function clearMobileTabIntroGlow(): void {
+  if (mobileTabIntroGlowTimer != null) {
+    clearTimeout(mobileTabIntroGlowTimer);
+    mobileTabIntroGlowTimer = null;
+  }
+  document.getElementById("mobileTabDropZones")?.classList.remove("mobile-tab-drops--intro-glow");
+}
+
+function startMobileTabIntroGlow(): void {
+  const zones = document.getElementById("mobileTabDropZones");
+  if (!zones) return;
+  clearMobileTabIntroGlow();
+  zones.classList.add("mobile-tab-drops--intro-glow");
+  mobileTabIntroGlowTimer = setTimeout(() => {
+    mobileTabIntroGlowTimer = null;
+    zones.classList.remove("mobile-tab-drops--intro-glow");
+  }, 1000);
 }
 
 function parseLocalId(el: Element | null): number | null {
@@ -109,6 +129,7 @@ async function getFilteredLaneEndMove(status: string): Promise<{ afterId: number
 }
 
 export function initDnD(): void {
+  clearMobileTabIntroGlow();
   // Destroy previous instances to prevent duplicate handlers
   for (const s of activeSortables) {
     try { s.destroy(); } catch (_) { /* element may already be removed */ }
@@ -121,6 +142,7 @@ export function initDnD(): void {
     dragInProgress = false;
     dragJustEnded = true;
     setTimeout(() => { dragJustEnded = false; }, 250);
+    clearMobileTabIntroGlow();
     setMobileDragging(false);
     recordBoardInteraction();
 
@@ -203,6 +225,7 @@ export function initDnD(): void {
         dragInProgress = true;
         dragJustEnded = false;
         setMobileDragging(true);
+        startMobileTabIntroGlow();
         recordBoardInteraction();
       },
       onEnd: handleEnd,
