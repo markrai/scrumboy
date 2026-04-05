@@ -158,6 +158,7 @@ export function initDnD(): void {
       const toStatus = list.getAttribute("data-status");
       if (!toStatus) return;
 
+      const fromStatus = evt.from?.getAttribute("data-status");
       const isTabDrop = !!list.closest("#mobileTabDropZones");
       const filteredSubsetActive = hasActiveBoardSubsetFilter();
 
@@ -195,8 +196,11 @@ export function initDnD(): void {
         if (cardEl) updateCardColorOptimistic(cardEl, toStatus, targetCol.color);
       }
 
-      const laneTitle = targetCol?.title || toStatus;
-      showToast(`Todo moved to ${laneTitle}`);
+      const laneChanged = fromStatus != null && fromStatus !== toStatus;
+      if (laneChanged) {
+        const laneTitle = targetCol?.title ?? toStatus;
+        showToast(`Todo moved to ${laneTitle}`);
+      }
 
       // Rely on SSE todo_moved event (debounced ~400ms) to refresh board; avoid double fetch.
     } catch (err: any) {
