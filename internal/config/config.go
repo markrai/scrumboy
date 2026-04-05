@@ -31,18 +31,20 @@ type Config struct {
 	IntranetIP string
 
 	// OIDC (optional). All four required fields must be set to enable OIDC login.
-	OIDCIssuer           string // Raw issuer URL from SCRUMBOY_OIDC_ISSUER
-	OIDCIssuerCanonical  string // Normalized once: trimmed, no trailing slash
-	OIDCClientID         string
-	OIDCClientSecret     string
-	OIDCRedirectURL      string // Absolute callback URL
+	OIDCIssuer            string // Raw issuer URL from SCRUMBOY_OIDC_ISSUER
+	OIDCIssuerCanonical   string // Normalized once: trimmed, no trailing slash
+	OIDCClientID          string
+	OIDCClientSecret      string
+	OIDCRedirectURL       string // Absolute callback URL
 	OIDCLocalAuthDisabled bool   // If true, disable password login/bootstrap when OIDC is configured
 
 	// Web Push VAPID (optional). Both public and private must be set for push subscribe and assignment notifications.
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
-	VAPIDSubscriber string // mailto: URL for VAPID JWT sub (e.g. mailto:ops@example.com)
+	VAPIDSubscriber string // mailto: or https: URL for VAPID JWT sub; plain email normalized to mailto:
 	PushDebug       bool   // SCRUMBOY_DEBUG_PUSH=1
+	// PushByDefaultIfVapid: when true and VAPID keys are set, the SPA may auto-subscribe Web Push after login per signed-in user (same browser); see docs/pwa.md.
+	PushByDefaultIfVapid bool
 }
 
 func FromEnv() Config {
@@ -74,17 +76,18 @@ func FromEnv() Config {
 		TLSKeyFile:  getenv("SCRUMBOY_TLS_KEY", "./key.pem"),
 		IntranetIP:  getenv("SCRUMBOY_INTRANET_IP", "192.168.1.250"),
 
-		OIDCIssuer:           strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
-		OIDCIssuerCanonical:  normalizeIssuer(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
-		OIDCClientID:         strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_ID")),
-		OIDCClientSecret:     strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_SECRET")),
-		OIDCRedirectURL:      strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_REDIRECT_URL")),
+		OIDCIssuer:            strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
+		OIDCIssuerCanonical:   normalizeIssuer(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
+		OIDCClientID:          strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_ID")),
+		OIDCClientSecret:      strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_SECRET")),
+		OIDCRedirectURL:       strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_REDIRECT_URL")),
 		OIDCLocalAuthDisabled: strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED"))) == "true",
 
-		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PUBLIC_KEY")),
-		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PRIVATE_KEY")),
-		VAPIDSubscriber: strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_SUBSCRIBER")),
-		PushDebug:       strings.TrimSpace(os.Getenv("SCRUMBOY_DEBUG_PUSH")) == "1",
+		VAPIDPublicKey:       strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PUBLIC_KEY")),
+		VAPIDPrivateKey:      strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PRIVATE_KEY")),
+		VAPIDSubscriber:      NormalizeVAPIDSubscriber(os.Getenv("SCRUMBOY_VAPID_SUBSCRIBER")),
+		PushDebug:            strings.TrimSpace(os.Getenv("SCRUMBOY_DEBUG_PUSH")) == "1",
+		PushByDefaultIfVapid: truthyEnv(os.Getenv("SCRUMBOY_PUSH_BY_DEFAULT_IF_VAPID")),
 	}
 }
 
@@ -134,6 +137,11 @@ func ResolveDataDir(dataDirOverride string) (string, string, error) {
 	}
 
 	return dataDir, dbPath, nil
+}
+
+func truthyEnv(v string) bool {
+	s := strings.TrimSpace(strings.ToLower(v))
+	return s == "1" || s == "true" || s == "yes"
 }
 
 func getenv(key, defaultValue string) string {

@@ -22,6 +22,7 @@
   - [Encryption key (optional)](#encryption-key-optional)
   - [OIDC / SSO login (optional)](#oidc--sso-login-optional)
   - [TLS / HTTPS (optional)](#tls--https-optional)
+  - [PWA / Web Push (optional)](#pwa--web-push-optional)
   - [Frontend build note](#frontend-build-note)
 - [Why Scrumboy?](#why-scrumboy)
 - [Who is this for?](#who-is-this-for)
@@ -108,6 +109,10 @@ See [`docs/oidc.md`](docs/oidc.md) for full setup details, constraints, and trou
 - TLS is optional.
 - HTTPS is enabled only when both `SCRUMBOY_TLS_CERT` and `SCRUMBOY_TLS_KEY` files exist.
 - Otherwise, the server runs on HTTP by default.
+
+### PWA / Web Push (optional)
+
+Install the app from the browser for a standalone window and better mobile UX. **Background assignment alerts** use the **Web Push API** with **VAPID** keys on the server. Details, subscriber contact semantics, and **`SCRUMBOY_PUSH_BY_DEFAULT_IF_VAPID`**: see **[`docs/pwa.md`](docs/pwa.md)**.
 
 ### Frontend build note
 
@@ -290,7 +295,8 @@ None of these are required for basic startup.
 | `SCRUMBOY_INTRANET_IP` | `192.168.1.250` - LAN IP to log for intranet access |
 | `SCRUMBOY_VAPID_PUBLIC_KEY` | (empty) - **Web Push.** VAPID public key (URL-safe base64). Required together with private key for PWA background assignment notifications. |
 | `SCRUMBOY_VAPID_PRIVATE_KEY` | (empty) - VAPID private key (URL-safe base64). |
-| `SCRUMBOY_VAPID_SUBSCRIBER` | (empty) - Contact URL for VAPID `sub` claim (e.g. `mailto:ops@example.com`). Defaults to `mailto:scrumboy@localhost` if unset. |
+| `SCRUMBOY_VAPID_SUBSCRIBER` | (empty) - Contact for VAPID JWT `sub` (not tied to IdP). Use a **plain email** (e.g. `ops@example.com`); the server adds `mailto:`. Or set a full `mailto:...` or `https://...` URL explicitly. If unset, a built-in default is used. |
+| `SCRUMBOY_PUSH_BY_DEFAULT_IF_VAPID` | (empty) - If `true` / `1` / `yes` and VAPID keys are set, the client may auto-request Web Push after login **per signed-in user** in that browser (may prompt). See [`docs/pwa.md`](docs/pwa.md). |
 | `SCRUMBOY_DEBUG_PUSH` | (empty) - Set to `1` to log push send/prune on the server. |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
@@ -370,6 +376,7 @@ Invariants (e.g. canonical URL `/{slug}`, no UI links to `/p/{id}`) are enforced
 # Documentation
 
 - **MCP (HTTP tools + JSON-RPC):** [`docs/mcp.md`](docs/mcp.md) — tool catalog, auth, legacy vs `/mcp/rpc`, examples (agents & automation). See also [`API.md`](API.md) for exhaustive MCP HTTP detail.
+- **PWA / Web Push (VAPID):** [`docs/pwa.md`](docs/pwa.md) - keys, subscriber contact, optional auto-enable env var, notification defaults tradeoffs.
 - **Roles and permissions:** `docs/ROLES_AND_PERMISSIONS.md` - project roles, backend authorization, anonymous boards.
 - **Audit trail:** `docs/AUDIT_TRAIL.md` - action vocabulary, event model, integration points.
 
