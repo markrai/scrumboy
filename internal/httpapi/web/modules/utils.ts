@@ -39,6 +39,64 @@ function showToast(msg: string): void {
  * Process an image file: validate size (max 1MB), crop to center square, resize to 128x128 PNG.
  * Returns a data URL. Rejects on validation or load error.
  */
+const WALLPAPER_MAX_INPUT_BYTES = 8 * 1024 * 1024;
+const WALLPAPER_MAX_DIM = 2560;
+
+/**
+ * Resize wallpaper client-side (JPEG) to reduce upload size; max dimension 2560px.
+ */
+export function processWallpaperFileForUpload(file: File): Promise<Blob> {
+  if (!file.type.startsWith('image/')) {
+    return Promise.reject(new Error('Please choose an image file'));
+  }
+  if (file.size > WALLPAPER_MAX_INPUT_BYTES) {
+    return Promise.reject(new Error('Image must be smaller than 8MB'));
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      if (!dataUrl) {
+        reject(new Error('Failed to read file'));
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxSide = Math.max(w, h);
+        const scale = maxSide > WALLPAPER_MAX_DIM ? WALLPAPER_MAX_DIM / maxSide : 1;
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Failed to get canvas context'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Failed to encode image'));
+              return;
+            }
+            resolve(blob);
+          },
+          'image/jpeg',
+          0.85
+        );
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = dataUrl;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function processImageFile(file: File): Promise<string> {
   if (file.size > 1024 * 1024) {
     return Promise.reject(new Error('Image size must be less than 1MB'));

@@ -114,6 +114,13 @@ function getBoardColumns(board: Board): Array<{ key: string; title: string; colo
   return columnsSpec().map((c) => ({ key: c.key, title: c.title, isDone: c.key === "DONE", color: undefined }));
 }
 
+/** Lane body tint when workflow provides a color (custom keys + themed columns; CSS fallback uses data-column only in light mode). */
+function laneColumnTintClassAndStyle(c: { color?: string }): { extraClass: string; styleAttr: string } {
+  const safe = c.color ? sanitizeHexColor(c.color) : null;
+  if (!safe) return { extraClass: "", styleAttr: "" };
+  return { extraClass: " col--lane-tint", styleAttr: ` style="--lane-accent:${escapeHTML(safe)};"` };
+}
+
 type LaneMetaState = { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number };
 
 function laneMetaKeyCandidates(key: string): string[] {
@@ -1439,8 +1446,9 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
         const laneMeta = getBoardLaneMeta()[c.key as TodoStatus];
         const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
         const displayCount = getLaneDisplayCount(c.key as TodoStatus);
+        const laneTint = laneColumnTintClassAndStyle(c);
         return `
-          <section class="col ${isMobileActive ? "col--mobile-active" : ""}" data-column="${c.key}">
+          <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${c.key}"${laneTint.styleAttr}>
             <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
               <span class="col__title">${escapeHTML(c.title)}</span>
               <span class="col__count" data-count-for="${c.key}">${displayCount}</span>
@@ -1686,8 +1694,9 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
               const isMobileActive = getMobileTab() === c.key;
               const laneMeta = getBoardLaneMeta()[c.key as TodoStatus];
               const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
+              const laneTint = laneColumnTintClassAndStyle(c);
               return `
-                <section class="col ${isMobileActive ? "col--mobile-active" : ""}" data-column="${c.key}">
+                <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${c.key}"${laneTint.styleAttr}>
                   <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
                     <span class="col__title">${escapeHTML(c.title)}</span>
                     <span class="col__count" data-count-for="${c.key}">${getLaneDisplayCount(c.key as TodoStatus)}</span>

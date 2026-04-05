@@ -70,6 +70,13 @@ function getBoardColumns(board) {
     }
     return columnsSpec().map((c) => ({ key: c.key, title: c.title, isDone: c.key === "DONE", color: undefined }));
 }
+/** Lane body tint when workflow provides a color (custom keys + themed columns; CSS fallback uses data-column only in light mode). */
+function laneColumnTintClassAndStyle(c) {
+    const safe = c.color ? sanitizeHexColor(c.color) : null;
+    if (!safe)
+        return { extraClass: "", styleAttr: "" };
+    return { extraClass: " col--lane-tint", styleAttr: ` style="--lane-accent:${escapeHTML(safe)};"` };
+}
 function laneMetaKeyCandidates(key) {
     const lower = key.toLowerCase();
     const upper = key.toUpperCase();
@@ -1332,8 +1339,9 @@ function updateBoardContent(board, tag, search, sprintId) {
             const laneMeta = getBoardLaneMeta()[c.key];
             const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
             const displayCount = getLaneDisplayCount(c.key);
+            const laneTint = laneColumnTintClassAndStyle(c);
             return `
-          <section class="col ${isMobileActive ? "col--mobile-active" : ""}" data-column="${c.key}">
+          <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${c.key}"${laneTint.styleAttr}>
             <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
               <span class="col__title">${escapeHTML(c.title)}</span>
               <span class="col__count" data-count-for="${c.key}">${displayCount}</span>
@@ -1565,8 +1573,9 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
             const isMobileActive = getMobileTab() === c.key;
             const laneMeta = getBoardLaneMeta()[c.key];
             const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
+            const laneTint = laneColumnTintClassAndStyle(c);
             return `
-                <section class="col ${isMobileActive ? "col--mobile-active" : ""}" data-column="${c.key}">
+                <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${c.key}"${laneTint.styleAttr}>
                   <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
                     <span class="col__title">${escapeHTML(c.title)}</span>
                     <span class="col__count" data-count-for="${c.key}">${getLaneDisplayCount(c.key)}</span>

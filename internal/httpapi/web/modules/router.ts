@@ -8,6 +8,7 @@ import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvai
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
+import { loadUserWallpaper } from './wallpaper.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -127,6 +128,9 @@ async function routeOnce(): Promise<void> {
       
       // Load theme
       await loadUserTheme();
+
+      // Load wallpaper
+      await loadUserWallpaper();
       
       // Load UI preferences (projectView, projectsTab)
       try {

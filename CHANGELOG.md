@@ -3,6 +3,19 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.5] - 2026-04-05
+
+### Features
+
+- **Wallpaper** - Optional built-in image at **`/wallpapers/default.jpg`**: empty preference tries to load it; if the file is missing or fails to load, wallpaper stays **off** (no bundled placeholder). **Builtin** mode is client-only in **localStorage**; server prefs remain **off** / **color** / **image** as before.
+- **Settings → Customization** - When a wallpaper is active, the Settings dialog uses a lighter **backdrop** and a slightly translucent panel so the same background shows through; tuned for readability (stronger panel and backdrop than the first pass).
+
+### Improvements
+
+- **Board** — Lane **column** backgrounds use a light **`color-mix`** tint from each workflow lane’s **`color`** when the API provides it (**`col--lane-tint`** / **`--lane-accent`**), so custom lane keys and themed projects match the header again—not only the five fixed **`data-column`** CSS rules in light mode.
+
+---
+
 ## [3.11.4] - 2026-04-05
 
 ### Features

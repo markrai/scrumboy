@@ -22,6 +22,9 @@ type Options struct {
 	Logger         *log.Logger
 	MaxRequestBody int64
 	ScrumboyMode   string // "full" or "anonymous"
+	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
+	// Empty disables wallpaper upload/serve (returns 503 for those routes).
+	DataDir string
 	AuthRateLimit  *ratelimit.Limiter
 	MCPHandler     http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
@@ -66,6 +69,8 @@ type Server struct {
 	vapidPublicKey      string
 	pushVapidConfigured bool // both public and private keys non-empty; subscribe and push notify use this
 	pushDebug           bool
+
+	dataDir string // user-wallpapers storage; empty = disabled
 }
 
 type storeAPI interface {
@@ -287,6 +292,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		logger:                    logger,
 		maxBody:                   maxBody,
 		mode:                      mode,
+		dataDir:                   strings.TrimSpace(opts.DataDir),
 		hub:                       hub,
 		sink:                      hub,
 		fanout:                    fanout,

@@ -341,6 +341,73 @@ body {
   color: var(--text);
 }
 
+/* App shell wallpaper (fixed stack behind #app; toggled via html[data-wallpaper-active]) */
+.wallpaper-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: none;
+}
+
+.wallpaper-shell.wallpaper-shell--visible {
+  display: block;
+}
+
+.wallpaper-shell__image {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.wallpaper-shell__overlay {
+  position: absolute;
+  inset: 0;
+  /* Dark theme: scrim over image for readability */
+  background: rgba(11, 15, 23, 0.78);
+}
+
+[data-theme="light"] .wallpaper-shell__overlay {
+  background: rgba(247, 247, 244, 0.82);
+}
+
+html[data-wallpaper-active] #app {
+  position: relative;
+  z-index: 1;
+}
+
+/* Let gutters show wallpaper; panels/cards keep solid surfaces */
+html[data-wallpaper-active] .container {
+  background: transparent;
+}
+
+html[data-wallpaper-active] .topbar {
+  background: color-mix(in srgb, var(--topbar-bg) 86%, transparent);
+}
+
+/* Light mode + photo wallpaper: paler topbar mix reads as solid white — let more of the image show through. */
+html[data-wallpaper-active][data-theme="light"][data-wallpaper-source="image"] .topbar {
+  background: color-mix(in srgb, var(--bg) 36%, transparent);
+}
+
+/* Settings: match the rest of the shell when a wallpaper is active (native dialog backdrop is a separate layer). */
+html[data-wallpaper-active] #settingsDialog.dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+html[data-wallpaper-active][data-theme="light"] #settingsDialog.dialog::backdrop {
+  background: rgba(247, 247, 244, 0.65);
+}
+html[data-wallpaper-active] #settingsDialog.dialog {
+  background: color-mix(in srgb, var(--bg) 96%, transparent);
+}
+@media (min-width: 768px) {
+  html[data-wallpaper-active] #settingsDialog.dialog {
+    backdrop-filter: blur(8px);
+  }
+}
+
 .page {
   min-height: 100%;
   display: flex;
@@ -2641,6 +2708,15 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   display: flex;
   flex-direction: column;
   min-height: 360px;
+}
+
+/* Lane body tint from workflow color (--lane-accent on .col from board.ts); overrides plain .col background */
+.col.col--lane-tint {
+  background: color-mix(in srgb, var(--lane-accent) 22%, var(--bg));
+}
+
+[data-theme="light"] .col.col--lane-tint {
+  background: color-mix(in srgb, var(--lane-accent) 16%, var(--bg));
 }
 
 .col * {

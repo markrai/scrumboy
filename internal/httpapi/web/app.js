@@ -2,6 +2,7 @@
 
 import { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, todoStatus, todoEstimationPoints, deleteTodoBtn, closeTodoBtn, settingsDialog, closeSettingsBtn } from './dist/dom/elements.js';
 import { initTheme, handleThemeChange, getStoredTheme, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from './dist/theme.js';
+import { initWallpaper } from './dist/wallpaper.js';
 import { escapeHTML, showToast } from './dist/utils.js';
 import { apiFetch } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
@@ -26,6 +27,7 @@ registerPwaGlobals();
 
 // Initialize theme on page load
 initTheme();
+initWallpaper();
 
 // Setup context menu handlers (one-time, global)
 setupContextMenuCloseHandler();

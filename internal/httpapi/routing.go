@@ -272,6 +272,11 @@ func (s *Server) handleUser(w http.ResponseWriter, r *http.Request, rest []strin
 		return
 	}
 
+	if len(rest) >= 1 && rest[0] == "wallpaper" {
+		s.handleUserWallpaper(w, r, userID, rest)
+		return
+	}
+
 	if rest[0] == "preferences" {
 		s.handleUserPreferences(w, r, userID)
 		return
@@ -310,6 +315,26 @@ func (s *Server) handleUserPreferences(w http.ResponseWriter, r *http.Request, u
 		}
 		if in.Key == "" {
 			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "missing key", nil)
+			return
+		}
+		if in.Key == wallpaperPrefKey {
+			p, err := store.ParseWallpaperPref(in.Value)
+			if err != nil {
+				writeStoreErr(w, err, true)
+				return
+			}
+			if p.Mode == "image" {
+				writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "image wallpaper must be uploaded via POST /api/user/wallpaper/image", map[string]any{"field": "value"})
+				return
+			}
+			if err := s.store.SetUserPreference(ctx, userID, in.Key, in.Value); err != nil {
+				writeStoreErr(w, err, true)
+				return
+			}
+			if p.Mode == "off" || p.Mode == "color" {
+				s.deleteUserWallpaperFile(userID)
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if err := s.store.SetUserPreference(ctx, userID, in.Key, in.Value); err != nil {

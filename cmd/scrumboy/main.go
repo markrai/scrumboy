@@ -92,6 +92,7 @@ func main() {
 		Logger:               logger,
 		MaxRequestBody:       cfg.MaxRequestBodyBytes,
 		ScrumboyMode:         cfg.ScrumboyMode,
+		DataDir:              cfg.DataDir,
 		MCPHandler:           mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode}),
 		EncryptionKey:        encKey,
 		OIDCService:          oidcSvc,

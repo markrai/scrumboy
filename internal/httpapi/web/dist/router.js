@@ -6,6 +6,7 @@ import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/pu
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled } from './state/selectors.js';
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setOidcEnabled, setLocalAuthEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { loadUserTheme } from './theme.js';
+import { loadUserWallpaper } from './wallpaper.js';
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
 let isRouting = false;
@@ -107,6 +108,8 @@ async function routeOnce() {
             }
             // Load theme
             await loadUserTheme();
+            // Load wallpaper
+            await loadUserWallpaper();
             // Load UI preferences (projectView, projectsTab)
             try {
                 const projectViewResp = await apiFetch("/api/user/preferences?key=projectView");

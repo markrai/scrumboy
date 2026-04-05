@@ -3,6 +3,8 @@ import { apiFetch } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
 import { escapeHTML, showToast, getAppVersion, showConfirmDialog, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
+import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
+import { processWallpaperFileForUpload } from '../utils.js';
 import { getSlug, getTag, getSearch, getSprintIdFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getBackupImportBtn, getBackupData, getBoardMembers } from '../state/selectors.js';
 import { setSettingsProjectId, setSettingsActiveTab, setTagColors, setBoard, setBackupImportBtn, setBackupData, setBackupPreview, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
@@ -942,7 +944,7 @@ async function renderSprintsTabContent() {
             ? "<div class='muted'>No sprints yet. Create one above.</div>"
             : sprints.map((sp) => {
                 const isEditing = editingSprintId === sp.id;
-                const dateRange = `${formatDate(sp.plannedStartAt)} – ${formatDate(sp.plannedEndAt)}`;
+                const dateRange = `${formatDate(sp.plannedStartAt)} - ${formatDate(sp.plannedEndAt)}`;
                 const stateBadge = `<span class="status-pill status-pill--${sp.state.toLowerCase()}">${sp.state}</span>`;
                 const activateBtn = sp.state === "PLANNED" ? `<button class="btn btn--ghost btn--sm" data-sprint-activate="${sp.id}">Activate</button>` : "";
                 const closeBtn = sp.state === "ACTIVE" ? `<button class="btn btn--ghost btn--sm" data-sprint-close="${sp.id}">Close</button>` : (sp.state === "CLOSED" ? `<button type="button" class="btn btn--ghost btn--sm settings-sprint-row__action-placeholder" aria-hidden="true" tabindex="-1">Close</button>` : "");
@@ -1184,7 +1186,7 @@ export async function renderSettingsModal(options) {
                       class="settings-color-picker" 
                       data-tag="${escapeHTML(tag.name)}"${tagIdAttr}
                       value="${colorValue}"
-                      title="${colorDisabled ? "Tag ID missing — cannot update color" : "Tag color"}"
+                      title="${colorDisabled ? "Tag ID missing; cannot update color" : "Tag color"}"
                       ${colorDisabled ? "disabled" : ""}
                     />
                     <button 
@@ -1371,9 +1373,19 @@ export async function renderSettingsModal(options) {
             pushVapidServerReady = false;
         }
     }
+    const wallpaperState = getStoredWallpaperState();
+    const wallpaperPickerHex = wallpaperState.mode === "color" && wallpaperState.hex ? wallpaperState.hex : "#8b919a";
+    const wallpaperSummaryLabel = wallpaperState.mode === "off"
+        ? "Off"
+        : wallpaperState.mode === "color"
+            ? "Solid color"
+            : wallpaperState.mode === "builtin"
+                ? "Default image"
+                : "Custom image";
+    const wallpaperImageModeSelected = wallpaperState.mode === "image" || wallpaperState.mode === "builtin";
     const pushPwaDisabledNotice = !pushVapidServerReady
         ? showProfileTab
-            ? "Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY — see docs)."
+            ? "Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY; see docs)."
             : "Web Push is not available in anonymous mode."
         : "";
     const customizationHTML = `
@@ -1394,6 +1406,38 @@ export async function renderSettingsModal(options) {
             <span>Light</span>
           </label>
         </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section__title">Wallpaper</div>
+        <div class="settings-section__description muted">Optional background behind the app. A scrim keeps text readable. Boards and cards stay solid; Settings can show the wallpaper when it is active.</div>
+        <p class="muted" style="margin:8px 0 0 0;font-size:13px;">
+          ${wallpaperSummaryLabel}: ${wallpaperState.mode === "off" ? "default appearance" : "active"}
+        </p>
+        <div class="theme-selector theme-selector--inline" style="margin-top:10px;">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="wallpaperMode" value="off" ${wallpaperState.mode === "off" ? "checked" : ""}>
+            <span>Off</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="wallpaperMode" value="color" ${wallpaperState.mode === "color" ? "checked" : ""}>
+            <span>Solid color</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="wallpaperMode" value="image" ${wallpaperImageModeSelected ? "checked" : ""} ${getUser() || wallpaperState.mode === "builtin" ? "" : "disabled"}>
+            <span>Custom image</span>
+          </label>
+        </div>
+        <div id="wallpaperColorRow" class="wallpaper-settings-color-row" style="margin-top:12px;${wallpaperState.mode === "color" ? "" : "display:none;"}">
+          <label class="row" style="align-items:center;gap:10px;">
+            <span class="muted">Color</span>
+            <input type="color" id="wallpaperColorPicker" value="${escapeHTML(wallpaperPickerHex)}" ${wallpaperState.mode === "color" ? "" : "disabled"} />
+          </label>
+        </div>
+        <div class="wallpaper-settings-wallpaper-actions" style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <button type="button" class="btn" id="wallpaperUploadBtn" ${getUser() ? "" : "disabled"} style="${wallpaperImageModeSelected && getUser() ? "" : "display:none;"}">${wallpaperState.mode === "image" ? "Replace image…" : "Upload image…"}</button>
+          <button type="button" class="btn btn--ghost" id="wallpaperRemoveBtn" ${wallpaperState.mode === "off" ? "disabled" : ""}>Remove wallpaper</button>
+        </div>
+        ${!getUser() ? `<p class="muted" style="margin-top:10px;font-size:13px;">Sign in to use a custom image. Solid color and Off work without signing in.</p>` : ""}
       </div>
       <div class="settings-section">
         <div class="settings-section__title">Desktop notifications</div>
@@ -1706,7 +1750,7 @@ export async function renderSettingsModal(options) {
         };
         closeSettingsBtn.addEventListener("click", onCloseClick, { capture: true, signal });
     }
-    // Setup logout button — use form POST so browser processes Set-Cookie from document response
+    // Setup logout button: use form POST so browser processes Set-Cookie from document response
     // (fetch/XHR responses don't always clear cookies reliably across browsers)
     const logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
@@ -2127,6 +2171,92 @@ export async function renderSettingsModal(options) {
             handleThemeChange(e.target.value);
         }, { signal });
     });
+    function syncWallpaperRadiosFromState() {
+        const st = getStoredWallpaperState();
+        const rOff = document.querySelector('input[name="wallpaperMode"][value="off"]');
+        const rCol = document.querySelector('input[name="wallpaperMode"][value="color"]');
+        const rImg = document.querySelector('input[name="wallpaperMode"][value="image"]');
+        if (st.mode === "off" && rOff)
+            rOff.checked = true;
+        else if (st.mode === "color" && rCol)
+            rCol.checked = true;
+        else if (st.mode === "image" && rImg)
+            rImg.checked = true;
+        else if (st.mode === "builtin" && rImg)
+            rImg.checked = true;
+    }
+    function openWallpaperFileDialog() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/jpeg,image/png,image/gif";
+        input.onchange = async (ev) => {
+            const file = ev.target.files?.[0];
+            if (!file)
+                return;
+            try {
+                const blob = await processWallpaperFileForUpload(file);
+                await uploadWallpaperImage(blob);
+                showToast("Wallpaper updated");
+            }
+            catch (err) {
+                showToast(err?.message ?? String(err) ?? "Upload failed");
+            }
+            await renderSettingsModal();
+        };
+        input.click();
+    }
+    document.querySelectorAll('input[name="wallpaperMode"]').forEach(radio => {
+        radio.addEventListener("change", async (e) => {
+            const el = e.target;
+            if (el.value === "off") {
+                await setWallpaperOff();
+                await renderSettingsModal();
+                return;
+            }
+            if (el.value === "color") {
+                const picker = document.getElementById("wallpaperColorPicker");
+                await setWallpaperColor(picker?.value || wallpaperPickerHex);
+                await renderSettingsModal();
+                return;
+            }
+            if (el.value === "image") {
+                el.checked = false;
+                syncWallpaperRadiosFromState();
+                if (!getUser()) {
+                    showToast("Sign in to use a custom image");
+                    return;
+                }
+                openWallpaperFileDialog();
+            }
+        }, { signal });
+    });
+    const wallpaperColorPicker = document.getElementById("wallpaperColorPicker");
+    if (wallpaperColorPicker) {
+        wallpaperColorPicker.addEventListener("input", async () => {
+            const mode = document.querySelector('input[name="wallpaperMode"]:checked')?.value;
+            if (mode !== "color")
+                return;
+            await setWallpaperColor(wallpaperColorPicker.value);
+        }, { signal });
+    }
+    const wallpaperUploadBtn = document.getElementById("wallpaperUploadBtn");
+    if (wallpaperUploadBtn) {
+        wallpaperUploadBtn.addEventListener("click", () => {
+            if (!getUser()) {
+                showToast("Sign in to use a custom image");
+                return;
+            }
+            openWallpaperFileDialog();
+        }, { signal });
+    }
+    const wallpaperRemoveBtn = document.getElementById("wallpaperRemoveBtn");
+    if (wallpaperRemoveBtn) {
+        wallpaperRemoveBtn.addEventListener("click", async () => {
+            await setWallpaperOff();
+            showToast("Wallpaper removed");
+            await renderSettingsModal();
+        }, { signal });
+    }
     if (getSettingsActiveTab() === "customization") {
         const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
         if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {
@@ -2136,7 +2266,7 @@ export async function renderSettingsModal(options) {
                     showToast("Desktop notifications enabled");
                 }
                 else if (r === "denied") {
-                    showToast("Notifications blocked — you can allow them in your browser settings for this site");
+                    showToast("Notifications blocked. You can allow them in your browser settings for this site.");
                 }
                 else {
                     showToast("Notification permission not granted");
@@ -2290,16 +2420,16 @@ async function renderUsersTabContent() {
             const isAdminRole = userRole === "admin";
             const isOwnerRole = userRole === "owner";
             // Determine available actions
-            let actionsHTML = "—";
+            let actionsHTML = "-";
             if (isOwner) {
                 // Owner can manage all users except themselves
                 if (isSelf) {
                     // Self: no delete, no demote if last owner
-                    actionsHTML = "—";
+                    actionsHTML = "-";
                 }
                 else if (isOwnerRole) {
                     // Other owner: no actions (can't demote/promote owners, can't delete owners)
-                    actionsHTML = "—";
+                    actionsHTML = "-";
                 }
                 else if (isAdminRole) {
                     // Admin: can demote to user or delete
@@ -2324,7 +2454,7 @@ async function renderUsersTabContent() {
             }
             else if (isAdmin) {
                 // Admin: can view but not manage
-                actionsHTML = "—";
+                actionsHTML = "-";
             }
             const roleDisplay = userRole.charAt(0).toUpperCase() + userRole.slice(1);
             const userDisplay = user.name || user.email || `User ${user.id}`;
