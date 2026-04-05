@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.11.2-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.11.3-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
@@ -167,7 +167,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 ## Integrations & API Access
 
-Scrumboy supports API access tokens for automation, integrations, and programmatic MCP access (legacy HTTP and JSON-RPC — see below).
+Scrumboy supports API access tokens for automation, integrations, and programmatic MCP access (legacy HTTP and JSON-RPC — see below). Full MCP guide for developers and agents: [`docs/mcp.md`](docs/mcp.md).
 
 You can create a token from the API and use it to call MCP endpoints directly — no browser session or cookies required.
 
@@ -197,7 +197,7 @@ Scrumboy exposes a **Model Context Protocol (MCP) compatible JSON-RPC endpoint**
 
 **Endpoint:** `POST /mcp/rpc`
 
-This is separate from the `/mcp` HTTP endpoint above and follows **JSON-RPC 2.0** (`initialize`, `tools/list`, `tools/call`, etc.). See [`API.md`](API.md) for full detail.
+This is separate from the `/mcp` HTTP endpoint above and follows **JSON-RPC 2.0** (`initialize`, `tools/list`, `tools/call`, etc.). See **[`docs/mcp.md`](docs/mcp.md)** for tools, auth, response shapes, and examples; **[`API.md`](API.md)** for the full HTTP/MCP behavior reference.
 
 #### Example: `initialize`
 
@@ -369,6 +369,7 @@ Invariants (e.g. canonical URL `/{slug}`, no UI links to `/p/{id}`) are enforced
 
 # Documentation
 
+- **MCP (HTTP tools + JSON-RPC):** [`docs/mcp.md`](docs/mcp.md) — tool catalog, auth, legacy vs `/mcp/rpc`, examples (agents & automation). See also [`API.md`](API.md) for exhaustive MCP HTTP detail.
 - **Roles and permissions:** `docs/ROLES_AND_PERMISSIONS.md` - project roles, backend authorization, anonymous boards.
 - **Audit trail:** `docs/AUDIT_TRAIL.md` - action vocabulary, event model, integration points.
 
