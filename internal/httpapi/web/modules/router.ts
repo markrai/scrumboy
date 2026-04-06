@@ -8,7 +8,7 @@ import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvai
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
-import { loadUserWallpaper } from './wallpaper.js';
+import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -85,7 +85,9 @@ async function routeOnce(): Promise<void> {
     // Use explicit mode field from server to determine anonymous vs full mode
     const isAnonymousMode = st.mode === "anonymous";
     setAuthStatusAvailable(!isAnonymousMode);
-    
+    // Wallpaper: defer until auth is known (no flash; anonymous deployment never shows wallpaper)
+    applyWallpaperForAuthContext(!isAnonymousMode);
+
     // Detect user change and reset state if user ID changed
     const oldUser = getUser();
     const newUser = st && st.user ? st.user : null;
@@ -205,9 +207,10 @@ async function routeOnce(): Promise<void> {
     return;
   }
 
-  // Show auth UI when not logged in (full mode): on projects list or on any board path (backend returns 404 when unauthenticated).
+  // Show auth UI when not logged in (full mode): projects list and dashboard only.
+  // Board URLs (/slug) must render for anonymous visitors so shareable temp boards and public reads work; access is enforced by GET /api/board/{slug} (404 when not allowed).
   if (getUser() == null && getAuthStatusChecked() && getAuthStatusAvailable()) {
-    if (r.name === "projects" || r.name === "dashboard" || r.name === "boardBySlug") {
+    if (r.name === "projects" || r.name === "dashboard") {
       console.log("Router: showing auth UI (not logged in)");
       renderAuth({ next: window.location.pathname + window.location.search, bootstrap: getBootstrapAvailable(), oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled() });
       return;

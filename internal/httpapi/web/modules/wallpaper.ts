@@ -59,7 +59,7 @@ function serializeWallpaperState(st: WallpaperState): string {
   return JSON.stringify(st);
 }
 
-/** Effective wallpaper state (server cache or localStorage for anonymous / boot). */
+/** Effective wallpaper state (localStorage cache; server merged via loadUserWallpaper in full mode). */
 export function getStoredWallpaperState(): WallpaperState {
   if (cachedWallpaperJSON !== null) {
     return parseWallpaperState(cachedWallpaperJSON);
@@ -121,6 +121,19 @@ async function verifyWallpaperImageOnServer(rev: number): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Clear wallpaper visuals only; does not read or write preferences (anonymous deployment). */
+function applyWallpaperVisualOff(): void {
+  const shell = document.getElementById(SHELL_ID) as HTMLElement | null;
+  if (!shell) return;
+  const imgEl = shell.querySelector('.wallpaper-shell__image') as HTMLElement | null;
+  if (!imgEl) return;
+  document.documentElement.removeAttribute('data-wallpaper-active');
+  document.documentElement.removeAttribute('data-wallpaper-source');
+  shell.classList.remove('wallpaper-shell--visible');
+  imgEl.style.backgroundImage = '';
+  imgEl.style.backgroundColor = '';
 }
 
 function ensureShell(): HTMLElement {
@@ -227,7 +240,18 @@ export async function uploadWallpaperImage(blob: Blob): Promise<void> {
   applyWallpaperState(st);
 }
 
-export function initWallpaper(): void {
+/**
+ * Call once after `/api/auth/status` is known (from the router). Avoids applying full-mode
+ * localStorage prefs during anonymous deployment and prevents a flash before auth resolves.
+ *
+ * - **Full mode:** applies stored preferences (may start builtin image probe).
+ * - **Anonymous mode:** hides wallpaper only; does not read or overwrite `localStorage`.
+ */
+export function applyWallpaperForAuthContext(fullMode: boolean): void {
+  if (!fullMode) {
+    applyWallpaperVisualOff();
+    return;
+  }
   ensureShell();
   applyWallpaperState(getStoredWallpaperState());
 }

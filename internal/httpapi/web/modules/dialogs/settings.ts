@@ -1509,9 +1509,10 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     }
   }
 
-  const wallpaperState = getStoredWallpaperState();
+  const showWallpaperSettings = getAuthStatusAvailable();
+  const wallpaperState = showWallpaperSettings ? getStoredWallpaperState() : { v: 1 as const, mode: "off" as const };
   const wallpaperPickerHex =
-    wallpaperState.mode === "color" && wallpaperState.hex ? wallpaperState.hex : "#8b919a";
+    showWallpaperSettings && wallpaperState.mode === "color" && wallpaperState.hex ? wallpaperState.hex : "#8b919a";
   const wallpaperSummaryLabel =
     wallpaperState.mode === "off"
       ? "Off"
@@ -1523,31 +1524,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   const wallpaperImageModeSelected =
     wallpaperState.mode === "image" || wallpaperState.mode === "builtin";
 
-  const pushPwaDisabledNotice = !pushVapidServerReady
-    ? showProfileTab
-      ? "Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY; see docs)."
-      : "Web Push is not available in anonymous mode."
-    : "";
-
-  const customizationHTML = `
-      <div class="settings-section">
-        <div class="settings-section__title">Theme</div>
-        <div class="settings-section__description muted">Choose your preferred color scheme.</div>
-        <div class="theme-selector theme-selector--inline">
-          <label class="theme-option theme-option--inline">
-            <input type="radio" name="theme" value="system" ${getStoredTheme() === THEME_SYSTEM ? "checked" : ""}>
-            <span>System</span>
-          </label>
-          <label class="theme-option theme-option--inline">
-            <input type="radio" name="theme" value="dark" ${getStoredTheme() === THEME_DARK ? "checked" : ""}>
-            <span>Dark</span>
-          </label>
-          <label class="theme-option theme-option--inline">
-            <input type="radio" name="theme" value="light" ${getStoredTheme() === THEME_LIGHT ? "checked" : ""}>
-            <span>Light</span>
-          </label>
-        </div>
-      </div>
+  const wallpaperSectionHTML = showWallpaperSettings
+    ? `
       <div class="settings-section">
         <div class="settings-section__title">Wallpaper</div>
         <div class="settings-section__description muted">Optional background behind the app. A scrim keeps text readable. Boards and cards stay solid; Settings can show the wallpaper when it is active.</div>
@@ -1580,6 +1558,35 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         </div>
         ${!getUser() ? `<p class="muted" style="margin-top:10px;font-size:13px;">Sign in to use a custom image. Solid color and Off work without signing in.</p>` : ""}
       </div>
+    `
+    : "";
+
+  const pushPwaDisabledNotice = !pushVapidServerReady
+    ? showProfileTab
+      ? "Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY; see docs)."
+      : "Web Push is not available in anonymous mode."
+    : "";
+
+  const customizationHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title">Theme</div>
+        <div class="settings-section__description muted">Choose your preferred color scheme.</div>
+        <div class="theme-selector theme-selector--inline">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="theme" value="system" ${getStoredTheme() === THEME_SYSTEM ? "checked" : ""}>
+            <span>System</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="theme" value="dark" ${getStoredTheme() === THEME_DARK ? "checked" : ""}>
+            <span>Dark</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="theme" value="light" ${getStoredTheme() === THEME_LIGHT ? "checked" : ""}>
+            <span>Light</span>
+          </label>
+        </div>
+      </div>
+      ${wallpaperSectionHTML}
       <div class="settings-section">
         <div class="settings-section__title">Desktop notifications</div>
         <div class="settings-section__description muted">OS-level alerts when someone assigns you a todo (works when this tab is in the background).</div>

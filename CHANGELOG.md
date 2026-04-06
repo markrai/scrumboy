@@ -3,6 +3,14 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.7] - 2026-04-05
+
+### Fixes
+
+- **Router (full mode)** — Logged-out visitors opening a **board URL** (`/{slug}`) are no longer sent to the **login UI** before the app loads the board. The client-side gate still applies to **`/projects`** and the **dashboard** only; board access for anonymous users (e.g. shareable **temporary** boards) is enforced by **`GET /api/board/{slug}`** as before.
+
+---
+
 ## [3.11.6] - 2026-04-05
 
 ### Fixes
