@@ -1142,38 +1142,48 @@ func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 	}, nil
 }
 
-// UpdateBoardActivity updates last_activity_at and extends expires_at for anonymous boards.
-// Throttle: only updates if last_activity_at is older than 5 minutes.
-// This reduces database writes while still tracking activity and extending expiration.
+// UpdateBoardActivity updates last_activity_at for the project (throttled) and extends expires_at
+// only when the project is expiring (expires_at IS NOT NULL). A missing project id returns
+// ErrNotFound; a throttled call (row exists but last_activity_at is fresh) returns nil.
 func (s *Store) UpdateBoardActivity(ctx context.Context, projectID int64) error {
 	nowMs := time.Now().UTC().UnixMilli()
 	throttleMs := nowMs - (5 * 60 * 1000) // 5 minutes ago
+	expiresAtMs := nowMs + (14 * 24 * 60 * 60 * 1000)
 
-	// Check current last_activity_at to determine if we should update
-	var lastActivityAtMs int64
-	err := s.db.QueryRowContext(ctx, `SELECT last_activity_at FROM projects WHERE id = ?`, projectID).Scan(&lastActivityAtMs)
+	res, err := s.db.ExecContext(ctx, `
+UPDATE projects
+SET
+  last_activity_at = ?,
+  expires_at = CASE
+    WHEN expires_at IS NOT NULL THEN ?
+    ELSE expires_at
+  END
+WHERE
+  id = ?
+  AND (
+    last_activity_at IS NULL
+    OR last_activity_at < ?
+  )`, nowMs, expiresAtMs, projectID, throttleMs)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		return fmt.Errorf("get last activity: %w", err)
+		return fmt.Errorf("update board activity: %w", err)
 	}
-
-	// Only update if last_activity_at is older than 5 minutes (throttle both fields)
-	if lastActivityAtMs < throttleMs {
-		_, err = s.db.ExecContext(ctx, `
-			UPDATE projects 
-			SET last_activity_at = ?,
-			    expires_at = CASE 
-			        WHEN expires_at IS NOT NULL THEN ? 
-			        ELSE expires_at 
-			    END
-			WHERE id = ?`, nowMs, nowMs+(14*24*60*60*1000), projectID)
-		if err != nil {
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update board activity: %w", err)
+	}
+	if n == 0 {
+		// No row updated: either the project does not exist or activity is still within the throttle window.
+		var exists bool
+		if err := s.db.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM projects WHERE id = ? AND import_batch_id IS NULL)`,
+			projectID,
+		).Scan(&exists); err != nil {
 			return fmt.Errorf("update board activity: %w", err)
 		}
+		if !exists {
+			return ErrNotFound
+		}
 	}
-	// If throttled, do nothing (no database write)
 	return nil
 }
 

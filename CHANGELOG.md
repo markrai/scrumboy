@@ -3,6 +3,14 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.10] - 2026-04-07
+
+### Improvements
+
+- **Board activity** - **`UpdateBoardActivity`** uses a single conditional **`UPDATE`** (throttled **`last_activity_at`**, rolling **`expires_at`** when expiring) instead of read-then-write. A missing project **`id`** still returns **`ErrNotFound`**; throttled calls return nil.
+
+---
+
 ## [3.11.9] - 2026-04-07
 
 ### Improvements
