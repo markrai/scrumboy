@@ -136,8 +136,10 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		totalCountByColumn[col.Key] = totalCount
 	}
 
-	if err := a.store.UpdateBoardActivity(ctx, pc.Project.ID); err != nil {
-		return nil, nil, mapStoreError(err)
+	if pc.Project.ExpiresAt != nil {
+		if err := a.store.UpdateBoardActivity(ctx, pc.Project.ID); err != nil {
+			return nil, nil, mapStoreError(err)
+		}
 	}
 
 	return map[string]any{

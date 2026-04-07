@@ -52,8 +52,11 @@ func (s *Store) getBoardPagedPerLane(ctx context.Context, pc *ProjectContext, pr
 		cols[col.Key] = items
 		meta[col.Key] = LaneMeta{HasMore: hasMore, NextCursor: nextCursor, TotalCount: total}
 	}
-	if err := s.UpdateBoardActivity(ctx, projectID); err != nil {
-		log.Printf("failed to update board activity for project %d: %v", projectID, err)
+	// Expiring boards only: durable reads skip activity (no SELECT/UPDATE for last_activity_at / expiry).
+	if pc.Project.ExpiresAt != nil {
+		if err := s.UpdateBoardActivity(ctx, projectID); err != nil {
+			log.Printf("failed to update board activity for project %d: %v", projectID, err)
+		}
 	}
 	return pc.Project, tags, workflow, cols, meta, nil
 }
@@ -147,8 +150,10 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 		flushLane(currentKey, page, laneTotal, limitPerLane, cols, meta)
 	}
 
-	if err := s.UpdateBoardActivity(ctx, projectID); err != nil {
-		log.Printf("failed to update board activity for project %d: %v", projectID, err)
+	if pc.Project.ExpiresAt != nil {
+		if err := s.UpdateBoardActivity(ctx, projectID); err != nil {
+			log.Printf("failed to update board activity for project %d: %v", projectID, err)
+		}
 	}
 
 	return pc.Project, tags, workflow, cols, meta, nil
@@ -191,10 +196,11 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 		cols[todo.ColumnKey] = append(cols[todo.ColumnKey], todo)
 	}
 
-	// Track activity: any board access (read) resets expiration
-	// Best-effort: log errors but don't fail the request
-	if err := s.UpdateBoardActivity(ctx, projectID); err != nil {
-		log.Printf("failed to update board activity for project %d: %v", projectID, err)
+	// Expiring boards: throttled read extends rolling expiry. Durable: skip (no activity DB work on read).
+	if pc.Project.ExpiresAt != nil {
+		if err := s.UpdateBoardActivity(ctx, projectID); err != nil {
+			log.Printf("failed to update board activity for project %d: %v", projectID, err)
+		}
 	}
 
 	return pc.Project, tags, workflow, cols, nil

@@ -1583,8 +1583,9 @@ func TestGetBoard_ActivityTrackingBestEffort(t *testing.T) {
 	if board.Project.ID != project.ID {
 		t.Fatalf("expected project ID %d, got %d", project.ID, board.Project.ID)
 	}
-	if len(board.Columns["BACKLOG"]) != 1 || board.Columns["BACKLOG"][0].ID != todo.ID {
-		t.Fatalf("expected todo in BACKLOG column")
+	// Board JSON keys columns by workflow column_key (e.g. "backlog"), not legacy UPPER status.
+	if len(board.Columns["backlog"]) != 1 || board.Columns["backlog"][0].ID != todo.ID {
+		t.Fatalf("expected todo in backlog column")
 	}
 
 	// Verify board data is returned correctly even if activity tracking had issues
