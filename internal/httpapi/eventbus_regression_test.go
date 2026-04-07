@@ -201,9 +201,10 @@ func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 	select {
 	case msg := <-hubCh:
 		var ev struct {
-			Type      string `json:"type"`
-			ProjectID int64  `json:"projectId"`
-			Payload   struct {
+			Type        string `json:"type"`
+			ProjectID   int64  `json:"projectId"`
+			ProjectSlug string `json:"projectSlug"`
+			Payload     struct {
 				TodoID     int64  `json:"todoId"`
 				Title      string `json:"title"`
 				AssigneeID int64  `json:"assigneeId"`
@@ -214,6 +215,9 @@ func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 		}
 		if ev.Type != "todo.assigned" {
 			t.Fatalf("expected SSE type todo.assigned, got %s", ev.Type)
+		}
+		if ev.ProjectSlug != p.Slug {
+			t.Fatalf("expected projectSlug %q on wire, got %q", p.Slug, ev.ProjectSlug)
 		}
 		if ev.Payload.Title != "with assignee" {
 			t.Fatalf("expected title in payload, got %q", ev.Payload.Title)
@@ -362,8 +366,9 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 	select {
 	case msg := <-hubCh:
 		var ev struct {
-			Type    string `json:"type"`
-			Payload struct {
+			Type        string `json:"type"`
+			ProjectSlug string `json:"projectSlug"`
+			Payload     struct {
 				TodoID     int64  `json:"todoId"`
 				Title      string `json:"title"`
 				AssigneeID int64  `json:"assigneeId"`
@@ -374,6 +379,9 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 		}
 		if ev.Type != "todo.assigned" {
 			t.Fatalf("expected todo.assigned, got %s", ev.Type)
+		}
+		if ev.ProjectSlug != p.Slug {
+			t.Fatalf("expected projectSlug %q on wire, got %q", p.Slug, ev.ProjectSlug)
 		}
 		if ev.Payload.Title != "assigned" {
 			t.Fatalf("expected title assigned, got %q", ev.Payload.Title)

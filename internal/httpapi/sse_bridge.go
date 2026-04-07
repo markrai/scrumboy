@@ -73,20 +73,22 @@ func (b *sseBridge) OnEvent(_ context.Context, e eventbus.Event) {
 
 		if domain.ToAssigneeUID != nil {
 			type assigneeWire struct {
-				ID        string `json:"id"`
-				Type      string `json:"type"`
-				ProjectID int64  `json:"projectId"`
-				Payload   struct {
-					TodoID       int64 `json:"todoId"`
-					Title        string `json:"title"`
-					AssigneeID   int64 `json:"assigneeId"`
-					ActorUserID  int64 `json:"actorUserId"`
+				ID          string `json:"id"`
+				Type        string `json:"type"`
+				ProjectID   int64  `json:"projectId"`
+				ProjectSlug string `json:"projectSlug,omitempty"`
+				Payload     struct {
+					TodoID      int64  `json:"todoId"`
+					Title       string `json:"title"`
+					AssigneeID  int64  `json:"assigneeId"`
+					ActorUserID int64  `json:"actorUserId"`
 				} `json:"payload"`
 			}
 			var w assigneeWire
 			w.ID = e.ID
 			w.Type = "todo.assigned"
 			w.ProjectID = e.ProjectID
+			w.ProjectSlug = domain.ProjectSlug
 			w.Payload.TodoID = domain.TodoID
 			w.Payload.Title = domain.Title
 			w.Payload.AssigneeID = *domain.ToAssigneeUID

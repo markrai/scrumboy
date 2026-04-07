@@ -5,8 +5,20 @@ import { emit, on } from '../events.js';
 import { apiFetch } from '../api.js';
 import { getProjectId, getProjects } from '../state/selectors.js';
 import { escapeHTML } from '../utils.js';
+import { resolveNotificationProjectSlugCore } from './notification-slug-resolve.js';
 const STORAGE_PREFIX = 'scrumboy_unread_v1_';
 const LIST_STORAGE_PREFIX = 'scrumboy_notifications_v1_';
+/**
+ * Resolves project slug: in-memory map → getProjects() catalog → event/localStorage slug.
+ * Central entry; do not read item.projectSlug or parsed.projectSlug for navigation without this.
+ */
+export function resolveNotificationProjectSlug(projectId, eventSlug) {
+    const mapSlug = projectSlugById.get(projectId);
+    const projects = getProjects();
+    const row = projects?.find((x) => x.id === projectId);
+    const catalogSlug = row && typeof row.slug === 'string' && row.slug.length > 0 ? row.slug : null;
+    return resolveNotificationProjectSlugCore(eventSlug, mapSlug ?? null, catalogSlug);
+}
 let unreadCount = 0;
 let currentUserId = null;
 let badgeInitialized = false;
@@ -174,20 +186,14 @@ function handleListClick(ev) {
         return;
     void (async () => {
         ingestProjectsFromApp(getProjects() ?? undefined);
-        let slug = item.projectSlug;
-        if (slug == null || slug === '') {
-            slug = projectSlugById.get(item.projectId) ?? null;
-            if (slug)
-                item.projectSlug = slug;
-        }
+        let slug = resolveNotificationProjectSlug(item.projectId, item.projectSlug);
         if (slug == null || slug === '') {
             await ensureProjectsLoaded();
-            slug = projectSlugById.get(item.projectId) ?? null;
-            if (slug)
-                item.projectSlug = slug;
+            slug = resolveNotificationProjectSlug(item.projectId, item.projectSlug);
         }
         if (slug == null || slug === '')
             return;
+        item.projectSlug = slug;
         item.read = true;
         flushPersistAndEmit();
         closePanel();
@@ -210,9 +216,22 @@ function ensureProjectsLoaded() {
     });
     return projectsLoadPromise;
 }
+function reconcileNotificationItemsFromResolver() {
+    let itemsChanged = false;
+    for (const it of notificationItems) {
+        const resolved = resolveNotificationProjectSlug(it.projectId, it.projectSlug);
+        if (resolved !== it.projectSlug) {
+            it.projectSlug = resolved;
+            itemsChanged = true;
+        }
+    }
+    if (itemsChanged) {
+        schedulePersistAndEmit();
+    }
+}
 /**
  * Merge id→slug from app state (dashboard / projects / board load). No network.
- * Backfills notification rows with null projectSlug when a slug is known.
+ * Reconciles stored rows when catalog/map disagrees with persisted slug.
  */
 export function ingestProjectsFromApp(projects) {
     if (!projects?.length)
@@ -222,19 +241,7 @@ export function ingestProjectsFromApp(projects) {
             projectSlugById.set(p.id, p.slug);
         }
     }
-    let itemsChanged = false;
-    for (const it of notificationItems) {
-        if (it.projectSlug !== null)
-            continue;
-        const s = projectSlugById.get(it.projectId);
-        if (s) {
-            it.projectSlug = s;
-            itemsChanged = true;
-        }
-    }
-    if (itemsChanged) {
-        schedulePersistAndEmit();
-    }
+    reconcileNotificationItemsFromResolver();
 }
 function tryHydrateSlugForNewItem(item) {
     const projects = getProjects();
@@ -269,7 +276,8 @@ function renderPanelList() {
     const rows = [];
     for (const it of notificationItems) {
         const unreadCls = it.read ? '' : ' notification-panel__row--unread';
-        const hasSlug = it.projectSlug != null && it.projectSlug.length > 0;
+        const resolvedSlug = resolveNotificationProjectSlug(it.projectId, it.projectSlug);
+        const hasSlug = resolvedSlug != null && resolvedSlug.length > 0;
         const opacity = hasSlug ? '1' : '0.75';
         rows.push(`<button type="button" class="notification-panel__row${unreadCls}" data-notification-id="${escapeHTML(it.id)}" style="display:block;width:100%;text-align:left;padding:12px 14px;border:none;background:transparent;cursor:pointer;opacity:${opacity};border-bottom:1px solid var(--border, rgba(0,0,0,.08));font:inherit;" tabindex="0">
       <div style="font-weight:${it.read ? '500' : '700'};font-size:14px;color:var(--text, #111);">${escapeHTML(it.title)}</div>
@@ -466,6 +474,7 @@ export function hydrateNotificationsForUser(userId) {
     }
     unreadCount = readStoredCount(userId);
     loadListFromStorage(userId);
+    reconcileNotificationItemsFromResolver();
     emitListUpdated();
 }
 export function getUnreadCount() {
@@ -542,6 +551,7 @@ export function appendTodoAssignedNotification(parsed) {
     if (isDuplicate(item))
         return;
     tryHydrateSlugForNewItem(item);
+    item.projectSlug = resolveNotificationProjectSlug(projectId, parsed.projectSlug ?? null);
     notificationItems = [item, ...notificationItems];
     capList();
     schedulePersistAndEmit();

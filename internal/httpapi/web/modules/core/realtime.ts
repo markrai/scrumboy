@@ -36,6 +36,7 @@ type RealtimePayload = {
   id?: string;
   type?: string;
   projectId?: number;
+  projectSlug?: string | null;
   payload?: { todoId?: number; title?: string; assigneeId?: number; actorUserId?: number };
 };
 

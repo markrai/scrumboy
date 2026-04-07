@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sort"
 	"testing"
 )
 
@@ -143,14 +144,14 @@ func TestGetBoard_TagAndSearchAND(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	
+
 	// Create user for tag ownership
 	user, err := st.BootstrapUser(ctx, "user@example.com", "password", "User")
 	if err != nil {
 		t.Fatalf("BootstrapUser: %v", err)
 	}
 	ctx = WithUserID(ctx, user.ID)
-	
+
 	p, err := st.CreateProject(ctx, "p")
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
@@ -277,12 +278,170 @@ func TestListTodosForBoardLane_Pagination(t *testing.T) {
 	}
 }
 
+// isAfter returns true iff first argument is strictly after second in ORDER BY rank ASC, id ASC
+// (same total order as ListTodosForBoardLane / getHiddenLaneBoundaryLocalId).
+func isAfter(a, b Todo) bool {
+	if a.Rank != b.Rank {
+		return a.Rank > b.Rank
+	}
+	return a.ID > b.ID
+}
+
+func TestListTodosForBoardLane_PaginationBoundaryContract(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "p")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: "Todo", Body: ""}, ModeFull)
+		if err != nil {
+			t.Fatalf("CreateTodo: %v", err)
+		}
+	}
+
+	const pageSize = 2
+	items1, cursor1, hasMore1, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, 0, 0, "", "", SprintFilter{Mode: "none"})
+	if err != nil {
+		t.Fatalf("page1: %v", err)
+	}
+	if len(items1) != pageSize || !hasMore1 || cursor1 == "" {
+		t.Fatalf("page1: len=%d hasMore=%v cursor empty=%v", len(items1), hasMore1, cursor1 == "")
+	}
+	A := items1[len(items1)-1]
+
+	afterRank, afterID := ParseLaneCursor(cursor1)
+	items2, cursor2, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank, afterID, "", "", SprintFilter{Mode: "none"})
+	if err != nil {
+		t.Fatalf("page2: %v", err)
+	}
+	if len(items2) < 1 {
+		t.Fatalf("page2 empty")
+	}
+	B := items2[0]
+	if !isAfter(B, A) {
+		t.Fatalf("expected page2[0] strictly after page1[last]: A=(rank=%d id=%d) B=(rank=%d id=%d)", A.Rank, A.ID, B.Rank, B.ID)
+	}
+
+	// Drag/drop invariant: limit=1 with afterCursor == page1's nextCursor returns exactly page2[0].
+	probe, probeCursor, probeHasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "", "", SprintFilter{Mode: "none"})
+	if err != nil {
+		t.Fatalf("probe limit=1: %v", err)
+	}
+	if len(probe) != 1 {
+		t.Fatalf("probe: expected 1 item, got %d", len(probe))
+	}
+	if probe[0].ID != B.ID {
+		t.Fatalf("limit=1 after page1 cursor: got id=%d want page2[0] id=%d", probe[0].ID, B.ID)
+	}
+	_ = probeCursor
+	_ = probeHasMore
+
+	// Walk remaining pages: union should be 5 distinct ids, no gaps in sequence when merged by order
+	var all []Todo
+	all = append(all, items1...)
+	all = append(all, items2...)
+	afterRank2, afterID2 := ParseLaneCursor(cursor2)
+	items3, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank2, afterID2, "", "", SprintFilter{Mode: "none"})
+	if err != nil {
+		t.Fatalf("page3: %v", err)
+	}
+	all = append(all, items3...)
+	seen := make(map[int64]struct{}, len(all))
+	for _, it := range all {
+		if _, ok := seen[it.ID]; ok {
+			t.Fatalf("duplicate id %d across pages", it.ID)
+		}
+		seen[it.ID] = struct{}{}
+	}
+	if len(seen) != 5 {
+		t.Fatalf("expected 5 unique todos, got %d", len(seen))
+	}
+}
+
+func TestListTodosForBoardLane_TagFilterPaginationInvariants(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "tagpage@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctx = WithUserID(ctx, user.ID)
+
+	p, err := st.CreateProject(ctx, "p")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	for i := 0; i < 5; i++ {
+		_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: "Todo", Body: "", Tags: []string{"bug"}}, ModeFull)
+		if err != nil {
+			t.Fatalf("CreateTodo: %v", err)
+		}
+	}
+
+	const pageSize = 2
+	tag := "bug"
+	var all []Todo
+	afterRank, afterID := int64(0), int64(0)
+	var prevLast *Todo
+	for page := 0; page < 5; page++ {
+		items, nextCur, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank, afterID, tag, "", SprintFilter{Mode: "none"})
+		if err != nil {
+			t.Fatalf("page %d: %v", page, err)
+		}
+		if len(items) == 0 {
+			break
+		}
+		if prevLast != nil {
+			if !isAfter(items[0], *prevLast) {
+				t.Fatalf("page boundary: first item not after previous page last")
+			}
+		}
+		for i := range items {
+			if i > 0 && !isAfter(items[i], items[i-1]) {
+				t.Fatalf("page %d: items not ordered by rank,id", page)
+			}
+			got := append([]string(nil), items[i].Tags...)
+			sort.Strings(got)
+			if len(got) != 1 || got[0] != "bug" {
+				t.Fatalf("todo %d: tags %v want [bug]", items[i].ID, items[i].Tags)
+			}
+		}
+		all = append(all, items...)
+		prevLast = &items[len(items)-1]
+		if !hasMore {
+			break
+		}
+		if nextCur == "" {
+			t.Fatalf("page %d: hasMore but empty cursor", page)
+		}
+		afterRank, afterID = ParseLaneCursor(nextCur)
+	}
+	seen := make(map[int64]struct{})
+	for _, it := range all {
+		if _, ok := seen[it.ID]; ok {
+			t.Fatalf("duplicate id %d", it.ID)
+		}
+		seen[it.ID] = struct{}{}
+	}
+	if len(seen) != 5 {
+		t.Fatalf("expected 5 tagged todos across pages, got %d", len(seen))
+	}
+}
+
 func TestListTodosForBoardLane_TagFilter(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()
 
 	ctx := context.Background()
-	user, err := st.BootstrapUser(ctx, "u@x.com", "pw", "U")
+	user, err := st.BootstrapUser(ctx, "u@x.com", "password123", "U")
 	if err != nil {
 		t.Fatalf("BootstrapUser: %v", err)
 	}

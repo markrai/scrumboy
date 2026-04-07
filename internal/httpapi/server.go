@@ -24,9 +24,9 @@ type Options struct {
 	ScrumboyMode   string // "full" or "anonymous"
 	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
 	// Empty disables wallpaper upload/serve (returns 503 for those routes).
-	DataDir string
-	AuthRateLimit  *ratelimit.Limiter
-	MCPHandler     http.Handler
+	DataDir       string
+	AuthRateLimit *ratelimit.Limiter
+	MCPHandler    http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
@@ -310,8 +310,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		swJS:                      swJS,
 		mcpHandler:                opts.MCPHandler,
 		vapidPublicKey:            vapidPub,
-		pushVapidConfigured: pushVapidConfigured,
-		pushDebug:           pushDebug,
+		pushVapidConfigured:       pushVapidConfigured,
+		pushDebug:                 pushDebug,
 	}
 }
 
@@ -405,9 +405,10 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 
 // PublishTodoAssigned emits a "todo.assigned" event through the event bus.
 // Designed to be passed to store.SetTodoAssignedPublisher.
-func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title string, from, to *int64, actorUserID int64) {
+func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug string, from, to *int64, actorUserID int64) {
 	payload, _ := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:       projectID,
+		ProjectSlug:     projectSlug,
 		TodoID:          todoID,
 		LocalID:         localID,
 		Title:           title,

@@ -464,6 +464,10 @@ ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
 // ListTodosForBoardLane returns todos for one status with cursor-based pagination.
 // Cursor format "rank:id" uses DB id (not localId). Returns (items, nextCursor, hasMore).
 // nextCursor is empty when hasMore is false.
+//
+// Ordering contract: queries use "ORDER BY t.rank ASC, t.id ASC". The cursor tuple (rank, id)
+// MUST match that order; the predicate "(t.rank, t.id) > (?, ?)" continues after the last
+// returned row. If ORDER BY changes, pagination tests and cursor semantics must be updated together.
 func (s *Store) ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, sprintFilter SprintFilter) ([]Todo, string, bool, error) {
 	if limit <= 0 {
 		limit = 20
@@ -527,7 +531,6 @@ LIMIT ?
 
 	var out []Todo
 	var todoIDs []int64
-	var lastRank, lastID int64
 	for rows.Next() {
 		var t Todo
 		var rowColumnKey string
@@ -564,7 +567,6 @@ LIMIT ?
 			t.DoneAt = &dt
 		}
 		todoIDs = append(todoIDs, t.ID)
-		lastRank, lastID = t.Rank, t.ID
 		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -584,7 +586,8 @@ LIMIT ?
 		out[i].Tags = tagMap[out[i].ID]
 	}
 	if hasMore {
-		return out, fmt.Sprintf("%d:%d", lastRank, lastID), true, nil
+		last := out[len(out)-1]
+		return out, fmt.Sprintf("%d:%d", last.Rank, last.ID), true, nil
 	}
 	return out, "", false, nil
 }

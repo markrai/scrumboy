@@ -2356,13 +2356,13 @@ func TestAPI_BoardPagedAndLaneEndpoint(t *testing.T) {
 	if board.ColumnsMeta == nil {
 		t.Fatal("expected columnsMeta")
 	}
-	backlog := board.Columns["BACKLOG"]
+	backlog := board.Columns["backlog"]
 	if len(backlog) != 10 {
-		t.Errorf("expected 10 items in BACKLOG, got %d", len(backlog))
+		t.Errorf("expected 10 items in backlog column, got %d", len(backlog))
 	}
-	meta := board.ColumnsMeta["BACKLOG"]
+	meta := board.ColumnsMeta["backlog"]
 	if meta == nil {
-		t.Fatal("expected BACKLOG columnsMeta")
+		t.Fatal("expected backlog columnsMeta")
 	}
 	if !meta["hasMore"].(bool) {
 		t.Error("expected BACKLOG hasMore true")
@@ -2382,7 +2382,7 @@ func TestAPI_BoardPagedAndLaneEndpoint(t *testing.T) {
 		NextCursor string `json:"nextCursor"`
 		HasMore    bool   `json:"hasMore"`
 	}
-	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+p.Slug+"/lanes/BACKLOG?limit=5&afterCursor="+url.QueryEscape(nextCursor), nil, &lane)
+	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+p.Slug+"/lanes/backlog?limit=5&afterCursor="+url.QueryEscape(nextCursor), nil, &lane)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get lane status=%d", resp.StatusCode)
 	}

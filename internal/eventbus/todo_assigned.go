@@ -6,6 +6,7 @@ package eventbus
 //   - httpapi.sseBridge todo.assigned branch (unmarshal → SSE wire)
 type TodoAssignedPayload struct {
 	ProjectID       int64  `json:"projectId"`
+	ProjectSlug     string `json:"projectSlug,omitempty"`
 	TodoID          int64  `json:"todoId"`
 	LocalID         int64  `json:"localId"`
 	Title           string `json:"title"`

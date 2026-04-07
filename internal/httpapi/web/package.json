@@ -3,10 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "postinstall": "node -e \"const fs=require('fs'); const path=require('path'); const src=path.join('node_modules','uplot','dist'); const dest='vendor'; if (!fs.existsSync(dest)) fs.mkdirSync(dest); try { fs.copyFileSync(path.join(src,'uPlot.iife.min.js'), path.join(dest,'uplot.min.js')); fs.copyFileSync(path.join(src,'uPlot.min.css'), path.join(dest,'uplot.min.css')); } catch (e) { console.warn('uPlot copy skipped:', e.message); }\""
+    "postinstall": "node -e \"const fs=require('fs'); const path=require('path'); const src=path.join('node_modules','uplot','dist'); const dest='vendor'; if (!fs.existsSync(dest)) fs.mkdirSync(dest); try { fs.copyFileSync(path.join(src,'uPlot.iife.min.js'), path.join(dest,'uplot.min.js')); fs.copyFileSync(path.join(src,'uPlot.min.css'), path.join(dest,'uplot.min.css')); } catch (e) { console.warn('uPlot copy skipped:', e.message); }\"",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
     "uplot": "^1.6.32"

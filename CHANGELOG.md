@@ -3,6 +3,21 @@
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
 
 
+## [3.11.8] - 2026-04-07
+
+### Fixes
+
+- **Board - lane pagination** — `ListTodosForBoardLane` now derives **`nextCursor` from the last returned row** after trimming to `limit` (aligned with `flushLane`), fixing skipped rows, duplicate IDs across pages, and incorrect **filtered drag/drop** boundary fetches that used `limit=1` with the lane cursor.
+- **Assignments - notifications** — **`todo.assigned`** SSE includes **`projectSlug`** (from the project row already loaded on assignee create/update; no extra DB round trip). Client uses centralized **`resolveNotificationProjectSlug`** (map → catalog → event) with **persisted row reconciliation** when the catalog slug changes.
+
+### Tests
+
+- **`internal/store`** — Pagination boundary contract, tag-filtered multi-page invariants, and related lane tests.
+- **`internal/httpapi`** — Eventbus regression asserts **`projectSlug`** on wire; **`TestAPI_BoardPagedAndLaneEndpoint`** uses canonical **`backlog`** column keys in JSON and lane URL.
+- **`internal/httpapi/web`** — Vitest for **`resolveNotificationProjectSlugCore`**.
+
+---
+
 ## [3.11.7] - 2026-04-05
 
 ### Fixes
