@@ -1660,6 +1660,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	// Maintained mutation contract: frontend and characterization tests use the
+	// slug/localId routes below. Legacy numeric /api/todos/{id} routes remain
+	// compatibility-only in handleTodos.
 	// PATCH/DELETE /api/board/{slug}/todos/{localId}
 	if len(rest) == 3 && rest[1] == "todos" && (r.Method == http.MethodPatch || r.Method == http.MethodDelete) {
 		localID, ok := parseInt64(rest[2])

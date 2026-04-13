@@ -1452,6 +1452,72 @@ func TestTodoLocalID_SequencingAndSlugEndpoints(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete todo status=%d", resp.StatusCode)
 	}
+	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+p.Slug+"/todos/1", nil, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected deleted todo GET to return 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestTodoCreate_DefaultLaneAndLocalIDPerProject(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+
+	var p1, p2 struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Defaults 1"}, &p1)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project 1 status=%d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Defaults 2"}, &p2)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project 2 status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var t1, t2, t3 struct {
+		LocalID   int64  `json:"localId"`
+		Status    string `json:"status"`
+		ColumnKey string `json:"columnKey"`
+		Body      string `json:"body"`
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p1.Slug+"/todos", map[string]any{
+		"title": "first",
+	}, &t1)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create first todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if t1.LocalID != 1 {
+		t.Fatalf("expected first todo localId 1, got %d", t1.LocalID)
+	}
+	if t1.Status != "BACKLOG" || t1.ColumnKey != "backlog" {
+		t.Fatalf("expected default backlog lane, got status=%q columnKey=%q", t1.Status, t1.ColumnKey)
+	}
+	if t1.Body != "" {
+		t.Fatalf("expected default empty body, got %q", t1.Body)
+	}
+
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p1.Slug+"/todos", map[string]any{
+		"title": "second",
+	}, &t2)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create second todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if t2.LocalID != 2 {
+		t.Fatalf("expected second todo localId 2, got %d", t2.LocalID)
+	}
+
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p2.Slug+"/todos", map[string]any{
+		"title": "other project first",
+	}, &t3)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create other project todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if t3.LocalID != 1 {
+		t.Fatalf("expected per-project localId reset to 1, got %d", t3.LocalID)
+	}
 }
 
 func TestTodoPatch_RequiresAssigneeField(t *testing.T) {
@@ -1489,6 +1555,226 @@ func TestTodoPatch_RequiresAssigneeField(t *testing.T) {
 	}, nil)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400 when assigneeUserId is missing, got %d", resp.StatusCode)
+	}
+}
+
+func TestTodoPatch_IsReplacementStyle(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+
+	var p struct {
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Replacement Patch"}, &p)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var created struct {
+		LocalID int64  `json:"localId"`
+		Title   string `json:"title"`
+		Body    string `json:"body"`
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/todos", map[string]any{
+		"title": "original",
+		"body":  "",
+	}, &created)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+p.Slug+"/todos/"+strconv.FormatInt(created.LocalID, 10), map[string]any{
+		"body":           "notes",
+		"assigneeUserId": nil,
+	}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected replacement-style sparse PATCH to fail with 400, got %d body=%s", resp.StatusCode, string(body))
+	}
+
+	var got struct {
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+p.Slug+"/todos/"+strconv.FormatInt(created.LocalID, 10), nil, &got)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if got.Title != "original" || got.Body != "" {
+		t.Fatalf("replacement-style failed PATCH must not mutate todo, got %+v", got)
+	}
+}
+
+func TestTodoPatch_SprintMutationSemantics(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t)
+	owner := bootstrapUserClient(t, client, ts.URL, "Owner", "sprint-owner@example.com", "password123")
+	ownerID := int64(owner["id"].(float64))
+	st := store.New(sqlDB, nil)
+	ctxOwner := store.WithUserID(context.Background(), ownerID)
+	project, err := st.CreateProject(ctxOwner, "Sprint Patch")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	sprint, err := st.CreateSprint(ctxOwner, project.ID, "Sprint 1", time.Now(), time.Now().Add(14*24*time.Hour))
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+
+	var created struct {
+		LocalID  int64  `json:"localId"`
+		SprintID *int64 `json:"sprintId"`
+		Body     string `json:"body"`
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos", map[string]any{
+		"title": "sprintable",
+		"body":  "",
+	}, &created)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if created.SprintID != nil {
+		t.Fatalf("expected new todo to start unscheduled, got sprintId=%v", *created.SprintID)
+	}
+
+	var scheduled struct {
+		LocalID  int64  `json:"localId"`
+		SprintID *int64 `json:"sprintId"`
+		Body     string `json:"body"`
+	}
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(created.LocalID, 10), map[string]any{
+		"title":          "sprintable",
+		"body":           "",
+		"tags":           []string{},
+		"assigneeUserId": nil,
+		"sprintId":       sprint.ID,
+	}, &scheduled)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("set sprint status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if scheduled.SprintID == nil || *scheduled.SprintID != sprint.ID {
+		t.Fatalf("expected sprintId %d after set, got %+v", sprint.ID, scheduled.SprintID)
+	}
+
+	var unchanged struct {
+		LocalID  int64  `json:"localId"`
+		SprintID *int64 `json:"sprintId"`
+		Body     string `json:"body"`
+	}
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(created.LocalID, 10), map[string]any{
+		"title":          "sprintable",
+		"body":           "leave unchanged",
+		"tags":           []string{},
+		"assigneeUserId": nil,
+	}, &unchanged)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("leave sprint unchanged status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if unchanged.SprintID == nil || *unchanged.SprintID != sprint.ID {
+		t.Fatalf("expected sprintId %d to remain set when omitted, got %+v", sprint.ID, unchanged.SprintID)
+	}
+	if unchanged.Body != "leave unchanged" {
+		t.Fatalf("expected body update to apply while sprint stayed unchanged, got %q", unchanged.Body)
+	}
+
+	var cleared struct {
+		LocalID  int64  `json:"localId"`
+		SprintID *int64 `json:"sprintId"`
+		Body     string `json:"body"`
+	}
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(created.LocalID, 10), map[string]any{
+		"title":          "sprintable",
+		"body":           "cleared",
+		"tags":           []string{},
+		"assigneeUserId": nil,
+		"sprintId":       nil,
+	}, &cleared)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("clear sprint status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if cleared.SprintID != nil {
+		t.Fatalf("expected sprintId to clear on explicit null, got %+v", cleared.SprintID)
+	}
+}
+
+func TestTodoMove_SlugRoute_UsesLocalIDsForOrdering(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+
+	var seed struct {
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Seed"}, &seed)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create seed project status=%d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+seed.Slug+"/todos", map[string]any{
+		"title": "seed todo",
+	}, nil)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create seed todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var p struct {
+		Slug string `json:"slug"`
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Ordering"}, &p)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var t1, t2, t3 struct {
+		ID      int64 `json:"id"`
+		LocalID int64 `json:"localId"`
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/todos", map[string]any{"title": "t1"}, &t1)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo1 status=%d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/todos", map[string]any{"title": "t2"}, &t2)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo2 status=%d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/todos", map[string]any{"title": "t3"}, &t3)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo3 status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if t1.ID == t1.LocalID {
+		t.Fatalf("expected todo id and localId to differ to prove localId routing semantics, got id=%d localId=%d", t1.ID, t1.LocalID)
+	}
+
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/todos/"+strconv.FormatInt(t3.LocalID, 10)+"/move", map[string]any{
+		"toColumnKey": "backlog",
+		"beforeId":    t1.LocalID,
+	}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("move todo status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var board struct {
+		Columns map[string][]struct {
+			LocalID int64 `json:"localId"`
+		} `json:"columns"`
+	}
+	resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+p.Slug, nil, &board)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get board status=%d body=%s", resp.StatusCode, string(body))
+	}
+	backlog := board.Columns["backlog"]
+	if len(backlog) != 3 {
+		t.Fatalf("expected 3 backlog todos, got %d", len(backlog))
+	}
+	got := []int64{backlog[0].LocalID, backlog[1].LocalID, backlog[2].LocalID}
+	want := []int64{t3.LocalID, t1.LocalID, t2.LocalID}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected backlog order %v, got %v", want, got)
+		}
 	}
 }
 
