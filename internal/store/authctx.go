@@ -10,6 +10,11 @@ const (
 	ctxKeyUserName
 )
 
+// These helpers define the current transport-to-store actor envelope.
+// HTTP requestContext() and MCP resolveRequestAuth() populate them after
+// external credential checks. Store code still consumes them for implicit-actor
+// flows under the current Phase 1 contract.
+
 // WithUserID attaches the authenticated user id to the context.
 func WithUserID(ctx context.Context, userID int64) context.Context {
 	return context.WithValue(ctx, ctxKeyUserID, userID)
@@ -25,7 +30,8 @@ func WithUserName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, ctxKeyUserName, name)
 }
 
-// UserIDFromContext retrieves the authenticated user id from the context.
+// UserIDFromContext retrieves the ambient actor user id established by the
+// transport layer.
 func UserIDFromContext(ctx context.Context) (int64, bool) {
 	v := ctx.Value(ctxKeyUserID)
 	id, ok := v.(int64)

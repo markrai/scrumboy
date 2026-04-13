@@ -353,18 +353,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handleSPA(w, r)
 }
 
+// requestContext is the HTTP credential-to-actor boundary.
+// It may attach actor identity from a valid session cookie, but it does not
+// authorize any operation on its own. Handlers may still do coarse
+// auth-required checks for HTTP behavior, while store methods remain the
+// authority for project/todo/user authorization.
 func (s *Server) requestContext(r *http.Request) context.Context {
 	ctx := r.Context()
 
-	// CRITICAL: Anonymous mode is an authentication boundary.
-	// In anonymous mode, session cookies are ignored and requests are treated as unauthenticated.
-	// This ensures anonymous temp boards have creator_user_id = NULL and never appear in user listings.
+	// Anonymous mode intentionally establishes no actor, even if a valid session
+	// cookie is present. This keeps anonymous temp boards creator-less and out of
+	// authenticated user listings.
 	if s.mode == "anonymous" {
 		return ctx // Do not extract user from session cookie
 	}
 
-	// Best-effort: attach authenticated principal to request context (if session cookie is valid).
-	// Do not error/redirect here; auth is enforced by API handlers/store authorization.
+	// Best-effort actor establishment only. Missing/invalid cookies fall through
+	// as unauthenticated requests; later handler/store code decides whether that
+	// is allowed for the specific operation.
 	c, err := r.Cookie("scrumboy_session")
 	if err != nil || c == nil || c.Value == "" {
 		return ctx
