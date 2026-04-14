@@ -60,6 +60,77 @@ type boardEventsWireEvent struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+type apiErrorEnvelope struct {
+	Error struct {
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Details map[string]any `json:"details"`
+	} `json:"error"`
+}
+
+func assertAPIError(t *testing.T, got apiErrorEnvelope, wantCode, wantField string) {
+	t.Helper()
+
+	if got.Error.Code != wantCode {
+		t.Fatalf("expected error code %q, got %+v", wantCode, got)
+	}
+	if wantField == "" {
+		return
+	}
+	if got.Error.Details == nil {
+		t.Fatalf("expected error.details.field=%q, got nil details", wantField)
+	}
+	gotField, _ := got.Error.Details["field"].(string)
+	if gotField != wantField {
+		t.Fatalf("expected error.details.field=%q, got %+v", wantField, got.Error.Details)
+	}
+}
+
+func assertExactJSONKeys(t *testing.T, m map[string]any, expected ...string) {
+	t.Helper()
+
+	if len(m) != len(expected) {
+		t.Fatalf("expected json keys %v, got %+v", expected, m)
+	}
+	for _, key := range expected {
+		if _, ok := m[key]; !ok {
+			t.Fatalf("expected json key %q in %+v", key, m)
+		}
+	}
+}
+
+func assertTodoSearchItem(t *testing.T, item map[string]any, wantLocalID int64, wantTitle string) {
+	t.Helper()
+
+	assertExactJSONKeys(t, item, "localId", "title")
+	gotLocalID, ok := item["localId"].(float64)
+	if !ok || int64(gotLocalID) != wantLocalID {
+		t.Fatalf("expected search item localId=%d, got %+v", wantLocalID, item)
+	}
+	gotTitle, ok := item["title"].(string)
+	if !ok || gotTitle != wantTitle {
+		t.Fatalf("expected search item title=%q, got %+v", wantTitle, item)
+	}
+}
+
+func assertTodoLinkItem(t *testing.T, item map[string]any, wantLocalID int64, wantTitle, wantLinkType string) {
+	t.Helper()
+
+	assertExactJSONKeys(t, item, "localId", "title", "linkType")
+	gotLocalID, ok := item["localId"].(float64)
+	if !ok || int64(gotLocalID) != wantLocalID {
+		t.Fatalf("expected link item localId=%d, got %+v", wantLocalID, item)
+	}
+	gotTitle, ok := item["title"].(string)
+	if !ok || gotTitle != wantTitle {
+		t.Fatalf("expected link item title=%q, got %+v", wantTitle, item)
+	}
+	gotLinkType, ok := item["linkType"].(string)
+	if !ok || gotLinkType != wantLinkType {
+		t.Fatalf("expected link item linkType=%q, got %+v", wantLinkType, item)
+	}
+}
+
 func subscribeBoardEvents(t *testing.T, client *http.Client, eventsURL string) (*http.Response, <-chan boardEventsWireEvent, <-chan error) {
 	t.Helper()
 
@@ -1506,6 +1577,474 @@ func TestTodoLocalID_SequencingAndSlugEndpoints(t *testing.T) {
 	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+p.Slug+"/todos/1", nil, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected deleted todo GET to return 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestBoardTodoSearch_RouteSemantics(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+
+	createProject := func(name string) struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	} {
+		t.Helper()
+		var p struct {
+			ID   int64  `json:"id"`
+			Slug string `json:"slug"`
+		}
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": name}, &p)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create project status=%d body=%s", resp.StatusCode, string(body))
+		}
+		if p.Slug == "" {
+			t.Fatalf("expected non-empty slug for project %q", name)
+		}
+		return p
+	}
+
+	createTodo := func(slug, title string) struct {
+		ID      int64  `json:"id"`
+		LocalID int64  `json:"localId"`
+		Title   string `json:"title"`
+	} {
+		t.Helper()
+		var todo struct {
+			ID      int64  `json:"id"`
+			LocalID int64  `json:"localId"`
+			Title   string `json:"title"`
+		}
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+slug+"/todos", map[string]any{
+			"title": title,
+		}, &todo)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create todo status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return todo
+	}
+
+	seed := createProject("search-seed")
+	for i := 0; i < 3; i++ {
+		_ = createTodo(seed.Slug, fmt.Sprintf("seed-%d", i))
+	}
+
+	project := createProject("search-target")
+	t1 := createTodo(project.Slug, "Login feature")
+	t2 := createTodo(project.Slug, "Feature flag")
+	t3 := createTodo(project.Slug, "Logout hardening")
+
+	if t1.LocalID != 1 || t2.LocalID != 2 || t3.LocalID != 3 {
+		t.Fatalf("expected localIds 1,2,3 got %d,%d,%d", t1.LocalID, t2.LocalID, t3.LocalID)
+	}
+	if t1.ID == t1.LocalID || t1.ID <= t3.LocalID {
+		t.Fatalf("expected target todo id/localId divergence, got id=%d localId=%d", t1.ID, t1.LocalID)
+	}
+
+	if _, err := sqlDB.Exec(`
+UPDATE todos
+SET updated_at = CASE local_id
+	WHEN 1 THEN 1000
+	WHEN 2 THEN 3000
+	WHEN 3 THEN 2000
+	ELSE updated_at
+END
+WHERE project_id = ? AND local_id IN (1, 2, 3)
+`, project.ID); err != nil {
+		t.Fatalf("set deterministic updated_at: %v", err)
+	}
+
+	t.Run("trimmed case-insensitive substring search uses the literal search route", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("q", "  FeAtUrE  ")
+
+		var out []map[string]any
+		resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/search?"+params.Encode(), nil, &out)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("search status=%d body=%s", resp.StatusCode, string(body))
+		}
+		if len(out) != 2 {
+			t.Fatalf("expected 2 search results, got %+v", out)
+		}
+		assertTodoSearchItem(t, out[0], 1, "Login feature")
+		assertTodoSearchItem(t, out[1], 2, "Feature flag")
+	})
+
+	t.Run("numeric q matches localId not global todo id", func(t *testing.T) {
+		var byLocalID []map[string]any
+		resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/search?q=1", nil, &byLocalID)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("search by localId status=%d body=%s", resp.StatusCode, string(body))
+		}
+		if len(byLocalID) != 1 {
+			t.Fatalf("expected 1 localId match, got %+v", byLocalID)
+		}
+		assertTodoSearchItem(t, byLocalID[0], 1, "Login feature")
+
+		var byGlobalID []map[string]any
+		resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/search?q="+strconv.FormatInt(t1.ID, 10), nil, &byGlobalID)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("search by global id status=%d body=%s", resp.StatusCode, string(body))
+		}
+		if len(byGlobalID) != 0 {
+			t.Fatalf("expected global todo id query %d to return no results, got %+v", t1.ID, byGlobalID)
+		}
+	})
+
+	t.Run("exclude ignores blanks invalid values and non-positive ids", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("q", "feature")
+		params.Set("exclude", ",2,nope,0,-1,999")
+
+		var out []map[string]any
+		resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/search?"+params.Encode(), nil, &out)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("search with exclude status=%d body=%s", resp.StatusCode, string(body))
+		}
+		if len(out) != 1 {
+			t.Fatalf("expected 1 filtered search result, got %+v", out)
+		}
+		assertTodoSearchItem(t, out[0], 1, "Login feature")
+	})
+
+	t.Run("empty q returns recent first by updated_at desc", func(t *testing.T) {
+		var out []map[string]any
+		resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/search", nil, &out)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("search empty q status=%d body=%s", resp.StatusCode, string(body))
+		}
+		if len(out) != 3 {
+			t.Fatalf("expected 3 recent search results, got %+v", out)
+		}
+		assertTodoSearchItem(t, out[0], 2, "Feature flag")
+		assertTodoSearchItem(t, out[1], 3, "Logout hardening")
+		assertTodoSearchItem(t, out[2], 1, "Login feature")
+	})
+}
+
+func TestBoardTodoSearchAndLinks_DurableBoardHideExistenceWithoutViewerAccess(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	ownerClient := newCookieClient(t)
+	bootstrapUserClient(t, ownerClient, ts.URL, "Owner", "owner-board-links@example.com", "password123")
+
+	var project struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "private-board-links"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var t1, t2 struct {
+		LocalID int64 `json:"localId"`
+	}
+	resp, body = doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos", map[string]any{"title": "private-1"}, &t1)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo1 status=%d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos", map[string]any{"title": "private-2"}, &t2)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo2 status=%d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", map[string]any{
+		"targetLocalId": t2.LocalID,
+	}, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("create link status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	anonClient := ts.Client()
+	var errResp apiErrorEnvelope
+
+	resp, body = doJSON(t, anonClient, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/search?q=private", nil, &errResp)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected search to hide board existence with 404, got %d body=%s", resp.StatusCode, string(body))
+	}
+	assertAPIError(t, errResp, "NOT_FOUND", "")
+
+	resp, body = doJSON(t, anonClient, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", nil, &errResp)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected links to hide board existence with 404, got %d body=%s", resp.StatusCode, string(body))
+	}
+	assertAPIError(t, errResp, "NOT_FOUND", "")
+}
+
+func TestBoardTodoLinks_RoundTripUsesLocalIDs(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+
+	createProject := func(name string) struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	} {
+		t.Helper()
+		var p struct {
+			ID   int64  `json:"id"`
+			Slug string `json:"slug"`
+		}
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": name}, &p)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create project status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return p
+	}
+
+	createTodo := func(slug, title string) struct {
+		ID      int64  `json:"id"`
+		LocalID int64  `json:"localId"`
+		Title   string `json:"title"`
+	} {
+		t.Helper()
+		var todo struct {
+			ID      int64  `json:"id"`
+			LocalID int64  `json:"localId"`
+			Title   string `json:"title"`
+		}
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+slug+"/todos", map[string]any{
+			"title": title,
+		}, &todo)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create todo status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return todo
+	}
+
+	seed := createProject("links-seed")
+	for i := 0; i < 2; i++ {
+		_ = createTodo(seed.Slug, fmt.Sprintf("seed-link-%d", i))
+	}
+
+	project := createProject("links-target")
+	t1 := createTodo(project.Slug, "Link source")
+	t2 := createTodo(project.Slug, "Link target")
+	t3 := createTodo(project.Slug, "Third todo")
+
+	if t1.ID == t1.LocalID || t2.ID == t2.LocalID || t3.ID == t3.LocalID {
+		t.Fatalf("expected id/localId divergence for link route test, got %+v %+v %+v", t1, t2, t3)
+	}
+
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", map[string]any{
+		"targetLocalId": t2.LocalID,
+	}, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("create default link status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", map[string]any{
+		"targetLocalId": t2.LocalID,
+	}, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("duplicate link add status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var links map[string][]map[string]any
+	resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", nil, &links)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get links after duplicate add status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if len(links) != 2 {
+		t.Fatalf("expected outbound/inbound keys only, got %+v", links)
+	}
+	if len(links["outbound"]) != 1 || len(links["inbound"]) != 0 {
+		t.Fatalf("unexpected links after duplicate add: %+v", links)
+	}
+	assertTodoLinkItem(t, links["outbound"][0], t2.LocalID, "Link target", "relates_to")
+
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", map[string]any{
+		"targetLocalId": t3.LocalID,
+		"linkType":      "duplicates",
+	}, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("create second outbound link status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t3.LocalID, 10)+"/links", map[string]any{
+		"targetLocalId": t2.LocalID,
+		"linkType":      "blocks",
+	}, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("create inbound link status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", nil, &links)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get source links status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if len(links["outbound"]) != 2 || len(links["inbound"]) != 0 {
+		t.Fatalf("unexpected source links payload: %+v", links)
+	}
+	assertTodoLinkItem(t, links["outbound"][0], t2.LocalID, "Link target", "relates_to")
+	assertTodoLinkItem(t, links["outbound"][1], t3.LocalID, "Third todo", "duplicates")
+
+	resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t2.LocalID, 10)+"/links", nil, &links)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get target links status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if len(links["outbound"]) != 0 || len(links["inbound"]) != 2 {
+		t.Fatalf("unexpected target links payload: %+v", links)
+	}
+	assertTodoLinkItem(t, links["inbound"][0], t1.LocalID, "Link source", "relates_to")
+	assertTodoLinkItem(t, links["inbound"][1], t3.LocalID, "Third todo", "blocks")
+
+	resp, body = doJSON(t, client, http.MethodDelete, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links/"+strconv.FormatInt(t3.LocalID, 10), nil, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete link status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	resp, body = doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"/todos/"+strconv.FormatInt(t1.LocalID, 10)+"/links", nil, &links)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get links after delete status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if len(links["outbound"]) != 1 || len(links["inbound"]) != 0 {
+		t.Fatalf("unexpected links after delete: %+v", links)
+	}
+	assertTodoLinkItem(t, links["outbound"][0], t2.LocalID, "Link target", "relates_to")
+}
+
+func TestBoardTodoLinks_ValidationAndStatusCodes(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+
+	createProject := func(name string) struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	} {
+		t.Helper()
+		var p struct {
+			ID   int64  `json:"id"`
+			Slug string `json:"slug"`
+		}
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": name}, &p)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create project status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return p
+	}
+
+	createTodo := func(slug, title string) struct {
+		ID      int64  `json:"id"`
+		LocalID int64  `json:"localId"`
+		Title   string `json:"title"`
+	} {
+		t.Helper()
+		var todo struct {
+			ID      int64  `json:"id"`
+			LocalID int64  `json:"localId"`
+			Title   string `json:"title"`
+		}
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+slug+"/todos", map[string]any{
+			"title": title,
+		}, &todo)
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create todo status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return todo
+	}
+
+	seed := createProject("links-validation-seed")
+	for i := 0; i < 3; i++ {
+		_ = createTodo(seed.Slug, fmt.Sprintf("seed-validation-%d", i))
+	}
+
+	project := createProject("links-validation-target")
+	t1 := createTodo(project.Slug, "Validation source")
+	t2 := createTodo(project.Slug, "Validation target")
+	if t2.ID == t2.LocalID || t2.ID <= t2.LocalID {
+		t.Fatalf("expected target todo id/localId divergence, got %+v", t2)
+	}
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		body       any
+		wantStatus int
+		wantCode   string
+		wantField  string
+	}{
+		{
+			name:       "get invalid source localId",
+			method:     http.MethodGet,
+			path:       "/api/board/" + project.Slug + "/todos/not-a-number/links",
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+			wantField:  "localId",
+		},
+		{
+			name:       "get missing source todo",
+			method:     http.MethodGet,
+			path:       "/api/board/" + project.Slug + "/todos/999/links",
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
+		},
+		{
+			name:       "post targetLocalId required",
+			method:     http.MethodPost,
+			path:       "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(t1.LocalID, 10) + "/links",
+			body:       map[string]any{"targetLocalId": 0},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+			wantField:  "targetLocalId",
+		},
+		{
+			name:       "post self link rejected",
+			method:     http.MethodPost,
+			path:       "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(t1.LocalID, 10) + "/links",
+			body:       map[string]any{"targetLocalId": t1.LocalID},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+			wantField:  "targetLocalId",
+		},
+		{
+			name:       "post invalid linkType",
+			method:     http.MethodPost,
+			path:       "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(t1.LocalID, 10) + "/links",
+			body:       map[string]any{"targetLocalId": t2.LocalID, "linkType": "invalid_type"},
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+		},
+		{
+			name:       "post target uses localId not global id",
+			method:     http.MethodPost,
+			path:       "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(t1.LocalID, 10) + "/links",
+			body:       map[string]any{"targetLocalId": t2.ID},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
+		},
+		{
+			name:       "delete invalid targetLocalId path",
+			method:     http.MethodDelete,
+			path:       "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(t1.LocalID, 10) + "/links/not-a-number",
+			wantStatus: http.StatusBadRequest,
+			wantCode:   "VALIDATION_ERROR",
+			wantField:  "targetLocalId",
+		},
+		{
+			name:       "delete missing existing link",
+			method:     http.MethodDelete,
+			path:       "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(t1.LocalID, 10) + "/links/" + strconv.FormatInt(t2.LocalID, 10),
+			wantStatus: http.StatusNotFound,
+			wantCode:   "NOT_FOUND",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var errResp apiErrorEnvelope
+			resp, body := doJSON(t, client, tc.method, ts.URL+tc.path, tc.body, &errResp)
+			if resp.StatusCode != tc.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", resp.StatusCode, tc.wantStatus, string(body))
+			}
+			assertAPIError(t, errResp, tc.wantCode, tc.wantField)
+		})
 	}
 }
 
