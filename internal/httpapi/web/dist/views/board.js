@@ -181,6 +181,12 @@ async function getRenderProjects() {
 function useMergedGlobalRealtime() {
     return !!(getAuthStatusAvailable() && getUser());
 }
+// Logged-in boards consume merged realtime from /api/me/realtime. Keep this
+// classification aligned with the anonymous board SSE path below:
+// - todo.assigned: no board reload here; assignment refresh arrives via the
+//   synthetic refresh_needed line emitted by the SSE bridge
+// - members_updated: invalidate members cache only
+// - refresh_needed and other non-ping project-scoped events: queue a board refetch
 function onBoardRealtimeEvent(_payload) {
     const slug = boardEventsSlug;
     if (!slug || getSlug() !== slug)
@@ -268,6 +274,10 @@ function ensureRealtimeForceRefreshTimer() {
         flushPendingRealtimeRefresh(true);
     }, maxRefreshDelayMs);
 }
+// Pending realtime refreshes are slug-scoped. They are dropped after
+// navigation, deferred while local interaction guards are active, retried after
+// max(realtimeRefetchDebounceMs, guardRemaining), and force-flushed after
+// maxRefreshDelayMs so the board eventually reloads.
 function flushPendingRealtimeRefresh(force = false) {
     const slug = pendingRealtimeRefreshSlug;
     if (!slug) {
@@ -335,6 +345,9 @@ function connectBoardEvents(slug) {
     const url = new URL(`/api/board/${slug}/events`, window.location.origin).toString();
     const manager = new SseConnectionManager(url, {
         label: `board/${slug}/events`,
+        // Anonymous-board onopen is conservative: skip reconnect refetches while
+        // the initial board load is still in flight, while the manager/slug is
+        // stale, or immediately after a successful load for the same slug.
         onOpen: () => {
             debugLog("SSE onopen fired", slug);
             if (isBulkUpdating())
@@ -357,6 +370,7 @@ function connectBoardEvents(slug) {
             }
             refetchBoardFromRealtime(slug);
         },
+        // Mirror onBoardRealtimeEvent semantics for anonymous board SSE.
         onMessage: (event) => {
             if (boardAnonSseManager !== manager || getSlug() !== slug)
                 return;

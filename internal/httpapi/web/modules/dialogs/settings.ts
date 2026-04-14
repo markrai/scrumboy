@@ -36,10 +36,8 @@ import {
 } from '../state/mutations.js';
 import { BackupPreviewResponse, User } from '../types.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
-import { invalidateBoard, refreshSprintsAndChips } from '../orchestration/board-refresh.js';
 import { emit } from '../events.js';
 import { normalizeSprints } from '../sprints.js';
-import { recordLocalMutation } from '../realtime/guard.js';
 import {
   KEY_ACTION_LIST,
   chordFromKeyboardEvent,
@@ -56,6 +54,22 @@ import {
   getDesktopNotificationStatusDescription,
 } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
+import {
+  bindWorkflowTabInteractions,
+  clearWorkflowDraftState,
+  invalidateWorkflowLaneCountsCache,
+  isWorkflowDraftDirty,
+  loadWorkflowTabContent,
+  resetWorkflowDraftToBaseline,
+} from './settings-workflow.js';
+import {
+  bindTagTabInteractions,
+  invalidateTagsCache as invalidateTagSettingsCache,
+  loadTagSettingsContent,
+} from './settings-tags.js';
+import { bindSprintsTabInteractions, renderSprintsTabContent } from './settings-sprints.js';
+
+export { invalidateTagsCache } from './settings-tags.js';
 
 // Import view functions - renderProjects is not needed here
 declare function renderProjects(): Promise<void>;
@@ -95,109 +109,12 @@ let settingsProfileRefetchController: AbortController | null = null;
 let settingsProfileRefetchVersion = 0;
 
 // Only one sprint row in edit mode at a time
-let editingSprintId: number | null = null;
-
-// Burndown chart sprint navigation: index into sorted sprints list
 let burndownSprintIndex = 0;
 
 // Cache for settings modal API calls
-let cachedTags: any[] | null = null;
-let cachedTagsHTML: string | null = null;
 let cachedRealBurndownData: any[] | null = null;
-let cachedTagsURL: string | null = null;
 let cachedRealBurndownURL: string | null = null;
 let cachedSprintsForCharts: { id: number; name: string; plannedStartAt: number; plannedEndAt: number; state?: string }[] | null = null;
-
-/** Settings → Workflow tab: server lane occupancy for delete gating (fail-closed). */
-type WorkflowLaneCountsState =
-  | { status: "loading" }
-  | { status: "ok"; counts: Record<string, number> }
-  | { status: "error" };
-
-let workflowLaneCountsCache: {
-  slug: string;
-  state: Exclude<WorkflowLaneCountsState, { status: "loading" }>;
-} | null = null;
-let workflowLaneCountsFetchGeneration = 0;
-
-/** Settings → Workflow: local draft for name/color (explicit Save Changes). */
-type WorkflowLaneDraft = { key: string; name: string; color: string; isDone: boolean };
-
-let workflowTabDraft: WorkflowLaneDraft[] | null = null;
-let workflowTabDraftBaseline: WorkflowLaneDraft[] | null = null;
-let workflowTabDraftSlug: string | null = null;
-
-function cloneWorkflowLanesFromBoard(): WorkflowLaneDraft[] {
-  const w = getBoard()?.columnOrder ?? [];
-  return w.map((l) => ({
-    key: l.key,
-    name: l.name,
-    color: normalizeWorkflowLaneColorForInput(l.color),
-    isDone: !!l.isDone,
-  }));
-}
-
-function ensureWorkflowDraftInitialized(): void {
-  const slug = getSlug();
-  if (!slug) return;
-  if (workflowTabDraftSlug !== slug || workflowTabDraft === null || workflowTabDraftBaseline === null) {
-    const lanes = cloneWorkflowLanesFromBoard();
-    workflowTabDraft = lanes;
-    workflowTabDraftBaseline = JSON.parse(JSON.stringify(lanes)) as WorkflowLaneDraft[];
-    workflowTabDraftSlug = slug;
-  }
-}
-
-function syncWorkflowDraftFromBoardAfterMutation(): void {
-  const lanes = cloneWorkflowLanesFromBoard();
-  workflowTabDraft = lanes;
-  workflowTabDraftBaseline = JSON.parse(JSON.stringify(lanes)) as WorkflowLaneDraft[];
-  workflowTabDraftSlug = getSlug() ?? null;
-}
-
-function resetWorkflowDraftToBaseline(): void {
-  if (workflowTabDraftBaseline && workflowTabDraftSlug === getSlug()) {
-    workflowTabDraft = JSON.parse(JSON.stringify(workflowTabDraftBaseline)) as WorkflowLaneDraft[];
-  } else {
-    ensureWorkflowDraftInitialized();
-  }
-}
-
-function clearWorkflowDraftState(): void {
-  workflowTabDraft = null;
-  workflowTabDraftBaseline = null;
-  workflowTabDraftSlug = null;
-}
-
-function isWorkflowDraftDirty(): boolean {
-  if (!workflowTabDraft || !workflowTabDraftBaseline) return false;
-  if (workflowTabDraft.length !== workflowTabDraftBaseline.length) return true;
-  for (let i = 0; i < workflowTabDraft.length; i++) {
-    const a = workflowTabDraft[i];
-    const b = workflowTabDraftBaseline[i];
-    if (a.key !== b.key) return true;
-    if (a.name.trim() !== b.name.trim()) return true;
-    if (a.color.trim().toLowerCase() !== b.color.trim().toLowerCase()) return true;
-  }
-  return false;
-}
-
-function updateWorkflowSaveFooter(): void {
-  const btn = document.querySelector("[data-workflow-save-changes]") as HTMLButtonElement | null;
-  if (btn) btn.disabled = !isWorkflowDraftDirty();
-}
-
-function invalidateWorkflowLaneCountsCache(): void {
-  workflowLaneCountsCache = null;
-  workflowLaneCountsFetchGeneration++;
-}
-
-// Helper function to invalidate tags cache (call when tags are modified)
-export function invalidateTagsCache(): void {
-  cachedTags = null;
-  cachedTagsHTML = null;
-  cachedTagsURL = null;
-}
 
 /** Update all user-avatar elements outside the settings dialog (e.g. topbar) after avatar change. */
 function refreshAvatarsOutsideSettings(): void {
@@ -659,515 +576,6 @@ async function setupBackupTab(signal?: AbortSignal): Promise<void> {
   }, 0);
 }
 
-// updateTagColor and deleteTag call view functions, so they need to import from app.js
-// For durable projects: tag_id required (same authority rule as delete). For anonymous boards only: name-based allowed.
-async function updateTagColor(tagName: string, tagId: number | null | undefined, color: string | null): Promise<void> {
-  const projectId = getSettingsProjectId();
-  const slug = getSlug();
-  const isDurable = !!projectId;
-
-  // Durable project: require tagId; never use name-based mutation.
-  if (isDurable) {
-    if (tagId == null || tagId <= 0) {
-      showToast("Cannot update color: tag ID missing");
-      return;
-    }
-    const url = `/api/projects/${projectId}/tags/id/${tagId}/color`;
-    try {
-      recordLocalMutation();
-      await apiFetch(url, {
-        method: "PATCH",
-        body: JSON.stringify({ color }),
-      });
-      await applyTagColorSuccess(tagName, color, url);
-    } catch (err: any) {
-      showToast(err.message);
-    }
-    return;
-  }
-
-  // Board (slug): prefer tag_id; fall back to name only for anonymous boards.
-  if (slug) {
-    let url: string;
-    if (tagId != null && tagId > 0) {
-      url = `/api/board/${slug}/tags/id/${tagId}/color`;
-    } else {
-      url = `/api/board/${slug}/tags/${encodeURIComponent(tagName)}/color`;
-    }
-    try {
-      recordLocalMutation();
-      await apiFetch(url, {
-        method: "PATCH",
-        body: JSON.stringify({ color }),
-      });
-      await applyTagColorSuccess(tagName, color, url);
-    } catch (err: any) {
-      showToast(err.message);
-    }
-    return;
-  }
-
-  showToast("No project available");
-}
-
-async function applyTagColorSuccess(tagName: string, color: string | null, _url: string): Promise<void> {
-  try {
-
-    // Update local state
-    const tagColors = { ...getTagColors() };
-    if (color) {
-      tagColors[tagName] = color;
-    } else {
-      delete tagColors[tagName];
-    }
-    setTagColors(tagColors);
-
-    // Save tag colors to backend (user preference)
-    if (getUser()) {
-      try {
-        await apiFetch("/api/user/preferences", {
-          method: "PUT",
-          body: JSON.stringify({ key: "tagColors", value: JSON.stringify(tagColors) }),
-        });
-      } catch (err) {
-        // Ignore errors saving preferences
-      }
-    }
-
-    // Update clear button visibility
-    const clearBtn = document.querySelector(`.settings-color-clear[data-tag="${escapeHTML(tagName)}"]`);
-    if (clearBtn) {
-      (clearBtn as HTMLElement).style.display = color ? "" : "none";
-    }
-
-    invalidateTagsCache();
-
-    // Refresh board to apply colors
-    if (getSlug()) {
-      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl());
-    }
-
-    showToast("Tag color updated");
-  } catch (err: any) {
-    showToast(err.message);
-  }
-}
-
-async function deleteTag(tagName: string, tagId?: number): Promise<void> {
-  // Authority by tag_id only. For durable projects, tagId is required; no fallback to name.
-  let url: string | null = null;
-  const isDurableMode = !!getSettingsProjectId(); // Projects handler is durable-only
-  
-  if (getSlug()) {
-    // Board view: prefer tag_id; fall back to name only for anonymous boards
-    url = tagId != null ? `/api/board/${getSlug()}/tags/id/${tagId}` : `/api/board/${getSlug()}/tags/${encodeURIComponent(tagName)}`;
-  } else if (isDurableMode) {
-    // Durable projects: tagId required; no fallback to name
-    if (tagId == null) {
-      showToast("Cannot delete: tag ID missing");
-      return;
-    }
-    url = `/api/projects/${getSettingsProjectId()}/tags/id/${tagId}`;
-  } else {
-    showToast("No project available");
-    return;
-  }
-
-  try {
-    recordLocalMutation();
-    await apiFetch(url, {
-      method: "DELETE",
-    });
-
-    const tagColors = { ...getTagColors() };
-    delete tagColors[tagName];
-    setTagColors(tagColors);
-
-    if (getUser()) {
-      try {
-        await apiFetch("/api/user/preferences", {
-          method: "PUT",
-          body: JSON.stringify({ key: "tagColors", value: JSON.stringify(tagColors) }),
-        });
-      } catch (err) {
-        // Ignore errors saving preferences
-      }
-    }
-
-    invalidateTagsCache();
-    await renderSettingsModal();
-
-    if (getSlug()) {
-      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl());
-    }
-
-    showToast(`Tag "${tagName}" deleted`);
-  } catch (err: any) {
-    showToast(err.message);
-  }
-}
-
-function msToDateTimeLocalStr(ms: number): string {
-  const d = new Date(ms);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${y}-${m}-${day}T${hh}:${mm}`;
-}
-
-const DEFAULT_WORKFLOW_LANE_COLOR = "#64748b";
-
-function normalizeWorkflowLaneColorForInput(color: string | undefined | null): string {
-  const s = color?.trim();
-  return s && /^#[0-9a-fA-F]{6}$/.test(s) ? s : DEFAULT_WORKFLOW_LANE_COLOR;
-}
-
-async function fetchWorkflowLaneCountsState(
-  slug: string
-): Promise<Exclude<WorkflowLaneCountsState, { status: "loading" }>> {
-  try {
-    const res = await apiFetch<{ countsByColumnKey?: Record<string, number> }>(
-      `/api/board/${encodeURIComponent(slug)}/workflow/counts`
-    );
-    if (!res || typeof res.countsByColumnKey !== "object" || res.countsByColumnKey === null) {
-      return { status: "error" };
-    }
-    return { status: "ok", counts: res.countsByColumnKey };
-  } catch {
-    return { status: "error" };
-  }
-}
-
-function renderWorkflowTabContent(countsState: WorkflowLaneCountsState): string {
-  const board = getBoard();
-  const col = board?.columnOrder ?? [];
-  if (!getSlug()) {
-    return `<div class="settings-section"><div class="muted">No project in context.</div></div>`;
-  }
-  if (col.length === 0) {
-    return `<div class="settings-section"><div class="muted">Workflow lanes are unavailable.</div></div>`;
-  }
-  ensureWorkflowDraftInitialized();
-  const workflow = workflowTabDraft ?? [];
-  const canDeleteAnyLane = workflow.length > 2;
-
-  const loadingBanner =
-    countsState.status === "loading"
-      ? `<div class="muted settings-workflow-counts-banner" style="margin-bottom:10px;">Checking lane occupancy…</div>`
-      : "";
-  const errorBanner =
-    countsState.status === "error"
-      ? `<div class="settings-workflow-counts-banner settings-workflow-counts-banner--error muted" style="margin-bottom:10px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
-          Could not load lane occupancy. Delete stays disabled until this succeeds.
-          <button type="button" class="btn btn--ghost btn--small" data-workflow-counts-retry>Retry</button>
-        </div>`
-      : "";
-
-  const deleteCell = (lane: { key: string; name: string; isDone: boolean; color?: string }) => {
-    if (lane.isDone) {
-      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Done lane cannot be deleted">Delete</button>`;
-    }
-    if (!canDeleteAnyLane) {
-      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Workflow must keep at least 2 lanes">Delete</button>`;
-    }
-    if (countsState.status === "loading") {
-      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Checking lane occupancy…">Delete</button>`;
-    }
-    if (countsState.status === "error") {
-      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Could not verify lane is empty">Delete</button>`;
-    }
-    const n = countsState.counts[lane.key] ?? 0;
-    if (n > 0) {
-      return `<button class="btn btn--ghost btn--small" type="button" disabled aria-disabled="true" title="Lane must be empty to delete" aria-label="Lane must be empty to delete">Delete</button>`;
-    }
-    return `<button class="btn btn--danger btn--small" type="button" data-workflow-delete="${escapeHTML(lane.key)}">Delete</button>`;
-  };
-
-  const saveDisabled = !isWorkflowDraftDirty();
-  return `
-    <div class="settings-section">
-      <div class="settings-section__title">Workflow</div>
-      <div class="settings-section__description muted">Edit lane labels and colors, then save. New lanes are inserted before the done lane. Keys stay immutable.</div>
-      ${loadingBanner}
-      ${errorBanner}
-      <div class="settings-workflow-list">
-        ${workflow
-          .map((lane) => {
-            const ic = normalizeWorkflowLaneColorForInput(lane.color);
-            return `
-          <div class="settings-workflow-row" data-workflow-key="${escapeHTML(lane.key)}" style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; padding-left:4px;">
-            <input
-              class="input"
-              data-workflow-name="${escapeHTML(lane.key)}"
-              value="${escapeHTML(lane.name)}"
-              maxlength="200"
-              aria-label="Lane label for ${escapeHTML(lane.key)}"
-              style="flex:1; min-width:120px;"
-            />
-            <input
-              type="color"
-              class="settings-color-picker"
-              data-workflow-color="${escapeHTML(lane.key)}"
-              value="${escapeHTML(ic)}"
-              aria-label="Lane color for ${escapeHTML(lane.key)}"
-              title="Lane color"
-            />
-            ${deleteCell(lane)}
-          </div>
-        `;
-          })
-          .join("")}
-      </div>
-      <div class="settings-workflow-add-row" style="display:flex; gap:8px; align-items:center; margin-top:12px;">
-        <input
-          class="input"
-          type="text"
-          data-workflow-ghost-input
-          maxlength="200"
-          placeholder="Add lane..."
-          aria-label="Add lane"
-          style="flex:1; min-width:0;"
-        />
-        <button type="button" class="btn btn--small" data-workflow-add>Add</button>
-      </div>
-      <div class="settings-workflow-footer">
-        <button type="button" class="btn btn--ghost" data-workflow-draft-cancel>Cancel</button>
-        <button type="button" class="btn" data-workflow-save-changes ${saveDisabled ? "disabled" : ""}>Save Changes</button>
-      </div>
-    </div>
-  `;
-}
-
-async function addWorkflowLane(name: string): Promise<void> {
-  const slug = getSlug();
-  if (!slug) {
-    showToast("No project available");
-    return;
-  }
-  const trimmed = name.trim();
-  if (!trimmed) {
-    showToast("Lane name is required");
-    return;
-  }
-  try {
-    recordLocalMutation();
-    await apiFetch(`/api/board/${slug}/workflow`, {
-      method: "POST",
-      body: JSON.stringify({ name: trimmed }),
-    });
-    invalidateWorkflowLaneCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
-    syncWorkflowDraftFromBoardAfterMutation();
-    await renderSettingsModal();
-    showToast("Lane added");
-  } catch (err: any) {
-    showToast(err.message || "Failed to add lane");
-  }
-}
-
-async function saveWorkflowDraftChanges(): Promise<void> {
-  const slug = getSlug();
-  if (!slug || !workflowTabDraft || !workflowTabDraftBaseline) return;
-  for (const lane of workflowTabDraft) {
-    if (!lane.name.trim()) {
-      showToast("Lane name is required");
-      return;
-    }
-  }
-  const baselineByKey = new Map(workflowTabDraftBaseline.map((l) => [l.key, l]));
-  try {
-    for (const lane of workflowTabDraft) {
-      const base = baselineByKey.get(lane.key);
-      if (!base) continue;
-      const name = lane.name.trim();
-      const color = lane.color.trim();
-      if (
-        name === base.name.trim() &&
-        color.toLowerCase() === base.color.trim().toLowerCase()
-      ) {
-        continue;
-      }
-      recordLocalMutation();
-      await apiFetch(`/api/board/${slug}/workflow/${encodeURIComponent(lane.key)}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name, color }),
-      });
-    }
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
-    syncWorkflowDraftFromBoardAfterMutation();
-    await renderSettingsModal();
-    showToast("Workflow updated");
-  } catch (err: any) {
-    showToast(err.message || "Failed to update workflow");
-  }
-}
-
-async function deleteWorkflowLane(key: string): Promise<void> {
-  const slug = getSlug();
-  if (!slug) {
-    showToast("No project available");
-    return;
-  }
-  const lane = getBoard()?.columnOrder?.find((item) => item.key === key);
-  if (!lane) {
-    showToast("Lane not found");
-    return;
-  }
-  if (lane.isDone) {
-    showToast("Done lane cannot be deleted");
-    return;
-  }
-  const confirmed = await showConfirmDialog(
-    `Delete lane "${lane.name}"? Only empty non-done lanes can be deleted.`,
-    "Delete lane?",
-    "Delete"
-  );
-  if (!confirmed) return;
-  try {
-    recordLocalMutation();
-    await apiFetch(`/api/board/${slug}/workflow/${encodeURIComponent(key)}`, {
-      method: "DELETE",
-    });
-    invalidateWorkflowLaneCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
-    syncWorkflowDraftFromBoardAfterMutation();
-    await renderSettingsModal();
-    showToast("Lane deleted");
-  } catch (err: any) {
-    showToast(err.message || "Failed to delete lane");
-  }
-}
-
-function computeDefaultSprintStart(now: Date): Date {
-  const daysToMonday = (now.getDay() + 6) % 7; // 0=Sun, 1=Mon, ..., 6=Sat
-  const monday = new Date(now.getTime());
-  monday.setDate(monday.getDate() - daysToMonday);
-  monday.setHours(9, 0, 0, 0);
-  return monday;
-}
-
-function computeDefaultSprintEnd(start: Date, weeks: number): Date {
-  const normalizedWeeks = weeks === 1 || weeks === 2 ? weeks : 2;
-  const end = new Date(start.getTime());
-  end.setDate(end.getDate() + (normalizedWeeks * 7 - 1));
-  end.setHours(23, 59, 0, 0);
-  return end;
-}
-
-// Main render function
-async function renderSprintsTabContent(): Promise<string> {
-  const slug = getSlug();
-  if (!slug) return "<div class='muted'>No project in context.</div>";
-  try {
-    const res = await apiFetch<{ sprints?: { id: number; name: string; state: string; plannedStartAt: number; plannedEndAt: number; startedAt?: number; closedAt?: number; todoCount?: number }[] } | null>(`/api/board/${slug}/sprints`);
-    const sprints = normalizeSprints(res);
-    const formatDate = (ms: number) => new Date(ms).toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    const listHTML = sprints.length === 0
-      ? "<div class='muted'>No sprints yet. Create one above.</div>"
-      : sprints.map((sp) => {
-          const isEditing = editingSprintId === sp.id;
-          const dateRange = `${formatDate(sp.plannedStartAt)} - ${formatDate(sp.plannedEndAt)}`;
-          const stateBadge = `<span class="status-pill status-pill--${sp.state.toLowerCase()}">${sp.state}</span>`;
-          const activateBtn = sp.state === "PLANNED" ? `<button class="btn btn--ghost btn--sm" data-sprint-activate="${sp.id}">Activate</button>` : "";
-          const closeBtn = sp.state === "ACTIVE" ? `<button class="btn btn--ghost btn--sm" data-sprint-close="${sp.id}">Close</button>` : (sp.state === "CLOSED" ? `<button type="button" class="btn btn--ghost btn--sm settings-sprint-row__action-placeholder" aria-hidden="true" tabindex="-1">Close</button>` : "");
-          const editBtn = `<button class="btn btn--ghost btn--sm" data-sprint-edit="${sp.id}">Edit</button>`;
-          const deleteBtn = `<button class="btn btn--danger btn--sm" data-sprint-delete="${sp.id}">Delete</button>`;
-          if (isEditing) {
-            const editingClass = " settings-sprint-row--editing";
-            const todoCount = sp.todoCount ?? 0;
-            const nameInput = (sp.state === "PLANNED" || sp.state === "CLOSED") ? `<input class="input" data-sprint-edit-name value="${escapeHTML(sp.name)}" style="min-width: 120px;" />` : `<strong>${escapeHTML(sp.name)}</strong>`;
-            const startDisplay = `<span class="muted">${formatDate(sp.plannedStartAt)}</span>`;
-            const startInput = sp.state === "PLANNED" ? `<input class="input" type="datetime-local" data-sprint-edit-start value="${msToDateTimeLocalStr(sp.plannedStartAt)}" style="min-width: 180px;" />` : startDisplay;
-            const endDisplay = `<span class="muted">${formatDate(sp.plannedEndAt)}</span>`;
-            const endInput = (sp.state === "PLANNED" || sp.state === "ACTIVE") ? `<input class="input" type="datetime-local" data-sprint-edit-end value="${msToDateTimeLocalStr(sp.plannedEndAt)}" style="min-width: 180px;" />` : endDisplay;
-            const endBlock = sp.state === "ACTIVE"
-              ? `<div class="settings-sprint-edit-end-block" style="display: inline-flex; align-items: center; gap: 6px;"><div class="field__label" style="margin-bottom: 0;">End</div>${endInput}</div>`
-              : endInput;
-            const saveCancelBlock = `<div class="settings-sprint-edit-save-cancel" style="display: inline-flex; align-items: center; gap: 8px;"><button class="btn btn--sm" data-sprint-save="${sp.id}">Save</button><button class="btn btn--ghost btn--sm" data-sprint-cancel="${sp.id}">Cancel</button></div>`;
-            return `
-            <div class="settings-sprint-row${editingClass}" data-sprint-id="${sp.id}" data-sprint-state="${sp.state}" data-sprint-todo-count="${todoCount}" data-sprint-planned-start-at="${sp.plannedStartAt}" data-sprint-name="${escapeHTML(sp.name)}">
-              <div class="settings-sprint-row__info" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1;">
-                ${nameInput}
-                ${startInput}
-                ${endBlock}
-                ${saveCancelBlock}
-              </div>
-              <div class="settings-sprint-row__actions" style="display: flex; align-items: center; gap: 8px;">
-                ${stateBadge}
-              </div>
-            </div>`;
-          }
-          const todoCount = sp.todoCount ?? 0;
-          return `
-            <div class="settings-sprint-row" data-sprint-id="${sp.id}" data-sprint-state="${sp.state}" data-sprint-todo-count="${todoCount}" data-sprint-planned-start-at="${sp.plannedStartAt}" data-sprint-name="${escapeHTML(sp.name)}">
-              <div class="settings-sprint-row__info">
-                <strong>${escapeHTML(sp.name)}</strong>
-                <span class="muted" style="margin-left: 8px;">${escapeHTML(dateRange)}</span>
-              </div>
-              <div class="settings-sprint-row__actions" style="display: flex; align-items: center; gap: 8px;">
-                ${stateBadge}
-                ${activateBtn}
-                ${closeBtn}
-                ${editBtn}
-                ${deleteBtn}
-              </div>
-            </div>`;
-        }).join("");
-    const defaultWeeks = getBoard()?.project?.defaultSprintWeeks === 1 ? 1 : 2;
-    const now = new Date();
-    const defaultStart = computeDefaultSprintStart(now);
-    const defaultEnd = computeDefaultSprintEnd(defaultStart, defaultWeeks);
-    const defaultStartStr = msToDateTimeLocalStr(defaultStart.getTime());
-    const defaultEndStr = msToDateTimeLocalStr(defaultEnd.getTime());
-    return `
-      <div class="settings-section">
-        <div class="settings-section__title">Create Sprint</div>
-        <div class="settings-section__description muted">
-          Default duration is
-          <select id="sprintDefaultWeeksSelect" class="input" style="display: inline-block; width: auto; min-width: 64px; margin: 0 4px;">
-            <option value="1" ${defaultWeeks === 1 ? "selected" : ""}>1</option>
-            <option value="2" ${defaultWeeks === 2 ? "selected" : ""}>2</option>
-          </select>
-          weeks. You can customize start and end dates.
-        </div>
-        <div class="settings-create-sprint-form" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
-          <label class="field settings-create-sprint-form__name" style="flex: 1; min-width: 120px;">
-            <div class="field__label">Name</div>
-            <input class="input" id="sprintNameInput" placeholder="e.g. Sprint 1 or 2026 Q1 Sprint 1" />
-          </label>
-          <div class="settings-create-sprint-form__dates" style="display: flex; gap: 12px; align-items: flex-end;">
-            <label class="field" style="min-width: 140px;">
-              <div class="field__label">Start</div>
-              <input class="input" type="datetime-local" id="sprintStartInput" value="${defaultStartStr}" />
-            </label>
-            <label class="field" style="min-width: 140px;">
-              <div class="field__label">End</div>
-              <input class="input" type="datetime-local" id="sprintEndInput" value="${defaultEndStr}" />
-            </label>
-          </div>
-          <div class="settings-create-sprint-form__submit">
-            <button class="btn" id="createSprintBtn">Create Sprint</button>
-          </div>
-        </div>
-        <div class="settings-section__title" style="margin-top: 24px;">Sprints</div>
-        <div class="settings-section__description muted">Create and manage sprints for this project. Only one sprint can be active at a time.</div>
-        <div class="settings-sprints-list" style="margin-bottom: 24px;">
-          ${listHTML}
-        </div>
-      </div>`;
-  } catch (err: any) {
-    return `<div class='muted'>Error loading sprints: ${escapeHTML(err.message)}</div>`;
-  }
-}
-
 export async function renderSettingsModal(options?: { skipProfileRefetch?: boolean }): Promise<void> {
   const contentEl = document.querySelector("#settingsDialog .dialog__content");
   if (!contentEl) {
@@ -1276,83 +684,14 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   }
 
   // Fetch tags and chart data only if we have project access
-  let tags: any[] = [];
   let tagsHTML = "";
   let realBurndownData: any[] = [];
   
-  // Check if URLs changed (invalidate cache)
-  const tagsURLChanged = cachedTagsURL !== tagsURL;
   const realBurndownURLChanged = cachedRealBurndownURL !== realBurndownURL;
   
   if (hasProjectAccess) {
     try {
-      // Fetch tags only if URL changed or cache is empty
-      if (tagsURLChanged || cachedTags === null) {
-        tags = await apiFetch(tagsURL!);
-        
-        // Sort tags alphabetically by name
-        tags.sort((a: any, b: any) => a.name.localeCompare(b.name));
-        
-        // Update tag colors map
-        const tagColors: Record<string, string> = {};
-        tags.forEach((tag: any) => {
-          if (tag.color) {
-            tagColors[tag.name] = tag.color;
-          }
-        });
-        setTagColors(tagColors);
-
-        const isDurableProject = !!getSettingsProjectId();
-        tagsHTML = tags.length === 0
-          ? "<div class='muted'>No tags yet. Create todos with tags to see them here.</div>"
-          : tags.map((tag: any) => {
-              const colorValue = sanitizeHexColor(tag.color, "#9CA3AF") || "#9CA3AF";
-              // Show delete only when: canDelete === true AND tagId != null (both required)
-              const showDelete = tag.canDelete === true && tag.tagId != null;
-              // Durable project: require tagId for color update; disable picker if missing
-              const hasTagId = tag.tagId != null && tag.tagId > 0;
-              const colorDisabled = isDurableProject && !hasTagId;
-              const tagIdAttr = hasTagId ? ` data-tag-id="${String(tag.tagId)}"` : "";
-              return `
-                <div class="settings-tag-item">
-                  <span class="settings-tag-name" title="${escapeHTML(tag.name)}">${escapeHTML(tag.name)}</span>
-                  <div class="settings-tag-color-controls">
-                    <input 
-                      type="color" 
-                      class="settings-color-picker" 
-                      data-tag="${escapeHTML(tag.name)}"${tagIdAttr}
-                      value="${colorValue}"
-                      title="${colorDisabled ? "Tag ID missing; cannot update color" : "Tag color"}"
-                      ${colorDisabled ? "disabled" : ""}
-                    />
-                    <button 
-                      class="btn btn--ghost btn--small settings-color-clear" 
-                      data-tag="${escapeHTML(tag.name)}"${tagIdAttr}
-                      title="Clear color"
-                      ${!tag.color ? 'style="display: none;"' : ''}
-                      ${colorDisabled ? "disabled" : ""}
-                    >Clear</button>
-                    ${showDelete ? `<button 
-                      class="btn btn--danger btn--small settings-tag-delete" 
-                      data-tag="${escapeHTML(tag.name)}"
-                      data-tag-id="${String(tag.tagId)}"
-                      title="Delete tag"
-                      aria-label="Delete tag"
-                    >✕</button>` : ''}
-                  </div>
-                </div>
-              `;
-            }).join("");
-        
-        // Cache tags data
-        cachedTags = tags;
-        cachedTagsHTML = tagsHTML;
-        cachedTagsURL = tagsURL;
-      } else {
-        // Use cached data
-        tags = cachedTags!;
-        tagsHTML = cachedTagsHTML!;
-      }
+      tagsHTML = await loadTagSettingsContent(tagsURL!);
 
       // Lazy-load chart data and sprints only when Charts tab is active
       const activeTab = getSettingsActiveTab();
@@ -1404,16 +743,10 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     } catch (err: any) {
       console.error("Failed to fetch tags:", err);
       tagsHTML = `<div class='muted'>Error loading tags: ${escapeHTML(err.message)}</div>`;
-      // Clear cache on error
-      cachedTags = null;
-      cachedTagsHTML = null;
-      cachedTagsURL = null;
     }
   } else {
     // No project access - clear cache
-    cachedTags = null;
-    cachedTagsHTML = null;
-    cachedTagsURL = null;
+    invalidateTagSettingsCache();
     cachedRealBurndownData = null;
     cachedRealBurndownURL = null;
   }
@@ -1670,25 +1003,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   }
   let workflowHTML = "";
   if (showWorkflowTab && getSettingsActiveTab() === "workflow" && slug) {
-    if (workflowLaneCountsCache && workflowLaneCountsCache.slug !== slug) {
-      invalidateWorkflowLaneCountsCache();
-    }
-    const cached =
-      workflowLaneCountsCache?.slug === slug ? workflowLaneCountsCache.state : null;
-    if (cached !== null) {
-      workflowHTML = renderWorkflowTabContent(cached);
-    } else {
-      workflowHTML = renderWorkflowTabContent({ status: "loading" });
-      const gen = workflowLaneCountsFetchGeneration;
-      void (async () => {
-        const state = await fetchWorkflowLaneCountsState(slug);
-        if (gen !== workflowLaneCountsFetchGeneration) return;
-        if (getSlug() !== slug) return;
-        workflowLaneCountsCache = { slug, state };
-        if (getSettingsActiveTab() !== "workflow") return;
-        await renderSettingsModal();
-      })();
-    }
+    workflowHTML = loadWorkflowTabContent({ slug, rerender: () => renderSettingsModal() });
   }
 
   destroyBurndownChart();
@@ -1801,117 +1116,14 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     }, 0);
   }
 
-  if (getSettingsActiveTab() === "workflow") {
-    const addInput = document.querySelector("[data-workflow-ghost-input]") as HTMLInputElement | null;
-    const addLane = () => {
-      if (!addInput) return;
-      addWorkflowLane(addInput.value);
-    };
-    const addBtn = document.querySelector("[data-workflow-add]");
-    if (addBtn) {
-      addBtn.addEventListener("click", addLane, { signal });
-    }
-    if (addInput) {
-      addInput.addEventListener("keydown", (e) => {
-        if ((e as KeyboardEvent).key !== "Enter") return;
-        e.preventDefault();
-        addLane();
-      }, { signal });
-    }
-    document.querySelectorAll("[data-workflow-name]").forEach((inputEl) => {
-      const key = (inputEl as HTMLElement).getAttribute("data-workflow-name");
-      if (!key) return;
-      inputEl.addEventListener("input", () => {
-        const lane = workflowTabDraft?.find((l) => l.key === key);
-        if (lane) lane.name = (inputEl as HTMLInputElement).value;
-        updateWorkflowSaveFooter();
-      }, { signal });
-    });
-    document.querySelectorAll("[data-workflow-color]").forEach((colorEl) => {
-      const key = (colorEl as HTMLElement).getAttribute("data-workflow-color");
-      if (!key) return;
-      colorEl.addEventListener("input", () => {
-        const lane = workflowTabDraft?.find((l) => l.key === key);
-        if (lane) lane.color = (colorEl as HTMLInputElement).value || DEFAULT_WORKFLOW_LANE_COLOR;
-        updateWorkflowSaveFooter();
-      }, { signal });
-    });
-    document.querySelectorAll("[data-workflow-delete]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const key = (btn as HTMLElement).getAttribute("data-workflow-delete");
-        if (!key) return;
-        void deleteWorkflowLane(key);
-      }, { signal });
-    });
-    const saveChangesBtn = document.querySelector("[data-workflow-save-changes]");
-    if (saveChangesBtn) {
-      saveChangesBtn.addEventListener("click", () => {
-        void saveWorkflowDraftChanges();
-      }, { signal });
-    }
-    const cancelDraftBtn = document.querySelector("[data-workflow-draft-cancel]");
-    if (cancelDraftBtn) {
-      cancelDraftBtn.addEventListener(
-        "click",
-        () => {
-          resetWorkflowDraftToBaseline();
-          void renderSettingsModal();
-        },
-        { signal }
-      );
-    }
-    const retryCountsBtn = document.querySelector("[data-workflow-counts-retry]");
-    if (retryCountsBtn) {
-      retryCountsBtn.addEventListener(
-        "click",
-        () => {
-          invalidateWorkflowLaneCountsCache();
-          void renderSettingsModal();
-        },
-        { signal }
-      );
-    }
-  }
-
   const settingsDlg = settingsDialog as HTMLDialogElement | null;
-  if (settingsDlg) {
-    const onDialogCancel = (e: Event) => {
-      if (getSettingsActiveTab() !== "workflow" || !isWorkflowDraftDirty()) return;
-      e.preventDefault();
-      void showConfirmDialog(
-        "You have unsaved changes. Discard them?",
-        "Unsaved changes",
-        "Discard"
-      ).then((discard) => {
-        if (discard) {
-          resetWorkflowDraftToBaseline();
-          clearWorkflowDraftState();
-          settingsDlg.close();
-        }
-      });
-    };
-    settingsDlg.addEventListener("cancel", onDialogCancel, { signal });
-    settingsDlg.addEventListener("close", () => clearWorkflowDraftState(), { signal });
-  }
-
-  if (closeSettingsBtn) {
-    const onCloseClick = (e: Event) => {
-      if (getSettingsActiveTab() !== "workflow" || !isWorkflowDraftDirty()) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      void showConfirmDialog(
-        "You have unsaved changes. Discard them?",
-        "Unsaved changes",
-        "Discard"
-      ).then((discard) => {
-        if (discard) {
-          resetWorkflowDraftToBaseline();
-          clearWorkflowDraftState();
-          (settingsDialog as HTMLDialogElement).close();
-        }
-      });
-    };
-    closeSettingsBtn.addEventListener("click", onCloseClick, { capture: true, signal });
+  if (getSettingsActiveTab() === "workflow") {
+    bindWorkflowTabInteractions({
+      signal,
+      settingsDialog: settingsDlg,
+      closeSettingsBtn,
+      rerender: () => renderSettingsModal(),
+    });
   }
 
   // Setup logout button: use form POST so browser processes Set-Cookie from document response
@@ -2087,235 +1299,10 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
 
   // Setup sprints tab (create, activate, close)
   if (getSettingsActiveTab() === "sprints") {
-    const defaultWeeksEl = document.getElementById("sprintDefaultWeeksSelect") as HTMLSelectElement | null;
-    const startEl = document.getElementById("sprintStartInput") as HTMLInputElement | null;
-    const endEl = document.getElementById("sprintEndInput") as HTMLInputElement | null;
-    let userHasEditedEndDate = false;
-
-    if (endEl) {
-      const markEdited = () => { userHasEditedEndDate = true; };
-      endEl.addEventListener("input", markEdited, { signal });
-      endEl.addEventListener("change", markEdited, { signal });
-    }
-
-    if (defaultWeeksEl && endEl) {
-      defaultWeeksEl.addEventListener("change", () => {
-        if (userHasEditedEndDate) return;
-        const weeks = parseInt(defaultWeeksEl.value, 10);
-        const start = startEl?.value ? new Date(startEl.value) : computeDefaultSprintStart(new Date());
-        if (!Number.isFinite(start.getTime())) return;
-        const computedEnd = computeDefaultSprintEnd(start, weeks);
-        endEl.value = msToDateTimeLocalStr(computedEnd.getTime());
-      }, { signal });
-    }
-
-    const createSprintBtn = document.getElementById("createSprintBtn");
-    if (createSprintBtn) {
-      createSprintBtn.addEventListener("click", async () => {
-        const slug = getSlug();
-        if (!slug) return;
-        const nameEl = document.getElementById("sprintNameInput") as HTMLInputElement;
-        const name = nameEl?.value?.trim();
-        const startStr = startEl?.value;
-        const endStr = endEl?.value;
-        if (!name) {
-          showToast("Name is required");
-          return;
-        }
-        if (!startStr || !endStr) {
-          showToast("Start and end dates are required");
-          return;
-        }
-        const plannedStartAt = new Date(startStr).getTime();
-        const plannedEndAt = new Date(endStr).getTime();
-        if (!Number.isFinite(plannedStartAt) || !Number.isFinite(plannedEndAt)) {
-          showToast("Invalid start or end date");
-          return;
-        }
-        if (plannedEndAt < plannedStartAt) {
-          showToast("End date must be after start date");
-          return;
-        }
-        try {
-          recordLocalMutation();
-          await apiFetch(`/api/board/${slug}/sprints`, {
-            method: "POST",
-            body: JSON.stringify({ name, plannedStartAt, plannedEndAt }),
-          });
-          const selectedWeeks = parseInt(defaultWeeksEl?.value ?? "", 10);
-          if (selectedWeeks === 1 || selectedWeeks === 2) {
-            recordLocalMutation();
-            apiFetch<{ defaultSprintWeeks: number }>(`/api/board/${slug}/settings`, {
-              method: "PATCH",
-              body: JSON.stringify({ defaultSprintWeeks: selectedWeeks }),
-            }).then((resp) => {
-              const board = getBoard();
-              const nextWeeks = resp?.defaultSprintWeeks === 1 ? 1 : 2;
-              if (board) {
-                setBoard({
-                  ...board,
-                  project: {
-                    ...board.project,
-                    defaultSprintWeeks: nextWeeks,
-                  },
-                });
-              }
-            }).catch(() => {
-              // Best-effort settings persistence; ignore failures.
-            });
-          }
-          showToast("Sprint created");
-          invalidateSprintsForChartsCache();
-          refreshSprintsAndChips(getSlug() ?? "").catch(() => {});
-          await renderSettingsModal();
-        } catch (err: any) {
-          showToast(err.message || "Failed to create sprint");
-        }
-      }, { signal });
-    }
-    document.querySelectorAll("[data-sprint-activate]").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        const target = e.target as HTMLElement;
-        const sprintId = target.getAttribute("data-sprint-activate");
-        const slug = getSlug();
-        if (!sprintId || !slug) return;
-        const row = target.closest('[data-sprint-id]') as HTMLElement | null;
-        const plannedStartRaw = row?.getAttribute("data-sprint-planned-start-at") ?? "";
-        const sprintName = row?.getAttribute("data-sprint-name") ?? "Sprint";
-        const plannedMs = parseInt(plannedStartRaw, 10);
-        if (Number.isFinite(plannedMs) && Math.abs(plannedMs - Date.now()) > 60000) {
-          const plannedLabel = new Date(plannedMs).toLocaleString(undefined, {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          });
-          const confirmed = await showConfirmDialog(
-            `${sprintName} will start now (activation time). Work completed after this moment will count. Planned start was ${plannedLabel}. Continue?`,
-            "Start sprint now?",
-            "Start Sprint"
-          );
-          if (!confirmed) return;
-        }
-        try {
-          recordLocalMutation();
-          await apiFetch(`/api/board/${slug}/sprints/${sprintId}/activate`, { method: "POST" });
-          showToast("Sprint activated");
-          invalidateSprintsForChartsCache();
-          emit("sprint-updated", { sprintId: parseInt(sprintId, 10), state: "ACTIVE" });
-          await renderSettingsModal();
-        } catch (err: any) {
-          showToast(err.message || "Failed to activate sprint");
-        }
-      }, { signal });
-    });
-    document.querySelectorAll("[data-sprint-close]").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        const sprintId = (e.target as HTMLElement).getAttribute("data-sprint-close");
-        const slug = getSlug();
-        if (!sprintId || !slug) return;
-        try {
-          recordLocalMutation();
-          await apiFetch(`/api/board/${slug}/sprints/${sprintId}/close`, { method: "POST" });
-          showToast("Sprint closed");
-          invalidateSprintsForChartsCache();
-          emit("sprint-updated", { sprintId: parseInt(sprintId, 10), state: "CLOSED" });
-          await renderSettingsModal();
-        } catch (err: any) {
-          showToast(err.message || "Failed to close sprint");
-        }
-      }, { signal });
-    });
-    document.querySelectorAll("[data-sprint-edit]").forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        const sprintId = (e.target as HTMLElement).getAttribute("data-sprint-edit");
-        if (!sprintId) return;
-        editingSprintId = parseInt(sprintId, 10);
-        renderSettingsModal();
-      }, { signal });
-    });
-    document.querySelectorAll("[data-sprint-cancel]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        editingSprintId = null;
-        renderSettingsModal();
-      }, { signal });
-    });
-    document.querySelectorAll("[data-sprint-save]").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        const sprintId = (e.target as HTMLElement).getAttribute("data-sprint-save");
-        const slug = getSlug();
-        if (!sprintId || !slug) return;
-        const row = document.querySelector(`[data-sprint-id="${sprintId}"].settings-sprint-row--editing`);
-        if (!row) return;
-        const state = row.getAttribute("data-sprint-state") ?? "";
-        const body: { name?: string; plannedStartAt?: number; plannedEndAt?: number } = {};
-        if (state === "PLANNED" || state === "CLOSED") {
-          const nameEl = row.querySelector("[data-sprint-edit-name]") as HTMLInputElement;
-          if (nameEl) body.name = nameEl.value.trim();
-        }
-        if (state === "PLANNED") {
-          const startEl = row.querySelector("[data-sprint-edit-start]") as HTMLInputElement;
-          const endEl = row.querySelector("[data-sprint-edit-end]") as HTMLInputElement;
-          if (startEl?.value && endEl?.value) {
-            body.plannedStartAt = new Date(startEl.value).getTime();
-            body.plannedEndAt = new Date(endEl.value).getTime();
-          }
-        }
-        if (state === "ACTIVE") {
-          const endEl = row.querySelector("[data-sprint-edit-end]") as HTMLInputElement;
-          if (endEl?.value) {
-            body.plannedEndAt = new Date(endEl.value).getTime();
-          }
-        }
-        try {
-          recordLocalMutation();
-          await apiFetch(`/api/board/${slug}/sprints/${sprintId}`, { method: "PATCH", body: JSON.stringify(body) });
-          showToast("Sprint updated");
-          invalidateSprintsForChartsCache();
-          editingSprintId = null;
-          refreshSprintsAndChips(getSlug() ?? "").catch(() => {});
-          await renderSettingsModal();
-        } catch (err: any) {
-          showToast(err.message || "Failed to update sprint");
-        }
-      }, { signal });
-    });
-    document.querySelectorAll("[data-sprint-delete]").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        const sprintId = (e.target as HTMLElement).getAttribute("data-sprint-delete");
-        const slug = getSlug();
-        if (!sprintId || !slug) return;
-        const row = document.querySelector(`[data-sprint-id="${sprintId}"]`);
-        if (!row) return;
-        const state = row.getAttribute("data-sprint-state") ?? "";
-        const nameEl = row.querySelector("strong");
-        const name = nameEl?.textContent ?? "Sprint";
-        const todoCount = parseInt((row as HTMLElement).getAttribute("data-sprint-todo-count") ?? "0", 10) || 0;
-        const storyWord = todoCount === 1 ? "story" : "stories";
-        let message: string;
-        let title = "Delete sprint?";
-        if (state === "ACTIVE") {
-          message = `This sprint is currently active. Deleting it will immediately end the sprint and move ${todoCount} ${storyWord} back to backlog.`;
-        } else if (todoCount === 0) {
-          message = `Sprint '${name}' will be permanently deleted.`;
-        } else {
-          message = `Sprint '${name}' has ${todoCount} ${storyWord}. They will be moved to backlog (unassigned from this sprint). The sprint will be permanently deleted.`;
-        }
-        const confirmed = await showConfirmDialog(message, title, "Delete");
-        if (!confirmed) return;
-        try {
-          recordLocalMutation();
-          await apiFetch(`/api/board/${slug}/sprints/${sprintId}`, { method: "DELETE" });
-          showToast("Sprint deleted");
-          invalidateSprintsForChartsCache();
-          editingSprintId = null;
-          refreshSprintsAndChips(getSlug() ?? "").catch(() => {});
-          await renderSettingsModal();
-        } catch (err: any) {
-          showToast(err.message || "Failed to delete sprint");
-        }
-      }, { signal });
+    bindSprintsTabInteractions({
+      signal,
+      rerender: () => renderSettingsModal(),
+      invalidateSprintChartsCache: invalidateSprintsForChartsCache,
     });
   }
 
@@ -2535,53 +1522,11 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   }
 
   // Setup event listeners for color pickers (only if we have project access)
-  if (hasProjectAccess) {
-    document.querySelectorAll(".settings-color-picker").forEach(picker => {
-      picker.addEventListener("change", async (e) => {
-        const el = e.target as HTMLElement;
-        const tagName = el.getAttribute("data-tag");
-        const tagIdAttr = el.getAttribute("data-tag-id");
-        const tagId = tagIdAttr ? parseInt(tagIdAttr, 10) : undefined;
-        const color = (el as HTMLInputElement).value;
-        if (tagName) {
-          await updateTagColor(tagName, Number.isNaN(tagId) ? undefined : tagId, color);
-        }
-      }, { signal });
-    });
-
-    // Setup event listeners for clear buttons
-    document.querySelectorAll(".settings-color-clear").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        const el = e.target as HTMLElement;
-        const tagName = el.getAttribute("data-tag");
-        const tagIdAttr = el.getAttribute("data-tag-id");
-        const tagId = tagIdAttr ? parseInt(tagIdAttr, 10) : undefined;
-        if (tagName) {
-          await updateTagColor(tagName, Number.isNaN(tagId) ? undefined : tagId, null);
-        }
-      }, { signal });
-    });
-
-    // Setup event listeners for delete buttons
-    document.querySelectorAll(".settings-tag-delete").forEach(btn => {
-      btn.addEventListener("click", async (e) => {
-        const el = e.target as HTMLElement;
-        const tagName = el.getAttribute("data-tag");
-        const tagIdAttr = el.getAttribute("data-tag-id");
-        const tagId = tagIdAttr ? parseInt(tagIdAttr, 10) : undefined;
-        if (tagName) {
-          const confirmed = await showConfirmDialog(
-            `Delete tag "${tagName}" from all projects? This will remove it from all todos.`,
-            "Delete Tag"
-          );
-          if (!confirmed) {
-            return;
-          }
-          await deleteTag(tagName, !Number.isNaN(tagId) ? tagId : undefined);
-        }
-      }, { signal });
-    });
-  }
+  bindTagTabInteractions({
+    signal,
+    hasProjectAccess,
+    rerender: () => renderSettingsModal(),
+  });
 }
 
 async function renderUsersTabContent(): Promise<string> {

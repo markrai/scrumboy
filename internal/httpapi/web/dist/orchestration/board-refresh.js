@@ -13,6 +13,12 @@ export function registerBoardRefresher(fn) {
 export function registerSprintsRefresher(fn) {
     refreshSprintsOnly = fn;
 }
+/**
+ * Maintained full-board reload entrypoint used by realtime, resume resync, and
+ * explicit UI follow-up refreshes after board-affecting mutations. Exact
+ * duplicate slug/tag/search/sprintId invalidates are coalesced within
+ * INVALIDATE_COALESCE_MS.
+ */
 export async function invalidateBoard(slug, tag, search, sprintId) {
     if (!refreshBoard)
         return;
@@ -38,7 +44,8 @@ export function resetBoardLimitPerLaneFloor() {
 /**
  * Refresh sprint chips only (fetch sprints API, update chip UI).
  * Use when sprint list changes (create/update/delete) but board payload is unchanged.
- * Does not refetch board, members, or todos.
+ * This intentionally does not behave like invalidateBoard(): no full board
+ * reload, no member refetch, and no todo reload.
  */
 export async function refreshSprintsAndChips(slug) {
     if (!refreshSprintsOnly)
