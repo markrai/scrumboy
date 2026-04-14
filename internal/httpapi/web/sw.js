@@ -1,5 +1,9 @@
 // Service Worker for Scrumboy PWA
 // Version injected at serve time: {{VERSION}}
+// Frontend working model:
+// - Edit modules/**/*.ts.
+// - This service worker precaches the emitted runtime bundle under /dist/*.
+// - It intentionally tracks runtime artifacts, not source modules.
 const CACHE_VERSION = '{{VERSION}}';
 const CACHE_NAME = 'scrumboy-' + (CACHE_VERSION || '0');
 
