@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderUserAvatar, renderAvatarContent, processImageFile, sanitizeHexColor } from '../utils.js';
+import { escapeHTML, showToast, renderAvatarContent, processImageFile } from '../utils.js';
 import {
   getBoard,
   getAuthStatusAvailable,
@@ -57,10 +57,29 @@ import {
   recordLocalMutation,
   isBulkUpdating,
 } from '../realtime/guard.js';
-import { initBulkEditDialog, openBulkEditDialog } from '../dialogs/bulk-edit.js';
 import { playAssignmentSound, showAssignmentDesktopNotification } from '../core/assignmentNotify.js';
 import { SseConnectionManager } from '../core/sse-client.js';
 import { registerAnonymousSseRestart } from '../core/realtime.js';
+import {
+  buildBoardColumnsHtml,
+  buildChipsHTML,
+  buildFiltersHtml,
+  buildNoResultsHtml,
+  buildTopbarHtml,
+  getBoardColumns,
+  getCombinedChipData,
+  renderTodoCard,
+  type ChipData,
+  type RenderTodoCardOpts,
+  type SprintChipData,
+} from './board-rendering.js';
+import {
+  clearTodoMultiSelection,
+  ensureBulkEditUi,
+  getSelectedTodoIds,
+  toggleTodoSelection,
+  updateBulkEditBar,
+} from './board-selection.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
@@ -100,23 +119,11 @@ let lastSuccessfulBoardLoadSlug: string | null = null;
 let initialBoardLoadInFlight: string | null = null;
 const SSE_ONOPEN_SKIP_MS = 2000;
 
-/** Multi-select todo ids (numeric `data-todo-id`) for bulk edit. */
-let selectedTodoIds = new Set<number>();
-let bulkEditUiInitialized = false;
-
 const DEBUG_BOARD_LOAD = typeof localStorage !== "undefined" && localStorage.getItem("scrumboy_debug_board_load") === "1";
 function debugLog(msg: string, slug?: string | null): void {
   if (DEBUG_BOARD_LOAD) {
     console.log(`[board-load] ${msg}`, slug != null ? `(slug=${slug})` : "");
   }
-}
-
-function getBoardColumns(board: Board): Array<{ key: string; title: string; color?: string; isDone: boolean }> {
-  const order = (board as any).columnOrder as Array<{ key: string; name: string; color?: string; isDone?: boolean }> | undefined;
-  if (order && order.length > 0) {
-    return order.map((c) => ({ key: c.key, title: c.name, color: c.color, isDone: !!c.isDone }));
-  }
-  return columnsSpec().map((c) => ({ key: c.key, title: c.title, isDone: c.key === "done", color: undefined }));
 }
 
 /** Older builds stored uppercase `mobileTab_${slug}` values; workflow column_key is store-shaped (lowercase). */
@@ -134,13 +141,6 @@ function resolveMobileTabKeyFromStorage(saved: string | null, cols: Array<{ key:
   const mapped = LEGACY_MOBILE_TAB_KEYS[saved];
   if (mapped && cols.some((c) => c.key === mapped)) return mapped;
   return null;
-}
-
-/** Lane body tint when workflow provides a color (custom keys + themed columns; CSS fallback uses data-column only in light mode). */
-function laneColumnTintClassAndStyle(c: { color?: string }): { extraClass: string; styleAttr: string } {
-  const safe = c.color ? sanitizeHexColor(c.color) : null;
-  if (!safe) return { extraClass: "", styleAttr: "" };
-  return { extraClass: " col--lane-tint", styleAttr: ` style="--lane-accent:${escapeHTML(safe)};"` };
 }
 
 type LaneMetaState = { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number };
@@ -200,20 +200,6 @@ function getRequestedBoardLimitPerLane(tag: string | null | undefined, search: s
 }
 
 // Mobile chips pagination: structured data and page state (combined tags + sprints)
-type ChipType = "tag" | "sprint";
-interface ChipData {
-  type: ChipType;
-  id: string;
-  name: string;
-  active: boolean;
-  color: string | null;
-  /** True when this sprint chip represents the project's active sprint (state ACTIVE). */
-  isActiveSprint?: boolean;
-  /** True when this sprint chip represents a closed sprint (state CLOSED). */
-  isClosedSprint?: boolean;
-  /** True when this sprint chip represents a planned sprint (state PLANNED). */
-  isPlannedSprint?: boolean;
-}
 let lastDisplayChipData: ChipData[] = [];
 /** Cached members lookup; rebuilt when members change. Avoids repeated Object.fromEntries during render. */
 let membersByUserIdCache: Record<number, BoardMember> = {};
@@ -231,7 +217,6 @@ function getMembersByUserId(): Record<number, BoardMember> {
   return membersByUserIdCache;
 }
 
-type SprintChipData = { sprints: { id: number; number: number; name: string; state?: string; todoCount?: number }[]; unscheduledCount?: number };
 let lastSprintsData: SprintChipData | null = null;
 let lastSprintsDataSlug: string | null = null;
 let lastRenderedChipsHTML = "";
@@ -548,11 +533,6 @@ registerAnonymousSseRestart((reason) => {
   boardAnonSseManager?.restartRequested(reason);
 });
 
-// Helper function for tag color
-function getTagColor(tagName: string): string | null {
-  return getTagColors()[tagName] || null;
-}
-
 function isModifiedFibonacciModeEnabled(): boolean {
   const mode = getBoard()?.project?.estimationMode;
   return mode == null || mode === "MODIFIED_FIBONACCI";
@@ -641,59 +621,6 @@ function scheduleCardHighlight(todo: Todo): void {
   });
 }
 
-function getCombinedChipData(
-  displayTags: { name: string; color?: string }[],
-  activeTag: string,
-  lastSprintsData: SprintChipData | null,
-  activeSprintId: string | null
-): ChipData[] {
-  if (activeSprintId === "assigned") activeSprintId = "scheduled";
-  const out: ChipData[] = [];
-  out.push({ type: "tag", id: "", name: "All", active: activeTag === "", color: null });
-  for (const t of displayTags) {
-    out.push({ type: "tag", id: t.name, name: t.name, active: activeTag === t.name, color: (t.color || getTagColor(t.name)) || null });
-  }
-  if (lastSprintsData) {
-    // Sprint "All" (no sprint filter) is not shown; tag "All" already clears sprint on click.
-    out.push({ type: "sprint", id: "scheduled", name: "Scheduled", active: activeSprintId === "scheduled", color: null });
-    out.push({ type: "sprint", id: "unscheduled", name: "Unscheduled", active: activeSprintId === "unscheduled", color: null });
-    const seenSprintIds = new Set<number>();
-    const nameCount = new Map<string, number>();
-    for (const s of lastSprintsData.sprints) nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
-    for (const s of lastSprintsData.sprints) {
-      if (seenSprintIds.has(s.id)) continue;
-      seenSprintIds.add(s.id);
-      const label = (nameCount.get(s.name) ?? 0) > 1 ? `${s.name} (${s.number})` : s.name;
-      const isActiveSprint = s.state === "ACTIVE";
-      const isClosedSprint = s.state === "CLOSED";
-      const isPlannedSprint = s.state === "PLANNED";
-      out.push({ type: "sprint", id: String(s.number), name: label, active: activeSprintId === String(s.number), color: null, isActiveSprint, isClosedSprint, isPlannedSprint });
-    }
-  }
-  return out;
-}
-
-function buildChipHTML(d: ChipData): string {
-  const activeClass = d.active ? "chip--active" : "";
-  const label = escapeHTML(d.name);
-  if (d.type === "tag") {
-    const safe = sanitizeHexColor(d.color);
-    const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20;"` : "";
-    return `<button class="chip ${activeClass}" data-tag="${escapeHTML(d.id)}" ${colorStyle}>${label}</button>`;
-  }
-  if (d.id === "__all__") {
-    return `<button class="chip chip--sprint ${activeClass}" data-sprint-clear="1">${label}</button>`;
-  }
-  const activeSprintClass = d.isActiveSprint ? " chip--active-sprint" : "";
-  const closedSprintClass = d.isClosedSprint ? " chip--closed-sprint" : "";
-  const plannedSprintClass = d.isPlannedSprint ? " chip--planned-sprint" : "";
-  return `<button class="chip chip--sprint${activeSprintClass}${closedSprintClass}${plannedSprintClass} ${activeClass}" data-sprint-id="${escapeHTML(d.id)}">${label}</button>`;
-}
-
-function buildChipsHTML(data: ChipData[]): string {
-  return data.map(buildChipHTML).join("");
-}
-
 /**
  * Chips-only update for the deferred sprints callback. Updates only #tagChips contents.
  * Does not touch board, filters wrapper, DnD, or board-level listeners.
@@ -707,7 +634,7 @@ function updateChipsOnly(sprintId: string | null): void {
     ? board.tags.filter((t) => t.count > 0)
     : board.tags;
   const tag = getTag();
-  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null);
+  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, getTagColors());
   lastDisplayChipData = combinedChipData;
   const chipsHTML = buildChipsHTML(combinedChipData);
   if (chipsHTML === lastRenderedChipsHTML) return;
@@ -796,64 +723,6 @@ function attachBoardInteractionListeners(): void {
   });
 }
 
-/** Attach delegated handlers for card click, load-more, and context menu. Call once when board is created. */
-function clearTodoMultiSelection(): void {
-  selectedTodoIds.clear();
-  const bar = document.getElementById("bulkEditBar");
-  const btn = document.getElementById("bulkEditBarBtn");
-  if (bar) bar.style.display = "none";
-  if (btn) btn.textContent = "";
-  document.querySelectorAll(".board .card--selected").forEach((el) => el.classList.remove("card--selected"));
-}
-
-function updateBulkEditBar(): void {
-  const bar = document.getElementById("bulkEditBar");
-  const btn = document.getElementById("bulkEditBarBtn");
-  if (!bar || !btn) return;
-  const n = selectedTodoIds.size;
-  if (n >= 2) {
-    bar.style.display = "";
-    btn.textContent = `Edit ${n} selected`;
-  } else {
-    bar.style.display = "none";
-    btn.textContent = "";
-  }
-}
-
-function toggleTodoSelection(id: number): void {
-  if (selectedTodoIds.has(id)) selectedTodoIds.delete(id);
-  else selectedTodoIds.add(id);
-  updateBulkEditBar();
-  const card = document.querySelector(`[data-todo-id="${id}"]`);
-  if (card) card.classList.toggle("card--selected", selectedTodoIds.has(id));
-}
-
-function ensureBulkEditUi(): void {
-  if (bulkEditUiInitialized) return;
-  bulkEditUiInitialized = true;
-  initBulkEditDialog(() => {
-    clearTodoMultiSelection();
-    updateBulkEditBar();
-  });
-  const barBtn = document.getElementById("bulkEditBarBtn");
-  barBtn?.addEventListener("click", () => {
-    void openBulkEditDialog(Array.from(selectedTodoIds), {
-      role: currentUserProjectRole,
-      onPruned: (remaining) => {
-        selectedTodoIds = new Set(remaining);
-        updateBulkEditBar();
-        const boardEl = document.querySelector(".board");
-        if (!boardEl) return;
-        boardEl.querySelectorAll("[data-todo-id]").forEach((el) => {
-          const id = Number((el as HTMLElement).getAttribute("data-todo-id"));
-          if (!Number.isFinite(id)) return;
-          el.classList.toggle("card--selected", selectedTodoIds.has(id));
-        });
-      },
-    });
-  });
-}
-
 function attachBoardDelegationHandlers(): void {
   const boardEl = document.querySelector(".board");
   if (!boardEl) return;
@@ -916,7 +785,18 @@ function attachBoardDelegationHandlers(): void {
     }
   });
 
-  ensureBulkEditUi();
+  ensureBulkEditUi({
+    getRole: () => currentUserProjectRole,
+    syncSelectionClasses: (selectedIds) => {
+      const currentBoardEl = document.querySelector(".board");
+      if (!currentBoardEl) return;
+      currentBoardEl.querySelectorAll("[data-todo-id]").forEach((el) => {
+        const id = Number((el as HTMLElement).getAttribute("data-todo-id"));
+        if (!Number.isFinite(id)) return;
+        el.classList.toggle("card--selected", selectedIds.has(id));
+      });
+    },
+  });
 }
 
 function attachChipsDelegatedHandler(): void {
@@ -1076,63 +956,6 @@ function initMobileTagPagination(): void {
   attachChipsDelegatedHandler();
 }
 
-/** Options for renderTodoCard to avoid per-card lookups. */
-type RenderTodoCardOpts = {
-  tagColors?: Record<string, string>;
-  showPointsMode?: boolean;
-  selectedIds?: Set<number>;
-};
-
-// Render a single todo card
-function renderTodoCard(t: Todo, columnColor?: string, membersByUserId?: Record<number, BoardMember>, opts?: RenderTodoCardOpts): string {
-  const showPoints = (opts?.showPointsMode ?? isModifiedFibonacciModeEnabled()) && t.estimationPoints != null;
-  const tagColors = opts?.tagColors ?? null;
-  const tags = (t.tags || []).map((tagName) => {
-    const tagColor = tagColors ? (tagColors[tagName] ?? null) : getTagColor(tagName);
-    const safe = sanitizeHexColor(tagColor);
-    const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"` : "";
-    return `<span class="tag" ${colorStyle}>${escapeHTML(tagName)}</span>`;
-  }).join("");
-  const borderStyle = columnColor ? ` style="border-color:${escapeHTML(columnColor)}"` : "";
-  const assignee = membersByUserId != null && t.assigneeUserId != null ? membersByUserId?.[t.assigneeUserId] : null;
-  const avatarHTML = assignee
-    ? `<div class="todo-avatar" title="${escapeHTML(assignee.name || assignee.email || '')}">${renderAvatarContent({ name: assignee.name, email: assignee.email, image: assignee.image })}</div>`
-    : '';
-  const pointsHTML = showPoints ? `<span class="card__points" aria-label="Estimation points">${t.estimationPoints}</span>` : "";
-  const footerContent = pointsHTML + avatarHTML;
-  const selectedClass = opts?.selectedIds?.has(t.id) ? " card--selected" : "";
-  return `
-    <button class="card card--${t.status.toLowerCase()}${selectedClass}"${borderStyle} data-todo-id="${t.id}" data-todo-local-id="${t.localId}"${t.assigneeUserId != null ? ` data-assignee-user-id="${t.assigneeUserId}"` : ""} id="todo_${t.id}" type="button">
-      <div class="card__content">
-        <div class="card__title-row">
-          <span class="card__id-inline">#${t.localId}</span>
-          <span class="card__title">${escapeHTML(t.title)}</span>
-        </div>
-        ${tags || footerContent ? `
-  <div class="card__tags">
-    <span class="card__tags-list">
-      ${tags}
-    </span>
-    <span class="card__badges">
-      ${footerContent}
-    </span>
-  </div>
-` : ""}
-      </div>
-      <div class="card__drag-handle" aria-label="Drag to reorder">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <circle cx="4" cy="3" r="1.5"/>
-          <circle cx="4" cy="8" r="1.5"/>
-          <circle cx="4" cy="13" r="1.5"/>
-          <circle cx="12" cy="3" r="1.5"/>
-          <circle cx="12" cy="8" r="1.5"/>
-          <circle cx="12" cy="13" r="1.5"/>
-        </svg>
-      </div>
-    </button>
-  `;
-}
-
 /**
  * Patch assignee avatars into cards that were rendered without members.
  * Avoids full board rebuild when members arrive after first paint.
@@ -1231,7 +1054,7 @@ async function handleLoadMore(status: TodoStatus): Promise<void> {
       const membersByUserId = getMembersByUserId();
       const tagColors = getTagColors();
       const showPointsMode = isModifiedFibonacciModeEnabled();
-      const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
+      const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
       items.forEach((t) => {
         const card = document.createElement("div");
         card.innerHTML = renderTodoCard(t, columnColor, membersByUserId, cardOpts);
@@ -1518,7 +1341,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
     ? board.tags.filter(t => t.count > 0)
     : board.tags;
 
-  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null);
+  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, tagColors);
   lastDisplayChipData = combinedChipData;
   const chipsHTML = buildChipsHTML(combinedChipData);
 
@@ -1528,18 +1351,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
     lastRenderedChipsHTML = chipsHTML;
     const filtersEl = document.querySelector(".filters");
     if (filtersEl) {
-      filtersEl.innerHTML = `
-        <div class="filters__label">Tags:</div>
-        <div class="chips-wrapper">
-          <div class="chips-viewport">
-            <div class="chips" id="tagChips">${chipsHTML}</div>
-          </div>
-          <div class="chips-nav" id="chipsNav" aria-hidden="true">
-            <button type="button" class="chips-nav__prev" aria-label="Previous tags">‹</button>
-            <button type="button" class="chips-nav__next" aria-label="Next tags">›</button>
-          </div>
-        </div>
-      `;
+      filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
     }
     initMobileTagPagination();
   }
@@ -1559,39 +1371,22 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
 
     const boardCols = getBoardColumns(board);
     setDnDColumns(boardCols.map((c) => ({ key: c.key, title: c.title, color: c.color })));
-    const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
-    boardEl.innerHTML = boardCols
-      .map((c) => {
-        const todos = board.columns[c.key] || [];
-        const isMobileActive = getMobileTab() === c.key;
-        const laneMeta = getBoardLaneMeta()[c.key as TodoStatus];
-        const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
-        const displayCount = getLaneDisplayCount(c.key as TodoStatus);
-        const laneTint = laneColumnTintClassAndStyle(c);
-        const dk = escapeHTML(c.key);
-        return `
-          <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${dk}"${laneTint.styleAttr}>
-            <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
-              <span class="col__title">${escapeHTML(c.title)}</span>
-              <span class="col__count" data-count-for="${dk}">${displayCount}</span>
-            </div>
-            <div class="col__list" data-status="${dk}" id="list_${c.key}">
-              ${todos.map((t) => renderTodoCard(t, c.color, membersByUserId, cardOpts)).join("")}
-            </div>
-            ${showLoadMore ? `<div class="col__load-more" data-load-more="${dk}"><button class="btn btn--ghost btn--small col__load-more--desktop" type="button">Load more</button><span class="col__load-more--mobile" role="button" tabindex="0" aria-label="Load more">▼</span></div>` : ""}
-          </section>
-        `;
-      })
-      .join("");
+    const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+    boardEl.innerHTML = buildBoardColumnsHtml({
+      boardCols,
+      board,
+      activeMobileTab: getMobileTab(),
+      laneMetaByKey: getBoardLaneMeta(),
+      laneDisplayCount: (key) => getLaneDisplayCount(key as TodoStatus),
+      membersByUserId,
+      cardOpts,
+    });
 
     // Add "No results" state if search is active and no todos match
     if (search && search.trim() !== "") {
       const totalTodos = Object.values(board.columns).reduce((sum, todos) => sum + todos.length, 0);
       if (totalTodos === 0) {
-        const noResults = document.createElement("div");
-        noResults.className = "no-results";
-        noResults.textContent = `No todos found matching "${escapeHTML(search)}"`;
-        boardEl.appendChild(noResults);
+        boardEl.insertAdjacentHTML("beforeend", buildNoResultsHtml(search));
       }
     }
   }
@@ -1671,93 +1466,32 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     ? board.tags.filter(t => t.count > 0)
     : board.tags;
 
-  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null);
+  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, tagColors);
   lastDisplayChipData = combinedChipData;
   const chipsHTML = buildChipsHTML(combinedChipData);
 
   // Minimal topbar (used for temporary/anonymous boards): logo, project name, rename (if anonymous temp), New Todo, Settings
-  const topbarHTML = minimalTopbar
-    ? `
-      <div class="topbar">
-        <div class="brand">
-          <button class="brand-link" id="brandLink" style="background: none; border: none; padding: 0; cursor: pointer;">
-            <img src="/scrumboytext.png" alt="Scrumboy" class="brand-text" />
-          </button>
-        </div>
-        ${isAnonymousTempBoard 
-          ? (board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" style="width: 32px; height: 32px; pointer-events: none; flex-shrink: 0;" />` : `<span class="project-image-topbar-placeholder" style="width: 32px; height: 32px; flex-shrink: 0;">📷</span>`)
-          : ''}
-        <div class="brand">${escapeHTML(board.project.name)}</div>
-        <div class="spacer"></div>
-        <div class="search-input-wrapper">
-          <input 
-            type="text" 
-            id="searchInput" 
-            class="search-input" 
-            placeholder="${searchPlaceholder}" 
-            value="${escapeHTML(search || "")}"
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="Clear search" title="Clear search">✕</button>` : ''}
-        </div>
-        ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
-        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn">New Todo</button>` : ''}
-        ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${!getUser() ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
-          <span class="hamburger">☰</span>
-        </button>` : ''}
-        ${isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${renderUserAvatar(getUser())}
-      </div>
-    `
-    : `
-      <div class="topbar">
-        <button class="btn btn--ghost" id="backBtn">${escapeHTML(backLabel)}</button>
-        ${isAnonymousTempBoard 
-          ? (board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" style="width: 32px; height: 32px; pointer-events: none; flex-shrink: 0;" />` : `<span class="project-image-topbar-placeholder" style="width: 32px; height: 32px; flex-shrink: 0;">📷</span>`)
-          : `<button class="project-image-topbar-btn" id="projectImageBtn" title="Change project image">
-            ${board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" />` : `<span class="project-image-topbar-placeholder">📷</span>`}
-          </button>`}
-        <div class="brand">${escapeHTML(board.project.name)}</div>
-        <div class="spacer"></div>
-        <div class="search-input-wrapper">
-          <input 
-            type="text" 
-            id="searchInput" 
-            class="search-input" 
-            placeholder="${searchPlaceholder}" 
-            value="${escapeHTML(search || "")}"
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="Clear search" title="Clear search">✕</button>` : ''}
-        </div>
-        ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
-        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn">New Todo</button>` : ''}
-        ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn">Delete Project</button>` : ''}
-        ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${!getUser() ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
-          <span class="hamburger">☰</span>
-        </button>` : ''}
-        ${isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${renderUserAvatar(getUser())}
-      </div>
-    `;
+  const topbarHTML = buildTopbarHtml({
+    board,
+    minimalTopbar,
+    search,
+    searchPlaceholder,
+    isMobile,
+    isAnonymousTempBoard,
+    currentUserProjectRole,
+    user: getUser(),
+    backLabel,
+  });
+  const membersByUserId = getMembersByUserId();
+  const showPointsMode = isModifiedFibonacciModeEnabled();
+  const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
 
   app.innerHTML = `
     <div class="page">
       ${topbarHTML}
 
       <div class="container">
-        <div class="filters">
-          <div class="filters__label">Tags:</div>
-          <div class="chips-wrapper">
-            <div class="chips-viewport">
-              <div class="chips" id="tagChips">${chipsHTML}</div>
-            </div>
-            <div class="chips-nav" id="chipsNav" aria-hidden="true">
-              <button type="button" class="chips-nav__prev" aria-label="Previous tags">‹</button>
-              <button type="button" class="chips-nav__next" aria-label="Next tags">›</button>
-            </div>
-          </div>
-        </div>
+        ${buildFiltersHtml(chipsHTML)}
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">
@@ -1778,33 +1512,15 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
           </div>
 
           <div class="board">
-          ${(() => {
-            const membersByUserId = getMembersByUserId();
-            const showPointsMode = isModifiedFibonacciModeEnabled();
-            const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
-            return boardCols
-            .map((c) => {
-              const todos = board.columns[c.key] || [];
-              const isMobileActive = getMobileTab() === c.key;
-              const laneMeta = getBoardLaneMeta()[c.key as TodoStatus];
-              const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
-              const laneTint = laneColumnTintClassAndStyle(c);
-              const dk = escapeHTML(c.key);
-              return `
-                <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${dk}"${laneTint.styleAttr}>
-                  <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
-                    <span class="col__title">${escapeHTML(c.title)}</span>
-                    <span class="col__count" data-count-for="${dk}">${getLaneDisplayCount(c.key as TodoStatus)}</span>
-                  </div>
-                  <div class="col__list" data-status="${dk}" id="list_${c.key}">
-                    ${todos.map((t) => renderTodoCard(t, c.color, membersByUserId, cardOpts)).join("")}
-                  </div>
-                  ${showLoadMore ? `<div class="col__load-more" data-load-more="${dk}"><button class="btn btn--ghost btn--small col__load-more--desktop" type="button">Load more</button><span class="col__load-more--mobile" role="button" tabindex="0" aria-label="Load more">▼</span></div>` : ""}
-                </section>
-              `;
-            })
-            .join("");
-          })()}
+          ${buildBoardColumnsHtml({
+            boardCols,
+            board,
+            activeMobileTab: getMobileTab(),
+            laneMetaByKey: getBoardLaneMeta(),
+            laneDisplayCount: (key) => getLaneDisplayCount(key as TodoStatus),
+            membersByUserId,
+            cardOpts,
+          })}
           </div>
         </div>
       </div>
@@ -2412,10 +2128,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     if (totalTodos === 0) {
       const boardEl = document.querySelector(".board");
       if (boardEl) {
-        const noResults = document.createElement("div");
-        noResults.className = "no-results";
-        noResults.textContent = `No todos found matching "${escapeHTML(search)}"`;
-        boardEl.appendChild(noResults);
+        boardEl.insertAdjacentHTML("beforeend", buildNoResultsHtml(search));
       }
     }
   }
