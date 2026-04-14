@@ -19,9 +19,11 @@ import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, record
 import { playAssignmentSound, showAssignmentDesktopNotification } from '../core/assignmentNotify.js';
 import { SseConnectionManager } from '../core/sse-client.js';
 import { registerAnonymousSseRestart } from '../core/realtime.js';
-import { buildBoardColumnsHtml, buildChipsHTML, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, getBoardColumns, getCombinedChipData, renderTodoCard, } from './board-rendering.js';
+import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, getBoardColumns, renderTodoCard, } from './board-rendering.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, updateBulkEditBar, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
+import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
+export { notifySprintStateChanged } from './board-filters.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -94,8 +96,6 @@ function getRequestedBoardLimitPerLane(tag, search, sprintId) {
         .map((el) => el.querySelectorAll("[data-todo-local-id]").length);
     return counts.length > 0 ? Math.max(20, ...counts) : 20;
 }
-// Mobile chips pagination: structured data and page state (combined tags + sprints)
-let lastDisplayChipData = [];
 /** Cached members lookup; rebuilt when members change. Avoids repeated Object.fromEntries during render. */
 let membersByUserIdCache = {};
 let membersByUserIdCacheSource = null;
@@ -108,17 +108,11 @@ function getMembersByUserId() {
     }
     return membersByUserIdCache;
 }
-let lastSprintsData = null;
-let lastSprintsDataSlug = null;
-let lastRenderedChipsHTML = "";
 /** Lightweight render signature for updateBoardContent skip; avoids stale UI from board-only comparison. */
 let lastUpdateBoardContentBoard = null;
 let lastUpdateBoardContentTag = "";
 let lastUpdateBoardContentSearch = "";
 let lastUpdateBoardContentSprintId = null;
-let mobileTagPage = 0;
-let mobileTagPageBoundaries = [];
-let mobileTagPaginationResizeBound = false;
 // Runtime access to renderProjects from projects view (after Step 2)
 // For now, we'll use a dynamic import that will work once projects.js exists
 async function getRenderProjects() {
@@ -398,34 +392,6 @@ function isModifiedFibonacciModeEnabled() {
     const mode = getBoard()?.project?.estimationMode;
     return mode == null || mode === "MODIFIED_FIBONACCI";
 }
-// Set tag parameter in URL
-function setTagParam(tag) {
-    const url = new URL(window.location.href);
-    if (tag)
-        url.searchParams.set("tag", tag);
-    else
-        url.searchParams.delete("tag");
-    history.replaceState({}, "", url.pathname + url.search);
-}
-// Set sprint filter in URL. null = no sprint filter (omit param). "scheduled" = Scheduled (sprint_id IS NOT NULL).
-// "unscheduled" = sprint_id IS NULL. Numeric string = specific sprint.
-function setSprintParam(sprintId) {
-    const url = new URL(window.location.href);
-    if (sprintId)
-        url.searchParams.set("sprintId", sprintId);
-    else
-        url.searchParams.delete("sprintId");
-    history.replaceState({}, "", url.pathname + url.search);
-}
-// Set search parameter in URL
-function setSearchParam(search) {
-    const url = new URL(window.location.href);
-    if (search)
-        url.searchParams.set("search", search);
-    else
-        url.searchParams.delete("search");
-    history.replaceState({}, "", url.pathname + url.search);
-}
 function clearResolverRequest() {
     if (resolverController) {
         resolverController.abort();
@@ -480,60 +446,6 @@ function scheduleCardHighlight(todo) {
             highlightTimeoutId = null;
             el.classList.remove(HIGHLIGHT_CLASS);
         }, 2000);
-    });
-}
-/**
- * Chips-only update for the deferred sprints callback. Updates only #tagChips contents.
- * Does not touch board, filters wrapper, DnD, or board-level listeners.
- * Use updateBoardContent for full board+filters updates (SSE, filter change, search).
- */
-function updateChipsOnly(sprintId) {
-    const board = getBoard();
-    if (!board)
-        return;
-    const isAnonymousTempBoard = isAnonymousBoard(board);
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter((t) => t.count > 0)
-        : board.tags;
-    const tag = getTag();
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, getTagColors());
-    lastDisplayChipData = combinedChipData;
-    const chipsHTML = buildChipsHTML(combinedChipData);
-    if (chipsHTML === lastRenderedChipsHTML)
-        return;
-    lastRenderedChipsHTML = chipsHTML;
-    const tagChipsEl = document.getElementById("tagChips");
-    if (tagChipsEl) {
-        tagChipsEl.innerHTML = chipsHTML;
-        attachChipsDelegatedHandler();
-        initMobileTagPagination();
-    }
-}
-/**
- * UI sync helper: patch local sprint state and re-render chips when a sprint is activated or closed.
- * Called from the sprint-updated event handler. Safe for number or string sprintId.
- */
-export function notifySprintStateChanged(sprintId, newState) {
-    if (!lastSprintsData || getSlug() !== lastSprintsDataSlug)
-        return;
-    const id = Number(sprintId);
-    const sprint = lastSprintsData.sprints.find((s) => s.id === id);
-    if (!sprint)
-        return;
-    if (sprint.state === newState)
-        return;
-    sprint.state = newState;
-    updateChipsOnly(getSprintIdFromUrl());
-}
-let sprintEventSubscribed = false;
-function ensureSprintSubscription() {
-    if (sprintEventSubscribed)
-        return;
-    sprintEventSubscribed = true;
-    on("sprint-updated", (payload) => {
-        if (payload && payload.sprintId != null && (payload.state === "ACTIVE" || payload.state === "CLOSED")) {
-            notifySprintStateChanged(payload.sprintId, payload.state);
-        }
     });
 }
 function isTrackedBoardPointerEvent(event) {
@@ -669,163 +581,6 @@ function attachBoardDelegationHandlers() {
             });
         },
     });
-}
-function attachChipsDelegatedHandler() {
-    const tagChipsEl = document.getElementById("tagChips");
-    if (!tagChipsEl)
-        return;
-    tagChipsEl.onclick = (e) => {
-        const chip = e.target.closest("[data-tag], [data-sprint-id], [data-sprint-clear]");
-        if (!chip)
-            return;
-        const additive = e.ctrlKey || e.metaKey;
-        if (chip.hasAttribute("data-tag")) {
-            const nextTag = chip.getAttribute("data-tag") ?? "";
-            if (additive) {
-                setTagParam(nextTag);
-            }
-            else {
-                setTagParam(nextTag);
-                setSprintParam(null);
-            }
-            loadBoardBySlug(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => showToast(err.message));
-        }
-        else if (chip.hasAttribute("data-sprint-clear")) {
-            if (additive) {
-                setSprintParam(null);
-            }
-            else {
-                setSprintParam(null);
-                setTagParam("");
-            }
-            loadBoardBySlug(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => showToast(err.message));
-        }
-        else if (chip.hasAttribute("data-sprint-id")) {
-            const nextSprint = chip.getAttribute("data-sprint-id") ?? "";
-            if (additive) {
-                setSprintParam(nextSprint);
-            }
-            else {
-                setSprintParam(nextSprint);
-                setTagParam("");
-            }
-            loadBoardBySlug(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => showToast(err.message));
-        }
-    };
-}
-const MOBILE_TAG_BREAKPOINT = 767;
-const MOBILE_TAG_ROWS_PER_PAGE = 2;
-function initMobileTagPagination() {
-    const tagChipsEl = document.getElementById("tagChips");
-    const chipsNav = document.getElementById("chipsNav");
-    if (!tagChipsEl || !chipsNav)
-        return;
-    const isMobile = window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
-    // One-time resize listener
-    if (!mobileTagPaginationResizeBound) {
-        mobileTagPaginationResizeBound = true;
-        let resizeTimeout = null;
-        window.addEventListener("resize", () => {
-            if (resizeTimeout)
-                clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                mobileTagPage = 0;
-                initMobileTagPagination();
-            }, 150);
-        });
-    }
-    if (!isMobile) {
-        // Desktop: all chips already in DOM, hide nav
-        chipsNav.classList.remove("is-visible");
-        chipsNav.setAttribute("aria-hidden", "true");
-        attachChipsDelegatedHandler();
-        return;
-    }
-    if (lastDisplayChipData.length <= 1) {
-        chipsNav.classList.remove("is-visible");
-        chipsNav.setAttribute("aria-hidden", "true");
-        attachChipsDelegatedHandler();
-        return;
-    }
-    // Ensure all chips are in DOM for measurement (e.g. after resize we might have had a slice)
-    tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData);
-    // Measure: all chips are in DOM, get positions and group by row
-    const chipEls = Array.from(tagChipsEl.querySelectorAll(".chip"));
-    if (chipEls.length === 0) {
-        return;
-    }
-    const rects = chipEls.map((el) => el.getBoundingClientRect());
-    const rowTolerance = 2;
-    const rows = [];
-    let currentRow = 0;
-    let lastTop = rects[0].top;
-    for (let i = 0; i < rects.length; i++) {
-        if (Math.abs(rects[i].top - lastTop) > rowTolerance) {
-            currentRow++;
-            lastTop = rects[i].top;
-        }
-        rows[i] = currentRow;
-    }
-    const numRows = currentRow + 1;
-    // Page boundaries: each page = MOBILE_TAG_ROWS_PER_PAGE rows; boundaries are start indices per page
-    mobileTagPageBoundaries = [0];
-    for (let p = 1; p * MOBILE_TAG_ROWS_PER_PAGE < numRows; p++) {
-        const rowStart = p * MOBILE_TAG_ROWS_PER_PAGE;
-        const idx = chipEls.findIndex((_, i) => rows[i] >= rowStart);
-        if (idx >= 0)
-            mobileTagPageBoundaries.push(idx);
-    }
-    mobileTagPageBoundaries.push(chipEls.length);
-    const numPages = mobileTagPageBoundaries.length - 1;
-    if (numPages <= 1) {
-        chipsNav.classList.remove("is-visible");
-        chipsNav.setAttribute("aria-hidden", "true");
-        attachChipsDelegatedHandler();
-        return;
-    }
-    // Reset to first page when board/filter changed (lastDisplayChipData was just set)
-    mobileTagPage = 0;
-    // Show only chips for current page
-    const start = mobileTagPageBoundaries[mobileTagPage];
-    const end = mobileTagPageBoundaries[mobileTagPage + 1];
-    tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData.slice(start, end));
-    chipsNav.classList.add("is-visible");
-    chipsNav.setAttribute("aria-hidden", "false");
-    const prevBtn = chipsNav.querySelector(".chips-nav__prev");
-    const nextBtn = chipsNav.querySelector(".chips-nav__next");
-    prevBtn?.replaceWith(prevBtn.cloneNode(true));
-    nextBtn?.replaceWith(nextBtn.cloneNode(true));
-    const newPrev = chipsNav.querySelector(".chips-nav__prev");
-    const newNext = chipsNav.querySelector(".chips-nav__next");
-    if (newPrev)
-        newPrev.disabled = mobileTagPage === 0;
-    if (newNext)
-        newNext.disabled = mobileTagPage === numPages - 1;
-    newPrev?.addEventListener("click", () => {
-        if (mobileTagPage <= 0)
-            return;
-        mobileTagPage--;
-        const s = mobileTagPageBoundaries[mobileTagPage];
-        const e = mobileTagPageBoundaries[mobileTagPage + 1];
-        tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData.slice(s, e));
-        if (newPrev)
-            newPrev.disabled = mobileTagPage === 0;
-        if (newNext)
-            newNext.disabled = mobileTagPage === numPages - 1;
-    });
-    newNext?.addEventListener("click", () => {
-        if (mobileTagPage >= numPages - 1)
-            return;
-        mobileTagPage++;
-        const s = mobileTagPageBoundaries[mobileTagPage];
-        const e = mobileTagPageBoundaries[mobileTagPage + 1];
-        tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData.slice(s, e));
-        if (newPrev)
-            newPrev.disabled = mobileTagPage === 0;
-        if (newNext)
-            newNext.disabled = mobileTagPage === numPages - 1;
-    });
-    attachChipsDelegatedHandler();
 }
 /**
  * Patch assignee avatars into cards that were rendered without members.
@@ -1211,22 +966,17 @@ function updateBoardContent(board, tag, search, sprintId) {
     });
     setTagColors(tagColors);
     const isAnonymousTempBoard = isAnonymousBoard(board);
-    // Filter tags for display: on anonymous boards, only show tags with count > 0
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter(t => t.count > 0)
-        : board.tags;
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, tagColors);
-    lastDisplayChipData = combinedChipData;
-    const chipsHTML = buildChipsHTML(combinedChipData);
+    const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
     // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
-    const chipsUnchanged = chipsHTML === lastRenderedChipsHTML;
     if (!chipsUnchanged) {
-        lastRenderedChipsHTML = chipsHTML;
         const filtersEl = document.querySelector(".filters");
         if (filtersEl) {
             filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
+            bindBoardFilterUi({
+                reloadBoard: loadBoardBySlug,
+                showError: (message) => showToast(message),
+            });
         }
-        initMobileTagPagination();
     }
     // Precompute for card render loop
     const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -1320,13 +1070,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
     setTagColors(tagColors);
     // Anonymous temporary board: expiresAt set, no creator (pastebin-style). Rename + New Todo without login — see isAnonymousBoard() / backend.
     const isAnonymousTempBoard = isAnonymousBoard(board);
-    // Filter tags for display: on anonymous boards, only show tags with count > 0
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter(t => t.count > 0)
-        : board.tags;
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, tagColors);
-    lastDisplayChipData = combinedChipData;
-    const chipsHTML = buildChipsHTML(combinedChipData);
+    const { chipsHTML } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
     // Minimal topbar (used for temporary/anonymous boards): logo, project name, rename (if anonymous temp), New Todo, Settings
     const topbarHTML = buildTopbarHtml({
         board,
@@ -1873,62 +1617,10 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
         });
         deleteProjectBtn[BOUND_FLAG] = true;
     }
-    initMobileTagPagination();
-    // Add search input handler
-    const searchInput = document.getElementById("searchInput");
-    if (searchInput && !searchInput[BOUND_FLAG]) {
-        let searchTimeout = null;
-        // Function to handle clear button click
-        const handleClearClick = () => {
-            searchInput.value = "";
-            setSearchParam("");
-            loadBoardBySlug(getSlug(), getTag(), null, getSprintIdFromUrl()).catch((err) => showToast(err.message));
-            updateClearButton();
-        };
-        // Function to update clear button visibility
-        const updateClearButton = () => {
-            const clearBtn = document.getElementById("searchClear");
-            const wrapper = searchInput.closest(".search-input-wrapper");
-            if (wrapper) {
-                const hasValue = searchInput.value.trim() !== "";
-                if (hasValue && !clearBtn) {
-                    // Add clear button
-                    const btn = document.createElement("button");
-                    btn.className = "search-clear";
-                    btn.id = "searchClear";
-                    btn.setAttribute("aria-label", "Clear search");
-                    btn.setAttribute("title", "Clear search");
-                    btn.textContent = "✕";
-                    btn.addEventListener("click", handleClearClick);
-                    wrapper.appendChild(btn);
-                }
-                else if (!hasValue && clearBtn) {
-                    // Remove clear button
-                    clearBtn.remove();
-                }
-            }
-        };
-        searchInput.addEventListener("input", (e) => {
-            const input = e.target;
-            const value = input.value; // Keep untrimmed value in input
-            updateClearButton();
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                const trimmedValue = value.trim();
-                setSearchParam(trimmedValue);
-                // loadBoardBySlug will detect existing topbar and only update board content
-                loadBoardBySlug(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl()).catch((err) => showToast(err.message));
-            }, 300); // 300ms debounce
-        });
-        // Attach handler to existing clear button (if present from initial render)
-        const existingClearBtn = document.getElementById("searchClear");
-        if (existingClearBtn) {
-            existingClearBtn.addEventListener("click", handleClearClick);
-        }
-        // Initialize clear button visibility
-        updateClearButton();
-        searchInput[BOUND_FLAG] = true;
-    }
+    bindBoardFilterUi({
+        reloadBoard: loadBoardBySlug,
+        showError: (message) => showToast(message),
+    });
     const settingsBtn = document.getElementById("settingsBtn");
     if (settingsBtn && !settingsBtn[BOUND_FLAG]) {
         settingsBtn.addEventListener("click", async () => {
@@ -1979,7 +1671,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
     const requestSprintId = sprintId ?? null;
     // Clear stale members from prior board immediately; prevents stale data if fetch fails early.
     setBoardMembers([]);
-    lastRenderedChipsHTML = "";
+    resetBoardFilterUiState();
     lastUpdateBoardContentBoard = null;
     const params = new URLSearchParams();
     params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(requestTag, requestSearch, requestSprintId), getBoardLimitPerLaneFloor())));
@@ -2017,9 +1709,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
         return;
     resetBoardLimitPerLaneFloor();
     // Defer sprints — render board first, then load in background
-    if (slug !== lastSprintsDataSlug) {
-        lastSprintsData = null;
-    }
+    clearSprintChipDataIfSlugChanged(slug);
     const effectiveSprintId = requestSprintId;
     const rendered = await bootstrapLoadedBoardView({
         board,
@@ -2046,14 +1736,14 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
     debugLog("loadBoardBySlug end (success)", slug);
     // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
     // No need to call hydrateAvatarsOnCards() here.
-    if (!isAnonymousBoard(board) && lastSprintsDataSlug !== slug) {
-        lastSprintsDataSlug = slug;
+    if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
+        setSprintChipDataForSlug(slug, null);
         apiFetch(`/api/board/${slug}/sprints`)
             .then((sprintsResp) => {
             if (requestSeq !== boardLoadSequence)
                 return;
             const sprints = normalizeSprints(sprintsResp);
-            lastSprintsData = sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null;
+            setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
             if (getSlug() === requestSlug) {
                 updateChipsOnly(requestSprintId);
             }
@@ -2061,8 +1751,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
             .catch(() => {
             if (requestSeq !== boardLoadSequence)
                 return;
-            lastSprintsData = null;
-            lastSprintsDataSlug = null;
+            clearSprintChipData();
         });
     }
 }
@@ -2077,14 +1766,12 @@ registerSprintsRefresher(async (slug) => {
     try {
         const sprintsResp = await apiFetch(`/api/board/${slug}/sprints`);
         const sprints = normalizeSprints(sprintsResp);
-        lastSprintsData = sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null;
-        lastSprintsDataSlug = slug;
+        setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
         if (getSlug() === slug)
             updateChipsOnly(getSprintIdFromUrl());
     }
     catch {
-        lastSprintsData = null;
-        lastSprintsDataSlug = null;
+        clearSprintChipData();
     }
 });
 ensureSprintSubscription();
@@ -2165,9 +1852,8 @@ export async function renderBoard(slug, tag, search, sprintId, openTodoId = null
     if (opts.prefetchedBoard && opts.prefetchedBoard.project?.id) {
         const board = opts.prefetchedBoard;
         setBoardMembers([]);
-        if (slug !== lastSprintsDataSlug) {
-            lastSprintsData = null;
-        }
+        resetBoardFilterUiState();
+        clearSprintChipDataIfSlugChanged(slug);
         const rendered = await bootstrapLoadedBoardView({
             board,
             slug,
@@ -2194,22 +1880,21 @@ export async function renderBoard(slug, tag, search, sprintId, openTodoId = null
             connectBoardEvents(slug);
         // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
         // No need to call hydrateAvatarsOnCards() here.
-        if (!isAnonymousBoard(board) && lastSprintsDataSlug !== slug) {
-            lastSprintsDataSlug = slug;
+        if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
+            setSprintChipDataForSlug(slug, null);
             apiFetch(`/api/board/${slug}/sprints`)
                 .then((sprintsResp) => {
                 if (getSlug() !== slug)
                     return;
                 const sprints = normalizeSprints(sprintsResp);
-                lastSprintsData = sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null;
+                setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
                 if (getSlug() === slug) {
                     updateChipsOnly(sprintId);
                 }
             })
                 .catch(() => {
                 if (getSlug() === slug) {
-                    lastSprintsData = null;
-                    lastSprintsDataSlug = null;
+                    clearSprintChipData();
                 }
             });
         }
