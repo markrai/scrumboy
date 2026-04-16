@@ -78,7 +78,9 @@ func (s *Store) userHasProjectRole(ctx context.Context, projectID int64, userID 
 // CheckProjectRole verifies that userID has at least the required role for the project.
 // Returns ErrNotFound when the user lacks access to the project.
 // Other errors may be returned for database failures.
-// Store functions must never call UserIDFromContext or HTTP helpers.
+// This helper stays transport-agnostic by taking an explicit requester userID.
+// Other store paths still read UserIDFromContext(ctx) directly under the
+// current mixed implicit/explicit actor contract.
 func (s *Store) CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole ProjectRole) error {
 	hasAccess, err := s.userHasProjectRole(ctx, projectID, userID, requiredRole)
 	if err != nil {
@@ -453,6 +455,8 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 	}
 	var ownerUserID *int64
 	if enabled {
+		// Current contract: transport establishes the ambient actor on ctx, and
+		// project creation reads it here for the owner/creator relationship.
 		uid, ok := UserIDFromContext(ctx)
 		if !ok {
 			return Project{}, ErrUnauthorized

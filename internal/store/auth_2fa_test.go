@@ -40,7 +40,10 @@ func TestCreateAndGetLogin2FAPending(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	u, _ := st.BootstrapUser(ctx, "u@x.com", "pass", "U")
+	u, err := st.BootstrapUser(ctx, "u@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
 
 	token, expiresAt, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
 	if err != nil {
@@ -70,16 +73,22 @@ func TestIncrementAttemptRevokesAfterMax(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	u, _ := st.BootstrapUser(ctx, "u@x.com", "pass", "U")
-	token, _, _ := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	u, err := st.BootstrapUser(ctx, "u@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatalf("CreateLogin2FAPending: %v", err)
+	}
 
 	for i := 0; i < 5; i++ {
-		err := st.IncrementLogin2FAPendingAttempt(ctx, token)
-		if err != nil {
-			t.Fatalf("increment %d: %v", i, err)
+		incErr := st.IncrementLogin2FAPendingAttempt(ctx, token)
+		if incErr != nil {
+			t.Fatalf("increment %d: %v", i, incErr)
 		}
 	}
-	err := st.IncrementLogin2FAPendingAttempt(ctx, token)
+	err = st.IncrementLogin2FAPendingAttempt(ctx, token)
 	if !errors.Is(err, ErrTooManyAttempts) {
 		t.Fatalf("expected ErrTooManyAttempts, got %v", err)
 	}
@@ -95,7 +104,10 @@ func TestRecoveryCodesAndConsume(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	u, _ := st.BootstrapUser(ctx, "u@x.com", "pass", "U")
+	u, err := st.BootstrapUser(ctx, "u@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
 	codes := GenerateRecoveryCodes(3)
 	if len(codes) != 3 {
 		t.Fatalf("expected 3 codes, got %d", len(codes))

@@ -1,5 +1,11 @@
 /* global Sortable */
 
+// Frontend working model:
+// - Edit modules/**/*.ts. That is the only maintained source of truth for frontend logic.
+// - Runtime boots from this app.js entry, which imports the committed dist/**/*.js bundle below.
+// - dist/**/*.js is emitted runtime/build output, not the primary editing target.
+// - source-side modules/**/*.js mirrors are unsupported and should not exist or be recreated.
+
 import { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, todoStatus, todoEstimationPoints, deleteTodoBtn, closeTodoBtn, settingsDialog, closeSettingsBtn } from './dist/dom/elements.js';
 import { initTheme, handleThemeChange, getStoredTheme, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from './dist/theme.js';
 import { escapeHTML, showToast } from './dist/utils.js';

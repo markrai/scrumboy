@@ -20,6 +20,10 @@ type membersUpdatedEvent struct {
 	ProjectID int64  `json:"projectId"`
 }
 
+// emitRefreshNeeded is the generic board invalidation signal for board-affecting
+// mutations and settings changes. `reason` is carried through to the SSE wire
+// payload for characterization/debugging; the current frontend does not branch
+// on it when deciding whether to reload the board.
 func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason string) {
 	payload, _ := json.Marshal(struct {
 		Reason string `json:"reason"`

@@ -1,7 +1,15 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** unless noted below.
 
+
+## [3.12.0] - 2026-04-16
+
+### Improvements
+
+- **Maintainability** - Backend router split into resource-focused files; frontend settings, todo dialog, and board modules decomposed behind stable facades; characterization tests added for extracted seams and key board routes.
+
+---
 
 ## [3.11.10] - 2026-04-07
 

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"scrumboy/internal/auth"
 	"golang.org/x/crypto/bcrypt"
+	"scrumboy/internal/auth"
 )
 
 func normalizeEmail(email string) string {
@@ -260,8 +260,7 @@ WHERE owner_user_id IS NULL
 //
 // IMPORTANT: This function is ONLY called explicitly via API endpoint.
 // It must NEVER be called automatically during login, bootstrap, or assignment.
-// Anonymous temporary boards (creator_user_id IS NULL) are intentionally ownerless
-// and should generally not be claimable - this is for authenticated temp boards only.
+// Claim converts an unowned, unexpired temporary board into an owned durable project.
 //
 // Behavior:
 // - requires an authenticated user (enforced by caller; this validates userID)
@@ -332,18 +331,6 @@ WHERE id = ? AND owner_user_id IS NULL
 			return fmt.Errorf("create membership: %w", err)
 		}
 		return tx.Commit()
-	}
-
-	// CRITICAL: Only allow claiming temporary boards that have a creator_user_id (authenticated temp boards).
-	// Anonymous temporary boards (creator_user_id IS NULL) are intentionally ownerless and must NEVER be claimed.
-	// Check if this is an anonymous temp board - if so, refuse to claim it.
-	var creatorUserID sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT creator_user_id FROM projects WHERE id = ?`, projectID).Scan(&creatorUserID); err != nil {
-		return fmt.Errorf("check creator: %w", err)
-	}
-	if !creatorUserID.Valid {
-		// This is an anonymous temp board - it must never be claimed
-		return ErrNotFound
 	}
 
 	if _, err := tx.ExecContext(ctx, `

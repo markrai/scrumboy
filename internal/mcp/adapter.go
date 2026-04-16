@@ -98,17 +98,23 @@ func parseBearerAuthorization(headerValue string) (ok bool, credential string) {
 	return true, strings.TrimSpace(v[i+1:])
 }
 
-// requestAuthResult is the outcome of MCP request authentication.
+// requestAuthResult is the outcome of MCP credential-to-actor resolution.
 type requestAuthResult struct {
 	Ctx              context.Context
 	BearerAuthFailed bool
 	Err              error // non-nil store failure (caller should map to 500)
 }
 
+// resolveRequestAuth is the MCP credential-to-actor boundary.
+// It establishes actor identity from bearer token or session cookie when
+// present, but it does not authorize access to any specific resource. MCP
+// tools may gate capability/UX early; store methods remain the authority for
+// resource authorization.
 func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 	ctx := r.Context()
 
-	// Anonymous mode: ignore Authorization and session cookies (same boundary as HTTP API).
+	// Anonymous mode intentionally establishes no actor, matching the HTTP API
+	// boundary for anonymous deployments.
 	if a.mode == "anonymous" {
 		return requestAuthResult{Ctx: ctx}
 	}
@@ -147,6 +153,9 @@ func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 	return requestAuthResult{Ctx: ctx}
 }
 
+// authState reports whether authenticated MCP tools are usable for this
+// request. It is a transport/tool capability gate layered on top of
+// resolveRequestAuth, not the source of truth for store-level authorization.
 func (a *Adapter) authState(ctx context.Context) (authCapabilities, bool, *adapterError) {
 	if a.mode == "anonymous" {
 		reason := "server mode anonymous disables authenticated MCP tools"

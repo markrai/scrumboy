@@ -3,23 +3,25 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderUserAvatar, renderAvatarContent, processImageFile, sanitizeHexColor } from '../utils.js';
-import { getBoard, getAuthStatusAvailable, getProjectId, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getEditingTodo, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, } from '../state/selectors.js';
-import { setProjectId, setBoard, setSlug, setTag, setSearch, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setBoardLaneMeta, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
+import { escapeHTML, showToast, renderAvatarContent, processImageFile } from '../utils.js';
+import { getBoard, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getEditingTodo, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, } from '../state/selectors.js';
+import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
 import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
 import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, mobileLaneTabStyleAttrForHtml, } from './mobile-lane-tabs.js';
-import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
+import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { normalizeSprints } from '../sprints.js';
-import { emit, on, off } from '../events.js';
-import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, recordLocalMutation, isBulkUpdating, } from '../realtime/guard.js';
-import { initBulkEditDialog, openBulkEditDialog } from '../dialogs/bulk-edit.js';
-import { playAssignmentSound, showAssignmentDesktopNotification } from '../core/assignmentNotify.js';
-import { SseConnectionManager } from '../core/sse-client.js';
-import { registerAnonymousSseRestart } from '../core/realtime.js';
+import { on, off } from '../events.js';
+import { recordLocalMutation, } from '../realtime/guard.js';
+import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, getBoardColumns, renderTodoCard, } from './board-rendering.js';
+import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
+import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
+import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
+export { notifySprintStateChanged } from './board-filters.js';
+import { attachBoardInteractionListeners, clearPendingRealtimeRefresh, connectBoardEvents, debugLog, disconnectBoardEvents, markBoardLoadSucceeded, runWhileTodoDialogOpening, setInitialBoardLoadInFlight, } from './board-realtime.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -31,46 +33,6 @@ let boardLoadSequence = 0;
 let resolverController = null;
 let highlightRafId = null;
 let highlightTimeoutId = null;
-let boardAnonSseManager = null;
-let boardEventsSlug = null;
-/** Logged-in path: listen on app bus instead of owning EventSource. */
-let boardRealtimeBound = false;
-const assignmentTodoDebounceMs = 1500;
-const assignmentToastLastByTodoId = new Map();
-let realtimeRefetchTimeoutId = null;
-let realtimeForceRefreshTimeoutId = null;
-let pendingRealtimeRefreshSlug = null;
-let boardPointerInteractionActive = false;
-let boardPointerReleaseTimeoutId = null;
-let todoDialogOpeningInProgress = false;
-let boardInteractionListenersBound = false;
-const realtimeRefetchDebounceMs = 400;
-const localRealtimeGuardMs = 1500;
-const boardInteractionGuardMs = 400;
-const maxRefreshDelayMs = 2000;
-/** Timestamp of last successful board load; used to gate SSE onopen refetch. */
-let lastBoardLoadTimestamp = 0;
-/** Slug of last successful board load; used for slug-aware onopen guard. */
-let lastSuccessfulBoardLoadSlug = null;
-/** Slug for which initial load is in flight; onopen must not refetch while this is set. */
-let initialBoardLoadInFlight = null;
-const SSE_ONOPEN_SKIP_MS = 2000;
-/** Multi-select todo ids (numeric `data-todo-id`) for bulk edit. */
-let selectedTodoIds = new Set();
-let bulkEditUiInitialized = false;
-const DEBUG_BOARD_LOAD = typeof localStorage !== "undefined" && localStorage.getItem("scrumboy_debug_board_load") === "1";
-function debugLog(msg, slug) {
-    if (DEBUG_BOARD_LOAD) {
-        console.log(`[board-load] ${msg}`, slug != null ? `(slug=${slug})` : "");
-    }
-}
-function getBoardColumns(board) {
-    const order = board.columnOrder;
-    if (order && order.length > 0) {
-        return order.map((c) => ({ key: c.key, title: c.name, color: c.color, isDone: !!c.isDone }));
-    }
-    return columnsSpec().map((c) => ({ key: c.key, title: c.title, isDone: c.key === "done", color: undefined }));
-}
 /** Older builds stored uppercase `mobileTab_${slug}` values; workflow column_key is store-shaped (lowercase). */
 const LEGACY_MOBILE_TAB_KEYS = {
     BACKLOG: "backlog",
@@ -89,46 +51,6 @@ function resolveMobileTabKeyFromStorage(saved, cols) {
         return mapped;
     return null;
 }
-/** Lane body tint when workflow provides a color (custom keys + themed columns; CSS fallback uses data-column only in light mode). */
-function laneColumnTintClassAndStyle(c) {
-    const safe = c.color ? sanitizeHexColor(c.color) : null;
-    if (!safe)
-        return { extraClass: "", styleAttr: "" };
-    return { extraClass: " col--lane-tint", styleAttr: ` style="--lane-accent:${escapeHTML(safe)};"` };
-}
-function laneMetaKeyCandidates(key) {
-    const lower = key.toLowerCase();
-    const upper = key.toUpperCase();
-    const out = [key, lower, upper];
-    // Legacy compatibility: map between old status key and workflow key.
-    if (lower === "doing" || upper === "IN_PROGRESS")
-        out.push("IN_PROGRESS", "doing");
-    return Array.from(new Set(out));
-}
-function buildLaneMetaFromBoard(board) {
-    const rawMeta = (board?.columnsMeta ?? {});
-    const keys = new Set();
-    getBoardColumns(board).forEach((c) => keys.add(c.key));
-    Object.keys(board?.columns ?? {}).forEach((k) => keys.add(k));
-    Object.keys(rawMeta).forEach((k) => keys.add(k));
-    const out = {};
-    keys.forEach((key) => {
-        let source;
-        for (const candidate of laneMetaKeyCandidates(key)) {
-            if (rawMeta[candidate] != null) {
-                source = rawMeta[candidate];
-                break;
-            }
-        }
-        out[key] = {
-            hasMore: source?.hasMore === true,
-            nextCursor: source?.nextCursor ?? null,
-            loading: false,
-            totalCount: source?.totalCount,
-        };
-    });
-    return out;
-}
 function hasActiveBoardSubsetFilter(tag, search, sprintId) {
     return !!((tag && tag.trim() !== "")
         || (search && search.trim() !== "")
@@ -142,7 +64,6 @@ function getRequestedBoardLimitPerLane(tag, search, sprintId) {
         .map((el) => el.querySelectorAll("[data-todo-local-id]").length);
     return counts.length > 0 ? Math.max(20, ...counts) : 20;
 }
-let lastDisplayChipData = [];
 /** Cached members lookup; rebuilt when members change. Avoids repeated Object.fromEntries during render. */
 let membersByUserIdCache = {};
 let membersByUserIdCacheSource = null;
@@ -155,17 +76,11 @@ function getMembersByUserId() {
     }
     return membersByUserIdCache;
 }
-let lastSprintsData = null;
-let lastSprintsDataSlug = null;
-let lastRenderedChipsHTML = "";
 /** Lightweight render signature for updateBoardContent skip; avoids stale UI from board-only comparison. */
 let lastUpdateBoardContentBoard = null;
 let lastUpdateBoardContentTag = "";
 let lastUpdateBoardContentSearch = "";
 let lastUpdateBoardContentSprintId = null;
-let mobileTagPage = 0;
-let mobileTagPageBoundaries = [];
-let mobileTagPaginationResizeBound = false;
 // Runtime access to renderProjects from projects view (after Step 2)
 // For now, we'll use a dynamic import that will work once projects.js exists
 async function getRenderProjects() {
@@ -178,290 +93,12 @@ async function getRenderProjects() {
         return window.renderProjects || renderProjects;
     }
 }
-function useMergedGlobalRealtime() {
-    return !!(getAuthStatusAvailable() && getUser());
-}
-function onBoardRealtimeEvent(_payload) {
-    const slug = boardEventsSlug;
-    if (!slug || getSlug() !== slug)
-        return;
-    const payload = _payload;
-    const currentProjectID = getProjectId();
-    if (typeof payload.projectId === 'number' && currentProjectID !== null && payload.projectId !== currentProjectID) {
-        return;
-    }
-    // Assignment toast/sound/unread are handled in core/realtime.ts (after id dedupe).
-    if (payload.type === 'todo.assigned') {
-        return;
-    }
-    try {
-        if (payload.type === 'members_updated') {
-            invalidateMembersCache(payload.projectId);
-            emit('members-updated', { projectId: payload.projectId });
-            return;
-        }
-        if (isBulkUpdating())
-            return;
-        if (payload.type === 'refresh_needed') {
-            refetchBoardFromRealtime(slug);
-            return;
-        }
-        refetchBoardFromRealtime(slug);
-    }
-    catch {
-        if (!isBulkUpdating())
-            refetchBoardFromRealtime(slug);
-    }
-}
-function clearRealtimeRefetchTimer() {
-    if (realtimeRefetchTimeoutId !== null) {
-        clearTimeout(realtimeRefetchTimeoutId);
-        realtimeRefetchTimeoutId = null;
-    }
-}
-function clearRealtimeForceRefreshTimer() {
-    if (realtimeForceRefreshTimeoutId !== null) {
-        clearTimeout(realtimeForceRefreshTimeoutId);
-        realtimeForceRefreshTimeoutId = null;
-    }
-}
-function clearPendingRealtimeRefresh() {
-    pendingRealtimeRefreshSlug = null;
-    clearRealtimeRefetchTimer();
-    clearRealtimeForceRefreshTimer();
-}
-function clearBoardPointerReleaseTimer() {
-    if (boardPointerReleaseTimeoutId !== null) {
-        clearTimeout(boardPointerReleaseTimeoutId);
-        boardPointerReleaseTimeoutId = null;
-    }
-}
-function getLocalRealtimeGuardRemaining() {
-    return Math.max(0, localRealtimeGuardMs - (Date.now() - getLastLocalMutationTimestamp()));
-}
-function getBoardInteractionGuardRemaining() {
-    return Math.max(0, boardInteractionGuardMs - (Date.now() - getLastBoardInteractionTimestamp()));
-}
-function isRealtimeRefreshBlocked() {
-    return dragInProgress
-        || boardPointerInteractionActive
-        || todoDialogOpeningInProgress
-        || getLocalRealtimeGuardRemaining() > 0
-        || getBoardInteractionGuardRemaining() > 0;
-}
-function getRealtimeRefreshDelay() {
-    const guardRemaining = Math.max(getLocalRealtimeGuardRemaining(), getBoardInteractionGuardRemaining());
-    return Math.max(realtimeRefetchDebounceMs, guardRemaining);
-}
-function scheduleRealtimeRefreshAttempt(delay) {
-    clearRealtimeRefetchTimer();
-    realtimeRefetchTimeoutId = setTimeout(() => {
-        realtimeRefetchTimeoutId = null;
-        flushPendingRealtimeRefresh();
-    }, delay);
-}
-function ensureRealtimeForceRefreshTimer() {
-    if (pendingRealtimeRefreshSlug == null || realtimeForceRefreshTimeoutId !== null)
-        return;
-    realtimeForceRefreshTimeoutId = setTimeout(() => {
-        realtimeForceRefreshTimeoutId = null;
-        flushPendingRealtimeRefresh(true);
-    }, maxRefreshDelayMs);
-}
-function flushPendingRealtimeRefresh(force = false) {
-    const slug = pendingRealtimeRefreshSlug;
-    if (!slug) {
-        clearRealtimeRefetchTimer();
-        clearRealtimeForceRefreshTimer();
-        return;
-    }
-    if (getSlug() !== slug) {
-        debugLog("flushPendingRealtimeRefresh dropped pending slug mismatch", slug);
-        clearPendingRealtimeRefresh();
-        return;
-    }
-    if (!force && isRealtimeRefreshBlocked()) {
-        debugLog("flushPendingRealtimeRefresh deferred because interaction guard active", slug);
-        scheduleRealtimeRefreshAttempt(getRealtimeRefreshDelay());
-        ensureRealtimeForceRefreshTimer();
-        return;
-    }
-    clearPendingRealtimeRefresh();
-    debugLog(force ? "flushPendingRealtimeRefresh forcing invalidateBoard" : "flushPendingRealtimeRefresh running invalidateBoard", slug);
-    invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl()).catch((err) => {
-        console.warn("Realtime board refresh failed:", err?.message || err);
-    });
-}
-function disconnectBoardEvents() {
-    clearPendingRealtimeRefresh();
-    clearBoardPointerReleaseTimer();
-    boardPointerInteractionActive = false;
-    todoDialogOpeningInProgress = false;
-    clearTodoMultiSelection();
-    updateBulkEditBar();
-    if (boardRealtimeBound) {
-        off('realtime:event', onBoardRealtimeEvent);
-        boardRealtimeBound = false;
-    }
-    if (boardAnonSseManager) {
-        boardAnonSseManager.stop();
-        boardAnonSseManager = null;
-    }
-    boardEventsSlug = null;
-}
-function refetchBoardFromRealtime(slug) {
-    if (isBulkUpdating())
-        return;
-    if (pendingRealtimeRefreshSlug === slug)
-        return;
-    pendingRealtimeRefreshSlug = slug;
-    debugLog("refetchBoardFromRealtime queued invalidateBoard", slug);
-    scheduleRealtimeRefreshAttempt(getRealtimeRefreshDelay());
-    ensureRealtimeForceRefreshTimer();
-}
-function connectBoardEvents(slug) {
-    if (boardEventsSlug === slug && (boardAnonSseManager !== null || boardRealtimeBound)) {
-        debugLog("connectBoardEvents skipped (already connected for slug)", slug);
-        return;
-    }
-    disconnectBoardEvents();
-    debugLog("connectBoardEvents running", slug);
-    boardEventsSlug = slug;
-    if (useMergedGlobalRealtime()) {
-        on('realtime:event', onBoardRealtimeEvent);
-        boardRealtimeBound = true;
-        return;
-    }
-    const url = new URL(`/api/board/${slug}/events`, window.location.origin).toString();
-    const manager = new SseConnectionManager(url, {
-        label: `board/${slug}/events`,
-        onOpen: () => {
-            debugLog("SSE onopen fired", slug);
-            if (isBulkUpdating())
-                return;
-            if (boardAnonSseManager !== manager || getSlug() !== slug) {
-                debugLog("SSE onopen refetch skipped: manager/slug mismatch", slug);
-                return;
-            }
-            if (lastSuccessfulBoardLoadSlug !== slug) {
-                debugLog("SSE onopen refetch skipped: lastSuccessfulBoardLoadSlug !== slug", slug);
-                return;
-            }
-            if (initialBoardLoadInFlight === slug) {
-                debugLog("SSE onopen refetch skipped: initialBoardLoadInFlight for slug", slug);
-                return;
-            }
-            if (Date.now() - lastBoardLoadTimestamp < SSE_ONOPEN_SKIP_MS) {
-                debugLog("SSE onopen refetch skipped: within SSE_ONOPEN_SKIP_MS", slug);
-                return;
-            }
-            refetchBoardFromRealtime(slug);
-        },
-        onMessage: (event) => {
-            if (boardAnonSseManager !== manager || getSlug() !== slug)
-                return;
-            try {
-                const payload = JSON.parse(event.data);
-                if (payload.type === "ping") {
-                    return;
-                }
-                const currentProjectID = getProjectId();
-                if (typeof payload.projectId === "number" && currentProjectID !== null && payload.projectId !== currentProjectID) {
-                    return;
-                }
-                if (payload.type === "todo.assigned") {
-                    const inner = payload.payload;
-                    if (!inner || typeof inner.todoId !== "number") {
-                        return;
-                    }
-                    const me = getUser();
-                    if (!me) {
-                        return;
-                    }
-                    if (Number(inner.assigneeId) !== Number(me.id)) {
-                        return;
-                    }
-                    if (typeof inner.actorUserId === "number" && Number(inner.actorUserId) === Number(me.id)) {
-                        return;
-                    }
-                    const now = Date.now();
-                    const last = assignmentToastLastByTodoId.get(inner.todoId);
-                    if (last !== undefined && now - last < assignmentTodoDebounceMs) {
-                        return;
-                    }
-                    assignmentToastLastByTodoId.set(inner.todoId, now);
-                    const t = typeof inner.title === "string" ? inner.title : "";
-                    showToast(`Assigned: ${t || "Todo"}`);
-                    playAssignmentSound();
-                    showAssignmentDesktopNotification(t || "Todo");
-                    return;
-                }
-                if (payload.type === "members_updated") {
-                    invalidateMembersCache(payload.projectId);
-                    emit("members-updated", { projectId: payload.projectId });
-                    return;
-                }
-                if (isBulkUpdating())
-                    return;
-                if (payload.type === "refresh_needed") {
-                    refetchBoardFromRealtime(slug);
-                    return;
-                }
-                refetchBoardFromRealtime(slug);
-            }
-            catch {
-                if (!isBulkUpdating())
-                    refetchBoardFromRealtime(slug);
-            }
-        },
-    });
-    boardAnonSseManager = manager;
-    manager.open();
-}
 export function stopBoardEvents() {
     disconnectBoardEvents();
-}
-// One registration for app lifetime: handler always reads current `boardAnonSseManager` (null when disconnected).
-registerAnonymousSseRestart((reason) => {
-    if (useMergedGlobalRealtime())
-        return;
-    boardAnonSseManager?.restartRequested(reason);
-});
-// Helper function for tag color
-function getTagColor(tagName) {
-    return getTagColors()[tagName] || null;
 }
 function isModifiedFibonacciModeEnabled() {
     const mode = getBoard()?.project?.estimationMode;
     return mode == null || mode === "MODIFIED_FIBONACCI";
-}
-// Set tag parameter in URL
-function setTagParam(tag) {
-    const url = new URL(window.location.href);
-    if (tag)
-        url.searchParams.set("tag", tag);
-    else
-        url.searchParams.delete("tag");
-    history.replaceState({}, "", url.pathname + url.search);
-}
-// Set sprint filter in URL. null = no sprint filter (omit param). "scheduled" = Scheduled (sprint_id IS NOT NULL).
-// "unscheduled" = sprint_id IS NULL. Numeric string = specific sprint.
-function setSprintParam(sprintId) {
-    const url = new URL(window.location.href);
-    if (sprintId)
-        url.searchParams.set("sprintId", sprintId);
-    else
-        url.searchParams.delete("sprintId");
-    history.replaceState({}, "", url.pathname + url.search);
-}
-// Set search parameter in URL
-function setSearchParam(search) {
-    const url = new URL(window.location.href);
-    if (search)
-        url.searchParams.set("search", search);
-    else
-        url.searchParams.delete("search");
-    history.replaceState({}, "", url.pathname + url.search);
 }
 function clearResolverRequest() {
     if (resolverController) {
@@ -517,224 +154,6 @@ function scheduleCardHighlight(todo) {
             highlightTimeoutId = null;
             el.classList.remove(HIGHLIGHT_CLASS);
         }, 2000);
-    });
-}
-function getCombinedChipData(displayTags, activeTag, lastSprintsData, activeSprintId) {
-    if (activeSprintId === "assigned")
-        activeSprintId = "scheduled";
-    const out = [];
-    out.push({ type: "tag", id: "", name: "All", active: activeTag === "", color: null });
-    for (const t of displayTags) {
-        out.push({ type: "tag", id: t.name, name: t.name, active: activeTag === t.name, color: (t.color || getTagColor(t.name)) || null });
-    }
-    if (lastSprintsData) {
-        // Sprint "All" (no sprint filter) is not shown; tag "All" already clears sprint on click.
-        out.push({ type: "sprint", id: "scheduled", name: "Scheduled", active: activeSprintId === "scheduled", color: null });
-        out.push({ type: "sprint", id: "unscheduled", name: "Unscheduled", active: activeSprintId === "unscheduled", color: null });
-        const seenSprintIds = new Set();
-        const nameCount = new Map();
-        for (const s of lastSprintsData.sprints)
-            nameCount.set(s.name, (nameCount.get(s.name) ?? 0) + 1);
-        for (const s of lastSprintsData.sprints) {
-            if (seenSprintIds.has(s.id))
-                continue;
-            seenSprintIds.add(s.id);
-            const label = (nameCount.get(s.name) ?? 0) > 1 ? `${s.name} (${s.number})` : s.name;
-            const isActiveSprint = s.state === "ACTIVE";
-            const isClosedSprint = s.state === "CLOSED";
-            const isPlannedSprint = s.state === "PLANNED";
-            out.push({ type: "sprint", id: String(s.number), name: label, active: activeSprintId === String(s.number), color: null, isActiveSprint, isClosedSprint, isPlannedSprint });
-        }
-    }
-    return out;
-}
-function buildChipHTML(d) {
-    const activeClass = d.active ? "chip--active" : "";
-    const label = escapeHTML(d.name);
-    if (d.type === "tag") {
-        const safe = sanitizeHexColor(d.color);
-        const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20;"` : "";
-        return `<button class="chip ${activeClass}" data-tag="${escapeHTML(d.id)}" ${colorStyle}>${label}</button>`;
-    }
-    if (d.id === "__all__") {
-        return `<button class="chip chip--sprint ${activeClass}" data-sprint-clear="1">${label}</button>`;
-    }
-    const activeSprintClass = d.isActiveSprint ? " chip--active-sprint" : "";
-    const closedSprintClass = d.isClosedSprint ? " chip--closed-sprint" : "";
-    const plannedSprintClass = d.isPlannedSprint ? " chip--planned-sprint" : "";
-    return `<button class="chip chip--sprint${activeSprintClass}${closedSprintClass}${plannedSprintClass} ${activeClass}" data-sprint-id="${escapeHTML(d.id)}">${label}</button>`;
-}
-function buildChipsHTML(data) {
-    return data.map(buildChipHTML).join("");
-}
-/**
- * Chips-only update for the deferred sprints callback. Updates only #tagChips contents.
- * Does not touch board, filters wrapper, DnD, or board-level listeners.
- * Use updateBoardContent for full board+filters updates (SSE, filter change, search).
- */
-function updateChipsOnly(sprintId) {
-    const board = getBoard();
-    if (!board)
-        return;
-    const isAnonymousTempBoard = isAnonymousBoard(board);
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter((t) => t.count > 0)
-        : board.tags;
-    const tag = getTag();
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null);
-    lastDisplayChipData = combinedChipData;
-    const chipsHTML = buildChipsHTML(combinedChipData);
-    if (chipsHTML === lastRenderedChipsHTML)
-        return;
-    lastRenderedChipsHTML = chipsHTML;
-    const tagChipsEl = document.getElementById("tagChips");
-    if (tagChipsEl) {
-        tagChipsEl.innerHTML = chipsHTML;
-        attachChipsDelegatedHandler();
-        initMobileTagPagination();
-    }
-}
-/**
- * UI sync helper: patch local sprint state and re-render chips when a sprint is activated or closed.
- * Called from the sprint-updated event handler. Safe for number or string sprintId.
- */
-export function notifySprintStateChanged(sprintId, newState) {
-    if (!lastSprintsData || getSlug() !== lastSprintsDataSlug)
-        return;
-    const id = Number(sprintId);
-    const sprint = lastSprintsData.sprints.find((s) => s.id === id);
-    if (!sprint)
-        return;
-    if (sprint.state === newState)
-        return;
-    sprint.state = newState;
-    updateChipsOnly(getSprintIdFromUrl());
-}
-let sprintEventSubscribed = false;
-function ensureSprintSubscription() {
-    if (sprintEventSubscribed)
-        return;
-    sprintEventSubscribed = true;
-    on("sprint-updated", (payload) => {
-        if (payload && payload.sprintId != null && (payload.state === "ACTIVE" || payload.state === "CLOSED")) {
-            notifySprintStateChanged(payload.sprintId, payload.state);
-        }
-    });
-}
-function isTrackedBoardPointerEvent(event) {
-    if (event.isPrimary === false)
-        return false;
-    if (event.pointerType === "mouse")
-        return true;
-    if (event.pointerType)
-        return false;
-    return typeof window !== "undefined"
-        && typeof window.matchMedia === "function"
-        && window.matchMedia("(pointer: fine)").matches;
-}
-function isBoardInteractionTarget(target) {
-    return target instanceof Element && target.closest(".card, .col__list, [data-load-more]") != null;
-}
-function attachBoardInteractionListeners() {
-    if (boardInteractionListenersBound)
-        return;
-    boardInteractionListenersBound = true;
-    const finishPointerInteraction = () => {
-        clearBoardPointerReleaseTimer();
-        if (!boardPointerInteractionActive)
-            return;
-        boardPointerInteractionActive = false;
-        recordBoardInteraction();
-        flushPendingRealtimeRefresh();
-    };
-    document.addEventListener("pointerdown", (event) => {
-        if (!isTrackedBoardPointerEvent(event))
-            return;
-        if (!isBoardInteractionTarget(event.target))
-            return;
-        clearBoardPointerReleaseTimer();
-        boardPointerInteractionActive = true;
-        recordBoardInteraction();
-    }, true);
-    document.addEventListener("pointerup", () => {
-        if (!boardPointerInteractionActive)
-            return;
-        clearBoardPointerReleaseTimer();
-        boardPointerReleaseTimeoutId = setTimeout(() => {
-            boardPointerReleaseTimeoutId = null;
-            finishPointerInteraction();
-        }, 0);
-    }, true);
-    document.addEventListener("pointercancel", finishPointerInteraction, true);
-    document.addEventListener("click", finishPointerInteraction, true);
-    document.addEventListener("auxclick", finishPointerInteraction, true);
-    document.addEventListener("contextmenu", finishPointerInteraction, true);
-    document.addEventListener("visibilitychange", () => {
-        finishPointerInteraction();
-    });
-}
-/** Attach delegated handlers for card click, load-more, and context menu. Call once when board is created. */
-function clearTodoMultiSelection() {
-    selectedTodoIds.clear();
-    const bar = document.getElementById("bulkEditBar");
-    const btn = document.getElementById("bulkEditBarBtn");
-    if (bar)
-        bar.style.display = "none";
-    if (btn)
-        btn.textContent = "";
-    document.querySelectorAll(".board .card--selected").forEach((el) => el.classList.remove("card--selected"));
-}
-function updateBulkEditBar() {
-    const bar = document.getElementById("bulkEditBar");
-    const btn = document.getElementById("bulkEditBarBtn");
-    if (!bar || !btn)
-        return;
-    const n = selectedTodoIds.size;
-    if (n >= 2) {
-        bar.style.display = "";
-        btn.textContent = `Edit ${n} selected`;
-    }
-    else {
-        bar.style.display = "none";
-        btn.textContent = "";
-    }
-}
-function toggleTodoSelection(id) {
-    if (selectedTodoIds.has(id))
-        selectedTodoIds.delete(id);
-    else
-        selectedTodoIds.add(id);
-    updateBulkEditBar();
-    const card = document.querySelector(`[data-todo-id="${id}"]`);
-    if (card)
-        card.classList.toggle("card--selected", selectedTodoIds.has(id));
-}
-function ensureBulkEditUi() {
-    if (bulkEditUiInitialized)
-        return;
-    bulkEditUiInitialized = true;
-    initBulkEditDialog(() => {
-        clearTodoMultiSelection();
-        updateBulkEditBar();
-    });
-    const barBtn = document.getElementById("bulkEditBarBtn");
-    barBtn?.addEventListener("click", () => {
-        void openBulkEditDialog(Array.from(selectedTodoIds), {
-            role: currentUserProjectRole,
-            onPruned: (remaining) => {
-                selectedTodoIds = new Set(remaining);
-                updateBulkEditBar();
-                const boardEl = document.querySelector(".board");
-                if (!boardEl)
-                    return;
-                boardEl.querySelectorAll("[data-todo-id]").forEach((el) => {
-                    const id = Number(el.getAttribute("data-todo-id"));
-                    if (!Number.isFinite(id))
-                        return;
-                    el.classList.toggle("card--selected", selectedTodoIds.has(id));
-                });
-            },
-        });
     });
 }
 function attachBoardDelegationHandlers() {
@@ -804,213 +223,20 @@ function attachBoardDelegationHandlers() {
             contextMenu.style.top = `${mouseEvent.pageY}px`;
         }
     });
-    ensureBulkEditUi();
-}
-function attachChipsDelegatedHandler() {
-    const tagChipsEl = document.getElementById("tagChips");
-    if (!tagChipsEl)
-        return;
-    tagChipsEl.onclick = (e) => {
-        const chip = e.target.closest("[data-tag], [data-sprint-id], [data-sprint-clear]");
-        if (!chip)
-            return;
-        const additive = e.ctrlKey || e.metaKey;
-        if (chip.hasAttribute("data-tag")) {
-            const nextTag = chip.getAttribute("data-tag") ?? "";
-            if (additive) {
-                setTagParam(nextTag);
-            }
-            else {
-                setTagParam(nextTag);
-                setSprintParam(null);
-            }
-            loadBoardBySlug(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => showToast(err.message));
-        }
-        else if (chip.hasAttribute("data-sprint-clear")) {
-            if (additive) {
-                setSprintParam(null);
-            }
-            else {
-                setSprintParam(null);
-                setTagParam("");
-            }
-            loadBoardBySlug(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => showToast(err.message));
-        }
-        else if (chip.hasAttribute("data-sprint-id")) {
-            const nextSprint = chip.getAttribute("data-sprint-id") ?? "";
-            if (additive) {
-                setSprintParam(nextSprint);
-            }
-            else {
-                setSprintParam(nextSprint);
-                setTagParam("");
-            }
-            loadBoardBySlug(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => showToast(err.message));
-        }
-    };
-}
-const MOBILE_TAG_BREAKPOINT = 767;
-const MOBILE_TAG_ROWS_PER_PAGE = 2;
-function initMobileTagPagination() {
-    const tagChipsEl = document.getElementById("tagChips");
-    const chipsNav = document.getElementById("chipsNav");
-    if (!tagChipsEl || !chipsNav)
-        return;
-    const isMobile = window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
-    // One-time resize listener
-    if (!mobileTagPaginationResizeBound) {
-        mobileTagPaginationResizeBound = true;
-        let resizeTimeout = null;
-        window.addEventListener("resize", () => {
-            if (resizeTimeout)
-                clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                mobileTagPage = 0;
-                initMobileTagPagination();
-            }, 150);
-        });
-    }
-    if (!isMobile) {
-        // Desktop: all chips already in DOM, hide nav
-        chipsNav.classList.remove("is-visible");
-        chipsNav.setAttribute("aria-hidden", "true");
-        attachChipsDelegatedHandler();
-        return;
-    }
-    if (lastDisplayChipData.length <= 1) {
-        chipsNav.classList.remove("is-visible");
-        chipsNav.setAttribute("aria-hidden", "true");
-        attachChipsDelegatedHandler();
-        return;
-    }
-    // Ensure all chips are in DOM for measurement (e.g. after resize we might have had a slice)
-    tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData);
-    // Measure: all chips are in DOM, get positions and group by row
-    const chipEls = Array.from(tagChipsEl.querySelectorAll(".chip"));
-    if (chipEls.length === 0) {
-        return;
-    }
-    const rects = chipEls.map((el) => el.getBoundingClientRect());
-    const rowTolerance = 2;
-    const rows = [];
-    let currentRow = 0;
-    let lastTop = rects[0].top;
-    for (let i = 0; i < rects.length; i++) {
-        if (Math.abs(rects[i].top - lastTop) > rowTolerance) {
-            currentRow++;
-            lastTop = rects[i].top;
-        }
-        rows[i] = currentRow;
-    }
-    const numRows = currentRow + 1;
-    // Page boundaries: each page = MOBILE_TAG_ROWS_PER_PAGE rows; boundaries are start indices per page
-    mobileTagPageBoundaries = [0];
-    for (let p = 1; p * MOBILE_TAG_ROWS_PER_PAGE < numRows; p++) {
-        const rowStart = p * MOBILE_TAG_ROWS_PER_PAGE;
-        const idx = chipEls.findIndex((_, i) => rows[i] >= rowStart);
-        if (idx >= 0)
-            mobileTagPageBoundaries.push(idx);
-    }
-    mobileTagPageBoundaries.push(chipEls.length);
-    const numPages = mobileTagPageBoundaries.length - 1;
-    if (numPages <= 1) {
-        chipsNav.classList.remove("is-visible");
-        chipsNav.setAttribute("aria-hidden", "true");
-        attachChipsDelegatedHandler();
-        return;
-    }
-    // Reset to first page when board/filter changed (lastDisplayChipData was just set)
-    mobileTagPage = 0;
-    // Show only chips for current page
-    const start = mobileTagPageBoundaries[mobileTagPage];
-    const end = mobileTagPageBoundaries[mobileTagPage + 1];
-    tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData.slice(start, end));
-    chipsNav.classList.add("is-visible");
-    chipsNav.setAttribute("aria-hidden", "false");
-    const prevBtn = chipsNav.querySelector(".chips-nav__prev");
-    const nextBtn = chipsNav.querySelector(".chips-nav__next");
-    prevBtn?.replaceWith(prevBtn.cloneNode(true));
-    nextBtn?.replaceWith(nextBtn.cloneNode(true));
-    const newPrev = chipsNav.querySelector(".chips-nav__prev");
-    const newNext = chipsNav.querySelector(".chips-nav__next");
-    if (newPrev)
-        newPrev.disabled = mobileTagPage === 0;
-    if (newNext)
-        newNext.disabled = mobileTagPage === numPages - 1;
-    newPrev?.addEventListener("click", () => {
-        if (mobileTagPage <= 0)
-            return;
-        mobileTagPage--;
-        const s = mobileTagPageBoundaries[mobileTagPage];
-        const e = mobileTagPageBoundaries[mobileTagPage + 1];
-        tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData.slice(s, e));
-        if (newPrev)
-            newPrev.disabled = mobileTagPage === 0;
-        if (newNext)
-            newNext.disabled = mobileTagPage === numPages - 1;
+    ensureBulkEditUi({
+        getRole: () => currentUserProjectRole,
+        syncSelectionClasses: (selectedIds) => {
+            const currentBoardEl = document.querySelector(".board");
+            if (!currentBoardEl)
+                return;
+            currentBoardEl.querySelectorAll("[data-todo-id]").forEach((el) => {
+                const id = Number(el.getAttribute("data-todo-id"));
+                if (!Number.isFinite(id))
+                    return;
+                el.classList.toggle("card--selected", selectedIds.has(id));
+            });
+        },
     });
-    newNext?.addEventListener("click", () => {
-        if (mobileTagPage >= numPages - 1)
-            return;
-        mobileTagPage++;
-        const s = mobileTagPageBoundaries[mobileTagPage];
-        const e = mobileTagPageBoundaries[mobileTagPage + 1];
-        tagChipsEl.innerHTML = buildChipsHTML(lastDisplayChipData.slice(s, e));
-        if (newPrev)
-            newPrev.disabled = mobileTagPage === 0;
-        if (newNext)
-            newNext.disabled = mobileTagPage === numPages - 1;
-    });
-    attachChipsDelegatedHandler();
-}
-// Render a single todo card
-function renderTodoCard(t, columnColor, membersByUserId, opts) {
-    const showPoints = (opts?.showPointsMode ?? isModifiedFibonacciModeEnabled()) && t.estimationPoints != null;
-    const tagColors = opts?.tagColors ?? null;
-    const tags = (t.tags || []).map((tagName) => {
-        const tagColor = tagColors ? (tagColors[tagName] ?? null) : getTagColor(tagName);
-        const safe = sanitizeHexColor(tagColor);
-        const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"` : "";
-        return `<span class="tag" ${colorStyle}>${escapeHTML(tagName)}</span>`;
-    }).join("");
-    const borderStyle = columnColor ? ` style="border-color:${escapeHTML(columnColor)}"` : "";
-    const assignee = membersByUserId != null && t.assigneeUserId != null ? membersByUserId?.[t.assigneeUserId] : null;
-    const avatarHTML = assignee
-        ? `<div class="todo-avatar" title="${escapeHTML(assignee.name || assignee.email || '')}">${renderAvatarContent({ name: assignee.name, email: assignee.email, image: assignee.image })}</div>`
-        : '';
-    const pointsHTML = showPoints ? `<span class="card__points" aria-label="Estimation points">${t.estimationPoints}</span>` : "";
-    const footerContent = pointsHTML + avatarHTML;
-    const selectedClass = opts?.selectedIds?.has(t.id) ? " card--selected" : "";
-    return `
-    <button class="card card--${t.status.toLowerCase()}${selectedClass}"${borderStyle} data-todo-id="${t.id}" data-todo-local-id="${t.localId}"${t.assigneeUserId != null ? ` data-assignee-user-id="${t.assigneeUserId}"` : ""} id="todo_${t.id}" type="button">
-      <div class="card__content">
-        <div class="card__title-row">
-          <span class="card__id-inline">#${t.localId}</span>
-          <span class="card__title">${escapeHTML(t.title)}</span>
-        </div>
-        ${tags || footerContent ? `
-  <div class="card__tags">
-    <span class="card__tags-list">
-      ${tags}
-    </span>
-    <span class="card__badges">
-      ${footerContent}
-    </span>
-  </div>
-` : ""}
-      </div>
-      <div class="card__drag-handle" aria-label="Drag to reorder">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <circle cx="4" cy="3" r="1.5"/>
-          <circle cx="4" cy="8" r="1.5"/>
-          <circle cx="4" cy="13" r="1.5"/>
-          <circle cx="12" cy="3" r="1.5"/>
-          <circle cx="12" cy="8" r="1.5"/>
-          <circle cx="12" cy="13" r="1.5"/>
-        </svg>
-      </div>
-    </button>
-  `;
 }
 /**
  * Patch assignee avatars into cards that were rendered without members.
@@ -1052,18 +278,6 @@ function hydrateAvatarsOnCards(members) {
         }
         card.dataset.avatarHydrated = "1";
     });
-}
-async function runWhileTodoDialogOpening(task) {
-    todoDialogOpeningInProgress = true;
-    recordBoardInteraction();
-    try {
-        await task();
-    }
-    finally {
-        todoDialogOpeningInProgress = false;
-        recordBoardInteraction();
-        flushPendingRealtimeRefresh();
-    }
 }
 function openTodoFromCard(todo) {
     void runWhileTodoDialogOpening(() => openTodoDialog({ mode: "edit", todo, onNavigateToLinkedTodo: navigate, role: currentUserProjectRole })).catch((err) => {
@@ -1117,7 +331,7 @@ async function handleLoadMore(status) {
             const membersByUserId = getMembersByUserId();
             const tagColors = getTagColors();
             const showPointsMode = isModifiedFibonacciModeEnabled();
-            const cardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
+            const cardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
             items.forEach((t) => {
                 const card = document.createElement("div");
                 card.innerHTML = renderTodoCard(t, columnColor, membersByUserId, cardOpts);
@@ -1396,33 +610,17 @@ function updateBoardContent(board, tag, search, sprintId) {
     });
     setTagColors(tagColors);
     const isAnonymousTempBoard = isAnonymousBoard(board);
-    // Filter tags for display: on anonymous boards, only show tags with count > 0
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter(t => t.count > 0)
-        : board.tags;
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null);
-    lastDisplayChipData = combinedChipData;
-    const chipsHTML = buildChipsHTML(combinedChipData);
+    const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
     // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
-    const chipsUnchanged = chipsHTML === lastRenderedChipsHTML;
     if (!chipsUnchanged) {
-        lastRenderedChipsHTML = chipsHTML;
         const filtersEl = document.querySelector(".filters");
         if (filtersEl) {
-            filtersEl.innerHTML = `
-        <div class="filters__label">Tags:</div>
-        <div class="chips-wrapper">
-          <div class="chips-viewport">
-            <div class="chips" id="tagChips">${chipsHTML}</div>
-          </div>
-          <div class="chips-nav" id="chipsNav" aria-hidden="true">
-            <button type="button" class="chips-nav__prev" aria-label="Previous tags">‹</button>
-            <button type="button" class="chips-nav__next" aria-label="Next tags">›</button>
-          </div>
-        </div>
-      `;
+            filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
+            bindBoardFilterUi({
+                reloadBoard: loadBoardBySlug,
+                showError: (message) => showToast(message),
+            });
         }
-        initMobileTagPagination();
     }
     // Precompute for card render loop
     const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -1437,38 +635,21 @@ function updateBoardContent(board, tag, search, sprintId) {
         }
         const boardCols = getBoardColumns(board);
         setDnDColumns(boardCols.map((c) => ({ key: c.key, title: c.title, color: c.color })));
-        const cardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
-        boardEl.innerHTML = boardCols
-            .map((c) => {
-            const todos = board.columns[c.key] || [];
-            const isMobileActive = getMobileTab() === c.key;
-            const laneMeta = getBoardLaneMeta()[c.key];
-            const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
-            const displayCount = getLaneDisplayCount(c.key);
-            const laneTint = laneColumnTintClassAndStyle(c);
-            const dk = escapeHTML(c.key);
-            return `
-          <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${dk}"${laneTint.styleAttr}>
-            <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
-              <span class="col__title">${escapeHTML(c.title)}</span>
-              <span class="col__count" data-count-for="${dk}">${displayCount}</span>
-            </div>
-            <div class="col__list" data-status="${dk}" id="list_${c.key}">
-              ${todos.map((t) => renderTodoCard(t, c.color, membersByUserId, cardOpts)).join("")}
-            </div>
-            ${showLoadMore ? `<div class="col__load-more" data-load-more="${dk}"><button class="btn btn--ghost btn--small col__load-more--desktop" type="button">Load more</button><span class="col__load-more--mobile" role="button" tabindex="0" aria-label="Load more">▼</span></div>` : ""}
-          </section>
-        `;
-        })
-            .join("");
+        const cardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+        boardEl.innerHTML = buildBoardColumnsHtml({
+            boardCols,
+            board,
+            activeMobileTab: getMobileTab(),
+            laneMetaByKey: getBoardLaneMeta(),
+            laneDisplayCount: (key) => getLaneDisplayCount(key),
+            membersByUserId,
+            cardOpts,
+        });
         // Add "No results" state if search is active and no todos match
         if (search && search.trim() !== "") {
             const totalTodos = Object.values(board.columns).reduce((sum, todos) => sum + todos.length, 0);
             if (totalTodos === 0) {
-                const noResults = document.createElement("div");
-                noResults.className = "no-results";
-                noResults.textContent = `No todos found matching "${escapeHTML(search)}"`;
-                boardEl.appendChild(noResults);
+                boardEl.insertAdjacentHTML("beforeend", buildNoResultsHtml(search));
             }
         }
     }
@@ -1533,95 +714,28 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
     setTagColors(tagColors);
     // Anonymous temporary board: expiresAt set, no creator (pastebin-style). Rename + New Todo without login — see isAnonymousBoard() / backend.
     const isAnonymousTempBoard = isAnonymousBoard(board);
-    // Filter tags for display: on anonymous boards, only show tags with count > 0
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter(t => t.count > 0)
-        : board.tags;
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null);
-    lastDisplayChipData = combinedChipData;
-    const chipsHTML = buildChipsHTML(combinedChipData);
+    const { chipsHTML } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
     // Minimal topbar (used for temporary/anonymous boards): logo, project name, rename (if anonymous temp), New Todo, Settings
-    const topbarHTML = minimalTopbar
-        ? `
-      <div class="topbar">
-        <div class="brand">
-          <button class="brand-link" id="brandLink" style="background: none; border: none; padding: 0; cursor: pointer;">
-            <img src="/scrumboytext.png" alt="Scrumboy" class="brand-text" />
-          </button>
-        </div>
-        ${isAnonymousTempBoard
-            ? (board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" style="width: 32px; height: 32px; pointer-events: none; flex-shrink: 0;" />` : `<span class="project-image-topbar-placeholder" style="width: 32px; height: 32px; flex-shrink: 0;">📷</span>`)
-            : ''}
-        <div class="brand">${escapeHTML(board.project.name)}</div>
-        <div class="spacer"></div>
-        <div class="search-input-wrapper">
-          <input 
-            type="text" 
-            id="searchInput" 
-            class="search-input" 
-            placeholder="${searchPlaceholder}" 
-            value="${escapeHTML(search || "")}"
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="Clear search" title="Clear search">✕</button>` : ''}
-        </div>
-        ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
-        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn">New Todo</button>` : ''}
-        ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${!getUser() ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
-          <span class="hamburger">☰</span>
-        </button>` : ''}
-        ${isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${renderUserAvatar(getUser())}
-      </div>
-    `
-        : `
-      <div class="topbar">
-        <button class="btn btn--ghost" id="backBtn">${escapeHTML(backLabel)}</button>
-        ${isAnonymousTempBoard
-            ? (board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" style="width: 32px; height: 32px; pointer-events: none; flex-shrink: 0;" />` : `<span class="project-image-topbar-placeholder" style="width: 32px; height: 32px; flex-shrink: 0;">📷</span>`)
-            : `<button class="project-image-topbar-btn" id="projectImageBtn" title="Change project image">
-            ${board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" />` : `<span class="project-image-topbar-placeholder">📷</span>`}
-          </button>`}
-        <div class="brand">${escapeHTML(board.project.name)}</div>
-        <div class="spacer"></div>
-        <div class="search-input-wrapper">
-          <input 
-            type="text" 
-            id="searchInput" 
-            class="search-input" 
-            placeholder="${searchPlaceholder}" 
-            value="${escapeHTML(search || "")}"
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="Clear search" title="Clear search">✕</button>` : ''}
-        </div>
-        ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
-        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn">New Todo</button>` : ''}
-        ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn">Delete Project</button>` : ''}
-        ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${!getUser() ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
-          <span class="hamburger">☰</span>
-        </button>` : ''}
-        ${isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
-        ${renderUserAvatar(getUser())}
-      </div>
-    `;
+    const topbarHTML = buildTopbarHtml({
+        board,
+        minimalTopbar,
+        search,
+        searchPlaceholder,
+        isMobile,
+        isAnonymousTempBoard,
+        currentUserProjectRole,
+        user: getUser(),
+        backLabel,
+    });
+    const membersByUserId = getMembersByUserId();
+    const showPointsMode = isModifiedFibonacciModeEnabled();
+    const cardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
     app.innerHTML = `
     <div class="page">
       ${topbarHTML}
 
       <div class="container">
-        <div class="filters">
-          <div class="filters__label">Tags:</div>
-          <div class="chips-wrapper">
-            <div class="chips-viewport">
-              <div class="chips" id="tagChips">${chipsHTML}</div>
-            </div>
-            <div class="chips-nav" id="chipsNav" aria-hidden="true">
-              <button type="button" class="chips-nav__prev" aria-label="Previous tags">‹</button>
-              <button type="button" class="chips-nav__next" aria-label="Next tags">›</button>
-            </div>
-          </div>
-        </div>
+        ${buildFiltersHtml(chipsHTML)}
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">
@@ -1642,33 +756,15 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
           </div>
 
           <div class="board">
-          ${(() => {
-        const membersByUserId = getMembersByUserId();
-        const showPointsMode = isModifiedFibonacciModeEnabled();
-        const cardOpts = { tagColors, showPointsMode, selectedIds: selectedTodoIds };
-        return boardCols
-            .map((c) => {
-            const todos = board.columns[c.key] || [];
-            const isMobileActive = getMobileTab() === c.key;
-            const laneMeta = getBoardLaneMeta()[c.key];
-            const showLoadMore = laneMeta?.hasMore && !laneMeta?.loading;
-            const laneTint = laneColumnTintClassAndStyle(c);
-            const dk = escapeHTML(c.key);
-            return `
-                <section class="col ${isMobileActive ? "col--mobile-active" : ""}${laneTint.extraClass}" data-column="${dk}"${laneTint.styleAttr}>
-                  <div class="col__head col__head--${c.key.toLowerCase()}" ${c.color ? `style="background:${escapeHTML(c.color)};"` : ""}>
-                    <span class="col__title">${escapeHTML(c.title)}</span>
-                    <span class="col__count" data-count-for="${dk}">${getLaneDisplayCount(c.key)}</span>
-                  </div>
-                  <div class="col__list" data-status="${dk}" id="list_${c.key}">
-                    ${todos.map((t) => renderTodoCard(t, c.color, membersByUserId, cardOpts)).join("")}
-                  </div>
-                  ${showLoadMore ? `<div class="col__load-more" data-load-more="${dk}"><button class="btn btn--ghost btn--small col__load-more--desktop" type="button">Load more</button><span class="col__load-more--mobile" role="button" tabindex="0" aria-label="Load more">▼</span></div>` : ""}
-                </section>
-              `;
-        })
-            .join("");
-    })()}
+          ${buildBoardColumnsHtml({
+        boardCols,
+        board,
+        activeMobileTab: getMobileTab(),
+        laneMetaByKey: getBoardLaneMeta(),
+        laneDisplayCount: (key) => getLaneDisplayCount(key),
+        membersByUserId,
+        cardOpts,
+    })}
           </div>
         </div>
       </div>
@@ -2165,62 +1261,10 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
         });
         deleteProjectBtn[BOUND_FLAG] = true;
     }
-    initMobileTagPagination();
-    // Add search input handler
-    const searchInput = document.getElementById("searchInput");
-    if (searchInput && !searchInput[BOUND_FLAG]) {
-        let searchTimeout = null;
-        // Function to handle clear button click
-        const handleClearClick = () => {
-            searchInput.value = "";
-            setSearchParam("");
-            loadBoardBySlug(getSlug(), getTag(), null, getSprintIdFromUrl()).catch((err) => showToast(err.message));
-            updateClearButton();
-        };
-        // Function to update clear button visibility
-        const updateClearButton = () => {
-            const clearBtn = document.getElementById("searchClear");
-            const wrapper = searchInput.closest(".search-input-wrapper");
-            if (wrapper) {
-                const hasValue = searchInput.value.trim() !== "";
-                if (hasValue && !clearBtn) {
-                    // Add clear button
-                    const btn = document.createElement("button");
-                    btn.className = "search-clear";
-                    btn.id = "searchClear";
-                    btn.setAttribute("aria-label", "Clear search");
-                    btn.setAttribute("title", "Clear search");
-                    btn.textContent = "✕";
-                    btn.addEventListener("click", handleClearClick);
-                    wrapper.appendChild(btn);
-                }
-                else if (!hasValue && clearBtn) {
-                    // Remove clear button
-                    clearBtn.remove();
-                }
-            }
-        };
-        searchInput.addEventListener("input", (e) => {
-            const input = e.target;
-            const value = input.value; // Keep untrimmed value in input
-            updateClearButton();
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                const trimmedValue = value.trim();
-                setSearchParam(trimmedValue);
-                // loadBoardBySlug will detect existing topbar and only update board content
-                loadBoardBySlug(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl()).catch((err) => showToast(err.message));
-            }, 300); // 300ms debounce
-        });
-        // Attach handler to existing clear button (if present from initial render)
-        const existingClearBtn = document.getElementById("searchClear");
-        if (existingClearBtn) {
-            existingClearBtn.addEventListener("click", handleClearClick);
-        }
-        // Initialize clear button visibility
-        updateClearButton();
-        searchInput[BOUND_FLAG] = true;
-    }
+    bindBoardFilterUi({
+        reloadBoard: loadBoardBySlug,
+        showError: (message) => showToast(message),
+    });
     const settingsBtn = document.getElementById("settingsBtn");
     if (settingsBtn && !settingsBtn[BOUND_FLAG]) {
         settingsBtn.addEventListener("click", async () => {
@@ -2250,10 +1294,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
         if (totalTodos === 0) {
             const boardEl = document.querySelector(".board");
             if (boardEl) {
-                const noResults = document.createElement("div");
-                noResults.className = "no-results";
-                noResults.textContent = `No todos found matching "${escapeHTML(search)}"`;
-                boardEl.appendChild(noResults);
+                boardEl.insertAdjacentHTML("beforeend", buildNoResultsHtml(search));
             }
         }
     }
@@ -2274,7 +1315,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
     const requestSprintId = sprintId ?? null;
     // Clear stale members from prior board immediately; prevents stale data if fetch fails early.
     setBoardMembers([]);
-    lastRenderedChipsHTML = "";
+    resetBoardFilterUiState();
     lastUpdateBoardContentBoard = null;
     const params = new URLSearchParams();
     params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(requestTag, requestSearch, requestSprintId), getBoardLimitPerLaneFloor())));
@@ -2310,71 +1351,42 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
     const currentSprintId = currentUrl.searchParams.get("sprintId") || null;
     if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null))
         return;
-    const projectId = board?.project?.id;
-    if (!projectId) {
-        throw new Error("Invalid board response");
-    }
     resetBoardLimitPerLaneFloor();
-    setSlug(slug);
-    setProjectId(projectId);
-    setTag(tag || "");
-    setSearch(search || "");
     // Defer sprints — render board first, then load in background
-    if (slug !== lastSprintsDataSlug) {
-        lastSprintsData = null;
-    }
+    clearSprintChipDataIfSlugChanged(slug);
     const effectiveSprintId = requestSprintId;
-    // Initialize boardLaneMeta from current board workflow keys (compat with legacy key variants).
-    setBoardLaneMeta(buildLaneMetaFromBoard(board));
-    // Fetch project members BEFORE rendering so role-dependent buttons appear correctly on first load
-    const isTemporary = !!board?.project?.expiresAt;
-    const user = getUser();
-    if (user && projectId && !isAnonymousBoard(board)) {
-        try {
-            const members = await fetchProjectMembers(projectId);
-            if (requestSeq !== boardLoadSequence || getSlug() !== requestSlug)
-                return;
-            setBoardMembers(members);
-            const currentMember = members.find((m) => m.userId === user.id);
-            currentUserProjectRole = currentMember ? currentMember.role : null;
+    const rendered = await bootstrapLoadedBoardView({
+        board,
+        slug,
+        tag,
+        search,
+        isCurrent: () => requestSeq === boardLoadSequence && getSlug() === requestSlug,
+        setResolvedRole: (role) => {
+            currentUserProjectRole = role;
+        },
+        markMembersFetched: (projectId) => {
             lastFetchedProjectId = projectId;
-        }
-        catch {
-            if (requestSeq !== boardLoadSequence)
-                return;
-            setBoardMembers([]);
-            currentUserProjectRole = null;
-        }
-    }
-    else {
-        // Reset role for anonymous boards or when not logged in
-        currentUserProjectRole = null;
-    }
-    // Render board with role already resolved
-    // Temporary boards:
-    // - Logged-in + full mode: full topbar with back to projects (same as durable boards).
-    // - Anonymous deployment: minimal topbar (no project list); back path omitted.
-    // - Logged-out + full mode: minimal topbar so action buttons stay visible (share links; wide topbar + mobile order rules crowded the bar).
-    const showBackToProjects = !!getAuthStatusAvailable();
-    const minimalTempTopbar = isTemporary && (!showBackToProjects || getUser() == null);
-    renderBoardFromData(board, projectId, tag || "", search || "", effectiveSprintId, {
-        backLabel: "← Projects",
-        backHref: showBackToProjects && getUser() != null ? "/" : "",
-        minimalTopbar: minimalTempTopbar,
+        },
+        renderLoadedBoard: (renderOpts) => {
+            renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", effectiveSprintId, renderOpts);
+        },
+        markLoadSuccess: (loadedSlug) => {
+            markBoardLoadSucceeded(loadedSlug);
+        },
     });
-    lastBoardLoadTimestamp = Date.now();
-    lastSuccessfulBoardLoadSlug = slug;
+    if (!rendered)
+        return;
     debugLog("loadBoardBySlug end (success)", slug);
     // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
     // No need to call hydrateAvatarsOnCards() here.
-    if (!isAnonymousBoard(board) && lastSprintsDataSlug !== slug) {
-        lastSprintsDataSlug = slug;
+    if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
+        setSprintChipDataForSlug(slug, null);
         apiFetch(`/api/board/${slug}/sprints`)
             .then((sprintsResp) => {
             if (requestSeq !== boardLoadSequence)
                 return;
             const sprints = normalizeSprints(sprintsResp);
-            lastSprintsData = sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null;
+            setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
             if (getSlug() === requestSlug) {
                 updateChipsOnly(requestSprintId);
             }
@@ -2382,8 +1394,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null) {
             .catch(() => {
             if (requestSeq !== boardLoadSequence)
                 return;
-            lastSprintsData = null;
-            lastSprintsDataSlug = null;
+            clearSprintChipData();
         });
     }
 }
@@ -2398,14 +1409,12 @@ registerSprintsRefresher(async (slug) => {
     try {
         const sprintsResp = await apiFetch(`/api/board/${slug}/sprints`);
         const sprints = normalizeSprints(sprintsResp);
-        lastSprintsData = sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null;
-        lastSprintsDataSlug = slug;
+        setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
         if (getSlug() === slug)
             updateChipsOnly(getSprintIdFromUrl());
     }
     catch {
-        lastSprintsData = null;
-        lastSprintsDataSlug = null;
+        clearSprintChipData();
     }
 });
 ensureSprintSubscription();
@@ -2485,79 +1494,60 @@ export async function renderBoard(slug, tag, search, sprintId, openTodoId = null
     }
     if (opts.prefetchedBoard && opts.prefetchedBoard.project?.id) {
         const board = opts.prefetchedBoard;
-        const projectId = board.project.id;
         setBoardMembers([]);
-        setSlug(slug);
-        setProjectId(projectId);
-        setTag(tag || "");
-        setSearch(search || "");
-        if (slug !== lastSprintsDataSlug) {
-            lastSprintsData = null;
-        }
-        setBoardLaneMeta(buildLaneMetaFromBoard(board));
-        const isTemporary = !!board?.project?.expiresAt;
-        // Fetch project members BEFORE rendering so role-dependent buttons appear correctly
-        const user = getUser();
-        if (user && projectId && !isAnonymousBoard(board)) {
-            try {
-                const members = await fetchProjectMembers(projectId);
-                if (getSlug() !== slug)
-                    return;
-                setBoardMembers(members);
-                const currentMember = members.find((m) => m.userId === user.id);
-                currentUserProjectRole = currentMember ? currentMember.role : null;
+        resetBoardFilterUiState();
+        clearSprintChipDataIfSlugChanged(slug);
+        const rendered = await bootstrapLoadedBoardView({
+            board,
+            slug,
+            tag,
+            search,
+            isCurrent: () => getSlug() === slug,
+            setResolvedRole: (role) => {
+                currentUserProjectRole = role;
+            },
+            markMembersFetched: (projectId) => {
                 lastFetchedProjectId = projectId;
-            }
-            catch {
-                if (getSlug() !== slug)
-                    return;
-                setBoardMembers([]);
-                currentUserProjectRole = null;
-            }
-        }
-        else {
-            currentUserProjectRole = null;
-        }
-        const showBackToProjects = !!getAuthStatusAvailable();
-        const minimalTempTopbar = isTemporary && (!showBackToProjects || getUser() == null);
-        renderBoardFromData(board, projectId, tag || "", search || "", sprintId, {
-            backLabel: "← Projects",
-            backHref: showBackToProjects && getUser() != null ? "/" : "",
-            minimalTopbar: minimalTempTopbar,
+            },
+            renderLoadedBoard: (renderOpts) => {
+                renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", sprintId, renderOpts);
+            },
+            markLoadSuccess: (loadedSlug) => {
+                markBoardLoadSucceeded(loadedSlug);
+            },
         });
-        lastBoardLoadTimestamp = Date.now();
-        lastSuccessfulBoardLoadSlug = slug;
+        if (!rendered)
+            return;
         if (getSlug() === slug)
             connectBoardEvents(slug);
         // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
         // No need to call hydrateAvatarsOnCards() here.
-        if (!isAnonymousBoard(board) && lastSprintsDataSlug !== slug) {
-            lastSprintsDataSlug = slug;
+        if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
+            setSprintChipDataForSlug(slug, null);
             apiFetch(`/api/board/${slug}/sprints`)
                 .then((sprintsResp) => {
                 if (getSlug() !== slug)
                     return;
                 const sprints = normalizeSprints(sprintsResp);
-                lastSprintsData = sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null;
+                setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
                 if (getSlug() === slug) {
                     updateChipsOnly(sprintId);
                 }
             })
                 .catch(() => {
                 if (getSlug() === slug) {
-                    lastSprintsData = null;
-                    lastSprintsDataSlug = null;
+                    clearSprintChipData();
                 }
             });
         }
     }
     else if (!opts.skipLoad) {
-        initialBoardLoadInFlight = slug;
+        setInitialBoardLoadInFlight(slug);
         try {
             await loadBoardBySlug(slug, tag, search || null, sprintId);
         }
         finally {
-            initialBoardLoadInFlight = null;
+            setInitialBoardLoadInFlight(null);
             if (getSlug() === slug)
                 connectBoardEvents(slug);
         }

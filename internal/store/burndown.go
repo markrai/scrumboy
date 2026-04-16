@@ -188,20 +188,20 @@ func (s *Store) GetBacklogSize(ctx context.Context, projectID int64, mode Mode) 
 	now := time.Now().UTC()
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 
-	// Find earliest todo creation date
-	var firstTodoDate *time.Time
+	// Find earliest todo creation day (UTC midnight)
+	var firstTodoDayStart *time.Time
 	if len(todos) > 0 {
 		firstCreated := todos[0].createdAt
-		firstTodoDate = &firstCreated
+		firstDayStart := time.Date(firstCreated.Year(), firstCreated.Month(), firstCreated.Day(), 0, 0, 0, 0, time.UTC)
+		firstTodoDayStart = &firstDayStart
 	}
 
-	// Calculate start date: min(firstTodoDate, today - 13 days)
+	// Calculate start date: min(first todo creation day, today - 13 days)
 	// This ensures we show at most 14 days, but start from when data actually exists
 	startDate := todayStart.AddDate(0, 0, -13) // Default: 14 days ago
-	if firstTodoDate != nil {
-		firstDayStart := time.Date(firstTodoDate.Year(), firstTodoDate.Month(), firstTodoDate.Day(), 0, 0, 0, 0, time.UTC)
-		if firstDayStart.Before(startDate) {
-			startDate = firstDayStart
+	if firstTodoDayStart != nil {
+		if firstTodoDayStart.Before(startDate) {
+			startDate = *firstTodoDayStart
 		}
 	}
 
@@ -252,7 +252,7 @@ func (s *Store) GetBacklogSize(ctx context.Context, projectID int64, mode Mode) 
 		var incompletePointsPtr *int
 		var totalScopePointsPtr *int
 
-		if firstTodoDate == nil || !dayStart.Before(*firstTodoDate) {
+		if firstTodoDayStart == nil || !dayStart.Before(*firstTodoDayStart) {
 			// Allocate new ints via helper to avoid pointer reuse bugs
 			// Safe even if someone refactors and moves variables outside the loop
 			incompleteCountPtr = intPtr(incompleteCount)

@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.11.10-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.12.0-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
@@ -67,7 +67,7 @@ Open [http://localhost:8080](http://localhost:8080).
 
 ### Environment variables
 
-Note: `scrumboy.env` is not a standard KEY=value file — it contains only the raw encryption key on a single line.
+Note: `scrumboy.env` is not a standard KEY=value file - it contains only the raw encryption key on a single line.
 
 - The app does **not** automatically load `.env` files.
 - On Linux/macOS, export variables manually (for example: `export SCRUMBOY_ENCRYPTION_KEY=...`).
@@ -150,7 +150,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Realtime SSE enabled boards for instant multi-user actions.
 
-- **Webhooks (API-only, full mode):** Register URLs per project so Scrumboy can POST JSON when subscribed domain events fire (e.g. `todo.assigned`). For your own automations—not in-app or browser notifications. See [Integrations](#integrations--api-access).
+- **Webhooks (API-only, full mode):** Register URLs per project so Scrumboy can POST JSON when subscribed domain events fire (e.g. `todo.assigned`). For your own automations, not in-app or browser notifications. See [Integrations](#integrations--api-access).
 
 - Customizable Tags: Users can inherit and customize tag colors.
 
@@ -172,9 +172,9 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 ## Integrations & API Access
 
-Scrumboy supports API access tokens for automation, integrations, and programmatic MCP access (legacy HTTP and JSON-RPC — see below). Full MCP guide for developers and agents: [`docs/mcp.md`](docs/mcp.md).
+Scrumboy supports API access tokens for automation, integrations, and programmatic MCP access (legacy HTTP and JSON-RPC - see below). Full MCP guide for developers and agents: [`docs/mcp.md`](docs/mcp.md).
 
-You can create a token from the API and use it to call MCP endpoints directly — no browser session or cookies required.
+You can create a token from the API and use it to call MCP endpoints directly - no browser session or cookies required.
 
 **Create a token (requires login session):**
 
@@ -243,7 +243,7 @@ curl -X POST http://localhost:8080/mcp/rpc \
 **Notes**
 
 - Compatible with MCP clients that support **HTTP JSON-RPC** to this URL.
-- Some MCP clients expect **stdio**-based servers — those are **not** supported here.
+- Some MCP clients expect **stdio**-based servers - those are **not** supported here.
 - Authentication works via **session cookie** or **Bearer** token (same rules as `/mcp`).
 
 This enables:
@@ -258,11 +258,11 @@ This enables:
 Scrumboy can **POST JSON to URLs you register** when certain events occur. This is for **server-side integrations** (your script, gateway, queue worker, etc.). It does **not** add notifications inside the Scrumboy UI; live boards still update via **SSE** as before.
 
 - **Availability:** **Full mode only** (endpoints are disabled in anonymous mode).
-- **Who can configure:** Project **maintainers**, via the HTTP API only—there is **no settings screen** for webhooks yet.
-- **API:** `POST /api/webhooks` (create), `GET /api/webhooks` (list yours), `DELETE /api/webhooks/{id}` — same session cookie / CSRF header rules as other mutating `/api/*` calls.
+- **Who can configure:** Project **maintainers**, via the HTTP API only - there is **no settings screen** for webhooks yet.
+- **API:** `POST /api/webhooks` (create), `GET /api/webhooks` (list yours), `DELETE /api/webhooks/{id}` - same session cookie / CSRF header rules as other mutating `/api/*` calls.
 - **Events:** Subscribe to specific types (e.g. `todo.assigned`) or `*` for all delivered types. The set may grow over time; unused types in your list are harmless.
 - **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body).
-- **Semantics:** Best-effort delivery with retries on failure; not a durable external queue—design for idempotent receivers using the event `id` in the JSON body.
+- **Semantics:** Best-effort delivery with retries on failure; not a durable external queue - design for idempotent receivers using the event `id` in the JSON body.
 
 Example create (replace cookie / project id / URL):
 
@@ -374,7 +374,7 @@ Invariants (e.g. canonical URL `/{slug}`, no UI links to `/p/{id}`) are enforced
 
 # Documentation
 
-- **MCP (HTTP tools + JSON-RPC):** [`docs/mcp.md`](docs/mcp.md) — tool catalog, auth, legacy vs `/mcp/rpc`, examples (agents & automation). See also [`API.md`](API.md) for exhaustive MCP HTTP detail.
+- **MCP (HTTP tools + JSON-RPC):** [`docs/mcp.md`](docs/mcp.md) - tool catalog, auth, legacy vs `/mcp/rpc`, examples (agents & automation). See also [`API.md`](API.md) for exhaustive MCP HTTP detail.
 - **PWA / Web Push (VAPID):** [`docs/pwa.md`](docs/pwa.md) - keys, subscriber contact, post-login auto-subscribe when VAPID is configured, Settings opt-out, tradeoffs.
 - **Roles and permissions:** `docs/ROLES_AND_PERMISSIONS.md` - project roles, backend authorization, anonymous boards.
 - **Audit trail:** `docs/AUDIT_TRAIL.md` - action vocabulary, event model, integration points.
