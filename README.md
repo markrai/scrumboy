@@ -387,4 +387,4 @@ Scrumboy is licensed under the **GNU Affero General Public License v3** (AGPL v3
 
 **Contributing:** Contributors must sign the [Contributor License Agreement (CLA)](CLA.md) before contributions are accepted. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, build, and pull request guidelines.
 
-Scrumboy is a passion project. We hope you will ❤️ it as much as we do!
+Scrumboy is an independent open-source project and is not affiliated with, sponsored by, or endorsed by Scrum.org, Scrum Alliance, Inc., or any other organization associated with Scrum training or certification. Any reference to "scrum" is made solely to describe the project management methodology that the software is intended to support. We hope you will ❤️ it as much as we do!
