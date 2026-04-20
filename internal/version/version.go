@@ -8,7 +8,7 @@ package version
 //
 // Convention: Update when releasing (e.g., "1.0.0", "1.1.0"); match git tags
 // (e.g., tag "v1.0.0" should have Version = "1.0.0").
-const Version = "3.13.0"
+const Version = "3.13.1"
 
 // ExportFormatVersion is the version of the backup/export data format.
 // Only increment this when the ExportData structure changes in a breaking way.

@@ -1,6 +1,14 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** unless noted below.
+
+## [3.13.1] - 2026-04-20
+
+### Enhancements
+
+- **VoiceFlow** - More reliable spoken **todo-by-title** handling: deterministic title references, clearer disambiguation, improved resolution (including title-target alternatives and suffix/number normalization in titles), with expanded coverage.
+
+---
 
 ## [3.13.0] - 2026-04-20
 
