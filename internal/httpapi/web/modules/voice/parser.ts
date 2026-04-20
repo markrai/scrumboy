@@ -5,7 +5,7 @@ import {
   parseSpokenNumber,
   stripWrappingQuotes,
 } from './normalize.js';
-import { normalizeEntityAlias } from './vocabulary.js';
+import { ENTITY_ALIAS_PATTERN, normalizeEntityAlias } from './vocabulary.js';
 
 function parseId(raw: string): CommandResult<{ localId: number; ambiguousId: boolean }> {
   const parsed = parseSpokenNumber(raw);
@@ -16,7 +16,7 @@ function parseId(raw: string): CommandResult<{ localId: number; ambiguousId: boo
 }
 
 function entityPattern(): string {
-  return "(story|stories|todo|todos)";
+  return ENTITY_ALIAS_PATTERN;
 }
 
 function isEntityAlias(raw: string): boolean {
@@ -31,7 +31,7 @@ function parseCreate(input: string): CommandResult<ParsedCommandDraft> | null {
   if (!title) {
     return commandFailure("invalid_title", "Todo title is required.");
   }
-  return { ok: true, value: { intent: "todos.create", title } };
+  return { ok: true, value: { intent: "todos.create", title, display: `create todo ${title}` } };
 }
 
 function parseMove(input: string): CommandResult<ParsedCommandDraft> | null {
@@ -51,6 +51,7 @@ function parseMove(input: string): CommandResult<ParsedCommandDraft> | null {
       localId: id.value.localId,
       rawStatus,
       ambiguousId: id.value.ambiguousId,
+      display: `move todo ${id.value.localId} to ${rawStatus}`,
     },
   };
 }
@@ -72,6 +73,7 @@ function parseTodoIs(input: string): CommandResult<ParsedCommandDraft> | null {
       localId: id.value.localId,
       rawStatus,
       ambiguousId: id.value.ambiguousId,
+      display: `todo ${id.value.localId} is ${rawStatus}`,
     },
   };
 }
@@ -88,6 +90,7 @@ function parseDelete(input: string): CommandResult<ParsedCommandDraft> | null {
       intent: "todos.delete",
       localId: id.value.localId,
       ambiguousId: id.value.ambiguousId,
+      display: `delete todo ${id.value.localId}`,
     },
   };
 }
@@ -104,6 +107,7 @@ function parseOpen(input: string): CommandResult<ParsedCommandDraft> | null {
       intent: "open_todo",
       localId: id.value.localId,
       ambiguousId: id.value.ambiguousId,
+      display: `${normalizePhrase(match[1])} todo ${id.value.localId}`,
     },
   };
 }
@@ -125,6 +129,7 @@ function parseAssign(input: string): CommandResult<ParsedCommandDraft> | null {
       localId: id.value.localId,
       rawUser,
       ambiguousId: id.value.ambiguousId,
+      display: `assign todo ${id.value.localId} to ${rawUser}`,
     },
   };
 }

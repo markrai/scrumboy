@@ -1,6 +1,6 @@
 import { commandFailure, isCommandFailure } from './schema.js';
 import { containsProjectScopeOverride, normalizePhrase, parseSpokenNumber, stripWrappingQuotes, } from './normalize.js';
-import { normalizeEntityAlias } from './vocabulary.js';
+import { ENTITY_ALIAS_PATTERN, normalizeEntityAlias } from './vocabulary.js';
 function parseId(raw) {
     const parsed = parseSpokenNumber(raw);
     if (!parsed) {
@@ -9,7 +9,7 @@ function parseId(raw) {
     return { ok: true, value: { localId: parsed.value, ambiguousId: parsed.ambiguous } };
 }
 function entityPattern() {
-    return "(story|stories|todo|todos)";
+    return ENTITY_ALIAS_PATTERN;
 }
 function isEntityAlias(raw) {
     return normalizeEntityAlias(raw) === "todo";
@@ -24,7 +24,7 @@ function parseCreate(input) {
     if (!title) {
         return commandFailure("invalid_title", "Todo title is required.");
     }
-    return { ok: true, value: { intent: "todos.create", title } };
+    return { ok: true, value: { intent: "todos.create", title, display: `create todo ${title}` } };
 }
 function parseMove(input) {
     const match = input.match(new RegExp(`^move\\s+(?:(?:${entityPattern()})\\s+)?(.+?)\\s+to\\s+(.+)$`, "i"));
@@ -46,6 +46,7 @@ function parseMove(input) {
             localId: id.value.localId,
             rawStatus,
             ambiguousId: id.value.ambiguousId,
+            display: `move todo ${id.value.localId} to ${rawStatus}`,
         },
     };
 }
@@ -69,6 +70,7 @@ function parseTodoIs(input) {
             localId: id.value.localId,
             rawStatus,
             ambiguousId: id.value.ambiguousId,
+            display: `todo ${id.value.localId} is ${rawStatus}`,
         },
     };
 }
@@ -87,6 +89,7 @@ function parseDelete(input) {
             intent: "todos.delete",
             localId: id.value.localId,
             ambiguousId: id.value.ambiguousId,
+            display: `delete todo ${id.value.localId}`,
         },
     };
 }
@@ -105,6 +108,7 @@ function parseOpen(input) {
             intent: "open_todo",
             localId: id.value.localId,
             ambiguousId: id.value.ambiguousId,
+            display: `${normalizePhrase(match[1])} todo ${id.value.localId}`,
         },
     };
 }
@@ -128,6 +132,7 @@ function parseAssign(input) {
             localId: id.value.localId,
             rawUser,
             ambiguousId: id.value.ambiguousId,
+            display: `assign todo ${id.value.localId} to ${rawUser}`,
         },
     };
 }

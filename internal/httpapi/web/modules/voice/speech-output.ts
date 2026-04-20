@@ -1,3 +1,7 @@
+export function prepareTextForSpeechSynthesis(text: string): string {
+  return String(text ?? "").replace(/^(Create|Open|Delete|Move|Assign) todo\b/i, "$1 to do");
+}
+
 export function speak(text: string, options: { signal?: AbortSignal } = {}): Promise<void> {
   return new Promise((resolve) => {
     const synth = window.speechSynthesis;
@@ -7,7 +11,7 @@ export function speak(text: string, options: { signal?: AbortSignal } = {}): Pro
     }
 
     let settled = false;
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(prepareTextForSpeechSynthesis(text));
     const cleanup = () => {
       utterance.onend = null;
       utterance.onerror = null;

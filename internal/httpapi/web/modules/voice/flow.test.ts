@@ -143,6 +143,20 @@ describe('voice command flow', () => {
     expect(callMcpToolMock).toHaveBeenCalledWith('todos.get', { projectSlug: 'alpha', localId: 99 }, { signal: undefined });
   });
 
+  it('normalizes to do speech alternatives into canonical todo text', async () => {
+    const options = makeOptions(() => makeContext());
+
+    const spoken = await parseAlternatives(['delete to do 56'], options);
+    const canonical = await parseAlternatives(['delete todo 56'], options);
+
+    expect(spoken.ok).toBe(true);
+    expect(canonical.ok).toBe(true);
+    if (spoken.ok && canonical.ok) {
+      expect(spoken.value.transcript).toBe('delete todo 56');
+      expect(spoken.value.resolved.ir).toEqual(canonical.value.resolved.ir);
+    }
+  });
+
   it('uses the same resolved pipeline for typed and speech commands', async () => {
     const options = makeOptions(() => makeContext());
 
@@ -211,6 +225,18 @@ describe('voice command flow', () => {
     expect(executeCommandIRMock).not.toHaveBeenCalled();
     expect(document.getElementById('voiceReviewStatus')?.textContent).toBe('Command changed. Review again before running.');
     expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('opens as VoiceFlow and writes canonical todo text after Safe-Mode speech', async () => {
+    startOneShotRecognitionMock.mockResolvedValueOnce({ alternatives: ['delete to do 56'] });
+
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    expect(document.querySelector('.dialog__title')?.textContent).toBe('VoiceFlow');
+    document.getElementById('voiceListenBtn')?.click();
+    await flushAsync();
+
+    expect((document.getElementById('voiceTranscript') as HTMLTextAreaElement).value).toBe('delete todo 56');
+    expect(document.getElementById('voiceSummary')?.textContent).toBe('Delete todo #56: Fix login');
   });
 
   it('uses a confirmation modal for destructive Safe-Mode execution', async () => {

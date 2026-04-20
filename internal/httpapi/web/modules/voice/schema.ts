@@ -35,11 +35,11 @@ export type CommandIR =
     };
 
 export type ParsedCommandDraft =
-  | { intent: "todos.create"; title: string }
-  | { intent: "todos.move"; localId: number; rawStatus: string; ambiguousId?: boolean }
-  | { intent: "todos.delete"; localId: number; ambiguousId?: boolean }
-  | { intent: "todos.assign"; localId: number; rawUser: string; ambiguousId?: boolean }
-  | { intent: "open_todo"; localId: number; ambiguousId?: boolean };
+  | { intent: "todos.create"; title: string; display: string }
+  | { intent: "todos.move"; localId: number; rawStatus: string; ambiguousId?: boolean; display: string }
+  | { intent: "todos.delete"; localId: number; ambiguousId?: boolean; display: string }
+  | { intent: "todos.assign"; localId: number; rawUser: string; ambiguousId?: boolean; display: string }
+  | { intent: "open_todo"; localId: number; ambiguousId?: boolean; display: string };
 
 export type CommandFailureCode =
   | "unsupported"

@@ -1,5 +1,6 @@
 import { normalizeLookup } from './normalize.js';
-export const ENTITY_ALIASES = new Set(["story", "stories", "todo", "todos"]);
+export const ENTITY_ALIASES = new Set(["story", "stories", "todo", "todos", "to do", "to dos"]);
+export const ENTITY_ALIAS_PATTERN = "(story|stories|todo|todos|to[-\\s]+dos|to[-\\s]+do)";
 export const BUILTIN_STATUS_ALIASES = [
     ["backlog", "backlog"],
     ["not started", "not_started"],

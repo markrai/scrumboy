@@ -114,7 +114,7 @@ export async function parseAlternatives(alternatives, options, signal) {
     if (!canRunResolvedCommand(context.value, resolved.value)) {
         return commandFailure("unauthorized", "Only maintainers can run mutating commands.");
     }
-    return { ok: true, value: { transcript: first.transcript, resolved: resolved.value } };
+    return { ok: true, value: { transcript: first.draft.display, resolved: resolved.value } };
 }
 export function parseConfirmationAlternatives(alternatives) {
     const confirmations = [];
@@ -138,7 +138,7 @@ function createDialog() {
     dialog.innerHTML = `
     <form method="dialog" class="dialog__form voice-command" id="voiceCommandForm">
       <div class="dialog__header">
-        <div class="dialog__title">Commands</div>
+        <div class="dialog__title">VoiceFlow</div>
         <button class="btn btn--ghost" type="button" id="voiceCommandClose" aria-label="Close">x</button>
       </div>
 

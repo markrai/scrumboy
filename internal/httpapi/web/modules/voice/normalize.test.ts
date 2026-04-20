@@ -26,6 +26,9 @@ describe('voice command normalization', () => {
     expect(normalizeEntityAlias('story')).toBe('todo');
     expect(normalizeEntityAlias('stories')).toBe('todo');
     expect(normalizeEntityAlias('todos')).toBe('todo');
+    expect(normalizeEntityAlias('to do')).toBe('todo');
+    expect(normalizeEntityAlias('to-do')).toBe('todo');
+    expect(normalizeEntityAlias('to dos')).toBe('todo');
     expect(normalizeConfirmationResponse('yeah')).toBe('yes');
     expect(normalizeConfirmationResponse('nope')).toBe('no');
     expect(normalizeConfirmationResponse('stop')).toBe('cancel');
