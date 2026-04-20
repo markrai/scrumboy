@@ -3053,7 +3053,8 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 
   .topbar {
-    gap: var(--s-8);
+    column-gap: var(--s-6);
+    row-gap: 0;
     padding: var(--s-8) 10px;
     flex-wrap: wrap;
     min-width: 0;
@@ -3061,9 +3062,10 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 
   .topbar .brand {
-    flex-shrink: 1;
+    flex: 0 0 clamp(56px, 18vw, 88px);
+    width: clamp(56px, 18vw, 88px);
     min-width: 0;
-    max-width: 100px;
+    max-width: clamp(56px, 18vw, 88px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3089,7 +3091,6 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     flex-shrink: 1;
   }
 
-  /* First row: back button, project image, brand, spacer, settings, members button, avatar */
   .topbar #backBtn,
   .topbar .project-image-topbar-btn,
   .topbar .project-image-topbar,
@@ -3102,40 +3103,46 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     order: 1;
   }
 
+  .topbar::after {
+    content: "";
+    order: 2;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
   .topbar .spacer {
     flex: 1;
     min-width: 0;
   }
 
-  /* Second row: search, rename (if exists), New Todo, Delete Project */
   .topbar .search-input-wrapper {
-    order: 3;
-    flex: 0 1 150px;
-    min-width: 0;
-    max-width: 45vw;
+    order: 4;
+    flex: 1 1 88px;
+    min-width: 72px;
+    max-width: 30vw;
     margin-right: var(--s-4);
     margin-top: var(--s-8);
   }
 
   .topbar #renameProjectBtn {
-    order: 2;
+    order: 4;
     margin-top: var(--s-8);
     margin-right: var(--s-16);
   }
 
   .topbar #newTodoBtn {
-    order: 4;
+    order: 5;
     margin-top: var(--s-8);
     margin-right: var(--s-4);
   }
 
   .topbar #voiceCommandBtn {
-    order: 2;
+    order: 3;
     margin-top: var(--s-8);
   }
 
   .topbar #deleteProjectBtn {
-    order: 5;
+    order: 6;
     margin-top: var(--s-8);
   }
 
@@ -3169,6 +3176,10 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     margin-right: var(--s-4);
     position: relative;
     color: transparent;
+    width: 56px;
+    min-width: 56px;
+    padding-left: 0;
+    padding-right: 0;
   }
 
   .topbar .btn#newTodoBtn::after {
@@ -3181,10 +3192,6 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     transform: translate(-50%, -50%);
     white-space: nowrap;
     color: var(--text);
-  }
-
-  .topbar .btn#deleteProjectBtn {
-    /* Already has order: 2, will appear in second row */
   }
 
   .topbar .btn--ghost {
