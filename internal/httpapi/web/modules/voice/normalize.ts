@@ -39,6 +39,8 @@ const TENS: Record<string, number> = {
   ninety: 90,
 };
 
+const TITLE_NUMBER_MARKERS = new Set(["number", "no", "num"]);
+
 function normalizeNumberPhrase(input: string): string[] {
   const tokens = normalizePhrase(input)
     .split(" ")
@@ -74,8 +76,23 @@ export function normalizeLookup(input: string): string {
     .trim();
 }
 
+function normalizeTrailingTitleNumberMarker(input: string): string {
+  const tokens = input.split(" ").filter(Boolean);
+  for (let index = tokens.length - 2; index >= 0; index -= 1) {
+    if (!TITLE_NUMBER_MARKERS.has(tokens[index])) continue;
+    const parsed = parseSpokenNumber(tokens.slice(index + 1).join(" "));
+    if (!parsed) continue;
+    return [...tokens.slice(0, index), String(parsed.value)].join(" ").trim();
+  }
+  return input;
+}
+
 export function normalizeTitleReference(input: string): string {
-  return normalizeLookup(input);
+  const normalized = normalizeLookup(input)
+    .replace(/#/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalizeTrailingTitleNumberMarker(normalized);
 }
 
 export function stripWrappingQuotes(input: string): string {

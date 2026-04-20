@@ -251,6 +251,76 @@ describe('voice command resolution', () => {
     });
   });
 
+  it('resolves trailing spoken number markers as title suffixes', async () => {
+    const sourceBoard = board({
+      columns: {
+        backlog: [
+          { id: 1, localId: 3, title: 'Numeric local ID should not win', status: 'backlog' },
+          { id: 2, localId: 21, title: 'Notification Test!', status: 'backlog' },
+          { id: 3, localId: 22, title: 'Notificatoin Test #2', status: 'backlog' },
+          { id: 4, localId: 23, title: 'Notification Test #3', status: 'backlog' },
+        ],
+        not_started: [],
+        doing: [],
+        testing: [],
+        done: [],
+      },
+    });
+    const parsed = parseCommand('move notification test number 3 to not started');
+    if (!parsed.ok) throw new Error('parse failed');
+
+    const resolved = await resolveCommandDraft(parsed.value, {
+      projectId: 1,
+      projectSlug: 'alpha',
+      board: sourceBoard,
+      members,
+    });
+
+    expect(parsed.value).toMatchObject({
+      intent: 'todos.move',
+      display: 'move todo notification test 3 to not started',
+    });
+    expect(resolved).toMatchObject({
+      ok: true,
+      value: {
+        ir: {
+          intent: 'todos.move',
+          projectSlug: 'alpha',
+          entities: { localId: 23, toColumnKey: 'not_started' },
+        },
+        summary: 'Move todo #23: Notification Test #3 to Not Started',
+      },
+    });
+  });
+
+  it('keeps pure number targets on the numeric ID path', async () => {
+    const sourceBoard = board({
+      columns: {
+        backlog: [
+          { id: 1, localId: 3, title: 'Numeric local ID should win', status: 'backlog' },
+          { id: 2, localId: 23, title: 'Notification Test #3', status: 'backlog' },
+        ],
+        not_started: [],
+        doing: [],
+        testing: [],
+        done: [],
+      },
+    });
+
+    const resolved = await parseAndResolve('move number 3 to done', sourceBoard);
+
+    expect(resolved).toMatchObject({
+      ok: true,
+      value: {
+        ir: {
+          intent: 'todos.move',
+          entities: { localId: 3, toColumnKey: 'done' },
+        },
+        summary: 'Move todo #3: Numeric local ID should win to Done',
+      },
+    });
+  });
+
   it('uses active-project todos.search as title candidate generation for unloaded todos', async () => {
     const parsed = parseCommand('move login redirect to done');
     if (!parsed.ok) throw new Error('parse failed');

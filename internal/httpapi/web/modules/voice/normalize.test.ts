@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeLookup, parseSpokenNumber } from './normalize.js';
+import { normalizeLookup, normalizeTitleReference, parseSpokenNumber } from './normalize.js';
 import { normalizeConfirmationResponse, normalizeDisambiguationChoice, normalizeEntityAlias } from './vocabulary.js';
 
 describe('voice command normalization', () => {
@@ -28,6 +28,14 @@ describe('voice command normalization', () => {
   it('normalizes lookup phrases without preserving punctuation variants', () => {
     expect(normalizeLookup('In-Progress!')).toBe('in progress');
     expect(normalizeLookup('"Ada Lovelace"')).toBe('ada lovelace');
+  });
+
+  it('normalizes title suffix number markers deterministically', () => {
+    expect(normalizeTitleReference('notification test number 3')).toBe('notification test 3');
+    expect(normalizeTitleReference('notification test number three')).toBe('notification test 3');
+    expect(normalizeTitleReference('notification test #3')).toBe('notification test 3');
+    expect(normalizeTitleReference('notification test no 3')).toBe('notification test 3');
+    expect(normalizeTitleReference('notification test num 3')).toBe('notification test 3');
   });
 
   it('normalizes command vocabulary aliases', () => {
