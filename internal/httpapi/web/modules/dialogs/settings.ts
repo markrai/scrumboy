@@ -54,6 +54,7 @@ import {
   getDesktopNotificationStatusDescription,
 } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
+import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import {
   bindWorkflowTabInteractions,
   clearWorkflowDraftState,
@@ -239,6 +240,19 @@ function renderBackupTabHTML(): string {
         <div id="backupWarnings" class="settings-backup-warnings" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 4px; color: var(--muted);"></div>
         <button class="btn" type="button" id="backupImportBtn" disabled>Import</button>
       </div>
+    </div>
+  `;
+}
+
+function renderVoiceFlowCustomizationHTML(): string {
+  const enabled = getVoiceFlowEnabledPreference();
+  return `
+    <div class="settings-section">
+      <div class="settings-section__title">VoiceFlow</div>
+      <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+        <input type="checkbox" id="voiceFlowEnabledToggle" ${enabled ? "checked" : ""} />
+        <span>Use voice commands to move, create and delete todos.</span>
+      </label>
     </div>
   `;
 }
@@ -662,6 +676,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
   } else if (!showWorkflowTab && getSettingsActiveTab() === "workflow") {
     setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
+  } else if (getSettingsActiveTab() === "voiceflow") {
+    setSettingsActiveTab("customization");
   }
 
   // Fetch full user profile (including avatar) when Profile tab is shown (skip when re-rendering after avatar change)
@@ -920,6 +936,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         </div>
       </div>
       ${wallpaperSectionHTML}
+      ${renderVoiceFlowCustomizationHTML()}
       <div class="settings-section">
         <div class="settings-section__title">Desktop notifications</div>
         <div class="settings-section__description muted">OS-level alerts when someone assigns you a todo (works when this tab is in the background).</div>
@@ -1415,6 +1432,18 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   }
 
   if (getSettingsActiveTab() === "customization") {
+    const voiceFlowEnabledToggle = document.getElementById("voiceFlowEnabledToggle") as HTMLInputElement | null;
+    if (voiceFlowEnabledToggle) {
+      voiceFlowEnabledToggle.addEventListener(
+        "change",
+        () => {
+          setVoiceFlowEnabledPreference(voiceFlowEnabledToggle.checked);
+          emit("voiceflow:enabled-changed", voiceFlowEnabledToggle.checked);
+        },
+        { signal }
+      );
+    }
+
     const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
     if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {
       desktopNotifyBtn.addEventListener(

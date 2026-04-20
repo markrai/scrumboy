@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.12.0-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.13.0-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
@@ -167,6 +167,8 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - PWA: Excellent UX for mobile users.
 
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
+
+- VoiceFlow - deterministic voice commands (see `docs/VOICEFLOW.md`).
 
 ---
 

@@ -2,6 +2,14 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** unless noted below.
 
+## [3.13.0] - 2026-04-20
+
+### Features
+
+- **VoiceFlow (voice commands)** - Board microphone opens a command modal supporting **create / move / assign / delete / open todo**, with Safe-Mode review and Hands-Free speech execution. Commands are parsed deterministically: speech alternatives are arbitrated into a single canonical command (or rejected as ambiguous), and spoken IDs like “number one” normalize to **`1`** before resolution/execution.
+
+---
+
 
 ## [3.12.0] - 2026-04-16
 

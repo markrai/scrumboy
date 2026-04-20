@@ -42,6 +42,7 @@ type BuildTopbarHtmlArgs = {
   isMobile: boolean;
   isAnonymousTempBoard: boolean;
   currentUserProjectRole: string | null;
+  showVoiceCommands?: boolean;
   user: any;
   backLabel: string;
 };
@@ -55,6 +56,10 @@ type BuildBoardColumnsHtmlArgs = {
   membersByUserId: Record<number, BoardMember>;
   cardOpts: RenderTodoCardOpts;
 };
+
+export function renderVoiceCommandTriggerHtml(): string {
+  return `<button class="btn btn--ghost voice-command-trigger" id="voiceCommandBtn" type="button" aria-label="VoiceFlow" title="VoiceFlow"><img src="/mic.svg" class="voice-command-trigger__icon" alt="" aria-hidden="true" decoding="async" width="20" height="20" /></button>`;
+}
 
 export function getBoardColumns(board: Board): BoardColumn[] {
   const order = (board as any).columnOrder as Array<{ key: string; name: string; color?: string; isDone?: boolean }> | undefined;
@@ -246,13 +251,16 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     isMobile,
     isAnonymousTempBoard,
     currentUserProjectRole,
+    showVoiceCommands,
     user,
     backLabel,
   } = args;
+  const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
+  const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
 
   if (minimalTopbar) {
     return `
-      <div class="topbar">
+      <div class="topbar ${voiceCommandClass}">
         <div class="brand">
           <button class="brand-link" id="brandLink" style="background: none; border: none; padding: 0; cursor: pointer;">
             <img src="/scrumboytext.png" alt="Scrumboy" class="brand-text" />
@@ -263,6 +271,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
           : ''}
         <div class="brand">${escapeHTML(board.project.name)}</div>
         <div class="spacer"></div>
+        ${voiceCommandTriggerHTML}
         <div class="search-input-wrapper">
           <input
             type="text"
@@ -274,7 +283,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="Clear search" title="Clear search">✕</button>` : ''}
         </div>
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
-        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn">New Todo</button>` : ''}
+        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="New Todo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
         ${!user ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
           <span class="hamburger">☰</span>
@@ -286,7 +295,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
   }
 
   return `
-      <div class="topbar">
+      <div class="topbar ${voiceCommandClass}">
         <button class="btn btn--ghost" id="backBtn">${escapeHTML(backLabel)}</button>
         ${isAnonymousTempBoard
           ? (board.project.image ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" style="width: 32px; height: 32px; pointer-events: none; flex-shrink: 0;" />` : `<span class="project-image-topbar-placeholder" style="width: 32px; height: 32px; flex-shrink: 0;">📷</span>`)
@@ -295,6 +304,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
           </button>`}
         <div class="brand">${escapeHTML(board.project.name)}</div>
         <div class="spacer"></div>
+        ${voiceCommandTriggerHTML}
         <div class="search-input-wrapper">
           <input
             type="text"
@@ -306,8 +316,8 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="Clear search" title="Clear search">✕</button>` : ''}
         </div>
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
-        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn">New Todo</button>` : ''}
-        ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn">Delete Project</button>` : ''}
+        ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="New Todo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
+        ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn" title="Delete Project"><img src="/trash.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
         ${!user ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
           <span class="hamburger">☰</span>

@@ -9,6 +9,14 @@ import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
+import {
+  hydrateVoiceFlowEnabledFromServer,
+  hydrateVoiceFlowHandsFreeConfirmationFromServer,
+  hydrateVoiceFlowModeFromServer,
+  VOICE_FLOW_ENABLED_PREFERENCE_KEY,
+  VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY,
+  VOICE_FLOW_MODE_PREFERENCE_KEY,
+} from './core/voiceflow-preferences.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -159,6 +167,27 @@ async function routeOnce(): Promise<void> {
         if (v === 'board' || v === 'activity') {
           hydrateDashboardTodoSortFromServer(v);
         }
+      } catch (err) {
+        // Ignore errors
+      }
+
+      try {
+        const enabledResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${VOICE_FLOW_ENABLED_PREFERENCE_KEY}`);
+        if (enabledResp?.value) hydrateVoiceFlowEnabledFromServer(enabledResp.value);
+      } catch (err) {
+        // Ignore errors
+      }
+
+      try {
+        const modeResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${VOICE_FLOW_MODE_PREFERENCE_KEY}`);
+        if (modeResp?.value) hydrateVoiceFlowModeFromServer(modeResp.value);
+      } catch (err) {
+        // Ignore errors
+      }
+
+      try {
+        const confirmationResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY}`);
+        if (confirmationResp?.value) hydrateVoiceFlowHandsFreeConfirmationFromServer(confirmationResp.value);
       } catch (err) {
         // Ignore errors
       }
