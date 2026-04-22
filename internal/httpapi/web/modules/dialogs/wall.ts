@@ -64,6 +64,7 @@ import {
   getMounted,
   setMounted,
   resetEditGuards,
+  setDragActive,
   type Mounted,
 } from "./wall-state.js";
 import {
@@ -169,6 +170,7 @@ function teardown(): void {
   document.documentElement.style.overflow = state.prevHtmlOverflow;
   setMounted(null);
   resetEditGuards();
+  setDragActive(false);
 }
 
 function refetchDoc(): Promise<void> {
