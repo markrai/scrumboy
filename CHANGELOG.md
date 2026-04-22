@@ -2,6 +2,14 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** unless noted below.
 
+## [3.14.2] - 2026-04-22
+
+### Fixes
+
+- **Wall (Scrumbaby)** - Drag a note to the trash on desktop again shows the delete confirmation and completes deletion: a synthetic mouse `click` after drag-release had been closing the new confirm dialog via the global outside-click handler before its promise could resolve. The outside-click logic now ignores that case, and the wall drag path defensively swallows the stray click.
+
+---
+
 ## [3.14.1] - 2026-04-21
 
 ### Enhancements
