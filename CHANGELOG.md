@@ -2,6 +2,18 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** unless noted below.
 
+## [3.14.1] - 2026-04-21
+
+### Enhancements
+
+- **Wall (Scrumbaby)** - UX refinements on the sticky-note wall: visual branding polish and clearer wall guidance/instructions so note controls are easier to discover.
+
+### Fixes
+
+- **Delete confirmation dialogs** - Confirmation behavior is now wired consistently across the app; wall interactions include explicit right-click delete confirmation flow updates.
+
+---
+
 ## [3.14.0] - 2026-04-21
 
 ### Enhancements

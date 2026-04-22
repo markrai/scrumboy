@@ -8,7 +8,7 @@
 
 import { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, todoStatus, todoEstimationPoints, deleteTodoBtn, closeTodoBtn, settingsDialog, closeSettingsBtn } from './dist/dom/elements.js';
 import { initTheme, handleThemeChange, getStoredTheme, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from './dist/theme.js';
-import { escapeHTML, showToast } from './dist/utils.js';
+import { escapeHTML, showToast, showConfirmDialog } from './dist/utils.js';
 import { apiFetch } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
 import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
@@ -107,7 +107,7 @@ todoDialog.addEventListener("close", () => {
 deleteTodoBtn.addEventListener("click", async () => {
   const todo = getEditingTodo();
   if (!todo) return;
-  if (!confirm("Delete this todo?")) return;
+  if (!await showConfirmDialog("Delete this todo?", "Delete", "Delete")) return;
   try {
     recordLocalMutation();
     await apiFetch(`/api/board/${getSlug()}/todos/${todo.localId}`, { method: "DELETE" });

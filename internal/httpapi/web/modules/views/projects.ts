@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { navigate } from '../router.js';
 import type { Board } from '../types.js';
-import { escapeHTML, showToast, renderUserAvatar } from '../utils.js';
+import { escapeHTML, showToast, renderUserAvatar, confirmDelete } from '../utils.js';
 import {
   getProjectsTab,
   getProjectView,
@@ -595,7 +595,7 @@ export async function renderProjects(): Promise<void> {
       el.addEventListener("click", async (e) => {
         e.stopPropagation(); // Prevent navigation when clicking delete
         const id = el.getAttribute("data-del");
-        if (!confirm("Delete this project and all its todos?")) return;
+        if (!await confirmDelete("Delete this project and all its todos?")) return;
         try {
           await apiFetch(`/api/projects/${id}`, { method: "DELETE" });
           await renderProjects();

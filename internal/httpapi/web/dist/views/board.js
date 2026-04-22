@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderAvatarContent, processImageFile } from '../utils.js';
+import { escapeHTML, showToast, renderAvatarContent, processImageFile, confirmDelete } from '../utils.js';
 import { getBoard, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
 import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
@@ -1360,7 +1360,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
     const deleteProjectBtn = document.getElementById("deleteProjectBtn");
     if (deleteProjectBtn && !deleteProjectBtn[BOUND_FLAG]) {
         deleteProjectBtn.addEventListener("click", async () => {
-            if (!confirm("Delete this project and all its todos?"))
+            if (!await confirmDelete("Delete this project and all its todos?"))
                 return;
             try {
                 recordLocalMutation();

@@ -1,3 +1,8 @@
+@font-face {
+  font-family: "Kalam";
+  src: url("/fonts/kalam.ttf") format("truetype");
+}
+
 /* ============================================
    CSS VARIABLES
    ============================================ */
@@ -4645,6 +4650,30 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   background: var(--wall-bg-page);
   color: var(--wall-fg);
 }
+.wall-logo {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 132px;
+  height: auto;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.92;
+}
+.wall-shortcuts {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  color: var(--wall-fg-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.8;
+  font-family: "Kalam", sans-serif;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+}
 /* Floating close — glyph only (no chip); still a comfortable hit target. */
 .wall-close-btn {
   position: absolute;
@@ -4679,7 +4708,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-  background: var(--wall-bg-page);
+  /* Very light graph-paper grid to aid alignment without competing with notes. */
+  background-color: var(--wall-bg-page);
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
   outline: none;
   touch-action: none;
   user-select: none;

@@ -2,7 +2,7 @@ import { app, settingsDialog } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderUserAvatar } from '../utils.js';
+import { escapeHTML, showToast, renderUserAvatar, confirmDelete } from '../utils.js';
 import { getProjectsTab, getProjectView, getUser, } from '../state/selectors.js';
 import { setProjects, setProjectsTab, setProjectView, setSettingsActiveTab, } from '../state/mutations.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
@@ -563,7 +563,7 @@ export async function renderProjects() {
             el.addEventListener("click", async (e) => {
                 e.stopPropagation(); // Prevent navigation when clicking delete
                 const id = el.getAttribute("data-del");
-                if (!confirm("Delete this project and all its todos?"))
+                if (!await confirmDelete("Delete this project and all its todos?"))
                     return;
                 try {
                     await apiFetch(`/api/projects/${id}`, { method: "DELETE" });

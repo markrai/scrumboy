@@ -1,7 +1,7 @@
 import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
-import { escapeHTML, showToast, getAppVersion, showConfirmDialog, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
+import { escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import { processWallpaperFileForUpload } from '../utils.js';
@@ -1288,7 +1288,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         const userId = (e.currentTarget as HTMLElement).getAttribute("data-user-id");
         if (!userId) return;
         
-        if (!confirm("Delete this user? This action cannot be undone.")) {
+        if (!await confirmDelete("Delete this user? This action cannot be undone.")) {
           return;
         }
         

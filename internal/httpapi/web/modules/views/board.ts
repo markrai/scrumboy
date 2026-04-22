@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderAvatarContent, processImageFile } from '../utils.js';
+import { escapeHTML, showToast, renderAvatarContent, processImageFile, confirmDelete } from '../utils.js';
 import {
   getBoard,
   getMobileTab,
@@ -1477,7 +1477,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   const deleteProjectBtn = document.getElementById("deleteProjectBtn");
   if (deleteProjectBtn && !(deleteProjectBtn as any)[BOUND_FLAG]) {
     deleteProjectBtn.addEventListener("click", async () => {
-      if (!confirm("Delete this project and all its todos?")) return;
+      if (!await confirmDelete("Delete this project and all its todos?")) return;
       try {
         recordLocalMutation();
         await apiFetch(`/api/projects/${projectId}`, { method: "DELETE" });

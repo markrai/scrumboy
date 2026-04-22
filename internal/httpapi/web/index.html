@@ -206,6 +206,27 @@
 
     <dialog id="wallDialog" class="dialog dialog--wall dialog--wall-fullscreen">
       <div class="wall-dialog__shell">
+        <img
+          id="wallLogo"
+          class="wall-logo"
+          src="/scrumbabylogo.png"
+          alt="Scrumbaby"
+          draggable="false"
+        />
+        <div class="wall-shortcuts" aria-hidden="true">
+          <br>
+          create note: <i>right-click on canvas</i>
+          <br>
+          change color: <i>single-click note</i>
+          <br>
+          edit note: <i>double-click note</i>
+          <br>
+          delete note: <i>right-click note or drag to trash</i>
+          <br>
+          draw lines: <i>shift + drag from note to note</i>
+          <br>
+          multiple select: <i>ctrl/cmd + left-click note or click-drag on canvas to box-select notes</i>
+        </div>
         <div id="wallSurface" class="wall-surface" aria-label="Sticky note wall"></div>
         <button class="wall-close-btn" type="button" id="closeWallBtn" aria-label="Close">✕</button>
         <img

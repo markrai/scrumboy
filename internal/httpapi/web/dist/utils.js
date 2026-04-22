@@ -271,4 +271,13 @@ export function showConfirmDialog(message, title = "Confirm", confirmLabel = "Co
         cancelBtn.focus();
     });
 }
+/**
+ * Standardized delete confirmation wrapper for destructive actions.
+ */
+export function confirmDelete(options) {
+    const normalized = typeof options === "string"
+        ? { message: options }
+        : options;
+    return showConfirmDialog(normalized.message, normalized.title ?? "Delete", normalized.confirmLabel ?? "Delete");
+}
 export { escapeHTML, showToast };

@@ -24,7 +24,7 @@
 //   out SSE wall.transient events. GET /wall is side-effect-free.
 import { wallDialog, wallSurface, closeWallBtn, wallTrash, } from "../dom/elements.js";
 import { apiFetch } from "../api.js";
-import { showToast } from "../utils.js";
+import { confirmDelete, showToast } from "../utils.js";
 import { on, off } from "../events.js";
 import { getUser } from "../state/selectors.js";
 import { canEditWall } from "./wall-permissions.js";
@@ -571,8 +571,7 @@ function bindSurfaceHandlers(state) {
         }
     }, { signal: state.abort.signal });
     // Postbaby parity: right-click on empty canvas adds a note; right-click on
-    // an edge deletes it (after confirm); right-click on a note is swallowed
-    // (no native menu, no creation) so it doesn't conflict with note drag.
+    // an edge or note deletes it (after confirm).
     surface.addEventListener("contextmenu", (ev) => {
         const target = ev.target;
         if (!target)
@@ -586,15 +585,25 @@ function bindSurfaceHandlers(state) {
             const edgeId = groupNode && groupNode instanceof SVGGElement
                 ? groupNode.dataset?.edgeId || ""
                 : "";
-            if (edgeId && window.confirm("Delete this connection?")) {
-                void deleteEdge(edgeId);
+            if (edgeId) {
+                void confirmDelete("Delete this connection?").then((confirmed) => {
+                    if (confirmed) {
+                        void deleteEdge(edgeId);
+                    }
+                });
             }
             return;
         }
         if (noteEl) {
-            // Suppress the browser menu over notes; do nothing else (no delete UX
-            // here - drop on trash is the only delete path for notes).
             ev.preventDefault();
+            const noteId = noteEl.dataset.noteId || "";
+            if (noteId) {
+                void confirmDelete("Delete this note?").then((confirmed) => {
+                    if (confirmed) {
+                        void deleteNote(noteId);
+                    }
+                });
+            }
             return;
         }
         ev.preventDefault();
@@ -887,14 +896,15 @@ function beginDrag(state, ev, noteEl, noteId, downX, downY) {
             }
             const n = participants.length;
             const prompt = n === 1 ? "Delete this note?" : `Delete ${n} notes?`;
-            const ok = window.confirm(prompt);
-            if (ok) {
-                for (const p of participants) {
-                    void deleteNote(p.id);
+            void confirmDelete(prompt).then((ok) => {
+                if (ok) {
+                    for (const p of participants) {
+                        void deleteNote(p.id);
+                    }
                 }
-            }
-            if (isGroup)
-                clearSelection();
+                if (isGroup)
+                    clearSelection();
+            });
             return;
         }
         // Final transient flush + durable PATCH for each moved participant.

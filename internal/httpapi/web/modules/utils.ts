@@ -300,4 +300,25 @@ export function showConfirmDialog(message: string, title: string = "Confirm", co
   });
 }
 
+export interface ConfirmDeleteOptions {
+  message: string;
+  title?: string;
+  confirmLabel?: string;
+}
+
+/**
+ * Standardized delete confirmation wrapper for destructive actions.
+ */
+export function confirmDelete(options: ConfirmDeleteOptions | string): Promise<boolean> {
+  const normalized: ConfirmDeleteOptions =
+    typeof options === "string"
+      ? { message: options }
+      : options;
+  return showConfirmDialog(
+    normalized.message,
+    normalized.title ?? "Delete",
+    normalized.confirmLabel ?? "Delete"
+  );
+}
+
 export { escapeHTML, showToast };
