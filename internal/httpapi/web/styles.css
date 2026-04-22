@@ -4645,37 +4645,39 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   background: var(--wall-bg-page);
   color: var(--wall-fg);
 }
-.wall-dialog__header {
-  flex: 0 0 auto;
-  display: flex;
+/* Floating close button — header bar is removed to reclaim vertical space
+   for the canvas. Button hovers over the top-right of the surface, sits
+   above notes and edges but below the dragging-note stack (z 1000) and the
+   trash (z 1500) so an in-flight drag still beats it visually. */
+.wall-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--wall-bg-header);
-  border-bottom: 1px solid var(--wall-border);
-}
-.wall-dialog__title {
-  font-weight: 600;
+  justify-content: center;
+  padding: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.45);
   color: var(--wall-fg);
-  font-size: 15px;
-  letter-spacing: 0.02em;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1400;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
-.wall-dialog__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.wall-close-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
 }
-.wall-dialog__header-actions .btn {
-  color: var(--wall-fg);
-  background: transparent;
-  border: 1px solid var(--wall-border);
-}
-.wall-dialog__header-actions .btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-.wall-dialog__header-actions .btn--ghost {
-  border-color: transparent;
+.wall-close-btn:focus-visible {
+  outline: 2px solid var(--accent, #5aa3ff);
+  outline-offset: 2px;
 }
 
 .wall-surface {

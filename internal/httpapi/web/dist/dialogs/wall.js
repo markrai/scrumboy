@@ -6,7 +6,7 @@
 //   constants / rendering helpers) is not part of the initial board bundle.
 //
 // Interaction model (delegated on #wallSurface):
-//   - Double-click on empty canvas -> POST /wall/notes at pointer position.
+//   - Right-click on empty canvas -> POST /wall/notes at pointer position.
 //   - Single-click on a note -> delayed color-cycle timer (DOUBLE_TAP_MS).
 //     Fires nextColor + PATCH color unless cancelled by dblclick or drag.
 //   - Double-click on a note -> cancel color timer; enter edit mode
@@ -60,8 +60,6 @@ export async function openWallDialog(opts) {
         transient: new Map(),
         colorTimers: new Map(),
         lastTapAt: new Map(),
-        lastEmptyTapAt: 0,
-        lastEmptyTapPos: null,
         selected: new Set(),
     };
     mounted = state;
@@ -489,12 +487,8 @@ function bindSurfaceHandlers(state) {
             }
             return;
         }
-        // Empty-canvas double-click: create a note at pointer position.
+        // Empty canvas: no create on double-click (right-click only).
         ev.preventDefault();
-        const rect = surface.getBoundingClientRect();
-        const x = ev.clientX - rect.left;
-        const y = ev.clientY - rect.top;
-        void createNoteAt(x, y);
     }, { signal: state.abort.signal });
     surface.addEventListener("pointerdown", (ev) => {
         const target = ev.target;

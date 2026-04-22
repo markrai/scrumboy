@@ -1,6 +1,14 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** unless noted below.
+
+## [3.14.0] - 2026-04-21
+
+### Enhancements
+
+- **Wall (Scrumbaby)** - Sticky-note wall for **durable** project boards: full-viewport canvas, move and resize notes, single-click color cycle, double-click edit, right-click empty canvas to create, Shift-drag connections between notes, marquee and Ctrl/Meta multi-select with group drag and batch trash delete, real-time updates for collaborators. Desktop topbar entry; optional instance opt-out with **`SCRUMBOY_WALL_ENABLED`**. Controls summarized in **`docs/WALL.md`**.
+
+---
 
 ## [3.13.1] - 2026-04-20
 

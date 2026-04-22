@@ -107,7 +107,7 @@ describe('wall-rendering helpers', () => {
   });
 
   it('renders a helpful empty state per role', () => {
-    expect(renderEmptyWallHtml(true)).toContain('Double-click');
+    expect(renderEmptyWallHtml(true)).toContain('Right-click');
     expect(renderEmptyWallHtml(true)).toContain('Shift');
     expect(renderEmptyWallHtml(false)).toContain('Waiting for a contributor');
   });

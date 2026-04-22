@@ -149,7 +149,7 @@ export function isEditing(noteEl: HTMLElement): boolean {
 
 export function renderEmptyWallHtml(canEdit: boolean): string {
   const hint = canEdit
-    ? "Double-click (or right-click) the canvas to add your first sticky note. Hold Shift and drag from one note to another to draw a connection."
+    ? "Right-click the canvas to add your first sticky note. Hold Shift and drag from one note to another to draw a connection."
     : "Waiting for a contributor to add one.";
   return `<div class="wall-empty" role="status">No notes yet.<br/><span class="muted">${hint}</span></div>`;
 }
