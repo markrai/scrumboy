@@ -40,8 +40,8 @@ type Options struct {
 	PushDebug       bool   // Log push send/skip (also SCRUMBOY_DEBUG_PUSH in config)
 
 	// WallEnabled gates the Scrumbaby feature. When false, all /wall routes
-	// return 404 and the frontend hides the Wall topbar button. Sourced from
-	// SCRUMBOY_WALL_ENABLED.
+	// return 404 and the frontend hides the Wall topbar button. Defaults on;
+	// set SCRUMBOY_WALL_ENABLED=0 to disable (see config.FromEnv semantics).
 	WallEnabled bool
 }
 
@@ -77,7 +77,7 @@ type Server struct {
 
 	dataDir string // user-wallpapers storage; empty = disabled
 
-	wallEnabled bool // Scrumbaby feature flag (SCRUMBOY_WALL_ENABLED)
+	wallEnabled bool // Scrumbaby wall; default on (SCRUMBOY_WALL_ENABLED=0 to disable)
 }
 
 type storeAPI interface {

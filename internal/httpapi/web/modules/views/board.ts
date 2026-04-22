@@ -211,7 +211,12 @@ function syncVoiceCommandPreferenceInTopbar(): void {
     return;
   }
   if (!existing) {
-    topbar.querySelector(".search-input-wrapper")?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
+    const wallBtn = document.getElementById("wallBtn");
+    if (wallBtn) {
+      wallBtn.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
+    } else {
+      topbar.querySelector(".search-input-wrapper")?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
+    }
   }
   bindVoiceCommandButton();
 }

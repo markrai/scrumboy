@@ -1296,7 +1296,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 
 .voice-command-trigger,
 #newTodoBtn,
-#deleteProjectBtn {
+#deleteProjectBtn,
+#wallBtn {
   white-space: nowrap;
   width: 40px;
   min-width: 40px;
@@ -1310,7 +1311,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 .voice-command-trigger svg,
 .voice-command-trigger img,
 #newTodoBtn img,
-#deleteProjectBtn img {
+#deleteProjectBtn img,
+#wallBtn img {
   width: 20px;
   height: 20px;
   max-width: 20px;
@@ -1321,7 +1323,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 
 .voice-command-trigger img,
 #newTodoBtn img,
-#deleteProjectBtn img {
+#deleteProjectBtn img,
+#wallBtn img {
   display: block;
   filter: var(--voice-command-icon-filter);
   object-fit: contain;
@@ -3237,6 +3240,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   .topbar #voiceCommandBtn {
     order: 3;
     margin-top: var(--s-8);
+  }
+
+  /* Wall is desktop-only; HTML can still contain #wallBtn after a wide→narrow
+     resize because topbar is not re-built on breakpoint cross. */
+  .topbar #wallBtn {
+    display: none !important;
   }
 
   .topbar #deleteProjectBtn {

@@ -24,16 +24,18 @@ function render(args: {
   isAnonymousTempBoard: boolean;
   wallEnabled?: boolean;
   isMobile?: boolean;
+  showVoiceCommands?: boolean;
+  minimalTopbar?: boolean;
 }): string {
   return buildTopbarHtml({
     board: board(args.expires),
-    minimalTopbar: false,
+    minimalTopbar: args.minimalTopbar ?? false,
     search: '',
     searchPlaceholder: 'Search',
     isMobile: !!args.isMobile,
     isAnonymousTempBoard: args.isAnonymousTempBoard,
     currentUserProjectRole: args.role,
-    showVoiceCommands: false,
+    showVoiceCommands: args.showVoiceCommands ?? false,
     user: null,
     backLabel: 'Projects',
     wallEnabled: args.wallEnabled,
@@ -45,6 +47,7 @@ describe('wall topbar gating', () => {
     for (const role of ['maintainer', 'contributor']) {
       const html = render({ role, isAnonymousTempBoard: false, wallEnabled: true });
       expect(html).toContain('id="wallBtn"');
+      expect(html).toContain('/postit.svg');
     }
   });
 
@@ -66,5 +69,25 @@ describe('wall topbar gating', () => {
   it('hides the wall button for viewers', () => {
     const html = render({ role: 'viewer', isAnonymousTempBoard: false, wallEnabled: true });
     expect(html).not.toContain('id="wallBtn"');
+  });
+
+  it('hides the wall button on mobile even for maintainers', () => {
+    const html = render({ role: 'maintainer', isAnonymousTempBoard: false, wallEnabled: true, isMobile: true });
+    expect(html).not.toContain('id="wallBtn"');
+  });
+
+  it('places the wall button immediately after the mic when voice is on (desktop)', () => {
+    const html = render({
+      role: 'maintainer',
+      isAnonymousTempBoard: false,
+      wallEnabled: true,
+      isMobile: false,
+      showVoiceCommands: true,
+    });
+    const mic = html.indexOf('id="voiceCommandBtn"');
+    const wall = html.indexOf('id="wallBtn"');
+    expect(mic).toBeGreaterThanOrEqual(0);
+    expect(wall).toBeGreaterThan(mic);
+    expect(html.indexOf('id="searchInput"')).toBeGreaterThan(wall);
   });
 });
