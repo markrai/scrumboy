@@ -99,6 +99,8 @@ type Mounted = {
   // Empty-canvas dblclick detection.
   lastEmptyTapAt: number;
   lastEmptyTapPos: { x: number; y: number } | null;
+  // Multi-select: ids of notes currently selected (marquee / Ctrl-click).
+  selected: Set<string>;
 };
 
 let mounted: Mounted | null = null;
@@ -133,6 +135,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
     lastTapAt: new Map(),
     lastEmptyTapAt: 0,
     lastEmptyTapPos: null,
+    selected: new Set<string>(),
   };
   mounted = state;
   (dialog as any)[TEARDOWN_MARKER] = true;
@@ -169,6 +172,7 @@ function teardown(): void {
     if (entry.timer) clearTimeout(entry.timer);
   }
   state.transient.clear();
+  state.selected.clear();
   state.abort.abort();
   if (wallSurface) wallSurface.innerHTML = "";
   if (wallTrash) {
@@ -225,6 +229,55 @@ function renderSurface(): void {
   // can read offsetLeft/offsetWidth on the freshly-mounted note elements.
   ensureEdgeOverlay(wallSurface);
   renderEdges(wallSurface, state.doc.edges ?? []);
+  // Drop selection entries whose notes no longer exist (remote delete,
+  // server-side reconcile), then reapply the `--selected` class.
+  pruneSelection();
+  syncSelectionDom();
+}
+
+// ---- Multi-select state -------------------------------------------------
+
+function syncSelectionDom(): void {
+  const state = mounted;
+  if (!state || !wallSurface) return;
+  const all = wallSurface.querySelectorAll<HTMLElement>(".wall-note");
+  all.forEach((el) => {
+    const id = el.dataset.noteId || "";
+    el.classList.toggle("wall-note--selected", state.selected.has(id));
+  });
+}
+
+function pruneSelection(): void {
+  const state = mounted;
+  if (!state) return;
+  if (state.selected.size === 0) return;
+  const live = new Set(state.doc.notes.map((n) => n.id));
+  for (const id of Array.from(state.selected)) {
+    if (!live.has(id)) state.selected.delete(id);
+  }
+}
+
+function clearSelection(): void {
+  const state = mounted;
+  if (!state) return;
+  if (state.selected.size === 0) return;
+  state.selected.clear();
+  syncSelectionDom();
+}
+
+function setSelection(ids: Iterable<string>): void {
+  const state = mounted;
+  if (!state) return;
+  state.selected = new Set(ids);
+  syncSelectionDom();
+}
+
+function toggleSelection(id: string): void {
+  const state = mounted;
+  if (!state) return;
+  if (state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
+  syncSelectionDom();
 }
 
 function noteElementById(id: string): HTMLElement | null {
@@ -527,11 +580,30 @@ function bindSurfaceHandlers(state: Mounted): void {
         beginEdgeDrag(state, ev, noteEl, noteId);
         return;
       }
+      // Ctrl/Meta+click: toggle this note in the selection and do not arm
+      // the normal single-click (color-cycle) path.
+      if ((ev.ctrlKey || ev.metaKey) && ev.button === 0) {
+        ev.preventDefault();
+        toggleSelection(noteId);
+        return;
+      }
+      // Plain click on a note while a multi-selection is active replaces the
+      // selection with just this note before the normal interaction runs.
+      // That lets a single click exit multi-select without an extra step
+      // while preserving color-cycle / drag / dblclick on the chosen note.
+      if (ev.button === 0 && state.selected.size > 0 && !state.selected.has(noteId)) {
+        setSelection([noteId]);
+      }
       armNoteInteraction(state, ev, noteEl, noteId);
       return;
     }
 
-    // Empty canvas: no action on pointerdown; creation is dblclick / RMB.
+    // Empty canvas, primary button: begin marquee (unless Shift is held —
+    // Shift is reserved for edge-from-note and has no empty-canvas meaning).
+    if (ev.button === 0 && !ev.shiftKey) {
+      beginMarquee(state, ev);
+      return;
+    }
   }, { signal: state.abort.signal });
 
   // Postbaby parity: right-click on empty canvas adds a note; right-click on
@@ -567,6 +639,92 @@ function bindSurfaceHandlers(state: Mounted): void {
     const y = ev.clientY - rect.top;
     void createNoteAt(x, y);
   }, { signal: state.abort.signal });
+}
+
+// ---- Marquee multi-select (empty-canvas drag) --------------------------
+
+function beginMarquee(state: Mounted, ev: PointerEvent): void {
+  if (!wallSurface) return;
+  const surface = wallSurface;
+  const surfaceRect = surface.getBoundingClientRect();
+  const startX = ev.clientX - surfaceRect.left;
+  const startY = ev.clientY - surfaceRect.top;
+  const downClientX = ev.clientX;
+  const downClientY = ev.clientY;
+
+  let marqueeEl: HTMLDivElement | null = null;
+  let promoted = false;
+
+  const ensureMarquee = (): HTMLDivElement => {
+    if (!marqueeEl) {
+      marqueeEl = document.createElement("div");
+      marqueeEl.className = "wall-marquee";
+      surface.appendChild(marqueeEl);
+    }
+    return marqueeEl;
+  };
+
+  const paint = (curX: number, curY: number) => {
+    const left = Math.min(startX, curX);
+    const top = Math.min(startY, curY);
+    const width = Math.abs(curX - startX);
+    const height = Math.abs(curY - startY);
+    const el = ensureMarquee();
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+    el.style.width = `${Math.round(width)}px`;
+    el.style.height = `${Math.round(height)}px`;
+  };
+
+  const onMove = (mv: PointerEvent) => {
+    const dx = mv.clientX - downClientX;
+    const dy = mv.clientY - downClientY;
+    if (!promoted && dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+    promoted = true;
+    mv.preventDefault();
+    const curX = mv.clientX - surfaceRect.left;
+    const curY = mv.clientY - surfaceRect.top;
+    paint(curX, curY);
+  };
+
+  const onUp = (up: PointerEvent) => {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    if (marqueeEl) {
+      marqueeEl.remove();
+      marqueeEl = null;
+    }
+    if (!promoted) {
+      // Plain click on empty canvas: clear any existing selection.
+      clearSelection();
+      return;
+    }
+    const endX = up.clientX - surfaceRect.left;
+    const endY = up.clientY - surfaceRect.top;
+    const rect = {
+      left: Math.min(startX, endX),
+      top: Math.min(startY, endY),
+      right: Math.max(startX, endX),
+      bottom: Math.max(startY, endY),
+    };
+    const picked: string[] = [];
+    for (const note of state.doc.notes) {
+      const nLeft = note.x;
+      const nTop = note.y;
+      const nRight = note.x + note.width;
+      const nBottom = note.y + note.height;
+      const intersects = !(
+        nRight < rect.left || nLeft > rect.right || nBottom < rect.top || nTop > rect.bottom
+      );
+      if (intersects) picked.push(note.id);
+    }
+    setSelection(picked);
+  };
+
+  document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
+  document.addEventListener("pointerup", onUp, { signal: state.abort.signal });
+  document.addEventListener("pointercancel", onUp, { signal: state.abort.signal });
 }
 
 // ---- Shift+drag edge creation -------------------------------------------
@@ -676,22 +834,47 @@ function armNoteInteraction(state: Mounted, ev: PointerEvent, noteEl: HTMLElemen
 
 // ---- Drag (document-scoped, rAF) ----------------------------------------
 
+type DragParticipant = {
+  id: string;
+  el: HTMLElement;
+  startX: number;
+  startY: number;
+  note: WallNote;
+};
+
 function beginDrag(state: Mounted, ev: PointerEvent, noteEl: HTMLElement, noteId: string, downX: number, downY: number): void {
-  const note = findNote(noteId);
-  if (!note) return;
+  const primary = findNote(noteId);
+  if (!primary) return;
   cancelColorTimer(state, noteId);
 
   const surface = wallSurface!;
   const surfaceRect = surface.getBoundingClientRect();
   const noteRect = noteEl.getBoundingClientRect();
-  // shiftX/shiftY: offset from pointer-down position to the note's top-left,
-  // measured within the surface. Using the original downX/downY (rather than
-  // current pointer position) preserves the visual feel of Postbaby's
-  // `shiftX = clientX - rect.left` so the note doesn't jump on drag start.
+  // shiftX/shiftY: offset from pointer-down position to the primary note's
+  // top-left, measured within the surface. Using the original downX/downY
+  // (rather than current pointer position) preserves the visual feel of
+  // Postbaby's `shiftX = clientX - rect.left` so the note doesn't jump.
   const shiftX = downX - noteRect.left;
   const shiftY = downY - noteRect.top;
 
-  noteEl.classList.add("wall-note--dragging");
+  // Group drag when the grabbed note is part of a multi-selection; otherwise
+  // single-note drag (and clear any stale lingering selection if user grabs
+  // a note that isn't in it — the armNoteInteraction path already replaced
+  // the selection by now, so this is cheap to double-check).
+  const isGroup = state.selected.has(noteId) && state.selected.size > 1;
+  const participants: DragParticipant[] = [];
+  if (isGroup) {
+    for (const id of state.selected) {
+      const n = findNote(id);
+      const el = noteElementById(id);
+      if (!n || !el) continue;
+      participants.push({ id, el, startX: n.x, startY: n.y, note: n });
+    }
+  } else {
+    participants.push({ id: noteId, el: noteEl, startX: primary.x, startY: primary.y, note: primary });
+  }
+
+  for (const p of participants) p.el.classList.add("wall-note--dragging");
   showTrash(true);
 
   let animationFrameId: number | null = null;
@@ -704,16 +887,28 @@ function beginDrag(state: Mounted, ev: PointerEvent, noteEl: HTMLElement, noteId
     if (animationFrameId !== null) return;
     animationFrameId = requestAnimationFrame(() => {
       animationFrameId = null;
-      const nx = Math.max(0, lastClientX - surfaceRect.left - shiftX);
-      const ny = Math.max(0, lastClientY - surfaceRect.top - shiftY);
-      noteEl.style.left = `${Math.round(nx)}px`;
-      noteEl.style.top = `${Math.round(ny)}px`;
-      scheduleTransient(state, noteId, nx, ny);
-      // Keep any edges glued to this note while it moves under the cursor.
-      if (wallSurface) {
-        updateEdgesForNote(wallSurface, noteId, nx + noteEl.offsetWidth / 2, ny + noteEl.offsetHeight / 2);
+      // Primary note's new top-left, clamped to surface origin.
+      const rawX = lastClientX - surfaceRect.left - shiftX;
+      const rawY = lastClientY - surfaceRect.top - shiftY;
+      // Cap the delta so no participant crosses x=0 or y=0. This preserves
+      // the group's internal spacing when one member bumps the wall edge.
+      let minDeltaX = rawX - primary.x;
+      let minDeltaY = rawY - primary.y;
+      for (const p of participants) {
+        if (p.startX + minDeltaX < 0) minDeltaX = -p.startX;
+        if (p.startY + minDeltaY < 0) minDeltaY = -p.startY;
       }
-      updateTrashHover(noteEl);
+      for (const p of participants) {
+        const nx = p.startX + minDeltaX;
+        const ny = p.startY + minDeltaY;
+        p.el.style.left = `${Math.round(nx)}px`;
+        p.el.style.top = `${Math.round(ny)}px`;
+        scheduleTransient(state, p.id, nx, ny);
+        if (wallSurface) {
+          updateEdgesForNote(wallSurface, p.id, nx + p.el.offsetWidth / 2, ny + p.el.offsetHeight / 2);
+        }
+      }
+      updateTrashHoverAny(participants);
     });
   }
 
@@ -729,31 +924,45 @@ function beginDrag(state: Mounted, ev: PointerEvent, noteEl: HTMLElement, noteId
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
     }
-    noteEl.classList.remove("wall-note--dragging");
+    for (const p of participants) p.el.classList.remove("wall-note--dragging");
 
-    const finalX = parseInt(noteEl.style.left || "0", 10);
-    const finalY = parseInt(noteEl.style.top || "0", 10);
-    const overlappingTrash = isOverTrash(noteEl);
+    const overlappingTrash = participants.some((p) => isOverTrash(p.el));
     showTrash(false);
 
     if (overlappingTrash) {
-      // Revert the visual position before confirming so the note doesn't
-      // sit over the trash while the dialog is up.
-      noteEl.style.left = `${Math.round(note.x)}px`;
-      noteEl.style.top = `${Math.round(note.y)}px`;
-      const ok = window.confirm("Delete this note?");
-      if (ok) {
-        void deleteNote(noteId);
+      // Revert visuals to starting positions before confirming so notes
+      // don't sit over the trash while the native dialog is up.
+      for (const p of participants) {
+        p.el.style.left = `${Math.round(p.startX)}px`;
+        p.el.style.top = `${Math.round(p.startY)}px`;
+        if (wallSurface) {
+          updateEdgesForNote(wallSurface, p.id, p.startX + p.el.offsetWidth / 2, p.startY + p.el.offsetHeight / 2);
+        }
       }
+      const n = participants.length;
+      const prompt = n === 1 ? "Delete this note?" : `Delete ${n} notes?`;
+      const ok = window.confirm(prompt);
+      if (ok) {
+        for (const p of participants) {
+          void deleteNote(p.id);
+        }
+      }
+      if (isGroup) clearSelection();
       return;
     }
 
-    // Final transient flush + durable PATCH.
-    scheduleTransient(state, noteId, finalX, finalY);
-    flushTransient(state, noteId);
-    if (finalX !== note.x || finalY !== note.y) {
-      void patchNote(noteId, { x: finalX, y: finalY });
+    // Final transient flush + durable PATCH for each moved participant.
+    for (const p of participants) {
+      const finalX = parseInt(p.el.style.left || "0", 10);
+      const finalY = parseInt(p.el.style.top || "0", 10);
+      scheduleTransient(state, p.id, finalX, finalY);
+      flushTransient(state, p.id);
+      if (finalX !== p.note.x || finalY !== p.note.y) {
+        void patchNote(p.id, { x: finalX, y: finalY });
+      }
     }
+    // Drop clears the group selection (user-requested behavior).
+    if (isGroup) clearSelection();
     void up;
   };
   document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
@@ -840,9 +1049,10 @@ function showTrash(visible: boolean): void {
   if (!visible) wallTrash.classList.remove("wall-trash--active");
 }
 
-function updateTrashHover(noteEl: HTMLElement): void {
+function updateTrashHoverAny(participants: Array<{ el: HTMLElement }>): void {
   if (!wallTrash) return;
-  wallTrash.classList.toggle("wall-trash--active", isOverTrash(noteEl));
+  const active = participants.some((p) => isOverTrash(p.el));
+  wallTrash.classList.toggle("wall-trash--active", active);
 }
 
 function isOverTrash(noteEl: HTMLElement): boolean {

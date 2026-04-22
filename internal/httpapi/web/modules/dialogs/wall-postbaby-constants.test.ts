@@ -10,9 +10,9 @@ import {
 } from './wall-postbaby-constants.js';
 
 describe('wall-postbaby-constants', () => {
-  it('preserves the exact Postbaby palette order', () => {
+  it('starts the palette with powder blue and preserves the Postbaby cycle order', () => {
     expect(RAINBOW_COLORS).toEqual([
-      '#FFFFFF',
+      '#B0E0E6',
       '#DC143C',
       '#FF7F00',
       '#FFBF00',
@@ -30,15 +30,15 @@ describe('wall-postbaby-constants', () => {
   });
 
   it('normalizes hex values for case-insensitive palette lookup', () => {
-    expect(normalizeHex('#ffffff')).toBe('#FFFFFF');
-    expect(normalizeHex('ffffff')).toBe('#FFFFFF');
+    expect(normalizeHex('#b0e0e6')).toBe('#B0E0E6');
+    expect(normalizeHex('b0e0e6')).toBe('#B0E0E6');
     expect(normalizeHex('')).toBe('');
     expect(normalizeHex(null)).toBe('');
   });
 
   it('finds palette indices and returns 0 on miss', () => {
-    expect(colorIndexFromHex('#FFFFFF')).toBe(0);
-    expect(colorIndexFromHex('#ffffff')).toBe(0);
+    expect(colorIndexFromHex('#B0E0E6')).toBe(0);
+    expect(colorIndexFromHex('#b0e0e6')).toBe(0);
     expect(colorIndexFromHex('#DC143C')).toBe(1);
     expect(colorIndexFromHex('#CF9FFF')).toBe(7);
     expect(colorIndexFromHex('#123456')).toBe(0);
@@ -46,9 +46,9 @@ describe('wall-postbaby-constants', () => {
   });
 
   it('cycles colors with wraparound', () => {
-    expect(nextColor('#FFFFFF')).toEqual({ color: '#DC143C', index: 1 });
+    expect(nextColor('#B0E0E6')).toEqual({ color: '#DC143C', index: 1 });
     expect(nextColor('#DC143C')).toEqual({ color: '#FF7F00', index: 2 });
-    expect(nextColor('#CF9FFF')).toEqual({ color: '#FFFFFF', index: 0 });
+    expect(nextColor('#CF9FFF')).toEqual({ color: '#B0E0E6', index: 0 });
     // Unknown colors start at palette[1] (one after the fallback index 0).
     expect(nextColor('#123456')).toEqual({ color: '#DC143C', index: 1 });
   });

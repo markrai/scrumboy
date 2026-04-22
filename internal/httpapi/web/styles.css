@@ -4714,6 +4714,17 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     0 14px 40px rgba(0, 0, 0, 0.35);
   transition: none;
 }
+/* Selected notes pulled to a mid z-index so they float above unselected
+   peers while a marquee or group drag is underway, without eclipsing the
+   actively-dragged stack (1000). Outline is layout-neutral. */
+.wall-note--selected {
+  z-index: 3;
+  outline: 2px solid var(--accent, #5aa3ff);
+  outline-offset: 2px;
+}
+.wall-note--selected.wall-note--dragging {
+  z-index: 1000;
+}
 /* Postbaby parity: `.grid-item` keeps the note color; only `.edit-textarea`
    uses `--textarea-bg`. Do not paint the whole note dark here. */
 .wall-note--editing {
@@ -4815,6 +4826,17 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   opacity: 1;
   transform: scale(1.2);
   filter: drop-shadow(0 6px 14px rgba(224, 87, 75, 0.55));
+}
+
+/* Marquee selection rectangle painted on `#wallSurface` during empty-canvas
+   left-drag. Pointer-events disabled so the active pointermove/up listeners
+   on document continue to fire untouched. */
+.wall-marquee {
+  position: absolute;
+  border: 1px dashed var(--accent, #5aa3ff);
+  background: rgba(90, 163, 255, 0.12);
+  pointer-events: none;
+  z-index: 1200;
 }
 
 .wall-empty {

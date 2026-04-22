@@ -6,8 +6,11 @@
 
 // Desktop rainbow palette from strings.js (rainbowColors).
 // Single-click on a note cycles through this list in order.
+// Index 0 is the default color for newly created notes. Scrumbaby uses
+// powder blue (#B0E0E6) instead of Postbaby's white so a fresh note reads
+// as "Scrumbaby" on the dark wall surface.
 export const RAINBOW_COLORS: readonly string[] = [
-  "#FFFFFF",
+  "#B0E0E6",
   "#DC143C",
   "#FF7F00",
   "#FFBF00",
