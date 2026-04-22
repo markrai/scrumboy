@@ -176,11 +176,88 @@ function teardown(): void {
 function refetchDoc(): Promise<void> {
   return refetchDocImpl({
     onApplyDoc: (state, doc) => {
-      state.doc = normalizeDoc(doc);
-      renderSurface();
+      const next = normalizeDoc(doc);
+      const diff = diffWallDoc(state.doc, next);
+      state.doc = next;
+      if (diff.kind === "full") {
+        renderSurface();
+        return;
+      }
+      // Fast path: single-note field changes (or nothing at all). No
+      // innerHTML wipe, so any note that the user just saved does not
+      // blink, and collaborative single-note updates are cheap.
+      wallRenderCounters.incrementalPatches += 1;
+      if (debugEnabled()) {
+        console.debug("wall incremental apply", {
+          fullRebuilds: wallRenderCounters.fullRebuilds,
+          incrementalPatches: wallRenderCounters.incrementalPatches,
+          changedNotes: diff.kind === "incremental" ? diff.changedNotes.length : 0,
+          noop: diff.kind === "noop",
+        });
+      }
+      if (diff.kind === "incremental") {
+        for (const note of diff.changedNotes) updateNoteElement(note);
+      }
     },
   });
 }
+
+type WallDocDiff =
+  | { kind: "full" }
+  | { kind: "noop" }
+  | { kind: "incremental"; changedNotes: WallNote[] };
+
+// Compare the currently-rendered doc against an incoming one. We only take
+// the fast path when the set of notes and the set of edges are unchanged
+// in identity and shape. Any add/remove/reorder, any edge endpoint change,
+// or a mismatched count falls back to the full rebuild so renderer state
+// (edge overlay, selection pruning, empty-wall placeholder) stays correct.
+function diffWallDoc(prev: WallDocument, next: WallDocument): WallDocDiff {
+  const prevNotes = prev.notes ?? [];
+  const nextNotes = next.notes ?? [];
+  const prevEdges = prev.edges ?? [];
+  const nextEdges = next.edges ?? [];
+  if (prevNotes.length !== nextNotes.length) return { kind: "full" };
+  if (prevEdges.length !== nextEdges.length) return { kind: "full" };
+
+  const prevNotesById = new Map<string, WallNote>();
+  for (const n of prevNotes) prevNotesById.set(n.id, n);
+  const changedNotes: WallNote[] = [];
+  for (const n of nextNotes) {
+    const prevNote = prevNotesById.get(n.id);
+    if (!prevNote) return { kind: "full" };
+    if (wallNoteFieldsDiffer(prevNote, n)) changedNotes.push(n);
+  }
+
+  const prevEdgesById = new Map<string, WallEdge>();
+  for (const e of prevEdges) prevEdgesById.set(e.id, e);
+  for (const e of nextEdges) {
+    const prevEdge = prevEdgesById.get(e.id);
+    if (!prevEdge) return { kind: "full" };
+    // Endpoint change for the same id should never happen on the server,
+    // but if it does we prefer the full rebuild since edge endpoints are
+    // only repainted via renderEdges / updateEdgesForNote.
+    if (prevEdge.from !== e.from || prevEdge.to !== e.to) return { kind: "full" };
+  }
+
+  if (changedNotes.length === 0) return { kind: "noop" };
+  return { kind: "incremental", changedNotes };
+}
+
+function wallNoteFieldsDiffer(a: WallNote, b: WallNote): boolean {
+  return (
+    a.x !== b.x ||
+    a.y !== b.y ||
+    a.width !== b.width ||
+    a.height !== b.height ||
+    a.color !== b.color ||
+    a.text !== b.text ||
+    a.version !== b.version
+  );
+}
+
+/** Test-only: expose the diff helper so unit tests can exercise it without mounting the wall. */
+export const __diffWallDocForTest = diffWallDoc;
 
 function applyTransient(payload: unknown): void {
   applyTransientImpl(payload, noteElementById);
@@ -196,9 +273,10 @@ function normalizeDoc(doc: WallDocument | null | undefined): WallDocument {
   };
 }
 
-// Phase 0 debug counters. Phase 3 will increment `incrementalPatches` when a
-// single-note change bypasses the full rebuild; until then it stays at 0 and
-// exists so tests/operators can observe the eventual fast-path share.
+// Phase 0/3 debug counters. `fullRebuilds` ticks whenever renderSurface()
+// wipes and re-mounts the wall; `incrementalPatches` ticks whenever the
+// Phase 3 fast path in refetchDoc() applies a single-note/no-op diff
+// without touching innerHTML.
 const wallRenderCounters = {
   fullRebuilds: 0,
   incrementalPatches: 0,
