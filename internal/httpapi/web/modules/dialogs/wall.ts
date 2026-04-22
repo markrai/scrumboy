@@ -102,6 +102,15 @@ type Mounted = {
 
 let mounted: Mounted | null = null;
 
+// Guard against SSE-driven `refetchDoc` blowing away an in-progress edit. A
+// freshly right-clicked note enters edit mode synchronously, but the server's
+// `wall.refresh_needed` echo would otherwise re-render `#wallSurface` and
+// destroy the textarea (and focus) before the user can type a single key.
+// While this is non-null the refetch path defers; when the edit finishes we
+// flush any deferred refresh.
+let activeWallEditNoteId: string | null = null;
+let pendingRefetchWhileEditing = false;
+
 // Public entry: open the wall dialog and boot its full lifecycle.
 export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void> {
   if (!wallDialog || !wallSurface) {
@@ -177,14 +186,28 @@ function teardown(): void {
   if (wallDialog) (wallDialog as any)[TEARDOWN_MARKER] = false;
   document.documentElement.style.overflow = state.prevHtmlOverflow;
   mounted = null;
+  activeWallEditNoteId = null;
+  pendingRefetchWhileEditing = false;
 }
 
 async function refetchDoc(): Promise<void> {
   const state = mounted;
   if (!state) return;
+  // Don't nuke the DOM while the user is typing into a freshly created note.
+  // We'll re-run this refetch the moment the edit commits or is cancelled.
+  if (activeWallEditNoteId) {
+    pendingRefetchWhileEditing = true;
+    return;
+  }
   try {
     const doc = await apiFetch<WallDocument>(`/api/board/${encodeURIComponent(state.slug)}/wall`);
     if (!mounted || mounted !== state) return;
+    // Second check: the user may have right-clicked to create a note while
+    // this GET was in flight. Respect the freshly active edit and postpone.
+    if (activeWallEditNoteId) {
+      pendingRefetchWhileEditing = true;
+      return;
+    }
     state.doc = normalizeDoc(doc);
     renderSurface();
   } catch (err: any) {
@@ -999,9 +1022,9 @@ function beginEdit(noteEl: HTMLElement, note: WallNote): void {
   const state = mounted;
   if (!state || !state.canEdit) return;
   if (isEditing(noteEl)) return;
+  activeWallEditNoteId = note.id;
   const ta = enterEditMode(noteEl, note.text);
   ta.focus();
-  // Caret at end for natural continuation.
   const end = ta.value.length;
   try { ta.setSelectionRange(end, end); } catch { /* ignore */ }
 
@@ -1009,12 +1032,18 @@ function beginEdit(noteEl: HTMLElement, note: WallNote): void {
   const finish = (commit: boolean) => {
     if (finished) return;
     finished = true;
+    activeWallEditNoteId = null;
     const newText = ta.value;
     exitEditMode(noteEl, commit ? newText : note.text);
     ta.removeEventListener("blur", onBlur);
     ta.removeEventListener("keydown", onKey);
     if (commit && newText !== note.text) {
       void patchNote(note.id, { text: newText });
+    }
+    // Flush any refresh_needed events that arrived while the user was typing.
+    if (pendingRefetchWhileEditing) {
+      pendingRefetchWhileEditing = false;
+      void refetchDoc();
     }
   };
   const onBlur = () => finish(true);
