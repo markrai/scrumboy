@@ -105,6 +105,28 @@ async function flushPromises(count = 8): Promise<void> {
   }
 }
 
+function rect(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    width,
+    height,
+    x: left,
+    y: top,
+    toJSON() {
+      return {};
+    },
+  } as DOMRect;
+}
+
+async function flushRaf(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 describe("wall interactions", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -194,5 +216,39 @@ describe("wall interactions", () => {
     const patchBody = patchCall?.[1]?.body ? JSON.parse(String(patchCall[1].body)) : {};
     expect(typeof patchBody.color).toBe("string");
     expect(patchBody.color).not.toBe("#FFFFFF");
+  });
+
+  it("deletes a note when dropped on trash after synthetic click (desktop mouse)", async () => {
+    confirmDeleteMock.mockResolvedValue(true);
+    const mod = await import("./wall.js");
+    await mod.openWallDialog({ projectId: 1, slug: "alpha", role: "maintainer" });
+    await flushPromises();
+
+    const noteEl = wallSurfaceEl.querySelector(".wall-note");
+    if (!(noteEl instanceof HTMLElement)) throw new Error("missing wall note");
+
+    wallSurfaceEl.getBoundingClientRect = () => rect(0, 0, 1200, 800);
+    wallTrashEl.getBoundingClientRect = () => rect(900, 650, 100, 100);
+    noteEl.getBoundingClientRect = () => {
+      const left = parseInt(noteEl.style.left || "20", 10);
+      const top = parseInt(noteEl.style.top || "20", 10);
+      const width = parseInt(noteEl.style.width || "160", 10);
+      const height = parseInt(noteEl.style.height || "100", 10);
+      return rect(left, top, width, height);
+    };
+
+    dispatchPointer(noteEl, "pointerdown", { button: 0, clientX: 30, clientY: 30 });
+    dispatchPointer(document, "pointermove", { button: 0, clientX: 60, clientY: 60 });
+    await flushRaf();
+    dispatchPointer(document, "pointermove", { button: 0, clientX: 920, clientY: 680 });
+    await flushRaf();
+    dispatchPointer(document, "pointerup", { button: 0, clientX: 920, clientY: 680 });
+    noteEl.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, clientX: 950, clientY: 700 }),
+    );
+    await flushPromises();
+
+    expect(confirmDeleteMock).toHaveBeenCalledWith("Delete this note?");
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/board/alpha/wall/notes/n1", { method: "DELETE" });
   });
 });

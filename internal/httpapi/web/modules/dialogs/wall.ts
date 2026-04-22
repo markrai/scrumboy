@@ -972,6 +972,16 @@ function beginDrag(state: Mounted, ev: PointerEvent, noteEl: HTMLElement, noteId
       }
       const n = participants.length;
       const prompt = n === 1 ? "Delete this note?" : `Delete ${n} notes?`;
+      // Swallow the synthetic click the browser fires after mouse drag-release
+      // on the same element so capture-phase listeners (e.g. modal-outside-click)
+      // cannot dismiss the confirm dialog we are about to open.
+      document.addEventListener(
+        "click",
+        (clickEv) => {
+          clickEv.stopPropagation();
+        },
+        { capture: true, once: true },
+      );
       void confirmDelete(prompt).then((ok) => {
         if (ok) {
           for (const p of participants) {

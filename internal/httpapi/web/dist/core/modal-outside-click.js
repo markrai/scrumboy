@@ -11,6 +11,8 @@
  * on click (e.g. drag from inside to outside).
  */
 let pointerStartedInsideContent = false;
+/** Topmost open dialog at pointerdown; used to ignore synthetic clicks that open a newer modal mid-gesture (e.g. wall drag-to-trash confirm). */
+let topAtPointerDown = null;
 let initialized = false;
 function getTopOpenDialog() {
     const openDialogs = Array.from(document.querySelectorAll("dialog[open]"));
@@ -22,6 +24,7 @@ function getDialogContentBox(dialog) {
     return dialog.querySelector(".dialog__form, .dialog__content");
 }
 function onPointerDown(ev) {
+    topAtPointerDown = getTopOpenDialog();
     const t = ev.target;
     if (t == null || !(t instanceof Node)) {
         pointerStartedInsideContent = false;
@@ -47,6 +50,10 @@ function onDocumentClick(ev) {
         return;
     const top = getTopOpenDialog();
     if (!top)
+        return;
+    // A modal opened during this gesture (e.g. confirm after drag-release).
+    // Do not treat the follow-up synthetic click as "outside" the new topmost.
+    if (topAtPointerDown !== top)
         return;
     const content = getDialogContentBox(top);
     if (!content)
