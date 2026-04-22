@@ -1,3 +1,8 @@
+@font-face {
+  font-family: "Kalam";
+  src: url("/fonts/kalam.ttf") format("truetype");
+}
+
 /* ============================================
    CSS VARIABLES
    ============================================ */
@@ -4655,6 +4660,19 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   pointer-events: none;
   user-select: none;
   opacity: 0.92;
+}
+.wall-shortcuts {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  color: var(--wall-fg-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.8;
+  font-family: "Kalam", sans-serif;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
 }
 /* Floating close — glyph only (no chip); still a comfortable hit target. */
 .wall-close-btn {
