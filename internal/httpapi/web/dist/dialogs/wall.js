@@ -560,6 +560,12 @@ function bindSurfaceHandlers(state) {
             if (ev.button === 0 && state.selected.size > 0 && !state.selected.has(noteId)) {
                 setSelection([noteId]);
             }
+            // Only primary-button presses participate in click/double-click/drag
+            // note interactions. Right-click is handled by the contextmenu path
+            // below; arming here would schedule a color-cycle timer and fire it
+            // alongside the delete-confirm dialog.
+            if (ev.button !== 0)
+                return;
             armNoteInteraction(state, ev, noteEl, noteId);
             return;
         }
@@ -598,6 +604,9 @@ function bindSurfaceHandlers(state) {
             ev.preventDefault();
             const noteId = noteEl.dataset.noteId || "";
             if (noteId) {
+                // Defensive clear in case an input sequence armed a color timer
+                // before the contextmenu event arrived.
+                cancelColorTimer(state, noteId);
                 void confirmDelete("Delete this note?").then((confirmed) => {
                     if (confirmed) {
                         void deleteNote(noteId);
