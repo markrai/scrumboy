@@ -78,6 +78,9 @@ export function setOidcEnabled(enabled) {
 export function setLocalAuthEnabled(enabled) {
     current._localAuthEnabled = enabled;
 }
+export function setWallEnabled(enabled) {
+    current._wallEnabled = enabled;
+}
 export function setProjectsTab(tab) {
     current.projectsTab = tab;
 }

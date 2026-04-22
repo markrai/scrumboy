@@ -96,6 +96,10 @@ export function getLocalAuthEnabled(): boolean {
   return current._localAuthEnabled !== false;
 }
 
+export function getWallEnabled(): boolean {
+  return !!current._wallEnabled;
+}
+
 export function getProjectsTab(): string | undefined {
   return current.projectsTab;
 }

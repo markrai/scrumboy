@@ -48,6 +48,39 @@ func (b *sseBridge) OnEvent(_ context.Context, e eventbus.Event) {
 		}
 		b.hub.Emit(e.ProjectID, data)
 
+	case "wall.refresh_needed":
+		var p struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.Unmarshal(e.Payload, &p)
+		data, err := json.Marshal(wallRefreshNeededEvent{
+			ID:        e.ID,
+			Type:      "wall.refresh_needed",
+			ProjectID: e.ProjectID,
+			Reason:    p.Reason,
+		})
+		if err != nil {
+			return
+		}
+		b.hub.Emit(e.ProjectID, data)
+
+	case "wall.transient":
+		// Transient events carry arbitrary note-move payloads; forward as-is.
+		var payload map[string]any
+		if len(e.Payload) > 0 {
+			_ = json.Unmarshal(e.Payload, &payload)
+		}
+		data, err := json.Marshal(wallTransientEvent{
+			ID:        e.ID,
+			Type:      "wall.transient",
+			ProjectID: e.ProjectID,
+			Payload:   payload,
+		})
+		if err != nil {
+			return
+		}
+		b.hub.Emit(e.ProjectID, data)
+
 	case "todo.assigned":
 		var domain eventbus.TodoAssignedPayload
 		if err := json.Unmarshal(e.Payload, &domain); err != nil {

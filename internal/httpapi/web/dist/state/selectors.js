@@ -70,6 +70,9 @@ export function getOidcEnabled() {
 export function getLocalAuthEnabled() {
     return current._localAuthEnabled !== false;
 }
+export function getWallEnabled() {
+    return !!current._wallEnabled;
+}
 export function getProjectsTab() {
     return current.projectsTab;
 }

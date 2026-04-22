@@ -164,6 +164,7 @@ export interface AuthStatusResponse {
   mode?: 'anonymous' | 'full';
   oidcEnabled?: boolean;
   localAuthEnabled?: boolean;
+  wallEnabled?: boolean;
 }
 
 export interface BoardResponse extends Board {

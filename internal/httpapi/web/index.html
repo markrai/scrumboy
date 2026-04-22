@@ -204,6 +204,25 @@
       </form>
     </dialog>
 
+    <dialog id="wallDialog" class="dialog dialog--wall dialog--wall-fullscreen">
+      <div class="wall-dialog__shell">
+        <div class="wall-dialog__header">
+          <div class="wall-dialog__title">Wall</div>
+          <div class="wall-dialog__header-actions">
+            <button class="btn btn--ghost" type="button" id="closeWallBtn" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div id="wallSurface" class="wall-surface" aria-label="Sticky note wall"></div>
+        <img
+          id="wallTrash"
+          class="wall-trash"
+          src="/scrumbabytrash.png"
+          alt="Drag a note here to delete"
+          draggable="false"
+        />
+      </div>
+    </dialog>
+
     <dialog id="settingsDialog" class="dialog">
       <div class="dialog__form">
         <div class="dialog__header">

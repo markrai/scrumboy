@@ -117,6 +117,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		}
 		resp["oidcEnabled"] = s.oidcService != nil
 		resp["localAuthEnabled"] = localAuthEnabled
+		resp["wallEnabled"] = s.wallEnabled
 		writeJSON(w, http.StatusOK, resp)
 		return
 

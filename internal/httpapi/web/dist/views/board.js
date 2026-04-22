@@ -4,7 +4,7 @@ import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
 import { escapeHTML, showToast, renderAvatarContent, processImageFile } from '../utils.js';
-import { getBoard, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, } from '../state/selectors.js';
+import { getBoard, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
 import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { openTodoDialog } from '../dialogs/todo.js';
@@ -830,6 +830,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
         showVoiceCommands,
         user: getUser(),
         backLabel,
+        wallEnabled: getWallEnabled(),
     });
     const membersByUserId = getMembersByUserId();
     const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -1377,6 +1378,21 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, opts = {})
             settingsDialog.showModal();
         });
         settingsBtn[BOUND_FLAG] = true;
+    }
+    const wallBtn = document.getElementById("wallBtn");
+    if (wallBtn && !wallBtn[BOUND_FLAG]) {
+        // Lazy-load the wall module on first click to keep board initial bundle lean.
+        wallBtn.addEventListener("click", async () => {
+            try {
+                const mod = await import('../dialogs/wall.js');
+                await mod.openWallDialog({ projectId, slug: getSlug() || "", role: currentUserProjectRole });
+            }
+            catch (err) {
+                console.error('wall load failed', err);
+                showToast('Could not open the wall');
+            }
+        });
+        wallBtn[BOUND_FLAG] = true;
     }
     const userAvatarBtn = document.getElementById("userAvatarBtn");
     if (userAvatarBtn && !userAvatarBtn[BOUND_FLAG]) {

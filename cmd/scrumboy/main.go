@@ -100,6 +100,7 @@ func main() {
 		VAPIDPrivateKey:      cfg.VAPIDPrivateKey,
 		VAPIDSubscriber:      cfg.VAPIDSubscriber,
 		PushDebug: cfg.PushDebug,
+		WallEnabled: cfg.WallEnabled,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 

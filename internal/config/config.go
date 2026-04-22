@@ -43,6 +43,10 @@ type Config struct {
 	VAPIDPrivateKey string
 	VAPIDSubscriber string // mailto: or https: URL for VAPID JWT sub; plain email normalized to mailto:
 	PushDebug       bool   // SCRUMBOY_DEBUG_PUSH=1
+
+	// Scrumbaby (sticky-note wall) feature flag. Default off.
+	// Set SCRUMBOY_WALL_ENABLED=1 to enable. Durable projects only.
+	WallEnabled bool
 }
 
 func FromEnv() Config {
@@ -85,6 +89,8 @@ func FromEnv() Config {
 		VAPIDPrivateKey:      strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PRIVATE_KEY")),
 		VAPIDSubscriber:      NormalizeVAPIDSubscriber(os.Getenv("SCRUMBOY_VAPID_SUBSCRIBER")),
 		PushDebug: strings.TrimSpace(os.Getenv("SCRUMBOY_DEBUG_PUSH")) == "1",
+
+		WallEnabled: strings.TrimSpace(os.Getenv("SCRUMBOY_WALL_ENABLED")) == "1",
 	}
 }
 

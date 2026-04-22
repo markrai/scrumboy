@@ -18,6 +18,7 @@ import {
   getBoardLaneMeta,
   getLaneDisplayCount,
   getBoardMembers,
+  getWallEnabled,
 } from '../state/selectors.js';
 import {
   setProjectId,
@@ -931,6 +932,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     showVoiceCommands,
     user: getUser(),
     backLabel,
+    wallEnabled: getWallEnabled(),
   });
   const membersByUserId = getMembersByUserId();
   const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -1493,6 +1495,21 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
       (settingsDialog as HTMLDialogElement).showModal();
     });
     (settingsBtn as any)[BOUND_FLAG] = true;
+  }
+
+  const wallBtn = document.getElementById("wallBtn");
+  if (wallBtn && !(wallBtn as any)[BOUND_FLAG]) {
+    // Lazy-load the wall module on first click to keep board initial bundle lean.
+    wallBtn.addEventListener("click", async () => {
+      try {
+        const mod = await import('../dialogs/wall.js');
+        await mod.openWallDialog({ projectId, slug: getSlug() || "", role: currentUserProjectRole });
+      } catch (err) {
+        console.error('wall load failed', err);
+        showToast('Could not open the wall');
+      }
+    });
+    (wallBtn as any)[BOUND_FLAG] = true;
   }
 
   const userAvatarBtn = document.getElementById("userAvatarBtn");

@@ -38,6 +38,11 @@ type Options struct {
 	VAPIDPrivateKey string
 	VAPIDSubscriber string // VAPID JWT "sub" (e.g. mailto:ops@example.com); default in notifier if empty
 	PushDebug       bool   // Log push send/skip (also SCRUMBOY_DEBUG_PUSH in config)
+
+	// WallEnabled gates the Scrumbaby feature. When false, all /wall routes
+	// return 404 and the frontend hides the Wall topbar button. Sourced from
+	// SCRUMBOY_WALL_ENABLED.
+	WallEnabled bool
 }
 
 type Server struct {
@@ -71,6 +76,8 @@ type Server struct {
 	pushDebug           bool
 
 	dataDir string // user-wallpapers storage; empty = disabled
+
+	wallEnabled bool // Scrumbaby feature flag (SCRUMBOY_WALL_ENABLED)
 }
 
 type storeAPI interface {
@@ -213,6 +220,15 @@ type storeAPI interface {
 	DeletePushSubscription(ctx context.Context, userID int64, endpoint string) error
 	DeletePushSubscriptionByEndpoint(ctx context.Context, endpoint string) error
 	ListPushSubscriptionsByUser(ctx context.Context, userID int64) ([]store.PushSubscription, error)
+
+	// Scrumbaby (sticky-note wall). Durable projects only.
+	GetWall(ctx context.Context, projectID int64) (store.Wall, error)
+	CreateNote(ctx context.Context, projectID int64, in store.CreateNoteInput) (store.WallNote, store.Wall, error)
+	PatchNote(ctx context.Context, projectID int64, noteID string, in store.PatchNoteInput) (store.WallNote, store.Wall, error)
+	DeleteNote(ctx context.Context, projectID int64, noteID string) (store.Wall, error)
+	ReplaceWall(ctx context.Context, projectID int64, notes []store.WallNote) (store.Wall, error)
+	CreateEdge(ctx context.Context, projectID int64, fromNoteID, toNoteID string) (store.WallEdge, store.Wall, error)
+	DeleteEdge(ctx context.Context, projectID int64, edgeID string) (store.Wall, error)
 }
 
 //go:embed web/**
@@ -312,6 +328,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		vapidPublicKey:            vapidPub,
 		pushVapidConfigured:       pushVapidConfigured,
 		pushDebug:                 pushDebug,
+		wallEnabled:               opts.WallEnabled,
 	}
 }
 

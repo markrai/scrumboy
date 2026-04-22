@@ -60,6 +60,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 	if s.handleBoardMetricsRoutes(w, r, rest, &pc) {
 		return
 	}
+	if s.handleBoardWallRoutes(w, r, rest, &pc) {
+		return
+	}
 
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 }

@@ -45,6 +45,7 @@ type BuildTopbarHtmlArgs = {
   showVoiceCommands?: boolean;
   user: any;
   backLabel: string;
+  wallEnabled?: boolean;
 };
 
 type BuildBoardColumnsHtmlArgs = {
@@ -254,9 +255,14 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     showVoiceCommands,
     user,
     backLabel,
+    wallEnabled,
   } = args;
   const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
   const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
+  // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
+  const wallButtonHTML = (wallEnabled && !isTemporaryBoard(board) && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor'))
+    ? `<button class="btn btn--ghost" id="wallBtn" title="Open wall">Wall</button>`
+    : '';
 
   if (minimalTopbar) {
     return `
@@ -285,10 +291,12 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="Rename project">Rename</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="New Todo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
+        ${!isMobile ? wallButtonHTML : ''}
         ${!user ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
           <span class="hamburger">☰</span>
         </button>` : ''}
         ${isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
+        ${isMobile ? wallButtonHTML : ''}
         ${renderUserAvatar(user)}
       </div>
     `;
@@ -319,10 +327,12 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="New Todo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn" title="Delete Project"><img src="/trash.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
+        ${!isMobile ? wallButtonHTML : ''}
         ${!user ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="Settings">
           <span class="hamburger">☰</span>
         </button>` : ''}
         ${isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="Manage members">Members</button>` : ''}
+        ${isMobile ? wallButtonHTML : ''}
         ${renderUserAvatar(user)}
       </div>
     `;

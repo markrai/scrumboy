@@ -67,6 +67,18 @@ function onBoardRealtimeEvent(_payload) {
             emit('members-updated', { projectId: payload.projectId });
             return;
         }
+        // Scrumbaby wall events are consumed by the wall dialog when open; they
+        // must NOT invalidate the board. Transient drag events are high-frequency
+        // and never hit the durable store, so they are also forwarded as-is for
+        // consumers that care (the wall dialog subscribes only while mounted).
+        if (payload.type === 'wall.refresh_needed') {
+            emit('wall:refresh_needed', { projectId: payload.projectId });
+            return;
+        }
+        if (payload.type === 'wall.transient') {
+            emit('wall:transient', payload);
+            return;
+        }
         if (isBulkUpdating())
             return;
         if (payload.type === 'refresh_needed') {
@@ -274,6 +286,14 @@ export function connectBoardEvents(slug) {
                 if (payload.type === "members_updated") {
                     invalidateMembersCache(payload.projectId);
                     emit("members-updated", { projectId: payload.projectId });
+                    return;
+                }
+                if (payload.type === 'wall.refresh_needed') {
+                    emit('wall:refresh_needed', { projectId: payload.projectId });
+                    return;
+                }
+                if (payload.type === 'wall.transient') {
+                    emit('wall:transient', payload);
                     return;
                 }
                 if (isBulkUpdating())

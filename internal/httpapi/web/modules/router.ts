@@ -4,7 +4,7 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setOidcEnabled, setLocalAuthEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
@@ -112,6 +112,7 @@ async function routeOnce(): Promise<void> {
     setBootstrapAvailable(!!(st && st.bootstrapAvailable));
     setOidcEnabled(!!(st && st.oidcEnabled));
     setLocalAuthEnabled(st && st.localAuthEnabled !== false);
+    setWallEnabled(!!(st && st.wallEnabled));
     
     // Load full profile (including avatar) when logged in; /api/auth/status omits image to keep it lean
     if (newUser) {

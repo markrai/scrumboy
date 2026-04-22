@@ -106,6 +106,10 @@ export function setLocalAuthEnabled(enabled: boolean): void {
   current._localAuthEnabled = enabled;
 }
 
+export function setWallEnabled(enabled: boolean): void {
+  current._wallEnabled = enabled;
+}
+
 export function setProjectsTab(tab: string | undefined): void {
   current.projectsTab = tab;
 }

@@ -18,6 +18,11 @@ const shareTodoBtn = document.getElementById("shareTodoBtn");
 const settingsDialog = document.getElementById("settingsDialog");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 
+const wallDialog = document.getElementById("wallDialog");
+const wallSurface = document.getElementById("wallSurface");
+const closeWallBtn = document.getElementById("closeWallBtn");
+const wallTrash = document.getElementById("wallTrash");
+
 const bulkEditBar = document.getElementById("bulkEditBar");
 const bulkEditBarBtn = document.getElementById("bulkEditBarBtn");
 const bulkEditDialog = document.getElementById("bulkEditDialog");
@@ -41,6 +46,10 @@ export {
   shareTodoBtn,
   settingsDialog,
   closeSettingsBtn,
+  wallDialog,
+  wallSurface,
+  closeWallBtn,
+  wallTrash,
   bulkEditBar,
   bulkEditBarBtn,
   bulkEditDialog,
