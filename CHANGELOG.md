@@ -2,6 +2,14 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** unless noted below.
 
+## [3.14.3] - 2026-04-22
+
+### Improvements
+
+- **Wall (Scrumbaby)** — Phase 1 drag transient coalescing: during multi-note drag, `wall-drag-controller` stores per-note positions each frame and drives a single group coalesce timer (`DRAG_TRANSIENT_COALESCE_MS`, 150ms) that flushes one `POST /wall/transient` per moved note when due, instead of per-participant per-`rAF` `scheduleTransient` calls. `TRANSIENT_COALESCE_MS` (100ms) is unchanged for drag-end and other callers (existing assertions preserved). Pointer-up clears any pending group timer before the existing drop-path `scheduleTransient` + flush so the final-position sequence stays the same.
+
+---
+
 ## [3.14.2] - 2026-04-22
 
 ### Improvements
