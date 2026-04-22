@@ -2,6 +2,27 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** unless noted below.
 
+## [3.14.5] - 2026-04-22
+
+### Enhancements
+
+- **Wall (Scrumbaby)** - **Right-click** a sticky note opens an in-dialog context menu: **Create Todo from Note** (opens New Todo with the note text seeded into the title field) and **Delete** (same confirmation pattern as drag-to-trash). Menu is mounted under the wall dialog and cleans up on every exit path via the wall `AbortSignal`.
+
+- **Wall (Scrumbaby)** - **Multi-select delete** behavior is clearer: labels and prompts reflect how many notes are targeted; **right-click on a note that is not part of the current selection** deletes only that note without disturbing the rest of the selection; trash-drop and post-delete selection clearing align with the new flows.
+
+- **Todo dialog** - `openTodoDialog` accepts optional **`initialTitle`** in create mode; seed text is collapsed to a single line (whitespace normalized) and respects the title input **`maxLength`** when set.
+
+### Documentation
+
+- **`docs/WALL.md`** - Documents the note right-click menu and distinguishes it from drag-to-trash delete.
+- **README** - Adds a short **Sticky-Note Wall** bullet under Features (links to **`docs/WALL.md`**).
+
+### Tests
+
+- **`wall-note-context-menu`**, expanded **`wall-interactions`** / **`wall-gesture-matrix`**, and **`todo-initial-title`** coverage for the new behavior.
+
+---
+
 ## [3.14.4] - 2026-04-22
 
 ### Improvements
