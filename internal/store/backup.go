@@ -60,6 +60,7 @@ type ProjectExport struct {
 	Todos               []TodoExport           `json:"todos"`
 	Tags                []TagExport            `json:"tags"`
 	Links               []LinkExport           `json:"links,omitempty"`
+	Wall                *WallExport            `json:"wall,omitempty"`
 }
 
 // TodoExport represents a todo in export format
@@ -89,6 +90,18 @@ type LinkExport struct {
 	FromLocalID int64  `json:"fromLocalId"`
 	ToLocalID   int64  `json:"toLocalId"`
 	LinkType    string `json:"linkType"`
+}
+
+// WallExport represents the sticky-note wall document (Scrumbaby) for a project.
+// The wall is a single JSON blob per project (one-to-one with projects); IDs
+// inside are opaque strings, so whole-document copy is safe across projects
+// without id remapping. UpdatedAt is intentionally omitted: each import stamps
+// its own import time on write. A missing field on an imported project means
+// "no wall data in this backup" - existing walls on the target are preserved.
+type WallExport struct {
+	Notes   []WallNote `json:"notes"`
+	Edges   []WallEdge `json:"edges,omitempty"`
+	Version int64      `json:"version,omitempty"`
 }
 
 // resolveImportDoneAt returns the done_at value for import. Uses export DoneAt when present;
@@ -343,6 +356,11 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			return nil, fmt.Errorf("export links for project %d: %w", p.ID, err)
 		}
 
+		wallExport, err := s.exportWallForProject(ctx, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("export wall for project %d: %w", p.ID, err)
+		}
+
 		dominantColor := p.DominantColor
 		if dominantColor == "" {
 			dominantColor = "#888888"
@@ -405,6 +423,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			Todos:              todoExports,
 			Tags:               tagExports,
 			Links:              linkExports,
+			Wall:               wallExport,
 		})
 	}
 
@@ -519,6 +538,25 @@ func (s *Store) exportAllTodosForProject(ctx context.Context, projectID int64, m
 		return nil, fmt.Errorf("rows todos: %w", err)
 	}
 	return out, nil
+}
+
+// exportWallForProject returns the sticky-note wall (Scrumbaby) for a project
+// as an export payload, or nil if the project has no wall row or only an empty
+// document. The nil case keeps legacy-looking JSON for projects that never used
+// the wall feature.
+func (s *Store) exportWallForProject(ctx context.Context, projectID int64) (*WallExport, error) {
+	wall, err := s.GetWall(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("get wall: %w", err)
+	}
+	if len(wall.Notes) == 0 && len(wall.Edges) == 0 {
+		return nil, nil
+	}
+	return &WallExport{
+		Notes:   wall.Notes,
+		Edges:   wall.Edges,
+		Version: wall.Version,
+	}, nil
 }
 
 // exportLinksForProject returns all todo links for a project for backup export.
@@ -881,7 +919,12 @@ func (s *Store) ImportProjectsWithTarget(ctx context.Context, data *ExportData, 
 	}
 }
 
-// importIntoBoard imports todos and tags into an existing board (anonymous mode only)
+// importIntoBoard imports todos and tags into an existing board (anonymous mode only).
+// Wall (Scrumbaby) payloads are intentionally skipped here: the target is an
+// anonymous temporary board (enforced below via ExpiresAt != nil), and the wall
+// feature is durable-project only. Folding multiple source walls into one
+// target wall has no unambiguous merge policy either, so we leave the field
+// alone rather than guess.
 func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode, targetSlug string) (*ImportResult, error) {
 	result := &ImportResult{Warnings: []string{}}
 
@@ -1104,6 +1147,14 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 		if err := bulkInsertLinks(ctx, tx, projectID, pExport.Links); err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("import links for project %q: %w", pExport.Name, err)
+		}
+
+		// Replace mode: a missing wall field in the backup produces no wall row,
+		// which matches the "nuke & restore" semantics (old rows were deleted by
+		// the project-level swap; ON DELETE CASCADE clears the wall with them).
+		if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall); err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -1585,6 +1636,17 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		if err := bulkInsertLinks(ctx, tx, projectID, pExport.Links); err != nil {
 			return nil, fmt.Errorf("import links: %w", err)
 		}
+
+		// Merge mode wall policy: when the backup carries a wall payload,
+		// replace the local wall with it (matches the links policy above).
+		// When the backup has no wall field - e.g. a pre-3.14 export - leave
+		// the target project's existing wall untouched so upgraders don't lose
+		// work done between export and import.
+		if pExport.Wall != nil {
+			if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall); err != nil {
+				return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
+			}
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1841,6 +1903,13 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 
 		if err := bulkInsertLinks(ctx, tx, newProjectID, pExport.Links); err != nil {
 			return nil, fmt.Errorf("import links: %w", err)
+		}
+
+		// Copy mode: always write the wall block verbatim when present. The
+		// target project was just created so there is no pre-existing wall
+		// to merge with.
+		if err := upsertWallForImportTx(ctx, tx, newProjectID, pExport.Wall); err != nil {
+			return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 		}
 
 		result.Created++

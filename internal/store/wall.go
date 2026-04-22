@@ -428,6 +428,114 @@ func (s *Store) DeleteEdge(ctx context.Context, projectID int64, edgeID string) 
 	return wall, nil
 }
 
+// upsertWallForImportTx writes a wall payload into project_walls inside an
+// import transaction. Validation is best-effort: invalid colors are rewritten
+// to a safe default and over-long text is truncated, so one bad row in a
+// backup does not fail the whole import. Edges referencing unknown notes are
+// dropped. Passing a nil payload is a no-op; callers decide whether a missing
+// wall field in the backup should wipe or preserve an existing wall row.
+func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport) error {
+	if payload == nil {
+		return nil
+	}
+	notes := payload.Notes
+	if len(notes) > maxWallNotes {
+		notes = notes[:maxWallNotes]
+	}
+	normalized := make([]WallNote, 0, len(notes))
+	seenIDs := make(map[string]struct{}, len(notes))
+	for _, n := range notes {
+		id := strings.TrimSpace(n.ID)
+		if id == "" {
+			id = newNoteID()
+		}
+		if _, dup := seenIDs[id]; dup {
+			continue
+		}
+		seenIDs[id] = struct{}{}
+		color := strings.TrimSpace(n.Color)
+		if !colorHexRe.MatchString(color) {
+			color = "#FFFFFF"
+		}
+		text := n.Text
+		if len(text) > maxWallTextBytes {
+			text = text[:maxWallTextBytes]
+		}
+		version := n.Version
+		if version <= 0 {
+			version = 1
+		}
+		normalized = append(normalized, WallNote{
+			ID:      id,
+			X:       clampNoteCoord(n.X),
+			Y:       clampNoteCoord(n.Y),
+			Width:   clampNoteDim(n.Width, defaultNoteWidth),
+			Height:  clampNoteDim(n.Height, defaultNoteHeight),
+			Color:   color,
+			Text:    text,
+			Version: version,
+		})
+	}
+
+	edges := payload.Edges
+	if len(edges) > maxWallEdges {
+		edges = edges[:maxWallEdges]
+	}
+	keptEdges := make([]WallEdge, 0, len(edges))
+	seenEdges := make(map[string]struct{}, len(edges))
+	for _, e := range edges {
+		from := strings.TrimSpace(e.From)
+		to := strings.TrimSpace(e.To)
+		if from == "" || to == "" || from == to {
+			continue
+		}
+		if _, ok := seenIDs[from]; !ok {
+			continue
+		}
+		if _, ok := seenIDs[to]; !ok {
+			continue
+		}
+		// Normalize to an undirected key so the same pair imported in either
+		// direction is deduplicated; edge direction is not significant.
+		a, b := from, to
+		if a > b {
+			a, b = b, a
+		}
+		key := a + "|" + b
+		if _, dup := seenEdges[key]; dup {
+			continue
+		}
+		seenEdges[key] = struct{}{}
+		id := strings.TrimSpace(e.ID)
+		if id == "" {
+			id = newEdgeID()
+		}
+		keptEdges = append(keptEdges, WallEdge{ID: id, From: from, To: to})
+	}
+
+	notesJSON, err := json.Marshal(normalized)
+	if err != nil {
+		return fmt.Errorf("encode wall notes for import: %w", err)
+	}
+	edgesJSON, err := json.Marshal(keptEdges)
+	if err != nil {
+		return fmt.Errorf("encode wall edges for import: %w", err)
+	}
+	version := payload.Version
+	if version <= 0 {
+		version = 1
+	}
+	nowMs := time.Now().UTC().UnixMilli()
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO project_walls (project_id, notes, edges, version, updated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.edges, version = excluded.version, updated_at = excluded.updated_at
+`, projectID, string(notesJSON), string(edgesJSON), version, nowMs); err != nil {
+		return fmt.Errorf("upsert wall for import: %w", err)
+	}
+	return nil
+}
+
 // ReplaceWall overwrites the full notes list. Intended for maintenance/recovery
 // only; note-scoped endpoints are the main write path.
 func (s *Store) ReplaceWall(ctx context.Context, projectID int64, notes []WallNote) (Wall, error) {

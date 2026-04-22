@@ -1554,3 +1554,258 @@ func TestImportMerge_SprintNumberConflict_AddsNewAndLeavesExisting(t *testing.T)
 		t.Errorf("sprint 3 name: got %q, want Sprint 3 New", got3.Name)
 	}
 }
+
+// seedWallFixture creates two notes and a connecting edge on the given project
+// and returns the edge for cross-check in round-trip assertions.
+func seedWallFixture(t *testing.T, st *Store, ctx context.Context, projectID int64) (WallNote, WallNote, WallEdge) {
+	t.Helper()
+	n1, _, err := st.CreateNote(ctx, projectID, CreateNoteInput{X: 10, Y: 20, Width: 180, Height: 140, Color: "#B0E0E6", Text: "first"})
+	if err != nil {
+		t.Fatalf("CreateNote 1: %v", err)
+	}
+	n2, _, err := st.CreateNote(ctx, projectID, CreateNoteInput{X: 300, Y: 400, Width: 200, Height: 160, Color: "#FFBF00", Text: "second"})
+	if err != nil {
+		t.Fatalf("CreateNote 2: %v", err)
+	}
+	edge, _, err := st.CreateEdge(ctx, projectID, n1.ID, n2.ID)
+	if err != nil {
+		t.Fatalf("CreateEdge: %v", err)
+	}
+	return n1, n2, edge
+}
+
+func assertWallRoundTrip(t *testing.T, st *Store, ctx context.Context, projectID int64, n1, n2 WallNote) {
+	t.Helper()
+	wall, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatalf("GetWall after import: %v", err)
+	}
+	if len(wall.Notes) != 2 {
+		t.Fatalf("expected 2 notes, got %d", len(wall.Notes))
+	}
+	if len(wall.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d", len(wall.Edges))
+	}
+	byID := map[string]WallNote{}
+	for _, n := range wall.Notes {
+		byID[n.ID] = n
+	}
+	got1, ok := byID[n1.ID]
+	if !ok {
+		t.Fatalf("note %q missing after import", n1.ID)
+	}
+	if got1.Text != n1.Text || got1.Color != n1.Color || got1.X != n1.X || got1.Y != n1.Y {
+		t.Errorf("note 1 round-trip mismatch: got %+v, want text=%q color=%q xy=(%v,%v)", got1, n1.Text, n1.Color, n1.X, n1.Y)
+	}
+	got2, ok := byID[n2.ID]
+	if !ok {
+		t.Fatalf("note %q missing after import", n2.ID)
+	}
+	if got2.Text != n2.Text || got2.Color != n2.Color {
+		t.Errorf("note 2 round-trip mismatch: got %+v, want text=%q color=%q", got2, n2.Text, n2.Color)
+	}
+	edge := wall.Edges[0]
+	if !((edge.From == n1.ID && edge.To == n2.ID) || (edge.From == n2.ID && edge.To == n1.ID)) {
+		t.Errorf("edge endpoints mismatch: got %q->%q, want between %q and %q", edge.From, edge.To, n1.ID, n2.ID)
+	}
+}
+
+// TestExportImportRoundTrip_Wall_Replace verifies Scrumbaby wall notes and
+// edges survive export -> replace import. Replace deletes the original project
+// row (and the cascaded wall) and recreates everything from backup, so this is
+// the strictest round-trip: anything not in the export is lost.
+func TestExportImportRoundTrip_Wall_Replace(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-replace@example.com", "password", "User")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctxUser := WithUserID(ctx, user.ID)
+
+	project, err := st.CreateProject(ctxUser, "Wall Project Replace")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	n1, n2, _ := seedWallFixture(t, st, ctx, project.ID)
+
+	data, err := st.ExportAllProjects(ctxUser, ModeFull)
+	if err != nil {
+		t.Fatalf("ExportAllProjects: %v", err)
+	}
+	if len(data.Projects) != 1 || data.Projects[0].Wall == nil {
+		t.Fatalf("export: expected wall payload, got %+v", data.Projects[0].Wall)
+	}
+	if len(data.Projects[0].Wall.Notes) != 2 || len(data.Projects[0].Wall.Edges) != 1 {
+		t.Fatalf("export: wall payload incomplete: notes=%d edges=%d", len(data.Projects[0].Wall.Notes), len(data.Projects[0].Wall.Edges))
+	}
+
+	if _, err := st.ImportProjects(ctxUser, data, ModeFull, "replace"); err != nil {
+		t.Fatalf("ImportProjects replace: %v", err)
+	}
+
+	projAfter, err := st.GetProjectBySlug(ctx, project.Slug)
+	if err != nil {
+		t.Fatalf("GetProjectBySlug: %v", err)
+	}
+	assertWallRoundTrip(t, st, ctx, projAfter.ID, n1, n2)
+}
+
+// TestExportImportRoundTrip_Wall_Merge_ReplacesWithBackup verifies that when a
+// backup carries a wall payload, merge mode overwrites the target's existing
+// wall with the backup (same policy as todo_links in merge mode).
+func TestExportImportRoundTrip_Wall_Merge_ReplacesWithBackup(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-merge@example.com", "password", "User")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctxUser := WithUserID(ctx, user.ID)
+
+	project, err := st.CreateProject(ctxUser, "Wall Project Merge")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	n1, n2, _ := seedWallFixture(t, st, ctx, project.ID)
+
+	data, err := st.ExportAllProjects(ctxUser, ModeFull)
+	if err != nil {
+		t.Fatalf("ExportAllProjects: %v", err)
+	}
+
+	// After export, mutate the local wall: add a transient note that should be
+	// wiped by the merge since it is not part of the backup.
+	if _, _, err := st.CreateNote(ctx, project.ID, CreateNoteInput{X: 0, Y: 0, Color: "#DC143C", Text: "ephemeral"}); err != nil {
+		t.Fatalf("CreateNote transient: %v", err)
+	}
+
+	if _, err := st.ImportProjects(ctxUser, data, ModeFull, "merge"); err != nil {
+		t.Fatalf("ImportProjects merge: %v", err)
+	}
+
+	assertWallRoundTrip(t, st, ctx, project.ID, n1, n2)
+}
+
+// TestExportImportRoundTrip_Wall_Merge_PreservesWhenBackupHasNoWall verifies
+// the upgrade path: a pre-3.14 backup (no wall field) must not wipe an
+// existing wall on the target project during merge.
+func TestExportImportRoundTrip_Wall_Merge_PreservesWhenBackupHasNoWall(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-merge-pre@example.com", "password", "User")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctxUser := WithUserID(ctx, user.ID)
+
+	project, err := st.CreateProject(ctxUser, "Wall Project Merge Pre")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	n1, n2, _ := seedWallFixture(t, st, ctx, project.ID)
+
+	data, err := st.ExportAllProjects(ctxUser, ModeFull)
+	if err != nil {
+		t.Fatalf("ExportAllProjects: %v", err)
+	}
+	// Strip the wall field to simulate a backup produced before Scrumbaby.
+	for i := range data.Projects {
+		data.Projects[i].Wall = nil
+	}
+
+	if _, err := st.ImportProjects(ctxUser, data, ModeFull, "merge"); err != nil {
+		t.Fatalf("ImportProjects merge: %v", err)
+	}
+
+	// Existing wall must be untouched.
+	assertWallRoundTrip(t, st, ctx, project.ID, n1, n2)
+}
+
+// TestExportImportRoundTrip_Wall_Copy verifies that copy mode reproduces the
+// wall onto the newly created project under a rewritten slug.
+func TestExportImportRoundTrip_Wall_Copy(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-copy@example.com", "password", "User")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctxUser := WithUserID(ctx, user.ID)
+
+	project, err := st.CreateProject(ctxUser, "Wall Project Copy")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	n1, n2, _ := seedWallFixture(t, st, ctx, project.ID)
+
+	data, err := st.ExportAllProjects(ctxUser, ModeFull)
+	if err != nil {
+		t.Fatalf("ExportAllProjects: %v", err)
+	}
+
+	if _, err := st.ImportProjects(ctxUser, data, ModeFull, "copy"); err != nil {
+		t.Fatalf("ImportProjects copy: %v", err)
+	}
+
+	// Copy mode rewrites slugs to "<base>-imported"; locate the new project
+	// by scanning all the user's projects for one that is not the original.
+	projects, err := st.ListProjects(ctxUser)
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	var copyID int64
+	for _, p := range projects {
+		if p.Project.ID != project.ID && strings.HasPrefix(p.Project.Slug, "wall-project-copy") {
+			copyID = p.Project.ID
+			break
+		}
+	}
+	if copyID == 0 {
+		t.Fatalf("copied project not found; projects=%+v", projects)
+	}
+
+	// Original wall must still be intact.
+	assertWallRoundTrip(t, st, ctx, project.ID, n1, n2)
+	// Copy must carry the same note/edge content; note IDs are preserved
+	// verbatim (opaque strings, safe across projects).
+	assertWallRoundTrip(t, st, ctx, copyID, n1, n2)
+}
+
+// TestExportImport_Wall_EmptyWallOmitsField verifies that projects with no
+// wall activity do not emit a "wall" field in the export, keeping the JSON
+// shape stable for users who never touch Scrumbaby.
+func TestExportImport_Wall_EmptyWallOmitsField(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-empty@example.com", "password", "User")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctxUser := WithUserID(ctx, user.ID)
+
+	if _, err := st.CreateProject(ctxUser, "No Wall Project"); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	data, err := st.ExportAllProjects(ctxUser, ModeFull)
+	if err != nil {
+		t.Fatalf("ExportAllProjects: %v", err)
+	}
+	if len(data.Projects) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(data.Projects))
+	}
+	if data.Projects[0].Wall != nil {
+		t.Errorf("expected nil Wall for project with no notes/edges, got %+v", data.Projects[0].Wall)
+	}
+}
