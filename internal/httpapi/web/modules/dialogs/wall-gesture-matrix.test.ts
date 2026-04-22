@@ -320,6 +320,28 @@ describe("wall gesture × modality regression matrix", () => {
     expect(colorPatches).toHaveLength(0);
   });
 
+  it("right-click delete on note × full pointer sequence → no color PATCH even after DOUBLE_TAP_MS", async () => {
+    // Real browsers fire pointerdown → contextmenu → pointerup around a
+    // right-click. Without the primary-button guard in the pointerdown
+    // handler, pointerdown arms armNoteInteraction which then schedules
+    // a color-cycle timer on pointerup, racing the delete confirm. This
+    // characterization replays the full sequence so the bug cannot hide
+    // again behind a bare contextmenu dispatch.
+    vi.useFakeTimers();
+    confirmDeleteMock.mockResolvedValue(false);
+    await openWall();
+    const noteEl = getNoteEl("n1");
+
+    dispatchPointer(noteEl, "pointerdown", { button: 2, clientX: 30, clientY: 30 });
+    dispatchMouse(noteEl, "contextmenu", { button: 2, clientX: 30, clientY: 30 });
+    dispatchPointer(document, "pointerup", { button: 2, clientX: 30, clientY: 30 });
+    vi.advanceTimersByTime(500);
+    await flushPromises();
+
+    const colorPatches = patchCalls().filter((p) => "color" in p.body);
+    expect(colorPatches).toHaveLength(0);
+  });
+
   it("marquee select × empty canvas drag → no API calls, selection populated", async () => {
     await openWall();
 

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../api.js", () => ({ apiFetch: vi.fn() }));
 vi.mock("../dom/elements.js", () => {
@@ -21,6 +21,7 @@ import {
   startRealtime,
   __getRealtimeCounters,
   __resetRealtimeCounters,
+  __getRefreshDebounceMs,
 } from "./wall-realtime.js";
 import { emit } from "../events.js";
 import {
@@ -29,6 +30,7 @@ import {
   setPendingRefetch,
   getPendingRefetch,
   resetEditGuards,
+  setDragActive,
   type Mounted,
 } from "./wall-state.js";
 
@@ -185,6 +187,7 @@ describe("wall-realtime Phase 0 counters", () => {
   });
 
   it("counts wall:refresh_needed events delivered via startRealtime", () => {
+    vi.useFakeTimers();
     const stop = startRealtime({
       onRefreshNeeded: () => { /* noop */ },
       onTransient: () => { /* noop */ },
@@ -196,6 +199,7 @@ describe("wall-realtime Phase 0 counters", () => {
     stop();
     emit("wall:refresh_needed");
     expect(__getRealtimeCounters().refreshNeededReceived).toBe(3);
+    vi.useRealTimers();
   });
 
   it("resets realtime counters via __resetRealtimeCounters", async () => {
@@ -205,5 +209,113 @@ describe("wall-realtime Phase 0 counters", () => {
     expect(__getRealtimeCounters().refetchDocInvocations).toBe(1);
     __resetRealtimeCounters();
     expect(__getRealtimeCounters()).toEqual({ refreshNeededReceived: 0, refetchDocInvocations: 0 });
+  });
+});
+
+describe("wall-realtime Phase 2 refresh_needed debounce", () => {
+  beforeEach(() => {
+    mock.mockReset();
+    resetEditGuards();
+    setDragActive(false);
+    setMounted(null);
+    __resetRealtimeCounters();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("collapses a burst of wall:refresh_needed into exactly one callback after the window elapses", () => {
+    vi.useFakeTimers();
+    const onRefreshNeeded = vi.fn();
+    const stop = startRealtime({
+      onRefreshNeeded,
+      onTransient: () => { /* noop */ },
+    });
+
+    for (let i = 0; i < 5; i += 1) emit("wall:refresh_needed");
+    expect(onRefreshNeeded).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(__getRefreshDebounceMs() + 5);
+    expect(onRefreshNeeded).toHaveBeenCalledTimes(1);
+    expect(__getRealtimeCounters().refreshNeededReceived).toBe(5);
+
+    stop();
+  });
+
+  it("holds the debounced refetch while a drag is active and flushes once after drag ends", () => {
+    vi.useFakeTimers();
+    const onRefreshNeeded = vi.fn();
+    const stop = startRealtime({
+      onRefreshNeeded,
+      onTransient: () => { /* noop */ },
+    });
+
+    setDragActive(true);
+    emit("wall:refresh_needed");
+    emit("wall:refresh_needed");
+    vi.advanceTimersByTime(__getRefreshDebounceMs() + 5);
+    expect(onRefreshNeeded).not.toHaveBeenCalled();
+
+    // Still no call while drag is active even across multiple windows.
+    vi.advanceTimersByTime(__getRefreshDebounceMs() * 3);
+    expect(onRefreshNeeded).not.toHaveBeenCalled();
+
+    setDragActive(false);
+    vi.advanceTimersByTime(__getRefreshDebounceMs() + 5);
+    expect(onRefreshNeeded).toHaveBeenCalledTimes(1);
+
+    stop();
+  });
+
+  it("stop() flushes a pending refresh when no guard is active", () => {
+    vi.useFakeTimers();
+    const onRefreshNeeded = vi.fn();
+    const stop = startRealtime({
+      onRefreshNeeded,
+      onTransient: () => { /* noop */ },
+    });
+
+    emit("wall:refresh_needed");
+    expect(onRefreshNeeded).not.toHaveBeenCalled();
+
+    stop();
+    expect(onRefreshNeeded).toHaveBeenCalledTimes(1);
+
+    emit("wall:refresh_needed");
+    vi.advanceTimersByTime(__getRefreshDebounceMs() + 5);
+    expect(onRefreshNeeded).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop() drops a pending refresh when a drag is still active (no blowup on teardown-during-drag)", () => {
+    vi.useFakeTimers();
+    const onRefreshNeeded = vi.fn();
+    const stop = startRealtime({
+      onRefreshNeeded,
+      onTransient: () => { /* noop */ },
+    });
+
+    setDragActive(true);
+    emit("wall:refresh_needed");
+    stop();
+    expect(onRefreshNeeded).not.toHaveBeenCalled();
+    setDragActive(false);
+  });
+
+  it("each startRealtime registration has its own independent debounce timer", () => {
+    vi.useFakeTimers();
+    const onA = vi.fn();
+    const onB = vi.fn();
+    const stopA = startRealtime({ onRefreshNeeded: onA, onTransient: () => { /* noop */ } });
+    emit("wall:refresh_needed");
+    stopA();
+
+    const stopB = startRealtime({ onRefreshNeeded: onB, onTransient: () => { /* noop */ } });
+    emit("wall:refresh_needed");
+    vi.advanceTimersByTime(__getRefreshDebounceMs() + 5);
+
+    expect(onA).toHaveBeenCalledTimes(1);
+    expect(onB).toHaveBeenCalledTimes(1);
+    stopB();
   });
 });

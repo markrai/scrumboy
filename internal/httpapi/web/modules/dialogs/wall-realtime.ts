@@ -25,9 +25,24 @@ import { fetchWall } from "./wall-api.js";
 import {
   getActiveEditNoteId,
   getMounted,
+  isDragActive,
   setPendingRefetch,
   type Mounted,
 } from "./wall-state.js";
+
+/**
+ * Phase 2: trailing-debounce window for `wall.refresh_needed` events.
+ *
+ * Rationale: bursts of durable mutations (multi-note move commits, multi
+ * delete, several collaborators editing at once) produce multiple SSE
+ * events in rapid succession. Without coalescing, each one fires a full
+ * `refetchDoc -> renderSurface` which clears `wallSurface.innerHTML` and
+ * rebuilds every note. On NAS / high-RTT links this manifests as hitching.
+ *
+ * 120ms is the smallest window that reliably captures a single human burst
+ * without adding perceivable latency to cross-user updates.
+ */
+const REFRESH_DEBOUNCE_MS = 120;
 
 export interface RefetchDocOptions {
   /** Called once with the normalized document on success. */
@@ -125,19 +140,103 @@ export interface StartRealtimeOptions {
  * stop() to tear them down. Exposed so tests can assert subscribe/unsubscribe
  * without touching the full openWallDialog lifecycle.
  */
+// Phase 2 debug hook: the most recently armed debounce scope exposes its
+// internal timer + "pending" state so tests can drive it with fake timers
+// without re-implementing the debounce semantics. Only the *currently
+// active* startRealtime subscription is tracked; calling startRealtime again
+// replaces the handle.
+type DebounceHandle = {
+  hasPending: () => boolean;
+  flushNow: () => void;
+  clear: () => void;
+};
+let currentDebounceHandle: DebounceHandle | null = null;
+
 export function startRealtime(opts: StartRealtimeOptions): () => void {
-  // Phase 0: count raw refresh_needed events so we can later compare against
-  // refetchDocInvocations once debounce/coalescing lands in Phase 2.
+  // Phase 2: trailing debounce around `wall:refresh_needed`. Each event
+  // re-arms the timer; when it fires we call `opts.onRefreshNeeded()` *unless*
+  // a local drag is active, in which case we re-arm so mid-drag refetches
+  // cannot wipe the DOM. Edit-mode is already guarded inside `refetchDoc`.
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pending = false;
+
+  function fireDebounced(): void {
+    debounceTimer = null;
+    if (!pending) return;
+    if (isDragActive()) {
+      debounceTimer = setTimeout(fireDebounced, REFRESH_DEBOUNCE_MS);
+      return;
+    }
+    pending = false;
+    opts.onRefreshNeeded();
+  }
+
   const wrappedRefresh = () => {
     realtimeCounters.refreshNeededReceived += 1;
-    opts.onRefreshNeeded();
+    pending = true;
+    if (debounceTimer !== null) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fireDebounced, REFRESH_DEBOUNCE_MS);
   };
+
   on("wall:refresh_needed", wrappedRefresh);
   on("wall:transient", opts.onTransient);
+
+  currentDebounceHandle = {
+    hasPending: () => pending,
+    flushNow: () => {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      if (!pending) return;
+      if (isDragActive()) return;
+      pending = false;
+      opts.onRefreshNeeded();
+    },
+    clear: () => {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      pending = false;
+    },
+  };
+  const handle = currentDebounceHandle;
+
   return () => {
     off("wall:refresh_needed", wrappedRefresh);
     off("wall:transient", opts.onTransient);
+    // If a refresh is pending and no drag/edit is blocking, flush once so
+    // teardown does not lose a convergence. Otherwise drop: the dialog is
+    // going away and a fresh mount will GET /wall on open anyway.
+    if (pending && !isDragActive() && !getActiveEditNoteId()) {
+      pending = false;
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      opts.onRefreshNeeded();
+    } else {
+      if (debounceTimer !== null) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
+      }
+      pending = false;
+    }
+    if (currentDebounceHandle === handle) {
+      currentDebounceHandle = null;
+    }
   };
+}
+
+/** Test helper: query + drive the currently-armed refresh-needed debounce. */
+export function __getRefreshDebounceHandle(): DebounceHandle | null {
+  return currentDebounceHandle;
+}
+
+/** Test helper: read the debounce window used by startRealtime. */
+export function __getRefreshDebounceMs(): number {
+  return REFRESH_DEBOUNCE_MS;
 }
 
 /** Test helper: read the Phase 0 realtime counters. */

@@ -46,6 +46,12 @@ let mounted: Mounted | null = null;
 let activeEditNoteId: string | null = null;
 let pendingRefetchWhileEditing = false;
 
+// Phase 2: drag-active flag. Mirrors the edit guard but is a boolean because
+// drag can involve multiple participants. The refresh-needed debounce in
+// wall-realtime uses this to keep the DOM stable during a drag; the debounce
+// re-arms until the drag ends, which converges to a single refetch.
+let activeDrag = false;
+
 export function getMounted(): Mounted | null {
   return mounted;
 }
@@ -74,4 +80,12 @@ export function setPendingRefetch(flag: boolean): void {
 export function resetEditGuards(): void {
   activeEditNoteId = null;
   pendingRefetchWhileEditing = false;
+}
+
+export function isDragActive(): boolean {
+  return activeDrag;
+}
+
+export function setDragActive(flag: boolean): void {
+  activeDrag = flag;
 }

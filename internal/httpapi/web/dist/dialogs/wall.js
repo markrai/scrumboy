@@ -29,7 +29,7 @@ import { getUser } from "../state/selectors.js";
 import { canEditWall } from "./wall-permissions.js";
 import { buildNoteElement, renderEmptyWallHtml, isEditing, ensureEdgeOverlay, renderEdges, updateEdgesForNote, beginEdgePreview, getNoteCenterFromElement, } from "./wall-rendering.js";
 import { DOUBLE_TAP_MS, DRAG_THRESHOLD_PX, DEFAULT_NOTE_WIDTH, DEFAULT_NOTE_HEIGHT, RAINBOW_COLORS, nextColor, } from "./wall-postbaby-constants.js";
-import { getMounted, setMounted, resetEditGuards, } from "./wall-state.js";
+import { getMounted, setMounted, resetEditGuards, setDragActive, } from "./wall-state.js";
 import { clearSelection, pruneSelection, setSelection, syncSelectionDom, toggleSelection, } from "./wall-selection.js";
 import { beginDrag as beginDragController, startResize as startResizeController, } from "./wall-drag-controller.js";
 import { applyTransient as applyTransientImpl, refetchDoc as refetchDocImpl, startRealtime, } from "./wall-realtime.js";
@@ -110,15 +110,90 @@ function teardown() {
     document.documentElement.style.overflow = state.prevHtmlOverflow;
     setMounted(null);
     resetEditGuards();
+    setDragActive(false);
 }
 function refetchDoc() {
     return refetchDocImpl({
         onApplyDoc: (state, doc) => {
-            state.doc = normalizeDoc(doc);
-            renderSurface();
+            const next = normalizeDoc(doc);
+            const diff = diffWallDoc(state.doc, next);
+            state.doc = next;
+            if (diff.kind === "full") {
+                renderSurface();
+                return;
+            }
+            // Fast path: single-note field changes (or nothing at all). No
+            // innerHTML wipe, so any note that the user just saved does not
+            // blink, and collaborative single-note updates are cheap.
+            wallRenderCounters.incrementalPatches += 1;
+            if (debugEnabled()) {
+                console.debug("wall incremental apply", {
+                    fullRebuilds: wallRenderCounters.fullRebuilds,
+                    incrementalPatches: wallRenderCounters.incrementalPatches,
+                    changedNotes: diff.kind === "incremental" ? diff.changedNotes.length : 0,
+                    noop: diff.kind === "noop",
+                });
+            }
+            if (diff.kind === "incremental") {
+                for (const note of diff.changedNotes)
+                    updateNoteElement(note);
+            }
         },
     });
 }
+// Compare the currently-rendered doc against an incoming one. We only take
+// the fast path when the set of notes and the set of edges are unchanged
+// in identity and shape. Any add/remove/reorder, any edge endpoint change,
+// or a mismatched count falls back to the full rebuild so renderer state
+// (edge overlay, selection pruning, empty-wall placeholder) stays correct.
+function diffWallDoc(prev, next) {
+    const prevNotes = prev.notes ?? [];
+    const nextNotes = next.notes ?? [];
+    const prevEdges = prev.edges ?? [];
+    const nextEdges = next.edges ?? [];
+    if (prevNotes.length !== nextNotes.length)
+        return { kind: "full" };
+    if (prevEdges.length !== nextEdges.length)
+        return { kind: "full" };
+    const prevNotesById = new Map();
+    for (const n of prevNotes)
+        prevNotesById.set(n.id, n);
+    const changedNotes = [];
+    for (const n of nextNotes) {
+        const prevNote = prevNotesById.get(n.id);
+        if (!prevNote)
+            return { kind: "full" };
+        if (wallNoteFieldsDiffer(prevNote, n))
+            changedNotes.push(n);
+    }
+    const prevEdgesById = new Map();
+    for (const e of prevEdges)
+        prevEdgesById.set(e.id, e);
+    for (const e of nextEdges) {
+        const prevEdge = prevEdgesById.get(e.id);
+        if (!prevEdge)
+            return { kind: "full" };
+        // Endpoint change for the same id should never happen on the server,
+        // but if it does we prefer the full rebuild since edge endpoints are
+        // only repainted via renderEdges / updateEdgesForNote.
+        if (prevEdge.from !== e.from || prevEdge.to !== e.to)
+            return { kind: "full" };
+    }
+    if (changedNotes.length === 0)
+        return { kind: "noop" };
+    return { kind: "incremental", changedNotes };
+}
+function wallNoteFieldsDiffer(a, b) {
+    return (a.x !== b.x ||
+        a.y !== b.y ||
+        a.width !== b.width ||
+        a.height !== b.height ||
+        a.color !== b.color ||
+        a.text !== b.text ||
+        a.version !== b.version);
+}
+/** Test-only: expose the diff helper so unit tests can exercise it without mounting the wall. */
+export const __diffWallDocForTest = diffWallDoc;
 function applyTransient(payload) {
     applyTransientImpl(payload, noteElementById);
 }
@@ -132,10 +207,42 @@ function normalizeDoc(doc) {
         updatedAt: doc.updatedAt,
     };
 }
+// Phase 0/3 debug counters. `fullRebuilds` ticks whenever renderSurface()
+// wipes and re-mounts the wall; `incrementalPatches` ticks whenever the
+// Phase 3 fast path in refetchDoc() applies a single-note/no-op diff
+// without touching innerHTML.
+const wallRenderCounters = {
+    fullRebuilds: 0,
+    incrementalPatches: 0,
+};
+function debugEnabled() {
+    return globalThis.__scrumboyWallDebug === true;
+}
+/** Test helper: read the Phase 0 wall render counters. */
+export function __getWallRenderCounters() {
+    return {
+        fullRebuilds: wallRenderCounters.fullRebuilds,
+        incrementalPatches: wallRenderCounters.incrementalPatches,
+    };
+}
+/** Test helper: reset the Phase 0 wall render counters between test cases. */
+export function __resetWallRenderCounters() {
+    wallRenderCounters.fullRebuilds = 0;
+    wallRenderCounters.incrementalPatches = 0;
+}
 function renderSurface() {
     const state = getMounted();
     if (!state || !wallSurface)
         return;
+    wallRenderCounters.fullRebuilds += 1;
+    if (debugEnabled()) {
+        console.debug("wall full rebuild", {
+            fullRebuilds: wallRenderCounters.fullRebuilds,
+            incrementalPatches: wallRenderCounters.incrementalPatches,
+            notes: state.doc.notes.length,
+            edges: state.doc.edges?.length ?? 0,
+        });
+    }
     wallSurface.innerHTML = "";
     if (state.doc.notes.length === 0) {
         wallSurface.innerHTML = renderEmptyWallHtml(state.canEdit);
@@ -403,6 +510,12 @@ function bindSurfaceHandlers(state) {
             if (ev.button === 0 && state.selected.size > 0 && !state.selected.has(noteId)) {
                 setSelection([noteId]);
             }
+            // Only primary-button presses participate in click/double-click/drag
+            // note interactions. Right-click is handled by the contextmenu path
+            // below; arming here would schedule a color-cycle timer and fire it
+            // alongside the delete-confirm dialog.
+            if (ev.button !== 0)
+                return;
             armNoteInteraction(state, ev, noteEl, noteId);
             return;
         }
@@ -441,6 +554,9 @@ function bindSurfaceHandlers(state) {
             ev.preventDefault();
             const noteId = noteEl.dataset.noteId || "";
             if (noteId) {
+                // Defensive clear in case an input sequence armed a color timer
+                // before the contextmenu event arrived.
+                cancelColorTimer(state, noteId);
                 void confirmDelete("Delete this note?").then((confirmed) => {
                     if (confirmed) {
                         void deleteNote(noteId);

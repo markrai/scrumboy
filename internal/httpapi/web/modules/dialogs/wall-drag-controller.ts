@@ -27,7 +27,7 @@ import {
 } from "./wall-rendering.js";
 import { DRAG_TRANSIENT_COALESCE_MS, TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
 import { postTransient } from "./wall-api.js";
-import { getMounted, type Mounted } from "./wall-state.js";
+import { getMounted, setDragActive, type Mounted } from "./wall-state.js";
 
 // Phase 0 debug counters. Lifetime-accumulating across all drags in the
 // current session; reset via __resetDragCounters() in tests. Per-drag deltas
@@ -194,6 +194,10 @@ export function beginDrag(opts: BeginDragOptions): void {
 
   for (const p of participants) p.el.classList.add("wall-note--dragging");
   showTrash(true);
+  // Phase 2: signal the refresh-needed debounce in wall-realtime to hold off
+  // on refetching while this drag is in flight. Cleared in onUp below (and
+  // defensively in wall.ts teardown if the dialog closes mid-drag).
+  setDragActive(true);
 
   let animationFrameId: number | null = null;
   let lastClientX = ev.clientX;
@@ -302,6 +306,11 @@ export function beginDrag(opts: BeginDragOptions): void {
       clearTimeout(groupTransientTimer);
       groupTransientTimer = null;
     }
+    // Phase 2: release the refresh-needed debounce gate. Any SSE refresh
+    // events that arrived during the drag have been deferred by the debounce;
+    // the subsequent PATCH from onCommitDragPositions (or a new remote event)
+    // will drive the next refetch.
+    setDragActive(false);
     for (const p of participants) p.el.classList.remove("wall-note--dragging");
 
     const overlappingTrash = participants.some((p) => isOverTrash(p.el));

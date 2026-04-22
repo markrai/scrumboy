@@ -2,11 +2,25 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** unless noted below.
 
+## [3.14.4] - 2026-04-22
+
+### Improvements
+
+- **Wall (Scrumbaby)** - SSE `wall.refresh_needed` handling is debounced in `wall-realtime` so bursts coalesce into a single `refetchDoc`/apply within a short window. While a local drag is in progress, the debounce re-arms via `isDragActive` / `setDragActive` (`wall-state`, `wall-drag-controller`) so the client does not refetch mid-drag; `wall` teardown clears the drag flag if the dialog closes during a drag.
+
+- **Wall (Scrumbaby)** - After a successful wall document fetch, simple single-note field updates against an unchanged note and edge id set apply incrementally via `updateNoteElement` instead of wiping `innerHTML` and rebuilding the whole surface. Reduces hitching and visible blink after text saves when the server echoes `refresh_needed`. Full rebuild remains the fallback for structural changes. Covered by `wall-incremental-apply.test.ts`.
+
+### Fixes
+
+- **Wall (Scrumbaby)** - Right-click on a note for delete confirmation no longer arms the delayed single-click color cycle (primary-button guard before `armNoteInteraction`, defensive `cancelColorTimer` on the note `contextmenu` path). Adds a gesture-matrix test that replays `pointerdown` and `pointerup` with button 2 around `contextmenu`.
+
+---
+
 ## [3.14.3] - 2026-04-22
 
 ### Improvements
 
-- **Wall (Scrumbaby)** — Phase 1 drag transient coalescing: during multi-note drag, `wall-drag-controller` stores per-note positions each frame and drives a single group coalesce timer (`DRAG_TRANSIENT_COALESCE_MS`, 150ms) that flushes one `POST /wall/transient` per moved note when due, instead of per-participant per-`rAF` `scheduleTransient` calls. `TRANSIENT_COALESCE_MS` (100ms) is unchanged for drag-end and other callers (existing assertions preserved). Pointer-up clears any pending group timer before the existing drop-path `scheduleTransient` + flush so the final-position sequence stays the same.
+- **Wall (Scrumbaby)** - Phase 1 drag transient coalescing: during multi-note drag, `wall-drag-controller` stores per-note positions each frame and drives a single group coalesce timer (`DRAG_TRANSIENT_COALESCE_MS`, 150ms) that flushes one `POST /wall/transient` per moved note when due, instead of per-participant per-`rAF` `scheduleTransient` calls. `TRANSIENT_COALESCE_MS` (100ms) is unchanged for drag-end and other callers (existing assertions preserved). Pointer-up clears any pending group timer before the existing drop-path `scheduleTransient` + flush so the final-position sequence stays the same.
 
 ---
 

@@ -16,9 +16,31 @@
 // gesture function, filled in once from `wall.ts::bindSurfaceHandlers`.
 import { wallSurface, wallTrash } from "../dom/elements.js";
 import { clampDim, updateEdgesForNote, MAX_NOTE_HEIGHT, MAX_NOTE_WIDTH, MIN_NOTE_HEIGHT, MIN_NOTE_WIDTH, } from "./wall-rendering.js";
-import { TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
+import { DRAG_TRANSIENT_COALESCE_MS, TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
 import { postTransient } from "./wall-api.js";
-import { getMounted } from "./wall-state.js";
+import { getMounted, setDragActive } from "./wall-state.js";
+// Phase 0 debug counters. Lifetime-accumulating across all drags in the
+// current session; reset via __resetDragCounters() in tests. Per-drag deltas
+// are also emitted via console.debug when window.__scrumboyWallDebug is true.
+const dragCounters = {
+    edgeUpdateBatches: 0,
+    edgeUpdateCalls: 0,
+};
+function debugEnabled() {
+    return globalThis.__scrumboyWallDebug === true;
+}
+/** Test helper: read the Phase 0 drag counters. */
+export function __getDragCounters() {
+    return {
+        edgeUpdateBatches: dragCounters.edgeUpdateBatches,
+        edgeUpdateCalls: dragCounters.edgeUpdateCalls,
+    };
+}
+/** Test helper: reset the Phase 0 drag counters between test cases. */
+export function __resetDragCounters() {
+    dragCounters.edgeUpdateBatches = 0;
+    dragCounters.edgeUpdateCalls = 0;
+}
 // ---- Transient (non-durable) drag fanout ---------------------------------
 export function scheduleTransient(state, noteId, x, y) {
     let entry = state.transient.get(noteId);
@@ -120,9 +142,61 @@ export function beginDrag(opts) {
     for (const p of participants)
         p.el.classList.add("wall-note--dragging");
     showTrash(true);
+    // Phase 2: signal the refresh-needed debounce in wall-realtime to hold off
+    // on refetching while this drag is in flight. Cleared in onUp below (and
+    // defensively in wall.ts teardown if the dialog closes mid-drag).
+    setDragActive(true);
     let animationFrameId = null;
     let lastClientX = ev.clientX;
     let lastClientY = ev.clientY;
+    // Phase 0 per-drag stats; aggregated into module-level `dragCounters` when
+    // this drag ends so tests / operators can inspect a full session.
+    const dragStats = { edgeUpdateBatches: 0, edgeUpdateCalls: 0, startedAt: performance.now() };
+    // Phase 1: single group-timer (one setTimeout shared by all participants)
+    // instead of N per-note timers. Per-note positions still fan out when the
+    // timer fires via sendTransientNow, so the HTTP payload shape is unchanged;
+    // only the wake-up count collapses from N to 1 per DRAG_TRANSIENT_COALESCE_MS
+    // window. The primary drag id keys the timer so teardown/close is obvious.
+    let groupTransientTimer = null;
+    let groupTransientLastSentAt = 0;
+    function storeTransientPosition(id, x, y) {
+        let entry = state.transient.get(id);
+        if (!entry) {
+            entry = { lastX: x, lastY: y, lastSentAt: 0, timer: null };
+            state.transient.set(id, entry);
+        }
+        else {
+            entry.lastX = x;
+            entry.lastY = y;
+        }
+    }
+    function flushGroupTransientsNow() {
+        if (groupTransientTimer !== null) {
+            clearTimeout(groupTransientTimer);
+            groupTransientTimer = null;
+        }
+        groupTransientLastSentAt = performance.now();
+        for (const p of participants) {
+            if (state.transient.has(p.id))
+                sendTransientNow(state, p.id);
+        }
+    }
+    function scheduleGroupTransient() {
+        const now = performance.now();
+        const elapsed = now - groupTransientLastSentAt;
+        if (elapsed >= DRAG_TRANSIENT_COALESCE_MS) {
+            flushGroupTransientsNow();
+            return;
+        }
+        if (groupTransientTimer !== null)
+            return;
+        groupTransientTimer = setTimeout(() => {
+            groupTransientTimer = null;
+            if (getMounted() !== state)
+                return;
+            flushGroupTransientsNow();
+        }, DRAG_TRANSIENT_COALESCE_MS - elapsed);
+    }
     function moveAt(clientX, clientY) {
         lastClientX = clientX;
         lastClientY = clientY;
@@ -140,15 +214,22 @@ export function beginDrag(opts) {
                 if (p.startY + minDeltaY < 0)
                     minDeltaY = -p.startY;
             }
+            let edgeCallsThisTick = 0;
             for (const p of participants) {
                 const nx = p.startX + minDeltaX;
                 const ny = p.startY + minDeltaY;
                 p.el.style.left = `${Math.round(nx)}px`;
                 p.el.style.top = `${Math.round(ny)}px`;
-                scheduleTransient(state, p.id, nx, ny);
+                storeTransientPosition(p.id, nx, ny);
                 if (wallSurface) {
                     updateEdgesForNote(wallSurface, p.id, nx + p.el.offsetWidth / 2, ny + p.el.offsetHeight / 2);
+                    edgeCallsThisTick += 1;
                 }
+            }
+            scheduleGroupTransient();
+            if (edgeCallsThisTick > 0) {
+                dragStats.edgeUpdateBatches += 1;
+                dragStats.edgeUpdateCalls += edgeCallsThisTick;
             }
             updateTrashHoverAny(participants);
         });
@@ -165,10 +246,35 @@ export function beginDrag(opts) {
             cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
         }
+        // Cancel any pending group-timer wake-up; the drop path below will
+        // schedule+flush each participant's final position explicitly, so the
+        // coalesced mid-drag POST is no longer needed.
+        if (groupTransientTimer !== null) {
+            clearTimeout(groupTransientTimer);
+            groupTransientTimer = null;
+        }
+        // Phase 2: release the refresh-needed debounce gate. Any SSE refresh
+        // events that arrived during the drag have been deferred by the debounce;
+        // the subsequent PATCH from onCommitDragPositions (or a new remote event)
+        // will drive the next refetch.
+        setDragActive(false);
         for (const p of participants)
             p.el.classList.remove("wall-note--dragging");
         const overlappingTrash = participants.some((p) => isOverTrash(p.el));
         showTrash(false);
+        const finalizeDragStats = (outcome) => {
+            dragCounters.edgeUpdateBatches += dragStats.edgeUpdateBatches;
+            dragCounters.edgeUpdateCalls += dragStats.edgeUpdateCalls;
+            if (debugEnabled()) {
+                console.debug("wall drag ended", {
+                    outcome,
+                    participants: participants.length,
+                    edgeUpdateBatches: dragStats.edgeUpdateBatches,
+                    edgeUpdateCalls: dragStats.edgeUpdateCalls,
+                    durationMs: Math.round(performance.now() - dragStats.startedAt),
+                });
+            }
+        };
         if (overlappingTrash) {
             // Revert visuals to starting positions before confirming so notes
             // don't sit over the trash while the native dialog is up.
@@ -180,6 +286,7 @@ export function beginDrag(opts) {
                 }
             }
             opts.onDropOnTrash(participants.map((p) => p.id), isGroup);
+            finalizeDragStats("trash");
             return;
         }
         const commits = [];
@@ -196,6 +303,7 @@ export function beginDrag(opts) {
             opts.onCommitDragPositions(commits);
         if (isGroup)
             opts.onClearSelectionAfterGroupDrop();
+        finalizeDragStats("commit");
         void up;
     };
     document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
