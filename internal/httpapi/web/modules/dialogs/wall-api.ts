@@ -81,11 +81,14 @@ export function deleteEdgeRemote(slug: string, id: string): Promise<void> {
  * Observability:
  *   - `__getTransientFailureCount()` returns the lifetime failure counter
  *     (useful for tests; not intended for production reads).
+ *   - `__getTransientPostsSent()` returns the lifetime *success* counter
+ *     (Phase 0 debug baseline; used to measure transient pressure).
  *   - `window.__scrumboyWallDebug === true` elevates the log level to
  *     `console.warn` so operators can surface otherwise-silent failures.
  */
 const TRANSIENT_LOG_THROTTLE_MS = 3000;
 const transientFailureState = { count: 0, lastLoggedAt: 0 };
+const transientSuccessState = { count: 0 };
 
 export async function postTransient(slug: string, body: TransientInput): Promise<void> {
   try {
@@ -93,6 +96,7 @@ export async function postTransient(slug: string, body: TransientInput): Promise
       method: "POST",
       body: JSON.stringify(body),
     });
+    transientSuccessState.count += 1;
   } catch (err) {
     transientFailureState.count += 1;
     const now = performance.now();
@@ -111,8 +115,14 @@ export function __getTransientFailureCount(): number {
   return transientFailureState.count;
 }
 
+/** Test helper: read the lifetime successful transient-post counter. */
+export function __getTransientPostsSent(): number {
+  return transientSuccessState.count;
+}
+
 /** Test helper: reset the internal counters/log state between test cases. */
 export function __resetTransientFailureState(): void {
   transientFailureState.count = 0;
   transientFailureState.lastLoggedAt = 0;
+  transientSuccessState.count = 0;
 }

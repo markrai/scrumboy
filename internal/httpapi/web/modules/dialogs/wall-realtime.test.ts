@@ -15,7 +15,14 @@ vi.mock("../dom/elements.js", () => {
 });
 
 import { apiFetch } from "../api.js";
-import { refetchDoc, applyTransient } from "./wall-realtime.js";
+import {
+  refetchDoc,
+  applyTransient,
+  startRealtime,
+  __getRealtimeCounters,
+  __resetRealtimeCounters,
+} from "./wall-realtime.js";
+import { emit } from "../events.js";
 import {
   setMounted,
   setActiveEditNoteId,
@@ -150,5 +157,53 @@ describe("wall-realtime.applyTransient", () => {
     const lookup = (id: string) => (id === "n1" ? el : null);
     applyTransient({ payload: { noteId: "n1", x: 42, y: 84, by: 99 } }, lookup);
     expect(el.style.left).toBe("1px");
+  });
+});
+
+describe("wall-realtime Phase 0 counters", () => {
+  beforeEach(() => {
+    mock.mockReset();
+    resetEditGuards();
+    setMounted(null);
+    __resetRealtimeCounters();
+  });
+
+  it("increments refetchDocInvocations on each refetchDoc call", async () => {
+    setMounted(makeState());
+    mock.mockResolvedValue({ notes: [], edges: [], version: 1 });
+    expect(__getRealtimeCounters().refetchDocInvocations).toBe(0);
+    await refetchDoc({ onApplyDoc: () => { /* noop */ } });
+    await refetchDoc({ onApplyDoc: () => { /* noop */ } });
+    expect(__getRealtimeCounters().refetchDocInvocations).toBe(2);
+  });
+
+  it("does not increment refetchDocInvocations when deferred by an active edit", async () => {
+    setMounted(makeState());
+    setActiveEditNoteId("n1");
+    await refetchDoc({ onApplyDoc: () => { /* noop */ } });
+    expect(__getRealtimeCounters().refetchDocInvocations).toBe(0);
+  });
+
+  it("counts wall:refresh_needed events delivered via startRealtime", () => {
+    const stop = startRealtime({
+      onRefreshNeeded: () => { /* noop */ },
+      onTransient: () => { /* noop */ },
+    });
+    emit("wall:refresh_needed");
+    emit("wall:refresh_needed");
+    emit("wall:refresh_needed");
+    expect(__getRealtimeCounters().refreshNeededReceived).toBe(3);
+    stop();
+    emit("wall:refresh_needed");
+    expect(__getRealtimeCounters().refreshNeededReceived).toBe(3);
+  });
+
+  it("resets realtime counters via __resetRealtimeCounters", async () => {
+    setMounted(makeState());
+    mock.mockResolvedValue({ notes: [], edges: [], version: 1 });
+    await refetchDoc({ onApplyDoc: () => { /* noop */ } });
+    expect(__getRealtimeCounters().refetchDocInvocations).toBe(1);
+    __resetRealtimeCounters();
+    expect(__getRealtimeCounters()).toEqual({ refreshNeededReceived: 0, refetchDocInvocations: 0 });
   });
 });

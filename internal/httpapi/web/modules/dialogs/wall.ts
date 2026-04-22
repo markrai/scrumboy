@@ -194,9 +194,44 @@ function normalizeDoc(doc: WallDocument | null | undefined): WallDocument {
   };
 }
 
+// Phase 0 debug counters. Phase 3 will increment `incrementalPatches` when a
+// single-note change bypasses the full rebuild; until then it stays at 0 and
+// exists so tests/operators can observe the eventual fast-path share.
+const wallRenderCounters = {
+  fullRebuilds: 0,
+  incrementalPatches: 0,
+};
+
+function debugEnabled(): boolean {
+  return (globalThis as any).__scrumboyWallDebug === true;
+}
+
+/** Test helper: read the Phase 0 wall render counters. */
+export function __getWallRenderCounters(): { fullRebuilds: number; incrementalPatches: number } {
+  return {
+    fullRebuilds: wallRenderCounters.fullRebuilds,
+    incrementalPatches: wallRenderCounters.incrementalPatches,
+  };
+}
+
+/** Test helper: reset the Phase 0 wall render counters between test cases. */
+export function __resetWallRenderCounters(): void {
+  wallRenderCounters.fullRebuilds = 0;
+  wallRenderCounters.incrementalPatches = 0;
+}
+
 function renderSurface(): void {
   const state = getMounted();
   if (!state || !wallSurface) return;
+  wallRenderCounters.fullRebuilds += 1;
+  if (debugEnabled()) {
+    console.debug("wall full rebuild", {
+      fullRebuilds: wallRenderCounters.fullRebuilds,
+      incrementalPatches: wallRenderCounters.incrementalPatches,
+      notes: state.doc.notes.length,
+      edges: state.doc.edges?.length ?? 0,
+    });
+  }
   wallSurface.innerHTML = "";
   if (state.doc.notes.length === 0) {
     wallSurface.innerHTML = renderEmptyWallHtml(state.canEdit);

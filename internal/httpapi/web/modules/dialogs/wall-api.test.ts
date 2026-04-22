@@ -9,6 +9,7 @@ vi.mock("../api.js", () => {
 import { apiFetch } from "../api.js";
 import {
   __getTransientFailureCount,
+  __getTransientPostsSent,
   __resetTransientFailureState,
   createEdgeRemote,
   createNote,
@@ -138,5 +139,25 @@ describe("wall-api.postTransient observability", () => {
     expect(__getTransientFailureCount()).toBe(0);
     debug.mockRestore();
     warn.mockRestore();
+  });
+
+  it("increments transientPostsSent on successful posts and leaves it at 0 on failure", async () => {
+    mock.mockResolvedValueOnce({});
+    await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
+    expect(__getTransientPostsSent()).toBe(1);
+    mock.mockRejectedValueOnce(new Error("boom"));
+    await postTransient("abc", { noteId: "n1", x: 1, y: 2 });
+    expect(__getTransientPostsSent()).toBe(1);
+    mock.mockResolvedValueOnce({});
+    await postTransient("abc", { noteId: "n1", x: 3, y: 4 });
+    expect(__getTransientPostsSent()).toBe(2);
+  });
+
+  it("resets transientPostsSent via __resetTransientFailureState", async () => {
+    mock.mockResolvedValue({});
+    await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
+    expect(__getTransientPostsSent()).toBe(1);
+    __resetTransientFailureState();
+    expect(__getTransientPostsSent()).toBe(0);
   });
 });

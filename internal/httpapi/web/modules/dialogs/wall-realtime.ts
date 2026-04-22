@@ -34,6 +34,17 @@ export interface RefetchDocOptions {
   onApplyDoc: (state: Mounted, doc: WallDocument) => void;
 }
 
+// Phase 0 debug counters. Off by default; surfaced via test-only getters
+// and via console.debug only when `window.__scrumboyWallDebug === true`.
+const realtimeCounters = {
+  refreshNeededReceived: 0,
+  refetchDocInvocations: 0,
+};
+
+function debugEnabled(): boolean {
+  return (globalThis as any).__scrumboyWallDebug === true;
+}
+
 /**
  * Fetch the wall document, deferring if an edit is in progress.
  *
@@ -50,6 +61,7 @@ export async function refetchDoc(opts: RefetchDocOptions): Promise<void> {
     setPendingRefetch(true);
     return;
   }
+  realtimeCounters.refetchDocInvocations += 1;
   try {
     const doc = await fetchWall(state.slug);
     if (getMounted() !== state) return;
@@ -58,6 +70,12 @@ export async function refetchDoc(opts: RefetchDocOptions): Promise<void> {
       return;
     }
     opts.onApplyDoc(state, doc);
+    if (debugEnabled()) {
+      console.debug("wall refetch applied", {
+        refetches: realtimeCounters.refetchDocInvocations,
+        refreshEvents: realtimeCounters.refreshNeededReceived,
+      });
+    }
   } catch (err: any) {
     if (err?.status === 404) {
       showToast("This board does not have a wall.");
@@ -108,10 +126,30 @@ export interface StartRealtimeOptions {
  * without touching the full openWallDialog lifecycle.
  */
 export function startRealtime(opts: StartRealtimeOptions): () => void {
-  on("wall:refresh_needed", opts.onRefreshNeeded);
+  // Phase 0: count raw refresh_needed events so we can later compare against
+  // refetchDocInvocations once debounce/coalescing lands in Phase 2.
+  const wrappedRefresh = () => {
+    realtimeCounters.refreshNeededReceived += 1;
+    opts.onRefreshNeeded();
+  };
+  on("wall:refresh_needed", wrappedRefresh);
   on("wall:transient", opts.onTransient);
   return () => {
-    off("wall:refresh_needed", opts.onRefreshNeeded);
+    off("wall:refresh_needed", wrappedRefresh);
     off("wall:transient", opts.onTransient);
   };
+}
+
+/** Test helper: read the Phase 0 realtime counters. */
+export function __getRealtimeCounters(): { refreshNeededReceived: number; refetchDocInvocations: number } {
+  return {
+    refreshNeededReceived: realtimeCounters.refreshNeededReceived,
+    refetchDocInvocations: realtimeCounters.refetchDocInvocations,
+  };
+}
+
+/** Test helper: reset the Phase 0 realtime counters between test cases. */
+export function __resetRealtimeCounters(): void {
+  realtimeCounters.refreshNeededReceived = 0;
+  realtimeCounters.refetchDocInvocations = 0;
 }
