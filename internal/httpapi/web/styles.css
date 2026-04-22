@@ -4858,6 +4858,13 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   filter: drop-shadow(0 6px 14px rgba(224, 87, 75, 0.55));
 }
 
+/* Note right-click context menu. Reuses `.context-menu` base styling; this
+   override raises it above wall notes and the edge overlay when painted
+   inside the wall `<dialog>` top-layer. */
+.wall-note-context-menu {
+  z-index: 1300;
+}
+
 /* Marquee selection rectangle painted on `#wallSurface` during empty-canvas
    left-drag. Pointer-events disabled so the active pointermove/up listeners
    on document continue to fire untouched. */

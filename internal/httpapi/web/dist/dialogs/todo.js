@@ -48,6 +48,22 @@ function isModifiedFibonacciMode() {
     const mode = getBoard()?.project?.estimationMode;
     return mode == null || mode === "MODIFIED_FIBONACCI";
 }
+// Collapse arbitrary text (e.g. a multi-line sticky-note body) into a value
+// suitable for the single-line Title input: trim ends, collapse runs of
+// whitespace (including newlines) to a single space, and honor the input's
+// maxLength if one is set.
+function normalizeSeedTitle(raw) {
+    if (!raw)
+        return "";
+    const collapsed = raw.replace(/\s+/g, " ").trim();
+    const input = todoTitle;
+    const max = input?.maxLength;
+    if (typeof max === "number" && max > 0 && collapsed.length > max) {
+        return collapsed.slice(0, max);
+    }
+    return collapsed;
+}
+export { normalizeSeedTitle as __normalizeSeedTitleForTest };
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
     setEditingTodo(mode === "edit" ? todo : null);
@@ -254,7 +270,7 @@ export async function openTodoDialog(opts) {
     };
     if (mode === "create") {
         todoDialogTitle.textContent = "New Todo";
-        todoTitle.value = "";
+        todoTitle.value = normalizeSeedTitle(opts.initialTitle);
         todoBody.value = "";
         todoTags.value = "";
         const initialKey = resolveColumnKey(status);

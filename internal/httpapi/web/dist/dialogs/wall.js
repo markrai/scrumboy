@@ -34,6 +34,7 @@ import { clearSelection, pruneSelection, setSelection, syncSelectionDom, toggleS
 import { beginDrag as beginDragController, startResize as startResizeController, } from "./wall-drag-controller.js";
 import { applyTransient as applyTransientImpl, refetchDoc as refetchDocImpl, startRealtime, } from "./wall-realtime.js";
 import { beginEdit as beginEditController } from "./wall-edit-controller.js";
+import { openWallNoteContextMenu } from "./wall-note-context-menu.js";
 const TEARDOWN_MARKER = Symbol("wallMounted");
 // Public entry: open the wall dialog and boot its full lifecycle.
 export async function openWallDialog(opts) {
@@ -553,16 +554,53 @@ function bindSurfaceHandlers(state) {
         if (noteEl) {
             ev.preventDefault();
             const noteId = noteEl.dataset.noteId || "";
-            if (noteId) {
-                // Defensive clear in case an input sequence armed a color timer
-                // before the contextmenu event arrived.
-                cancelColorTimer(state, noteId);
-                void confirmDelete("Delete this note?").then((confirmed) => {
-                    if (confirmed) {
-                        void deleteNote(noteId);
-                    }
-                });
-            }
+            if (!noteId)
+                return;
+            // Defensive clear in case an input sequence armed a color timer
+            // before the contextmenu event arrived.
+            cancelColorTimer(state, noteId);
+            // Parity with wall-drag-controller.ts drag-to-trash: treat this as a
+            // group op only when the right-clicked note is itself part of a
+            // multi-selection. A right-click on an unselected note (even if other
+            // notes are selected) deletes only that note and leaves selection alone.
+            const isGroup = state.selected.has(noteId) && state.selected.size > 1;
+            const groupIds = isGroup ? Array.from(state.selected) : [noteId];
+            const deleteLabel = isGroup ? `Delete ${groupIds.length} notes` : "Delete";
+            const confirmPrompt = isGroup
+                ? `Delete ${groupIds.length} notes?`
+                : "Delete this note?";
+            void openWallNoteContextMenu(ev.clientX, ev.clientY, state.abort.signal, {
+                showCreateTodo: !isGroup,
+                deleteLabel,
+            }).then(async (choice) => {
+                if (choice === "create-todo") {
+                    // Defensive: the Create-Todo item is hidden in the group case, so
+                    // this branch can only run for single-note menus.
+                    if (isGroup)
+                        return;
+                    const note = findNote(noteId);
+                    if (!note)
+                        return;
+                    // Dynamic import keeps todo.ts out of the wall bundle so the
+                    // lazy-loaded wall module stays small; the todo dialog is only
+                    // pulled in the first time a user picks this action.
+                    const mod = await import("./todo.js");
+                    await mod.openTodoDialog({
+                        mode: "create",
+                        role: state.role,
+                        initialTitle: note.text,
+                    });
+                }
+                else if (choice === "delete") {
+                    const confirmed = await confirmDelete(confirmPrompt);
+                    if (!confirmed)
+                        return;
+                    for (const id of groupIds)
+                        void deleteNote(id);
+                    if (isGroup)
+                        clearSelection();
+                }
+            });
             return;
         }
         ev.preventDefault();

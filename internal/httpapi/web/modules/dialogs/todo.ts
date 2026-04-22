@@ -89,10 +89,28 @@ function isModifiedFibonacciMode(): boolean {
   return mode == null || mode === "MODIFIED_FIBONACCI";
 }
 
+// Collapse arbitrary text (e.g. a multi-line sticky-note body) into a value
+// suitable for the single-line Title input: trim ends, collapse runs of
+// whitespace (including newlines) to a single space, and honor the input's
+// maxLength if one is set.
+function normalizeSeedTitle(raw: string | undefined): string {
+  if (!raw) return "";
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  const input = todoTitle as HTMLInputElement | null;
+  const max = input?.maxLength;
+  if (typeof max === "number" && max > 0 && collapsed.length > max) {
+    return collapsed.slice(0, max);
+  }
+  return collapsed;
+}
+
+export { normalizeSeedTitle as __normalizeSeedTitleForTest };
+
 export async function openTodoDialog(opts: {
   mode: string;
   todo?: any;
   status?: string;
+  initialTitle?: string;
   onNavigateToLinkedTodo?: (path: string) => void;
   role?: string | null;
 }): Promise<void> {
@@ -300,7 +318,7 @@ export async function openTodoDialog(opts: {
 
   if (mode === "create") {
     (todoDialogTitle as HTMLElement).textContent = "New Todo";
-    (todoTitle as HTMLInputElement).value = "";
+    (todoTitle as HTMLInputElement).value = normalizeSeedTitle(opts.initialTitle);
     (todoBody as HTMLTextAreaElement).value = "";
     (todoTags as HTMLInputElement).value = "";
     const initialKey = resolveColumnKey(status);

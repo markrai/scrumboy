@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.14.4-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.14.5-blue" alt="version" />
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   </a>
@@ -169,6 +169,8 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
 
 - VoiceFlow - deterministic voice commands (see `docs/VOICEFLOW.md`).
+
+- Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see `docs/WALL.md`).
 
 ---
 

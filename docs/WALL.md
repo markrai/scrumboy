@@ -10,7 +10,10 @@ Sticky-note board for durable projects. Open it from the board topbar (desktop o
 - **Resize** - Drag the **bottom-right** handle.
 - **Change color** - **Single-click** a note (waits briefly so a double-click can still open edit).
 - **Edit text** - **Double-click** a note. **Enter** commits (Shift+Enter = new line). **Escape** cancels. **Blur** commits.
-- **Delete a note** - Drag it onto the **trash** image (bottom-right), then confirm.
+- **Note actions menu** - **Right-click** a note to open a small menu with:
+  - **Create Todo from Note** - opens the **New Todo** dialog with the note's text prefilled as the Title. Save or cancel as usual; the wall stays open either way.
+  - **Delete** - prompts the same confirmation as before, then deletes the note.
+- **Delete a note (drag-to-trash)** - Drag it onto the **trash** image (bottom-right), then confirm.
 - **Line between two notes** - Hold **Shift**, drag from one note to another.
 - **Delete a line** - **Right-click** the line, then confirm.
 - **Select several notes** - **Drag** on empty canvas to draw a selection box.
