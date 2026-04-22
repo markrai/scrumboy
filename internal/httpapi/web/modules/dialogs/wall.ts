@@ -621,8 +621,7 @@ function bindSurfaceHandlers(state: Mounted): void {
   }, { signal: state.abort.signal });
 
   // Postbaby parity: right-click on empty canvas adds a note; right-click on
-  // an edge deletes it (after confirm); right-click on a note is swallowed
-  // (no native menu, no creation) so it doesn't conflict with note drag.
+  // an edge or note deletes it (after confirm).
   surface.addEventListener("contextmenu", (ev: MouseEvent) => {
     const target = ev.target as HTMLElement | null;
     if (!target) return;
@@ -646,9 +645,15 @@ function bindSurfaceHandlers(state: Mounted): void {
       return;
     }
     if (noteEl) {
-      // Suppress the browser menu over notes; do nothing else (no delete UX
-      // here - drop on trash is the only delete path for notes).
       ev.preventDefault();
+      const noteId = noteEl.dataset.noteId || "";
+      if (noteId) {
+        void confirmDelete("Delete this note?").then((confirmed) => {
+          if (confirmed) {
+            void deleteNote(noteId);
+          }
+        });
+      }
       return;
     }
     ev.preventDefault();
