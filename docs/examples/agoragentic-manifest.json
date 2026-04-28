@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "listings": [
+    {
+      "id": "scrumboy.discover_tools",
+      "kind": "http",
+      "method": "POST",
+      "path": "/agora/v1/discover",
+      "requestBody": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "scrumboy.invoke_tool",
+      "kind": "http",
+      "method": "POST",
+      "path": "/agora/v1/invoke",
+      "requestBody": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "arguments": { "type": "object" }
+        },
+        "required": ["tool", "arguments"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

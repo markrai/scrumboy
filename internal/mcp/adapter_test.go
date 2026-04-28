@@ -1056,6 +1056,73 @@ func TestMCPTodosUpdateNullClearsSupportedFields(t *testing.T) {
 	}
 }
 
+func TestMCPTodosUpdatePatchSprintIdAssignAndClear(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+
+	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Todo Sprint Patch Project",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+	slug := projectSlugByName(t, sqlDB, "Todo Sprint Patch Project")
+	projectID := projectIDBySlug(t, sqlDB, slug)
+
+	st := store.New(sqlDB, nil)
+	sp, err := st.CreateSprint(context.Background(), projectID, "Sprint A", time.UnixMilli(1000), time.UnixMilli(2000))
+	if err != nil {
+		t.Fatalf("create sprint: %v", err)
+	}
+
+	doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "todos.create",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"title":       "Sprint patch todo",
+		},
+	})
+
+	respAssign, outAssign := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "todos.update",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"localId":     1,
+			"patch": map[string]any{
+				"sprintId": sp.ID,
+			},
+		},
+	})
+	if respAssign.StatusCode != http.StatusOK {
+		t.Fatalf("todos.update assign sprint status=%d body=%#v", respAssign.StatusCode, outAssign)
+	}
+	todo := outAssign["data"].(map[string]any)["todo"].(map[string]any)
+	if todo["sprintId"] != float64(sp.ID) {
+		t.Fatalf("expected sprintId %d in todo, got %#v", sp.ID, todo["sprintId"])
+	}
+
+	respClear, outClear := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "todos.update",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"localId":     1,
+			"patch": map[string]any{
+				"sprintId": nil,
+			},
+		},
+	})
+	if respClear.StatusCode != http.StatusOK {
+		t.Fatalf("todos.update clear sprint status=%d body=%#v", respClear.StatusCode, outClear)
+	}
+	todo2 := outClear["data"].(map[string]any)["todo"].(map[string]any)
+	if todo2["sprintId"] != nil {
+		t.Fatalf("expected sprintId cleared (null), got %#v", todo2["sprintId"])
+	}
+}
+
 func TestMCPTodosUpdateValidationErrorForMalformedPatch(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()

@@ -1,5 +1,7 @@
 # Scrumboy MCP HTTP API
 
+Updated: 2026-04-23 14:28:12 -04:00
+
 This API is intended for programmatic clients (e.g., agents or integrations), not direct browser use.
 
 This document describes the **Model Context Protocol (MCP) HTTP surface** implemented under `internal/mcp` and mounted by the Scrumboy HTTP server. It reflects **current behavior only**, not a roadmap.
@@ -74,14 +76,16 @@ In addition to the **`/mcp`** HTTP interface above, Scrumboy exposes a Model Con
 
 **`notifications/initialized`** or **`initialized`** — Client acknowledgment after `initialize`. Must be sent **without** `id` (notification). Server responds with **204** and no JSON body. If an `id` is present, the server rejects the call.
 
-**`tools/list`** — Requires `id`. Returns `{ "tools": [ ... ] }`. Each entry has `name`, `description`, and `inputSchema` (JSON Schema object). **Today** the list includes **four** tools with full schemas (`projects.list`, `todos.create`, `todos.get`, `todos.update`); more entries will be added over time. **`tools/list` does not require a prior `initialize`.**
+**`tools/list`** — Requires `id`. Returns `{ "tools": [ ... ] }`. Each entry has `name`, `description`, and `inputSchema` (JSON Schema object). The array includes **every** tool in `implementedTools` from the in-code catalog (`internal/mcp/tool_catalog.go`), not a subset. **`tools/list` does not require a prior `initialize`.** The handler does **not** run `resolveRequestAuth`; the catalog is returned without an MCP-layer authentication gate (same visibility as any client that can reach `POST /mcp/rpc`).
 
 **`tools/call`** — Invokes a tool by name. Requires `id` and a **`params` object** containing:
 
 - **`name`** (string, required): exact registered tool name (same names as `POST /mcp`’s `tool` field).
 - **`arguments`** (object, optional): tool input; if omitted, treated as `{}`.
 
-**`tools/call` uses the same tool registry as `POST /mcp`**, so any implemented tool may be invoked even if it does not yet appear in `tools/list`. For tools that **do** appear in `tools/list`, the server performs a **lightweight check** that JSON Schema `required` top-level properties are present in `arguments` before calling the handler; full JSON Schema validation is not performed. Unknown tool names yield JSON-RPC **`method not found`** (`-32601`); optional `error.data` may include `{ "name": "<tool>" }`.
+`params` is unmarshaled with the Go JSON package **without** `DisallowUnknownFields`, so **extra keys** on `params` beside `name` / `arguments` are **ignored** (not rejected).
+
+**`tools/call` uses the same tool registry as `POST /mcp`**. For tools that have a catalog definition, the server performs a **lightweight check** that JSON Schema `required` top-level properties are present in `arguments` before calling the handler; full JSON Schema validation is not performed. **Unknown tool names** produce an HTTP **200** JSON-RPC **`result`** with **`isError: true`** and a text **`content`** message **`tool not found`** (not a JSON-RPC top-level **`error`** object with `-32601`). Invalid/missing `params` shape still yields JSON-RPC **`error`** (e.g. `-32602` **invalid params**).
 
 **Example `tools/call`:**
 
@@ -113,15 +117,21 @@ All JSON-RPC **responses with a body** include `"jsonrpc": "2.0"` and preserve t
   "result": {
     "content": [
       {
-        "type": "json",
-        "json": {}
+        "type": "text",
+        "text": "{\"todo\":{\"projectSlug\":\"my-project\",\"localId\":1}}"
       }
-    ]
+    ],
+    "structuredContent": {
+      "todo": {
+        "projectSlug": "my-project",
+        "localId": 1
+      }
+    }
   }
 }
 ```
 
-The `json` object is the tool’s result value (same conceptual payload as legacy `data`, including nested shapes such as `{ "todo": { ... } }` where the tool returns that).
+**`structuredContent`** is the tool’s result value (same conceptual payload as legacy `data`). **`content`** is a single MCP-style **text** block whose **`text`** field is JSON **string** of that same payload (from `json.Marshal` in `internal/mcp/jsonrpc_handler.go`).
 
 **Error:**
 
@@ -189,7 +199,7 @@ The `json` object is the tool’s result value (same conceptual payload as legac
 
 **Bearer (API access token):** In `full` mode, clients may send `Authorization: Bearer <token>` using an opaque secret minted via [`/api/me/tokens`](#api-access-tokens-rest) (prefix `sb_`, stored as a hash server-side).
 
-**Precedence:** If the request includes a **`Bearer` authorization attempt** (scheme `Bearer` per RFC 9110, with the credential in the segment after the first space; trim applies **only** to that credential string), the adapter validates that token and **does not** fall back to the session cookie when validation fails. A failed Bearer attempt yields **401** with `AUTH_REQUIRED` for the **entire** MCP request (including `GET /mcp` and `system.getCapabilities` over GET). If there is no Bearer attempt, the adapter uses the session cookie as before.
+**Precedence:** If the request includes a **`Bearer` authorization attempt** (scheme `Bearer` per RFC 9110, with the credential in the segment after the first space; trim applies **only** to that credential string), the adapter validates that token and **does not** fall back to the session cookie when validation fails for that attempt. On **legacy** `GET /mcp` and **`POST /mcp`**, a failed Bearer yields **401** with **`AUTH_REQUIRED`** before the handler runs. On **`POST /mcp/rpc`**, **`initialize`** and **`tools/list`** do **not** call **`resolveRequestAuth`**, so a bad Bearer alone does not fail those calls. **`tools/call`** does call **`resolveRequestAuth`**; a failed Bearer there returns HTTP **200** with a JSON-RPC **`result`** where **`isError`** is **`true`** and the text message is **`authentication required`** (not the legacy **`AUTH_REQUIRED`** envelope). If there is no Bearer attempt, the adapter uses the session cookie as before.
 
 **Anonymous mode:** Session cookies and Bearer tokens are **not** applied for MCP (same anonymous boundary as the documented HTTP API for cookies).
 
@@ -199,7 +209,7 @@ The `json` object is the tool’s result value (same conceptual payload as legac
 
 **Typical codes:** `AUTH_REQUIRED` when the transport rejects the principal (failed Bearer, or tool needs a signed-in user but none is in context) or when a tool requires sign-in without a session/API token. `CAPABILITY_UNAVAILABLE` when the server is in **anonymous mode**, or **before bootstrap** (no users yet), or the tool is otherwise gated as unavailable.
 
-**Practical rule:** Almost all project-scoped tools (todos, sprints, tags, members, board) require **full mode**, **post-bootstrap**, and a **valid session or valid API bearer token**. When no `Authorization: Bearer` header is sent, **`GET /mcp`** / **`system.getCapabilities`** still run without sign-in so clients can inspect the server; **if** a Bearer attempt is present and invalid, that rule does not apply - the request fails at **401** first.
+**Practical rule:** Almost all project-scoped tools (todos, sprints, tags, members, board) require **full mode**, **post-bootstrap**, and a **valid session or valid API bearer token**. When no `Authorization: Bearer` header is sent, **`GET /mcp`** / **`system.getCapabilities`** still run without sign-in so clients can inspect the server. **If** a Bearer attempt is present and invalid, **`GET /mcp`** and legacy **`POST /mcp`** fail at **401** first; JSON-RPC **`tools/call`** surfaces the failure as a tool error result instead (see above).
 
 ## Authentication example (curl)
 

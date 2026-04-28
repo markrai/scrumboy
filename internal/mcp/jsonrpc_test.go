@@ -495,6 +495,26 @@ func TestJSONRPC_ToolsList_TodosUpdateSchema(t *testing.T) {
 			t.Fatalf("todos.update patch missing field %q", field)
 		}
 	}
+
+	sprintIDSchema := patchProps["sprintId"].(map[string]any)
+	typ, ok := sprintIDSchema["type"].([]any)
+	if !ok {
+		t.Fatalf("todos.update patch.sprintId type expected []any, got %T %#v", sprintIDSchema["type"], sprintIDSchema["type"])
+	}
+	have := map[string]struct{}{}
+	for _, x := range typ {
+		s, ok := x.(string)
+		if !ok {
+			t.Fatalf("todos.update patch.sprintId type union element expected string, got %T", x)
+		}
+		have[s] = struct{}{}
+	}
+	if _, ok := have["integer"]; !ok {
+		t.Fatalf("todos.update patch.sprintId expected integer in type union, got %#v", typ)
+	}
+	if _, ok := have["null"]; !ok {
+		t.Fatalf("todos.update patch.sprintId expected null in type union, got %#v", typ)
+	}
 }
 
 func TestJSONRPC_ToolsList_ProjectsListSchema(t *testing.T) {

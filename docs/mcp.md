@@ -1,5 +1,7 @@
 # Scrumboy MCP Interface
 
+Updated: 2026-04-23 14:28:12 -04:00
+
 Designed for use by AI agents (Claude, custom MCP clients) and automation workflows.
 
 Scrumboy provides an MCP-compatible tool interface over HTTP for managing projects, todos, sprints, tags, and members.
@@ -43,7 +45,7 @@ Each tool is invoked by name (e.g. `todos.create`) with a JSON input object and 
 
 Scrumboy exposes a fixed catalog of **named tools** over **HTTP**. Clients call tools by posting JSON and receive JSON success or error envelopes (legacy surface), or use **JSON-RPC 2.0** on a separate path (MCP-style `tools/list` and `tools/call`).
 
-Tool inputs strictly follow their defined schemas and **reject unknown fields** (JSON decoding uses **`DisallowUnknownFields`**; tool catalog roots set **`additionalProperties: false`** in `internal/mcp/tool_catalog.go`, enforced via **`decodeInput`** in `internal/mcp/adapter.go` and **`readJSON`** on legacy `POST /mcp` bodies in `internal/mcp/http_handler.go`).
+Tool inputs **generally** reject unknown fields where the handler uses **`decodeInput`** (JSON decoding uses **`DisallowUnknownFields`** there and on legacy `POST /mcp` bodies via **`readJSON`** in `internal/mcp/http_handler.go`). The tool catalog roots set **`additionalProperties: false`** in `internal/mcp/tool_catalog.go` to describe that contract. **Exceptions:** handlers that do not call **`decodeInput`** still accept extra keys in `input` / `arguments` without failing decode — today **`system.getCapabilities`**, **`projects.list`**, and **`tags.listMine`**. JSON-RPC **`tools/call`** unmarshals **`params`** with standard **`json.Unmarshal`**, so unknown keys **beside** `name` / `arguments` on `params` are ignored (only **`arguments`** are validated per tool).
 
 This is not a stdio-based MCP server. All interactions occur over HTTP. Any client that can send `GET`/`POST` with JSON bodies and cookies or `Authorization` headers can integrate.
 
@@ -91,6 +93,10 @@ The MCP handler is mounted at **`/mcp`** on the same origin as the Scrumboy HTTP
 
 There are no other MCP paths under `/mcp/` in the current implementation.
 
+## Agoragentic HTTP adapter (Agora)
+
+For **Agoragentic**-style listings (HTTP envelope and fixed paths), Scrumboy exposes **`POST /agora/v1/discover`** and **`POST /agora/v1/invoke`**, which delegate in-process to the same JSON-RPC **`tools/list`** and **`tools/call`** flow as **`POST /mcp/rpc`**. **`/mcp`** and **`/mcp/rpc`** remain the canonical MCP surfaces; this layer is an edge adapter only. Request/response shapes, required fields, and schema notes are documented in **`docs/agoragentic.md`**, with a minimal example manifest at **`docs/examples/agoragentic-manifest.json`**.
+
 ## Choosing an Interface
 
 Claude and other MCP-style clients should use the **JSON-RPC** interface (**`/mcp/rpc`**).
@@ -135,7 +141,7 @@ Behavior is implemented in `internal/mcp/adapter.go` (`resolveRequestAuth`).
 
 **JSON-RPC:**
 
-- After `initialize`, call **`tools/list`** to receive the catalog (`name`, `description`, `inputSchema` per tool), implemented in `internal/mcp/jsonrpc_handler.go` / `internal/mcp/tool_catalog.go`.
+- After `initialize`, call **`tools/list`** to receive the catalog (`name`, `description`, `inputSchema` per tool), implemented in `internal/mcp/jsonrpc_handler.go` / `internal/mcp/tool_catalog.go`. **`tools/list`** does **not** invoke **`resolveRequestAuth`**; the catalog is returned without an MCP-layer auth check (any caller that can `POST /mcp/rpc` receives the tool list and schemas).
 
 **Example `data` object** (structure from `internal/mcp/types.go` `capabilitiesData`; values below match a **full-mode, pre-bootstrap** instance as asserted in tests — your `serverMode`, `bootstrapAvailable`, and `implementedTools` may differ):
 
@@ -517,7 +523,7 @@ curl -sS -X POST 'https://YOUR_HOST/mcp/rpc' \
 
 **`result`** contains **`tools`**: an array of objects with **`name`**, **`description`**, **`inputSchema`** (one entry per implemented tool; length matches **`implementedTools`** in capabilities).
 
-**4. `tools/call`** — same auth as legacy **`POST /mcp`** (session cookie or **`Authorization: Bearer`** on the request). **`params.name`** is the tool name; **`params.arguments`** is the tool input object (required JSON keys must be present; unknown keys are rejected by the adapter’s strict decode).
+**4. `tools/call`** — same auth resolution as legacy **`POST /mcp`** (**`resolveRequestAuth`**: session cookie or **`Authorization: Bearer`**), but Bearer failures map to a JSON-RPC **tool** result with **`isError: true`** and message **`authentication required`**, not the legacy **`AUTH_REQUIRED`** envelope. **`params.name`** is the tool name; **`params.arguments`** is the tool input object (catalog **`required`** keys are checked before the handler; unknown keys in **`arguments`** fail **`decodeInput`** for most tools — see **Overview** for exceptions).
 
 ```bash
 curl -sS -X POST 'https://YOUR_HOST/mcp/rpc' \

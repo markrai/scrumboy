@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"scrumboy/internal/agora"
 	"scrumboy/internal/config"
 	"scrumboy/internal/crypto"
 	"scrumboy/internal/db"
@@ -88,19 +89,25 @@ func main() {
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
 	}
 
+	maxB := cfg.MaxRequestBodyBytes
+	if maxB <= 0 {
+		maxB = 1 << 20
+	}
+	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode})
 	srv := httpapi.NewServer(st, httpapi.Options{
-		Logger:               logger,
-		MaxRequestBody:       cfg.MaxRequestBodyBytes,
-		ScrumboyMode:         cfg.ScrumboyMode,
-		DataDir:              cfg.DataDir,
-		MCPHandler:           mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode}),
-		EncryptionKey:        encKey,
-		OIDCService:          oidcSvc,
-		VAPIDPublicKey:       cfg.VAPIDPublicKey,
-		VAPIDPrivateKey:      cfg.VAPIDPrivateKey,
-		VAPIDSubscriber:      cfg.VAPIDSubscriber,
-		PushDebug: cfg.PushDebug,
-		WallEnabled: cfg.WallEnabled,
+		Logger:          logger,
+		MaxRequestBody:  cfg.MaxRequestBodyBytes,
+		ScrumboyMode:    cfg.ScrumboyMode,
+		DataDir:         cfg.DataDir,
+		MCPHandler:      mcpH,
+		AgoraHandler:    agora.New(mcpH, agora.Options{MaxRequestBytes: maxB}),
+		EncryptionKey:   encKey,
+		OIDCService:     oidcSvc,
+		VAPIDPublicKey:  cfg.VAPIDPublicKey,
+		VAPIDPrivateKey: cfg.VAPIDPrivateKey,
+		VAPIDSubscriber: cfg.VAPIDSubscriber,
+		PushDebug:       cfg.PushDebug,
+		WallEnabled:     cfg.WallEnabled,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 

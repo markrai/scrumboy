@@ -27,6 +27,7 @@ type Options struct {
 	DataDir       string
 	AuthRateLimit *ratelimit.Limiter
 	MCPHandler    http.Handler
+	AgoraHandler  http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
@@ -64,12 +65,13 @@ type Server struct {
 
 	passwordResetAdminLimiter *ratelimit.Limiter // 10 resets/min per admin
 
-	webFS       fs.FS
-	fileSrv     http.Handler
-	indexHTML   []byte
-	landingHTML []byte
-	swJS        []byte // Service worker with version injected
-	mcpHandler  http.Handler
+	webFS        fs.FS
+	fileSrv      http.Handler
+	indexHTML    []byte
+	landingHTML  []byte
+	swJS         []byte // Service worker with version injected
+	mcpHandler   http.Handler
+	agoraHandler http.Handler
 
 	vapidPublicKey      string
 	pushVapidConfigured bool // both public and private keys non-empty; subscribe and push notify use this
@@ -325,6 +327,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		landingHTML:               landingHTML,
 		swJS:                      swJS,
 		mcpHandler:                opts.MCPHandler,
+		agoraHandler:              opts.AgoraHandler,
 		vapidPublicKey:            vapidPub,
 		pushVapidConfigured:       pushVapidConfigured,
 		pushDebug:                 pushDebug,
@@ -354,6 +357,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/healthz" {
 		s.handleHealthz(w, r)
+		return
+	}
+
+	if s.agoraHandler != nil && (r.URL.Path == "/agora/v1" || strings.HasPrefix(r.URL.Path, "/agora/v1/")) {
+		s.agoraHandler.ServeHTTP(w, r)
 		return
 	}
 
