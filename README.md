@@ -15,6 +15,7 @@
 
 - [Quick Start](#quick-start)
   - [Run the official Docker image](#run-the-official-docker-image)
+  - [Run the Windows executable](#run-the-windows-executable)
   - [Build locally from source](#build-locally-from-source)
   - [Run from source](#run-from-source)
 - [Optional Configuration](#optional-configuration)
@@ -84,6 +85,16 @@ docker compose up -d
 ```
 
 Open [http://localhost:8080](http://localhost:8080).
+
+### Run the Windows executable
+
+Windows users can download `scrumboy-*-windows-amd64.exe` from [GitHub Releases](https://github.com/markrai/scrumboy/releases). The matching `.sha256` file is published beside it for checksum verification.
+
+Put the exe in a dedicated writable folder before running it, for example `%USERPROFILE%\Scrumboy`. The exe starts a local Scrumboy server; open [http://localhost:8080](http://localhost:8080) after it starts.
+
+Scrumboy creates runtime data under `./data` by default. The default SQLite database is `./data/app.db`, and SQLite may also create `app.db-wal` and `app.db-shm` while the server is running. The exe is single-file for distribution, but it is not "no runtime files ever."
+
+Advanced users can set `DATA_DIR` to choose the runtime data directory and `BIND_ADDR` to choose the listen address or port.
 
 ### Build locally from source
 

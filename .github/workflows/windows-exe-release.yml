@@ -1,0 +1,231 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-exe:
+    name: Build and smoke-test Windows EXE
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          clean: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: internal/httpapi/web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: internal/httpapi/web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: internal/httpapi/web
+        run: npm run build
+
+      - name: Test frontend
+        working-directory: internal/httpapi/web
+        run: npm test
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test Go
+        run: go test ./... -count=1 -timeout=5m
+
+      - name: Prepare artifact names
+        id: names
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $artifactDir = Join-Path $env:RUNNER_TEMP "scrumboy-artifacts"
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+
+          if ($env:GITHUB_EVENT_NAME -eq "release") {
+            $tag = "${{ github.event.release.tag_name }}"
+            if ([string]::IsNullOrWhiteSpace($tag)) {
+              throw "Release event did not provide a tag name."
+            }
+            if ($tag.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) {
+              throw "Release tag '$tag' contains characters that are invalid in Windows filenames."
+            }
+            $artifactStem = "scrumboy-$tag-windows-amd64"
+          } else {
+            $artifactStem = "scrumboy-manual-${{ github.run_number }}-windows-amd64"
+          }
+
+          $exePath = Join-Path $artifactDir "$artifactStem.exe"
+          $shaPath = "$exePath.sha256"
+
+          "artifact_stem=$artifactStem" >> $env:GITHUB_OUTPUT
+          "exe_path=$exePath" >> $env:GITHUB_OUTPUT
+          "sha_path=$shaPath" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows executable
+        shell: pwsh
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
+          EXE_PATH: ${{ steps.names.outputs.exe_path }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          go build -trimpath -ldflags="-s -w" -o "$env:EXE_PATH" .\cmd\scrumboy
+
+      - name: Smoke-test Windows executable
+        shell: pwsh
+        env:
+          EXE_PATH: ${{ steps.names.outputs.exe_path }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $runDir = Join-Path $env:RUNNER_TEMP "scrumboy-smoke-run"
+          $dataDir = Join-Path $env:RUNNER_TEMP "scrumboy-smoke-data"
+          $stdoutLog = Join-Path $env:RUNNER_TEMP "scrumboy-smoke.stdout.log"
+          $stderrLog = Join-Path $env:RUNNER_TEMP "scrumboy-smoke.stderr.log"
+
+          Remove-Item -LiteralPath $runDir -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath $dataDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+
+          $env:DATA_DIR = $dataDir
+          $env:BIND_ADDR = "127.0.0.1:18080"
+
+          $proc = $null
+          try {
+            $proc = Start-Process `
+              -FilePath $env:EXE_PATH `
+              -WorkingDirectory $runDir `
+              -RedirectStandardOutput $stdoutLog `
+              -RedirectStandardError $stderrLog `
+              -WindowStyle Hidden `
+              -PassThru
+
+            $healthOk = $false
+            for ($attempt = 1; $attempt -le 60; $attempt++) {
+              if ($proc.HasExited) {
+                throw "Scrumboy exited before /healthz became available. Exit code: $($proc.ExitCode)"
+              }
+
+              try {
+                $health = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:18080/healthz" -TimeoutSec 2
+                if ($health.StatusCode -eq 200) {
+                  $healthOk = $true
+                  break
+                }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+
+            if (-not $healthOk) {
+              throw "Timed out waiting for /healthz to return HTTP 200."
+            }
+
+            $root = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:18080/" -TimeoutSec 10
+            if ($root.StatusCode -ne 200) {
+              throw "Expected / to return HTTP 200, got HTTP $($root.StatusCode)."
+            }
+
+            $dbPath = Join-Path $dataDir "app.db"
+            if (-not (Test-Path -LiteralPath $dbPath -PathType Leaf)) {
+              throw "Expected SQLite database to be created at '$dbPath'."
+            }
+          } finally {
+            if ($proc -and -not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+              Wait-Process -Id $proc.Id -Timeout 10 -ErrorAction SilentlyContinue
+            }
+
+            Write-Host "===== Scrumboy stdout ====="
+            if (Test-Path -LiteralPath $stdoutLog) {
+              Get-Content -LiteralPath $stdoutLog -Raw
+            }
+            Write-Host "===== Scrumboy stderr ====="
+            if (Test-Path -LiteralPath $stderrLog) {
+              Get-Content -LiteralPath $stderrLog -Raw
+            }
+          }
+
+      - name: Generate SHA256 checksum
+        shell: pwsh
+        env:
+          EXE_PATH: ${{ steps.names.outputs.exe_path }}
+          SHA_PATH: ${{ steps.names.outputs.sha_path }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $env:EXE_PATH).Hash.ToLowerInvariant()
+          $fileName = Split-Path -Leaf $env:EXE_PATH
+          Set-Content -LiteralPath $env:SHA_PATH -Value "$hash  $fileName" -Encoding ASCII
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.names.outputs.exe_path }}
+          if-no-files-found: error
+          archive: false
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.names.outputs.sha_path }}
+          if-no-files-found: error
+          archive: false
+
+  upload-release-assets:
+    name: Attach assets to GitHub Release
+    if: github.event_name == 'release'
+    needs: build-windows-exe
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Download executable artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+
+      - name: Attach assets to existing release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $assetDir = Join-Path $env:RUNNER_TEMP "release-assets"
+          $exeFiles = @(Get-ChildItem -LiteralPath $assetDir -Recurse -File | Where-Object { $_.Name -like "scrumboy-*-windows-amd64.exe" })
+          $shaFiles = @(Get-ChildItem -LiteralPath $assetDir -Recurse -File | Where-Object { $_.Name -like "scrumboy-*-windows-amd64.exe.sha256" })
+
+          if ($exeFiles.Count -ne 1) {
+            throw "Expected exactly one Windows executable artifact, found $($exeFiles.Count)."
+          }
+          if ($shaFiles.Count -ne 1) {
+            throw "Expected exactly one checksum artifact, found $($shaFiles.Count)."
+          }
+
+          $exePath = $exeFiles[0].FullName
+          $shaPath = $shaFiles[0].FullName
+          gh release upload $env:RELEASE_TAG $exePath $shaPath --clobber
