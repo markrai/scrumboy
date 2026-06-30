@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	login2FAPendingTTL    = 10 * time.Minute
+	login2FAPendingTTL   = 10 * time.Minute
 	enrollmentTTL        = 10 * time.Minute
 	maxAttemptsPerToken  = 5
 	recoveryCodeLength   = 8 // Crockford base32, 4-4 split
@@ -371,23 +371,39 @@ func (s *Store) ConsumeRecoveryCode(ctx context.Context, userID int64, code stri
 	if err != nil {
 		return false, fmt.Errorf("list recovery codes: %w", err)
 	}
-	defer rows.Close()
 
 	nowMs := time.Now().UTC().UnixMilli()
+	var matchingID int64
+	var scanErr error
 	for rows.Next() {
 		var id int64
 		var codeHash string
 		if err := rows.Scan(&id, &codeHash); err != nil {
-			return false, fmt.Errorf("scan recovery code: %w", err)
+			scanErr = err
+			break
 		}
 		if bcrypt.CompareHashAndPassword([]byte(codeHash), []byte(code)) == nil {
-			if _, err := s.db.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ?`, nowMs, id); err != nil {
-				return false, fmt.Errorf("mark recovery code used: %w", err)
-			}
-			return true, nil
+			matchingID = id
+			break
 		}
 	}
-	return false, nil
+	if err := rows.Close(); err != nil {
+		return false, fmt.Errorf("close recovery code rows: %w", err)
+	}
+	if scanErr != nil {
+		return false, fmt.Errorf("scan recovery code: %w", scanErr)
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate recovery codes: %w", err)
+	}
+	if matchingID == 0 {
+		return false, nil
+	}
+
+	if _, err := s.db.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ?`, nowMs, matchingID); err != nil {
+		return false, fmt.Errorf("mark recovery code used: %w", err)
+	}
+	return true, nil
 }
 
 // DeleteRecoveryCodesByUser removes all recovery codes for the user.

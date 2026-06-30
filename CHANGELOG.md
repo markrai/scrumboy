@@ -2,6 +2,12 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** unless noted below.
 
+## [3.18.22] - 2026-06-30
+
+### Fixed
+
+- **2FA recovery code login** - Consuming a recovery code during sign-in no longer runs the mark-used update while the recovery-code SELECT cursor is open, avoiding SQLite writer lock contention that could deadlock login.
+
 ## [3.18.21] - 2026-06-30
 
 ### Documentation
