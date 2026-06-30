@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** unless noted below.
 
+## [3.18.23] - 2026-06-30
+
+### Added
+
+- **Windows executable releases** - GitHub Actions workflow builds, smoke-tests, and attaches `scrumboy-*-windows-amd64.exe` plus a matching `.sha256` checksum to GitHub Releases on publish; manual `workflow_dispatch` runs upload build artifacts for ad-hoc testing.
+
+### Documentation
+
+- **README** - Quick Start section for downloading the Windows exe from GitHub Releases, runtime `./data` layout, and optional `DATA_DIR` / `BIND_ADDR` overrides.
+
 ## [3.18.22] - 2026-06-30
 
 ### Fixed
