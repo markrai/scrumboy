@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -29,27 +31,31 @@ func main() {
 	defer sqlDB.Close()
 
 	query := os.Args[1]
-	ctx := context.Background()
+	if err := run(context.Background(), sqlDB, query, os.Stdout); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
 
+func run(ctx context.Context, sqlDB *sql.DB, query string, out io.Writer) error {
 	rows, err := sqlDB.QueryContext(ctx, query)
 	if err != nil {
-		log.Fatalf("query: %v", err)
+		return fmt.Errorf("query: %w", err)
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
 	if err != nil {
-		log.Fatalf("columns: %v", err)
+		return fmt.Errorf("columns: %w", err)
 	}
 
 	// Print header
 	for i, col := range cols {
 		if i > 0 {
-			fmt.Print(" | ")
+			fmt.Fprint(out, " | ")
 		}
-		fmt.Print(col)
+		fmt.Fprint(out, col)
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 
 	// Print rows
 	values := make([]interface{}, len(cols))
@@ -60,21 +66,22 @@ func main() {
 
 	for rows.Next() {
 		if err := rows.Scan(valuePtrs...); err != nil {
-			log.Fatalf("scan: %v", err)
+			return fmt.Errorf("scan: %w", err)
 		}
 		for i, val := range values {
 			if i > 0 {
-				fmt.Print(" | ")
+				fmt.Fprint(out, " | ")
 			}
 			if val == nil {
-				fmt.Print("NULL")
+				fmt.Fprint(out, "NULL")
 			} else {
-				fmt.Print(val)
+				fmt.Fprint(out, val)
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(out)
 	}
 	if err := rows.Err(); err != nil {
-		log.Fatalf("rows: %v", err)
+		return fmt.Errorf("rows: %w", err)
 	}
+	return nil
 }
