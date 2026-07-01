@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -29,15 +31,21 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	if err := run(ctx, sqlDB, logger); err != nil {
+		logger.Fatal(err)
+	}
+}
+
+func run(ctx context.Context, sqlDB *sql.DB, logger *log.Logger) error {
 	if err := migrate.Apply(ctx, sqlDB); err != nil {
-		logger.Fatalf("migrate: %v", err)
+		return fmt.Errorf("migrate: %w", err)
 	}
 
 	st := store.New(sqlDB, nil)
 	n, err := st.RewriteDurableProjectSlugs(ctx)
 	if err != nil {
-		logger.Fatalf("rewrite slugs: %v", err)
+		return fmt.Errorf("rewrite slugs: %w", err)
 	}
 	logger.Printf("rewrote %d durable project slug(s)", n)
+	return nil
 }
-
