@@ -1,9 +1,12 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.18.23-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.18.24-blue" alt="version" />
   <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
+  <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/markrai/scrumboy/ci.yml?branch=main&label=tests" alt="tests" />
+  </a>
 </p>
 
 #### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP-compatible client support

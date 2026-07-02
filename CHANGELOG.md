@@ -2,6 +2,25 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** unless noted below.
 
+## [3.18.24] - 2026-07-01
+
+### Added
+
+- **CI workflow** - GitHub Actions (`.github/workflows/ci.yml`) runs Go (`go test ./...`) and frontend (`npm test`) on every push and pull request to `main`, with parallel jobs and `workflow_dispatch` for manual runs.
+
+### Tests
+
+- **Maintenance CLI tools** - Coverage for `dbquery`, `slugfix`, `tagcheck`, and `tagrecover` (report formatting, error paths, and legacy slug/tag recovery); core logic extracted into testable `run()` helpers.
+- **Auth** - Password validation rules and password-reset token generate/parse/verify flows.
+- **Database layer** - `db.Open` directory creation, SQLite pragmas, connection pool limits, and migration runner idempotency with current-schema landmark checks.
+- **Event bus** - Fan-out publish delivery order, context propagation, and missing-ID/timestamp defaults.
+- **HTTP API** - Auth rate limiter per-IP and per-email windows, stale-entry cleanup, and email normalization.
+- **Project color** - Dominant-color extraction from avatar data URLs (invalid input, PNG channels, clamping).
+
+### Documentation
+
+- **README** - Tests status shield linked to the CI workflow on `main`.
+
 ## [3.18.23] - 2026-06-30
 
 ### Added
