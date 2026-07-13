@@ -16,6 +16,7 @@ type storeAPI interface {
 	CountUsers(ctx context.Context) (int, error)
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
 	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
+	GetUserByOAuthAccessToken(ctx context.Context, rawToken string) (store.User, error)
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProjectContextBySlug(ctx context.Context, slug string, mode store.Mode) (store.ProjectContext, error)
 	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
@@ -125,6 +126,12 @@ func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 			return requestAuthResult{Ctx: ctx, BearerAuthFailed: true}
 		}
 		u, err := a.store.GetUserByAPIToken(ctx, cred)
+		if errors.Is(err, store.ErrNotFound) {
+			// OAuth-issued access tokens (RFC 6749) live in a separate table
+			// from manually-created API tokens; fall back to that lookup
+			// before giving up. This never falls back to the session cookie.
+			u, err = a.store.GetUserByOAuthAccessToken(ctx, cred)
+		}
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return requestAuthResult{Ctx: ctx, BearerAuthFailed: true}
