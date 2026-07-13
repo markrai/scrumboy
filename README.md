@@ -161,6 +161,10 @@ Environment="SCRUMBOY_ENCRYPTION_KEY=REPLACE_WITH_BASE64_32_BYTE_KEY"
 
 In both cases, the deployment manager is injecting the environment variable. Scrumboy itself does not auto-load these files.
 
+### SMTP for self-service password reset (optional)
+
+Set `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_PORT`, and `SCRUMBOY_SMTP_FROM` together (Username/Password optional) to enable `POST /api/auth/request-password-reset`, letting users request their own password-reset email instead of relying on an admin-generated link. **`SCRUMBOY_ENCRYPTION_KEY` above is also required** for this flow (it signs the reset token, same as the admin-generated link). See [`docs/smtp.md`](docs/smtp.md) for TLS modes, startup log states, and verification steps.
+
 ### OIDC / SSO login (optional)
 
 Scrumboy supports OpenID Connect for single sign-on with any standards-compliant provider (Keycloak, Authentik, Auth0, Entra ID, etc.). OIDC is enabled by setting all four required environment variables:
@@ -237,6 +241,8 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - Sprints: create, activate, close; sprint filter on board; default sprint weeks (1 or 2) per project.
 
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
+
+- Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY`): see [docs/smtp.md](docs/smtp.md).
 
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit_trail.md](docs/audit_trail.md)).
 
@@ -388,6 +394,13 @@ None of these are required for basic startup.
 | `SCRUMBOY_VAPID_PRIVATE_KEY` | (empty) - VAPID private key (URL-safe base64). |
 | `SCRUMBOY_VAPID_SUBSCRIBER` | (empty) - Contact for VAPID JWT `sub` (not tied to IdP). Use a **plain email** (e.g. `ops@example.com`); the server adds `mailto:`. Or set a full `mailto:...` or `https://...` URL explicitly. If unset, a built-in default is used. |
 | `SCRUMBOY_DEBUG_PUSH` | (empty) - Set to `1` to log push send/prune on the server. |
+| `SCRUMBOY_SMTP_HOST` | (empty) - **Self-service password reset.** SMTP relay hostname. Required together with Port and From. |
+| `SCRUMBOY_SMTP_PORT` | `587` |
+| `SCRUMBOY_SMTP_USERNAME` | (empty) - SMTP auth username; omit for relays allowing unauthenticated submission. |
+| `SCRUMBOY_SMTP_PASSWORD` | (empty) - SMTP auth password. Never logged. |
+| `SCRUMBOY_SMTP_FROM` | (empty) - Envelope + header `From`, e.g. `Scrumboy <no-reply@example.com>`. Required together with Host and Port. |
+| `SCRUMBOY_SMTP_TLS_MODE` | `starttls` (or `implicit`, `none`) - see [`docs/smtp.md`](docs/smtp.md). |
+| `SCRUMBOY_SMTP_DEBUG` | (empty) - Set to `1` to log SMTP send attempts (never credentials/body). |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 

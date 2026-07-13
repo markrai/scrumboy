@@ -10,6 +10,7 @@
 - [Are tag colors personal, or shared with the team?](#are-tag-colors-personal-or-shared-with-the-team)
 - [How do I use Scrumboy with Claude or other MCP clients?](#how-do-i-use-scrumboy-with-claude-or-other-mcp-clients)
 - [What are VAPID keys, and do I need them?](#what-are-vapid-keys-and-do-i-need-them)
+- [Do I need to configure SMTP? What happens if I don't?](#do-i-need-to-configure-smtp-what-happens-if-i-dont)
 - [How does auditing work, and where can I see it?](#how-does-auditing-work-and-where-can-i-see-it)
 - [Does Scrumboy use telemetry, tracking, or “phone home”?](#does-scrumboy-use-telemetry-tracking-or-phone-home)
 - [What do I need to do to contribute?](#what-do-i-need-to-do-to-contribute)
@@ -173,6 +174,12 @@ Optional: `SCRUMBOY_VAPID_SUBSCRIBER` is a **contact hint for push providers** (
 **Not telemetry:** VAPID identifies **your** Scrumboy server to the push network so assignment events can be delivered. It is not product analytics and does not send board data to Scrumboy’s project maintainers.
 
 For what VAPID is, how it fits this project, key generation, and verification, see [`docs/vapid.md`](docs/vapid.md). For PWA install, Docker wiring, and auto-subscribe behavior, see [`docs/pwa.md`](docs/pwa.md).
+
+## Do I need to configure SMTP? What happens if I don't?
+
+**No.** SMTP is optional server config that adds a self-service "forgot password" flow (`POST /api/auth/request-password-reset`). Without it, admins can still generate password-reset links manually (Settings → Users → Password) and hand them to the user out of band — that flow is unaffected by SMTP configuration.
+
+If you want users to be able to request their own reset email, set `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_PORT`, and `SCRUMBOY_SMTP_FROM` together (plus `SCRUMBOY_ENCRYPTION_KEY`, which signs the reset token). See [`docs/smtp.md`](docs/smtp.md) for TLS modes and setup/verification steps.
 
 # Auditing
 

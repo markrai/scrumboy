@@ -87,6 +87,7 @@ func main() {
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
 	}
 	logWebPushConfiguration(logger, cfg.ScrumboyMode, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey)
+	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
 
 	maxB := cfg.MaxRequestBodyBytes
 	if maxB <= 0 {
@@ -110,6 +111,12 @@ func main() {
 		WallEnabled:          cfg.WallEnabled,
 		MarkdownNotesEnabled: cfg.MarkdownNotesEnabled,
 		MermaidNotesEnabled:  cfg.MermaidNotesEnabled,
+		SMTPHost:             cfg.SMTPHost,
+		SMTPPort:             cfg.SMTPPort,
+		SMTPUsername:         cfg.SMTPUsername,
+		SMTPPassword:         cfg.SMTPPassword,
+		SMTPFrom:             cfg.SMTPFrom,
+		SMTPTLSMode:          cfg.SMTPTLSMode,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 
@@ -234,5 +241,16 @@ func logWebPushConfiguration(logger *log.Logger, mode, publicKey, privateKey str
 		logger.Printf("web push: partial config ignored")
 	default:
 		logger.Printf("web push: disabled (set SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY)")
+	}
+}
+
+func logSMTPConfiguration(logger *log.Logger, host string, port int, from string) {
+	switch {
+	case httpapi.SMTPConfigured(host, port, from):
+		logger.Printf("smtp: enabled (host=%s port=%d)", host, port)
+	case httpapi.SMTPPartiallyConfigured(host, port, from):
+		logger.Printf("smtp: partial config ignored (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM together)")
+	default:
+		logger.Printf("smtp: disabled (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM to enable password-reset emails)")
 	}
 }

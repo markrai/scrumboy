@@ -1,0 +1,329 @@
+package httpapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"regexp"
+	"strings"
+	"testing"
+	"time"
+
+	"scrumboy/internal/auth/tokens"
+	"scrumboy/internal/mailer/mailertest"
+)
+
+var testEncryptionKey = []byte("0123456789abcdef0123456789abcdef")
+
+func newRequestPasswordResetTestServer(t *testing.T, smtpConfigured bool) (*httptest.Server, *mailertest.Server, func()) {
+	t.Helper()
+
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	host, port := fake.HostPort()
+
+	opts := Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+		SMTPTLSMode:    "none",
+	}
+	if smtpConfigured {
+		opts.SMTPHost = host
+		opts.SMTPPort = port
+		opts.SMTPFrom = "no-reply@example.com"
+	}
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, opts)
+	return ts, fake, func() {
+		cleanup()
+		fake.Close()
+	}
+}
+
+func waitForMessages(t *testing.T, fake *mailertest.Server, want int) []mailertest.Message {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if msgs := fake.Messages(); len(msgs) >= want {
+			return msgs
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %d message(s), got %d", want, len(fake.Messages()))
+	return nil
+}
+
+func assertStillNoMessages(t *testing.T, fake *mailertest.Server) {
+	t.Helper()
+	// Give the async worker a beat to (incorrectly) fire before asserting absence.
+	time.Sleep(150 * time.Millisecond)
+	if msgs := fake.Messages(); len(msgs) != 0 {
+		t.Fatalf("expected no messages, got %+v", msgs)
+	}
+}
+
+var resetURLRe = regexp.MustCompile(`token=([^\s&]+)`)
+
+func TestRequestPasswordReset_ExistingUser_DeliversEmail(t *testing.T) {
+	ts, fake, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	client := newCookieClient(t)
+	user := bootstrapUserClient(t, client, ts.URL, "Alice", "alice@example.com", "password123")
+	userID := int64(user["id"].(float64))
+
+	var out map[string]any
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "alice@example.com",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if out["message"] == nil {
+		t.Fatalf("expected generic message field, got %+v", out)
+	}
+
+	msgs := waitForMessages(t, fake, 1)
+	m := msgs[0]
+	if m.To != "alice@example.com" {
+		t.Fatalf("To = %q", m.To)
+	}
+	match := resetURLRe.FindStringSubmatch(m.Body)
+	if match == nil {
+		t.Fatalf("expected token in email body, got: %s", m.Body)
+	}
+	token, err := url.QueryUnescape(match[1])
+	if err != nil {
+		t.Fatalf("unescape token: %v", err)
+	}
+	gotUserID, _, _, err := tokens.ParsePasswordResetToken(token)
+	if err != nil {
+		t.Fatalf("parse token: %v", err)
+	}
+	if gotUserID != userID {
+		t.Fatalf("token user id = %d, want %d", gotUserID, userID)
+	}
+}
+
+func TestRequestPasswordReset_NonexistentEmail_IdenticalResponseNoEmail(t *testing.T) {
+	ts, fake, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "alice2@example.com", "password123")
+
+	var existing, nonexistent map[string]any
+	resp1, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "alice2@example.com",
+	}, &existing)
+	waitForMessages(t, fake, 1) // let the existing-user path finish before comparing
+
+	resp2, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "nobody-here@example.com",
+	}, &nonexistent)
+
+	if resp1.StatusCode != resp2.StatusCode {
+		t.Fatalf("status codes differ: %d vs %d", resp1.StatusCode, resp2.StatusCode)
+	}
+	b1, _ := json.Marshal(existing)
+	b2, _ := json.Marshal(nonexistent)
+	if string(b1) != string(b2) {
+		t.Fatalf("expected byte-identical bodies, got %s vs %s", b1, b2)
+	}
+
+	if len(fake.Messages()) != 1 {
+		t.Fatalf("expected exactly 1 message (from the existing-user request only), got %d", len(fake.Messages()))
+	}
+}
+
+func TestRequestPasswordReset_SMTPNotConfigured_GenericResponseNoEmail(t *testing.T) {
+	ts, fake, cleanup := newRequestPasswordResetTestServer(t, false)
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "alice3@example.com", "password123")
+
+	var out map[string]any
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "alice3@example.com",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertStillNoMessages(t, fake)
+}
+
+func TestRequestPasswordReset_EncryptionKeyNotConfigured_GenericResponse(t *testing.T) {
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	defer fake.Close()
+	host, port := fake.HostPort()
+
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		SMTPHost:       host,
+		SMTPPort:       port,
+		SMTPFrom:       "no-reply@example.com",
+		SMTPTLSMode:    "none",
+		// EncryptionKey intentionally left unset.
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "alice4@example.com", "password123")
+
+	var out map[string]any
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "alice4@example.com",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertStillNoMessages(t, fake)
+}
+
+func TestRequestPasswordReset_AnonymousMode_NotFound(t *testing.T) {
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	defer fake.Close()
+
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "anonymous",
+		EncryptionKey:  testEncryptionKey,
+	})
+	defer cleanup()
+
+	resp, _ := doJSON(t, ts.Client(), http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "whoever@example.com",
+	}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestRequestPasswordReset_WrongMethod_MethodNotAllowed(t *testing.T) {
+	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	resp, err := ts.Client().Get(ts.URL + "/api/auth/request-password-reset")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+func TestRequestPasswordReset_MalformedJSON_BadRequest(t *testing.T) {
+	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/request-password-reset", strings.NewReader("{not json"))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Scrumboy", "1")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestRequestPasswordReset_CSRFExceptionAllowsMissingHeader(t *testing.T) {
+	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	// Deliberately omit X-Scrumboy; the endpoint must still be reachable
+	// (enumeration-safety and rate limiting are the actual defenses here).
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/request-password-reset", strings.NewReader(`{"email":"nobody@example.com"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("expected CSRF exception to apply, got 403")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+// doJSONWithIP is like doJSON but sets X-Forwarded-For so the dual-key
+// (IP + email) rate limiter sees a distinct IP per call.
+func doJSONWithIP(t *testing.T, client *http.Client, url, ip string, body any) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		t.Fatalf("encode json: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Scrumboy", "1")
+	req.Header.Set("X-Forwarded-For", ip)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	return resp
+}
+
+func TestRequestPasswordReset_RateLimited(t *testing.T) {
+	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	client := ts.Client()
+	var lastStatus int
+	for i := 0; i < 6; i++ {
+		resp := doJSONWithIP(t, client, ts.URL+"/api/auth/request-password-reset", "203.0.113.10", map[string]any{
+			"email": "ratelimited@example.com",
+		})
+		lastStatus = resp.StatusCode
+		resp.Body.Close()
+	}
+	if lastStatus != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 on 6th attempt from same IP+email, got %d", lastStatus)
+	}
+
+	// Different IP AND different email must be unaffected.
+	resp := doJSONWithIP(t, client, ts.URL+"/api/auth/request-password-reset", "203.0.113.20", map[string]any{
+		"email": "different-email@example.com",
+	})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected different IP+email to be unaffected by rate limit, got %d", resp.StatusCode)
+	}
+
+	// Same IP as the exhausted one, but a fresh email: still blocked, because
+	// the IP-side key alone is already over its limit (dual-key AND semantics).
+	resp2 := doJSONWithIP(t, client, ts.URL+"/api/auth/request-password-reset", "203.0.113.10", map[string]any{
+		"email": "yet-another-email@example.com",
+	})
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected exhausted IP to still be blocked regardless of email, got %d", resp2.StatusCode)
+	}
+}

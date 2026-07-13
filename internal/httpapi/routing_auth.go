@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"scrumboy/internal/auth/tokens"
@@ -45,6 +47,12 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 	// POST /api/auth/reset-password - token-based; no session required
 	if len(rest) == 1 && rest[0] == "reset-password" {
 		s.handleAuthResetPassword(w, r)
+		return
+	}
+
+	// POST /api/auth/request-password-reset - no session required; enumeration-safe
+	if len(rest) == 1 && rest[0] == "request-password-reset" {
+		s.handleAuthRequestPasswordReset(w, r)
 		return
 	}
 
@@ -331,4 +339,96 @@ func (s *Server) handleAuthResetPassword(w http.ResponseWriter, r *http.Request)
 	clearSessionCookie(w, r)
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleAuthRequestPasswordReset lets a user self-serve a password-reset
+// email, as an alternative to the admin-generated link
+// (handleAdminUsersPasswordReset). It is deliberately enumeration-safe: the
+// response is always identical whether or not the submitted email matches an
+// account, whether SMTP is configured, and whether the encryption key is
+// configured. Only the fully-successful path (user exists, SMTP configured,
+// token generated) enqueues an email.
+func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+		return
+	}
+	if s.mode == "anonymous" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
+	}
+
+	var in struct {
+		Email string `json:"email"`
+	}
+	if err := readJSON(w, r, s.maxBody, &in); err != nil {
+		return
+	}
+	email := ratelimit.NormalizeEmail(in.Email)
+
+	// Rate limit before any DB lookup or config check, so neither an
+	// unconfigured-SMTP response nor a per-email limiter bypass can become a
+	// timing or enumeration oracle. 5/min per IP, 5/min per submitted email.
+	if s.passwordResetRequestLimiter != nil && !s.passwordResetRequestLimiter.Allow("ip:"+clientIP(r), email) {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
+		return
+	}
+
+	// Generic response, identical regardless of what happens below (user not
+	// found, SMTP not configured, encryption key missing, or full success).
+	// This is the enumeration-safety contract for this endpoint: no branch
+	// below may change status code or body shape based on account existence.
+	respond := func() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"message": "If that account exists, a password reset email has been sent.",
+		})
+	}
+
+	if len(s.encryptionKey) == 0 || !s.smtpConfigured || email == "" {
+		respond()
+		return
+	}
+
+	ctx := s.requestContext(r)
+	u, err := s.store.GetUserByEmail(ctx, email)
+	if err != nil {
+		respond()
+		return
+	}
+
+	passwordHash, err := s.store.GetUserPasswordHash(ctx, u.ID)
+	if err != nil {
+		respond()
+		return
+	}
+	token, _, err := tokens.GeneratePasswordResetToken(s.encryptionKey, u.ID, passwordHash)
+	if err != nil {
+		s.logger.Printf("password reset request: generate token user=%d: %v", u.ID, err)
+		respond()
+		return
+	}
+
+	// Base URL derived from this request, synchronously, before enqueueing —
+	// same mechanism handleAdminUsersPasswordReset already uses; there is no
+	// dedicated site-base-URL config in Scrumboy.
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	resetURL := proto + "://" + r.Host + "/auth/reset-password?token=" + url.QueryEscape(token)
+
+	s.mailQueue.Enqueue(mailDelivery{
+		To:      u.Email,
+		Subject: "Reset your Scrumboy password",
+		Body: "A password reset was requested for your Scrumboy account.\n\n" +
+			"Reset your password using this link (expires in 30 minutes):\n" + resetURL + "\n\n" +
+			"If you did not request this, you can safely ignore this email.\n",
+		LogRef: fmt.Sprintf("password-reset user=%d", u.ID),
+	})
+
+	respond()
 }

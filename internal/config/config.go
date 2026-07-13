@@ -58,6 +58,17 @@ type Config struct {
 	// SCRUMBOY_MERMAID_NOTES_ENABLED=1 (also accepts true/on/yes). Effective
 	// only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
+
+	// SMTP (optional). Enables self-service "forgot password" emails. Host,
+	// Port, and From are required together to enable; Username/Password are
+	// optional (some relays allow trusted-network submission without auth).
+	SMTPHost     string // SCRUMBOY_SMTP_HOST
+	SMTPPort     int    // SCRUMBOY_SMTP_PORT, default 587
+	SMTPUsername string // SCRUMBOY_SMTP_USERNAME (optional)
+	SMTPPassword string // SCRUMBOY_SMTP_PASSWORD (optional; never logged)
+	SMTPFrom     string // SCRUMBOY_SMTP_FROM, e.g. "Scrumboy <no-reply@example.com>"
+	SMTPTLSMode  string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
+	SMTPDebug    bool   // SCRUMBOY_SMTP_DEBUG=1 — log send attempts (never credentials/body)
 }
 
 func FromEnv() Config {
@@ -107,6 +118,27 @@ func FromEnv() Config {
 		WallEnabled:          wallEnabledFromEnv(),
 		MarkdownNotesEnabled: markdownNotesEnabled,
 		MermaidNotesEnabled:  mermaidNotesEnabledFromEnv(markdownNotesEnabled),
+
+		SMTPHost:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_HOST")),
+		SMTPPort:     getenvInt("SCRUMBOY_SMTP_PORT", 587),
+		SMTPUsername: strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_USERNAME")),
+		SMTPPassword: strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_PASSWORD")),
+		SMTPFrom:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_FROM")),
+		SMTPTLSMode:  normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
+		SMTPDebug:    strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
+	}
+}
+
+// normalizeSMTPTLSMode validates SCRUMBOY_SMTP_TLS_MODE. Unrecognized or empty
+// values default to "starttls" (correct for the conventional port 587) —
+// the mode is always explicit config, never inferred from the port number.
+func normalizeSMTPTLSMode(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	switch v {
+	case "implicit", "none":
+		return v
+	default:
+		return "starttls"
 	}
 }
 

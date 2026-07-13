@@ -13,6 +13,7 @@ import (
 
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
+	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/store"
 	"scrumboy/internal/version"
@@ -53,6 +54,16 @@ type Options struct {
 	// MermaidNotesEnabled gates Mermaid rendering within the markdown preview.
 	// Effective only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
+
+	// SMTP (optional). Enables self-service "forgot password" email via
+	// POST /api/auth/request-password-reset. Enabled only when Host, Port,
+	// and From are all set (see SMTPConfigured).
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPTLSMode  string
 }
 
 type Server struct {
@@ -67,13 +78,18 @@ type Server struct {
 	fanout              *eventbus.Fanout
 	webhookQueue        *webhookQueue
 	webhookCancel       context.CancelFunc
+	mailQueue           *mailQueue
+	mailCancel          context.CancelFunc
 
 	authRateLimit *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
 
-	passwordResetAdminLimiter *ratelimit.Limiter // 10 resets/min per admin
+	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
+	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
+
+	smtpConfigured bool // Host+Port+From all set; gates request-password-reset email sending
 
 	webFS               fs.FS
 	fileSrv             http.Handler
@@ -346,6 +362,25 @@ func NewServer(st storeAPI, opts Options) *Server {
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	go whWorker.Run(workerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
+	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
+
+	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
+	mQueue := newMailQueue(logger)
+	var mailCancel context.CancelFunc
+	if smtpConfigured {
+		sender := mailer.New(mailer.Config{
+			Host:     opts.SMTPHost,
+			Port:     opts.SMTPPort,
+			Username: opts.SMTPUsername,
+			Password: opts.SMTPPassword,
+			From:     opts.SMTPFrom,
+			TLSMode:  opts.SMTPTLSMode,
+		})
+		mWorker := newMailWorker(mQueue, sender, logger)
+		mailCtx, cancel := context.WithCancel(context.Background())
+		mailCancel = cancel
+		go mWorker.Run(mailCtx)
+	}
 
 	var encKey []byte
 	if opts.EncryptionKey != nil {
@@ -353,35 +388,39 @@ func NewServer(st storeAPI, opts Options) *Server {
 	}
 
 	return &Server{
-		store:                     st,
-		logger:                    logger,
-		maxBody:                   maxBody,
-		maxTrelloImportBody:       maxTrelloImportBody,
-		mode:                      mode,
-		dataDir:                   strings.TrimSpace(opts.DataDir),
-		hub:                       hub,
-		sink:                      hub,
-		fanout:                    fanout,
-		webhookQueue:              whQueue,
-		webhookCancel:             workerCancel,
-		authRateLimit:             authRateLimit,
-		encryptionKey:             encKey,
-		oidcService:               opts.OIDCService,
-		passwordResetAdminLimiter: passwordResetAdminLimiter,
-		webFS:                     webFS,
-		fileSrv:                   http.FileServer(http.FS(webFS)),
-		indexHTML:                 indexHTML,
-		landingHTML:               landingHTML,
-		landingHTMLByLocale:       landingHTMLByLocale,
-		swJS:                      swJS,
-		mcpHandler:                opts.MCPHandler,
-		agoraHandler:              opts.AgoraHandler,
-		vapidPublicKey:            vapidPub,
-		pushVapidConfigured:       pushVapidConfigured,
-		pushDebug:                 pushDebug,
-		wallEnabled:               opts.WallEnabled,
-		markdownNotesEnabled:      opts.MarkdownNotesEnabled,
-		mermaidNotesEnabled:       opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
+		store:                       st,
+		logger:                      logger,
+		maxBody:                     maxBody,
+		maxTrelloImportBody:         maxTrelloImportBody,
+		mode:                        mode,
+		dataDir:                     strings.TrimSpace(opts.DataDir),
+		hub:                         hub,
+		sink:                        hub,
+		fanout:                      fanout,
+		webhookQueue:                whQueue,
+		webhookCancel:               workerCancel,
+		mailQueue:                   mQueue,
+		mailCancel:                  mailCancel,
+		authRateLimit:               authRateLimit,
+		encryptionKey:               encKey,
+		oidcService:                 opts.OIDCService,
+		passwordResetAdminLimiter:   passwordResetAdminLimiter,
+		passwordResetRequestLimiter: passwordResetRequestLimiter,
+		smtpConfigured:              smtpConfigured,
+		webFS:                       webFS,
+		fileSrv:                     http.FileServer(http.FS(webFS)),
+		indexHTML:                   indexHTML,
+		landingHTML:                 landingHTML,
+		landingHTMLByLocale:         landingHTMLByLocale,
+		swJS:                        swJS,
+		mcpHandler:                  opts.MCPHandler,
+		agoraHandler:                opts.AgoraHandler,
+		vapidPublicKey:              vapidPub,
+		pushVapidConfigured:         pushVapidConfigured,
+		pushDebug:                   pushDebug,
+		wallEnabled:                 opts.WallEnabled,
+		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
+		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
 }
 
@@ -472,6 +511,9 @@ func (s *Server) storeMode() store.Mode {
 func (s *Server) Close() {
 	if s.webhookCancel != nil {
 		s.webhookCancel()
+	}
+	if s.mailCancel != nil {
+		s.mailCancel()
 	}
 }
 
