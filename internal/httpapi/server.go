@@ -119,6 +119,15 @@ type storeAPI interface {
 	ListUserAPITokens(ctx context.Context, userID int64) ([]store.APITokenMeta, error)
 	RevokeUserAPIToken(ctx context.Context, userID, tokenID int64) error
 
+	// OAuth 2.1 authorization server (RFC 7591/6749/7636/7009) for MCP clients.
+	CreateOAuthClient(ctx context.Context, clientID, clientName, redirectURI string) (store.OAuthClient, error)
+	GetOAuthClient(ctx context.Context, clientID string) (store.OAuthClient, error)
+	CreateOAuthAuthCode(ctx context.Context, clientID string, userID int64, redirectURI, codeChallenge, codeChallengeMethod string) (string, error)
+	ConsumeOAuthAuthCode(ctx context.Context, rawCode string) (store.OAuthAuthCode, error)
+	IssueOAuthTokenPair(ctx context.Context, clientID string, userID int64) (store.OAuthTokenPair, error)
+	ConsumeOAuthRefreshToken(ctx context.Context, rawToken string) (clientID string, userID int64, err error)
+	RevokeOAuthToken(ctx context.Context, rawToken, hint string) error
+
 	GetUserByOIDCIdentity(ctx context.Context, issuer, subject string) (store.User, error)
 	GetUserByEmail(ctx context.Context, email string) (store.User, error)
 	LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subject, email string) error
@@ -417,6 +426,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if s.mcpHandler != nil && (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) {
 		s.mcpHandler.ServeHTTP(w, r)
+		return
+	}
+
+	if r.URL.Path == "/.well-known/oauth-protected-resource" {
+		s.handleOAuthProtectedResourceMetadata(w, r)
+		return
+	}
+	if r.URL.Path == "/.well-known/oauth-authorization-server" {
+		s.handleOAuthASMetadata(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/oauth/") {
+		s.handleOAuth(w, r)
 		return
 	}
 

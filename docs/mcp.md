@@ -129,6 +129,8 @@ Behavior is implemented in `internal/mcp/adapter.go` (`resolveRequestAuth`).
 
 **Bootstrap:** When the user table is empty (`CountUsers == 0`), capabilities include `bootstrapAvailable: true` and `auth.authenticatedToolsUsable: false`. Most tools return **`CAPABILITY_UNAVAILABLE`** (*unavailable before bootstrap*) until the first user exists.
 
+**OAuth 2.1 (full mode only):** Scrumboy's MCP endpoint also supports OAuth 2.1 for clients that support automatic discovery and Dynamic Client Registration (e.g. Claude Code's `--transport http` OAuth flow), as an alternative to manually minting a static API token. See **[`docs/oauth.md`](oauth.md)** for the discovery endpoints, authorize/token/revoke flow, and token lifetimes. Static Bearer API tokens (above) remain fully supported and unaffected — an OAuth-issued access token is just another Bearer credential accepted by the same `resolveRequestAuth` boundary.
+
 ## Capabilities
 
 **Legacy (recommended for a quick probe):**
