@@ -21,6 +21,7 @@ type deliveryQueue[T deliveryItem] struct {
 	notify chan struct{}
 	logger *log.Logger
 	kind   string // e.g. "mail", "webhook" — used in log lines
+	sealed bool   // after Seal, Enqueue drops new items (shutdown)
 }
 
 func newDeliveryQueue[T deliveryItem](logger *log.Logger, capacity int, kind string) *deliveryQueue[T] {
@@ -32,8 +33,21 @@ func newDeliveryQueue[T deliveryItem](logger *log.Logger, capacity int, kind str
 	}
 }
 
+// Seal stops accepting new entries. Already-queued items remain for the
+// shutdown drain. Safe to call more than once.
+func (q *deliveryQueue[T]) Seal() {
+	q.mu.Lock()
+	q.sealed = true
+	q.mu.Unlock()
+}
+
 func (q *deliveryQueue[T]) Enqueue(d T) {
 	q.mu.Lock()
+	if q.sealed {
+		q.mu.Unlock()
+		q.logger.Printf("%s queue sealed, dropping delivery: %s", q.kind, d.logRef())
+		return
+	}
 	if len(q.items) >= q.cap {
 		q.mu.Unlock()
 		q.logger.Printf("%s queue full, dropping delivery: %s", q.kind, d.logRef())

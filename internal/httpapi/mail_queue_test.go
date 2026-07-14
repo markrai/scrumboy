@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func discardLogger() *log.Logger {
@@ -80,6 +81,23 @@ func TestMailQueue_HighWaterMarkWarningBeforeDrop(t *testing.T) {
 	}
 }
 
+func TestMailQueue_SealDropsNewEntries(t *testing.T) {
+	var buf strings.Builder
+	logger := log.New(&buf, "", 0)
+	q := newMailQueue(logger)
+	q.Enqueue(mailDelivery{LogRef: "before-seal"})
+	q.Seal()
+	q.Enqueue(mailDelivery{LogRef: "after-seal"})
+
+	batch := q.Drain()
+	if len(batch) != 1 || batch[0].LogRef != "before-seal" {
+		t.Fatalf("expected only pre-seal item, got %+v", batch)
+	}
+	if !strings.Contains(buf.String(), "mail queue sealed, dropping delivery: after-seal") {
+		t.Fatalf("expected sealed drop log, got: %s", buf.String())
+	}
+}
+
 func TestMailQueue_ConcurrentEnqueue(t *testing.T) {
 	q := newMailQueueWithCapacity(discardLogger(), 1000)
 	var wg sync.WaitGroup
@@ -103,4 +121,22 @@ func TestMailQueue_ConcurrentEnqueue(t *testing.T) {
 	if total != 100 {
 		t.Fatalf("expected 100 enqueued items, got %d", total)
 	}
+}
+
+// waitQueueSealed blocks until q.Seal has been observed. Used by Server.Close
+// tests so the first send is only released after Close has performed its
+// shutdown wiring (seal + beginShutdown).
+func waitQueueSealed[T deliveryItem](t *testing.T, q *deliveryQueue[T]) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		q.mu.Lock()
+		sealed := q.sealed
+		q.mu.Unlock()
+		if sealed {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("queue was not sealed in time")
 }

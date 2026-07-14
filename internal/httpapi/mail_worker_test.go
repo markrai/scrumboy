@@ -53,7 +53,7 @@ func TestMailWorker_RetriesThenSucceeds(t *testing.T) {
 	w := newMailWorker(q, sender, discardLogger())
 
 	start := time.Now()
-	w.deliver(context.Background(), mailDelivery{To: "a@example.com", LogRef: "test"})
+	w.deliver(mailDelivery{To: "a@example.com", LogRef: "test"})
 	elapsed := time.Since(start)
 
 	if sender.callCount() != 3 {
@@ -73,7 +73,7 @@ func TestMailWorker_AlwaysFails_LogsAfterThreeAttempts(t *testing.T) {
 	q := newMailQueue(logger)
 	w := newMailWorker(q, sender, logger)
 
-	w.deliver(context.Background(), mailDelivery{To: "a@example.com", LogRef: "always-fails"})
+	w.deliver(mailDelivery{To: "a@example.com", LogRef: "always-fails"})
 
 	if sender.callCount() != 3 {
 		t.Fatalf("expected exactly 3 attempts, got %d", sender.callCount())
@@ -93,7 +93,7 @@ func TestMailWorker_PermanentSMTPError_SingleAttempt(t *testing.T) {
 	q := newMailQueue(logger)
 	w := newMailWorker(q, sender, logger)
 
-	w.deliver(context.Background(), mailDelivery{To: "bad@example.com", LogRef: "perm-rcpt"})
+	w.deliver(mailDelivery{To: "bad@example.com", LogRef: "perm-rcpt"})
 
 	if sender.callCount() != 1 {
 		t.Fatalf("expected exactly 1 attempt for permanent SMTP error, got %d", sender.callCount())
@@ -133,13 +133,16 @@ func TestServerClose_WaitsForMailFlush(t *testing.T) {
 	sender := &fakeMailSender{}
 	q := newMailQueue(discardLogger())
 	w := newMailWorker(q, sender, discardLogger())
-	q.Enqueue(mailDelivery{To: "pending@example.com", LogRef: "pending"})
 
 	mailCtx, mailCancel := context.WithCancel(context.Background())
 	go w.Run(mailCtx)
 
+	q.Enqueue(mailDelivery{To: "pending@example.com", LogRef: "pending"})
+
 	srv := &Server{
 		logger:     discardLogger(),
+		mailQueue:  q,
+		mailWorker: w,
 		mailCancel: mailCancel,
 		mailDone:   w.Done(),
 	}
@@ -161,6 +164,109 @@ func TestServerClose_WaitsForMailFlush(t *testing.T) {
 	}
 }
 
+// TestServerClose_PreservesMailRetriesDuringActiveFlush starts the worker,
+// blocks the first send, then Close while that attempt is in flight. After
+// releasing a transient failure, attempts 2 and 3 must still run under the
+// open Close deadline.
+func TestServerClose_PreservesMailRetriesDuringActiveFlush(t *testing.T) {
+	gate := newGatedMailSender(2)
+	q := newMailQueue(discardLogger())
+	w := newMailWorker(q, gate, discardLogger())
+
+	mailCtx, mailCancel := context.WithCancel(context.Background())
+	go w.Run(mailCtx)
+
+	q.Enqueue(mailDelivery{To: "retry@example.com", LogRef: "retry-on-close"})
+
+	select {
+	case <-gate.started:
+	case <-time.After(time.Second):
+		t.Fatal("first mail attempt did not start")
+	}
+
+	srv := &Server{
+		logger:     discardLogger(),
+		mailQueue:  q,
+		mailWorker: w,
+		mailCancel: mailCancel,
+		mailDone:   w.Done(),
+	}
+
+	closeDone := make(chan struct{})
+	go func() {
+		srv.Close(context.Background())
+		close(closeDone)
+	}()
+
+	waitQueueSealed(t, q)
+	gate.release <- errors.New("transient")
+
+	select {
+	case <-closeDone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close did not return after mail retries completed")
+	}
+
+	if gate.callCount() != 3 {
+		t.Fatalf("expected 3 send attempts under Close drain, got %d", gate.callCount())
+	}
+}
+
+// TestServerClose_MailDeadlineExpiresDuringBackoff verifies that once the
+// Close deadline fires after attempt one, no further attempt begins.
+func TestServerClose_MailDeadlineExpiresDuringBackoff(t *testing.T) {
+	gate := newGatedMailSender(99)
+	q := newMailQueue(discardLogger())
+	w := newMailWorker(q, gate, discardLogger())
+
+	mailCtx, mailCancel := context.WithCancel(context.Background())
+	go w.Run(mailCtx)
+
+	q.Enqueue(mailDelivery{To: "retry@example.com", LogRef: "deadline-backoff"})
+	q.Enqueue(mailDelivery{To: "second@example.com", LogRef: "should-not-start"})
+
+	select {
+	case <-gate.started:
+	case <-time.After(time.Second):
+		t.Fatal("first mail attempt did not start")
+	}
+
+	srv := &Server{
+		logger:     discardLogger(),
+		mailQueue:  q,
+		mailWorker: w,
+		mailCancel: mailCancel,
+		mailDone:   w.Done(),
+	}
+
+	closeCtx, closeCancel := context.WithCancel(context.Background())
+	closeDone := make(chan struct{})
+	go func() {
+		srv.Close(closeCtx)
+		close(closeDone)
+	}()
+
+	waitQueueSealed(t, q)
+	gate.release <- errors.New("transient")
+	closeCancel()
+
+	select {
+	case <-closeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not return after deadline")
+	}
+
+	select {
+	case <-w.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("mail worker did not finish after deadline")
+	}
+
+	if got := gate.callCount(); got != 1 {
+		t.Fatalf("expected only the in-progress first attempt, got %d", got)
+	}
+}
+
 func TestServerClose_ReturnsAtDeadlineIfMailFlushHangs(t *testing.T) {
 	blockingDone := make(chan struct{}) // never closed: simulates a flush that hasn't finished
 	_, mailCancel := context.WithCancel(context.Background())
@@ -179,6 +285,46 @@ func TestServerClose_ReturnsAtDeadlineIfMailFlushHangs(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 1*time.Second {
 		t.Fatalf("Close should have returned at the context deadline, took %v", elapsed)
 	}
+}
+
+// gatedMailSender blocks the first Send until release receives an error to
+// return, then fails until failUntil calls have been made.
+type gatedMailSender struct {
+	mu        sync.Mutex
+	calls     int
+	failUntil int
+	started   chan struct{}
+	release   chan error
+}
+
+func newGatedMailSender(failUntil int) *gatedMailSender {
+	return &gatedMailSender{
+		failUntil: failUntil,
+		started:   make(chan struct{}),
+		release:   make(chan error),
+	}
+}
+
+func (g *gatedMailSender) Send(m mailer.Message) error {
+	g.mu.Lock()
+	g.calls++
+	n := g.calls
+	g.mu.Unlock()
+
+	if n == 1 {
+		close(g.started)
+		return <-g.release
+	}
+	if n <= g.failUntil {
+		return errors.New("transient failure")
+	}
+	return nil
+}
+
+func (g *gatedMailSender) callCount() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls
 }
 
 func TestMailWorker_EmptyQueue_RunExitsCleanlyOnCancel(t *testing.T) {

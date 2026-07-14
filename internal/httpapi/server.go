@@ -89,9 +89,11 @@ type Server struct {
 	sink                EventSink
 	fanout              *eventbus.Fanout
 	webhookQueue        *webhookQueue
+	webhookWorker       *webhookWorker
 	webhookCancel       context.CancelFunc
 	webhookDone         <-chan struct{} // closed once the webhook worker's shutdown flush completes
 	mailQueue           *mailQueue
+	mailWorker          *mailWorker // nil when SMTP isn't configured
 	mailCancel          context.CancelFunc
 	mailDone            <-chan struct{} // closed once the mail worker's shutdown flush completes; nil if SMTP isn't configured
 
@@ -383,6 +385,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 
 	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
 	mQueue := newMailQueue(logger)
+	var mWorker *mailWorker
 	var mailCancel context.CancelFunc
 	var mailDone <-chan struct{}
 	if smtpConfigured {
@@ -396,7 +399,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 			Debug:    opts.SMTPDebug,
 			Logger:   logger,
 		})
-		mWorker := newMailWorker(mQueue, sender, logger)
+		mWorker = newMailWorker(mQueue, sender, logger)
 		mailCtx, cancel := context.WithCancel(context.Background())
 		mailCancel = cancel
 		mailDone = mWorker.Done()
@@ -419,9 +422,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		sink:                        hub,
 		fanout:                      fanout,
 		webhookQueue:                whQueue,
+		webhookWorker:               whWorker,
 		webhookCancel:               workerCancel,
 		webhookDone:                 webhookDone,
 		mailQueue:                   mQueue,
+		mailWorker:                  mWorker,
 		mailCancel:                  mailCancel,
 		mailDone:                    mailDone,
 		authRateLimit:               authRateLimit,
@@ -531,11 +536,26 @@ func (s *Server) storeMode() store.Mode {
 	return mode
 }
 
-// Close cancels background workers and waits (bounded by ctx) for each
-// worker's shutdown flush to finish (retries and all) before returning. This
-// avoids the process exiting mid-flush and silently dropping queued webhook
-// deliveries or password-reset emails. Call from main on shutdown.
+// Close stops accepting new delivery-queue entries, links each worker's
+// retry context to ctx (so observing ctx cancellation stops further
+// drain/retry work—including an already-running flush), cancels each
+// worker's accept loop, and waits (also bounded by ctx) for the drain to
+// finish. An in-flight send may complete under its own transport timeout.
+// Once a worker observes close-context cancellation, it starts no further
+// queued item or send attempt. Call from main on shutdown.
 func (s *Server) Close(ctx context.Context) {
+	if s.webhookQueue != nil {
+		s.webhookQueue.Seal()
+	}
+	if s.mailQueue != nil {
+		s.mailQueue.Seal()
+	}
+	if s.webhookWorker != nil {
+		s.webhookWorker.beginShutdown(ctx)
+	}
+	if s.mailWorker != nil {
+		s.mailWorker.beginShutdown(ctx)
+	}
 	if s.webhookCancel != nil {
 		s.webhookCancel()
 	}
