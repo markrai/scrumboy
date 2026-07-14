@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net"
 	"net/smtp"
 	"strconv"
@@ -24,6 +25,12 @@ type Config struct {
 	From     string // envelope + header From, e.g. "Scrumboy <no-reply@example.com>"
 	TLSMode  string // "starttls" (default) | "implicit" | "none"
 	Timeout  time.Duration
+
+	// Debug, if true, logs each send attempt's connection details (host,
+	// port, TLS mode, whether auth is used) to Logger. Never logs
+	// credentials, the message body, or the recipient address.
+	Debug  bool
+	Logger *log.Logger
 
 	// rootCAs overrides the trust store used for TLS verification. Always
 	// nil (system pool) in production; only set directly by white-box tests
@@ -65,6 +72,11 @@ func (s *Sender) Send(m Message) error {
 	}
 
 	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
+
+	if s.cfg.Debug && s.cfg.Logger != nil {
+		s.cfg.Logger.Printf("smtp: send attempt addr=%s tls_mode=%s auth=%v",
+			addr, s.cfg.TLSMode, strings.TrimSpace(s.cfg.Username) != "")
+	}
 
 	var (
 		client *smtp.Client

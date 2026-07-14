@@ -117,6 +117,7 @@ func main() {
 		SMTPPassword:         cfg.SMTPPassword,
 		SMTPFrom:             cfg.SMTPFrom,
 		SMTPTLSMode:          cfg.SMTPTLSMode,
+		SMTPDebug:            cfg.SMTPDebug,
 		PublicBaseURL:        cfg.PublicBaseURL,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)

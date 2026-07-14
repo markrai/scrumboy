@@ -1,6 +1,8 @@
 package mailer
 
 import (
+	"bytes"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -164,6 +166,60 @@ func TestSend_NoneMode_Plaintext(t *testing.T) {
 	}
 	if len(srv.Messages()) != 1 {
 		t.Fatalf("expected 1 message")
+	}
+}
+
+func TestSend_Debug_LogsAttemptWithoutCredentialsBodyOrRecipient(t *testing.T) {
+	srv, err := mailertest.Start(mailertest.Options{RequireAuth: true, Username: "svcuser", Password: "hunter2"})
+	if err != nil {
+		t.Fatalf("start fake server: %v", err)
+	}
+	defer srv.Close()
+
+	host, port := srv.HostPort()
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+	s := New(Config{
+		Host: host, Port: port, From: "no-reply@example.com", TLSMode: "none",
+		Username: "svcuser", Password: "hunter2", Timeout: 3 * time.Second,
+		Debug: true, Logger: logger,
+	})
+
+	if err := s.Send(Message{To: "dave@example.com", Subject: "Hi", Body: "super secret body"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "smtp: send attempt") {
+		t.Fatalf("expected a debug log line for the send attempt, got: %s", out)
+	}
+	if !strings.Contains(out, "auth=true") {
+		t.Fatalf("expected the log to note auth is in use, got: %s", out)
+	}
+	for _, secret := range []string{"hunter2", "dave@example.com", "super secret body"} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("debug log must never contain credentials, recipient, or body; found %q in: %s", secret, out)
+		}
+	}
+}
+
+func TestSend_Debug_Disabled_LogsNothing(t *testing.T) {
+	srv, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake server: %v", err)
+	}
+	defer srv.Close()
+
+	host, port := srv.HostPort()
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+	s := New(Config{Host: host, Port: port, From: "no-reply@example.com", TLSMode: "none", Timeout: 3 * time.Second, Logger: logger})
+
+	if err := s.Send(Message{To: "dave@example.com", Subject: "Hi", Body: "body"}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("expected no log output when Debug is false, got: %s", buf.String())
 	}
 }
 

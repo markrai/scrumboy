@@ -65,6 +65,10 @@ type Options struct {
 	SMTPPassword string
 	SMTPFrom     string
 	SMTPTLSMode  string
+	// SMTPDebug, if true, logs each send attempt's connection details (host,
+	// port, TLS mode, whether auth is used) — never credentials or message
+	// bodies. See SCRUMBOY_SMTP_DEBUG in docs/smtp.md.
+	SMTPDebug bool
 
 	// PublicBaseURL (optional but strongly recommended when SMTP is
 	// configured). When set, overrides the request-derived origin used to
@@ -388,6 +392,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 			Password: opts.SMTPPassword,
 			From:     opts.SMTPFrom,
 			TLSMode:  opts.SMTPTLSMode,
+			Debug:    opts.SMTPDebug,
+			Logger:   logger,
 		})
 		mWorker := newMailWorker(mQueue, sender, logger)
 		mailCtx, cancel := context.WithCancel(context.Background())
