@@ -384,7 +384,12 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 		})
 	}
 
-	if len(s.encryptionKey) == 0 || !s.smtpConfigured || email == "" {
+	// Self-service reset emails a link built from this request's Host header
+	// unless SCRUMBOY_PUBLIC_BASE_URL is configured. Since this endpoint is
+	// unauthenticated, that header is attacker-controlled, so without a
+	// configured base URL we fail closed and skip sending rather than emailing
+	// a spoofable link to a real user (see resetBaseURL).
+	if len(s.encryptionKey) == 0 || !s.smtpConfigured || s.publicBaseURL == "" || email == "" {
 		respond()
 		return
 	}
@@ -428,13 +433,13 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 //
 // If SCRUMBOY_PUBLIC_BASE_URL is configured, it is used verbatim and the
 // inbound request is never consulted. Otherwise this falls back to deriving
-// the origin from X-Forwarded-Proto/Host on the request itself — both of
-// which are attacker-controlled on an unauthenticated endpoint. A request
-// with a spoofed Host header still generates a valid reset token for a real
-// account; without a configured base URL, that token would be delivered
-// inside a link pointing at whatever host the attacker supplied, allowing
-// password-reset-link poisoning if the victim follows it. Operators enabling
-// SMTP self-service reset should set SCRUMBOY_PUBLIC_BASE_URL.
+// the origin from X-Forwarded-Proto/Host on the request itself. The
+// self-service caller above never reaches this fallback: it refuses to send
+// an email at all when SCRUMBOY_PUBLIC_BASE_URL is unset, since that endpoint
+// is unauthenticated and the Host header is attacker-controlled there. The
+// fallback only fires for the admin-generated link, which requires an
+// authenticated owner and is returned to them directly rather than emailed
+// to the target user.
 func (s *Server) resetBaseURL(r *http.Request) string {
 	if s.publicBaseURL != "" {
 		return s.publicBaseURL

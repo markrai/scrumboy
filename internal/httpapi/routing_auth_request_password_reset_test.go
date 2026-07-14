@@ -36,6 +36,10 @@ func newRequestPasswordResetTestServer(t *testing.T, smtpConfigured bool) (*http
 		opts.SMTPHost = host
 		opts.SMTPPort = port
 		opts.SMTPFrom = "no-reply@example.com"
+		// Self-service reset now refuses to send without a configured base
+		// URL (see resetBaseURL); set one so tests that expect delivery keep
+		// exercising the happy path rather than the fail-closed one.
+		opts.PublicBaseURL = "https://scrumboy.example.com"
 	}
 	ts, _, cleanup := newTestHTTPServerWithOptions(t, opts)
 	return ts, fake, func() {
@@ -153,6 +157,56 @@ func TestRequestPasswordReset_SMTPNotConfigured_GenericResponseNoEmail(t *testin
 	}, &out)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertStillNoMessages(t, fake)
+}
+
+// TestRequestPasswordReset_NoPublicBaseURL_GenericResponseNoEmail guards
+// against password-reset-link poisoning: with SMTP configured but
+// SCRUMBOY_PUBLIC_BASE_URL unset, this unauthenticated endpoint must not
+// build a reset link from the (attacker-controlled) request Host header. It
+// fails closed — generic response, no email sent — rather than falling back.
+func TestRequestPasswordReset_NoPublicBaseURL_GenericResponseNoEmail(t *testing.T) {
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	defer fake.Close()
+	host, port := fake.HostPort()
+
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+		SMTPTLSMode:    "none",
+		SMTPHost:       host,
+		SMTPPort:       port,
+		SMTPFrom:       "no-reply@example.com",
+		// PublicBaseURL intentionally left unset.
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "no-base-url@example.com", "password123")
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/request-password-reset",
+		strings.NewReader(`{"email":"no-base-url@example.com"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Scrumboy", "1")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Host", "attacker.evil")
+	req.Host = "attacker.evil"
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", resp.StatusCode)
 	}
 	assertStillNoMessages(t, fake)
 }
