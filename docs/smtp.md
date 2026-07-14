@@ -124,6 +124,23 @@ Scrumboy does **not** auto-load `.env` files inside the process. Your process ma
 
 ---
 
+## Example SMTP providers (optional)
+
+Scrumboy only needs a normal SMTP relay for infrequent password-reset mail. It does **not** require a marketing ESP, an HTTP send API, or high monthly volume. Any relay that gives you host/port/username/password (and TLS) works with the env vars above.
+
+The table below lists a few public providers that expose SMTP and publish a free tier suitable for small, self-hosted instances. Figures are approximate and change; confirm on each provider’s pricing page before relying on them. This is not an endorsement or affiliation. *(Free-tier figures last checked: 2026-07-14.)*
+
+| Provider | Free tier (approx.) | Notes |
+|----------|--------------------:|-------|
+| [SMTP2GO](https://www.smtp2go.com/) | 1,000/month (also ~200/day) | SMTP-focused; a solid default when you want classic relay credentials |
+| [Resend](https://resend.com/) | 3,000/month (also ~100/day) | Strong developer tooling; SMTP at `smtp.resend.com` (API key as password) |
+| [Brevo](https://www.brevo.com/) | 300/day | Long-standing service; free plan is daily-capped |
+| [Mailjet](https://www.mailjet.com/) | 200/day (~6,000/month) | Another SMTP-capable option with a free forever plan |
+
+For Scrumboy’s password-reset use case, daily caps are rarely the bottleneck; domain/sender verification and correct `SCRUMBOY_SMTP_FROM` / TLS mode matter more. Local catchers such as [Mailpit](https://github.com/axllent/mailpit) remain the recommended path for development (see [Quick verification](#quick-verification)).
+
+---
+
 ## Related documentation
 
 - [`docs/vapid.md`](vapid.md) — the parallel optional-feature model this design mirrors (config gate, startup log states, partial-config handling).
