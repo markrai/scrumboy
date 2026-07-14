@@ -127,7 +127,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 			"bootstrapAvailable":              bootstrapAvailable,
 			"mode":                            "full",
 			"pushConfigured":                  s.pushVapidConfigured,
-			"selfServicePasswordResetEnabled": s.smtpConfigured && len(s.encryptionKey) > 0 && s.publicBaseURL != "",
+			"selfServicePasswordResetEnabled": s.selfServicePasswordResetEnabled(),
 			"markdownNotesEnabled":            s.markdownNotesEnabled,
 			"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 		}
@@ -401,7 +401,7 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 	// Self-service reset requires SCRUMBOY_PUBLIC_BASE_URL (see resetBaseURL).
 	// This endpoint is unauthenticated, so we fail closed when the base URL is
 	// unset rather than building a link from the attacker-controlled Host header.
-	if len(s.encryptionKey) == 0 || !s.smtpConfigured || s.publicBaseURL == "" || email == "" {
+	if email == "" || !s.selfServicePasswordResetEnabled() {
 		respond()
 		return
 	}

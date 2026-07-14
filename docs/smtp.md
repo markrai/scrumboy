@@ -42,8 +42,8 @@ These auth routes are **not** documented in [`API.md`](../API.md) (MCP-only). Sh
 
 ### `GET /api/auth/status`
 
-- **Capability:** `selfServicePasswordResetEnabled` is `true` only in full mode when the required SMTP host/from/port settings are present, `SCRUMBOY_ENCRYPTION_KEY` is present, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid normalized origin.
-- **Scope:** this is a static settings-readiness signal. It does not validate the sender address or credentials, contact the relay, verify TLS support, or guarantee delivery.
+- **Capability:** `selfServicePasswordResetEnabled` is `true` only in full mode when the required SMTP host/from/port settings are present and valid, `SCRUMBOY_ENCRYPTION_KEY` is present, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid normalized origin. `SCRUMBOY_SMTP_FROM` must be a parseable RFC 5322 address (no CR/LF); empty or malformed values keep the capability false.
+- **Scope:** this is a static settings-readiness signal. It does not validate SMTP credentials, contact the relay, verify TLS support, or guarantee delivery.
 - **Privacy:** this flag describes instance configuration only. It never reflects whether a submitted email belongs to an account.
 - **UI:** the SPA also requires normal local-password sign-in (not bootstrap or OIDC-only) before showing **Forgot password?**. Anonymous mode reports the capability as `false`.
 
@@ -52,7 +52,7 @@ These auth routes are **not** documented in [`API.md`](../API.md) (MCP-only). Sh
 - **Body:** `{"email": "user@example.com"}`
 - **Success:** always `200` with `{"message": "If that account exists, a password reset email has been sent."}` — identical whether the account exists, SMTP is configured, or `SCRUMBOY_PUBLIC_BASE_URL` is set. A 200 does **not** confirm an email was sent.
 - **Other:** `404` in anonymous mode; `429` when rate-limited (5/min per IP and per email).
-- **Sends email only when:** user exists, SMTP configured, `SCRUMBOY_ENCRYPTION_KEY` set, valid `SCRUMBOY_PUBLIC_BASE_URL` set.
+- **Sends email only when:** user exists, SMTP host/from/port settings are present and valid (including a parseable `SCRUMBOY_SMTP_FROM`), `SCRUMBOY_ENCRYPTION_KEY` set, valid `SCRUMBOY_PUBLIC_BASE_URL` set.
 
 ### `POST /api/auth/reset-password`
 

@@ -1019,9 +1019,11 @@ describe("auth view i18n", () => {
     document.getElementById("authForgotPassword")?.click();
 
     expect(document.querySelector(".panel__title")?.textContent).toBe("Reset your password");
-    expect((document.getElementById("authForgotEmail") as HTMLInputElement).value).toBe("first@example.com");
-
     const forgotEmailEl = document.getElementById("authForgotEmail") as HTMLInputElement;
+    expect(forgotEmailEl.value).toBe("first@example.com");
+    expect(forgotEmailEl.getAttribute("aria-label")).toBe("Email");
+    expect(document.activeElement).toBe(forgotEmailEl);
+
     forgotEmailEl.value = "edited@example.com";
     forgotEmailEl.dispatchEvent(new Event("input", { bubbles: true }));
     document.getElementById("authForgotBack")?.click();
@@ -1198,6 +1200,7 @@ describe("auth view i18n", () => {
     expect(document.getElementById("authForgotSubmit")?.textContent).toBe("Link zum Zurücksetzen senden");
     expect(document.getElementById("authForgotBack")?.textContent).toBe("Zurück zur Anmeldung");
     expect((document.getElementById("authForgotEmail") as HTMLInputElement).value).toBe("edited@example.com");
+    expect((document.getElementById("authForgotEmail") as HTMLInputElement).getAttribute("aria-label")).toBe("E-Mail");
   });
 
   it("renders a public language selector in every auth shell", async () => {

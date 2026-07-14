@@ -11,7 +11,12 @@ func TestSMTPConfigured(t *testing.T) {
 		want bool
 	}{
 		{"all set", "smtp.example.com", 587, "no-reply@example.com", true},
+		{"bare valid address", "smtp.example.com", 587, "no-reply@example.com", true},
+		{"valid display-name address", "smtp.example.com", 587, "Scrumboy <no-reply@example.com>", true},
 		{"from empty", "smtp.example.com", 587, "", false},
+		{"from whitespace only", "smtp.example.com", 587, "   ", false},
+		{"malformed From", "smtp.example.com", 587, "not-an-address", false},
+		{"CRLF From", "smtp.example.com", 587, "no-reply@example.com\r\nBcc: evil@example.com", false},
 		{"host empty", "", 587, "no-reply@example.com", false},
 		{"port zero", "smtp.example.com", 0, "no-reply@example.com", false},
 		{"everything empty", "", 0, "", false},
@@ -50,6 +55,8 @@ func TestSMTPPartiallyConfigured(t *testing.T) {
 		{"host+from port 65536", "smtp.example.com", 65536, "no-reply@example.com", false, true},
 		{"host+from port -1", "smtp.example.com", -1, "no-reply@example.com", false, true},
 		{"host and port explicit, no from", "smtp.example.com", 587, "", true, true},
+		{"host+malformed From", "smtp.example.com", 587, "not-an-address", false, true},
+		{"host+CRLF From", "smtp.example.com", 587, "no-reply@example.com\r\nBcc: evil@example.com", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

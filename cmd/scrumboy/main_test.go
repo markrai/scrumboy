@@ -81,6 +81,15 @@ func TestLogSMTPConfiguration(t *testing.T) {
 			wantContains: []string{"smtp: enabled"},
 			wantAbsent:   []string{"smtp: partial or invalid config ignored", "smtp: disabled"},
 		},
+		{
+			name:         "partial host+malformed From",
+			host:         "smtp.example.com",
+			port:         587,
+			from:         "not-an-address",
+			portExplicit: false,
+			wantContains: []string{"smtp: partial or invalid config ignored"},
+			wantAbsent:   []string{"smtp: enabled"},
+		},
 	}
 
 	for _, tc := range cases {

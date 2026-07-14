@@ -199,6 +199,14 @@ func validateHeaderValue(field, value string) error {
 	return nil
 }
 
+// ValidateFrom checks that from is a usable RFC 5322 From value (trim,
+// nonempty, no CR/LF, mail.ParseAddress). Use for readiness gates that must
+// match send-time validation.
+func ValidateFrom(from string) error {
+	_, _, err := parseFrom(from)
+	return err
+}
+
 // parseFrom validates the configured From value (CR/LF reject + RFC 5322
 // parse) and returns the header form to write and the bare envelope address
 // for MAIL FROM.

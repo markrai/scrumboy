@@ -200,7 +200,10 @@ function applyAuthViewTranslations(): void {
     const helperEl = document.querySelector(".muted");
     if (helperEl) helperEl.textContent = t("auth.forgot.helper");
     const emailEl = document.getElementById("authForgotEmail") as HTMLInputElement | null;
-    if (emailEl) emailEl.placeholder = t("auth.fields.email.placeholder");
+    if (emailEl) {
+      emailEl.placeholder = t("auth.fields.email.placeholder");
+      emailEl.setAttribute("aria-label", t("auth.fields.email.placeholder"));
+    }
     const backBtn = document.getElementById("authForgotBack");
     if (backBtn) backBtn.textContent = t("auth.forgot.backToSignIn");
     const submitBtn = document.getElementById("authForgotSubmit");
@@ -478,7 +481,7 @@ function renderForgotPasswordView(state: ForgotPasswordState): void {
       ${escapeHTML(t("auth.forgot.helper"))}
     </div>
     <form id="authForgotForm" class="stack">
-      <input class="input" id="authForgotEmail" type="email" placeholder="${escapeHTML(t("auth.fields.email.placeholder"))}" maxlength="200" autocomplete="email" required />
+      <input class="input" id="authForgotEmail" type="email" placeholder="${escapeHTML(t("auth.fields.email.placeholder"))}" aria-label="${escapeHTML(t("auth.fields.email.placeholder"))}" maxlength="200" autocomplete="email" required />
       <div class="row auth-actions" style="margin-top: 8px;">
         <button class="btn btn--ghost" type="button" id="authForgotBack">${escapeHTML(t("auth.forgot.backToSignIn"))}</button>
         <div class="spacer"></div>
@@ -498,6 +501,7 @@ function renderForgotPasswordView(state: ForgotPasswordState): void {
     emailEl.addEventListener("input", () => {
       state.draft.email = emailEl.value;
     });
+    emailEl.focus();
   }
 
   if (backBtn && emailEl) {

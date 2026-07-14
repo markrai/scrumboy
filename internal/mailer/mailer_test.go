@@ -418,6 +418,37 @@ func TestParseFrom(t *testing.T) {
 	}
 }
 
+func TestValidateFrom(t *testing.T) {
+	cases := []struct {
+		name    string
+		from    string
+		wantErr bool
+	}{
+		{name: "display name", from: "Scrumboy <no-reply@example.com>", wantErr: false},
+		{name: "bare address", from: "no-reply@example.com", wantErr: false},
+		{name: "empty", from: "   ", wantErr: true},
+		{name: "malformed", from: "not-an-address", wantErr: true},
+		{name: "CRLF", from: "no-reply@example.com\r\nBcc: evil@example.com", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateFrom(tc.from)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !IsPermanent(err) {
+					t.Fatalf("expected permanent error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ValidateFrom: %v", err)
+			}
+		})
+	}
+}
+
 // TestSend_QUITFailureAfterDATA_StillSucceeds ensures that once the server
 // has accepted the message (250 after DATA/wc.Close), a failed QUIT does not
 // surface as a Send error — otherwise the delivery worker would retry and

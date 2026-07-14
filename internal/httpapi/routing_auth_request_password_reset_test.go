@@ -203,6 +203,39 @@ func TestRequestPasswordReset_SMTPNotConfigured_GenericResponseNoEmail(t *testin
 	assertStillNoMessages(t, fake)
 }
 
+func TestRequestPasswordReset_InvalidSMTPFrom_GenericResponseNoEmail(t *testing.T) {
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	defer fake.Close()
+	host, port := fake.HostPort()
+
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+		SMTPTLSMode:    "none",
+		SMTPHost:       host,
+		SMTPPort:       port,
+		SMTPFrom:       "not-an-address",
+		PublicBaseURL:  "https://scrumboy.example.com",
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "bad-from@example.com", "password123")
+
+	var out map[string]any
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "bad-from@example.com",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertStillNoMessages(t, fake)
+}
+
 // TestRequestPasswordReset_InvalidSMTPPort_GenericResponseNoEmail ensures direct
 // Options construction with an out-of-range port does not enable SMTP at the
 // server boundary.

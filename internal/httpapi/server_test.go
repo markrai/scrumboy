@@ -2316,6 +2316,14 @@ func TestAuthStatus_SelfServicePasswordResetCapability(t *testing.T) {
 	missingPublicBaseURL.PublicBaseURL = ""
 	invalidPublicBaseURL := configured
 	invalidPublicBaseURL.PublicBaseURL = "https://scrumboy.example.com/path"
+	emptyFrom := configured
+	emptyFrom.SMTPFrom = "   "
+	malformedFrom := configured
+	malformedFrom.SMTPFrom = "not-an-address"
+	crlfFrom := configured
+	crlfFrom.SMTPFrom = "no-reply@example.com\r\nBcc: evil@example.com"
+	displayNameFrom := configured
+	displayNameFrom.SMTPFrom = "Scrumboy <no-reply@example.com>"
 	anonymous := configured
 	anonymous.ScrumboyMode = "anonymous"
 
@@ -2330,6 +2338,10 @@ func TestAuthStatus_SelfServicePasswordResetCapability(t *testing.T) {
 		{name: "missing encryption key", opts: missingEncryptionKey, want: false},
 		{name: "missing public base URL", opts: missingPublicBaseURL, want: false},
 		{name: "invalid public base URL", opts: invalidPublicBaseURL, want: false},
+		{name: "empty From", opts: emptyFrom, want: false},
+		{name: "malformed From", opts: malformedFrom, want: false},
+		{name: "CRLF From", opts: crlfFrom, want: false},
+		{name: "valid display-name From", opts: displayNameFrom, want: true},
 		{name: "anonymous mode with every prerequisite", opts: anonymous, want: false},
 	}
 
