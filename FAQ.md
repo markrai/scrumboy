@@ -177,9 +177,9 @@ For what VAPID is, how it fits this project, key generation, and verification, s
 
 ## Do I need to configure SMTP? What happens if I don't?
 
-**No.** SMTP is optional server config that adds a self-service "forgot password" flow (`POST /api/auth/request-password-reset`). Without it, admins can still generate password-reset links manually (Settings → Users → Password) and hand them to the user out of band — that flow is unaffected by SMTP configuration.
+**No.** SMTP is optional server config that adds a self-service password-reset API (`POST /api/auth/request-password-reset`). Without it, admins can still generate password-reset links manually (Settings → Users → Password) and hand them to the user out of band — that flow is unaffected by SMTP configuration. The sign-in screen has no “Forgot password?” link yet; see [`docs/smtp.md`](docs/smtp.md) for the HTTP contract and verification steps.
 
-If you want users to be able to request their own reset email, set `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535), plus `SCRUMBOY_ENCRYPTION_KEY`, which signs the reset token. See [`docs/smtp.md`](docs/smtp.md) for TLS modes and setup/verification steps.
+If you want users to be able to request their own reset email, set `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535), plus `SCRUMBOY_ENCRYPTION_KEY`, which signs the reset token. Callers use the API directly (e.g. `curl`) until a sign-in UI exists. See [`docs/smtp.md`](docs/smtp.md) for TLS modes and setup/verification steps.
 
 # Auditing
 

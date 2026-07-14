@@ -1,8 +1,10 @@
 # SMTP and self-service password reset in Scrumboy
 
-**SMTP** credentials are **optional server config** that enable a self-service **"forgot password"** email flow: `POST /api/auth/request-password-reset`. Without SMTP, password reset is still possible, but only via the existing **admin-generated reset link** (Settings → Users → Password), which an admin must hand-deliver out of band.
+**SMTP** credentials are **optional server config** that enable a self-service password-reset **API** (`POST /api/auth/request-password-reset`). Without SMTP, password reset is still possible, but only via the existing **admin-generated reset link** (Settings → Users → Password), which an admin must hand-deliver out of band.
 
-This document explains what SMTP enables, how to configure it, and how to verify it. For the token/reset mechanics themselves, see [`API.md`](../API.md).
+This document explains what SMTP enables, how to configure it, how to verify it, and the HTTP contracts for the password-reset endpoints. [`API.md`](../API.md) documents the **MCP HTTP API only** — it does not cover these auth routes.
+
+**Product scope:** Scrumboy ships the request-reset API, outbound email, and the `/auth/reset-password` page (for links from email or an admin). The sign-in screen has **no** “Forgot password?” control yet — users must call the API (e.g. `curl`, automation) or use an admin-generated link until that UI exists.
 
 ---
 
@@ -30,6 +32,31 @@ If SMTP is not configured (or only partially configured), the endpoint still ret
 - `smtp: partial or invalid config ignored (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM; SCRUMBOY_SMTP_PORT defaults to 587 and, when set, must be between 1 and 65535)`
 
 There is no anonymous-mode-specific log line: `request-password-reset` (like `reset-password`) already returns 404 in anonymous mode regardless of SMTP configuration, since anonymous mode has no authenticated accounts to reset.
+
+---
+
+## HTTP endpoints
+
+These auth routes are **not** documented in [`API.md`](../API.md) (MCP-only). Shapes below reflect current server behavior.
+
+### `POST /api/auth/request-password-reset`
+
+- **Body:** `{"email": "user@example.com"}`
+- **Success:** always `200` with `{"message": "If that account exists, a password reset email has been sent."}` — identical whether the account exists, SMTP is configured, or `SCRUMBOY_PUBLIC_BASE_URL` is set. A 200 does **not** confirm an email was sent.
+- **Other:** `404` in anonymous mode; `429` when rate-limited (5/min per IP and per email).
+- **Sends email only when:** user exists, SMTP configured, `SCRUMBOY_ENCRYPTION_KEY` set, valid `SCRUMBOY_PUBLIC_BASE_URL` set.
+
+### `POST /api/auth/reset-password`
+
+- **Body:** `{"token": "...", "new_password": "..."}` (token from the reset link query string)
+- **Success:** `200` with empty body; existing sessions for that user are cleared.
+- **Other:** `400` invalid/expired token; `404` in anonymous mode; `429` rate-limited; `503` if encryption key not configured.
+- **SPA:** users can also complete reset at `/auth/reset-password?token=...` (same API under the hood).
+
+### `POST /api/admin/users/{id}/password-reset`
+
+- **Auth:** owner session required.
+- **Response:** JSON with a reset URL (not emailed). Unaffected by SMTP. When `SCRUMBOY_PUBLIC_BASE_URL` is unset, the link uses the request's `Host`/`X-Forwarded-Proto`.
 
 ---
 
@@ -92,5 +119,4 @@ Scrumboy does **not** auto-load `.env` files inside the process. Your process ma
 
 - [`docs/vapid.md`](vapid.md) — the parallel optional-feature model this design mirrors (config gate, startup log states, partial-config handling).
 - [`FAQ.md`](../FAQ.md) — "Do I need SMTP?" entry.
-- [`API.md`](../API.md) — request/response shape for `request-password-reset` and `reset-password`.
 - [`README.md`](../README.md#config) — env variable table.

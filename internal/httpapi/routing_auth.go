@@ -396,11 +396,9 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 		})
 	}
 
-	// Self-service reset emails a link built from this request's Host header
-	// unless SCRUMBOY_PUBLIC_BASE_URL is configured. Since this endpoint is
-	// unauthenticated, that header is attacker-controlled, so without a
-	// configured base URL we fail closed and skip sending rather than emailing
-	// a spoofable link to a real user (see resetBaseURL).
+	// Self-service reset requires SCRUMBOY_PUBLIC_BASE_URL (see resetBaseURL).
+	// This endpoint is unauthenticated, so we fail closed when the base URL is
+	// unset rather than building a link from the attacker-controlled Host header.
 	if len(s.encryptionKey) == 0 || !s.smtpConfigured || s.publicBaseURL == "" || email == "" {
 		respond()
 		return

@@ -16,7 +16,7 @@
 
 - **Mailer** - Send success/failure/auth-failure/STARTTLS-vs-implicit-TLS coverage against a hand-rolled fake SMTP listener (`internal/mailer/mailertest`), including a header-injection guard.
 - **Mail queue/worker** - Enqueue/drain, capacity drop, and 3-attempt retry/backoff behavior.
-- **HTTP API** - `request-password-reset` enumeration-safety (identical response for existing/non-existing accounts), rate limiting, and an end-to-end test asserting a captured email contains a valid reset token/link honoring `X-Forwarded-Proto`.
+- **HTTP API** - `request-password-reset` enumeration-safety (identical response for existing/non-existing accounts), rate limiting, and an end-to-end test asserting a captured email contains a valid reset token/link using `SCRUMBOY_PUBLIC_BASE_URL` (admin-generated links still honor `X-Forwarded-Proto` when the base URL is unset).
 
 ## [3.18.26] - 2026-07-12
 
