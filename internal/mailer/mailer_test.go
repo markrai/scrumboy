@@ -284,6 +284,52 @@ func TestSend_STARTTLSRequiredButUnsupported(t *testing.T) {
 	}
 }
 
+func TestNew_NormalizesTLSMode(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"", "starttls"},
+		{"  ", "starttls"},
+		{"STARTTLS", "starttls"},
+		{"bogus", "starttls"},
+		{"none", "none"},
+		{"IMPLICIT", "implicit"},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%q", tc.in), func(t *testing.T) {
+			s := New(Config{TLSMode: tc.in, Timeout: time.Second})
+			if s.cfg.TLSMode != tc.want {
+				t.Fatalf("TLSMode = %q, want %q", s.cfg.TLSMode, tc.want)
+			}
+		})
+	}
+}
+
+// TestSend_UnknownTLSMode_DoesNotUsePlaintext ensures a typo at the mailer
+// boundary normalizes to starttls (and thus fails closed against a plaintext-
+// only relay) rather than skipping STARTTLS like TLSMode "none".
+func TestSend_UnknownTLSMode_DoesNotUsePlaintext(t *testing.T) {
+	srv, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake server: %v", err)
+	}
+	defer srv.Close()
+
+	host, port := srv.HostPort()
+	s := New(Config{Host: host, Port: port, From: "no-reply@example.com", TLSMode: "typo-mode", Timeout: 3 * time.Second})
+
+	err = s.Send(Message{To: "grace@example.com", Subject: "Hi", Body: "body"})
+	if err == nil {
+		t.Fatal("expected STARTTLS failure for unknown TLSMode, got success (would mean plaintext downgrade)")
+	}
+	if !strings.Contains(err.Error(), "STARTTLS") {
+		t.Fatalf("expected STARTTLS-not-supported error, got: %v", err)
+	}
+	if len(srv.Messages()) != 0 {
+		t.Fatalf("expected no message delivered")
+	}
+}
+
 func TestSend_HeaderInjectionRejected(t *testing.T) {
 	srv, err := mailertest.Start(mailertest.Options{})
 	if err != nil {
@@ -310,6 +356,76 @@ func TestSend_HeaderInjectionRejected(t *testing.T) {
 	}
 	if len(srv.Messages()) != 0 {
 		t.Fatalf("expected no message delivered")
+	}
+}
+
+func TestSend_InvalidFromRejected(t *testing.T) {
+	cases := []struct {
+		name string
+		from string
+	}{
+		{"CRLF", "no-reply@example.com\r\nBcc: evil@example.com"},
+		{"malformed", "not-an-address"},
+		{"empty", "   "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := New(Config{
+				Host: "127.0.0.1", Port: 1, From: tc.from,
+				TLSMode: "none", Timeout: 1 * time.Second,
+			})
+			err := s.Send(Message{To: "alice@example.com", Subject: "Hi", Body: "body"})
+			if err == nil {
+				t.Fatal("expected From validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), "From") && !strings.Contains(err.Error(), "from") {
+				// parseFrom errors are "smtp: From ..." or "smtp: From is empty"
+				t.Fatalf("expected From-related error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestParseFrom(t *testing.T) {
+	header, envelope, err := parseFrom("Scrumboy <no-reply@example.com>")
+	if err != nil {
+		t.Fatalf("parseFrom: %v", err)
+	}
+	if header != "Scrumboy <no-reply@example.com>" {
+		t.Fatalf("header = %q", header)
+	}
+	if envelope != "no-reply@example.com" {
+		t.Fatalf("envelope = %q", envelope)
+	}
+}
+
+// TestSend_QUITFailureAfterDATA_StillSucceeds ensures that once the server
+// has accepted the message (250 after DATA/wc.Close), a failed QUIT does not
+// surface as a Send error — otherwise the delivery worker would retry and
+// risk duplicate emails.
+func TestSend_QUITFailureAfterDATA_StillSucceeds(t *testing.T) {
+	srv, err := mailertest.Start(mailertest.Options{FailQUIT: true})
+	if err != nil {
+		t.Fatalf("start fake server: %v", err)
+	}
+	defer srv.Close()
+
+	host, port := srv.HostPort()
+	s := New(Config{
+		Host: host, Port: port, From: "no-reply@example.com",
+		TLSMode: "none", Timeout: 3 * time.Second,
+	})
+
+	if err := s.Send(Message{To: "alice@example.com", Subject: "Reset", Body: "link"}); err != nil {
+		t.Fatalf("Send after successful DATA must ignore QUIT failure, got: %v", err)
+	}
+
+	msgs := srv.Messages()
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 accepted message, got %d", len(msgs))
+	}
+	if msgs[0].To != "alice@example.com" {
+		t.Fatalf("To: got %q", msgs[0].To)
 	}
 }
 

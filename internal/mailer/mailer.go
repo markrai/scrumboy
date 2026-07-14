@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strconv"
 	"strings"
@@ -52,12 +53,27 @@ type Sender struct {
 	cfg Config
 }
 
-// New returns a Sender for cfg. A zero Timeout defaults to 10s.
+// New returns a Sender for cfg. A zero Timeout defaults to 10s. Empty or
+// unrecognized TLSMode values are normalized to "starttls" so a typo cannot
+// silently skip TLS and use plaintext (unlike a bare switch default of "none").
 func New(cfg Config) *Sender {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 10 * time.Second
 	}
+	cfg.TLSMode = normalizeTLSMode(cfg.TLSMode)
 	return &Sender{cfg: cfg}
+}
+
+// normalizeTLSMode returns a canonical TLS mode. Empty and unrecognized
+// values become "starttls" (safe default matching FromEnv).
+func normalizeTLSMode(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	switch v {
+	case "implicit", "none", "starttls":
+		return v
+	default:
+		return "starttls"
+	}
 }
 
 // Send connects, optionally negotiates TLS, authenticates if credentials are
@@ -70,6 +86,10 @@ func (s *Sender) Send(m Message) error {
 	if err := validateHeaderValue("Subject", m.Subject); err != nil {
 		return err
 	}
+	fromHeader, fromAddr, err := parseFrom(s.cfg.From)
+	if err != nil {
+		return err
+	}
 
 	addr := net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.cfg.Port))
 
@@ -78,10 +98,7 @@ func (s *Sender) Send(m Message) error {
 			addr, s.cfg.TLSMode, strings.TrimSpace(s.cfg.Username) != "")
 	}
 
-	var (
-		client *smtp.Client
-		err    error
-	)
+	var client *smtp.Client
 	client, err = s.dial(addr)
 	if err != nil {
 		return err
@@ -105,7 +122,6 @@ func (s *Sender) Send(m Message) error {
 		}
 	}
 
-	fromAddr := extractAddr(s.cfg.From)
 	if err := client.Mail(fromAddr); err != nil {
 		return fmt.Errorf("smtp: mail from: %w", err)
 	}
@@ -117,7 +133,7 @@ func (s *Sender) Send(m Message) error {
 	if err != nil {
 		return fmt.Errorf("smtp: data: %w", err)
 	}
-	msg := buildMessage(s.cfg.From, m.To, m.Subject, m.Body)
+	msg := buildMessage(fromHeader, m.To, m.Subject, m.Body)
 	if _, err := wc.Write([]byte(msg)); err != nil {
 		wc.Close()
 		return fmt.Errorf("smtp: write body: %w", err)
@@ -126,7 +142,11 @@ func (s *Sender) Send(m Message) error {
 		return fmt.Errorf("smtp: close data: %w", err)
 	}
 
-	return client.Quit()
+	// The server has already accepted the message (final 250 after DATA).
+	// Treat QUIT as best-effort so a failed/timed-out quit cannot cause the
+	// delivery worker to retry an already-accepted message (duplicate email).
+	_ = client.Quit()
+	return nil
 }
 
 // dial opens an SMTP client using one absolute deadline for both connection
@@ -146,11 +166,13 @@ func (s *Sender) dial(addr string) (*smtp.Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("smtp: implicit tls dial: %w", err)
 		}
-	default: // "starttls" or "none"
+	case "starttls", "none":
 		conn, err = dialer.Dial("tcp", addr)
 		if err != nil {
 			return nil, fmt.Errorf("smtp: dial: %w", err)
 		}
+	default:
+		return nil, fmt.Errorf("smtp: invalid TLS mode %q", s.cfg.TLSMode)
 	}
 
 	if err := conn.SetDeadline(deadline); err != nil {
@@ -175,15 +197,22 @@ func validateHeaderValue(field, value string) error {
 	return nil
 }
 
-// extractAddr pulls the bare address out of a "Name <addr>" From header value.
-func extractAddr(from string) string {
+// parseFrom validates the configured From value (CR/LF reject + RFC 5322
+// parse) and returns the header form to write and the bare envelope address
+// for MAIL FROM.
+func parseFrom(from string) (header, envelope string, err error) {
 	from = strings.TrimSpace(from)
-	if i := strings.LastIndex(from, "<"); i >= 0 {
-		if j := strings.LastIndex(from, ">"); j > i {
-			return from[i+1 : j]
-		}
+	if from == "" {
+		return "", "", fmt.Errorf("smtp: From is empty")
 	}
-	return from
+	if err := validateHeaderValue("From", from); err != nil {
+		return "", "", err
+	}
+	addr, err := mail.ParseAddress(from)
+	if err != nil {
+		return "", "", fmt.Errorf("smtp: From: %w", err)
+	}
+	return from, addr.Address, nil
 }
 
 // buildMessage assembles a minimal RFC 5322 plain-text message.

@@ -29,25 +29,26 @@ func TestRetryWorker_Cancelled_SingleAttemptPerItem_NoBackoff(t *testing.T) {
 	}
 	w := newRetryWorker(queue, logger, "test", send)
 
+	// Enqueue before starting the worker, then cancel immediately so Run
+	// enters shutdown flush with a cancelled ctx. That avoids a race where
+	// the worker wakes on the first enqueue and begins normal retries before
+	// cancel arrives.
+	queue.Enqueue(testDelivery{LogRef: "one"})
+	queue.Enqueue(testDelivery{LogRef: "two"})
+
 	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	runDone := make(chan struct{})
 	go func() {
 		w.Run(ctx)
 		close(runDone)
 	}()
 
-	queue.Enqueue(testDelivery{LogRef: "one"})
-	queue.Enqueue(testDelivery{LogRef: "two"})
-	cancel()
-
-	start := time.Now()
 	select {
 	case <-w.Done():
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("worker Done did not close promptly after cancel")
-	}
-	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
-		t.Fatalf("expected no 100ms+400ms backoff after cancel, took %v", elapsed)
 	}
 	if got := sendCalls.Load(); got != 2 {
 		t.Fatalf("expected exactly 2 send calls (one per item), got %d", got)

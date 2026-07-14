@@ -34,6 +34,7 @@ type Options struct {
 	Username      string
 	Password      string
 	RejectRCPT    bool // return 550 on RCPT TO
+	FailQUIT      bool // return an error response on QUIT (after successful DATA)
 }
 
 // Message is a captured, parsed email.
@@ -229,6 +230,10 @@ func (s *Server) handle(conn net.Conn) {
 			writeLine("250 OK: queued")
 
 		case upper == "QUIT":
+			if s.opts.FailQUIT {
+				writeLine("421 closing connection")
+				return
+			}
 			writeLine("221 bye")
 			return
 
