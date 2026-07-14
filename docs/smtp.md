@@ -1,10 +1,10 @@
 # SMTP and self-service password reset in Scrumboy
 
-**SMTP** credentials are **optional server config** that enable a self-service password-reset **API** (`POST /api/auth/request-password-reset`). Without SMTP, password reset is still possible, but only via the existing **admin-generated reset link** (Settings → Users → Password), which an admin must hand-deliver out of band.
+**SMTP** credentials are **optional server config** for self-service password-reset email delivery. The request route (`POST /api/auth/request-password-reset`) exists in full mode even when delivery settings are absent, but the sign-in control appears only when the required static settings are present. Without SMTP, password reset is still possible through the existing **admin-generated reset link** (Settings → Users → Password), which an admin must hand-deliver out of band.
 
 This document explains what SMTP enables, how to configure it, how to verify it, and the HTTP contracts for the password-reset endpoints. [`API.md`](../API.md) documents the **MCP HTTP API only** — it does not cover these auth routes.
 
-**Product scope:** Scrumboy ships the request-reset API, outbound email, and the `/auth/reset-password` page (for links from email or an admin). The sign-in screen has **no** “Forgot password?” control yet — users must call the API (e.g. `curl`, automation) or use an admin-generated link until that UI exists.
+**Product scope:** Scrumboy ships the request-reset API, a capability-gated in-place **Forgot password?** step on local-password sign-in, outbound email, and the `/auth/reset-password` page (for links from email or an admin). The control is hidden during first-time setup, on OIDC-only or anonymous deployments, and whenever a required static setting is missing.
 
 ---
 
@@ -18,14 +18,15 @@ Scrumboy does **not** ship default SMTP credentials. Each self-hosted instance s
 
 ## What SMTP enables
 
-When **`SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` are set** (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535) and `SCRUMBOY_ENCRYPTION_KEY` is also configured (used to sign the reset token, same as the admin flow), Scrumboy:
+When **`SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` are set** (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535), `SCRUMBOY_ENCRYPTION_KEY` is configured, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid public origin, Scrumboy:
 
-1. Exposes **`POST /api/auth/request-password-reset`**, which accepts `{"email": "..."}` and emails a reset link when the address matches a registered account.
-2. Always returns the same generic response (`"If that account exists, a password reset email has been sent."`) regardless of whether the email is registered, whether SMTP is configured, or whether the encryption key is set. **This is intentional** — a different status code or body per case would let an attacker enumerate registered accounts. A 200 response does **not** confirm an email was actually sent.
-3. Delivers the email **asynchronously** via an in-memory queue with retry: up to 3 attempts with backoff for **transient** failures (dial errors, timeouts, SMTP 4xx) while the worker is running, mirroring the architecture already used for outbound webhooks. **Permanent** failures — SMTP 5xx replies and local validation/config errors (invalid `SCRUMBOY_SMTP_FROM`, CR/LF in headers, STARTTLS required but not advertised) — are logged once and not retried. Each SMTP send is bounded by a single timeout (default 10s) covering dial through quit; a stuck relay fails that attempt instead of hanging the worker indefinitely. On shutdown, retry backoff stops when the worker is cancelled; `Server.Close(ctx)` waits up to its deadline for the flush to finish, but some queued items may remain undelivered if the process exits before the queue drains.
-4. Rate-limits requests to 5/minute per IP and 5/minute per submitted email, reusing the same dual-key limiter used elsewhere in auth.
+1. Reports **`selfServicePasswordResetEnabled: true`** from `GET /api/auth/status`, allowing the SPA to show **Forgot password?** without probing mail endpoints.
+2. Accepts **`POST /api/auth/request-password-reset`** with `{"email": "..."}` and emails a reset link when the address matches a registered account. The route itself remains available in full mode when delivery is unconfigured.
+3. Always returns the same generic response (`"If that account exists, a password reset email has been sent."`) regardless of whether the email is registered, whether SMTP is configured, or whether the encryption key is set. **This is intentional** — a different status code or body per case would let an attacker enumerate registered accounts. A 200 response does **not** confirm an email was actually sent.
+4. Delivers the email **asynchronously** via an in-memory queue with retry: up to 3 attempts with backoff for **transient** failures (dial errors, timeouts, SMTP 4xx) while the worker is running, mirroring the architecture already used for outbound webhooks. **Permanent** failures — SMTP 5xx replies and local validation/config errors (invalid `SCRUMBOY_SMTP_FROM`, CR/LF in headers, STARTTLS required but not advertised) — are logged once and not retried. Each SMTP send is bounded by a single timeout (default 10s) covering dial through quit; a stuck relay fails that attempt instead of hanging the worker indefinitely. On shutdown, retry backoff stops when the worker is cancelled; `Server.Close(ctx)` waits up to its deadline for the flush to finish, but some queued items may remain undelivered if the process exits before the queue drains.
+5. Rate-limits requests to 5/minute per IP and 5/minute per submitted email, reusing the same dual-key limiter used elsewhere in auth.
 
-If SMTP is not configured (or only partially configured), the endpoint still returns the same generic success response — but no email is sent, and the admin manual-reset endpoint remains the only working path. At startup the server logs one of:
+If any required static setting is missing or invalid, `selfServicePasswordResetEnabled` is false and the SPA hides the control. The request endpoint still returns the same generic success response — but no email is sent, and the admin manual-reset endpoint remains the working fallback. At startup the server logs one of:
 
 - `smtp: enabled (host=... port=...)`
 - `smtp: disabled (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM to enable password-reset emails; SCRUMBOY_SMTP_PORT defaults to 587 when omitted)`
@@ -38,6 +39,13 @@ There is no anonymous-mode-specific log line: `request-password-reset` (like `re
 ## HTTP endpoints
 
 These auth routes are **not** documented in [`API.md`](../API.md) (MCP-only). Shapes below reflect current server behavior.
+
+### `GET /api/auth/status`
+
+- **Capability:** `selfServicePasswordResetEnabled` is `true` only in full mode when the required SMTP host/from/port settings are present, `SCRUMBOY_ENCRYPTION_KEY` is present, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid normalized origin.
+- **Scope:** this is a static settings-readiness signal. It does not validate the sender address or credentials, contact the relay, verify TLS support, or guarantee delivery.
+- **Privacy:** this flag describes instance configuration only. It never reflects whether a submitted email belongs to an account.
+- **UI:** the SPA also requires normal local-password sign-in (not bootstrap or OIDC-only) before showing **Forgot password?**. Anonymous mode reports the capability as `false`.
 
 ### `POST /api/auth/request-password-reset`
 
@@ -110,8 +118,9 @@ Scrumboy does **not** auto-load `.env` files inside the process. Your process ma
 1. Confirm env vars are visible to the running process (e.g. `docker exec scrumboy env | grep SCRUMBOY_SMTP`).
 2. Check the startup log for `smtp: enabled (...)`.
 3. For local testing, run a catcher like [Mailpit](https://github.com/axllent/mailpit): `docker run --rm -p 1025:1025 -p 8025:8025 axllent/mailpit`, set `SCRUMBOY_SMTP_HOST=127.0.0.1`, `SCRUMBOY_SMTP_PORT=1025`, `SCRUMBOY_SMTP_TLS_MODE=none`.
-4. `curl -X POST http://localhost:8080/api/auth/request-password-reset -H 'Content-Type: application/json' -d '{"email":"you@example.com"}'` and check the catcher's UI (`http://localhost:8025` for Mailpit) for the delivered email.
-5. Follow the link in the email (or POST its token to `/api/auth/reset-password`) to confirm the full reset loop works end to end.
+4. After at least one user exists, sign out from a local-password deployment. Confirm **Forgot password?** is visible, submit the user's email, and check the catcher's UI (`http://localhost:8025` for Mailpit) for the delivered email.
+5. Optionally verify the low-level contract with `curl -X POST http://localhost:8080/api/auth/request-password-reset -H 'Content-Type: application/json' -d '{"email":"you@example.com"}'`. The response remains generic.
+6. Follow the link in the email (or POST its token to `/api/auth/reset-password`) to confirm the full reset loop works end to end.
 
 ---
 

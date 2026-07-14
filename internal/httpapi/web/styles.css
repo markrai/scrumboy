@@ -1477,6 +1477,10 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   background: var(--border);
 }
 
+.page--auth .auth-actions {
+  flex-wrap: wrap;
+}
+
 .btn--small {
   padding: var(--s-6) 10px;
   border-radius: var(--radius-10);

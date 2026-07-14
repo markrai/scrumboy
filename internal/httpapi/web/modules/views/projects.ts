@@ -12,6 +12,9 @@ import {
   getProjectView,
   getProjects,
   getUser,
+  getOidcEnabled,
+  getLocalAuthEnabled,
+  getSelfServicePasswordResetEnabled,
 } from '../state/selectors.js';
 import {
   setProjects,
@@ -349,10 +352,18 @@ function openWorkflowSetupModal(projectName: string): void {
 }
 
 // Declare renderAuth function (will be available after Step 3)
-declare function renderAuth(opts: { next: string; bootstrap?: boolean }): void;
+type RenderAuthOptions = {
+  next: string;
+  bootstrap?: boolean;
+  oidcEnabled?: boolean;
+  localAuthEnabled?: boolean;
+  selfServicePasswordResetEnabled?: boolean;
+};
+
+declare function renderAuth(opts: RenderAuthOptions): void;
 
 // Runtime access to renderAuth from auth view (after Step 3)
-async function getRenderAuth(): Promise<(opts: { next: string; bootstrap?: boolean }) => void> {
+async function getRenderAuth(): Promise<(opts: RenderAuthOptions) => void> {
   try {
     // @ts-ignore - auth.js will exist after Step 3
     const authModule = await import('./auth.js');
@@ -678,7 +689,12 @@ export async function renderProjects(): Promise<void> {
   } catch (err: any) {
     if (err && err.status === 401) {
       const renderAuth = await getRenderAuth();
-      renderAuth({ next: "/" });
+      renderAuth({
+        next: "/",
+        oidcEnabled: getOidcEnabled(),
+        localAuthEnabled: getLocalAuthEnabled(),
+        selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),
+      });
       return;
     }
     throw err;

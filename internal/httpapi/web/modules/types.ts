@@ -163,6 +163,7 @@ export interface AuthStatusResponse {
   bootstrapAvailable?: boolean;
   mode?: 'anonymous' | 'full';
   pushConfigured?: boolean;
+  selfServicePasswordResetEnabled?: boolean;
   oidcEnabled?: boolean;
   localAuthEnabled?: boolean;
   wallEnabled?: boolean;

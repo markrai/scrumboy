@@ -163,7 +163,7 @@ In both cases, the deployment manager is injecting the environment variable. Scr
 
 ### SMTP for self-service password reset (optional)
 
-Set `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535) to enable `POST /api/auth/request-password-reset`, letting users request their own password-reset email instead of relying on an admin-generated link. There is no sign-in “Forgot password?” UI yet — callers use the API directly (see [`docs/smtp.md`](docs/smtp.md)). **`SCRUMBOY_ENCRYPTION_KEY` above is also required** for this flow (it signs the reset token, same as the admin-generated link). **`SCRUMBOY_PUBLIC_BASE_URL` is also required** for self-service emails: set a valid absolute `http`/`https` origin (e.g. `https://scrumboy.example.com`). Missing or invalid values disable self-service email delivery (the endpoint still returns a generic success response). See [`docs/smtp.md`](docs/smtp.md) for TLS modes, startup log states, and verification steps.
+Configure `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535), **`SCRUMBOY_ENCRYPTION_KEY`**, and a valid **`SCRUMBOY_PUBLIC_BASE_URL`** absolute `http`/`https` origin (for example, `https://scrumboy.example.com`) to enable self-service password-reset email delivery. When those required static settings are present, the local-password sign-in screen shows **Forgot password?**, which submits `POST /api/auth/request-password-reset`. If a required setting is missing or invalid, the control is hidden and admins can still generate reset links under Settings → Users → Password. This readiness check does not test relay reachability or guarantee delivery. Accepted requests always show the same generic result; a `200` response never confirms that an account exists or that an email was delivered. See [`docs/smtp.md`](docs/smtp.md) for TLS modes, capability details, startup log states, and verification steps.
 
 ### OIDC / SSO login (optional)
 
@@ -242,7 +242,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
 
-- Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY`): see [docs/smtp.md](docs/smtp.md).
+- Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit_trail.md](docs/audit_trail.md)).
 

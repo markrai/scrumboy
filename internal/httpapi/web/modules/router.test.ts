@@ -128,7 +128,8 @@ describe('router push autosubscribe gate', () => {
     initForegroundLifecycleMock.mockReset();
     hydrateNotificationsForUserMock.mockReset();
     initNotificationBadgeMock.mockReset();
-    unsubscribeFromPushMock.mockClear();
+    unsubscribeFromPushMock.mockReset();
+    unsubscribeFromPushMock.mockResolvedValue(undefined);
     maybeAutoSubscribePushAfterLoginMock.mockClear();
     loadUserThemeMock.mockClear();
     applyWallpaperForAuthContextMock.mockClear();
@@ -152,6 +153,7 @@ describe('router push autosubscribe gate', () => {
           bootstrapAvailable: false,
           mode: 'full',
           pushConfigured,
+          selfServicePasswordResetEnabled: false,
           oidcEnabled: false,
           localAuthEnabled: true,
           wallEnabled: false,
@@ -164,6 +166,29 @@ describe('router push autosubscribe gate', () => {
       }
       if (url.startsWith('/api/user/preferences?key=')) {
         return {};
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  function installSignedOutAuthStatus(selfServicePasswordResetEnabled?: boolean): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        const status: Record<string, unknown> = {
+          user: null,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+        if (selfServicePasswordResetEnabled !== undefined) {
+          status.selfServicePasswordResetEnabled = selfServicePasswordResetEnabled;
+        }
+        return status;
       }
       throw new Error(`unexpected apiFetch url: ${url}`);
     });
@@ -188,5 +213,48 @@ describe('router push autosubscribe gate', () => {
     expect(maybeAutoSubscribePushAfterLoginMock).toHaveBeenCalledTimes(1);
     expect(maybeAutoSubscribePushAfterLoginMock).toHaveBeenCalledWith(7);
     expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('passes the self-service password-reset capability to the signed-out auth view', async () => {
+    installSignedOutAuthStatus(true);
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(renderAuthMock).toHaveBeenCalledWith({
+      next: '/',
+      bootstrap: false,
+      oidcEnabled: false,
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
+  });
+
+  it('fails closed when auth status omits the self-service password-reset capability', async () => {
+    installSignedOutAuthStatus();
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({
+      selfServicePasswordResetEnabled: false,
+    }));
+  });
+
+  it('passes the capability to the board-401 auth fallback', async () => {
+    window.history.replaceState({}, '', '/sample-board');
+    installSignedOutAuthStatus(true);
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { status: 401 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(renderAuthMock).toHaveBeenCalledWith({
+      next: '/sample-board',
+      bootstrap: false,
+      oidcEnabled: false,
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
   });
 });

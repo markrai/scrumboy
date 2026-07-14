@@ -87,12 +87,13 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		// Anonymous mode: return noop response (no console errors, clear contract)
 		if s.mode == "anonymous" {
 			writeJSON(w, http.StatusOK, map[string]any{
-				"user":                 nil,
-				"bootstrapAvailable":   false,
-				"mode":                 "anonymous",
-				"pushConfigured":       false,
-				"markdownNotesEnabled": s.markdownNotesEnabled,
-				"mermaidNotesEnabled":  s.mermaidNotesEnabled,
+				"user":                            nil,
+				"bootstrapAvailable":              false,
+				"mode":                            "anonymous",
+				"pushConfigured":                  false,
+				"selfServicePasswordResetEnabled": false,
+				"markdownNotesEnabled":            s.markdownNotesEnabled,
+				"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 			})
 			return
 		}
@@ -122,12 +123,13 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		}
 
 		resp := map[string]any{
-			"user":                 user,
-			"bootstrapAvailable":   bootstrapAvailable,
-			"mode":                 "full",
-			"pushConfigured":       s.pushVapidConfigured,
-			"markdownNotesEnabled": s.markdownNotesEnabled,
-			"mermaidNotesEnabled":  s.mermaidNotesEnabled,
+			"user":                            user,
+			"bootstrapAvailable":              bootstrapAvailable,
+			"mode":                            "full",
+			"pushConfigured":                  s.pushVapidConfigured,
+			"selfServicePasswordResetEnabled": s.smtpConfigured && len(s.encryptionKey) > 0 && s.publicBaseURL != "",
+			"markdownNotesEnabled":            s.markdownNotesEnabled,
+			"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 		}
 		resp["oidcEnabled"] = s.oidcService != nil
 		resp["localAuthEnabled"] = localAuthEnabled
