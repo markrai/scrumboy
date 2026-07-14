@@ -7,6 +7,7 @@
 ### Added
 
 - **SMTP email + self-service password reset** - New optional `SCRUMBOY_SMTP_*` configuration enables outbound email via `net/smtp`/`crypto/tls` (no new dependency). When configured, `POST /api/auth/request-password-reset` lets users request a reset link by email; delivery is asynchronous with retry/backoff, mirroring the existing webhook delivery architecture. The response is always generic to avoid leaking account existence. The admin-generated manual reset-link flow (`POST /api/admin/users/{id}/password-reset`) is unchanged and remains available regardless of SMTP configuration.
+- **`SCRUMBOY_TRUST_PROXY`** - Auth rate-limit IP keys default to connection `RemoteAddr` and ignore client `X-Forwarded-For` unless explicitly enabled (`1`/`true`/`on`/`yes`). Enable only behind a reverse proxy that overwrites/strips client XFF. Applies to login, 2FA, and request-password-reset limiters.
 
 ### Documentation
 
@@ -17,7 +18,7 @@
 - **Mailer** - Send success/failure/auth-failure/STARTTLS-vs-implicit-TLS coverage against a hand-rolled fake SMTP listener (`internal/mailer/mailertest`), including a header-injection guard.
 - **Mail queue/worker** - Enqueue/drain, capacity drop, and 3-attempt retry/backoff behavior.
 - **HTTP API** - `request-password-reset` enumeration-safety (identical response for existing/non-existing accounts), rate limiting, and an end-to-end test asserting a captured email contains a valid reset token/link using `SCRUMBOY_PUBLIC_BASE_URL` (admin-generated links still honor `X-Forwarded-Proto` when the base URL is unset).
-
+- **Trust proxy** - `clientIP` ignores spoofed XFF by default; honors first XFF hop when `TrustProxy` is set.
 ## [3.18.26] - 2026-07-12
 
 ### Added

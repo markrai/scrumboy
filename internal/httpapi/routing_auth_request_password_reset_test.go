@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,10 @@ import (
 var testEncryptionKey = []byte("0123456789abcdef0123456789abcdef")
 
 func newRequestPasswordResetTestServer(t *testing.T, smtpConfigured bool) (*httptest.Server, *mailertest.Server, func()) {
+	return newRequestPasswordResetTestServerWith(t, smtpConfigured, false)
+}
+
+func newRequestPasswordResetTestServerWith(t *testing.T, smtpConfigured, trustProxy bool) (*httptest.Server, *mailertest.Server, func()) {
 	t.Helper()
 
 	fake, err := mailertest.Start(mailertest.Options{})
@@ -31,6 +36,7 @@ func newRequestPasswordResetTestServer(t *testing.T, smtpConfigured bool) (*http
 		ScrumboyMode:   "full",
 		EncryptionKey:  testEncryptionKey,
 		SMTPTLSMode:    "none",
+		TrustProxy:     trustProxy,
 	}
 	if smtpConfigured {
 		opts.SMTPHost = host
@@ -530,7 +536,9 @@ func doJSONWithIP(t *testing.T, client *http.Client, url, ip string, body any) *
 }
 
 func TestRequestPasswordReset_RateLimited(t *testing.T) {
-	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+	// TrustProxy so doJSONWithIP can distinguish clients via X-Forwarded-For
+	// under httptest (RemoteAddr is always the test server loopback).
+	ts, _, cleanup := newRequestPasswordResetTestServerWith(t, true, true)
 	defer cleanup()
 
 	client := ts.Client()
@@ -563,5 +571,25 @@ func TestRequestPasswordReset_RateLimited(t *testing.T) {
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected exhausted IP to still be blocked regardless of email, got %d", resp2.StatusCode)
+	}
+}
+
+func TestRequestPasswordReset_SpoofedXFFIgnoredWithoutTrustProxy(t *testing.T) {
+	ts, _, cleanup := newRequestPasswordResetTestServerWith(t, true, false)
+	defer cleanup()
+
+	client := ts.Client()
+	var lastStatus int
+	for i := 0; i < 6; i++ {
+		// Rotate XFF each attempt; without TrustProxy all share RemoteAddr.
+		ip := fmt.Sprintf("198.51.100.%d", i+1)
+		resp := doJSONWithIP(t, client, ts.URL+"/api/auth/request-password-reset", ip, map[string]any{
+			"email": fmt.Sprintf("spoof-%d@example.com", i),
+		})
+		lastStatus = resp.StatusCode
+		resp.Body.Close()
+	}
+	if lastStatus != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 when rotating XFF without TrustProxy (shared RemoteAddr), got %d", lastStatus)
 	}
 }

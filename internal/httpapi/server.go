@@ -76,6 +76,10 @@ type Options struct {
 	// password-reset emails; missing or invalid values fail closed. When set,
 	// overrides the request-derived origin for reset links (see resetBaseURL).
 	PublicBaseURL string
+
+	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, clientIP honors
+	// X-Forwarded-For for auth rate limits. Default false (RemoteAddr only).
+	TrustProxy bool
 }
 
 type Server struct {
@@ -108,6 +112,7 @@ type Server struct {
 	smtpConfigured bool // Host+port+From statically valid; gates request-password-reset email sending
 
 	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty disables self-service reset email (see resetBaseURL)
+	trustProxy    bool   // SCRUMBOY_TRUST_PROXY; when true, clientIP honors X-Forwarded-For
 
 	webFS               fs.FS
 	fileSrv             http.Handler
@@ -436,6 +441,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		passwordResetRequestLimiter: passwordResetRequestLimiter,
 		smtpConfigured:              smtpConfigured,
 		publicBaseURL:               config.NormalizeBaseURL(opts.PublicBaseURL),
+		trustProxy:                  opts.TrustProxy,
 		webFS:                       webFS,
 		fileSrv:                     http.FileServer(http.FS(webFS)),
 		indexHTML:                   indexHTML,

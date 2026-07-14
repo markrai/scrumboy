@@ -402,6 +402,7 @@ None of these are required for basic startup.
 | `SCRUMBOY_SMTP_TLS_MODE` | `starttls` (or `implicit`, `none`) - see [`docs/smtp.md`](docs/smtp.md). |
 | `SCRUMBOY_SMTP_DEBUG` | (empty) - Set to `1` to log SMTP send attempts (never credentials/body). |
 | `SCRUMBOY_PUBLIC_BASE_URL` | (empty) - **Required for self-service password-reset email.** Canonical public origin (e.g. `https://scrumboy.example.com`). Must be absolute `http`/`https` with hostname; no path, query, fragment, or userinfo. Missing or invalid → self-service emails disabled (generic API response only). Also used for admin-generated reset links when set. See [`docs/smtp.md`](docs/smtp.md#reset-link-url). |
+| `SCRUMBOY_TRUST_PROXY` | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth rate-limit IP keys. Default off: use `RemoteAddr` only. Enable only behind a reverse proxy that overwrites/strips client XFF. |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 

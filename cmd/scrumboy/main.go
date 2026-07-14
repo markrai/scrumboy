@@ -119,6 +119,7 @@ func main() {
 		SMTPTLSMode:          cfg.SMTPTLSMode,
 		SMTPDebug:            cfg.SMTPDebug,
 		PublicBaseURL:        cfg.PublicBaseURL,
+		TrustProxy:           cfg.TrustProxy,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 

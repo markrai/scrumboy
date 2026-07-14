@@ -206,7 +206,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return
 		}
-		ipKey := "ip:" + clientIP(r)
+		ipKey := "ip:" + s.clientIP(r)
 		emailKey := "email:" + ratelimit.NormalizeEmail(in.Email)
 		if s.authRateLimit != nil && !s.authRateLimit.Allow(ipKey, emailKey) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
@@ -293,7 +293,7 @@ func (s *Server) handleAuthResetPassword(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Rate limit by IP (reuse auth ratelimit)
-	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+clientIP(r), "") {
+	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
 	}
@@ -389,7 +389,7 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 	// Rate limit before any DB lookup or config check, so neither an
 	// unconfigured-SMTP response nor a per-email limiter bypass can become a
 	// timing or enumeration oracle. 5/min per IP, 5/min per submitted email.
-	if s.passwordResetRequestLimiter != nil && !s.passwordResetRequestLimiter.Allow("ip:"+clientIP(r), email) {
+	if s.passwordResetRequestLimiter != nil && !s.passwordResetRequestLimiter.Allow("ip:"+s.clientIP(r), email) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
 	}

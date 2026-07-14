@@ -79,6 +79,12 @@ type Config struct {
 	// this origin for both self-service email and admin-generated links.
 	// Example: "https://scrumboy.example.com".
 	PublicBaseURL string
+
+	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, auth rate-limit IP keys
+	// honor X-Forwarded-For (first hop). Default false: use RemoteAddr only
+	// so clients cannot spoof the per-IP limiter. Enable only when a reverse
+	// proxy is the sole network path and overwrites/strips client XFF.
+	TrustProxy bool
 }
 
 func FromEnv() Config {
@@ -140,6 +146,7 @@ func FromEnv() Config {
 		SMTPDebug:    strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
 
 		PublicBaseURL: NormalizeBaseURL(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")),
+		TrustProxy:    trustProxyFromEnv(),
 	}
 }
 
@@ -224,6 +231,19 @@ func wallEnabledFromEnv() bool {
 // 1/true/on/yes (trimmed, case-insensitive).
 func markdownNotesEnabledFromEnv() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_MARKDOWN_NOTES_ENABLED")))
+	switch v {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// trustProxyFromEnv returns whether rate-limit IP keys may honor
+// X-Forwarded-For. Default false unless explicitly opted in with
+// 1/true/on/yes (trimmed, case-insensitive).
+func trustProxyFromEnv() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_TRUST_PROXY")))
 	switch v {
 	case "1", "true", "on", "yes":
 		return true
