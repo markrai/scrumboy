@@ -64,6 +64,12 @@ type Options struct {
 	SMTPPassword string
 	SMTPFrom     string
 	SMTPTLSMode  string
+
+	// PublicBaseURL (optional but strongly recommended when SMTP is
+	// configured). When set, overrides the request-derived origin used to
+	// build password-reset links, closing the Host-header poisoning vector
+	// (see resetBaseURL). No trailing slash.
+	PublicBaseURL string
 }
 
 type Server struct {
@@ -90,6 +96,8 @@ type Server struct {
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
 
 	smtpConfigured bool // Host+Port+From all set; gates request-password-reset email sending
+
+	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty falls back to request-derived origin (see resetBaseURL)
 
 	webFS               fs.FS
 	fileSrv             http.Handler
@@ -407,6 +415,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,
 		passwordResetRequestLimiter: passwordResetRequestLimiter,
 		smtpConfigured:              smtpConfigured,
+		publicBaseURL:               strings.TrimSuffix(strings.TrimSpace(opts.PublicBaseURL), "/"),
 		webFS:                       webFS,
 		fileSrv:                     http.FileServer(http.FS(webFS)),
 		indexHTML:                   indexHTML,

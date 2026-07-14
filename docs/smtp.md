@@ -47,9 +47,11 @@ Set `SCRUMBOY_SMTP_TLS_MODE` explicitly — it is never inferred from the port n
 
 ## Reset-link URL
 
-The reset link's scheme and host are derived from **the inbound request** (`X-Forwarded-Proto` header, falling back to whether the connection itself is TLS; and `Host`) — the same mechanism the existing admin-generated reset link already uses. There is no separate `SCRUMBOY_BASE_URL`/public-URL setting.
+**Set `SCRUMBOY_PUBLIC_BASE_URL`** (e.g. `https://scrumboy.example.com`, no trailing slash) to a fixed, trusted origin. When set, it is used verbatim for both the self-service reset link and the admin-generated one, and the inbound request's `Host`/`X-Forwarded-Proto` headers are ignored entirely.
 
-**Operational implication:** if Scrumboy sits behind a reverse proxy, that proxy must forward the correct `Host` header and set `X-Forwarded-Proto` accurately. If it doesn't (e.g. an SSL-terminating proxy that fails to set `X-Forwarded-Proto: https`), reset links will be generated with the wrong scheme or hostname even though the request itself arrived correctly.
+If `SCRUMBOY_PUBLIC_BASE_URL` is **not** set, the reset link's scheme and host fall back to being derived from **the inbound request** (`X-Forwarded-Proto` header, falling back to whether the connection itself is TLS; and `Host`). This fallback exists for backward compatibility but is **not safe for the self-service flow**: `Host` and `X-Forwarded-Proto` on an unauthenticated request are attacker-controlled. An attacker can `POST /api/auth/request-password-reset` with a spoofed `Host` header and a real user's email address; the server still generates a valid reset token for that user and emails them a link built from the attacker's `Host`, i.e. password-reset-link poisoning. If the victim follows the link (or if the attacker-controlled page proxies the flow), the token can be captured and used to take over the account. Set `SCRUMBOY_PUBLIC_BASE_URL` before enabling SMTP self-service reset to close this off. The server logs a startup warning if SMTP is configured without it.
+
+**Operational implication if you rely on the fallback anyway:** if Scrumboy sits behind a reverse proxy, that proxy must forward the correct `Host` header and set `X-Forwarded-Proto` accurately. If it doesn't (e.g. an SSL-terminating proxy that fails to set `X-Forwarded-Proto: https`), reset links will be generated with the wrong scheme or hostname even though the request itself arrived correctly — another reason to prefer `SCRUMBOY_PUBLIC_BASE_URL`.
 
 ---
 
@@ -64,6 +66,7 @@ The reset link's scheme and host are derived from **the inbound request** (`X-Fo
 | `SCRUMBOY_SMTP_FROM` | Yes (with Host, Port) | Envelope + header `From` address, e.g. `Scrumboy <no-reply@example.com>`. |
 | `SCRUMBOY_SMTP_TLS_MODE` | No (default `starttls`) | `starttls` \| `implicit` \| `none`. See TLS modes above. |
 | `SCRUMBOY_SMTP_DEBUG` | No | Set to `1` to log send attempts (never logs credentials or message bodies). |
+| `SCRUMBOY_PUBLIC_BASE_URL` | Strongly recommended | Fixed origin for reset links, e.g. `https://scrumboy.example.com`. See [Reset-link URL](#reset-link-url) above. |
 
 Also required: `SCRUMBOY_ENCRYPTION_KEY` (see [`README.md`](../README.md#config)) — used to sign the reset token, same as the admin-generated reset link.
 

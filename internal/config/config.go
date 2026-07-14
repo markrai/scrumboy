@@ -69,6 +69,16 @@ type Config struct {
 	SMTPFrom     string // SCRUMBOY_SMTP_FROM, e.g. "Scrumboy <no-reply@example.com>"
 	SMTPTLSMode  string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
 	SMTPDebug    bool   // SCRUMBOY_SMTP_DEBUG=1 — log send attempts (never credentials/body)
+
+	// PublicBaseURL (optional but strongly recommended when SMTP is
+	// configured). When set, password-reset links (both the self-service
+	// email flow and the admin-generated link) use this as their origin
+	// instead of the inbound request's Host/X-Forwarded-Proto headers, which
+	// are attacker-controlled and otherwise allow password-reset-link
+	// poisoning (a spoofed Host causes a valid reset token for a real user
+	// to be delivered inside a link pointing at an attacker-controlled
+	// domain). Example: "https://scrumboy.example.com". No trailing slash.
+	PublicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL
 }
 
 func FromEnv() Config {
@@ -126,6 +136,8 @@ func FromEnv() Config {
 		SMTPFrom:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_FROM")),
 		SMTPTLSMode:  normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
 		SMTPDebug:    strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
+
+		PublicBaseURL: strings.TrimSuffix(strings.TrimSpace(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")), "/"),
 	}
 }
 

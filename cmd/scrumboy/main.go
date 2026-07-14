@@ -87,7 +87,7 @@ func main() {
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
 	}
 	logWebPushConfiguration(logger, cfg.ScrumboyMode, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey)
-	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
+	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom, cfg.PublicBaseURL)
 
 	maxB := cfg.MaxRequestBodyBytes
 	if maxB <= 0 {
@@ -117,6 +117,7 @@ func main() {
 		SMTPPassword:         cfg.SMTPPassword,
 		SMTPFrom:             cfg.SMTPFrom,
 		SMTPTLSMode:          cfg.SMTPTLSMode,
+		PublicBaseURL:        cfg.PublicBaseURL,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 
@@ -244,10 +245,13 @@ func logWebPushConfiguration(logger *log.Logger, mode, publicKey, privateKey str
 	}
 }
 
-func logSMTPConfiguration(logger *log.Logger, host string, port int, from string) {
+func logSMTPConfiguration(logger *log.Logger, host string, port int, from string, publicBaseURL string) {
 	switch {
 	case httpapi.SMTPConfigured(host, port, from):
 		logger.Printf("smtp: enabled (host=%s port=%d)", host, port)
+		if strings.TrimSpace(publicBaseURL) == "" {
+			logger.Printf("smtp: warning: SCRUMBOY_PUBLIC_BASE_URL is not set — password-reset links will use the inbound request's Host header, which is attacker-controlled and can be spoofed to poison reset links sent to real users; set SCRUMBOY_PUBLIC_BASE_URL (e.g. https://scrumboy.example.com) to prevent this")
+		}
 	case httpapi.SMTPPartiallyConfigured(host, port, from):
 		logger.Printf("smtp: partial config ignored (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM together)")
 	default:

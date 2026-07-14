@@ -408,18 +408,7 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Base URL derived from this request, synchronously, before enqueueing —
-	// same mechanism handleAdminUsersPasswordReset already uses; there is no
-	// dedicated site-base-URL config in Scrumboy.
-	proto := r.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
-		if r.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
-	}
-	resetURL := proto + "://" + r.Host + "/auth/reset-password?token=" + url.QueryEscape(token)
+	resetURL := s.resetBaseURL(r) + "/auth/reset-password?token=" + url.QueryEscape(token)
 
 	s.mailQueue.Enqueue(mailDelivery{
 		To:      u.Email,
@@ -431,4 +420,32 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 	})
 
 	respond()
+}
+
+// resetBaseURL returns the origin (scheme + host, no trailing slash) to use
+// when building password-reset links, for both the self-service email flow
+// above and the admin-generated link in handleAdminUsersPasswordReset.
+//
+// If SCRUMBOY_PUBLIC_BASE_URL is configured, it is used verbatim and the
+// inbound request is never consulted. Otherwise this falls back to deriving
+// the origin from X-Forwarded-Proto/Host on the request itself — both of
+// which are attacker-controlled on an unauthenticated endpoint. A request
+// with a spoofed Host header still generates a valid reset token for a real
+// account; without a configured base URL, that token would be delivered
+// inside a link pointing at whatever host the attacker supplied, allowing
+// password-reset-link poisoning if the victim follows it. Operators enabling
+// SMTP self-service reset should set SCRUMBOY_PUBLIC_BASE_URL.
+func (s *Server) resetBaseURL(r *http.Request) string {
+	if s.publicBaseURL != "" {
+		return s.publicBaseURL
+	}
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	return proto + "://" + r.Host
 }

@@ -24,6 +24,7 @@ services:
       - SCRUMBOY_SMTP_FROM=${SCRUMBOY_SMTP_FROM:-}
       - SCRUMBOY_SMTP_TLS_MODE=${SCRUMBOY_SMTP_TLS_MODE:-}
       - SCRUMBOY_SMTP_DEBUG=${SCRUMBOY_SMTP_DEBUG:-}
+      - SCRUMBOY_PUBLIC_BASE_URL=${SCRUMBOY_PUBLIC_BASE_URL:-}
     volumes:
       - ./data:/data
     restart: unless-stopped

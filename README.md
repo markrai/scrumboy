@@ -163,7 +163,7 @@ In both cases, the deployment manager is injecting the environment variable. Scr
 
 ### SMTP for self-service password reset (optional)
 
-Set `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_PORT`, and `SCRUMBOY_SMTP_FROM` together (Username/Password optional) to enable `POST /api/auth/request-password-reset`, letting users request their own password-reset email instead of relying on an admin-generated link. **`SCRUMBOY_ENCRYPTION_KEY` above is also required** for this flow (it signs the reset token, same as the admin-generated link). See [`docs/smtp.md`](docs/smtp.md) for TLS modes, startup log states, and verification steps.
+Set `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_PORT`, and `SCRUMBOY_SMTP_FROM` together (Username/Password optional) to enable `POST /api/auth/request-password-reset`, letting users request their own password-reset email instead of relying on an admin-generated link. **`SCRUMBOY_ENCRYPTION_KEY` above is also required** for this flow (it signs the reset token, same as the admin-generated link). **Also set `SCRUMBOY_PUBLIC_BASE_URL`** to a fixed origin (e.g. `https://scrumboy.example.com`) — without it, the reset link is built from the inbound request's `Host` header, which an attacker can spoof to poison the link emailed to a real user. See [`docs/smtp.md`](docs/smtp.md) for TLS modes, startup log states, and verification steps.
 
 ### OIDC / SSO login (optional)
 
@@ -401,6 +401,7 @@ None of these are required for basic startup.
 | `SCRUMBOY_SMTP_FROM` | (empty) - Envelope + header `From`, e.g. `Scrumboy <no-reply@example.com>`. Required together with Host and Port. |
 | `SCRUMBOY_SMTP_TLS_MODE` | `starttls` (or `implicit`, `none`) - see [`docs/smtp.md`](docs/smtp.md). |
 | `SCRUMBOY_SMTP_DEBUG` | (empty) - Set to `1` to log SMTP send attempts (never credentials/body). |
+| `SCRUMBOY_PUBLIC_BASE_URL` | (empty) - **Strongly recommended with SMTP.** Canonical origin (e.g. `https://scrumboy.example.com`, no trailing slash) used to build password-reset links. If unset, links are built from the inbound request's `Host`/`X-Forwarded-Proto` headers, which are attacker-controlled and can be spoofed to poison reset links sent to real users. See [`docs/smtp.md`](docs/smtp.md#reset-link-url). |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 

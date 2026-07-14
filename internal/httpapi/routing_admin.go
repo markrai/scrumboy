@@ -241,16 +241,7 @@ func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	proto := r.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
-		if r.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
-		}
-	}
-	baseURL := proto + "://" + r.Host
-	resetURL := baseURL + "/auth/reset-password?token=" + url.QueryEscape(token)
+	resetURL := s.resetBaseURL(r) + "/auth/reset-password?token=" + url.QueryEscape(token)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"reset_url":  resetURL,
