@@ -104,6 +104,58 @@ func TestMailWorker_GracefulShutdownFlushesPending(t *testing.T) {
 	}
 }
 
+func TestServerClose_WaitsForMailFlush(t *testing.T) {
+	sender := &fakeMailSender{}
+	q := newMailQueue(discardLogger())
+	w := newMailWorker(q, sender, discardLogger())
+	q.Enqueue(mailDelivery{To: "pending@example.com", LogRef: "pending"})
+
+	mailCtx, mailCancel := context.WithCancel(context.Background())
+	go w.Run(mailCtx)
+
+	srv := &Server{
+		logger:     discardLogger(),
+		mailCancel: mailCancel,
+		mailDone:   w.Done(),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		srv.Close(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not return after mail worker flushed")
+	}
+
+	if sender.callCount() < 1 {
+		t.Fatal("expected Close to wait until the pending mail was delivered")
+	}
+}
+
+func TestServerClose_ReturnsAtDeadlineIfMailFlushHangs(t *testing.T) {
+	blockingDone := make(chan struct{}) // never closed: simulates a flush that hasn't finished
+	_, mailCancel := context.WithCancel(context.Background())
+
+	srv := &Server{
+		logger:     discardLogger(),
+		mailCancel: mailCancel,
+		mailDone:   blockingDone,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	srv.Close(ctx)
+	if elapsed := time.Since(start); elapsed > 1*time.Second {
+		t.Fatalf("Close should have returned at the context deadline, took %v", elapsed)
+	}
+}
+
 func TestMailWorker_EmptyQueue_RunExitsCleanlyOnCancel(t *testing.T) {
 	sender := &fakeMailSender{}
 	q := newMailQueue(discardLogger())

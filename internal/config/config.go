@@ -137,8 +137,17 @@ func FromEnv() Config {
 		SMTPTLSMode:  normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
 		SMTPDebug:    strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
 
-		PublicBaseURL: strings.TrimSuffix(strings.TrimSpace(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")), "/"),
+		PublicBaseURL: NormalizeBaseURL(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")),
 	}
+}
+
+// NormalizeBaseURL trims whitespace and any trailing slash from a
+// configured base URL (e.g. SCRUMBOY_PUBLIC_BASE_URL), so every caller that
+// concatenates a path onto it gets a consistent origin with no "//". Shared
+// so callers outside this package (httpapi.Options) don't re-implement the
+// same normalization and risk it drifting out of sync.
+func NormalizeBaseURL(raw string) string {
+	return strings.TrimSuffix(strings.TrimSpace(raw), "/")
 }
 
 // normalizeSMTPTLSMode validates SCRUMBOY_SMTP_TLS_MODE. Unrecognized or empty

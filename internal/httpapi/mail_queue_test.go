@@ -3,6 +3,7 @@ package httpapi
 import (
 	"io"
 	"log"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -59,6 +60,24 @@ func TestMailQueue_WaitSignalsOnEnqueue(t *testing.T) {
 	// Signal channel has buffer 1; a second Enqueue before Drain must not block.
 	q.Enqueue(mailDelivery{LogRef: "2"})
 	q.Enqueue(mailDelivery{LogRef: "3"})
+}
+
+func TestMailQueue_HighWaterMarkWarningBeforeDrop(t *testing.T) {
+	var buf strings.Builder
+	logger := log.New(&buf, "", 0)
+	q := newMailQueueWithCapacity(logger, 10)
+
+	for i := 0; i < 8; i++ {
+		q.Enqueue(mailDelivery{LogRef: "warm-up"})
+	}
+	if strings.Contains(buf.String(), "capacity") {
+		t.Fatalf("did not expect a high-water-mark warning below 90%% capacity, got: %s", buf.String())
+	}
+
+	q.Enqueue(mailDelivery{LogRef: "9th"})
+	if !strings.Contains(buf.String(), "mail queue at 9/10 capacity") {
+		t.Fatalf("expected a high-water-mark warning at 90%% capacity, got: %s", buf.String())
+	}
 }
 
 func TestMailQueue_ConcurrentEnqueue(t *testing.T) {

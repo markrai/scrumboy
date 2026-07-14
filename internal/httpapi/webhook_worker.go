@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,60 +11,18 @@ import (
 )
 
 type webhookWorker struct {
-	queue  *webhookQueue
-	logger *log.Logger
-	client *http.Client
+	*retryWorker[webhookDelivery]
 }
 
 func newWebhookWorker(queue *webhookQueue, logger *log.Logger) *webhookWorker {
-	return &webhookWorker{
-		queue:  queue,
-		logger: logger,
-		client: &http.Client{Timeout: 10 * time.Second},
+	client := &http.Client{Timeout: 10 * time.Second}
+	send := func(d webhookDelivery) error {
+		return sendWebhook(client, d)
 	}
+	return &webhookWorker{retryWorker: newRetryWorker(queue, logger, "webhook", send)}
 }
 
-func (w *webhookWorker) Run(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			w.flush()
-			return
-		case <-w.queue.Wait():
-			w.flush()
-		}
-	}
-}
-
-func (w *webhookWorker) flush() {
-	for {
-		batch := w.queue.Drain()
-		if len(batch) == 0 {
-			return
-		}
-		for _, d := range batch {
-			w.deliver(d)
-		}
-	}
-}
-
-func (w *webhookWorker) deliver(d webhookDelivery) {
-	backoff := [3]time.Duration{0, 100 * time.Millisecond, 400 * time.Millisecond}
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		if backoff[attempt] > 0 {
-			time.Sleep(backoff[attempt])
-		}
-		lastErr = w.send(d)
-		if lastErr == nil {
-			return
-		}
-	}
-	w.logger.Printf("webhook delivery failed after 3 attempts: webhook_id=%d event=%s url=%s err=%v",
-		d.WebhookID, d.EventID, d.URL, lastErr)
-}
-
-func (w *webhookWorker) send(d webhookDelivery) error {
+func sendWebhook(client *http.Client, d webhookDelivery) error {
 	req, err := http.NewRequest(http.MethodPost, d.URL, bytes.NewReader(d.Body))
 	if err != nil {
 		return err
@@ -81,7 +38,7 @@ func (w *webhookWorker) send(d webhookDelivery) error {
 		req.Header.Set("X-Scrumboy-Signature", sig)
 	}
 
-	resp, err := w.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

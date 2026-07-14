@@ -500,7 +500,7 @@ func TestServer_CloseStopsWorker(t *testing.T) {
 	default:
 	}
 
-	srv.Close()
+	srv.Close(context.Background())
 
 	select {
 	case <-workerCtx.Done():

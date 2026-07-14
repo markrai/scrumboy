@@ -144,6 +144,48 @@ func TestRequestPasswordReset_NonexistentEmail_IdenticalResponseNoEmail(t *testi
 	}
 }
 
+func TestRequestPasswordReset_TimingIndistinguishable(t *testing.T) {
+	ts, fake, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "alice3@example.com", "password123")
+
+	measure := func(email string) time.Duration {
+		var out map[string]any
+		start := time.Now()
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+			"email": email,
+		}, &out)
+		elapsed := time.Since(start)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+		}
+		return elapsed
+	}
+
+	existingElapsed := measure("alice3@example.com")
+	waitForMessages(t, fake, 1) // let the existing-user path's async enqueue settle
+	nonexistentElapsed := measure("nobody-timing@example.com")
+
+	// Both paths are floored to minPasswordResetRequestDuration, so their
+	// wall-clock times should land close together regardless of the extra DB
+	// calls and token generation on the existing-user path. Allow generous
+	// slack for scheduler jitter in CI.
+	diff := existingElapsed - nonexistentElapsed
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 150*time.Millisecond {
+		t.Fatalf("expected response times within 150ms of each other, existing=%v nonexistent=%v diff=%v",
+			existingElapsed, nonexistentElapsed, diff)
+	}
+	if existingElapsed < minPasswordResetRequestDuration || nonexistentElapsed < minPasswordResetRequestDuration {
+		t.Fatalf("expected both responses to be floored to at least %v, got existing=%v nonexistent=%v",
+			minPasswordResetRequestDuration, existingElapsed, nonexistentElapsed)
+	}
+}
+
 func TestRequestPasswordReset_SMTPNotConfigured_GenericResponseNoEmail(t *testing.T) {
 	ts, fake, cleanup := newRequestPasswordResetTestServer(t, false)
 	defer cleanup()

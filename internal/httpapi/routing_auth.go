@@ -347,8 +347,17 @@ func (s *Server) handleAuthResetPassword(w http.ResponseWriter, r *http.Request)
 // response is always identical whether or not the submitted email matches an
 // account, whether SMTP is configured, and whether the encryption key is
 // configured. Only the fully-successful path (user exists, SMTP configured,
-// token generated) enqueues an email.
+// token generated) enqueues an email. minPasswordResetRequestDuration floors
+// the response time so the account-exists path's extra DB calls and token
+// generation can't be timed to distinguish it from the account-not-found path.
+// minPasswordResetRequestDuration is a floor on this handler's total
+// response time, so that the extra DB lookups and token generation on the
+// account-exists path don't create a timing side-channel for enumerating
+// accounts (the response body is already identical on every path).
+const minPasswordResetRequestDuration = 200 * time.Millisecond
+
 func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
@@ -379,6 +388,9 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 	// This is the enumeration-safety contract for this endpoint: no branch
 	// below may change status code or body shape based on account existence.
 	respond := func() {
+		if elapsed := time.Since(start); elapsed < minPasswordResetRequestDuration {
+			time.Sleep(minPasswordResetRequestDuration - elapsed)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"message": "If that account exists, a password reset email has been sent.",
 		})

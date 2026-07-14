@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/mailer"
@@ -84,8 +85,10 @@ type Server struct {
 	fanout              *eventbus.Fanout
 	webhookQueue        *webhookQueue
 	webhookCancel       context.CancelFunc
+	webhookDone         <-chan struct{} // closed once the webhook worker's shutdown flush completes
 	mailQueue           *mailQueue
 	mailCancel          context.CancelFunc
+	mailDone            <-chan struct{} // closed once the mail worker's shutdown flush completes; nil if SMTP isn't configured
 
 	authRateLimit *ratelimit.Limiter
 
@@ -368,6 +371,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier)
 	whWorker := newWebhookWorker(whQueue, logger)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
+	webhookDone := whWorker.Done()
 	go whWorker.Run(workerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
 	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
@@ -375,6 +379,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
 	mQueue := newMailQueue(logger)
 	var mailCancel context.CancelFunc
+	var mailDone <-chan struct{}
 	if smtpConfigured {
 		sender := mailer.New(mailer.Config{
 			Host:     opts.SMTPHost,
@@ -387,6 +392,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		mWorker := newMailWorker(mQueue, sender, logger)
 		mailCtx, cancel := context.WithCancel(context.Background())
 		mailCancel = cancel
+		mailDone = mWorker.Done()
 		go mWorker.Run(mailCtx)
 	}
 
@@ -407,15 +413,17 @@ func NewServer(st storeAPI, opts Options) *Server {
 		fanout:                      fanout,
 		webhookQueue:                whQueue,
 		webhookCancel:               workerCancel,
+		webhookDone:                 webhookDone,
 		mailQueue:                   mQueue,
 		mailCancel:                  mailCancel,
+		mailDone:                    mailDone,
 		authRateLimit:               authRateLimit,
 		encryptionKey:               encKey,
 		oidcService:                 opts.OIDCService,
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,
 		passwordResetRequestLimiter: passwordResetRequestLimiter,
 		smtpConfigured:              smtpConfigured,
-		publicBaseURL:               strings.TrimSuffix(strings.TrimSpace(opts.PublicBaseURL), "/"),
+		publicBaseURL:               config.NormalizeBaseURL(opts.PublicBaseURL),
 		webFS:                       webFS,
 		fileSrv:                     http.FileServer(http.FS(webFS)),
 		indexHTML:                   indexHTML,
@@ -516,13 +524,33 @@ func (s *Server) storeMode() store.Mode {
 	return mode
 }
 
-// Close cancels background workers. Call from main on shutdown.
-func (s *Server) Close() {
+// Close cancels background workers and waits (bounded by ctx) for each
+// worker's shutdown flush to finish (retries and all) before returning. This
+// avoids the process exiting mid-flush and silently dropping queued webhook
+// deliveries or password-reset emails. Call from main on shutdown.
+func (s *Server) Close(ctx context.Context) {
 	if s.webhookCancel != nil {
 		s.webhookCancel()
 	}
 	if s.mailCancel != nil {
 		s.mailCancel()
+	}
+
+	for _, w := range []struct {
+		name string
+		done <-chan struct{}
+	}{
+		{"webhook", s.webhookDone},
+		{"mail", s.mailDone},
+	} {
+		if w.done == nil {
+			continue
+		}
+		select {
+		case <-w.done:
+		case <-ctx.Done():
+			s.logger.Printf("shutdown: %s worker flush did not finish before deadline", w.name)
+		}
 	}
 }
 

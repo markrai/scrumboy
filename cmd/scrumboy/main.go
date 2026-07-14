@@ -227,7 +227,10 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Printf("shutdown: %v", err)
 	}
-	srv.Close()
+
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer closeCancel()
+	srv.Close(closeCtx)
 }
 
 func logWebPushConfiguration(logger *log.Logger, mode, publicKey, privateKey string) {
