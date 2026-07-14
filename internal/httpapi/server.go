@@ -70,10 +70,9 @@ type Options struct {
 	// bodies. See SCRUMBOY_SMTP_DEBUG in docs/smtp.md.
 	SMTPDebug bool
 
-	// PublicBaseURL (optional but strongly recommended when SMTP is
-	// configured). When set, overrides the request-derived origin used to
-	// build password-reset links, closing the Host-header poisoning vector
-	// (see resetBaseURL). No trailing slash.
+	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
+	// password-reset emails; missing or invalid values fail closed. When set,
+	// overrides the request-derived origin for reset links (see resetBaseURL).
 	PublicBaseURL string
 }
 
@@ -104,7 +103,7 @@ type Server struct {
 
 	smtpConfigured bool // Host+Port+From all set; gates request-password-reset email sending
 
-	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty falls back to request-derived origin (see resetBaseURL)
+	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty disables self-service reset email (see resetBaseURL)
 
 	webFS               fs.FS
 	fileSrv             http.Handler

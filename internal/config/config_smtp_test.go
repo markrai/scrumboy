@@ -2,6 +2,62 @@ package config
 
 import "testing"
 
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"empty", "", ""},
+		{"whitespace", "   ", ""},
+		{"valid https", "https://scrumboy.example.com", "https://scrumboy.example.com"},
+		{"trailing slash stripped via canonicalize", "https://scrumboy.example.com/", "https://scrumboy.example.com"},
+		{"scheme lowercased", "HTTPS://scrumboy.example.com/", "https://scrumboy.example.com"},
+		{"port preserved", "https://scrumboy.example.com:8443", "https://scrumboy.example.com:8443"},
+		{"localhost with port", "http://localhost:8080", "http://localhost:8080"},
+		{"ipv6 with port", "http://[::1]:8080", "http://[::1]:8080"},
+		{"ftp scheme rejected", "ftp://scrumboy.example.com", ""},
+		{"relative rejected", "//scrumboy.example.com", ""},
+		{"missing hostname", "https://:8443", ""},
+		{"userinfo rejected", "https://u:p@scrumboy.example.com", ""},
+		{"path rejected", "https://scrumboy.example.com/scrumboy", ""},
+		{"query rejected", "https://scrumboy.example.com?q=1", ""},
+		{"bare question mark rejected", "https://scrumboy.example.com?", ""},
+		{"fragment rejected", "https://scrumboy.example.com#frag", ""},
+		{"double slash path rejected", "https://scrumboy.example.com//", ""},
+		{"encoded slash path rejected", "https://scrumboy.example.com/%2F", ""},
+		{"malformed port rejected", "https://scrumboy.example.com:notaport", ""},
+		{"max valid port accepted", "https://scrumboy.example.com:65535", "https://scrumboy.example.com:65535"},
+		{"port 65536 rejected", "https://scrumboy.example.com:65536", ""},
+		{"port 0 rejected", "https://scrumboy.example.com:0", ""},
+		{"dangling colon rejected", "https://scrumboy.example.com:", ""},
+		{"ipv6 dangling colon rejected", "http://[::1]:", ""},
+		{"javascript scheme rejected", "javascript:alert(1)", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeBaseURL(tc.raw); got != tc.want {
+				t.Fatalf("NormalizeBaseURL(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFromEnv_PublicBaseURL(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("SCRUMBOY_PUBLIC_BASE_URL", "HTTPS://scrumboy.example.com/")
+	cfg := FromEnv()
+	if cfg.PublicBaseURL != "https://scrumboy.example.com" {
+		t.Fatalf("PublicBaseURL = %q, want canonical origin", cfg.PublicBaseURL)
+	}
+
+	t.Setenv("SCRUMBOY_PUBLIC_BASE_URL", "https://evil.example/phish")
+	cfg = FromEnv()
+	if cfg.PublicBaseURL != "" {
+		t.Fatalf("invalid PublicBaseURL should be empty, got %q", cfg.PublicBaseURL)
+	}
+}
+
 func TestNormalizeSMTPTLSMode(t *testing.T) {
 	cases := []struct {
 		name string

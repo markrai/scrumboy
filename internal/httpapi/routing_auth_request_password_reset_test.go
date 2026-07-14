@@ -253,6 +253,42 @@ func TestRequestPasswordReset_NoPublicBaseURL_GenericResponseNoEmail(t *testing.
 	assertStillNoMessages(t, fake)
 }
 
+// TestRequestPasswordReset_InvalidPublicBaseURL_GenericResponseNoEmail ensures
+// malformed PublicBaseURL in Options collapses to fail-closed at the server
+// boundary (not only when loaded via FromEnv).
+func TestRequestPasswordReset_InvalidPublicBaseURL_GenericResponseNoEmail(t *testing.T) {
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	defer fake.Close()
+	host, port := fake.HostPort()
+
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+		SMTPTLSMode:    "none",
+		SMTPHost:       host,
+		SMTPPort:       port,
+		SMTPFrom:       "no-reply@example.com",
+		PublicBaseURL:  "https://evil.example/phish",
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "invalid-base@example.com", "password123")
+
+	var out map[string]any
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "invalid-base@example.com",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertStillNoMessages(t, fake)
+}
+
 func TestRequestPasswordReset_EncryptionKeyNotConfigured_GenericResponse(t *testing.T) {
 	fake, err := mailertest.Start(mailertest.Options{})
 	if err != nil {

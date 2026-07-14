@@ -47,11 +47,15 @@ Set `SCRUMBOY_SMTP_TLS_MODE` explicitly — it is never inferred from the port n
 
 ## Reset-link URL
 
-**Set `SCRUMBOY_PUBLIC_BASE_URL`** (e.g. `https://scrumboy.example.com`, no trailing slash) to a fixed, trusted origin. When set, it is used verbatim for both the self-service reset link and the admin-generated one, and the inbound request's `Host`/`X-Forwarded-Proto` headers are ignored entirely.
+**`SCRUMBOY_PUBLIC_BASE_URL` is required for self-service password-reset emails.** Set it to a fixed public origin (e.g. `https://scrumboy.example.com`). The value must be an absolute `http` or `https` URL with a hostname, optional TCP port (1–65535), and **no** path (other than `/`), query, fragment, or userinfo. Invalid values are treated like unset.
 
-If `SCRUMBOY_PUBLIC_BASE_URL` is **not** set, the reset link's scheme and host fall back to being derived from **the inbound request** (`X-Forwarded-Proto` header, falling back to whether the connection itself is TLS; and `Host`). This fallback exists for backward compatibility but is **not safe for the self-service flow**: `Host` and `X-Forwarded-Proto` on an unauthenticated request are attacker-controlled. An attacker can `POST /api/auth/request-password-reset` with a spoofed `Host` header and a real user's email address; the server still generates a valid reset token for that user and emails them a link built from the attacker's `Host`, i.e. password-reset-link poisoning. If the victim follows the link (or if the attacker-controlled page proxies the flow), the token can be captured and used to take over the account. Set `SCRUMBOY_PUBLIC_BASE_URL` before enabling SMTP self-service reset to close this off. The server logs a startup warning if SMTP is configured without it.
+When set to a valid origin, reset links use it for both the self-service email and the admin-generated link; the inbound request's `Host`/`X-Forwarded-Proto` headers are ignored.
 
-**Operational implication if you rely on the fallback anyway:** if Scrumboy sits behind a reverse proxy, that proxy must forward the correct `Host` header and set `X-Forwarded-Proto` accurately. If it doesn't (e.g. an SSL-terminating proxy that fails to set `X-Forwarded-Proto: https`), reset links will be generated with the wrong scheme or hostname even though the request itself arrived correctly — another reason to prefer `SCRUMBOY_PUBLIC_BASE_URL`.
+If `SCRUMBOY_PUBLIC_BASE_URL` is **missing or invalid**, the self-service endpoint still returns the same generic success response, but **no email is sent**. The server logs at startup:
+
+`smtp: SCRUMBOY_PUBLIC_BASE_URL is missing or invalid; self-service password-reset emails are disabled until a valid public origin is configured`
+
+**Admin-generated reset links** (`POST /api/admin/users/{id}/password-reset`) do not require this variable. When unset, that authenticated owner-only endpoint still builds its link from the inbound request's `Host`/`X-Forwarded-Proto` (returned in JSON, not emailed). Behind a reverse proxy, ensure `Host` and `X-Forwarded-Proto` are forwarded correctly for that path, or set `SCRUMBOY_PUBLIC_BASE_URL` so admin links also use a fixed origin.
 
 ---
 
@@ -66,7 +70,7 @@ If `SCRUMBOY_PUBLIC_BASE_URL` is **not** set, the reset link's scheme and host f
 | `SCRUMBOY_SMTP_FROM` | Yes (with Host, Port) | Envelope + header `From` address, e.g. `Scrumboy <no-reply@example.com>`. |
 | `SCRUMBOY_SMTP_TLS_MODE` | No (default `starttls`) | `starttls` \| `implicit` \| `none`. See TLS modes above. |
 | `SCRUMBOY_SMTP_DEBUG` | No | Set to `1` to log send attempts (never logs credentials or message bodies). |
-| `SCRUMBOY_PUBLIC_BASE_URL` | Strongly recommended | Fixed origin for reset links, e.g. `https://scrumboy.example.com`. See [Reset-link URL](#reset-link-url) above. |
+| `SCRUMBOY_PUBLIC_BASE_URL` | Yes (for self-service email) | Canonical public origin for reset links, e.g. `https://scrumboy.example.com`. Missing or invalid → self-service emails disabled (generic response only). See [Reset-link URL](#reset-link-url). |
 
 Also required: `SCRUMBOY_ENCRYPTION_KEY` (see [`README.md`](../README.md#config)) — used to sign the reset token, same as the admin-generated reset link.
 

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -70,15 +71,12 @@ type Config struct {
 	SMTPTLSMode  string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
 	SMTPDebug    bool   // SCRUMBOY_SMTP_DEBUG=1 — log send attempts (never credentials/body)
 
-	// PublicBaseURL (optional but strongly recommended when SMTP is
-	// configured). When set, password-reset links (both the self-service
-	// email flow and the admin-generated link) use this as their origin
-	// instead of the inbound request's Host/X-Forwarded-Proto headers, which
-	// are attacker-controlled and otherwise allow password-reset-link
-	// poisoning (a spoofed Host causes a valid reset token for a real user
-	// to be delivered inside a link pointing at an attacker-controlled
-	// domain). Example: "https://scrumboy.example.com". No trailing slash.
-	PublicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL
+	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
+	// password-reset emails: missing or invalid values fail closed (no email
+	// sent). When set to a valid absolute http/https origin, reset links use
+	// this origin for both self-service email and admin-generated links.
+	// Example: "https://scrumboy.example.com".
+	PublicBaseURL string
 }
 
 func FromEnv() Config {
@@ -141,13 +139,53 @@ func FromEnv() Config {
 	}
 }
 
-// NormalizeBaseURL trims whitespace and any trailing slash from a
-// configured base URL (e.g. SCRUMBOY_PUBLIC_BASE_URL), so every caller that
-// concatenates a path onto it gets a consistent origin with no "//". Shared
-// so callers outside this package (httpapi.Options) don't re-implement the
-// same normalization and risk it drifting out of sync.
+// NormalizeBaseURL parses SCRUMBOY_PUBLIC_BASE_URL into a canonical public
+// origin (scheme://host[:port]). Empty or invalid input returns "" so
+// self-service password-reset email fails closed. Valid: absolute http or
+// https, hostname required, optional port in 1..65535, no userinfo, path only
+// empty or "/", no query (including bare ?) or fragment.
 func NormalizeBaseURL(raw string) string {
-	return strings.TrimSuffix(strings.TrimSpace(raw), "/")
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	if u.Opaque != "" ||
+		(!strings.EqualFold(u.Scheme, "http") &&
+			!strings.EqualFold(u.Scheme, "https")) ||
+		u.Hostname() == "" ||
+		u.User != nil ||
+		u.ForceQuery ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
+		return ""
+	}
+
+	escapedPath := u.EscapedPath()
+	if escapedPath != "" && escapedPath != "/" {
+		return ""
+	}
+
+	// Reject dangling colon in authority (e.g. https://host:, http://[::1]:).
+	// Valid IPv6 without a port ends in ], not :.
+	if strings.HasSuffix(u.Host, ":") {
+		return ""
+	}
+
+	port := u.Port()
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return ""
+		}
+	}
+
+	return strings.ToLower(u.Scheme) + "://" + u.Host
 }
 
 // normalizeSMTPTLSMode validates SCRUMBOY_SMTP_TLS_MODE. Unrecognized or empty
