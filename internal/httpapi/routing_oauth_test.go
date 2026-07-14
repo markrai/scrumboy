@@ -541,3 +541,87 @@ func TestOAuth_DCRMissingRedirectURIs(t *testing.T) {
 		t.Fatalf("expected invalid_redirect_uri, got %+v", out)
 	}
 }
+
+// TestOAuth_DCRRejectsMalformedRedirectURI guards against registering a client with a redirect_uri
+// that isn't even a well-formed absolute http(s) URL (e.g. a bare string, or a non-http(s) scheme
+// like javascript:) — DCR is unauthenticated, so this is the only structural check available at
+// registration time (exact-match comparison later in the flow is what actually prevents tampering).
+func TestOAuth_DCRRejectsMalformedRedirectURI(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	for _, bad := range []string{"not-a-url", "javascript:alert(1)", "ftp://example.com/cb", "://broken"} {
+		var out map[string]any
+		resp, body := doJSON(t, http.DefaultClient, http.MethodPost, ts.URL+"/oauth/register", map[string]any{
+			"client_name":   "Bad Redirect",
+			"redirect_uris": []string{bad},
+		}, &out)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("redirect_uri=%q: expected 400, got %d body=%s", bad, resp.StatusCode, string(body))
+		}
+		if out["error"] != "invalid_redirect_uri" {
+			t.Fatalf("redirect_uri=%q: expected invalid_redirect_uri, got %+v", bad, out)
+		}
+	}
+}
+
+// TestOAuth_DCRAcceptsLoopbackHTTP guards against over-tightening the redirect_uri check: native/CLI
+// clients (RFC 8252) commonly redirect to a plain-http loopback address, which must keep working.
+func TestOAuth_DCRAcceptsLoopbackHTTP(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	clientID := registerOAuthClient(t, ts.URL, "http://127.0.0.1:54321/callback")
+	if clientID == "" {
+		t.Fatal("expected a client_id for a valid loopback redirect_uri")
+	}
+}
+
+// TestOAuth_DCRRateLimited guards against unauthenticated, unbounded client registration: an
+// attacker minting unlimited oauth_clients rows for free is both a DB-growth DoS vector and the
+// zero-cost first step of a consent-screen phishing attack (register a trusted-sounding client_name
+// pointing at an attacker redirect_uri).
+func TestOAuth_DCRRateLimited(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	var lastStatus int
+	for i := 0; i < 11; i++ {
+		var out map[string]any
+		resp, _ := doJSON(t, http.DefaultClient, http.MethodPost, ts.URL+"/oauth/register", map[string]any{
+			"client_name":   "Rate Limit Probe",
+			"redirect_uris": []string{"http://localhost:9999/callback"},
+		}, &out)
+		lastStatus = resp.StatusCode
+	}
+	if lastStatus != http.StatusTooManyRequests {
+		t.Fatalf("expected the 11th registration within a minute to be rate limited (429), got %d", lastStatus)
+	}
+}
+
+// TestOAuth_ConsentPageDisclosesRedirectDestination guards the phishing-mitigation fix: since any
+// client can self-register via unauthenticated DCR with an arbitrary client_name, the consent
+// screen must show the actual redirect_uri destination, not just the (spoofable) name, so a user
+// has a chance to notice an untrusted destination before approving.
+func TestOAuth_ConsentPageDisclosesRedirectDestination(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	cookieClient := newCookieClient(t)
+	bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "consent-disclosure@example.com", "password123")
+
+	redirectURI := "http://attacker.example.com:9999/callback"
+	clientID := registerOAuthClient(t, ts.URL, redirectURI)
+	_, challenge := pkcePair(t)
+
+	resp, err := cookieClient.Get(authorizeURL(ts.URL, clientID, redirectURI, challenge, "s1"))
+	if err != nil {
+		t.Fatalf("authorize GET: %v", err)
+	}
+	defer resp.Body.Close()
+	body := make([]byte, 8192)
+	n, _ := resp.Body.Read(body)
+	if !strings.Contains(string(body[:n]), redirectURI) {
+		t.Fatalf("expected consent page to disclose the redirect_uri destination %q, got: %s", redirectURI, body[:n])
+	}
+}

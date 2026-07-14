@@ -55,6 +55,12 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 
 - Single fixed scope ("read and manage projects, todos, sprints, and tags"); there is no granular per-scope consent screen.
 - The user approving consent must already have (or create, via the normal login form shown inline) a Scrumboy session. Accounts with 2FA enabled must log in at the main app first — the inline login form on the consent page does not handle a 2FA challenge.
+- Because `client_name` is unauthenticated, self-registered metadata (any client can call itself "Claude Code" or anything else), the consent screen also shows the actual `redirect_uri` destination the code will be sent to, not just the name, so a user has something to check before approving.
+
+**Dynamic Client Registration abuse resistance**
+
+- `POST /oauth/register` is rate-limited (shares `authRateLimit`, 10/min per IP) since it's otherwise an unauthenticated, unbounded way to create `oauth_clients` rows.
+- `redirect_uris[0]` must be a well-formed absolute `http`/`https` URL with a host (plain `http` loopback addresses are allowed, per RFC 8252, for native/CLI clients). This is a structural sanity check only — it does not make a registered client trustworthy; exact-match comparison against the registered value is still what prevents redirect-target tampering during the authorize/token flow.
 
 **Mode**
 

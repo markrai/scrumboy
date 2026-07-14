@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 )
 
@@ -15,5 +16,5 @@ func VerifyPKCE(method, verifier, challenge string) bool {
 	}
 	sum := sha256.Sum256([]byte(verifier))
 	computed := base64.RawURLEncoding.EncodeToString(sum[:])
-	return computed == challenge
+	return subtle.ConstantTimeCompare([]byte(computed), []byte(challenge)) == 1
 }

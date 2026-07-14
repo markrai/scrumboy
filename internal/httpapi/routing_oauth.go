@@ -98,6 +98,13 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
+	// Unauthenticated by design (DCR is inherently self-service), so this is the only thing
+	// standing between the endpoint and unbounded oauth_clients row growth / free client-identity
+	// minting for a phishing-style consent-screen attack (see renderOAuthConsentPage).
+	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+clientIP(r), "") {
+		oauth.WriteJSON(w, http.StatusTooManyRequests, oauth.ErrInvalidRequest, "too many attempts; try again later")
+		return
+	}
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxBody))
 	if err != nil {
@@ -117,6 +124,10 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redirectURI := strings.TrimSpace(in.RedirectURIs[0])
+	if !isValidOAuthRedirectURI(redirectURI) {
+		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "redirect_uris[0] must be an absolute http(s) URL")
+		return
+	}
 	clientName := strings.TrimSpace(in.ClientName)
 
 	clientID, err := oauth.GenerateClientID()
@@ -389,6 +400,23 @@ func (s *Server) redirectOAuthError(w http.ResponseWriter, r *http.Request, redi
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
+// isValidOAuthRedirectURI reports whether raw is a well-formed absolute http(s) URL with a host.
+// This doesn't make DCR trustworthy on its own (registration stays unauthenticated, and exact-match
+// comparison against the registered value is what actually prevents redirect-target tampering later
+// in the flow) — it only rejects garbage/malformed input at registration time, e.g. non-URL strings,
+// non-http(s) schemes, or a missing host. http is allowed (not just https) since native/CLI clients
+// commonly redirect to a loopback address (RFC 8252), which has no TLS.
+func isValidOAuthRedirectURI(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	return u.Host != ""
+}
+
 func queryJoiner(u string) string {
 	if strings.Contains(u, "?") {
 		return "&"
@@ -472,6 +500,8 @@ func (s *Server) renderOAuthConsentPage(w http.ResponseWriter, client store.OAut
 <div class="card">
 <h1>Approve access for %s?</h1>
 <p>%s will be able to read and manage projects, todos, sprints, and tags in this Scrumboy instance on your behalf.</p>
+<p>After you approve, you'll be redirected to:<br><strong>%s</strong></p>
+<p>Only approve this if you recognize the application above and intended to connect it — anyone can register a client with any name, so a name alone doesn't confirm who you're granting access to. Check that this destination is one you trust.</p>
 <form method="POST" action="/oauth/authorize">
 <input type="hidden" name="response_type" value="%s">
 <input type="hidden" name="client_id" value="%s">
@@ -484,6 +514,7 @@ func (s *Server) renderOAuthConsentPage(w http.ResponseWriter, client store.OAut
 </form>
 </div></body></html>`,
 		html.EscapeString(name), oauthPageStyle, html.EscapeString(name), html.EscapeString(name),
+		html.EscapeString(params.RedirectURI),
 		html.EscapeString(params.ResponseType), html.EscapeString(params.ClientID), html.EscapeString(params.RedirectURI),
 		html.EscapeString(params.CodeChallenge), html.EscapeString(params.CodeChallengeMethod), html.EscapeString(params.State))
 }
