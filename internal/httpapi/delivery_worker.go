@@ -14,11 +14,12 @@ var deliveryBackoff = [3]time.Duration{0, 100 * time.Millisecond, 400 * time.Mil
 // up to len(deliveryBackoff) times before giving up and logging. It powers
 // both the webhook worker and the mail worker.
 type retryWorker[T deliveryItem] struct {
-	queue  *deliveryQueue[T]
-	logger *log.Logger
-	kind   string // e.g. "mail", "webhook" — used in the failure log line
-	send   func(T) error
-	done   chan struct{}
+	queue       *deliveryQueue[T]
+	logger      *log.Logger
+	kind        string // e.g. "mail", "webhook" — used in the failure log line
+	send        func(T) error
+	isPermanent func(error) bool
+	done        chan struct{}
 }
 
 func newRetryWorker[T deliveryItem](queue *deliveryQueue[T], logger *log.Logger, kind string, send func(T) error) *retryWorker[T] {
@@ -78,8 +79,24 @@ func (w *retryWorker[T]) deliver(ctx context.Context, d T) {
 		if lastErr == nil {
 			return
 		}
+		if w.isPermanent != nil && w.isPermanent(lastErr) {
+			w.logPermanentFailure(d, attemptsMade, lastErr)
+			return
+		}
 	}
 	w.logFailure(d, attemptsMade, lastErr)
+}
+
+func (w *retryWorker[T]) logPermanentFailure(d T, attemptsMade int, lastErr error) {
+	if attemptsMade == 0 {
+		return
+	}
+	attemptWord := "attempt"
+	if attemptsMade != 1 {
+		attemptWord = "attempts"
+	}
+	w.logger.Printf("%s delivery permanently failed after %d %s: %s err=%v",
+		w.kind, attemptsMade, attemptWord, d.logRef(), lastErr)
 }
 
 func (w *retryWorker[T]) logFailure(d T, attemptsMade int, lastErr error) {

@@ -20,5 +20,7 @@ func newMailWorker(queue *mailQueue, sender mailSender, logger *log.Logger) *mai
 	send := func(d mailDelivery) error {
 		return sender.Send(mailer.Message{To: d.To, Subject: d.Subject, Body: d.Body})
 	}
-	return &mailWorker{retryWorker: newRetryWorker(queue, logger, "mail", send)}
+	worker := newRetryWorker(queue, logger, "mail", send)
+	worker.isPermanent = mailer.IsPermanent
+	return &mailWorker{retryWorker: worker}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/textproto"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ type fakeMailSender struct {
 	calls     int
 	failUntil int // fail this many calls before succeeding; 0 = always succeed
 	alwaysErr bool
+	err       error // when alwaysErr and set, returned instead of generic error
 	sent      []mailer.Message
 }
 
@@ -27,6 +29,9 @@ func (f *fakeMailSender) Send(m mailer.Message) error {
 	defer f.mu.Unlock()
 	f.calls++
 	if f.alwaysErr {
+		if f.err != nil {
+			return f.err
+		}
 		return errors.New("permanent failure")
 	}
 	if f.calls <= f.failUntil {
@@ -75,6 +80,26 @@ func TestMailWorker_AlwaysFails_LogsAfterThreeAttempts(t *testing.T) {
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("mail delivery failed after 3 attempts: always-fails")) {
 		t.Fatalf("expected failure log line, got: %s", buf.String())
+	}
+}
+
+func TestMailWorker_PermanentSMTPError_SingleAttempt(t *testing.T) {
+	sender := &fakeMailSender{
+		alwaysErr: true,
+		err:       &textproto.Error{Code: 550, Msg: "no such user"},
+	}
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+	q := newMailQueue(logger)
+	w := newMailWorker(q, sender, logger)
+
+	w.deliver(context.Background(), mailDelivery{To: "bad@example.com", LogRef: "perm-rcpt"})
+
+	if sender.callCount() != 1 {
+		t.Fatalf("expected exactly 1 attempt for permanent SMTP error, got %d", sender.callCount())
+	}
+	if !bytes.Contains(buf.Bytes(), []byte("mail delivery permanently failed after 1 attempt: perm-rcpt")) {
+		t.Fatalf("expected permanent failure log line, got: %s", buf.String())
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"testing"
@@ -119,6 +120,9 @@ func TestSend_AuthFailure(t *testing.T) {
 	err = s.Send(Message{To: "bob@example.com", Subject: "Hi", Body: "body"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !IsPermanent(err) {
+		t.Fatalf("expected permanent auth failure, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "auth") {
 		t.Fatalf("expected auth error, got: %v", err)
@@ -236,8 +240,12 @@ func TestSend_DialFailure(t *testing.T) {
 	srv.Close()
 
 	s := New(Config{Host: host, Port: port, From: "no-reply@example.com", TLSMode: "none", Timeout: 1 * time.Second})
-	if err := s.Send(Message{To: "eve@example.com", Subject: "Hi", Body: "body"}); err == nil {
+	err = s.Send(Message{To: "eve@example.com", Subject: "Hi", Body: "body"})
+	if err == nil {
 		t.Fatal("expected dial error, got nil")
+	}
+	if IsPermanent(err) {
+		t.Fatalf("expected transient dial failure, got permanent: %v", err)
 	}
 }
 
@@ -254,6 +262,9 @@ func TestSend_RCPTRejected(t *testing.T) {
 	err = s.Send(Message{To: "frank@example.com", Subject: "Hi", Body: "body"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !IsPermanent(err) {
+		t.Fatalf("expected permanent RCPT failure, got: %v", err)
 	}
 	if len(srv.Messages()) != 0 {
 		t.Fatalf("expected no message delivered")
@@ -275,6 +286,9 @@ func TestSend_STARTTLSRequiredButUnsupported(t *testing.T) {
 	err = s.Send(Message{To: "grace@example.com", Subject: "Hi", Body: "body"})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+	if !IsPermanent(err) {
+		t.Fatalf("expected permanent STARTTLS misconfig, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "STARTTLS") {
 		t.Fatalf("expected STARTTLS-not-supported error, got: %v", err)
@@ -351,6 +365,8 @@ func TestSend_HeaderInjectionRejected(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := s.Send(tc.msg); err == nil {
 				t.Fatal("expected error, got nil")
+			} else if !IsPermanent(err) {
+				t.Fatalf("expected permanent header injection error, got: %v", err)
 			}
 		})
 	}
@@ -377,6 +393,9 @@ func TestSend_InvalidFromRejected(t *testing.T) {
 			err := s.Send(Message{To: "alice@example.com", Subject: "Hi", Body: "body"})
 			if err == nil {
 				t.Fatal("expected From validation error, got nil")
+			}
+			if !IsPermanent(err) {
+				t.Fatalf("expected permanent From validation error, got: %v", err)
 			}
 			if !strings.Contains(err.Error(), "From") && !strings.Contains(err.Error(), "from") {
 				// parseFrom errors are "smtp: From ..." or "smtp: From is empty"
@@ -478,7 +497,35 @@ func TestSend_StallsAfterGreeting_ReturnsWithinTimeout(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected timeout error, got nil")
 		}
+		if IsPermanent(err) {
+			t.Fatalf("expected transient timeout failure, got permanent: %v", err)
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Send did not respect SMTP timeout")
+	}
+}
+
+func TestIsPermanent(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"marked", permanent(fmt.Errorf("local")), true},
+		{"wrappedMarked", fmt.Errorf("wrap: %w", permanent(fmt.Errorf("local"))), true},
+		{"smtp550", &textproto.Error{Code: 550, Msg: "no such user"}, true},
+		{"wrapped550", fmt.Errorf("rcpt: %w", &textproto.Error{Code: 550, Msg: "no"}), true},
+		{"smtp535", &textproto.Error{Code: 535, Msg: "auth failed"}, true},
+		{"smtp451", &textproto.Error{Code: 451, Msg: "try again"}, false},
+		{"generic", fmt.Errorf("fail"), false},
+		{"timeout", &net.OpError{Op: "dial", Err: fmt.Errorf("timeout")}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsPermanent(tc.err); got != tc.want {
+				t.Fatalf("IsPermanent(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }

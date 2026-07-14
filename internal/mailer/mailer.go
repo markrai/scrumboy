@@ -7,11 +7,13 @@ package mailer
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
@@ -111,7 +113,7 @@ func (s *Sender) Send(m Message) error {
 				return fmt.Errorf("smtp: starttls: %w", tlsErr)
 			}
 		} else {
-			return fmt.Errorf("smtp: server does not support STARTTLS (required by SCRUMBOY_SMTP_TLS_MODE=starttls)")
+			return permanent(fmt.Errorf("smtp: server does not support STARTTLS (required by SCRUMBOY_SMTP_TLS_MODE=starttls)"))
 		}
 	}
 
@@ -172,7 +174,7 @@ func (s *Sender) dial(addr string) (*smtp.Client, error) {
 			return nil, fmt.Errorf("smtp: dial: %w", err)
 		}
 	default:
-		return nil, fmt.Errorf("smtp: invalid TLS mode %q", s.cfg.TLSMode)
+		return nil, permanent(fmt.Errorf("smtp: invalid TLS mode %q", s.cfg.TLSMode))
 	}
 
 	if err := conn.SetDeadline(deadline); err != nil {
@@ -192,7 +194,7 @@ func (s *Sender) dial(addr string) (*smtp.Client, error) {
 // headers, as cheap defense-in-depth against header injection.
 func validateHeaderValue(field, value string) error {
 	if strings.ContainsAny(value, "\r\n") {
-		return fmt.Errorf("smtp: %s must not contain CR/LF", field)
+		return permanent(fmt.Errorf("smtp: %s must not contain CR/LF", field))
 	}
 	return nil
 }
@@ -203,16 +205,45 @@ func validateHeaderValue(field, value string) error {
 func parseFrom(from string) (header, envelope string, err error) {
 	from = strings.TrimSpace(from)
 	if from == "" {
-		return "", "", fmt.Errorf("smtp: From is empty")
+		return "", "", permanent(fmt.Errorf("smtp: From is empty"))
 	}
 	if err := validateHeaderValue("From", from); err != nil {
 		return "", "", err
 	}
 	addr, err := mail.ParseAddress(from)
 	if err != nil {
-		return "", "", fmt.Errorf("smtp: From: %w", err)
+		return "", "", permanent(fmt.Errorf("smtp: From: %w", err))
 	}
 	return from, addr.Address, nil
+}
+
+type permanentError struct {
+	err error
+}
+
+func (e *permanentError) Error() string { return e.err.Error() }
+func (e *permanentError) Unwrap() error { return e.err }
+
+func permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &permanentError{err: err}
+}
+
+// IsPermanent reports whether err is a non-retryable SMTP failure: explicitly
+// marked local validation/config errors or an SMTP 5xx reply.
+func IsPermanent(err error) bool {
+	if err == nil {
+		return false
+	}
+	var marked *permanentError
+	if errors.As(err, &marked) {
+		return true
+	}
+	var smtpErr *textproto.Error
+	return errors.As(err, &smtpErr) &&
+		smtpErr.Code >= 500 && smtpErr.Code <= 599
 }
 
 // buildMessage assembles a minimal RFC 5322 plain-text message.
