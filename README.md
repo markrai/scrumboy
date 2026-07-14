@@ -388,6 +388,7 @@ None of these are required for basic startup.
 | `SCRUMBOY_VAPID_PRIVATE_KEY` | (empty) - VAPID private key (URL-safe base64). |
 | `SCRUMBOY_VAPID_SUBSCRIBER` | (empty) - Contact for VAPID JWT `sub` (not tied to IdP). Use a **plain email** (e.g. `ops@example.com`); the server adds `mailto:`. Or set a full `mailto:...` or `https://...` URL explicitly. If unset, a built-in default is used. |
 | `SCRUMBOY_DEBUG_PUSH` | (empty) - Set to `1` to log push send/prune on the server. |
+| `SCRUMBOY_TRUST_PROXY` | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth/OAuth rate-limit IP keys. Default off: use the connection's `RemoteAddr` only. Enable only behind a reverse proxy that overwrites/strips client-supplied XFF. |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 

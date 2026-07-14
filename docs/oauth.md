@@ -59,7 +59,8 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 
 **Dynamic Client Registration abuse resistance**
 
-- `POST /oauth/register` is rate-limited (shares `authRateLimit`, 10/min per IP) since it's otherwise an unauthenticated, unbounded way to create `oauth_clients` rows.
+- `POST /oauth/register` is rate-limited (shares `authRateLimit`, 10/min per IP; the IP key honors `X-Forwarded-For` only when `SCRUMBOY_TRUST_PROXY=1`, otherwise `RemoteAddr` — see `SCRUMBOY_TRUST_PROXY` in the README — so a client can't spoof a fresh bucket per request) since it's otherwise an unauthenticated, unbounded way to create `oauth_clients` rows.
+- `POST /oauth/register` requires `Content-Type: application/json` strictly, rejecting any other value. This isn't just input validation: a cross-origin browser request with e.g. `Content-Type: text/plain` is a CORS "simple request" that needs no preflight, so without this check a hostile webpage could get many unwitting visitors' browsers to each register a client from their own IP — defeating the per-IP rate limit above by distributing registration load across real, distinct addresses instead of one attacker IP.
 - `redirect_uris[0]` must be a well-formed absolute `http`/`https` URL with a host (plain `http` loopback addresses are allowed, per RFC 8252, for native/CLI clients). This is a structural sanity check only — it does not make a registered client trustworthy; exact-match comparison against the registered value is still what prevents redirect-target tampering during the authorize/token flow.
 
 **Mode**

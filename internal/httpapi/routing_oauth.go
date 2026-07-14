@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -98,10 +99,20 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
+	// RFC 7591 clients always send application/json, so requiring it strictly rejects a
+	// cross-origin "simple request" (e.g. Content-Type: text/plain, which needs no CORS preflight)
+	// before it can spend a rate-limit slot: a hostile page could otherwise get many unwitting
+	// visitors' browsers to each register clients from their own IP, defeating the per-IP limit
+	// below by distributing it across real, distinct addresses.
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidClientMetadata, "Content-Type must be application/json")
+		return
+	}
 	// Unauthenticated by design (DCR is inherently self-service), so this is the only thing
 	// standing between the endpoint and unbounded oauth_clients row growth / free client-identity
 	// minting for a phishing-style consent-screen attack (see renderOAuthConsentPage).
-	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+clientIP(r), "") {
+	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
 		oauth.WriteJSON(w, http.StatusTooManyRequests, oauth.ErrInvalidRequest, "too many attempts; try again later")
 		return
 	}
@@ -275,7 +286,7 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
-	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+clientIP(r), "") {
+	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
 		oauth.WriteJSON(w, http.StatusTooManyRequests, oauth.ErrInvalidRequest, "too many attempts; try again later")
 		return
 	}

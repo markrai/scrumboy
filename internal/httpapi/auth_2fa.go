@@ -15,15 +15,21 @@ import (
 	"scrumboy/internal/store"
 )
 
-func clientIP(r *http.Request) string {
-	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
-		if i := strings.Index(xff, ","); i >= 0 {
-			xff = strings.TrimSpace(xff[:i])
+// clientIP returns the key used for per-IP rate limiting. X-Forwarded-For is only honored when
+// s.trustProxy is set (SCRUMBOY_TRUST_PROXY) — otherwise any client could spoof it to get a fresh
+// rate-limit bucket on every request, defeating IP-based limits (login, 2FA, OAuth DCR/token)
+// entirely. Default to RemoteAddr, which a client cannot forge.
+func (s *Server) clientIP(r *http.Request) string {
+	if s != nil && s.trustProxy {
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			if i := strings.Index(xff, ","); i >= 0 {
+				xff = strings.TrimSpace(xff[:i])
+			}
+			if host, _, err := net.SplitHostPort(xff); err == nil {
+				return host
+			}
+			return xff
 		}
-		if host, _, err := net.SplitHostPort(xff); err == nil {
-			return host
-		}
-		return xff
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	if host != "" {
@@ -65,7 +71,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipKey := "ip:" + clientIP(r)
+	ipKey := "ip:" + s.clientIP(r)
 	emailKey := "email:" + ratelimit.NormalizeEmail(u.Email)
 	if s.authRateLimit != nil && !s.authRateLimit.Allow(ipKey, emailKey) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
@@ -143,7 +149,7 @@ func (s *Server) handle2FASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipKey := "ip:" + clientIP(r)
+	ipKey := "ip:" + s.clientIP(r)
 	u, _ := s.store.GetUser(ctx, userID)
 	emailKey := "email:" + ratelimit.NormalizeEmail(u.Email)
 	if s.authRateLimit != nil && !s.authRateLimit.Allow(ipKey, emailKey) {
@@ -325,7 +331,7 @@ func (s *Server) handle2FARecoveryRegenerate(w http.ResponseWriter, r *http.Requ
 	}
 
 	u, _ := s.store.GetUser(ctx, userID)
-	ipKey := "ip:" + clientIP(r)
+	ipKey := "ip:" + s.clientIP(r)
 	emailKey := "email:" + ratelimit.NormalizeEmail(u.Email)
 	if s.authRateLimit != nil && !s.authRateLimit.Allow(ipKey, emailKey) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)

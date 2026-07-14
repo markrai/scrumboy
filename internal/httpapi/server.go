@@ -53,6 +53,13 @@ type Options struct {
 	// MermaidNotesEnabled gates Mermaid rendering within the markdown preview.
 	// Effective only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
+
+	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, clientIP honors
+	// X-Forwarded-For for auth/OAuth rate-limit IP keys. Default false
+	// (RemoteAddr only) since a client can otherwise spoof XFF to get a
+	// fresh rate-limit bucket on every request. Enable only behind a
+	// reverse proxy that overwrites/strips client-supplied XFF.
+	TrustProxy bool
 }
 
 type Server struct {
@@ -93,6 +100,8 @@ type Server struct {
 	wallEnabled          bool // Scrumbaby wall; default on (SCRUMBOY_WALL_ENABLED=0 to disable)
 	markdownNotesEnabled bool // Todo notes markdown preview; default off unless explicitly enabled
 	mermaidNotesEnabled  bool // Mermaid in todo notes preview; default off unless explicitly enabled
+
+	trustProxy bool // SCRUMBOY_TRUST_PROXY; when true, clientIP honors X-Forwarded-For
 }
 
 type storeAPI interface {
@@ -391,6 +400,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		wallEnabled:               opts.WallEnabled,
 		markdownNotesEnabled:      opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:       opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
+		trustProxy:                opts.TrustProxy,
 	}
 }
 

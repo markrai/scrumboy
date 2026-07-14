@@ -58,6 +58,12 @@ type Config struct {
 	// SCRUMBOY_MERMAID_NOTES_ENABLED=1 (also accepts true/on/yes). Effective
 	// only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
+
+	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, auth/OAuth rate-limit IP
+	// keys honor X-Forwarded-For (first hop). Default false: use RemoteAddr
+	// only so a client can't spoof the per-IP limiter. Enable only when a
+	// reverse proxy is the sole network path and overwrites/strips client XFF.
+	TrustProxy bool
 }
 
 func FromEnv() Config {
@@ -107,6 +113,20 @@ func FromEnv() Config {
 		WallEnabled:          wallEnabledFromEnv(),
 		MarkdownNotesEnabled: markdownNotesEnabled,
 		MermaidNotesEnabled:  mermaidNotesEnabledFromEnv(markdownNotesEnabled),
+		TrustProxy:           trustProxyFromEnv(),
+	}
+}
+
+// trustProxyFromEnv returns whether rate-limit IP keys may honor
+// X-Forwarded-For. Default false unless explicitly opted in with
+// 1/true/on/yes (trimmed, case-insensitive).
+func trustProxyFromEnv() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_TRUST_PROXY")))
+	switch v {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -195,7 +195,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return
 		}
-		ipKey := "ip:" + clientIP(r)
+		ipKey := "ip:" + s.clientIP(r)
 		emailKey := "email:" + ratelimit.NormalizeEmail(in.Email)
 		if s.authRateLimit != nil && !s.authRateLimit.Allow(ipKey, emailKey) {
 			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
@@ -282,7 +282,7 @@ func (s *Server) handleAuthResetPassword(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Rate limit by IP (reuse auth ratelimit)
-	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+clientIP(r), "") {
+	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
 	}

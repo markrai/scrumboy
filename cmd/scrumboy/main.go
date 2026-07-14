@@ -110,6 +110,7 @@ func main() {
 		WallEnabled:          cfg.WallEnabled,
 		MarkdownNotesEnabled: cfg.MarkdownNotesEnabled,
 		MermaidNotesEnabled:  cfg.MermaidNotesEnabled,
+		TrustProxy:           cfg.TrustProxy,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 

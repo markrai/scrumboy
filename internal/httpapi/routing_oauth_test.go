@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -574,6 +575,70 @@ func TestOAuth_DCRAcceptsLoopbackHTTP(t *testing.T) {
 	clientID := registerOAuthClient(t, ts.URL, "http://127.0.0.1:54321/callback")
 	if clientID == "" {
 		t.Fatal("expected a client_id for a valid loopback redirect_uri")
+	}
+}
+
+// TestOAuth_DCRRejectsNonJSONContentType guards against a cross-origin "simple request" (e.g.
+// Content-Type: text/plain, which browsers send with no CORS preflight) reaching DCR: a hostile
+// page could otherwise get visitors' browsers to each register a client from their own IP,
+// defeating the per-IP rate limit by distributing registration load across many real addresses.
+func TestOAuth_DCRRejectsNonJSONContentType(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	payload := `{"client_name":"Simple Request Probe","redirect_uris":["http://localhost:9999/callback"]}`
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/oauth/register", strings.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "text/plain")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-JSON Content-Type, got %d body=%+v", resp.StatusCode, out)
+	}
+	if out["error"] != "invalid_client_metadata" {
+		t.Fatalf("expected invalid_client_metadata, got %+v", out)
+	}
+}
+
+// TestOAuth_DCRRateLimitIgnoresSpoofedXFFByDefault guards against the rate limit added to
+// /oauth/register being trivially defeated: without TrustProxy, a client can't get a fresh
+// rate-limit bucket per request just by sending a different X-Forwarded-For value each time.
+func TestOAuth_DCRRateLimitIgnoresSpoofedXFFByDefault(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	var lastStatus int
+	for i := 0; i < 11; i++ {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/oauth/register", strings.NewReader(
+			`{"client_name":"XFF Spoof Probe","redirect_uris":["http://localhost:9999/callback"]}`))
+		if err != nil {
+			t.Fatalf("new request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		// A different spoofed source IP on every request -- without TrustProxy this must be ignored,
+		// so all requests still count against the same (RemoteAddr-keyed) rate-limit bucket.
+		req.Header.Set("X-Forwarded-For", fmt.Sprintf("203.0.113.%d", i))
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		lastStatus = resp.StatusCode
+		resp.Body.Close()
+	}
+	if lastStatus != http.StatusTooManyRequests {
+		t.Fatalf("expected rate limiting to ignore spoofed X-Forwarded-For and still trigger by the 11th request, got %d", lastStatus)
 	}
 }
 
