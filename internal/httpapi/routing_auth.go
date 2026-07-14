@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
 	"time"
@@ -366,6 +367,14 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 	}
 	if s.mode == "anonymous" {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
+	}
+
+	// Require application/json as defense in depth so cross-origin simple
+	// text/plain POSTs cannot reach the mail path if route-level protections change.
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeValidationError(w, "Content-Type must be application/json", "invalid_content_type", map[string]any{"field": "Content-Type"})
 		return
 	}
 

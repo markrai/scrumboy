@@ -119,7 +119,7 @@ Scrumboy does **not** auto-load `.env` files inside the process. Your process ma
 2. Check the startup log for `smtp: enabled (...)`.
 3. For local testing, run a catcher like [Mailpit](https://github.com/axllent/mailpit): `docker run --rm -p 1025:1025 -p 8025:8025 axllent/mailpit`, set `SCRUMBOY_SMTP_HOST=127.0.0.1`, `SCRUMBOY_SMTP_PORT=1025`, `SCRUMBOY_SMTP_TLS_MODE=none`.
 4. After at least one user exists, sign out from a local-password deployment. Confirm **Forgot password?** is visible, submit the user's email, and check the catcher's UI (`http://localhost:8025` for Mailpit) for the delivered email.
-5. Optionally verify the low-level contract with `curl -X POST http://localhost:8080/api/auth/request-password-reset -H 'Content-Type: application/json' -d '{"email":"you@example.com"}'`. The response remains generic.
+5. Optionally verify the low-level contract with `curl -X POST http://localhost:8080/api/auth/request-password-reset -H 'Content-Type: application/json' -H 'X-Scrumboy: 1' -d '{"email":"you@example.com"}'`. The response remains generic. Mutating auth JSON routes require the custom header (same as login).
 6. Follow the link in the email (or POST its token to `/api/auth/reset-password`) to confirm the full reset loop works end to end.
 
 ---

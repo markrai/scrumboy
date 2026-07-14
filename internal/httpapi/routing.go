@@ -16,14 +16,13 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		// Exception: /api/auth/logout form POST (Content-Type form) - form submit can't add custom headers;
 		// same-origin form POST is the standard logout pattern behind tunnels/proxies.
 		// Exception: /api/auth/reset-password - token is auth; user may arrive from email/link without session.
-		// Exception: /api/auth/request-password-reset - unauthenticated by design; no session exists yet
-		// to make a same-origin check meaningful, and the endpoint itself is enumeration-safe.
+		// request-password-reset is not exempt: like login, it is unauthenticated JSON and still requires
+		// X-Scrumboy so hostile cross-origin pages cannot trigger reset emails without a CORS preflight.
 		isLogoutForm := r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/auth/logout") &&
 			(strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") ||
 				strings.Contains(r.Header.Get("Content-Type"), "multipart/form-data"))
 		isResetPassword := r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/auth/reset-password")
-		isRequestPasswordReset := r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/auth/request-password-reset")
-		if !isLogoutForm && !isResetPassword && !isRequestPasswordReset && r.Header.Get("X-Scrumboy") != "1" {
+		if !isLogoutForm && !isResetPassword && r.Header.Get("X-Scrumboy") != "1" {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "missing X-Scrumboy header", nil)
 			return
 		}

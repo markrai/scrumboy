@@ -445,27 +445,65 @@ func TestRequestPasswordReset_MalformedJSON_BadRequest(t *testing.T) {
 	}
 }
 
-func TestRequestPasswordReset_CSRFExceptionAllowsMissingHeader(t *testing.T) {
-	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+func TestRequestPasswordReset_MissingXScrumboyHeaderForbidden(t *testing.T) {
+	ts, fake, cleanup := newRequestPasswordResetTestServer(t, true)
 	defer cleanup()
 
-	// Deliberately omit X-Scrumboy; the endpoint must still be reachable
-	// (enumeration-safety and rate limiting are the actual defenses here).
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/request-password-reset", strings.NewReader(`{"email":"nobody@example.com"}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// Deliberately omit X-Scrumboy — same CSRF gate as login.
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusForbidden {
-		t.Fatalf("expected CSRF exception to apply, got 403")
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 without X-Scrumboy, got %d", resp.StatusCode)
 	}
+	assertStillNoMessages(t, fake)
+}
+
+func TestRequestPasswordReset_NonJSONContentTypeRejected(t *testing.T) {
+	ts, fake, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/request-password-reset", strings.NewReader(`{"email":"nobody@example.com"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("X-Scrumboy", "1")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-JSON Content-Type, got %d", resp.StatusCode)
+	}
+	assertStillNoMessages(t, fake)
+}
+
+func TestRequestPasswordReset_JSONContentTypeWithCharsetAllowed(t *testing.T) {
+	ts, _, cleanup := newRequestPasswordResetTestServer(t, true)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/request-password-reset", strings.NewReader(`{"email":"nobody@example.com"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("X-Scrumboy", "1")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+		t.Fatalf("expected 200 with charset=utf-8 Content-Type, got %d", resp.StatusCode)
 	}
 }
 
