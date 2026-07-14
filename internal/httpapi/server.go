@@ -57,8 +57,9 @@ type Options struct {
 	MermaidNotesEnabled bool
 
 	// SMTP (optional). Enables self-service "forgot password" email via
-	// POST /api/auth/request-password-reset. Enabled only when Host, Port,
-	// and From are all set (see SMTPConfigured).
+	// POST /api/auth/request-password-reset. Enabled when Host and From are
+	// set and Port is in 1–65535 (Port defaults to 587 when omitted; see
+	// SMTPConfigured). Also requires SCRUMBOY_PUBLIC_BASE_URL for emailed links.
 	SMTPHost     string
 	SMTPPort     int
 	SMTPUsername string
@@ -101,7 +102,7 @@ type Server struct {
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
 
-	smtpConfigured bool // Host+Port+From all set; gates request-password-reset email sending
+	smtpConfigured bool // Host+From set and Port valid (1–65535); gates request-password-reset email sending
 
 	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty disables self-service reset email (see resetBaseURL)
 
