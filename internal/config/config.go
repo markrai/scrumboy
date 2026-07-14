@@ -60,12 +60,14 @@ type Config struct {
 	// only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
 
-	// SMTP (optional). Enables self-service "forgot password" emails. Host,
-	// Port, and From are required together to enable; Username/Password are
-	// optional (some relays allow trusted-network submission without auth).
-	SMTPHost     string // SCRUMBOY_SMTP_HOST
-	SMTPPort     int    // SCRUMBOY_SMTP_PORT, default 587
-	SMTPUsername string // SCRUMBOY_SMTP_USERNAME (optional)
+	// SMTP (optional). Enables self-service "forgot password" emails. Host and
+	// From are required; Port defaults to 587 when omitted. Invalid explicit
+	// port values become 0 (SMTP stays off). Username/Password are optional
+	// (some relays allow trusted-network submission without auth).
+	SMTPHost          string // SCRUMBOY_SMTP_HOST
+	SMTPPort          int    // SCRUMBOY_SMTP_PORT, default defaultSMTPPort when unset
+	SMTPPortExplicit  bool   // true when SCRUMBOY_SMTP_PORT key is present in the environment
+	SMTPUsername      string // SCRUMBOY_SMTP_USERNAME (optional)
 	SMTPPassword string // SCRUMBOY_SMTP_PASSWORD (optional; never logged)
 	SMTPFrom     string // SCRUMBOY_SMTP_FROM, e.g. "Scrumboy <no-reply@example.com>"
 	SMTPTLSMode  string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
@@ -91,6 +93,7 @@ func FromEnv() Config {
 	}
 
 	markdownNotesEnabled := markdownNotesEnabledFromEnv()
+	smtpPort, smtpPortExplicit := smtpPortFromEnv()
 
 	return Config{
 		BindAddr:             getenv("BIND_ADDR", ":8080"),
@@ -127,9 +130,10 @@ func FromEnv() Config {
 		MarkdownNotesEnabled: markdownNotesEnabled,
 		MermaidNotesEnabled:  mermaidNotesEnabledFromEnv(markdownNotesEnabled),
 
-		SMTPHost:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_HOST")),
-		SMTPPort:     getenvInt("SCRUMBOY_SMTP_PORT", 587),
-		SMTPUsername: strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_USERNAME")),
+		SMTPHost:         strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_HOST")),
+		SMTPPort:         smtpPort,
+		SMTPPortExplicit: smtpPortExplicit,
+		SMTPUsername:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_USERNAME")),
 		SMTPPassword: strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_PASSWORD")),
 		SMTPFrom:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_FROM")),
 		SMTPTLSMode:  normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
@@ -297,6 +301,23 @@ func getenv(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+const defaultSMTPPort = 587
+
+// smtpPortFromEnv parses SCRUMBOY_SMTP_PORT. When unset, returns the default
+// port and explicit=false. When set, explicit=true; invalid or out-of-range
+// values fail closed to port 0.
+func smtpPortFromEnv() (port int, explicit bool) {
+	raw, ok := os.LookupEnv("SCRUMBOY_SMTP_PORT")
+	if !ok {
+		return defaultSMTPPort, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 1 || n > 65535 {
+		return 0, true
+	}
+	return n, true
 }
 
 func getenvInt(key string, defaultValue int) int {

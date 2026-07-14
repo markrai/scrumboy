@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestNormalizeBaseURL(t *testing.T) {
 	cases := []struct {
@@ -82,6 +85,54 @@ func TestNormalizeSMTPTLSMode(t *testing.T) {
 	}
 }
 
+func unsetEnv(t *testing.T, key string) {
+	t.Helper()
+	old, existed := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
+	t.Cleanup(func() {
+		if existed {
+			_ = os.Setenv(key, old)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+	})
+}
+
+func TestSMTPPortFromEnv(t *testing.T) {
+	cases := []struct {
+		name      string
+		unset     bool
+		raw       string
+		wantPort  int
+		wantExpl  bool
+	}{
+		{name: "unset", unset: true, wantPort: defaultSMTPPort, wantExpl: false},
+		{name: "587", raw: "587", wantPort: 587, wantExpl: true},
+		{name: "trimmed 2525", raw: " 2525 ", wantPort: 2525, wantExpl: true},
+		{name: "empty explicit", raw: "", wantPort: 0, wantExpl: true},
+		{name: "not-a-number", raw: "not-a-number", wantPort: 0, wantExpl: true},
+		{name: "zero", raw: "0", wantPort: 0, wantExpl: true},
+		{name: "65536", raw: "65536", wantPort: 0, wantExpl: true},
+		{name: "65535", raw: "65535", wantPort: 65535, wantExpl: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DATA_DIR", t.TempDir())
+			if tc.unset {
+				unsetEnv(t, "SCRUMBOY_SMTP_PORT")
+			} else {
+				t.Setenv("SCRUMBOY_SMTP_PORT", tc.raw)
+			}
+			gotPort, gotExpl := smtpPortFromEnv()
+			if gotPort != tc.wantPort || gotExpl != tc.wantExpl {
+				t.Fatalf("smtpPortFromEnv() = (%d, %v), want (%d, %v)", gotPort, gotExpl, tc.wantPort, tc.wantExpl)
+			}
+		})
+	}
+}
+
 func TestFromEnv_SMTP(t *testing.T) {
 	t.Run("full config", func(t *testing.T) {
 		t.Setenv("SCRUMBOY_SMTP_HOST", "smtp.example.com")
@@ -99,6 +150,9 @@ func TestFromEnv_SMTP(t *testing.T) {
 		}
 		if cfg.SMTPPort != 465 {
 			t.Fatalf("SMTPPort = %d", cfg.SMTPPort)
+		}
+		if !cfg.SMTPPortExplicit {
+			t.Fatal("expected SMTPPortExplicit true")
 		}
 		if cfg.SMTPUsername != "bot" {
 			t.Fatalf("SMTPUsername = %q, want trimmed", cfg.SMTPUsername)
@@ -119,21 +173,28 @@ func TestFromEnv_SMTP(t *testing.T) {
 
 	t.Run("port default when unset", func(t *testing.T) {
 		t.Setenv("DATA_DIR", t.TempDir())
+		unsetEnv(t, "SCRUMBOY_SMTP_PORT")
 		cfg := FromEnv()
-		if cfg.SMTPPort != 587 {
-			t.Fatalf("SMTPPort default = %d, want 587", cfg.SMTPPort)
+		if cfg.SMTPPort != defaultSMTPPort {
+			t.Fatalf("SMTPPort default = %d, want %d", cfg.SMTPPort, defaultSMTPPort)
+		}
+		if cfg.SMTPPortExplicit {
+			t.Fatal("expected SMTPPortExplicit false when unset")
 		}
 		if cfg.SMTPTLSMode != "starttls" {
 			t.Fatalf("SMTPTLSMode default = %q, want starttls", cfg.SMTPTLSMode)
 		}
 	})
 
-	t.Run("invalid port falls back to default", func(t *testing.T) {
+	t.Run("invalid explicit port fails closed", func(t *testing.T) {
 		t.Setenv("SCRUMBOY_SMTP_PORT", "not-a-number")
 		t.Setenv("DATA_DIR", t.TempDir())
 		cfg := FromEnv()
-		if cfg.SMTPPort != 587 {
-			t.Fatalf("SMTPPort = %d, want fallback 587", cfg.SMTPPort)
+		if cfg.SMTPPort != 0 {
+			t.Fatalf("SMTPPort = %d, want 0", cfg.SMTPPort)
+		}
+		if !cfg.SMTPPortExplicit {
+			t.Fatal("expected SMTPPortExplicit true for invalid explicit port")
 		}
 	})
 }

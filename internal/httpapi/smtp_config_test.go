@@ -16,6 +16,9 @@ func TestSMTPConfigured(t *testing.T) {
 		{"port zero", "smtp.example.com", 0, "no-reply@example.com", false},
 		{"everything empty", "", 0, "", false},
 		{"whitespace only host", "   ", 587, "no-reply@example.com", false},
+		{"port 65535", "smtp.example.com", 65535, "no-reply@example.com", true},
+		{"port 65536", "smtp.example.com", 65536, "no-reply@example.com", false},
+		{"port negative", "smtp.example.com", -1, "no-reply@example.com", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -28,22 +31,31 @@ func TestSMTPConfigured(t *testing.T) {
 
 func TestSMTPPartiallyConfigured(t *testing.T) {
 	cases := []struct {
-		name string
-		host string
-		port int
-		from string
-		want bool
+		name         string
+		host         string
+		port         int
+		from         string
+		portExplicit bool
+		want         bool
 	}{
-		{"all set (fully configured, not partial)", "smtp.example.com", 587, "no-reply@example.com", false},
-		{"everything empty (not partial)", "", 0, "", false},
-		{"host only", "smtp.example.com", 0, "", true},
-		{"from only", "", 0, "no-reply@example.com", true},
-		{"host and port, no from", "smtp.example.com", 587, "", true},
+		{"all set (fully configured, not partial)", "smtp.example.com", 587, "no-reply@example.com", false, false},
+		{"nothing + default port", "", 587, "", false, false},
+		{"explicit port only", "", 587, "", true, true},
+		{"invalid explicit port only", "", 0, "", true, true},
+		{"host only", "smtp.example.com", 587, "", false, true},
+		{"from only", "", 587, "no-reply@example.com", false, true},
+		{"host+from implicit default", "smtp.example.com", 587, "no-reply@example.com", false, false},
+		{"host+from valid explicit", "smtp.example.com", 465, "no-reply@example.com", true, false},
+		{"host+from invalid explicit", "smtp.example.com", 0, "no-reply@example.com", true, true},
+		{"host+from port 65536", "smtp.example.com", 65536, "no-reply@example.com", false, true},
+		{"host+from port -1", "smtp.example.com", -1, "no-reply@example.com", false, true},
+		{"host and port explicit, no from", "smtp.example.com", 587, "", true, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := SMTPPartiallyConfigured(tc.host, tc.port, tc.from); got != tc.want {
-				t.Fatalf("SMTPPartiallyConfigured(%q, %d, %q) = %v, want %v", tc.host, tc.port, tc.from, got, tc.want)
+			if got := SMTPPartiallyConfigured(tc.host, tc.port, tc.from, tc.portExplicit); got != tc.want {
+				t.Fatalf("SMTPPartiallyConfigured(%q, %d, %q, %v) = %v, want %v",
+					tc.host, tc.port, tc.from, tc.portExplicit, got, tc.want)
 			}
 		})
 	}

@@ -87,7 +87,7 @@ func main() {
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
 	}
 	logWebPushConfiguration(logger, cfg.ScrumboyMode, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey)
-	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom, cfg.PublicBaseURL)
+	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom, cfg.SMTPPortExplicit, cfg.PublicBaseURL)
 
 	maxB := cfg.MaxRequestBodyBytes
 	if maxB <= 0 {
@@ -249,16 +249,16 @@ func logWebPushConfiguration(logger *log.Logger, mode, publicKey, privateKey str
 	}
 }
 
-func logSMTPConfiguration(logger *log.Logger, host string, port int, from string, publicBaseURL string) {
+func logSMTPConfiguration(logger *log.Logger, host string, port int, from string, portExplicit bool, publicBaseURL string) {
 	switch {
 	case httpapi.SMTPConfigured(host, port, from):
 		logger.Printf("smtp: enabled (host=%s port=%d)", host, port)
 		if strings.TrimSpace(publicBaseURL) == "" {
 			logger.Printf("smtp: SCRUMBOY_PUBLIC_BASE_URL is missing or invalid; self-service password-reset emails are disabled until a valid public origin is configured (e.g. https://scrumboy.example.com)")
 		}
-	case httpapi.SMTPPartiallyConfigured(host, port, from):
-		logger.Printf("smtp: partial config ignored (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM together)")
+	case httpapi.SMTPPartiallyConfigured(host, port, from, portExplicit):
+		logger.Printf("smtp: partial or invalid config ignored (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM; SCRUMBOY_SMTP_PORT defaults to 587 and, when set, must be between 1 and 65535)")
 	default:
-		logger.Printf("smtp: disabled (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM to enable password-reset emails)")
+		logger.Printf("smtp: disabled (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM to enable password-reset emails; SCRUMBOY_SMTP_PORT defaults to 587 when omitted)")
 	}
 }

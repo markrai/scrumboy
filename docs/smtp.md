@@ -16,7 +16,7 @@ Scrumboy does **not** ship default SMTP credentials. Each self-hosted instance s
 
 ## What SMTP enables
 
-When Host, Port, and From are **all** set (Username/Password are optional — some relays allow trusted-network submission without auth) **and** `SCRUMBOY_ENCRYPTION_KEY` is also configured (used to sign the reset token, same as the admin flow), Scrumboy:
+When **`SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` are set** (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535) and `SCRUMBOY_ENCRYPTION_KEY` is also configured (used to sign the reset token, same as the admin flow), Scrumboy:
 
 1. Exposes **`POST /api/auth/request-password-reset`**, which accepts `{"email": "..."}` and emails a reset link when the address matches a registered account.
 2. Always returns the same generic response (`"If that account exists, a password reset email has been sent."`) regardless of whether the email is registered, whether SMTP is configured, or whether the encryption key is set. **This is intentional** — a different status code or body per case would let an attacker enumerate registered accounts. A 200 response does **not** confirm an email was actually sent.
@@ -26,8 +26,8 @@ When Host, Port, and From are **all** set (Username/Password are optional — so
 If SMTP is not configured (or only partially configured), the endpoint still returns the same generic success response — but no email is sent, and the admin manual-reset endpoint remains the only working path. At startup the server logs one of:
 
 - `smtp: enabled (host=... port=...)`
-- `smtp: disabled (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM to enable password-reset emails)`
-- `smtp: partial config ignored (set SCRUMBOY_SMTP_HOST, SCRUMBOY_SMTP_PORT, and SCRUMBOY_SMTP_FROM together)`
+- `smtp: disabled (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM to enable password-reset emails; SCRUMBOY_SMTP_PORT defaults to 587 when omitted)`
+- `smtp: partial or invalid config ignored (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM; SCRUMBOY_SMTP_PORT defaults to 587 and, when set, must be between 1 and 65535)`
 
 There is no anonymous-mode-specific log line: `request-password-reset` (like `reset-password`) already returns 404 in anonymous mode regardless of SMTP configuration, since anonymous mode has no authenticated accounts to reset.
 
@@ -63,11 +63,11 @@ If `SCRUMBOY_PUBLIC_BASE_URL` is **missing or invalid**, the self-service endpoi
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `SCRUMBOY_SMTP_HOST` | Yes (with Port, From) | SMTP relay hostname. |
-| `SCRUMBOY_SMTP_PORT` | No (default `587`) | SMTP relay port. |
+| `SCRUMBOY_SMTP_HOST` | Yes | SMTP relay hostname. |
+| `SCRUMBOY_SMTP_PORT` | No (default `587`) | SMTP relay port. If explicitly set, must be between 1 and 65535; invalid values disable SMTP. |
 | `SCRUMBOY_SMTP_USERNAME` | No | SMTP auth username. Omit for relays that allow unauthenticated submission from a trusted network. |
 | `SCRUMBOY_SMTP_PASSWORD` | No | SMTP auth password. **Keep secret; never logged.** |
-| `SCRUMBOY_SMTP_FROM` | Yes (with Host, Port) | Envelope + header `From` address, e.g. `Scrumboy <no-reply@example.com>`. |
+| `SCRUMBOY_SMTP_FROM` | Yes | Envelope + header `From` address, e.g. `Scrumboy <no-reply@example.com>`. |
 | `SCRUMBOY_SMTP_TLS_MODE` | No (default `starttls`) | `starttls` \| `implicit` \| `none`. See TLS modes above. |
 | `SCRUMBOY_SMTP_DEBUG` | No | Set to `1` to log send attempts (never logs credentials or message bodies). |
 | `SCRUMBOY_PUBLIC_BASE_URL` | Yes (for self-service email) | Canonical public origin for reset links, e.g. `https://scrumboy.example.com`. Missing or invalid → self-service emails disabled (generic response only). See [Reset-link URL](#reset-link-url). |

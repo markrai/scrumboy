@@ -203,6 +203,41 @@ func TestRequestPasswordReset_SMTPNotConfigured_GenericResponseNoEmail(t *testin
 	assertStillNoMessages(t, fake)
 }
 
+// TestRequestPasswordReset_InvalidSMTPPort_GenericResponseNoEmail ensures direct
+// Options construction with an out-of-range port does not enable SMTP at the
+// server boundary.
+func TestRequestPasswordReset_InvalidSMTPPort_GenericResponseNoEmail(t *testing.T) {
+	fake, err := mailertest.Start(mailertest.Options{})
+	if err != nil {
+		t.Fatalf("start fake smtp server: %v", err)
+	}
+	defer fake.Close()
+
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+		SMTPTLSMode:    "none",
+		SMTPHost:       "smtp.example.com",
+		SMTPPort:       70000,
+		SMTPFrom:       "no-reply@example.com",
+		PublicBaseURL:  "https://scrumboy.example.com",
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "invalid-port@example.com", "password123")
+
+	var out map[string]any
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{
+		"email": "invalid-port@example.com",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertStillNoMessages(t, fake)
+}
+
 // TestRequestPasswordReset_NoPublicBaseURL_GenericResponseNoEmail guards
 // against password-reset-link poisoning: with SMTP configured but
 // SCRUMBOY_PUBLIC_BASE_URL unset, this unauthenticated endpoint must not
