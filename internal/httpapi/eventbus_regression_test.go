@@ -431,7 +431,7 @@ func TestWebhookWorker_SignatureHeader(t *testing.T) {
 		Body:      body,
 	})
 
-	w.flush()
+	w.flush(context.Background())
 
 	mu.Lock()
 	defer mu.Unlock()

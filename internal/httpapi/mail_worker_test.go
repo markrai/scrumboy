@@ -48,7 +48,7 @@ func TestMailWorker_RetriesThenSucceeds(t *testing.T) {
 	w := newMailWorker(q, sender, discardLogger())
 
 	start := time.Now()
-	w.deliver(mailDelivery{To: "a@example.com", LogRef: "test"})
+	w.deliver(context.Background(), mailDelivery{To: "a@example.com", LogRef: "test"})
 	elapsed := time.Since(start)
 
 	if sender.callCount() != 3 {
@@ -68,7 +68,7 @@ func TestMailWorker_AlwaysFails_LogsAfterThreeAttempts(t *testing.T) {
 	q := newMailQueue(logger)
 	w := newMailWorker(q, sender, logger)
 
-	w.deliver(mailDelivery{To: "a@example.com", LogRef: "always-fails"})
+	w.deliver(context.Background(), mailDelivery{To: "a@example.com", LogRef: "always-fails"})
 
 	if sender.callCount() != 3 {
 		t.Fatalf("expected exactly 3 attempts, got %d", sender.callCount())

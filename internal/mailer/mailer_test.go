@@ -2,7 +2,10 @@ package mailer
 
 import (
 	"bytes"
+	"fmt"
 	"log"
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -307,5 +310,59 @@ func TestSend_HeaderInjectionRejected(t *testing.T) {
 	}
 	if len(srv.Messages()) != 0 {
 		t.Fatalf("expected no message delivered")
+	}
+}
+
+// TestSend_StallsAfterGreeting_ReturnsWithinTimeout ensures the absolute
+// send deadline covers the SMTP dialogue after the initial 220 greeting, not
+// just TCP connect / NewClient.
+func TestSend_StallsAfterGreeting_ReturnsWithinTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = fmt.Fprintf(conn, "220 stalltest ESMTP\r\n")
+		buf := make([]byte, 4096)
+		for {
+			if _, err := conn.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	host, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("split host port: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("parse port: %v", err)
+	}
+
+	s := New(Config{
+		Host: host, Port: port, From: "no-reply@example.com",
+		TLSMode: "none", Timeout: 200 * time.Millisecond,
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.Send(Message{To: "a@example.com", Subject: "Hi", Body: "body"})
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected timeout error, got nil")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Send did not respect SMTP timeout")
 	}
 }

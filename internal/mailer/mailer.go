@@ -82,22 +82,9 @@ func (s *Sender) Send(m Message) error {
 		client *smtp.Client
 		err    error
 	)
-	switch s.cfg.TLSMode {
-	case "implicit":
-		conn, dialErr := tls.DialWithDialer(&net.Dialer{Timeout: s.cfg.Timeout}, "tcp", addr, &tls.Config{ServerName: s.cfg.Host, RootCAs: s.cfg.rootCAs})
-		if dialErr != nil {
-			return fmt.Errorf("smtp: implicit tls dial: %w", dialErr)
-		}
-		client, err = smtp.NewClient(conn, s.cfg.Host)
-	default: // "starttls" or "none"
-		conn, dialErr := net.DialTimeout("tcp", addr, s.cfg.Timeout)
-		if dialErr != nil {
-			return fmt.Errorf("smtp: dial: %w", dialErr)
-		}
-		client, err = smtp.NewClient(conn, s.cfg.Host)
-	}
+	client, err = s.dial(addr)
 	if err != nil {
-		return fmt.Errorf("smtp: new client: %w", err)
+		return err
 	}
 	defer client.Close()
 
@@ -140,6 +127,43 @@ func (s *Sender) Send(m Message) error {
 	}
 
 	return client.Quit()
+}
+
+// dial opens an SMTP client using one absolute deadline for both connection
+// establishment and the subsequent SMTP dialogue (greeting through QUIT).
+func (s *Sender) dial(addr string) (*smtp.Client, error) {
+	deadline := time.Now().Add(s.cfg.Timeout)
+	dialer := &net.Dialer{Deadline: deadline}
+
+	var conn net.Conn
+	var err error
+	switch s.cfg.TLSMode {
+	case "implicit":
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{
+			ServerName: s.cfg.Host,
+			RootCAs:    s.cfg.rootCAs,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("smtp: implicit tls dial: %w", err)
+		}
+	default: // "starttls" or "none"
+		conn, err = dialer.Dial("tcp", addr)
+		if err != nil {
+			return nil, fmt.Errorf("smtp: dial: %w", err)
+		}
+	}
+
+	if err := conn.SetDeadline(deadline); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("smtp: set deadline: %w", err)
+	}
+
+	client, err := smtp.NewClient(conn, s.cfg.Host)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("smtp: new client: %w", err)
+	}
+	return client, nil
 }
 
 // validateHeaderValue rejects CR/LF in values that end up in RFC 5322

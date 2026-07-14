@@ -37,36 +37,54 @@ func (w *retryWorker[T]) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			w.flush()
+			w.flush(ctx)
 			return
 		case <-w.queue.Wait():
-			w.flush()
+			w.flush(ctx)
 		}
 	}
 }
 
-func (w *retryWorker[T]) flush() {
+func (w *retryWorker[T]) flush(ctx context.Context) {
 	for {
 		batch := w.queue.Drain()
 		if len(batch) == 0 {
 			return
 		}
 		for _, d := range batch {
-			w.deliver(d)
+			w.deliver(ctx, d)
 		}
 	}
 }
 
-func (w *retryWorker[T]) deliver(d T) {
+// deliver sends d with up to three attempts. The first attempt always runs;
+// retries and backoff happen only while ctx is still active.
+func (w *retryWorker[T]) deliver(ctx context.Context, d T) {
 	var lastErr error
-	for attempt := 0; attempt < len(deliveryBackoff); attempt++ {
-		if deliveryBackoff[attempt] > 0 {
-			time.Sleep(deliveryBackoff[attempt])
+	attemptsMade := 0
+	for attempt, backoff := range deliveryBackoff {
+		if attempt > 0 {
+			timer := time.NewTimer(backoff)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				w.logFailure(d, attemptsMade, lastErr)
+				return
+			case <-timer.C:
+			}
 		}
 		lastErr = w.send(d)
+		attemptsMade++
 		if lastErr == nil {
 			return
 		}
 	}
-	w.logger.Printf("%s delivery failed after %d attempts: %s err=%v", w.kind, len(deliveryBackoff), d.logRef(), lastErr)
+	w.logFailure(d, attemptsMade, lastErr)
+}
+
+func (w *retryWorker[T]) logFailure(d T, attemptsMade int, lastErr error) {
+	if attemptsMade == 0 {
+		return
+	}
+	w.logger.Printf("%s delivery failed after %d attempts: %s err=%v", w.kind, attemptsMade, d.logRef(), lastErr)
 }
