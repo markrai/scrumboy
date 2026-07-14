@@ -67,6 +67,9 @@ export function getBootstrapAvailable() {
 export function getPushConfigured() {
     return !!current._pushConfigured;
 }
+export function getSelfServicePasswordResetEnabled() {
+    return !!current._selfServicePasswordResetEnabled;
+}
 export function getOidcEnabled() {
     return !!current._oidcEnabled;
 }

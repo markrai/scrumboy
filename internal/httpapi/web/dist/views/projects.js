@@ -6,7 +6,7 @@ import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
 import { navigate } from '../router.js';
 import { escapeHTML, showToast, renderUserAvatar, confirmDelete, showPromptDialog } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
-import { getProjectsTab, getProjectView, getProjects, getUser, } from '../state/selectors.js';
+import { getProjectsTab, getProjectView, getProjects, getUser, getOidcEnabled, getLocalAuthEnabled, getSelfServicePasswordResetEnabled, } from '../state/selectors.js';
 import { setProjects, setProjectsTab, setProjectView, setSettingsActiveTab, } from '../state/mutations.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 // Symbol for idempotent listener attachment
@@ -643,7 +643,12 @@ export async function renderProjects() {
     catch (err) {
         if (err && err.status === 401) {
             const renderAuth = await getRenderAuth();
-            renderAuth({ next: "/" });
+            renderAuth({
+                next: "/",
+                oidcEnabled: getOidcEnabled(),
+                localAuthEnabled: getLocalAuthEnabled(),
+                selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),
+            });
             return;
         }
         throw err;
