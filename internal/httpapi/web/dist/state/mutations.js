@@ -75,6 +75,9 @@ export function setBootstrapAvailable(available) {
 export function setPushConfigured(enabled) {
     current._pushConfigured = enabled;
 }
+export function setSelfServicePasswordResetEnabled(enabled) {
+    current._selfServicePasswordResetEnabled = enabled;
+}
 export function setOidcEnabled(enabled) {
     current._oidcEnabled = enabled;
 }

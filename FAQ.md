@@ -10,9 +10,14 @@
 - [Are tag colors personal, or shared with the team?](#are-tag-colors-personal-or-shared-with-the-team)
 - [How do I use Scrumboy with Claude or other MCP clients?](#how-do-i-use-scrumboy-with-claude-or-other-mcp-clients)
 - [What are VAPID keys, and do I need them?](#what-are-vapid-keys-and-do-i-need-them)
+- [How do I generate SCRUMBOY_ENCRYPTION_KEY?](#how-do-i-generate-scrumboy_encryption_key)
+- [Do I need to configure SMTP? What happens if I don't?](#do-i-need-to-configure-smtp-what-happens-if-i-dont)
+- [I configured SMTP - why don't I see Forgot password?](#i-configured-smtp---why-dont-i-see-forgot-password)
 - [How does auditing work, and where can I see it?](#how-does-auditing-work-and-where-can-i-see-it)
 - [Does Scrumboy use telemetry, tracking, or “phone home”?](#does-scrumboy-use-telemetry-tracking-or-phone-home)
 - [What do I need to do to contribute?](#what-do-i-need-to-do-to-contribute)
+- [How do I contact the developers of Scrumboy?](#how-do-i-contact-the-developers-of-scrumboy)
+- [Does this project accept donations?](#does-this-project-accept-donations)
 
 # Notes
 ## How do I enable Markdown in my notes?
@@ -174,6 +179,67 @@ Optional: `SCRUMBOY_VAPID_SUBSCRIBER` is a **contact hint for push providers** (
 
 For what VAPID is, how it fits this project, key generation, and verification, see [`docs/vapid.md`](docs/vapid.md). For PWA install, Docker wiring, and auto-subscribe behavior, see [`docs/pwa.md`](docs/pwa.md).
 
+## How do I generate SCRUMBOY_ENCRYPTION_KEY?
+
+`SCRUMBOY_ENCRYPTION_KEY` is a **base64-encoded 32-byte** secret you generate yourself. Scrumboy uses it for 2FA and password-reset tokens. It is **not** required for basic startup, but it **is** required for self-service password-reset email (with SMTP) and for setting up 2FA. Generate it **on your own machine** - do not use a random website to create production secrets.
+
+### Linux / macOS
+
+In a terminal:
+
+```bash
+openssl rand -base64 32
+```
+
+Put the one-line output into the process environment (example):
+
+```bash
+export SCRUMBOY_ENCRYPTION_KEY='paste-the-openssl-output-here'
+```
+
+Your process manager, Compose file, or systemd unit must inject the same value when Scrumboy starts. The server does **not** auto-load `.env` files.
+
+### Windows
+
+**Option A - PowerShell (no extra software):** open PowerShell and run:
+
+```powershell
+[Convert]::ToBase64String((1..32 | ForEach-Object { [byte](Get-Random -Maximum 256) }))
+```
+
+Copy the one-line result. For a manual env var in that same session before you start Scrumboy:
+
+```powershell
+$env:SCRUMBOY_ENCRYPTION_KEY = 'paste-the-output-here'
+```
+
+**Option B - official helpers:** `win_run_full.bat` / `win_run_anonymous.bat` can create and store a key in `data/scrumboy.env` (format `SCRUMBOY_ENCRYPTION_KEY=<base64…>`) and inject it for you. See [`README.md`](README.md#encryption-key-optional).
+
+If OpenSSL is installed on Windows, `openssl rand -base64 32` works the same as on Linux.
+
+### After you have a key
+
+- Back it up **with** `data/app.db`. Losing or replacing the key after 2FA or password-reset data exists can break those features.
+- Do **not** regenerate the key casually on an instance that already uses encrypted auth data.
+- More detail: [`README.md`](README.md#encryption-key-optional) and [`docs/smtp.md`](docs/smtp.md#required-env-vars) (SMTP needs this key among others).
+
+## Do I need to configure SMTP? What happens if I don't?
+
+**No.** SMTP is optional server config for self-service password-reset email delivery. Without it, admins can still generate password-reset links manually (Settings → Users → Password) and hand them to the user out of band - that flow is unaffected by SMTP configuration.
+
+To let users request their own reset email, configure `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535; `SCRUMBOY_SMTP_FROM` must be a parseable RFC 5322 address), `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL`. When those required static settings are present and valid, users can choose **Forgot password?** on the local-password sign-in screen. The control is hidden during first-time setup, on OIDC-only or anonymous deployments, and whenever a required setting is missing or invalid; the admin-generated link remains the fallback. The capability does not test relay reachability or guarantee delivery. The request endpoint stays enumeration-safe: its generic accepted result does not confirm an account or email delivery. See [`docs/smtp.md`](docs/smtp.md) for TLS modes, the HTTP contract, and setup/verification steps.
+
+## I configured SMTP - why don't I see Forgot password?
+
+Setting the SMTP host alone is not enough. Scrumboy only shows **Forgot password?** when self-service reset is fully ready **and** you are on the normal local-password sign-in screen. Work through this checklist:
+
+1. **Full mode** - anonymous mode never offers self-service reset (`selfServicePasswordResetEnabled` is always `false`).
+2. **Startup logs** - look for `smtp: enabled (host=… port=…)`. Do **not** stop there: also confirm there is **no** `SCRUMBOY_PUBLIC_BASE_URL is missing or invalid…` line and **no** `invalid SCRUMBOY_ENCRYPTION_KEY ignored… password reset disabled` warning. You need all four: `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM`, `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL` (see [`docs/smtp.md`](docs/smtp.md#required-env-vars)).
+3. **`GET /api/auth/status`** - `selfServicePasswordResetEnabled` must be `true`. That flag is the source of truth for whether the SPA will offer the control (it does not prove mail can reach your relay).
+4. **Local password sign-in** - the control is hidden during first-time bootstrap, when local auth is disabled (OIDC-only), and when you are not on the email+password form.
+
+If the capability is `true` but mail never arrives after you submit an address, that is a delivery/credentials issue (try `SCRUMBOY_SMTP_DEBUG=1`), not this UI gate. Admins can still generate a reset link under Settings → Users → Password. Full setup details: [`docs/smtp.md`](docs/smtp.md).
+
 # Auditing
 
 ## How does auditing work, and where can I see it?
@@ -239,3 +305,11 @@ git commit -s -m "Fix board filter chip styling"
 ```
 
 You do **not** need to sign a separate CLA, email a form, or use any other signing service. The **`-s`** on your commits is enough.
+
+## How do I contact the developers of Scrumboy?
+
+Email **[markraidc@gmail.com](mailto:markraidc@gmail.com)**. For bugs and feature work, prefer a GitHub issue or pull request on the project repository when you can; use email for other inquiries.
+
+## Does this project accept donations?
+
+Yes. If you find Scrumboy useful and want to support development, you can use [Buy Me a Coffee](https://buymeacoffee.com/markrai). Donations are optional and appreciated - they are not required to use the software.

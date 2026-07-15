@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -59,10 +60,30 @@ type Config struct {
 	// only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
 
-	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, auth/OAuth rate-limit IP
-	// keys honor X-Forwarded-For (first hop). Default false: use RemoteAddr
-	// only so a client can't spoof the per-IP limiter. Enable only when a
-	// reverse proxy is the sole network path and overwrites/strips client XFF.
+	// SMTP (optional). Enables self-service "forgot password" emails. Host and
+	// From are required; Port defaults to 587 when omitted. Invalid explicit
+	// port values become 0 (SMTP stays off). Username/Password are optional
+	// (some relays allow trusted-network submission without auth).
+	SMTPHost         string // SCRUMBOY_SMTP_HOST
+	SMTPPort         int    // SCRUMBOY_SMTP_PORT, default defaultSMTPPort when unset
+	SMTPPortExplicit bool   // true when SCRUMBOY_SMTP_PORT key is present in the environment
+	SMTPUsername     string // SCRUMBOY_SMTP_USERNAME (optional)
+	SMTPPassword     string // SCRUMBOY_SMTP_PASSWORD (optional; never logged)
+	SMTPFrom         string // SCRUMBOY_SMTP_FROM, e.g. "Scrumboy <no-reply@example.com>"
+	SMTPTLSMode      string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
+	SMTPDebug        bool   // SCRUMBOY_SMTP_DEBUG=1 — log send attempts (never credentials/body)
+
+	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
+	// password-reset emails: missing or invalid values fail closed (no email
+	// sent). When set to a valid absolute http/https origin, reset links use
+	// this origin for both self-service email and admin-generated links.
+	// Example: "https://scrumboy.example.com".
+	PublicBaseURL string
+
+	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, authentication and OAuth
+	// rate-limit IP keys honor X-Forwarded-For (first hop). Default false: use
+	// RemoteAddr only so clients cannot spoof the per-IP limiter. Enable only
+	// when a reverse proxy is the sole network path and overwrites/strips XFF.
 	TrustProxy bool
 }
 
@@ -78,6 +99,7 @@ func FromEnv() Config {
 	}
 
 	markdownNotesEnabled := markdownNotesEnabledFromEnv()
+	smtpPort, smtpPortExplicit := smtpPortFromEnv()
 
 	return Config{
 		BindAddr:             getenv("BIND_ADDR", ":8080"),
@@ -113,20 +135,80 @@ func FromEnv() Config {
 		WallEnabled:          wallEnabledFromEnv(),
 		MarkdownNotesEnabled: markdownNotesEnabled,
 		MermaidNotesEnabled:  mermaidNotesEnabledFromEnv(markdownNotesEnabled),
-		TrustProxy:           trustProxyFromEnv(),
+
+		SMTPHost:         strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_HOST")),
+		SMTPPort:         smtpPort,
+		SMTPPortExplicit: smtpPortExplicit,
+		SMTPUsername:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_USERNAME")),
+		SMTPPassword:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_PASSWORD")),
+		SMTPFrom:         strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_FROM")),
+		SMTPTLSMode:      normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
+		SMTPDebug:        strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
+
+		PublicBaseURL: NormalizeBaseURL(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")),
+		TrustProxy:    trustProxyFromEnv(),
 	}
 }
 
-// trustProxyFromEnv returns whether rate-limit IP keys may honor
-// X-Forwarded-For. Default false unless explicitly opted in with
-// 1/true/on/yes (trimmed, case-insensitive).
-func trustProxyFromEnv() bool {
-	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_TRUST_PROXY")))
+// NormalizeBaseURL parses SCRUMBOY_PUBLIC_BASE_URL into a canonical public
+// origin (scheme://host[:port]). Empty or invalid input returns "" so
+// self-service password-reset email fails closed. Valid: absolute http or
+// https, hostname required, optional port in 1..65535, no userinfo, path only
+// empty or "/", no query (including bare ?) or fragment.
+func NormalizeBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	if u.Opaque != "" ||
+		(!strings.EqualFold(u.Scheme, "http") &&
+			!strings.EqualFold(u.Scheme, "https")) ||
+		u.Hostname() == "" ||
+		u.User != nil ||
+		u.ForceQuery ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
+		return ""
+	}
+
+	escapedPath := u.EscapedPath()
+	if escapedPath != "" && escapedPath != "/" {
+		return ""
+	}
+
+	// Reject dangling colon in authority (e.g. https://host:, http://[::1]:).
+	// Valid IPv6 without a port ends in ], not :.
+	if strings.HasSuffix(u.Host, ":") {
+		return ""
+	}
+
+	port := u.Port()
+	if port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return ""
+		}
+	}
+
+	return strings.ToLower(u.Scheme) + "://" + u.Host
+}
+
+// normalizeSMTPTLSMode validates SCRUMBOY_SMTP_TLS_MODE. Unrecognized or empty
+// values default to "starttls" (correct for the conventional port 587) —
+// the mode is always explicit config, never inferred from the port number.
+func normalizeSMTPTLSMode(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
 	switch v {
-	case "1", "true", "on", "yes":
-		return true
+	case "implicit", "none":
+		return v
 	default:
-		return false
+		return "starttls"
 	}
 }
 
@@ -149,6 +231,19 @@ func wallEnabledFromEnv() bool {
 // 1/true/on/yes (trimmed, case-insensitive).
 func markdownNotesEnabledFromEnv() bool {
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_MARKDOWN_NOTES_ENABLED")))
+	switch v {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// trustProxyFromEnv returns whether rate-limit IP keys may honor
+// X-Forwarded-For. Default false unless explicitly opted in with
+// 1/true/on/yes (trimmed, case-insensitive).
+func trustProxyFromEnv() bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_TRUST_PROXY")))
 	switch v {
 	case "1", "true", "on", "yes":
 		return true
@@ -226,6 +321,23 @@ func getenv(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+const defaultSMTPPort = 587
+
+// smtpPortFromEnv parses SCRUMBOY_SMTP_PORT. When unset, returns the default
+// port and explicit=false. When set, explicit=true; invalid or out-of-range
+// values fail closed to port 0.
+func smtpPortFromEnv() (port int, explicit bool) {
+	raw, ok := os.LookupEnv("SCRUMBOY_SMTP_PORT")
+	if !ok {
+		return defaultSMTPPort, false
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n < 1 || n > 65535 {
+		return 0, true
+	}
+	return n, true
 }
 
 func getenvInt(key string, defaultValue int) int {

@@ -87,6 +87,7 @@ func main() {
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
 	}
 	logWebPushConfiguration(logger, cfg.ScrumboyMode, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey)
+	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom, cfg.SMTPPortExplicit, cfg.PublicBaseURL)
 
 	maxB := cfg.MaxRequestBodyBytes
 	if maxB <= 0 {
@@ -110,6 +111,14 @@ func main() {
 		WallEnabled:          cfg.WallEnabled,
 		MarkdownNotesEnabled: cfg.MarkdownNotesEnabled,
 		MermaidNotesEnabled:  cfg.MermaidNotesEnabled,
+		SMTPHost:             cfg.SMTPHost,
+		SMTPPort:             cfg.SMTPPort,
+		SMTPUsername:         cfg.SMTPUsername,
+		SMTPPassword:         cfg.SMTPPassword,
+		SMTPFrom:             cfg.SMTPFrom,
+		SMTPTLSMode:          cfg.SMTPTLSMode,
+		SMTPDebug:            cfg.SMTPDebug,
+		PublicBaseURL:        cfg.PublicBaseURL,
 		TrustProxy:           cfg.TrustProxy,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
@@ -220,7 +229,10 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Printf("shutdown: %v", err)
 	}
-	srv.Close()
+
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer closeCancel()
+	srv.Close(closeCtx)
 }
 
 func logWebPushConfiguration(logger *log.Logger, mode, publicKey, privateKey string) {
@@ -235,5 +247,19 @@ func logWebPushConfiguration(logger *log.Logger, mode, publicKey, privateKey str
 		logger.Printf("web push: partial config ignored")
 	default:
 		logger.Printf("web push: disabled (set SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY)")
+	}
+}
+
+func logSMTPConfiguration(logger *log.Logger, host string, port int, from string, portExplicit bool, publicBaseURL string) {
+	switch {
+	case httpapi.SMTPConfigured(host, port, from):
+		logger.Printf("smtp: enabled (host=%s port=%d)", host, port)
+		if strings.TrimSpace(publicBaseURL) == "" {
+			logger.Printf("smtp: SCRUMBOY_PUBLIC_BASE_URL is missing or invalid; self-service password-reset emails are disabled until a valid public origin is configured (e.g. https://scrumboy.example.com)")
+		}
+	case httpapi.SMTPPartiallyConfigured(host, port, from, portExplicit):
+		logger.Printf("smtp: partial or invalid config ignored (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM; SCRUMBOY_SMTP_PORT defaults to 587 and, when set, must be between 1 and 65535)")
+	default:
+		logger.Printf("smtp: disabled (set SCRUMBOY_SMTP_HOST and SCRUMBOY_SMTP_FROM to enable password-reset emails; SCRUMBOY_SMTP_PORT defaults to 587 when omitted)")
 	}
 }

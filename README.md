@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.18.26-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.20.0-blue" alt="version" />
   <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml">
@@ -56,6 +56,8 @@ No `.env` file, TLS certificates, or encryption key are required to start the ap
 Scrumboy is distributed as a container image on GitHub Container Registry:
 
 `ghcr.io/markrai/scrumboy:latest`
+
+Published images are multi-arch for `linux/amd64` and `linux/arm64`; Docker pulls the variant that matches your host.
 
 **Docker run** (named volume for persistent SQLite data under `/data`):
 
@@ -161,26 +163,13 @@ Environment="SCRUMBOY_ENCRYPTION_KEY=REPLACE_WITH_BASE64_32_BYTE_KEY"
 
 In both cases, the deployment manager is injecting the environment variable. Scrumboy itself does not auto-load these files.
 
+### SMTP for self-service password reset (optional)
+
+Optional SMTP lets users request a password-reset email (**Forgot password?** on local-password sign-in). You need a relay (`SCRUMBOY_SMTP_*`), **`SCRUMBOY_ENCRYPTION_KEY`**, and a valid **`SCRUMBOY_PUBLIC_BASE_URL`**. Without that, admins can still generate reset links under Settings → Users → Password. Setup, env vars, providers, and troubleshooting: [`docs/smtp.md`](docs/smtp.md). Also [`FAQ.md`](FAQ.md#do-i-need-to-configure-smtp-what-happens-if-i-dont).
+
 ### OIDC / SSO login (optional)
 
-Scrumboy supports OpenID Connect for single sign-on with any standards-compliant provider (Keycloak, Authentik, Auth0, Entra ID, etc.). OIDC is enabled by setting all four required environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `SCRUMBOY_OIDC_ISSUER` | Issuer URL (e.g. `https://auth.example.com/realms/main`) |
-| `SCRUMBOY_OIDC_CLIENT_ID` | OAuth client ID |
-| `SCRUMBOY_OIDC_CLIENT_SECRET` | Confidential client secret |
-| `SCRUMBOY_OIDC_REDIRECT_URL` | Full callback URL registered at IdP (e.g. `https://scrumboy.example.com/api/auth/oidc/callback`) |
-
-Optional:
-
-| Variable | Description |
-|----------|-------------|
-| `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED` | Set to `true` to disable local password login when OIDC is configured (SSO-only mode) |
-
-Local password authentication remains available by default alongside OIDC. After successful OIDC login, the user receives a standard Scrumboy session cookie. The IdP must return a verified email (`email_verified: true`). HTTPS is recommended when using OIDC to ensure session cookies are `Secure`.
-
-See [`docs/oidc.md`](docs/oidc.md) for full setup details, constraints, and troubleshooting.
+Optional OpenID Connect SSO with any standards-compliant IdP (Keycloak, Authentik, Auth0, Entra ID, etc.). Enable with `SCRUMBOY_OIDC_ISSUER`, `SCRUMBOY_OIDC_CLIENT_ID`, `SCRUMBOY_OIDC_CLIENT_SECRET`, and `SCRUMBOY_OIDC_REDIRECT_URL`. Local password login stays available unless you set `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`. Setup, constraints, and troubleshooting: [`docs/oidc.md`](docs/oidc.md).
 
 ### TLS / HTTPS (optional)
 
@@ -237,6 +226,8 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - Sprints: create, activate, close; sprint filter on board; default sprint weeks (1 or 2) per project.
 
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
+
+- Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit_trail.md](docs/audit_trail.md)).
 
@@ -380,7 +371,7 @@ None of these are required for basic startup.
 | `SQLITE_SYNCHRONOUS` | `FULL` |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) |
 | `SCRUMBOY_MODE` | `full` (or `anonymous`) |
-| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503. Back this key up with `data/app.db`; do not replace it casually once encrypted auth/security data exists. |
+| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA and password reset.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503 and password-reset tokens cannot be issued. Back this key up with `data/app.db`; do not replace it casually once encrypted auth/security data exists. |
 | `SCRUMBOY_TLS_CERT` | `./cert.pem` - TLS cert for HTTPS |
 | `SCRUMBOY_TLS_KEY` | `./key.pem` - TLS key for HTTPS |
 | `SCRUMBOY_INTRANET_IP` | `192.168.1.250` - LAN IP to log for intranet access |
@@ -388,7 +379,15 @@ None of these are required for basic startup.
 | `SCRUMBOY_VAPID_PRIVATE_KEY` | (empty) - VAPID private key (URL-safe base64). |
 | `SCRUMBOY_VAPID_SUBSCRIBER` | (empty) - Contact for VAPID JWT `sub` (not tied to IdP). Use a **plain email** (e.g. `ops@example.com`); the server adds `mailto:`. Or set a full `mailto:...` or `https://...` URL explicitly. If unset, a built-in default is used. |
 | `SCRUMBOY_DEBUG_PUSH` | (empty) - Set to `1` to log push send/prune on the server. |
-| `SCRUMBOY_TRUST_PROXY` | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth/OAuth rate-limit IP keys. Default off: use the connection's `RemoteAddr` only. Enable only behind a reverse proxy that overwrites/strips client-supplied XFF. |
+| `SCRUMBOY_SMTP_HOST` | (empty) - **Self-service password reset.** SMTP relay hostname. Required with From. |
+| `SCRUMBOY_SMTP_PORT` | `587` - Defaults to 587 when omitted. If explicitly set, must be 1–65535. |
+| `SCRUMBOY_SMTP_USERNAME` | (empty) - SMTP auth username; omit for relays allowing unauthenticated submission. |
+| `SCRUMBOY_SMTP_PASSWORD` | (empty) - SMTP auth password. Never logged. |
+| `SCRUMBOY_SMTP_FROM` | (empty) - Envelope + header `From`, e.g. `Scrumboy <no-reply@example.com>`. Required with Host. |
+| `SCRUMBOY_SMTP_TLS_MODE` | `starttls` (or `implicit`, `none`) - see [`docs/smtp.md`](docs/smtp.md). |
+| `SCRUMBOY_SMTP_DEBUG` | (empty) - Set to `1` to log SMTP send attempts (never credentials/body). |
+| `SCRUMBOY_PUBLIC_BASE_URL` | (empty) - **Required for self-service password-reset email.** Canonical public origin (e.g. `https://scrumboy.example.com`). Must be absolute `http`/`https` with hostname; no path, query, fragment, or userinfo. Missing or invalid → self-service emails disabled (generic API response only). Also used for admin-generated reset links when set. See [`docs/smtp.md`](docs/smtp.md#reset-link-url). |
+| `SCRUMBOY_TRUST_PROXY` | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth/OAuth rate-limit IP keys. Default off: use `RemoteAddr` only. Enable only behind a reverse proxy that overwrites/strips client XFF. |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 

@@ -1,6 +1,51 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** unless noted below.
+
+## [3.20.0] - 2026-07-15
+
+### Added
+
+- **OAuth 2.1 authorization server for MCP clients** - Full-mode support for MCP clients that use automatic OAuth discovery, PKCE, and Dynamic Client Registration (e.g. Claude Code's `claude mcp add --transport http`). Adds RFC 8414/9728 discovery (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`), RFC 7591 `POST /oauth/register` (public clients only), consent-gated `/oauth/authorize`, `/oauth/token` (authorization code + refresh rotation), and RFC 7009 `/oauth/revoke`. OAuth access tokens are accepted as Bearer credentials on `/mcp` and `/mcp/rpc` additively alongside existing static API tokens and session cookies. Migration `055_add_oauth_authorization_server.sql` adds `oauth_clients`, `oauth_auth_codes`, `oauth_access_tokens`, and `oauth_refresh_tokens`.
+
+### Changed
+
+- **`SCRUMBOY_TRUST_PROXY` consumers** - Per-IP auth rate limiting now also covers OAuth DCR (`POST /oauth/register`) and `POST /oauth/token`. As before, `X-Forwarded-For` is honored only when TrustProxy is enabled.
+
+### Documentation
+
+- **OAuth for MCP** - Added `docs/oauth.md` (discovery, DCR, PKCE, authorize/token/revoke, token lifetimes, deliberately unimplemented items); linked from `README.md` and `docs/mcp.md`.
+
+### Tests
+
+- **OAuth** - Happy-path register → authorize → consent → token → MCP call; PKCE mismatch; expired/replayed auth codes; redirect URI mismatch; anonymous-mode 404s; refresh rotation/reuse rejection; revoked-token rejection by MCP; DCR validation (malformed redirect URI, loopback HTTP allowed); strict JSON Content-Type on DCR; DCR rate limit ignores spoofed XFF by default.
+- **MCP** - Invalid Bearer (including OAuth-shaped tokens) does not fall back to the session cookie.
+
+## [3.19.0] - 2026-07-14
+
+### Added
+
+- **SMTP email + self-service password reset** - New optional `SCRUMBOY_SMTP_*` configuration enables outbound email via `net/smtp`/`crypto/tls` (no new dependency). When configured, `POST /api/auth/request-password-reset` lets users request a reset link by email; delivery is asynchronous with retry/backoff, mirroring the existing webhook delivery architecture. The response is always generic to avoid leaking account existence. The admin-generated manual reset-link flow (`POST /api/admin/users/{id}/password-reset`) is unchanged and remains available regardless of SMTP configuration.
+- **Forgot password UI** - Sign-in shows a Forgot password control when self-service reset is enabled (full mode, local password auth, and the SMTP/encryption/public-base-URL capability below). The form posts to `request-password-reset` and returns the same generic success copy as the API.
+- **`SCRUMBOY_TRUST_PROXY`** - Auth rate-limit IP keys default to connection `RemoteAddr` and ignore client `X-Forwarded-For` unless explicitly enabled (`1`/`true`/`on`/`yes`). Enable only behind a reverse proxy that overwrites/strips client XFF. Applies to login, 2FA, and request-password-reset limiters.
+
+### Changed
+
+- **Self-service reset operator constraints** - Capability (`selfServicePasswordResetEnabled`) and actual email sends require valid `SCRUMBOY_SMTP_HOST` / `SCRUMBOY_SMTP_FROM` (parseable RFC 5322 address, no CR/LF; port 1–65535), `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL` origin. Missing or invalid public base URL fail closed: the request endpoint still returns the generic success body, but no email is sent and the Forgot control stays hidden. Transient SMTP failures (dial/timeouts/4xx) retry with backoff; permanent failures (5xx and local validation/config errors) are logged once and not retried.
+- **Webhook/mail shutdown flush** - `Server.Close` seals the webhook and mail delivery queues (no new entries), then gives in-flight drain/retry work a bounded chance to finish against the close context before exit. Once a worker observes close-context cancellation, it starts no further queued item or send attempt (an in-flight send may still finish under its own transport timeout).
+- **`request-password-reset` CSRF + Content-Type** - Same `X-Scrumboy: 1` gate as other mutating auth JSON routes (missing header → 403), plus required `Content-Type: application/json` (charset parameters allowed; wrong type → 400).
+
+### Documentation
+
+- **SMTP** - Added `docs/smtp.md` covering configuration, TLS modes (STARTTLS/implicit/none), public base URL / encryption requirements, startup log states, verification steps, and example providers; cross-linked from `README.md` and `FAQ.md`.
+
+### Tests
+
+- **Mailer** - Send success/failure/auth-failure/STARTTLS-vs-implicit-TLS coverage against a hand-rolled fake SMTP listener (`internal/mailer/mailertest`), including a header-injection guard.
+- **Mail queue/worker** - Enqueue/drain, capacity drop, 3-attempt retry/backoff, and bounded shutdown flush behavior.
+- **HTTP API** - `request-password-reset` enumeration-safety (identical response for existing/non-existing accounts), rate limiting, CSRF/Content-Type rejection cases, and an end-to-end test asserting a captured email contains a valid reset token/link using `SCRUMBOY_PUBLIC_BASE_URL` (admin-generated links still honor `X-Forwarded-Proto` when the base URL is unset).
+- **Trust proxy** - `clientIP` ignores spoofed XFF by default; honors first XFF hop when `TrustProxy` is set.
+- **Forgot password UI** - Capability-gated Forgot control, form submit/back flow, and i18n coverage for the new auth copy.
 
 ## [3.18.26] - 2026-07-12
 

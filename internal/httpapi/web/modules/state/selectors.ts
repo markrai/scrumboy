@@ -92,6 +92,10 @@ export function getPushConfigured(): boolean {
   return !!current._pushConfigured;
 }
 
+export function getSelfServicePasswordResetEnabled(): boolean {
+  return !!current._selfServicePasswordResetEnabled;
+}
+
 export function getOidcEnabled(): boolean {
   return !!current._oidcEnabled;
 }

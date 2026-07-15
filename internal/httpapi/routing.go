@@ -16,6 +16,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 		// Exception: /api/auth/logout form POST (Content-Type form) - form submit can't add custom headers;
 		// same-origin form POST is the standard logout pattern behind tunnels/proxies.
 		// Exception: /api/auth/reset-password - token is auth; user may arrive from email/link without session.
+		// request-password-reset is not exempt: like login, it is unauthenticated JSON and still requires
+		// X-Scrumboy so hostile cross-origin pages cannot trigger reset emails without a CORS preflight.
 		isLogoutForm := r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/auth/logout") &&
 			(strings.Contains(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") ||
 				strings.Contains(r.Header.Get("Content-Type"), "multipart/form-data"))

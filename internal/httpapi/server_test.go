@@ -2239,6 +2239,9 @@ func TestAuth_EndpointsNotFound_AnonymousMode(t *testing.T) {
 	if statusResp["pushConfigured"] != false {
 		t.Fatalf("expected pushConfigured to be false in anonymous mode, got %v", statusResp["pushConfigured"])
 	}
+	if statusResp["selfServicePasswordResetEnabled"] != false {
+		t.Fatalf("expected selfServicePasswordResetEnabled to be false in anonymous mode, got %v", statusResp["selfServicePasswordResetEnabled"])
+	}
 }
 
 func TestAuthStatus_PushConfiguredCapability(t *testing.T) {
@@ -2288,6 +2291,79 @@ func TestAuthStatus_PushConfiguredCapability(t *testing.T) {
 			}
 			if st["pushConfigured"] != tc.want {
 				t.Fatalf("expected pushConfigured %v, got %#v", tc.want, st["pushConfigured"])
+			}
+		})
+	}
+}
+
+func TestAuthStatus_SelfServicePasswordResetCapability(t *testing.T) {
+	configured := Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		SMTPHost:       "smtp.example.com",
+		SMTPPort:       587,
+		SMTPFrom:       "no-reply@example.com",
+		EncryptionKey:  testEncryptionKey,
+		PublicBaseURL:  "https://scrumboy.example.com",
+	}
+	missingSMTPHost := configured
+	missingSMTPHost.SMTPHost = ""
+	invalidSMTPPort := configured
+	invalidSMTPPort.SMTPPort = 0
+	missingEncryptionKey := configured
+	missingEncryptionKey.EncryptionKey = nil
+	missingPublicBaseURL := configured
+	missingPublicBaseURL.PublicBaseURL = ""
+	invalidPublicBaseURL := configured
+	invalidPublicBaseURL.PublicBaseURL = "https://scrumboy.example.com/path"
+	emptyFrom := configured
+	emptyFrom.SMTPFrom = "   "
+	malformedFrom := configured
+	malformedFrom.SMTPFrom = "not-an-address"
+	crlfFrom := configured
+	crlfFrom.SMTPFrom = "no-reply@example.com\r\nBcc: evil@example.com"
+	displayNameFrom := configured
+	displayNameFrom.SMTPFrom = "Scrumboy <no-reply@example.com>"
+	anonymous := configured
+	anonymous.ScrumboyMode = "anonymous"
+
+	cases := []struct {
+		name string
+		opts Options
+		want bool
+	}{
+		{name: "full mode with every prerequisite", opts: configured, want: true},
+		{name: "missing SMTP host", opts: missingSMTPHost, want: false},
+		{name: "invalid SMTP port", opts: invalidSMTPPort, want: false},
+		{name: "missing encryption key", opts: missingEncryptionKey, want: false},
+		{name: "missing public base URL", opts: missingPublicBaseURL, want: false},
+		{name: "invalid public base URL", opts: invalidPublicBaseURL, want: false},
+		{name: "empty From", opts: emptyFrom, want: false},
+		{name: "malformed From", opts: malformedFrom, want: false},
+		{name: "CRLF From", opts: crlfFrom, want: false},
+		{name: "valid display-name From", opts: displayNameFrom, want: true},
+		{name: "anonymous mode with every prerequisite", opts: anonymous, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, _, cleanup := newTestHTTPServerWithOptions(t, tc.opts)
+			defer cleanup()
+
+			resp, err := ts.Client().Get(ts.URL + "/api/auth/status")
+			if err != nil {
+				t.Fatalf("GET /api/auth/status: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200 for /api/auth/status, got %d", resp.StatusCode)
+			}
+			var st map[string]any
+			if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+				t.Fatalf("decode status response: %v", err)
+			}
+			if st["selfServicePasswordResetEnabled"] != tc.want {
+				t.Fatalf("expected selfServicePasswordResetEnabled %v, got %#v", tc.want, st["selfServicePasswordResetEnabled"])
 			}
 		})
 	}

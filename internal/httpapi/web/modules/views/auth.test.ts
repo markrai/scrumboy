@@ -45,6 +45,13 @@ const enCatalog = {
   "auth.fields.newPassword.label": "New password",
   "auth.fields.newPassword.placeholder": "Min 8 characters",
   "auth.fields.password.placeholder": "Password",
+  "auth.forgot.backToSignIn": "Back to sign in",
+  "auth.forgot.failed": "Could not request a password reset.",
+  "auth.forgot.helper": "Enter your email. If an account exists for that email address, we’ll send a password reset link that expires in 30 minutes.",
+  "auth.forgot.link": "Forgot password?",
+  "auth.forgot.submit": "Send reset link",
+  "auth.forgot.success": "If an account exists for that email address, a password reset email has been sent.",
+  "auth.forgot.title": "Reset your password",
   "auth.login.failed": "Login failed.",
   "auth.oidc.button": "Continue with SSO",
   "auth.oidc.error.email": "A verified email address is required.",
@@ -89,6 +96,13 @@ const deCatalog = {
   "auth.fields.newPassword.label": "Neues Passwort",
   "auth.fields.newPassword.placeholder": "Mindestens 8 Zeichen",
   "auth.fields.password.placeholder": "Passwort",
+  "auth.forgot.backToSignIn": "Zurück zur Anmeldung",
+  "auth.forgot.failed": "Die Anfrage zum Zurücksetzen des Passworts konnte nicht gesendet werden.",
+  "auth.forgot.helper": "Gib deine E-Mail-Adresse ein. Falls ein Konto mit dieser Adresse existiert, senden wir einen Link zum Zurücksetzen, der in 30 Minuten abläuft.",
+  "auth.forgot.link": "Passwort vergessen?",
+  "auth.forgot.submit": "Link zum Zurücksetzen senden",
+  "auth.forgot.success": "Falls ein Konto mit dieser E-Mail-Adresse existiert, wurde eine E-Mail zum Zurücksetzen des Passworts gesendet.",
+  "auth.forgot.title": "Passwort zurücksetzen",
   "auth.login.failed": "Anmeldung fehlgeschlagen.",
   "auth.oidc.button": "Mit SSO fortfahren",
   "auth.oidc.error.email": "Eine verifizierte E-Mail-Adresse ist erforderlich.",
@@ -793,6 +807,13 @@ const pseudoCatalog = {
   "auth.fields.newPassword.label": "[!! New password !!]",
   "auth.fields.newPassword.placeholder": "[!! Min 8 characters !!]",
   "auth.fields.password.placeholder": "[!! Password !!]",
+  "auth.forgot.backToSignIn": "[!! Back to sign in !!]",
+  "auth.forgot.failed": "[!! Could not request a password reset. !!]",
+  "auth.forgot.helper": "[!! Enter your email. If an account exists for that email address, we’ll send a password reset link that expires in 30 minutes. !!]",
+  "auth.forgot.link": "[!! Forgot password? !!]",
+  "auth.forgot.submit": "[!! Send reset link !!]",
+  "auth.forgot.success": "[!! If an account exists for that email address, a password reset email has been sent. !!]",
+  "auth.forgot.title": "[!! Reset your password !!]",
   "auth.login.failed": "[!! Login failed. !!]",
   "auth.oidc.button": "[!! Continue with SSO !!]",
   "auth.oidc.error.email": "[!! A verified email address is required. !!]",
@@ -960,6 +981,226 @@ describe("auth view i18n", () => {
     expect((document.getElementById("authPassword") as HTMLInputElement | null)?.placeholder).toBe("Password");
     expect(document.getElementById("loginBtn")?.textContent).toBe("Login");
     expect(document.getElementById("authPasswordToggle")?.getAttribute("aria-label")).toBe("Show password");
+  });
+
+  it("shows forgot password only for configured local sign-in outside bootstrap", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+
+    auth.renderAuth({ localAuthEnabled: true, selfServicePasswordResetEnabled: true });
+    expect(document.getElementById("authForgotPassword")?.textContent).toBe("Forgot password?");
+
+    auth.renderAuth({ bootstrap: true, localAuthEnabled: true, selfServicePasswordResetEnabled: true });
+    expect(document.getElementById("authForgotPassword")).toBeNull();
+
+    auth.renderAuth({ oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: true });
+    expect(document.getElementById("authForgotPassword")).toBeNull();
+    expect(document.getElementById("authForm")).toBeNull();
+
+    auth.renderAuth({ localAuthEnabled: true, selfServicePasswordResetEnabled: false });
+    expect(document.getElementById("authForgotPassword")).toBeNull();
+  });
+
+  it("opens the forgot step with the typed email and returns without losing sign-in state", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+
+    auth.renderAuth({
+      next: "/dashboard?tab=mine",
+      oidcEnabled: true,
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
+    const emailEl = document.getElementById("authEmail") as HTMLInputElement;
+    const passwordEl = document.getElementById("authPassword") as HTMLInputElement;
+    emailEl.value = "first@example.com";
+    passwordEl.value = "secret";
+    document.getElementById("authPasswordToggle")?.click();
+    document.getElementById("authForgotPassword")?.click();
+
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Reset your password");
+    const forgotEmailEl = document.getElementById("authForgotEmail") as HTMLInputElement;
+    expect(forgotEmailEl.value).toBe("first@example.com");
+    expect(forgotEmailEl.getAttribute("aria-label")).toBe("Email");
+    expect(document.activeElement).toBe(forgotEmailEl);
+
+    forgotEmailEl.value = "edited@example.com";
+    forgotEmailEl.dispatchEvent(new Event("input", { bubbles: true }));
+    document.getElementById("authForgotBack")?.click();
+
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Sign in");
+    expect((document.getElementById("authEmail") as HTMLInputElement).value).toBe("edited@example.com");
+    expect((document.getElementById("authPassword") as HTMLInputElement).value).toBe("secret");
+    expect((document.getElementById("authPassword") as HTMLInputElement).type).toBe("text");
+    expect(document.getElementById("authSsoBtn")?.getAttribute("href")).toContain(
+      "return_to=%2Fdashboard%3Ftab%3Dmine",
+    );
+    expect(document.getElementById("authForgotPassword")).not.toBeNull();
+  });
+
+  it("requests a reset with generic localized success, then restores sign-in and next", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+    apiFetchMock
+      .mockResolvedValueOnce({ message: "This address belongs to an account." })
+      .mockResolvedValueOnce({});
+
+    auth.renderAuth({
+      next: "/projects?from=forgot",
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
+    (document.getElementById("authEmail") as HTMLInputElement).value = "user@example.com";
+    (document.getElementById("authPassword") as HTMLInputElement).value = "password";
+    document.getElementById("authForgotPassword")?.click();
+    document.getElementById("authForgotForm")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenNthCalledWith(1, "/api/auth/request-password-reset", {
+      method: "POST",
+      body: JSON.stringify({ email: "user@example.com" }),
+    });
+    expect(showToastMock).toHaveBeenCalledWith(
+      "If an account exists for that email address, a password reset email has been sent.",
+    );
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Sign in");
+    expect((document.getElementById("authEmail") as HTMLInputElement).value).toBe("user@example.com");
+    expect((document.getElementById("authPassword") as HTMLInputElement).value).toBe("password");
+    expect(redirectAfterAuthMock).not.toHaveBeenCalled();
+
+    document.getElementById("authForm")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenNthCalledWith(2, "/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "user@example.com", password: "password" }),
+    });
+    expect(redirectAfterAuthMock).toHaveBeenCalledWith("/projects?from=forgot");
+  });
+
+  it("keeps the forgot step open and localizes rate-limit and fallback failures", async () => {
+    await setupI18n("de");
+    const auth = await import("./auth.js");
+    apiFetchMock.mockRejectedValueOnce({ status: 429, message: "HTTP 429" });
+
+    auth.renderAuth({ localAuthEnabled: true, selfServicePasswordResetEnabled: true });
+    (document.getElementById("authEmail") as HTMLInputElement).value = "user@example.com";
+    document.getElementById("authForgotPassword")?.click();
+    document.getElementById("authForgotForm")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(showToastMock).toHaveBeenLastCalledWith("Zu viele Versuche. Bitte später erneut versuchen.");
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Passwort zurücksetzen");
+    expect((document.getElementById("authForgotSubmit") as HTMLButtonElement).disabled).toBe(false);
+    expect((document.getElementById("authForgotBack") as HTMLButtonElement).disabled).toBe(false);
+
+    apiFetchMock.mockRejectedValueOnce({ status: 500, message: "HTTP 500" });
+    document.getElementById("authForgotForm")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(showToastMock).toHaveBeenLastCalledWith(
+      "Die Anfrage zum Zurücksetzen des Passworts konnte nicht gesendet werden.",
+    );
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Passwort zurücksetzen");
+  });
+
+  it("disables forgot actions in flight and ignores duplicate submissions", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+    let resolveRequest: ((value: unknown) => void) | undefined;
+    apiFetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRequest = resolve;
+    }));
+
+    auth.renderAuth({ localAuthEnabled: true, selfServicePasswordResetEnabled: true });
+    (document.getElementById("authEmail") as HTMLInputElement).value = "user@example.com";
+    document.getElementById("authForgotPassword")?.click();
+    const form = document.getElementById("authForgotForm");
+    form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect((document.getElementById("authForgotSubmit") as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById("authForgotBack") as HTMLButtonElement).disabled).toBe(true);
+
+    resolveRequest?.({});
+    await flushPromises();
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Sign in");
+  });
+
+  it("ignores stale forgot completions after a newer auth render or navigation", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+    let resolveRequest: ((value: unknown) => void) | undefined;
+    let rejectRequest: ((reason?: unknown) => void) | undefined;
+    apiFetchMock
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveRequest = resolve;
+      }))
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => {
+        rejectRequest = reject;
+      }));
+
+    auth.renderAuth({
+      next: "/old-success",
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
+    (document.getElementById("authEmail") as HTMLInputElement).value = "old@example.com";
+    document.getElementById("authForgotPassword")?.click();
+    document.getElementById("authForgotForm")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    auth.renderAuth({
+      next: "/newer-success",
+      oidcEnabled: true,
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: false,
+    });
+    resolveRequest?.({});
+    await flushPromises();
+
+    expect(showToastMock).not.toHaveBeenCalled();
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Sign in");
+    expect((document.getElementById("authEmail") as HTMLInputElement).value).toBe("");
+    expect(document.getElementById("authSsoBtn")?.getAttribute("href")).toContain("return_to=%2Fnewer-success");
+
+    auth.renderAuth({
+      next: "/old-error",
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
+    (document.getElementById("authEmail") as HTMLInputElement).value = "old@example.com";
+    document.getElementById("authForgotPassword")?.click();
+    document.getElementById("authForgotForm")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    document.body.innerHTML = `<div class="page page--projects"><h1>Newer page</h1></div>`;
+    rejectRequest?.(new Error("network failed"));
+    await flushPromises();
+
+    expect(showToastMock).not.toHaveBeenCalled();
+    expect(document.querySelector("h1")?.textContent).toBe("Newer page");
+  });
+
+  it("relocalizes an open forgot step without clearing the edited email", async () => {
+    const i18n = await setupI18n("en");
+    const auth = await import("./auth.js");
+
+    auth.renderAuth({ localAuthEnabled: true, selfServicePasswordResetEnabled: true });
+    (document.getElementById("authEmail") as HTMLInputElement).value = "first@example.com";
+    document.getElementById("authForgotPassword")?.click();
+    const forgotEmailEl = document.getElementById("authForgotEmail") as HTMLInputElement;
+    forgotEmailEl.value = "edited@example.com";
+    forgotEmailEl.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await i18n.setLocale("de");
+    await flushPromises();
+
+    expect(document.querySelector(".panel__title")?.textContent).toBe("Passwort zurücksetzen");
+    expect(document.querySelector(".muted")?.textContent).toContain("30 Minuten");
+    expect(document.getElementById("authForgotSubmit")?.textContent).toBe("Link zum Zurücksetzen senden");
+    expect(document.getElementById("authForgotBack")?.textContent).toBe("Zurück zur Anmeldung");
+    expect((document.getElementById("authForgotEmail") as HTMLInputElement).value).toBe("edited@example.com");
+    expect((document.getElementById("authForgotEmail") as HTMLInputElement).getAttribute("aria-label")).toBe("E-Mail");
   });
 
   it("renders a public language selector in every auth shell", async () => {
@@ -1493,7 +1734,14 @@ describe("auth view i18n", () => {
     });
 
     auth.renderAuth({ next: "/dashboard", oidcEnabled: true, localAuthEnabled: true });
-    auth.renderAuth({ next: "/projects", oidcEnabled: true, localAuthEnabled: true });
+    auth.renderAuth({
+      next: "/projects",
+      oidcEnabled: true,
+      localAuthEnabled: true,
+      selfServicePasswordResetEnabled: true,
+    });
+    document.getElementById("authForgotPassword")?.click();
+    document.getElementById("authForgotBack")?.click();
 
     (document.getElementById("authEmail") as HTMLInputElement).value = "user@example.com";
     (document.getElementById("authPassword") as HTMLInputElement).value = "password";

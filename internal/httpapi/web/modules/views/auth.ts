@@ -16,6 +16,7 @@ type AuthBaseState = {
     bootstrap: boolean;
     oidcEnabled: boolean;
     localAuthEnabled: boolean;
+    selfServicePasswordResetEnabled: boolean;
   };
   draft: {
     name: string;
@@ -23,6 +24,17 @@ type AuthBaseState = {
     password: string;
   };
   passwordVisible: boolean;
+};
+
+type ForgotPasswordState = {
+  mode: "forgot";
+  options: {
+    authState: AuthBaseState;
+  };
+  draft: {
+    email: string;
+  };
+  submitting: boolean;
 };
 
 type TwoFactorState = {
@@ -49,7 +61,7 @@ type ResetPasswordState = {
   passwordVisible: boolean;
 };
 
-type AuthViewState = AuthBaseState | TwoFactorState | ResetPasswordState;
+type AuthViewState = AuthBaseState | ForgotPasswordState | TwoFactorState | ResetPasswordState;
 type AuthGlobal = typeof globalThis & {
   __scrumboyAuthLocaleListener?: EventListener;
 };
@@ -154,6 +166,8 @@ function applyAuthViewTranslations(): void {
     } else {
       const loginBtn = document.getElementById("loginBtn");
       if (loginBtn) loginBtn.textContent = t("auth.actions.login");
+      const forgotPasswordBtn = document.getElementById("authForgotPassword");
+      if (forgotPasswordBtn) forgotPasswordBtn.textContent = t("auth.forgot.link");
     }
     setPasswordToggleState(
       pwEl ? [pwEl] : [],
@@ -177,6 +191,23 @@ function applyAuthViewTranslations(): void {
     }
     const submitBtn = document.getElementById("auth2FASubmit");
     if (submitBtn) submitBtn.textContent = t("auth.2fa.submit");
+    return;
+  }
+
+  if (authViewState.mode === "forgot") {
+    const titleEl = document.querySelector(".panel__title");
+    if (titleEl) titleEl.textContent = t("auth.forgot.title");
+    const helperEl = document.querySelector(".muted");
+    if (helperEl) helperEl.textContent = t("auth.forgot.helper");
+    const emailEl = document.getElementById("authForgotEmail") as HTMLInputElement | null;
+    if (emailEl) {
+      emailEl.placeholder = t("auth.fields.email.placeholder");
+      emailEl.setAttribute("aria-label", t("auth.fields.email.placeholder"));
+    }
+    const backBtn = document.getElementById("authForgotBack");
+    if (backBtn) backBtn.textContent = t("auth.forgot.backToSignIn");
+    const submitBtn = document.getElementById("authForgotSubmit");
+    if (submitBtn) submitBtn.textContent = t("auth.forgot.submit");
     return;
   }
 
@@ -263,9 +294,10 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
   ensureAuthLocaleListener();
   authViewState = state;
 
-  const { next, bootstrap, oidcEnabled, localAuthEnabled } = state.options;
+  const { next, bootstrap, oidcEnabled, localAuthEnabled, selfServicePasswordResetEnabled } = state.options;
   const version = getAppVersion();
   const showLocalForm = localAuthEnabled;
+  const showForgotPassword = !bootstrap && showLocalForm && selfServicePasswordResetEnabled;
   const ssoButtonHTML = oidcEnabled
     ? `<a class="btn btn--sso" id="authSsoBtn" href="/api/auth/oidc/login?return_to=${encodeURIComponent(next)}">${escapeHTML(t("auth.oidc.button"))}</a>`
     : "";
@@ -292,7 +324,10 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
             <svg id="authPasswordIcon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${PATH_SHOW}"/></svg>
           </button>
         </div>
-        <div class="row" style="margin-top: 8px;">
+        <div class="row auth-actions" style="margin-top: 8px;">
+          ${showForgotPassword
+            ? `<button class="btn btn--ghost" type="button" id="authForgotPassword">${escapeHTML(t("auth.forgot.link"))}</button>`
+            : ""}
           <div class="spacer"></div>
           ${bootstrap
             ? `<button class="btn" type="button" id="bootstrapBtn" title="${escapeHTML(t("auth.bootstrap.title"))}">${escapeHTML(t("auth.actions.bootstrap"))}</button>`
@@ -308,6 +343,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
   const pwEl = document.getElementById("authPassword") as HTMLInputElement | null;
   const pwToggle = document.getElementById("authPasswordToggle") as HTMLElement | null;
   const pwIcon = document.getElementById("authPasswordIcon")?.querySelector("path");
+  const forgotPasswordBtn = document.getElementById("authForgotPassword");
 
   if (nameEl) {
     nameEl.value = state.draft.name;
@@ -345,6 +381,17 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
         `/api/auth/oidc/login?return_to=${encodeURIComponent(state.options.next)}`,
       );
     }
+  }
+
+  if (forgotPasswordBtn && emailEl && pwEl) {
+    forgotPasswordBtn.addEventListener("click", () => {
+      state.draft = {
+        name: nameEl?.value || "",
+        email: emailEl.value,
+        password: pwEl.value,
+      };
+      renderForgotPasswordStep(state);
+    });
   }
 
   if (bootstrap) {
@@ -400,7 +447,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
   }
 }
 
-export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabled?: boolean; localAuthEnabled?: boolean } = {}): void {
+export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabled?: boolean; localAuthEnabled?: boolean; selfServicePasswordResetEnabled?: boolean } = {}): void {
   const next = opts.next ?? stripOidcErrorFromNext(window.location.pathname + window.location.search);
   const state: AuthBaseState = {
     mode: "auth",
@@ -409,6 +456,7 @@ export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabl
       bootstrap: !!opts.bootstrap,
       oidcEnabled: !!opts.oidcEnabled,
       localAuthEnabled: opts.localAuthEnabled !== false,
+      selfServicePasswordResetEnabled: !!opts.selfServicePasswordResetEnabled,
     },
     draft: {
       name: "",
@@ -418,6 +466,94 @@ export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabl
     passwordVisible: false,
   };
   renderAuthView(state, { handleOidcError: true });
+}
+
+function renderForgotPasswordView(state: ForgotPasswordState): void {
+  ensureAuthLocaleListener();
+  authViewState = state;
+
+  const version = getAppVersion();
+  app.innerHTML = authShellHTML(`
+    <div class="panel__header">
+      <div class="panel__title">${escapeHTML(t("auth.forgot.title"))}</div>
+    </div>
+    <div class="muted" style="margin-bottom: 12px;">
+      ${escapeHTML(t("auth.forgot.helper"))}
+    </div>
+    <form id="authForgotForm" class="stack">
+      <input class="input" id="authForgotEmail" type="email" placeholder="${escapeHTML(t("auth.fields.email.placeholder"))}" aria-label="${escapeHTML(t("auth.fields.email.placeholder"))}" maxlength="200" autocomplete="email" required />
+      <div class="row auth-actions" style="margin-top: 8px;">
+        <button class="btn btn--ghost" type="button" id="authForgotBack">${escapeHTML(t("auth.forgot.backToSignIn"))}</button>
+        <div class="spacer"></div>
+        <button class="btn" type="submit" id="authForgotSubmit">${escapeHTML(t("auth.forgot.submit"))}</button>
+      </div>
+    </form>
+  `, version);
+  bindAuthLocaleSelect();
+
+  const form = document.getElementById("authForgotForm");
+  const emailEl = document.getElementById("authForgotEmail") as HTMLInputElement | null;
+  const backBtn = document.getElementById("authForgotBack") as HTMLButtonElement | null;
+  const submitBtn = document.getElementById("authForgotSubmit") as HTMLButtonElement | null;
+
+  if (emailEl) {
+    emailEl.value = state.draft.email;
+    emailEl.addEventListener("input", () => {
+      state.draft.email = emailEl.value;
+    });
+    emailEl.focus();
+  }
+
+  if (backBtn && emailEl) {
+    backBtn.addEventListener("click", () => {
+      if (state.submitting) return;
+      state.options.authState.draft.email = emailEl.value;
+      renderAuthView(state.options.authState, { handleOidcError: false });
+    });
+  }
+
+  if (form && emailEl && submitBtn) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (state.submitting) return;
+
+      state.draft.email = emailEl.value.trim();
+      state.options.authState.draft.email = state.draft.email;
+      state.submitting = true;
+      submitBtn.disabled = true;
+      if (backBtn) backBtn.disabled = true;
+
+      try {
+        await apiFetch("/api/auth/request-password-reset", {
+          method: "POST",
+          body: JSON.stringify({ email: state.draft.email }),
+        });
+        if (authViewState !== state || !isAuthViewVisible()) return;
+        showToast(t("auth.forgot.success"));
+        renderAuthView(state.options.authState, { handleOidcError: false });
+      } catch (err) {
+        if (authViewState !== state || !isAuthViewVisible()) return;
+        state.submitting = false;
+        submitBtn.disabled = false;
+        if (backBtn) backBtn.disabled = false;
+        showToast(authApiErrorMessage(err, "auth.forgot.failed"));
+      }
+    });
+  }
+}
+
+function renderForgotPasswordStep(authState: AuthBaseState): void {
+  const state: ForgotPasswordState = {
+    mode: "forgot",
+    options: {
+      authState,
+    },
+    draft: {
+      email: authState.draft.email,
+    },
+    submitting: false,
+  };
+  renderForgotPasswordView(state);
 }
 
 function render2FAView(state: TwoFactorState): void {

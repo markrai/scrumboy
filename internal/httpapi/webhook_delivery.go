@@ -1,6 +1,9 @@
 package httpapi
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type webhookDelivery struct {
 	WebhookID int64
@@ -10,4 +13,8 @@ type webhookDelivery struct {
 	EventType string
 	Timestamp time.Time
 	Body      []byte // pre-serialized JSON payload
+}
+
+func (d webhookDelivery) logRef() string {
+	return fmt.Sprintf("webhook_id=%d event=%s url=%s", d.WebhookID, d.EventID, d.URL)
 }

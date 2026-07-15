@@ -31,6 +31,7 @@ export interface State {
   _authStatusChecked?: boolean;
   _bootstrapAvailable?: boolean;
   _pushConfigured?: boolean;
+  _selfServicePasswordResetEnabled?: boolean;
   _oidcEnabled?: boolean;
   _localAuthEnabled?: boolean;
   _wallEnabled?: boolean;

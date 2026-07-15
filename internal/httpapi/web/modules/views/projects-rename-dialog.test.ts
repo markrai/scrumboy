@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const apiFetchMock = vi.hoisted(() => vi.fn());
 const showPromptDialogMock = vi.hoisted(() => vi.fn());
 const showToastMock = vi.hoisted(() => vi.fn());
+const renderAuthMock = vi.hoisted(() => vi.fn());
 const settingsDialogMock = vi.hoisted(() => document.createElement("dialog"));
 
 vi.mock("../dom/elements.js", () => ({
@@ -19,6 +20,10 @@ vi.mock("../router.js", () => ({
   navigate: vi.fn(),
 }));
 
+vi.mock("./auth.js", () => ({
+  renderAuth: renderAuthMock,
+}));
+
 vi.mock("../utils.js", () => ({
   escapeHTML: (s: string) => s,
   showToast: showToastMock,
@@ -32,6 +37,9 @@ vi.mock("../state/selectors.js", () => ({
   getProjectView: () => "list",
   getProjects: () => [],
   getUser: () => null,
+  getOidcEnabled: () => true,
+  getLocalAuthEnabled: () => false,
+  getSelfServicePasswordResetEnabled: () => true,
 }));
 
 vi.mock("../state/mutations.js", () => ({
@@ -67,6 +75,7 @@ describe("projects rename dialog", () => {
     apiFetchMock.mockReset();
     showPromptDialogMock.mockReset();
     showToastMock.mockReset();
+    renderAuthMock.mockReset();
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/projects") {
         return [{ id: 99, slug: "alpha", name: "Alpha", role: "maintainer" }];
@@ -134,5 +143,19 @@ describe("projects rename dialog", () => {
     await flushPromises(10);
 
     expect(showToastMock).toHaveBeenCalledWith("Failed to rename project");
+  });
+
+  it("forwards auth capabilities when a projects request reports an expired session", async () => {
+    apiFetchMock.mockRejectedValueOnce(Object.assign(new Error("unauthorized"), { status: 401 }));
+    const mod = await import("./projects.js");
+
+    await mod.renderProjects();
+
+    expect(renderAuthMock).toHaveBeenCalledWith({
+      next: "/",
+      oidcEnabled: true,
+      localAuthEnabled: false,
+      selfServicePasswordResetEnabled: true,
+    });
   });
 });

@@ -3,8 +3,8 @@ import { renderAuth, renderResetPassword, renderProjects, renderDashboard, rende
 import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from './core/realtime.js';
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
-import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled, getPushConfigured } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setSelfServicePasswordResetEnabled, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
@@ -84,6 +84,7 @@ async function routeOnce() {
         setUser(newUser);
         setBootstrapAvailable(!!(st && st.bootstrapAvailable));
         setPushConfigured(!!(st && st.pushConfigured));
+        setSelfServicePasswordResetEnabled(!!(st && st.selfServicePasswordResetEnabled));
         setOidcEnabled(!!(st && st.oidcEnabled));
         setLocalAuthEnabled(st && st.localAuthEnabled !== false);
         setWallEnabled(!!(st && st.wallEnabled));
@@ -220,7 +221,7 @@ async function routeOnce() {
     if (getUser() == null && getAuthStatusChecked() && getAuthStatusAvailable()) {
         if (r.name === "projects" || r.name === "dashboard") {
             console.log("Router: showing auth UI (not logged in)");
-            renderAuth({ next: window.location.pathname + window.location.search, bootstrap: getBootstrapAvailable(), oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled() });
+            renderAuth({ next: window.location.pathname + window.location.search, bootstrap: getBootstrapAvailable(), oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
             return;
         }
     }
@@ -265,7 +266,7 @@ async function routeOnce() {
             console.error("Router: error rendering board:", err);
             if (err && err.status === 401) {
                 // Only show auth UI for 401s (entry points). Resource endpoints should generally return 404 when unauthenticated.
-                renderAuth({ next: window.location.pathname + window.location.search, bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled() });
+                renderAuth({ next: window.location.pathname + window.location.search, bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
                 return;
             }
             throw err;

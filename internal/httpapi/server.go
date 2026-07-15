@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
+	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
 	"scrumboy/internal/store"
 	"scrumboy/internal/version"
@@ -54,11 +56,31 @@ type Options struct {
 	// Effective only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
 
+	// SMTP (optional). Enables self-service "forgot password" email via
+	// POST /api/auth/request-password-reset. Enabled when Host is set, Port
+	// is in 1–65535 (defaults to 587 when omitted), and From is a parseable
+	// RFC 5322 address (see SMTPConfigured). Also requires
+	// SCRUMBOY_PUBLIC_BASE_URL for emailed links.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	SMTPTLSMode  string
+	// SMTPDebug, if true, logs each send attempt's connection details (host,
+	// port, TLS mode, whether auth is used) — never credentials or message
+	// bodies. See SCRUMBOY_SMTP_DEBUG in docs/smtp.md.
+	SMTPDebug bool
+
+	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
+	// password-reset emails; missing or invalid values fail closed. When set,
+	// overrides the request-derived origin for reset links (see resetBaseURL).
+	PublicBaseURL string
+
 	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, clientIP honors
-	// X-Forwarded-For for auth/OAuth rate-limit IP keys. Default false
-	// (RemoteAddr only) since a client can otherwise spoof XFF to get a
-	// fresh rate-limit bucket on every request. Enable only behind a
-	// reverse proxy that overwrites/strips client-supplied XFF.
+	// X-Forwarded-For for authentication and OAuth rate-limit IP keys. Default
+	// false (RemoteAddr only). Enable only behind a reverse proxy that
+	// overwrites or strips client-supplied XFF.
 	TrustProxy bool
 }
 
@@ -73,14 +95,26 @@ type Server struct {
 	sink                EventSink
 	fanout              *eventbus.Fanout
 	webhookQueue        *webhookQueue
+	webhookWorker       *webhookWorker
 	webhookCancel       context.CancelFunc
+	webhookDone         <-chan struct{} // closed once the webhook worker's shutdown flush completes
+	mailQueue           *mailQueue
+	mailWorker          *mailWorker // nil when SMTP isn't configured
+	mailCancel          context.CancelFunc
+	mailDone            <-chan struct{} // closed once the mail worker's shutdown flush completes; nil if SMTP isn't configured
 
 	authRateLimit *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
 
-	passwordResetAdminLimiter *ratelimit.Limiter // 10 resets/min per admin
+	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
+	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
+
+	smtpConfigured bool // Host+port+From statically valid; gates request-password-reset email sending
+
+	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty disables self-service reset email (see resetBaseURL)
+	trustProxy    bool   // SCRUMBOY_TRUST_PROXY; when true, clientIP honors X-Forwarded-For
 
 	webFS               fs.FS
 	fileSrv             http.Handler
@@ -100,8 +134,6 @@ type Server struct {
 	wallEnabled          bool // Scrumbaby wall; default on (SCRUMBOY_WALL_ENABLED=0 to disable)
 	markdownNotesEnabled bool // Todo notes markdown preview; default off unless explicitly enabled
 	mermaidNotesEnabled  bool // Mermaid in todo notes preview; default off unless explicitly enabled
-
-	trustProxy bool // SCRUMBOY_TRUST_PROXY; when true, clientIP honors X-Forwarded-For
 }
 
 type storeAPI interface {
@@ -362,8 +394,33 @@ func NewServer(st storeAPI, opts Options) *Server {
 	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier)
 	whWorker := newWebhookWorker(whQueue, logger)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
+	webhookDone := whWorker.Done()
 	go whWorker.Run(workerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
+	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
+
+	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
+	mQueue := newMailQueue(logger)
+	var mWorker *mailWorker
+	var mailCancel context.CancelFunc
+	var mailDone <-chan struct{}
+	if smtpConfigured {
+		sender := mailer.New(mailer.Config{
+			Host:     opts.SMTPHost,
+			Port:     opts.SMTPPort,
+			Username: opts.SMTPUsername,
+			Password: opts.SMTPPassword,
+			From:     opts.SMTPFrom,
+			TLSMode:  opts.SMTPTLSMode,
+			Debug:    opts.SMTPDebug,
+			Logger:   logger,
+		})
+		mWorker = newMailWorker(mQueue, sender, logger)
+		mailCtx, cancel := context.WithCancel(context.Background())
+		mailCancel = cancel
+		mailDone = mWorker.Done()
+		go mWorker.Run(mailCtx)
+	}
 
 	var encKey []byte
 	if opts.EncryptionKey != nil {
@@ -371,36 +428,45 @@ func NewServer(st storeAPI, opts Options) *Server {
 	}
 
 	return &Server{
-		store:                     st,
-		logger:                    logger,
-		maxBody:                   maxBody,
-		maxTrelloImportBody:       maxTrelloImportBody,
-		mode:                      mode,
-		dataDir:                   strings.TrimSpace(opts.DataDir),
-		hub:                       hub,
-		sink:                      hub,
-		fanout:                    fanout,
-		webhookQueue:              whQueue,
-		webhookCancel:             workerCancel,
-		authRateLimit:             authRateLimit,
-		encryptionKey:             encKey,
-		oidcService:               opts.OIDCService,
-		passwordResetAdminLimiter: passwordResetAdminLimiter,
-		webFS:                     webFS,
-		fileSrv:                   http.FileServer(http.FS(webFS)),
-		indexHTML:                 indexHTML,
-		landingHTML:               landingHTML,
-		landingHTMLByLocale:       landingHTMLByLocale,
-		swJS:                      swJS,
-		mcpHandler:                opts.MCPHandler,
-		agoraHandler:              opts.AgoraHandler,
-		vapidPublicKey:            vapidPub,
-		pushVapidConfigured:       pushVapidConfigured,
-		pushDebug:                 pushDebug,
-		wallEnabled:               opts.WallEnabled,
-		markdownNotesEnabled:      opts.MarkdownNotesEnabled,
-		mermaidNotesEnabled:       opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
-		trustProxy:                opts.TrustProxy,
+		store:                       st,
+		logger:                      logger,
+		maxBody:                     maxBody,
+		maxTrelloImportBody:         maxTrelloImportBody,
+		mode:                        mode,
+		dataDir:                     strings.TrimSpace(opts.DataDir),
+		hub:                         hub,
+		sink:                        hub,
+		fanout:                      fanout,
+		webhookQueue:                whQueue,
+		webhookWorker:               whWorker,
+		webhookCancel:               workerCancel,
+		webhookDone:                 webhookDone,
+		mailQueue:                   mQueue,
+		mailWorker:                  mWorker,
+		mailCancel:                  mailCancel,
+		mailDone:                    mailDone,
+		authRateLimit:               authRateLimit,
+		encryptionKey:               encKey,
+		oidcService:                 opts.OIDCService,
+		passwordResetAdminLimiter:   passwordResetAdminLimiter,
+		passwordResetRequestLimiter: passwordResetRequestLimiter,
+		smtpConfigured:              smtpConfigured,
+		publicBaseURL:               config.NormalizeBaseURL(opts.PublicBaseURL),
+		trustProxy:                  opts.TrustProxy,
+		webFS:                       webFS,
+		fileSrv:                     http.FileServer(http.FS(webFS)),
+		indexHTML:                   indexHTML,
+		landingHTML:                 landingHTML,
+		landingHTMLByLocale:         landingHTMLByLocale,
+		swJS:                        swJS,
+		mcpHandler:                  opts.MCPHandler,
+		agoraHandler:                opts.AgoraHandler,
+		vapidPublicKey:              vapidPub,
+		pushVapidConfigured:         pushVapidConfigured,
+		pushDebug:                   pushDebug,
+		wallEnabled:                 opts.WallEnabled,
+		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
+		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
 }
 
@@ -500,10 +566,48 @@ func (s *Server) storeMode() store.Mode {
 	return mode
 }
 
-// Close cancels background workers. Call from main on shutdown.
-func (s *Server) Close() {
+// Close stops accepting new delivery-queue entries, links each worker's
+// retry context to ctx (so observing ctx cancellation stops further
+// drain/retry work—including an already-running flush), cancels each
+// worker's accept loop, and waits (also bounded by ctx) for the drain to
+// finish. An in-flight send may complete under its own transport timeout.
+// Once a worker observes close-context cancellation, it starts no further
+// queued item or send attempt. Call from main on shutdown.
+func (s *Server) Close(ctx context.Context) {
+	if s.webhookQueue != nil {
+		s.webhookQueue.Seal()
+	}
+	if s.mailQueue != nil {
+		s.mailQueue.Seal()
+	}
+	if s.webhookWorker != nil {
+		s.webhookWorker.beginShutdown(ctx)
+	}
+	if s.mailWorker != nil {
+		s.mailWorker.beginShutdown(ctx)
+	}
 	if s.webhookCancel != nil {
 		s.webhookCancel()
+	}
+	if s.mailCancel != nil {
+		s.mailCancel()
+	}
+
+	for _, w := range []struct {
+		name string
+		done <-chan struct{}
+	}{
+		{"webhook", s.webhookDone},
+		{"mail", s.mailDone},
+	} {
+		if w.done == nil {
+			continue
+		}
+		select {
+		case <-w.done:
+		case <-ctx.Done():
+			s.logger.Printf("shutdown: %s worker flush did not finish before deadline", w.name)
+		}
 	}
 }
 
