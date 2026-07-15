@@ -16,6 +16,21 @@ Scrumboy does **not** ship default SMTP credentials. Each self-hosted instance s
 
 ---
 
+## Minimum required env vars
+
+Self-service password-reset email needs **all four** of these set and valid — miss any one and `selfServicePasswordResetEnabled` silently stays `false` (generic 200 response, no email sent, admin-generated link still works). There's no single "here's what's missing" error; check each one individually if the feature isn't turning on.
+
+| Variable | What happens if it's missing/invalid |
+|----------|---------------------------------------|
+| `SCRUMBOY_SMTP_HOST` | Startup log shows `smtp: disabled` or `smtp: partial or invalid config ignored`. |
+| `SCRUMBOY_SMTP_FROM` | Same as above; also must be a parseable RFC 5322 address (no CR/LF) or the capability stays `false` even with `SCRUMBOY_SMTP_HOST` set. |
+| `SCRUMBOY_ENCRYPTION_KEY` | Reset tokens can't be signed; `selfServicePasswordResetEnabled` stays `false` even with SMTP fully configured. See [`README.md`](../README.md#config). |
+| `SCRUMBOY_PUBLIC_BASE_URL` | Startup log shows `smtp: SCRUMBOY_PUBLIC_BASE_URL is missing or invalid...`; self-service emails disabled even with everything else set. See [Reset-link URL](#reset-link-url). |
+
+`SCRUMBOY_SMTP_PORT` (default `587`), `SCRUMBOY_SMTP_USERNAME`/`PASSWORD`, and `SCRUMBOY_SMTP_TLS_MODE` (default `starttls`) round out the config — see the full [Environment variables](#environment-variables) table below for all of them at once.
+
+---
+
 ## What SMTP enables
 
 When **`SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` are set** (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535), `SCRUMBOY_ENCRYPTION_KEY` is configured, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid public origin, Scrumboy:
@@ -138,6 +153,22 @@ The table below lists a few public providers that expose SMTP and publish a free
 | [Mailjet](https://www.mailjet.com/) | 200/day (~6,000/month) | Another SMTP-capable option with a free forever plan |
 
 For Scrumboy’s password-reset use case, daily caps are rarely the bottleneck; domain/sender verification and correct `SCRUMBOY_SMTP_FROM` / TLS mode matter more. Local catchers such as [Mailpit](https://github.com/axllent/mailpit) remain the recommended path for development (see [Quick verification](#quick-verification)).
+
+### API-key providers: username is a literal, not your account login
+
+Several providers above (Resend included) authenticate SMTP with an **API key**, not a normal username/password pair. In that case:
+
+- `SCRUMBOY_SMTP_PASSWORD` = the API key.
+- `SCRUMBOY_SMTP_USERNAME` = whatever literal string the provider's SMTP docs say to use (often the provider's own name, e.g. `resend` for Resend) — **not** your account email or login.
+
+Check the provider's SMTP-specific docs for the exact required username; it's easy to assume it should be your account email and get a rejected auth instead.
+
+### Tested providers
+
+Confirmed working end-to-end against a live Scrumboy instance (bootstrap → request-password-reset → email received → reset-password consumed):
+
+- **Resend** (`smtp.resend.com:587`, `starttls`, `SCRUMBOY_SMTP_USERNAME=resend`) — full round trip confirmed on two separate runs against a real inbox. One gotcha: Resend's newer **domain-restricted** API keys (scoped to one verified domain in their dashboard) are rejected by the SMTP relay with `535 Authentication credentials invalid`. Only an **unrestricted** (account-wide) sending key works over SMTP — if auth fails with a key that works fine via Resend's HTTP API, this is almost certainly why.
+- **SMTP2Go** — confirmed working with a normal username/password pair (not an API key).
 
 ---
 
