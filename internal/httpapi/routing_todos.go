@@ -74,7 +74,7 @@ func (s *Server) handleTodosPatchOrDelete(w http.ResponseWriter, r *http.Request
 			return true
 		}
 		if !todo.AssignmentChanged {
-			s.emitRefreshNeeded(r.Context(), todo.ProjectID, "todo_updated")
+			s.emitRefreshNeeded(s.requestContext(r), todo.ProjectID, "todo_updated")
 		}
 		writeJSON(w, http.StatusOK, todoToJSON(todo))
 		return true
@@ -89,7 +89,7 @@ func (s *Server) handleTodosPatchOrDelete(w http.ResponseWriter, r *http.Request
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), projectID, "todo_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "todo_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
@@ -127,7 +127,7 @@ func (s *Server) handleTodosMove(w http.ResponseWriter, r *http.Request, rest []
 		writeStoreErr(w, err, true)
 		return true
 	}
-	s.emitRefreshNeeded(r.Context(), todo.ProjectID, "todo_moved")
+	s.emitRefreshNeeded(s.requestContext(r), todo.ProjectID, "todo_moved")
 	writeJSON(w, http.StatusOK, todoToJSON(todo))
 	return true
 }

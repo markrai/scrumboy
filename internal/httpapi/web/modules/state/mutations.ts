@@ -106,6 +106,10 @@ export function setSelfServicePasswordResetEnabled(enabled: boolean): void {
   current._selfServicePasswordResetEnabled = enabled;
 }
 
+export function setEmailNotifyAvailable(available: boolean): void {
+  current._emailNotifyAvailable = available;
+}
+
 export function setOidcEnabled(enabled: boolean): void {
   current._oidcEnabled = enabled;
 }

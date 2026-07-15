@@ -96,6 +96,10 @@ export function getSelfServicePasswordResetEnabled(): boolean {
   return !!current._selfServicePasswordResetEnabled;
 }
 
+export function getEmailNotifyAvailable(): boolean {
+  return !!current._emailNotifyAvailable;
+}
+
 export function getOidcEnabled(): boolean {
   return !!current._oidcEnabled;
 }

@@ -70,6 +70,9 @@ export function getPushConfigured() {
 export function getSelfServicePasswordResetEnabled() {
     return !!current._selfServicePasswordResetEnabled;
 }
+export function getEmailNotifyAvailable() {
+    return !!current._emailNotifyAvailable;
+}
 export function getOidcEnabled() {
     return !!current._oidcEnabled;
 }

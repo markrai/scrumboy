@@ -151,7 +151,7 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "project_settings_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "project_settings_updated")
 		writeJSON(w, http.StatusOK, map[string]any{"defaultSprintWeeks": *in.DefaultSprintWeeks})
 		return true
 	}
@@ -225,7 +225,7 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "workflow_column_added")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_added")
 		writeJSON(w, http.StatusCreated, workflowColumnJSON{
 			Key:      col.Key,
 			Name:     col.Name,
@@ -284,7 +284,7 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "workflow_column_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -311,7 +311,7 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "workflow_column_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -377,7 +377,7 @@ func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, r
 		writeStoreErr(w, err, true)
 		return true
 	}
-	s.emitRefreshNeeded(r.Context(), project.ID, "board_claimed")
+	s.emitRefreshNeeded(s.requestContext(r), project.ID, "board_claimed")
 	w.WriteHeader(http.StatusNoContent)
 	return true
 }
@@ -439,7 +439,7 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			return true
 		}
 		if !todo.AssignmentChanged {
-			s.emitRefreshNeeded(r.Context(), project.ID, "todo_created")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_created")
 		}
 		writeJSON(w, http.StatusCreated, todoToJSON(todo))
 		return true
@@ -581,7 +581,7 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			}
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "todo_links_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_links_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
@@ -602,7 +602,7 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			}
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "todo_links_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_links_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
@@ -699,7 +699,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				return true
 			}
 			if !todo.AssignmentChanged {
-				s.emitRefreshNeeded(r.Context(), project.ID, "todo_updated")
+				s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_updated")
 			}
 			writeJSON(w, http.StatusOK, todoToJSON(todo))
 			return true
@@ -713,7 +713,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(r.Context(), project.ID, "todo_deleted")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
@@ -753,7 +753,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "todo_moved")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_moved")
 		writeJSON(w, http.StatusOK, todoToJSON(todo))
 		return true
 	}
@@ -814,7 +814,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "sprint_created")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_created")
 		writeJSON(w, http.StatusCreated, sprintToJSON(sprint))
 		return true
 	}
@@ -891,7 +891,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(r.Context(), project.ID, "sprint_updated")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_updated")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 
@@ -911,7 +911,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(r.Context(), project.ID, "sprint_deleted")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 
@@ -958,7 +958,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "sprint_activated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_activated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -985,7 +985,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "sprint_closed")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_closed")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1062,7 +1062,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, patchColorErr, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1093,7 +1093,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1112,7 +1112,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "tag_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1134,7 +1134,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(r.Context(), project.ID, "tag_deleted")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
@@ -1156,7 +1156,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), project.ID, "tag_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

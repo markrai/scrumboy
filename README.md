@@ -167,6 +167,10 @@ In both cases, the deployment manager is injecting the environment variable. Scr
 
 Optional SMTP lets users request a password-reset email (**Forgot password?** on local-password sign-in). You need a relay (`SCRUMBOY_SMTP_*`), **`SCRUMBOY_ENCRYPTION_KEY`**, and a valid **`SCRUMBOY_PUBLIC_BASE_URL`**. Without that, admins can still generate reset links under Settings → Users → Password. Setup, env vars, providers, and troubleshooting: [`docs/smtp.md`](docs/smtp.md). Also [`FAQ.md`](FAQ.md#do-i-need-to-configure-smtp-what-happens-if-i-dont).
 
+### Email notifications (optional)
+
+The same SMTP config above also enables opt-in email notifications: users choose per-category (card assigned to them, card/sprint/project activity, added to a project) under Settings → Customization, off by default. No `SCRUMBOY_ENCRYPTION_KEY` required. Setup and category/recipient details: [`docs/notifications.md`](docs/notifications.md).
+
 ### OIDC / SSO login (optional)
 
 Optional OpenID Connect SSO with any standards-compliant IdP (Keycloak, Authentik, Auth0, Entra ID, etc.). Enable with `SCRUMBOY_OIDC_ISSUER`, `SCRUMBOY_OIDC_CLIENT_ID`, `SCRUMBOY_OIDC_CLIENT_SECRET`, and `SCRUMBOY_OIDC_REDIRECT_URL`. Local password login stays available unless you set `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`. Setup, constraints, and troubleshooting: [`docs/oidc.md`](docs/oidc.md).

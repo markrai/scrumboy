@@ -93,6 +93,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 				"mode":                            "anonymous",
 				"pushConfigured":                  false,
 				"selfServicePasswordResetEnabled": false,
+				"emailNotifyAvailable":            false,
 				"markdownNotesEnabled":            s.markdownNotesEnabled,
 				"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 			})
@@ -135,6 +136,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		resp["oidcEnabled"] = s.oidcService != nil
 		resp["localAuthEnabled"] = localAuthEnabled
 		resp["wallEnabled"] = s.wallEnabled
+		resp["emailNotifyAvailable"] = s.smtpConfigured && s.publicBaseURL != ""
 		writeJSON(w, http.StatusOK, resp)
 		return
 

@@ -246,6 +246,7 @@ type storeAPI interface {
 
 	GetUserPreference(ctx context.Context, userID int64, key string) (string, error)
 	SetUserPreference(ctx context.Context, userID int64, key, value string) error
+	GetEmailNotifyPref(ctx context.Context, userID int64) (store.EmailNotifyPref, error)
 
 	// 2FA
 	CreateLogin2FAPending(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)
@@ -380,7 +381,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 	vapidPub := strings.TrimSpace(opts.VAPIDPublicKey)
 	pushVapidConfigured := PushConfigured(mode, opts.VAPIDPublicKey, opts.VAPIDPrivateKey)
 	pushNotifier := newPushNotifier(st, logger, opts.VAPIDPublicKey, opts.VAPIDPrivateKey, opts.VAPIDSubscriber, pushDebug)
-	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier)
+
+	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
+	mQueue := newMailQueue(logger)
+	publicBaseURL := config.NormalizeBaseURL(opts.PublicBaseURL)
+	emailNotifier := newEmailNotifier(st, mQueue, publicBaseURL, smtpConfigured, logger)
+
+	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier, emailNotifier)
 	whWorker := newWebhookWorker(whQueue, logger)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	webhookDone := whWorker.Done()
@@ -388,8 +395,6 @@ func NewServer(st storeAPI, opts Options) *Server {
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
 	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
 
-	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
-	mQueue := newMailQueue(logger)
 	var mWorker *mailWorker
 	var mailCancel context.CancelFunc
 	var mailDone <-chan struct{}
@@ -440,7 +445,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,
 		passwordResetRequestLimiter: passwordResetRequestLimiter,
 		smtpConfigured:              smtpConfigured,
-		publicBaseURL:               config.NormalizeBaseURL(opts.PublicBaseURL),
+		publicBaseURL:               publicBaseURL,
 		trustProxy:                  opts.TrustProxy,
 		webFS:                       webFS,
 		fileSrv:                     http.FileServer(http.FS(webFS)),

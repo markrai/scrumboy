@@ -164,6 +164,7 @@ export interface AuthStatusResponse {
   mode?: 'anonymous' | 'full';
   pushConfigured?: boolean;
   selfServicePasswordResetEnabled?: boolean;
+  emailNotifyAvailable?: boolean;
   oidcEnabled?: boolean;
   localAuthEnabled?: boolean;
   wallEnabled?: boolean;

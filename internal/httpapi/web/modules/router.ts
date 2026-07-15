@@ -4,7 +4,7 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setSelfServicePasswordResetEnabled, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
@@ -17,6 +17,7 @@ import {
   VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY,
   VOICE_FLOW_MODE_PREFERENCE_KEY,
 } from './core/voiceflow-preferences.js';
+import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -112,6 +113,7 @@ async function routeOnce(): Promise<void> {
     setBootstrapAvailable(!!(st && st.bootstrapAvailable));
     setPushConfigured(!!(st && st.pushConfigured));
     setSelfServicePasswordResetEnabled(!!(st && st.selfServicePasswordResetEnabled));
+    setEmailNotifyAvailable(!!(st && st.emailNotifyAvailable));
     setOidcEnabled(!!(st && st.oidcEnabled));
     setLocalAuthEnabled(st && st.localAuthEnabled !== false);
     setWallEnabled(!!(st && st.wallEnabled));
@@ -196,6 +198,9 @@ async function routeOnce(): Promise<void> {
       } catch (err) {
         // Ignore errors
       }
+
+      // Load email notification preferences
+      await loadUserEmailNotifyPref();
     }
 
     if (getAuthStatusAvailable()) {

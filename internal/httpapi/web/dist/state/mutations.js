@@ -78,6 +78,9 @@ export function setPushConfigured(enabled) {
 export function setSelfServicePasswordResetEnabled(enabled) {
     current._selfServicePasswordResetEnabled = enabled;
 }
+export function setEmailNotifyAvailable(available) {
+    current._emailNotifyAvailable = available;
+}
 export function setOidcEnabled(enabled) {
     current._oidcEnabled = enabled;
 }

@@ -164,7 +164,7 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), projectID, "project_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "project_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
@@ -205,7 +205,7 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		if in.Name != nil || in.Image != nil {
-			s.emitRefreshNeeded(r.Context(), projectID, "project_updated")
+			s.emitRefreshNeeded(s.requestContext(r), projectID, "project_updated")
 		}
 		writeJSON(w, http.StatusOK, projectToJSON(project))
 		return true
@@ -314,6 +314,7 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			return true
 		}
 		s.emitMembersUpdated(r.Context(), projectID)
+		s.emitMembership(s.requestContext(r), projectID, in.UserID, "added")
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return true
 	}
@@ -342,6 +343,7 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			return true
 		}
 		s.emitMembersUpdated(r.Context(), projectID)
+		s.emitMembership(s.requestContext(r), projectID, targetUserID, "removed")
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return true
 	}
@@ -389,6 +391,7 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			return true
 		}
 		s.emitMembersUpdated(r.Context(), projectID)
+		s.emitMembership(s.requestContext(r), projectID, targetUserID, "role_changed")
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return true
 	}
@@ -467,7 +470,7 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), projectID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -493,7 +496,7 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(r.Context(), projectID, "tag_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

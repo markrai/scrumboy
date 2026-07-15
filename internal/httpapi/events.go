@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"scrumboy/internal/eventbus"
+	"scrumboy/internal/store"
 )
 
 type refreshNeededEvent struct {
@@ -23,11 +24,18 @@ type membersUpdatedEvent struct {
 // emitRefreshNeeded is the generic board invalidation signal for board-affecting
 // mutations and settings changes. `reason` is carried through to the SSE wire
 // payload for characterization/debugging; the current frontend does not branch
-// on it when deciding whether to reload the board.
+// on it when deciding whether to reload the board. `actorUserId` (best-effort,
+// from the ambient request actor) lets non-realtime consumers such as the email
+// notifier skip notifying the person who made the change.
 func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason string) {
+	var actorUserID int64
+	if uid, ok := store.UserIDFromContext(ctx); ok {
+		actorUserID = uid
+	}
 	payload, _ := json.Marshal(struct {
-		Reason string `json:"reason"`
-	}{Reason: reason})
+		Reason      string `json:"reason"`
+		ActorUserID int64  `json:"actorUserId,omitempty"`
+	}{Reason: reason, ActorUserID: actorUserID})
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      "board.refresh_needed",
 		ProjectID: projectID,
@@ -39,5 +47,26 @@ func (s *Server) emitMembersUpdated(ctx context.Context, projectID int64) {
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      "board.members_updated",
 		ProjectID: projectID,
+	})
+}
+
+// emitMembership publishes a per-user membership change, distinct from the
+// board-wide "board.members_updated" SSE invalidation signal, so consumers
+// like the email notifier can target the one affected user.
+func (s *Server) emitMembership(ctx context.Context, projectID, affectedUserID int64, action string) {
+	var actorUserID int64
+	if uid, ok := store.UserIDFromContext(ctx); ok {
+		actorUserID = uid
+	}
+	payload, _ := json.Marshal(eventbus.MembershipPayload{
+		ProjectID:      projectID,
+		AffectedUserID: affectedUserID,
+		Action:         action,
+		ActorUserID:    actorUserID,
+	})
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      "project.membership",
+		ProjectID: projectID,
+		Payload:   payload,
 	})
 }

@@ -13,6 +13,7 @@
 - [How do I generate SCRUMBOY_ENCRYPTION_KEY?](#how-do-i-generate-scrumboy_encryption_key)
 - [Do I need to configure SMTP? What happens if I don't?](#do-i-need-to-configure-smtp-what-happens-if-i-dont)
 - [I configured SMTP - why don't I see Forgot password?](#i-configured-smtp---why-dont-i-see-forgot-password)
+- [How do I turn on email notifications?](#how-do-i-turn-on-email-notifications)
 - [How does auditing work, and where can I see it?](#how-does-auditing-work-and-where-can-i-see-it)
 - [Does Scrumboy use telemetry, tracking, or “phone home”?](#does-scrumboy-use-telemetry-tracking-or-phone-home)
 - [What do I need to do to contribute?](#what-do-i-need-to-do-to-contribute)
@@ -239,6 +240,10 @@ Setting the SMTP host alone is not enough. Scrumboy only shows **Forgot password
 4. **Local password sign-in** - the control is hidden during first-time bootstrap, when local auth is disabled (OIDC-only), and when you are not on the email+password form.
 
 If the capability is `true` but mail never arrives after you submit an address, that is a delivery/credentials issue (try `SCRUMBOY_SMTP_DEBUG=1`), not this UI gate. Admins can still generate a reset link under Settings → Users → Password. Full setup details: [`docs/smtp.md`](docs/smtp.md).
+
+## How do I turn on email notifications?
+
+Email notifications reuse the same SMTP config as self-service password reset (`SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM`, `SCRUMBOY_PUBLIC_BASE_URL`), but do **not** need `SCRUMBOY_ENCRYPTION_KEY`. Once the server reports `emailNotifyAvailable: true` on `GET /api/auth/status`, each user opts in individually under Settings → Customization: a master toggle (off by default) plus five category checkboxes (card assigned to me and added to a project default on; card/sprint/project activity default off). No email sends unless both the master toggle and the relevant category are on for that user. See [`docs/notifications.md`](docs/notifications.md) for the full category/recipient breakdown.
 
 # Auditing
 

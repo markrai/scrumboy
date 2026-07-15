@@ -32,6 +32,7 @@ export interface State {
   _bootstrapAvailable?: boolean;
   _pushConfigured?: boolean;
   _selfServicePasswordResetEnabled?: boolean;
+  _emailNotifyAvailable?: boolean;
   _oidcEnabled?: boolean;
   _localAuthEnabled?: boolean;
   _wallEnabled?: boolean;

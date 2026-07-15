@@ -19,6 +19,7 @@ import {
   getUser, 
   getAuthStatusAvailable,
   getPushConfigured,
+  getEmailNotifyAvailable,
   getBackupImportBtn,
   getBackupData,
   getBackupPreview,
@@ -67,6 +68,7 @@ import {
 } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { getStoredEmailNotifyPref, setEmailNotifyPref, type EmailNotifyCategory } from '../core/email-notify-preferences.js';
 import {
   bindWorkflowTabInteractions,
   clearWorkflowDraftState,
@@ -1545,6 +1547,34 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
     `;
 
+  const emailNotifyAvailable = showProfileTab && getEmailNotifyAvailable();
+  const emailNotifyPref = showProfileTab ? getStoredEmailNotifyPref() : null;
+  const emailCategoryRows: Array<{ key: EmailNotifyCategory; labelKey: string; label: string }> = [
+    { key: "assigned", labelKey: "settings.customization.emailNotify.category.assigned", label: "When a card is assigned to me" },
+    { key: "cardActivity", labelKey: "settings.customization.emailNotify.category.cardActivity", label: "Card created, moved, or deleted" },
+    { key: "sprintActivity", labelKey: "settings.customization.emailNotify.category.sprintActivity", label: "Sprint activity" },
+    { key: "projectActivity", labelKey: "settings.customization.emailNotify.category.projectActivity", label: "Project, workflow, or tag changes" },
+    { key: "addedToProject", labelKey: "settings.customization.emailNotify.category.addedToProject", label: "When I'm added to a project" },
+  ];
+  const emailNotifySectionHTML = showProfileTab ? `
+      <div class="settings-section settings-section--email-notify${!emailNotifyAvailable ? " settings-section--email-notify-disabled" : ""}">
+        <div class="settings-section__title" data-i18n-text="settings.customization.emailNotify.title">Email notifications</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.emailNotify.description">Get emailed about activity on your boards. Off by default.</div>
+        ${!emailNotifyAvailable ? `<p class="muted" style="margin:8px 0;font-size:13px;" data-i18n-text="settings.customization.emailNotify.unavailableNotice">Email notifications require SMTP to be configured on the server (see docs).</p>` : ""}
+        <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="emailNotifyEnabledToggle" ${!emailNotifyAvailable ? "disabled" : ""} ${emailNotifyPref?.enabled ? "checked" : ""} />
+          <span data-i18n-text="settings.customization.emailNotify.toggleLabel">Email notifications on</span>
+        </label>
+        <div class="email-notify-categories" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">
+          ${emailCategoryRows.map((row) => `
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" class="email-notify-category-toggle" data-category="${row.key}" ${(!emailNotifyAvailable || !emailNotifyPref?.enabled) ? "disabled" : ""} ${emailNotifyPref?.[row.key] ? "checked" : ""} />
+            <span data-i18n-text="${row.labelKey}">${escapeHTML(row.label)}</span>
+          </label>`).join("")}
+        </div>
+      </div>
+    ` : "";
+
   const customizationHTML = activeSettingsTab === "customization" ? `
     <div id="settingsCustomizationContent">
       ${languageSectionHTML}
@@ -1584,6 +1614,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         </label>
         <p class="muted" id="pushNotifyHint" style="margin:8px 0 0 0;font-size:13px;"></p>
       </div>
+      ${emailNotifySectionHTML}
       <div class="settings-section settings-section--keybindings">
         <div class="settings-section__title" data-i18n-text="settings.customization.keybindings.title">Keybindings</div>
         <div class="settings-section__description muted" data-i18n-text="settings.customization.keybindings.description">Click a key to record a new shortcut. Press Esc to cancel while listening.</div>
@@ -2128,6 +2159,31 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         );
       }
     }
+    const emailNotifyEnabledToggle = document.getElementById("emailNotifyEnabledToggle") as HTMLInputElement | null;
+    if (emailNotifyEnabledToggle && !emailNotifyEnabledToggle.hasAttribute("disabled")) {
+      emailNotifyEnabledToggle.addEventListener(
+        "change",
+        async () => {
+          const pref = getStoredEmailNotifyPref();
+          await setEmailNotifyPref({ ...pref, enabled: emailNotifyEnabledToggle.checked });
+          await renderSettingsModal();
+        },
+        { signal }
+      );
+    }
+    document.querySelectorAll<HTMLInputElement>(".email-notify-category-toggle").forEach((toggle) => {
+      if (toggle.hasAttribute("disabled")) return;
+      toggle.addEventListener(
+        "change",
+        async () => {
+          const category = toggle.getAttribute("data-category") as EmailNotifyCategory | null;
+          if (!category) return;
+          const pref = getStoredEmailNotifyPref();
+          await setEmailNotifyPref({ ...pref, [category]: toggle.checked });
+        },
+        { signal }
+      );
+    });
     resetKeybindingCaptureUI();
     document.querySelectorAll("[data-keybinding-capture]").forEach((btn) => {
       btn.addEventListener(

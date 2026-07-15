@@ -1,6 +1,17 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** unless noted below.
+
+## [3.20.0] - 2026-07-15
+
+### Added
+
+- **Opt-in email notifications** - Builds on the SMTP infrastructure added in 3.19.0. Each user can enable email notifications under Settings → Customization and choose per-category opt-in: card assigned to them and added to a project (on by default), plus card activity, sprint activity, and project/workflow/tag activity (off by default). No email sends unless both the master toggle and the relevant category are enabled for that user; the instance also needs `SCRUMBOY_SMTP_*` and `SCRUMBOY_PUBLIC_BASE_URL` configured (no `SCRUMBOY_ENCRYPTION_KEY` required). `GET /api/auth/status` reports readiness via a new `emailNotifyAvailable` flag. See [docs/notifications.md](docs/notifications.md).
+- **`project.membership` domain event** - New event bus event published on project member add/remove/role-change, carrying the affected user and actor, so non-realtime consumers (like the email notifier) can target the specific member without a board-wide payload.
+
+### Changed
+
+- **`board.refresh_needed` payload** - Now includes a best-effort `actorUserId` (from the ambient request actor) alongside the existing `reason` string. Additive; existing SSE consumers are unaffected.
 
 ## [3.19.0] - 2026-07-14
 
