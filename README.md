@@ -57,6 +57,8 @@ Scrumboy is distributed as a container image on GitHub Container Registry:
 
 `ghcr.io/markrai/scrumboy:latest`
 
+Published images are multi-arch for `linux/amd64` and `linux/arm64`; Docker pulls the variant that matches your host.
+
 **Docker run** (named volume for persistent SQLite data under `/data`):
 
 ```bash
@@ -163,28 +165,11 @@ In both cases, the deployment manager is injecting the environment variable. Scr
 
 ### SMTP for self-service password reset (optional)
 
-Configure `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535; `SCRUMBOY_SMTP_FROM` must be a parseable RFC 5322 address), **`SCRUMBOY_ENCRYPTION_KEY`**, and a valid **`SCRUMBOY_PUBLIC_BASE_URL`** absolute `http`/`https` origin (for example, `https://scrumboy.example.com`) to enable self-service password-reset email delivery. When those required static settings are present and valid, the local-password sign-in screen shows **Forgot password?**, which submits `POST /api/auth/request-password-reset`. If a required setting is missing or invalid, the control is hidden and admins can still generate reset links under Settings → Users → Password. This readiness check does not test relay reachability or guarantee delivery. Accepted requests always show the same generic result; a `200` response never confirms that an account exists or that an email was delivered. See [`docs/smtp.md`](docs/smtp.md) for TLS modes, capability details, startup log states, and verification steps.
+Optional SMTP lets users request a password-reset email (**Forgot password?** on local-password sign-in). You need a relay (`SCRUMBOY_SMTP_*`), **`SCRUMBOY_ENCRYPTION_KEY`**, and a valid **`SCRUMBOY_PUBLIC_BASE_URL`**. Without that, admins can still generate reset links under Settings → Users → Password. Setup, env vars, providers, and troubleshooting: [`docs/smtp.md`](docs/smtp.md). Also [`FAQ.md`](FAQ.md#do-i-need-to-configure-smtp-what-happens-if-i-dont).
 
 ### OIDC / SSO login (optional)
 
-Scrumboy supports OpenID Connect for single sign-on with any standards-compliant provider (Keycloak, Authentik, Auth0, Entra ID, etc.). OIDC is enabled by setting all four required environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `SCRUMBOY_OIDC_ISSUER` | Issuer URL (e.g. `https://auth.example.com/realms/main`) |
-| `SCRUMBOY_OIDC_CLIENT_ID` | OAuth client ID |
-| `SCRUMBOY_OIDC_CLIENT_SECRET` | Confidential client secret |
-| `SCRUMBOY_OIDC_REDIRECT_URL` | Full callback URL registered at IdP (e.g. `https://scrumboy.example.com/api/auth/oidc/callback`) |
-
-Optional:
-
-| Variable | Description |
-|----------|-------------|
-| `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED` | Set to `true` to disable local password login when OIDC is configured (SSO-only mode) |
-
-Local password authentication remains available by default alongside OIDC. After successful OIDC login, the user receives a standard Scrumboy session cookie. The IdP must return a verified email (`email_verified: true`). HTTPS is recommended when using OIDC to ensure session cookies are `Secure`.
-
-See [`docs/oidc.md`](docs/oidc.md) for full setup details, constraints, and troubleshooting.
+Optional OpenID Connect SSO with any standards-compliant IdP (Keycloak, Authentik, Auth0, Entra ID, etc.). Enable with `SCRUMBOY_OIDC_ISSUER`, `SCRUMBOY_OIDC_CLIENT_ID`, `SCRUMBOY_OIDC_CLIENT_SECRET`, and `SCRUMBOY_OIDC_REDIRECT_URL`. Local password login stays available unless you set `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`. Setup, constraints, and troubleshooting: [`docs/oidc.md`](docs/oidc.md).
 
 ### TLS / HTTPS (optional)
 
@@ -386,7 +371,7 @@ None of these are required for basic startup.
 | `SQLITE_SYNCHRONOUS` | `FULL` |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) |
 | `SCRUMBOY_MODE` | `full` (or `anonymous`) |
-| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503. Back this key up with `data/app.db`; do not replace it casually once encrypted auth/security data exists. |
+| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA and password reset.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503 and password-reset tokens cannot be issued. Back this key up with `data/app.db`; do not replace it casually once encrypted auth/security data exists. |
 | `SCRUMBOY_TLS_CERT` | `./cert.pem` - TLS cert for HTTPS |
 | `SCRUMBOY_TLS_KEY` | `./key.pem` - TLS key for HTTPS |
 | `SCRUMBOY_INTRANET_IP` | `192.168.1.250` - LAN IP to log for intranet access |
