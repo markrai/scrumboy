@@ -56,6 +56,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 - Single fixed scope ("read and manage projects, todos, sprints, and tags"); there is no granular per-scope consent screen.
 - The user approving consent must already have (or create, via the normal login form shown inline) a Scrumboy session. Accounts with 2FA enabled must log in at the main app first — the inline login form on the consent page does not handle a 2FA challenge.
 - Because `client_name` is unauthenticated, self-registered metadata (any client can call itself "Claude Code" or anything else), the consent screen also shows the actual `redirect_uri` destination the code will be sent to, not just the name, so a user has something to check before approving.
+- The consent form POST requires `Origin` (falling back to `Referer`) to match this server's own origin, rejecting the request otherwise. `SameSite=Lax` on the session cookie alone isn't sufficient: "site" for SameSite purposes is the registrable domain, not this exact origin, so a form auto-submitted from any sibling subdomain sharing that cookie's Domain would otherwise still carry it into this endpoint.
 
 **Dynamic Client Registration abuse resistance**
 
@@ -76,6 +77,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 - Authorization codes: 60 seconds, single-use.
 - Access tokens: 1 hour.
 - Refresh tokens: 30 days (matches the existing session TTL), rotated on every use.
+- Consumed/expired codes and revoked/expired tokens are swept hourly by the same background job that expires temporary boards (`DeleteExpiredOAuthArtifacts` in `cmd/scrumboy/main.go`) — nothing else deletes these rows, only marks them consumed/revoked.
 
 ---
 
@@ -150,6 +152,7 @@ The following are explicitly out of scope in the current version:
 - **Multiple redirect URIs per client** — one per client, fixed at registration.
 - **Granular per-scope consent** — a single fixed scope.
 - **Refresh-token reuse-detection cascade** — a reused (already-rotated-away-from) refresh token is rejected, but reuse does not revoke the rest of that token family.
+- **Revocation cascade** — explicitly revoking a refresh token via `/oauth/revoke` does not also revoke access tokens already issued alongside it; those remain valid until their own (1 hour) expiry. Access and refresh tokens aren't linked by a shared grant/family id in the current schema, so revoking one can't look up the other.
 - **Admin UI for listing/revoking registered OAuth clients** — inspect or clean up via direct database access if ever needed.
 - **JWT access tokens / JWKS endpoint** — tokens are opaque and validated by direct database lookup, matching how static API tokens already work.
 - **Inline 2FA during the consent-page login form** — accounts with 2FA enabled must log in at the main app first, then reopen the authorization link.

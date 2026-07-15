@@ -110,6 +110,7 @@ func approveConsent(t *testing.T, client *http.Client, baseURL, clientID, redire
 		t.Fatalf("new request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", baseURL)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("approve consent: %v", err)
@@ -724,6 +725,51 @@ func TestOAuth_DCRRateLimited(t *testing.T) {
 // client can self-register via unauthenticated DCR with an arbitrary client_name, the consent
 // screen must show the actual redirect_uri destination, not just the (spoofable) name, so a user
 // has a chance to notice an untrusted destination before approving.
+// TestOAuth_ConsentSubmitRejectsCrossOriginPost guards against the gap
+// SameSite=Lax structurally cannot close: "site" for SameSite purposes is
+// the registrable domain, so a POST from any sibling subdomain covered by
+// the same session cookie is same-site and still carries the cookie. A
+// consent-form POST whose Origin doesn't match this server's own origin
+// must be rejected regardless of a valid session cookie.
+func TestOAuth_ConsentSubmitRejectsCrossOriginPost(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	cookieClient := newCookieClient(t)
+	bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "cross-origin@example.com", "password123")
+
+	redirectURI := "http://client.example.com/callback"
+	clientID := registerOAuthClient(t, ts.URL, redirectURI)
+	_, challenge := pkcePair(t)
+
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientID},
+		"redirect_uri":          {redirectURI},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"state":                 {"s1"},
+		"action":                {"approve"},
+	}
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/oauth/authorize", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", "https://evil.example.com")
+	resp, err := cookieClient.Do(req)
+	if err != nil {
+		t.Fatalf("cross-origin consent post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected cross-origin consent POST to be rejected with 400, got %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "" {
+		t.Fatalf("cross-origin consent POST must not redirect (would leak a code), got Location: %s", loc)
+	}
+}
+
 func TestOAuth_ConsentPageDisclosesRedirectDestination(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
 	defer cleanup()

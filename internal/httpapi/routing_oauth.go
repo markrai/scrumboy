@@ -246,7 +246,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n == 0 {
-		s.renderOAuthErrorPage(w, http.StatusServiceUnavailable, "Set up Scrumboy first", `This Scrumboy instance has no account yet. Complete first-time setup at <a href="/">the main app</a>, then reopen this link.`)
+		s.renderOAuthErrorPage(w, http.StatusServiceUnavailable, "Set up Scrumboy first", `This Scrumboy instance has no account yet. Complete first-time setup at the main app (/), then reopen this link.`)
 		return
 	}
 	if _, ok := store.UserIDFromContext(ctx); !ok {
@@ -257,6 +257,19 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOAuthAuthorizeSubmit(w http.ResponseWriter, r *http.Request, ctx context.Context, client store.OAuthClient, params authorizeParams) {
+	// SameSite=Lax on the session cookie (see the package doc comment above)
+	// blocks cross-site form submissions, but "site" per SameSite is the
+	// registrable domain, not this exact origin: a page on any sibling
+	// subdomain the cookie's Domain also covers is same-site and would still
+	// carry the session cookie into an auto-submitting POST here. Requiring
+	// Origin (falling back to Referer) to match this server's own origin
+	// closes that gap; genuine browser form/fetch POSTs always send one of
+	// the two.
+	if !s.oauthConsentOriginAllowed(r) {
+		s.renderOAuthErrorPage(w, http.StatusBadRequest, "Invalid request origin", "This consent submission did not originate from this Scrumboy instance.")
+		return
+	}
+
 	userID, ok := store.UserIDFromContext(ctx)
 	if !ok {
 		// Session expired between the GET and this POST; send back to the
@@ -414,6 +427,24 @@ func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// oauthConsentOriginAllowed reports whether r's Origin (or, absent that,
+// Referer) header matches this server's own origin. See the call site in
+// handleOAuthAuthorizeSubmit for why this check exists.
+func (s *Server) oauthConsentOriginAllowed(r *http.Request) bool {
+	self := s.oauthIssuer(r)
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return origin == self
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		u, err := url.Parse(ref)
+		if err != nil {
+			return false
+		}
+		return u.Scheme+"://"+u.Host == self
+	}
+	return false
+}
+
 // redirectOAuthError redirects to the (already-verified) client redirect_uri
 // with RFC 6749 §4.1.2.1 error query params.
 func (s *Server) redirectOAuthError(w http.ResponseWriter, r *http.Request, redirectURI, code, description, state string) {
@@ -461,11 +492,15 @@ button{padding:10px 18px;border-radius:6px;border:none;font-size:14px;cursor:poi
 a{color:#5b8cff}
 </style>`
 
+// renderOAuthErrorPage renders body as plain text (HTML-escaped): every call
+// site passes a fixed, developer-authored string today, but escaping keeps
+// it that way if a future caller ever interpolates a client- or
+// request-derived value here.
 func (s *Server) renderOAuthErrorPage(w http.ResponseWriter, status int, title, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>%s</title>%s</head><body><div class="card"><h1>%s</h1><p>%s</p></div></body></html>`,
-		html.EscapeString(title), oauthPageStyle, html.EscapeString(title), body)
+		html.EscapeString(title), oauthPageStyle, html.EscapeString(title), html.EscapeString(body))
 }
 
 func (s *Server) renderOAuthLoginPage(w http.ResponseWriter, client store.OAuthClient) {

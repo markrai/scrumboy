@@ -204,6 +204,12 @@ func main() {
 					logger.Printf("deleted %d expired projects", deleted)
 				}
 
+				if deletedOAuth, err := st.DeleteExpiredOAuthArtifacts(ctx); err != nil {
+					logger.Printf("cleanup expired oauth codes/tokens: %v", err)
+				} else if deletedOAuth > 0 {
+					logger.Printf("deleted %d expired/revoked oauth codes and tokens", deletedOAuth)
+				}
+
 				// WAL checkpoint to prevent unbounded WAL growth
 				// TRUNCATE mode: checkpoint and truncate WAL file
 				// This prevents the "week later it's slow" problem by keeping WAL small

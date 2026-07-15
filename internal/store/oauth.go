@@ -305,6 +305,50 @@ WHERE t.token_hash = ?
 	return u, nil
 }
 
+// DeleteExpiredOAuthArtifacts deletes spent/expired authorization codes and
+// revoked/expired access and refresh tokens. Nothing else ever deletes these
+// rows (consuming a code or rotating/revoking a token only flips a
+// consumed_at/revoked_at column), so without a periodic sweep the three
+// tables grow without bound on an otherwise-idle instance — most notably
+// oauth_refresh_tokens, which gets one dead row per refresh-token rotation
+// for every long-lived client. Called on the same hourly cadence as
+// DeleteExpiredProjects (see cmd/scrumboy/main.go).
+func (s *Store) DeleteExpiredOAuthArtifacts(ctx context.Context) (int64, error) {
+	nowMs := time.Now().UTC().UnixMilli()
+	var total int64
+	res, err := s.db.ExecContext(ctx, `DELETE FROM oauth_auth_codes WHERE consumed_at IS NOT NULL OR expires_at < ?`, nowMs)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired oauth auth codes: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected delete expired oauth auth codes: %w", err)
+	}
+	total += n
+
+	res, err = s.db.ExecContext(ctx, `DELETE FROM oauth_access_tokens WHERE revoked_at IS NOT NULL OR expires_at < ?`, nowMs)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired oauth access tokens: %w", err)
+	}
+	n, err = res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected delete expired oauth access tokens: %w", err)
+	}
+	total += n
+
+	res, err = s.db.ExecContext(ctx, `DELETE FROM oauth_refresh_tokens WHERE revoked_at IS NOT NULL OR expires_at < ?`, nowMs)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired oauth refresh tokens: %w", err)
+	}
+	n, err = res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected delete expired oauth refresh tokens: %w", err)
+	}
+	total += n
+
+	return total, nil
+}
+
 // RevokeOAuthToken revokes an access or refresh token by its plaintext value
 // (RFC 7009). If hint is "access_token" or "refresh_token" only that table is
 // checked; otherwise both are tried. Always succeeds (no-op if the token

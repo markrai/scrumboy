@@ -40,6 +40,7 @@ CREATE TABLE oauth_access_tokens (
 );
 
 CREATE INDEX idx_oauth_access_tokens_user_id ON oauth_access_tokens(user_id);
+CREATE INDEX idx_oauth_access_tokens_expires_at ON oauth_access_tokens(expires_at);
 
 -- Opaque refresh tokens, rotated on use (no reuse-detection chain in v1).
 CREATE TABLE oauth_refresh_tokens (
@@ -52,3 +53,4 @@ CREATE TABLE oauth_refresh_tokens (
 );
 
 CREATE INDEX idx_oauth_refresh_tokens_user_id ON oauth_refresh_tokens(user_id);
+CREATE INDEX idx_oauth_refresh_tokens_expires_at ON oauth_refresh_tokens(expires_at);
