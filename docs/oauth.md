@@ -67,6 +67,10 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected â
 
 - Available only in full mode (`SCRUMBOY_MODE=full`). All `/oauth/*` and `/.well-known/oauth-*` endpoints return `404` in anonymous mode.
 
+**Issuer / discovery origin**
+
+- The `issuer`/`resource` values in the two discovery documents, and the absolute endpoint URLs built from them, use `SCRUMBOY_PUBLIC_BASE_URL` when it's configured â€” same as the password-reset link origin. If it's unset, they fall back to the inbound request's `Host`/`X-Forwarded-Proto`, which are attacker-controlled unless the deployment terminates TLS itself or sits behind a proxy that strips/overwrites those headers. Deployments behind a reverse proxy should set `SCRUMBOY_PUBLIC_BASE_URL` (and `SCRUMBOY_TRUST_PROXY` where applicable) to avoid a forged `Host` header being reflected back as the issuer.
+
 **Token lifetimes**
 
 - Authorization codes: 60 seconds, single-use.

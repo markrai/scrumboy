@@ -37,7 +37,20 @@ func (s *Server) handleOAuth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// oauthIssuer returns the origin advertised in discovery metadata and used
+// to build absolute endpoint URLs. If SCRUMBOY_PUBLIC_BASE_URL is configured,
+// it is used verbatim and the inbound request is never consulted — mirroring
+// resetBaseURL. Otherwise this falls back to deriving the origin from
+// X-Forwarded-Proto/Host on the request itself, both of which are
+// attacker-controlled when SCRUMBOY_TRUST_PROXY is unset (see isSecureRequest
+// and clientIP): a request with a forged Host header would otherwise get its
+// own value reflected back as the "issuer", and a forged X-Forwarded-Proto:
+// https on a cleartext connection would advertise an https issuer for an
+// unencrypted deployment.
 func (s *Server) oauthIssuer(r *http.Request) string {
+	if s.publicBaseURL != "" {
+		return s.publicBaseURL
+	}
 	proto := "http"
 	if isSecureRequest(r) {
 		proto = "https"

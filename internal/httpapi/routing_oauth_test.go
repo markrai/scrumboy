@@ -144,6 +144,62 @@ func exchangeToken(t *testing.T, baseURL string, form url.Values) (int, map[stri
 	return resp.StatusCode, out
 }
 
+// TestOAuthDiscovery_PublicBaseURLOverridesSpoofedHostAndProto guards against
+// the same class of issue fixed for password-reset links (see resetBaseURL):
+// without SCRUMBOY_PUBLIC_BASE_URL configured, oauthIssuer built the
+// "issuer"/"resource" values in discovery metadata from the inbound Host
+// header and X-Forwarded-Proto, both attacker-controlled when
+// SCRUMBOY_TRUST_PROXY is unset. A request claiming Host: attacker.example
+// (or forging X-Forwarded-Proto: https on a cleartext connection) must not
+// be able to make Scrumboy advertise itself as attacker.example.
+func TestOAuthDiscovery_PublicBaseURLOverridesSpoofedHostAndProto(t *testing.T) {
+	dir := t.TempDir()
+	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
+		BusyTimeout: 5000,
+		JournalMode: "WAL",
+		Synchronous: "FULL",
+	})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer sqlDB.Close()
+	if err := migrate.Apply(context.Background(), sqlDB); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(sqlDB, nil)
+	srv := NewServer(st, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "normal",
+		MCPHandler:     mcp.New(st, mcp.Options{Mode: "normal"}),
+		PublicBaseURL:  "https://scrumboy.example.com",
+	})
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/.well-known/oauth-authorization-server", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Host = "attacker.example"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("discovery request: %v", err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode discovery response: %v", err)
+	}
+	issuer, _ := out["issuer"].(string)
+	if issuer != "https://scrumboy.example.com" {
+		t.Fatalf("expected issuer to use configured PublicBaseURL, got %q (body: %+v)", issuer, out)
+	}
+	if strings.Contains(fmt.Sprint(out), "attacker.example") {
+		t.Fatalf("discovery response leaked spoofed Host header: %+v", out)
+	}
+}
+
 func TestOAuth_FullHappyPath(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
 	defer cleanup()
