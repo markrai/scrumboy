@@ -33,7 +33,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected â
 1. MCP client discovers endpoints via `GET /.well-known/oauth-authorization-server` and `GET /.well-known/oauth-protected-resource`.
 2. Client registers itself via `POST /oauth/register` (RFC 7591) and receives a `client_id` (no secret â€” public client).
 3. Client redirects the user's browser to `GET /oauth/authorize` with `response_type=code`, its `client_id`, `redirect_uri`, and a PKCE `code_challenge` (S256).
-4. If the user has no active Scrumboy session, a login form is shown inline. Once logged in, a consent screen ("Approve access for `<client name>`?") is shown.
+4. If the user has no active Scrumboy session, the authorization page offers the configured sign-in methods: local password, SSO, or both. Successful sign-in returns to the pending authorization request and shows consent ("Approve access for `<client name>`?").
 5. On approval, Scrumboy redirects back to the client's `redirect_uri` with a single-use authorization code.
 6. Client exchanges the code (plus its `code_verifier`) for an access token and refresh token at `POST /oauth/token`.
 7. Client sends the access token as `Authorization: Bearer <token>` on `/mcp` or `/mcp/rpc` requests, exactly like a static API token.
@@ -51,10 +51,19 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected â
 
 - Required on every authorization request. Only `S256` is accepted; `plain` is rejected.
 
+**Authentication / OIDC continuation**
+
+- Initial instance ownership is still established through the main app: while Scrumboy has zero users, OAuth authorization shows **Set up Scrumboy first** and does not start SSO. After that one-time bootstrap, the configured login modes below apply.
+- An existing Scrumboy session skips the login page and goes directly to consent.
+- Without OIDC, the authorization page keeps the local email/password form. With OIDC and local auth both enabled, it shows the password form and **Continue with SSO** as explicit alternatives; neither starts automatically. With `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`, the password form is omitted and **Continue with SSO** is the primary authentication action.
+- The SSO action sends the complete current `/oauth/authorize?...` request as the OIDC login route's `return_to`. The existing OIDC sanitizer requires that continuation to remain an internal relative Scrumboy path. A client parameter also named `return_to` may remain inside the preserved authorize query, but `/oauth/authorize` does not use it for navigation and it cannot replace the server-constructed outer continuation.
+- After successful SSO, the existing callback creates the session and returns to the full pending authorize request, which then renders consent. Failed or cancelled SSO keeps the existing internal `/?oidc_error=...` destination; restart the authorization request after a failure.
+- Inline password login still does not handle a 2FA challenge. Accounts with 2FA enabled must establish a session at the main app first, then reopen the authorization link.
+
 **Consent**
 
 - Single fixed scope ("read and manage projects, todos, sprints, and tags"); there is no granular per-scope consent screen.
-- The user approving consent must already have (or create, via the normal login form shown inline) a Scrumboy session. Accounts with 2FA enabled must log in at the main app first â€” the inline login form on the consent page does not handle a 2FA challenge.
+- The user approving consent must have an authenticated Scrumboy session established through one of the methods above.
 - Because `client_name` is unauthenticated, self-registered metadata (any client can call itself "Claude Code" or anything else), the consent screen also shows the actual `redirect_uri` destination the code will be sent to, not just the name, so a user has something to check before approving.
 - The consent form POST requires `Origin` (falling back to `Referer`) to match this server's own origin, rejecting the request otherwise. `SameSite=Lax` on the session cookie alone isn't sufficient: "site" for SameSite purposes is the registrable domain, not this exact origin, so a form auto-submitted from any sibling subdomain sharing that cookie's Domain would otherwise still carry it into this endpoint.
 - The login, consent, and error HTML pages all send `Cache-Control: no-store`, `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`, so the Approve button can't be framed for a clickjacking-style attack and a shared/cached browser never retains a copy of these pages.

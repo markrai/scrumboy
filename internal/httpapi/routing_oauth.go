@@ -320,6 +320,19 @@ func parseAuthorizeParams(r *http.Request) authorizeParams {
 	}
 }
 
+func oauthAuthorizeRequestURI(params authorizeParams) string {
+	query := url.Values{}
+	query.Set("response_type", params.ResponseType)
+	query.Set("client_id", params.ClientID)
+	query.Set("redirect_uri", params.RedirectURI)
+	query.Set("code_challenge", params.CodeChallenge)
+	query.Set("code_challenge_method", params.CodeChallengeMethod)
+	if params.State != "" {
+		query.Set("state", params.State)
+	}
+	return "/oauth/authorize?" + query.Encode()
+}
+
 // handleOAuthAuthorize serves the RFC 6749 §3.1/§4.1.1 authorize endpoint.
 // GET shows a login form (if the caller has no valid session) or a consent
 // form (if logged in); POST is the consent form's approve/deny submission.
@@ -376,7 +389,7 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := store.UserIDFromContext(ctx); !ok {
-		s.renderOAuthLoginPage(w, client)
+		s.renderOAuthLoginPage(w, r, client)
 		return
 	}
 	s.renderOAuthConsentPage(w, client, params)
@@ -398,9 +411,11 @@ func (s *Server) handleOAuthAuthorizeSubmit(w http.ResponseWriter, r *http.Reque
 
 	userID, ok := store.UserIDFromContext(ctx)
 	if !ok {
-		// Session expired between the GET and this POST; send back to the
-		// GET flow, which will show the login form again.
-		s.renderOAuthLoginPage(w, client)
+		// Session expired between consent rendering and submission. Rebuild
+		// the validated authorize request from the consent form fields and
+		// return to the GET flow so password reloads and OIDC continuation
+		// preserve the pending request without resubmitting this POST.
+		http.Redirect(w, r, oauthAuthorizeRequestURI(params), http.StatusSeeOther)
 		return
 	}
 
@@ -644,6 +659,9 @@ input{width:100%;box-sizing:border-box;padding:10px;margin:6px 0;border-radius:6
 button{padding:10px 18px;border-radius:6px;border:none;font-size:14px;cursor:pointer;margin-top:8px}
 .btn-primary{background:#5b8cff;color:#fff}
 .btn-secondary{background:#2a2e37;color:#e6e6e6;margin-left:8px}
+.sso-button{display:block;padding:10px 18px;border-radius:6px;text-align:center;text-decoration:none;margin-top:8px}
+.auth-divider{display:flex;align-items:center;gap:12px;color:#7f8796;font-size:12px;margin:20px 0 12px}
+.auth-divider:before,.auth-divider:after{content:"";height:1px;background:#2a2e37;flex:1}
 .err{color:#ff6b6b;font-size:13px;margin-top:8px}
 a{color:#5b8cff}
 </style>`
@@ -674,18 +692,23 @@ func (s *Server) renderOAuthErrorPage(w http.ResponseWriter, status int, title, 
 		html.EscapeString(title), oauthPageStyle, html.EscapeString(title), html.EscapeString(body))
 }
 
-func (s *Server) renderOAuthLoginPage(w http.ResponseWriter, client store.OAuthClient) {
+func (s *Server) renderOAuthLoginPage(w http.ResponseWriter, r *http.Request, client store.OAuthClient) {
 	setOAuthHTMLHeaders(w)
 	w.WriteHeader(http.StatusOK)
 	name := client.ClientName
 	if name == "" {
 		name = "This application"
 	}
-	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Log in to Scrumboy</title>%s</head><body>
-<div class="card">
-<h1>Log in to connect %s</h1>
-<p>Sign in with your Scrumboy account to continue.</p>
-<div id="err" class="err"></div>
+
+	oidcAvailable := s.oidcService != nil
+	localAuthEnabled := !oidcAvailable || !s.oidcService.Config().LocalAuthDisabled
+	title := "Log in to Scrumboy"
+	heading := "Log in to connect " + name
+	intro := "Sign in with your Scrumboy account to continue."
+
+	var actions strings.Builder
+	if localAuthEnabled {
+		actions.WriteString(`<div id="err" class="err"></div>
 <input id="email" type="email" placeholder="Email" autocomplete="username">
 <input id="password" type="password" placeholder="Password" autocomplete="current-password">
 <button class="btn-primary" onclick="doLogin()">Log in</button>
@@ -715,8 +738,30 @@ function doLogin() {
     err.textContent = 'Login failed. Please try again.';
   });
 }
-</script>
-</div></body></html>`, oauthPageStyle, html.EscapeString(name))
+</script>`)
+	}
+
+	if oidcAvailable {
+		title = "Sign in to continue"
+		heading = "Sign in to continue"
+		if localAuthEnabled {
+			intro = "Choose a sign-in method to connect " + name + "."
+			actions.WriteString(`<div class="auth-divider"><span>or</span></div>`)
+		} else {
+			intro = "Sign in through your configured identity provider to review this access request."
+		}
+		query := url.Values{}
+		query.Set("return_to", r.URL.RequestURI())
+		oidcLoginURL := "/api/auth/oidc/login?" + query.Encode()
+		fmt.Fprintf(&actions, `<a id="oauth-oidc-login" href="%s" class="sso-button btn-primary">Continue with SSO</a>`, html.EscapeString(oidcLoginURL))
+	}
+
+	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>%s</title>%s</head><body>
+<div class="card">
+<h1>%s</h1>
+<p>%s</p>
+%s
+</div></body></html>`, html.EscapeString(title), oauthPageStyle, html.EscapeString(heading), html.EscapeString(intro), actions.String())
 }
 
 func (s *Server) renderOAuthConsentPage(w http.ResponseWriter, client store.OAuthClient, params authorizeParams) {

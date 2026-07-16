@@ -410,7 +410,8 @@ func TestOIDCCallbackInvalidState(t *testing.T) {
 		},
 	}
 
-	resp, err := client.Get(ts.URL + "/api/auth/oidc/callback?code=abc&state=bogus")
+	clientRedirect := "https://client.example.com/callback"
+	resp, err := client.Get(ts.URL + "/api/auth/oidc/callback?code=abc&state=bogus&redirect_uri=" + url.QueryEscape(clientRedirect))
 	if err != nil {
 		t.Fatalf("callback: %v", err)
 	}
@@ -420,8 +421,20 @@ func TestOIDCCallbackInvalidState(t *testing.T) {
 		t.Fatalf("expected 302, got %d", resp.StatusCode)
 	}
 	loc := resp.Header.Get("Location")
-	if !strings.Contains(loc, "oidc_error=state_invalid") {
-		t.Errorf("expected oidc_error=state_invalid, got Location=%q", loc)
+	location, err := url.Parse(loc)
+	if err != nil {
+		t.Fatalf("parse callback Location: %v", err)
+	}
+	if location.IsAbs() || location.Host != "" || location.Path != "/" || location.Query().Get("oidc_error") != "state_invalid" {
+		t.Errorf("expected existing internal state-error destination, got Location=%q", loc)
+	}
+	if strings.HasPrefix(loc, clientRedirect) || location.Query().Get("code") != "" || strings.Contains(loc, "code=") {
+		t.Errorf("invalid callback must not redirect to the OAuth client or expose a code, got Location=%q", loc)
+	}
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "scrumboy_session" {
+			t.Errorf("invalid callback must not establish an authenticated session: %+v", cookie)
+		}
 	}
 }
 

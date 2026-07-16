@@ -9,6 +9,7 @@
 - [What does the done lane mean for dashboard stats?](#what-does-the-done-lane-mean-for-dashboard-stats)
 - [Are tag colors personal, or shared with the team?](#are-tag-colors-personal-or-shared-with-the-team)
 - [How do I use Scrumboy with Claude or other MCP clients?](#how-do-i-use-scrumboy-with-claude-or-other-mcp-clients)
+- [Can Scrumboy MCP OAuth work with OIDC-only login?](#can-scrumboy-mcp-oauth-work-with-oidc-only-login)
 - [What are VAPID keys, and do I need them?](#what-are-vapid-keys-and-do-i-need-them)
 - [How do I generate SCRUMBOY_ENCRYPTION_KEY?](#how-do-i-generate-scrumboy_encryption_key)
 - [Do I need to configure SMTP? What happens if I don't?](#do-i-need-to-configure-smtp-what-happens-if-i-dont)
@@ -150,6 +151,10 @@ When you open a board, Scrumboy refreshes colors from that board so what you see
 - All traffic stays between the client and **your** Scrumboy server. Scrumboy does not host a cloud MCP relay for you.
 
 For tool names, auth rules, examples, and the optional Agora discover/invoke edge, see [`docs/mcp.md`](docs/mcp.md). For full HTTP behavior, see [`API.md`](API.md).
+
+## Can Scrumboy MCP OAuth work with OIDC-only login?
+
+**Yes.** After the initial owner completes one-time setup through the main app, an OAuth authorization page can continue through configured SSO and return you to the pending consent request. See [`docs/oauth.md`](docs/oauth.md) for configuration, security behavior, and limitations.
 
 # Notifications
 

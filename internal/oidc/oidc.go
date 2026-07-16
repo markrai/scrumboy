@@ -230,48 +230,60 @@ func isEmailVerified(v any) bool {
 
 // SanitizeReturnTo validates a return_to value against open-redirect attacks.
 func SanitizeReturnTo(raw string) string {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "/"
 	}
-	decoded, err := url.PathUnescape(raw)
+	// A return target may legitimately carry URL-encoded values in its query
+	// (for example an OAuth authorize request's encoded redirect_uri). Decode
+	// and validate only the path so query values cannot be mistaken for target
+	// URL structure, while preserving the query exactly for the continuation.
+	pathPart := raw
+	queryPart := ""
+	if idx := strings.IndexByte(raw, '?'); idx >= 0 {
+		pathPart = raw[:idx]
+		queryPart = raw[idx:]
+	}
+	decodedPath, err := url.PathUnescape(pathPart)
 	if err != nil {
 		return "/"
 	}
-	decoded = strings.TrimSpace(decoded)
-	if decoded == "" {
+	decodedPath = strings.TrimSpace(decodedPath)
+	if decodedPath == "" {
 		return "/"
 	}
 
-	for _, c := range decoded {
+	for _, c := range raw {
+		if c == '\\' || c == '\r' || c == '\n' || c == 0 {
+			return "/"
+		}
+	}
+	for _, c := range decodedPath {
 		if c == '\\' || c == '\r' || c == '\n' || c == 0 {
 			return "/"
 		}
 	}
 
-	if !strings.HasPrefix(decoded, "/") {
+	if !strings.HasPrefix(decodedPath, "/") {
 		return "/"
 	}
-	if strings.HasPrefix(decoded, "//") {
+	if strings.HasPrefix(decodedPath, "//") {
 		return "/"
 	}
-	if strings.Contains(decoded, "://") {
+	if strings.Contains(decodedPath, "://") {
 		return "/"
 	}
-	if strings.Contains(decoded, "#") {
+	if strings.Contains(raw, "#") || strings.Contains(decodedPath, "#") {
 		return "/"
 	}
 
-	pathPart := decoded
-	if idx := strings.Index(decoded, "?"); idx >= 0 {
-		pathPart = decoded[:idx]
-	}
-	for _, seg := range strings.Split(pathPart, "/") {
+	for _, seg := range strings.Split(decodedPath, "/") {
 		if seg == "." || seg == ".." {
 			return "/"
 		}
 	}
 
-	return decoded
+	return decodedPath + queryPart
 }
 
 // NormalizeIssuer produces IssuerCanonical from a raw env value.
