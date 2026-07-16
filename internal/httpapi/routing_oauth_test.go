@@ -908,6 +908,59 @@ func TestOAuthIssuer_PrefersPublicBaseURL(t *testing.T) {
 	}
 }
 
+// TestOAuthPublicBaseURLIssuer_HTTPSAndLoopbackHTTP enforces OAuth-only rules on
+// SCRUMBOY_PUBLIC_BASE_URL: HTTPS always; HTTP only for explicit loopback (password
+// reset may still allow non-loopback HTTP via NormalizeBaseURL).
+func TestOAuthPublicBaseURLIssuer_HTTPSAndLoopbackHTTP(t *testing.T) {
+	for _, tc := range []struct {
+		base    string
+		wantOK  bool
+		wantOut string
+	}{
+		{base: "https://scrumboy.example.com", wantOK: true, wantOut: "https://scrumboy.example.com"},
+		{base: "http://localhost:8080", wantOK: true, wantOut: "http://localhost:8080"},
+		{base: "http://127.0.0.1:8080", wantOK: true, wantOut: "http://127.0.0.1:8080"},
+		{base: "http://[::1]:8080", wantOK: true, wantOut: "http://[::1]:8080"},
+		{base: "http://scrumboy.example.com", wantOK: false},
+		{base: "http://192.168.1.20:8080", wantOK: false},
+	} {
+		t.Run(tc.base, func(t *testing.T) {
+			got, err := oauthPublicBaseURLIssuer(tc.base)
+			if tc.wantOK {
+				if err != nil {
+					t.Fatalf("oauthPublicBaseURLIssuer(%q): %v", tc.base, err)
+				}
+				if got != tc.wantOut {
+					t.Fatalf("oauthPublicBaseURLIssuer(%q) = %q, want %q", tc.base, got, tc.wantOut)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("oauthPublicBaseURLIssuer(%q) = %q, want rejection", tc.base, got)
+			}
+		})
+	}
+}
+
+func TestOAuthIssuer_RejectsNonLoopbackHTTPPublicBaseURL(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{PublicBaseURL: "http://scrumboy.example.com"})
+	req := httptest.NewRequest(http.MethodGet, "https://scrumboy.example.com/oauth/authorize", nil)
+	req.TLS = &tls.ConnectionState{}
+	if _, err := srv.oauthIssuer(req); err == nil {
+		t.Fatal("expected oauthIssuer to reject non-loopback HTTP PUBLIC_BASE_URL even when request is TLS")
+	}
+}
+
+func TestOAuthDiscovery_NonLoopbackHTTPPublicBaseURLReturns503(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{PublicBaseURL: "http://scrumboy.example.com"})
+	req := httptest.NewRequest(http.MethodGet, "http://scrumboy.example.com/.well-known/oauth-authorization-server", nil)
+	w := httptest.NewRecorder()
+	srv.handleOAuthASMetadata(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 for non-loopback HTTP PUBLIC_BASE_URL, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 // TestOAuthIssuer_DirectTLSUsesValidatedRequestHost guards the second rung: direct TLS supplies the
 // HTTPS scheme, while the HTTP request authority still has to pass the shared syntax/port parser.
 func TestOAuthIssuer_DirectTLSUsesValidatedRequestHost(t *testing.T) {
@@ -1040,6 +1093,69 @@ func TestOAuthIssuer_TrustProxyRejectsInsecureForwardedProto(t *testing.T) {
 	if _, err := srv.oauthIssuer(req); err == nil {
 		t.Fatalf("expected oauthIssuer to fail closed for an insecure forwarded proto")
 	}
+}
+
+// When X-Forwarded-Proto is present but not https, CF-Visitor must not be used as a
+// fallback — only an entirely absent XFP may consult CF-Visitor.
+func TestOAuthIssuer_TrustProxyDoesNotFallBackToCFVisitorWhenXFPPresent(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+	req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+	req.Header.Set("CF-Visitor", `{"scheme":"https"}`)
+	req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+	if _, err := srv.oauthIssuer(req); err == nil {
+		t.Fatal("expected oauthIssuer to reject when X-Forwarded-Proto is http even if CF-Visitor says https")
+	}
+}
+
+func TestOAuthIssuer_TrustProxyRejectsMultiValueForwardedProto(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+
+	t.Run("duplicate header fields", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+		req.Header.Add("X-Forwarded-Proto", "https")
+		req.Header.Add("X-Forwarded-Proto", "http")
+		req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+		if _, err := srv.oauthIssuer(req); err == nil {
+			t.Fatal("expected oauthIssuer to reject multiple X-Forwarded-Proto fields")
+		}
+	})
+
+	t.Run("comma-separated single field", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+		req.Header.Set("X-Forwarded-Proto", "https, http")
+		req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+		if _, err := srv.oauthIssuer(req); err == nil {
+			t.Fatal("expected oauthIssuer to reject comma-separated X-Forwarded-Proto")
+		}
+	})
+}
+
+func TestOAuthIssuer_TrustProxyCFVisitorRequiresSingleField(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+
+	t.Run("single CF-Visitor https", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+		req.Header.Set("CF-Visitor", `{"scheme":"https"}`)
+		req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+		got, err := srv.oauthIssuer(req)
+		if err != nil {
+			t.Fatalf("oauthIssuer: %v", err)
+		}
+		if got != "https://scrumboy.example.com" {
+			t.Fatalf("got %q, want https://scrumboy.example.com", got)
+		}
+	})
+
+	t.Run("duplicate CF-Visitor fields", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+		req.Header.Add("CF-Visitor", `{"scheme":"https"}`)
+		req.Header.Add("CF-Visitor", `{"scheme":"http"}`)
+		req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+		if _, err := srv.oauthIssuer(req); err == nil {
+			t.Fatal("expected oauthIssuer to reject multiple CF-Visitor fields")
+		}
+	})
 }
 
 // TestOAuthIssuer_LoopbackAllowsPlainHTTP and TestOAuthIssuer_FailsClosedForUnknownHost cover the

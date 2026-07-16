@@ -45,8 +45,10 @@ var errOAuthIssuerUnavailable = errors.New("no trustworthy issuer origin for thi
 // oauthIssuer returns the origin advertised in discovery metadata and used to
 // build absolute endpoint URLs, in order:
 //
-//  1. SCRUMBOY_PUBLIC_BASE_URL, used verbatim — the inbound request is never
-//     consulted, mirroring resetBaseURL.
+//  1. SCRUMBOY_PUBLIC_BASE_URL, when set and OAuth-safe: HTTPS always, or
+//     HTTP only for an explicit loopback host (local-dev exception). The
+//     inbound request is never consulted. Non-loopback HTTP is rejected here
+//     even though NormalizeBaseURL still allows it for password-reset links.
 //  2. Direct TLS: TLS supplies the HTTPS scheme and r.Host supplies the HTTP
 //     request authority after strict syntax and port validation.
 //  3. SCRUMBOY_TRUST_PROXY: forwarded HTTPS plus an explicit, validated
@@ -59,7 +61,7 @@ var errOAuthIssuerUnavailable = errors.New("no trustworthy issuer origin for thi
 //     issuer or downgrade it to HTTP.
 func (s *Server) oauthIssuer(r *http.Request) (string, error) {
 	if s.publicBaseURL != "" {
-		return s.publicBaseURL, nil
+		return oauthPublicBaseURLIssuer(s.publicBaseURL)
 	}
 	authority, hostname, authorityOK := parseHTTPAuthority(r.Host)
 	if r.TLS != nil && authorityOK {
@@ -76,26 +78,43 @@ func (s *Server) oauthIssuer(r *http.Request) (string, error) {
 	return "", errOAuthIssuerUnavailable
 }
 
-// forwardedOAuthOrigin derives scheme+host as one validated decision from
-// X-Forwarded-Proto/X-Forwarded-Host (falling back to CF-Visitor for scheme).
-// Only called when SCRUMBOY_TRUST_PROXY is enabled. X-Forwarded-Host is
-// required explicitly; the backend-facing r.Host is never used as a fallback.
-// Only https is accepted here: a proxy that terminates TLS and forwards
-// plaintext http should not have that http advertised as this server's
-// issuer scheme. Comma-separated or otherwise malformed forwarded-host
-// values (multiple hops) are rejected rather than guessing which hop is
-// external, since that depends on proxy topology this server doesn't know.
-func forwardedOAuthOrigin(r *http.Request) (string, bool) {
-	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
-	if proto == "" {
-		var cfVisitor struct {
-			Scheme string `json:"scheme"`
-		}
-		if err := json.Unmarshal([]byte(r.Header.Get("CF-Visitor")), &cfVisitor); err == nil {
-			proto = strings.ToLower(strings.TrimSpace(cfVisitor.Scheme))
-		}
+// oauthPublicBaseURLIssuer reports whether configured PUBLIC_BASE_URL may be
+// advertised as an OAuth authorization-server issuer (RFC 8414 / MCP auth
+// expect HTTPS for non-loopback AS endpoints). Global NormalizeBaseURL still
+// permits http for password-reset compatibility; this check is OAuth-only.
+func oauthPublicBaseURLIssuer(base string) (string, error) {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", errOAuthIssuerUnavailable
 	}
-	if proto != "https" {
+	scheme := strings.ToLower(u.Scheme)
+	_, hostname, ok := parseHTTPAuthority(u.Host)
+	if !ok {
+		return "", errOAuthIssuerUnavailable
+	}
+	switch scheme {
+	case "https":
+		return base, nil
+	case "http":
+		if isLoopbackHostname(hostname) {
+			return base, nil
+		}
+		return "", errOAuthIssuerUnavailable
+	default:
+		return "", errOAuthIssuerUnavailable
+	}
+}
+
+// forwardedOAuthOrigin derives scheme+host as one validated decision from
+// X-Forwarded-Proto/X-Forwarded-Host (falling back to CF-Visitor for scheme
+// only when X-Forwarded-Proto is entirely absent). Only called when
+// SCRUMBOY_TRUST_PROXY is enabled. X-Forwarded-Host is required explicitly;
+// the backend-facing r.Host is never used as a fallback. Only https is
+// accepted here. Each trusted forwarded header must be a single field with a
+// single value (no comma-separated hop lists / duplicate fields).
+func forwardedOAuthOrigin(r *http.Request) (string, bool) {
+	proto, ok := forwardedOAuthScheme(r)
+	if !ok || proto != "https" {
 		return "", false
 	}
 	hostValues := r.Header.Values("X-Forwarded-Host")
@@ -107,6 +126,39 @@ func forwardedOAuthOrigin(r *http.Request) (string, bool) {
 		return "", false
 	}
 	return "https://" + authority, true
+}
+
+// forwardedOAuthScheme returns a single validated forwarded scheme for OAuth
+// issuer construction. X-Forwarded-Proto wins when present (exactly one field,
+// no commas). CF-Visitor is consulted only when X-Forwarded-Proto is absent,
+// and then only if exactly one CF-Visitor field is present.
+func forwardedOAuthScheme(r *http.Request) (string, bool) {
+	protoValues := r.Header.Values("X-Forwarded-Proto")
+	if len(protoValues) > 0 {
+		if len(protoValues) != 1 {
+			return "", false
+		}
+		proto := strings.ToLower(strings.TrimSpace(protoValues[0]))
+		if proto == "" || strings.Contains(proto, ",") {
+			return "", false
+		}
+		return proto, true
+	}
+	cfValues := r.Header.Values("CF-Visitor")
+	if len(cfValues) != 1 {
+		return "", false
+	}
+	var cfVisitor struct {
+		Scheme string `json:"scheme"`
+	}
+	if err := json.Unmarshal([]byte(cfValues[0]), &cfVisitor); err != nil {
+		return "", false
+	}
+	proto := strings.ToLower(strings.TrimSpace(cfVisitor.Scheme))
+	if proto == "" || strings.Contains(proto, ",") {
+		return "", false
+	}
+	return proto, true
 }
 
 // isLoopbackHostname reports whether a validated, port-free hostname refers
