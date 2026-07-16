@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -49,6 +50,34 @@ func newTestHTTPServerWithMCP(t *testing.T, mode string) (*httptest.Server, *sql
 		ts.Close()
 		_ = sqlDB.Close()
 	}
+}
+
+// newTestOAuthServer builds a bare *Server (no httptest listener) for unit-level
+// exercising of methods like oauthIssuer that only need Server fields and a
+// synthetic *http.Request, not a live socket.
+func newTestOAuthServer(t *testing.T, opts Options) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
+		BusyTimeout: 5000,
+		JournalMode: "WAL",
+		Synchronous: "FULL",
+	})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := migrate.Apply(context.Background(), sqlDB); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	st := store.New(sqlDB, nil)
+	if opts.MaxRequestBody == 0 {
+		opts.MaxRequestBody = 1 << 20
+	}
+	if opts.ScrumboyMode == "" {
+		opts.ScrumboyMode = "full"
+	}
+	return NewServer(st, opts)
 }
 
 // pkcePair returns a random S256 code_verifier/code_challenge pair.
@@ -608,7 +637,14 @@ func TestOAuth_DCRRejectsMalformedRedirectURI(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
 	defer cleanup()
 
-	for _, bad := range []string{"not-a-url", "javascript:alert(1)", "ftp://example.com/cb", "://broken"} {
+	for _, bad := range []string{
+		"not-a-url", "javascript:alert(1)", "ftp://example.com/cb", "://broken",
+		"http://remote-host.example/callback",   // remote, non-loopback http
+		"http://localhost.example.com/callback", // subdomain trick, not actually localhost
+		"https://user@example.com/callback",     // userinfo
+		"https://example.com/callback#fragment", // fragment
+		"http://192.168.1.5/callback",           // RFC1918/LAN, not loopback
+	} {
 		var out map[string]any
 		resp, body := doJSON(t, http.DefaultClient, http.MethodPost, ts.URL+"/oauth/register", map[string]any{
 			"client_name":   "Bad Redirect",
@@ -738,7 +774,7 @@ func TestOAuth_ConsentSubmitRejectsCrossOriginPost(t *testing.T) {
 	cookieClient := newCookieClient(t)
 	bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "cross-origin@example.com", "password123")
 
-	redirectURI := "http://client.example.com/callback"
+	redirectURI := "https://client.example.com/callback"
 	clientID := registerOAuthClient(t, ts.URL, redirectURI)
 	_, challenge := pkcePair(t)
 
@@ -777,7 +813,7 @@ func TestOAuth_ConsentPageDisclosesRedirectDestination(t *testing.T) {
 	cookieClient := newCookieClient(t)
 	bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "consent-disclosure@example.com", "password123")
 
-	redirectURI := "http://attacker.example.com:9999/callback"
+	redirectURI := "https://attacker.example.com:9999/callback"
 	clientID := registerOAuthClient(t, ts.URL, redirectURI)
 	_, challenge := pkcePair(t)
 
@@ -791,4 +827,230 @@ func TestOAuth_ConsentPageDisclosesRedirectDestination(t *testing.T) {
 	if !strings.Contains(string(body[:n]), redirectURI) {
 		t.Fatalf("expected consent page to disclose the redirect_uri destination %q, got: %s", redirectURI, body[:n])
 	}
+}
+
+// TestOAuth_DCRRejectsMultipleRedirectURIs guards against silently registering only
+// redirect_uris[0]: a client believing all of its listed URIs were accepted (when only the first
+// was ever validated) is a footgun, so registration must reject anything but exactly one entry.
+func TestOAuth_DCRRejectsMultipleRedirectURIs(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	var out map[string]any
+	resp, body := doJSON(t, http.DefaultClient, http.MethodPost, ts.URL+"/oauth/register", map[string]any{
+		"client_name":   "Multi Redirect",
+		"redirect_uris": []string{"https://a.example.com/cb", "https://b.example.com/cb"},
+	}, &out)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for multiple redirect_uris, got %d body=%s", resp.StatusCode, string(body))
+	}
+	if out["error"] != "invalid_redirect_uri" {
+		t.Fatalf("expected invalid_redirect_uri, got %+v", out)
+	}
+}
+
+// TestOAuth_DCRAcceptsCleanHTTPSAndLoopback covers the audit's documented pass cases so a future
+// tightening of isValidOAuthRedirectURI can't silently regress legitimate clients.
+func TestOAuth_DCRAcceptsCleanHTTPSAndLoopback(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	for _, good := range []string{
+		"http://127.0.0.2/callback",
+		"http://[::1]:49152/callback",
+		"http://localhost/callback",
+		"https://example.com/callback",
+	} {
+		if clientID := registerOAuthClient(t, ts.URL, good); clientID == "" {
+			t.Fatalf("redirect_uri=%q: expected registration to succeed", good)
+		}
+	}
+}
+
+// TestOAuthIssuer_PrefersPublicBaseURL guards the top of the ladder: when configured, the request
+// is never consulted, so a forged Host/X-Forwarded-* header can't influence the issuer at all.
+func TestOAuthIssuer_PrefersPublicBaseURL(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{PublicBaseURL: "https://scrumboy.example.com"})
+	req := httptest.NewRequest(http.MethodGet, "http://attacker.example.com/oauth/authorize", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+	got, err := srv.oauthIssuer(req)
+	if err != nil {
+		t.Fatalf("oauthIssuer: %v", err)
+	}
+	if got != "https://scrumboy.example.com" {
+		t.Fatalf("expected configured PublicBaseURL to win, got %q", got)
+	}
+}
+
+// TestOAuthIssuer_DirectTLSUsesRequestHost guards the second rung: r.TLS is set only by Go's own
+// TLS listener, so a request that has it is unforgeable by the client.
+func TestOAuthIssuer_DirectTLSUsesRequestHost(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{})
+	req := httptest.NewRequest(http.MethodGet, "https://scrumboy.internal/oauth/authorize", nil)
+	req.TLS = &tls.ConnectionState{}
+	got, err := srv.oauthIssuer(req)
+	if err != nil {
+		t.Fatalf("oauthIssuer: %v", err)
+	}
+	if got != "https://scrumboy.internal" {
+		t.Fatalf("expected https://scrumboy.internal, got %q", got)
+	}
+}
+
+// TestOAuthIssuer_ForwardedProtoIgnoredWithoutTrustProxy guards against the exact spoof the audit
+// called out: an attacker-controlled X-Forwarded-Proto: https on a cleartext, non-loopback
+// connection must never make the issuer look secure when SCRUMBOY_TRUST_PROXY is unset.
+func TestOAuthIssuer_ForwardedProtoIgnoredWithoutTrustProxy(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{})
+	req := httptest.NewRequest(http.MethodGet, "http://scrumboy.internal/oauth/authorize", nil)
+	req.Host = "scrumboy.internal"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	if _, err := srv.oauthIssuer(req); err == nil {
+		t.Fatalf("expected oauthIssuer to fail closed for a non-loopback host with unverified forwarded proto")
+	}
+}
+
+// TestOAuthIssuer_TrustProxyHonorsForwardedOrigin covers the ladder's TrustProxy rung: scheme and
+// host are trusted together as one decision, sourced from X-Forwarded-Proto/X-Forwarded-Host.
+func TestOAuthIssuer_TrustProxyHonorsForwardedOrigin(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+	req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+	got, err := srv.oauthIssuer(req)
+	if err != nil {
+		t.Fatalf("oauthIssuer: %v", err)
+	}
+	if got != "https://scrumboy.example.com" {
+		t.Fatalf("expected https://scrumboy.example.com, got %q", got)
+	}
+}
+
+// TestOAuthIssuer_TrustProxyRejectsInsecureForwardedProto guards against a proxy (or spoofed
+// header) claiming plain http even when TrustProxy is on: this server never advertises an http
+// issuer for a non-loopback host just because a proxy is in front of it.
+func TestOAuthIssuer_TrustProxyRejectsInsecureForwardedProto(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+	req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+	req.Header.Set("X-Forwarded-Proto", "http")
+	req.Header.Set("X-Forwarded-Host", "scrumboy.example.com")
+	if _, err := srv.oauthIssuer(req); err == nil {
+		t.Fatalf("expected oauthIssuer to fail closed for an insecure forwarded proto")
+	}
+}
+
+// TestOAuthIssuer_LoopbackAllowsPlainHTTP and TestOAuthIssuer_FailsClosedForUnknownHost cover the
+// bottom of the ladder: loopback is a safe, useful default for local/dev use; anything else with no
+// PublicBaseURL, no TLS, and no (or untrusted) proxy must fail closed rather than guess.
+func TestOAuthIssuer_LoopbackAllowsPlainHTTP(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{})
+	for _, host := range []string{"localhost:8080", "127.0.0.2:8080", "[::1]:8080"} {
+		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/oauth/authorize", nil)
+		req.Host = host
+		got, err := srv.oauthIssuer(req)
+		if err != nil {
+			t.Fatalf("host=%q: oauthIssuer: %v", host, err)
+		}
+		if got != "http://"+host {
+			t.Fatalf("host=%q: expected http://%s, got %q", host, host, got)
+		}
+	}
+}
+
+func TestOAuthIssuer_FailsClosedForUnknownHost(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{})
+	req := httptest.NewRequest(http.MethodGet, "http://random-internet-host.example/oauth/authorize", nil)
+	req.Host = "random-internet-host.example"
+	if _, err := srv.oauthIssuer(req); err == nil {
+		t.Fatalf("expected oauthIssuer to fail closed for a non-loopback plaintext request with no PublicBaseURL/TLS/TrustProxy")
+	}
+}
+
+// TestOAuthDiscovery_FailsClosedReturns503 checks the fail-closed behavior actually reaches the
+// wire as a controlled error, not a panic or a guessed issuer value.
+func TestOAuthDiscovery_FailsClosedReturns503(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/.well-known/oauth-authorization-server", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Host = "random-internet-host.example"
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when no trustworthy issuer can be derived, got %d", resp.StatusCode)
+	}
+}
+
+// TestOAuthHTMLPages_SecurityHeaders guards MEDIUM-02: login/consent/error pages must all carry
+// no-store plus anti-framing headers so the consent Approve button can't be UI-redressed and
+// cached copies never persist an auth-code-bearing or session-bound page.
+func TestOAuthHTMLPages_SecurityHeaders(t *testing.T) {
+	assertHeaders := func(t *testing.T, resp *http.Response) {
+		t.Helper()
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("Cache-Control = %q, want no-store", got)
+		}
+		if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+			t.Errorf("X-Frame-Options = %q, want DENY", got)
+		}
+		if got := resp.Header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'none'") {
+			t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", got)
+		}
+		if got := resp.Header.Get("Referrer-Policy"); got != "no-referrer" {
+			t.Errorf("Referrer-Policy = %q, want no-referrer", got)
+		}
+		if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+		}
+	}
+
+	t.Run("error page", func(t *testing.T) {
+		ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+		defer cleanup()
+		resp, err := http.Get(ts.URL + "/oauth/authorize")
+		if err != nil {
+			t.Fatalf("GET /oauth/authorize: %v", err)
+		}
+		defer resp.Body.Close()
+		assertHeaders(t, resp)
+	})
+
+	t.Run("login page", func(t *testing.T) {
+		ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+		defer cleanup()
+		cookieClient := newCookieClient(t)
+		bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "headers-login@example.com", "password123")
+		redirectURI := "https://client.example.com/callback"
+		clientID := registerOAuthClient(t, ts.URL, redirectURI)
+		_, challenge := pkcePair(t)
+		// Unauthenticated client hits the login page.
+		resp, err := http.Get(authorizeURL(ts.URL, clientID, redirectURI, challenge, "s1"))
+		if err != nil {
+			t.Fatalf("authorize GET: %v", err)
+		}
+		defer resp.Body.Close()
+		assertHeaders(t, resp)
+	})
+
+	t.Run("consent page", func(t *testing.T) {
+		ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+		defer cleanup()
+		cookieClient := newCookieClient(t)
+		bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "headers-consent@example.com", "password123")
+		redirectURI := "https://client.example.com/callback"
+		clientID := registerOAuthClient(t, ts.URL, redirectURI)
+		_, challenge := pkcePair(t)
+		resp, err := cookieClient.Get(authorizeURL(ts.URL, clientID, redirectURI, challenge, "s1"))
+		if err != nil {
+			t.Fatalf("authorize GET: %v", err)
+		}
+		defer resp.Body.Close()
+		assertHeaders(t, resp)
+	})
 }

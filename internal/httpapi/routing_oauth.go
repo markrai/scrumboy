@@ -8,6 +8,7 @@ import (
 	"html"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,25 +38,91 @@ func (s *Server) handleOAuth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// oauthIssuer returns the origin advertised in discovery metadata and used
-// to build absolute endpoint URLs. If SCRUMBOY_PUBLIC_BASE_URL is configured,
-// it is used verbatim and the inbound request is never consulted — mirroring
-// resetBaseURL. Otherwise this falls back to deriving the origin from
-// X-Forwarded-Proto/Host on the request itself, both of which are
-// attacker-controlled when SCRUMBOY_TRUST_PROXY is unset (see isSecureRequest
-// and clientIP): a request with a forged Host header would otherwise get its
-// own value reflected back as the "issuer", and a forged X-Forwarded-Proto:
-// https on a cleartext connection would advertise an https issuer for an
-// unencrypted deployment.
-func (s *Server) oauthIssuer(r *http.Request) string {
+// errOAuthIssuerUnavailable is returned by oauthIssuer when no origin can be
+// derived that this server can vouch for. Callers must fail closed (a
+// controlled error response) rather than fall back to a guessed value.
+var errOAuthIssuerUnavailable = errors.New("no trustworthy issuer origin for this request")
+
+// oauthIssuer returns the origin advertised in discovery metadata and used to
+// build absolute endpoint URLs, in order:
+//
+//  1. SCRUMBOY_PUBLIC_BASE_URL, used verbatim — the inbound request is never
+//     consulted, mirroring resetBaseURL.
+//  2. Direct TLS: r.TLS is only set by Go's own TLS listener, so it can't be
+//     forged by a client.
+//  3. SCRUMBOY_TRUST_PROXY: a single validated forwarded-origin decision (see
+//     forwardedOAuthOrigin) — scheme and host are trusted together, never
+//     mixed with the raw, potentially-rewritten r.Host.
+//  4. A loopback request host (localhost, 127.0.0.0/8, ::1) — cleartext HTTP
+//     is acceptable there since it never leaves the machine.
+//  5. Otherwise: fail closed. Advertising a guessed issuer (e.g. reflecting
+//     an attacker-controlled Host header, or an ungated X-Forwarded-Proto on
+//     a cleartext connection) would let an attacker spoof the metadata
+//     issuer or downgrade it to HTTP.
+func (s *Server) oauthIssuer(r *http.Request) (string, error) {
 	if s.publicBaseURL != "" {
-		return s.publicBaseURL
+		return s.publicBaseURL, nil
 	}
-	proto := "http"
-	if isSecureRequest(r) {
-		proto = "https"
+	if r.TLS != nil {
+		return "https://" + r.Host, nil
 	}
-	return proto + "://" + r.Host
+	if s.trustProxy {
+		if origin, ok := forwardedOAuthOrigin(r); ok {
+			return origin, nil
+		}
+	}
+	if isLoopbackHost(r.Host) {
+		return "http://" + r.Host, nil
+	}
+	return "", errOAuthIssuerUnavailable
+}
+
+// forwardedOAuthOrigin derives scheme+host as one validated decision from
+// X-Forwarded-Proto/X-Forwarded-Host (falling back to CF-Visitor for scheme
+// and r.Host for host). Only called when SCRUMBOY_TRUST_PROXY is enabled.
+// Only https is accepted here: a proxy that terminates TLS and forwards
+// plaintext http should not have that http advertised as this server's
+// issuer scheme. Comma-separated or otherwise malformed forwarded-host
+// values (multiple hops) are rejected rather than guessing which hop is
+// external, since that depends on proxy topology this server doesn't know.
+func forwardedOAuthOrigin(r *http.Request) (string, bool) {
+	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	if proto == "" {
+		var cfVisitor struct {
+			Scheme string `json:"scheme"`
+		}
+		if err := json.Unmarshal([]byte(r.Header.Get("CF-Visitor")), &cfVisitor); err == nil {
+			proto = strings.ToLower(strings.TrimSpace(cfVisitor.Scheme))
+		}
+	}
+	if proto != "https" {
+		return "", false
+	}
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" || strings.ContainsAny(host, ", ") {
+		return "", false
+	}
+	return "https://" + host, true
+}
+
+// isLoopbackHost reports whether hostport (an optional-port host, as found in
+// r.Host or a URL's Hostname()) refers to localhost, 127.0.0.0/8, or ::1.
+// Deliberately does not treat RFC1918/LAN addresses (192.168.x.x, etc.) as
+// loopback — LAN cleartext HTTP is a separate product decision.
+func isLoopbackHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // handleOAuthProtectedResourceMetadata serves RFC 9728 discovery: the two
@@ -69,7 +136,11 @@ func (s *Server) handleOAuthProtectedResourceMetadata(w http.ResponseWriter, r *
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
-	issuer := s.oauthIssuer(r)
+	issuer, err := s.oauthIssuer(r)
+	if err != nil {
+		s.writeOAuthIssuerUnavailable(w)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"resource":              issuer + "/mcp",
 		"authorization_servers": []string{issuer},
@@ -86,7 +157,11 @@ func (s *Server) handleOAuthASMetadata(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
-	issuer := s.oauthIssuer(r)
+	issuer, err := s.oauthIssuer(r)
+	if err != nil {
+		s.writeOAuthIssuerUnavailable(w)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"issuer":                                     issuer,
 		"authorization_endpoint":                     issuer + "/oauth/authorize",
@@ -143,8 +218,11 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidClientMetadata, "invalid JSON body")
 		return
 	}
-	if len(in.RedirectURIs) == 0 || strings.TrimSpace(in.RedirectURIs[0]) == "" {
-		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "redirect_uris is required")
+	// Exactly one redirect_uris entry is required and enforced — silently registering
+	// only redirect_uris[0] while ignoring the rest would let a client list additional,
+	// unvalidated URIs that this server never checked but the client believes were accepted.
+	if len(in.RedirectURIs) != 1 || strings.TrimSpace(in.RedirectURIs[0]) == "" {
+		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "exactly one redirect_uris entry is required")
 		return
 	}
 	redirectURI := strings.TrimSpace(in.RedirectURIs[0])
@@ -431,7 +509,10 @@ func (s *Server) handleOAuthRevoke(w http.ResponseWriter, r *http.Request) {
 // Referer) header matches this server's own origin. See the call site in
 // handleOAuthAuthorizeSubmit for why this check exists.
 func (s *Server) oauthConsentOriginAllowed(r *http.Request) bool {
-	self := s.oauthIssuer(r)
+	self, err := s.oauthIssuer(r)
+	if err != nil {
+		return false
+	}
 	if origin := r.Header.Get("Origin"); origin != "" {
 		return origin == self
 	}
@@ -455,12 +536,22 @@ func (s *Server) redirectOAuthError(w http.ResponseWriter, r *http.Request, redi
 	http.Redirect(w, r, dest, http.StatusFound)
 }
 
+// writeOAuthIssuerUnavailable is the fail-closed response for discovery
+// endpoints when oauthIssuer can't determine a trustworthy origin (see
+// errOAuthIssuerUnavailable) — a controlled 503, never a guessed issuer.
+func (s *Server) writeOAuthIssuerUnavailable(w http.ResponseWriter) {
+	oauth.WriteJSON(w, http.StatusServiceUnavailable, oauth.ErrServerError,
+		"unable to determine a trustworthy issuer for this request; configure SCRUMBOY_PUBLIC_BASE_URL")
+}
+
 // isValidOAuthRedirectURI reports whether raw is a well-formed absolute http(s) URL with a host.
 // This doesn't make DCR trustworthy on its own (registration stays unauthenticated, and exact-match
 // comparison against the registered value is what actually prevents redirect-target tampering later
-// in the flow) — it only rejects garbage/malformed input at registration time, e.g. non-URL strings,
-// non-http(s) schemes, or a missing host. http is allowed (not just https) since native/CLI clients
-// commonly redirect to a loopback address (RFC 8252), which has no TLS.
+// in the flow) — it only rejects garbage/malformed input at registration time: non-URL strings,
+// non-http(s) schemes, a missing host, embedded userinfo/fragments (phishing display tricks), or a
+// plain-http URI targeting anything other than loopback. https is allowed for any host; http is only
+// allowed for loopback (localhost, 127.0.0.0/8, ::1 — not RFC1918/LAN) since native/CLI clients
+// commonly redirect there (RFC 8252) and it has no TLS.
 func isValidOAuthRedirectURI(raw string) bool {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -469,7 +560,17 @@ func isValidOAuthRedirectURI(raw string) bool {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
-	return u.Host != ""
+	if u.User != nil || u.Fragment != "" {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	if u.Scheme == "http" && !isLoopbackHost(host) {
+		return false
+	}
+	return true
 }
 
 func queryJoiner(u string) string {
@@ -492,19 +593,34 @@ button{padding:10px 18px;border-radius:6px;border:none;font-size:14px;cursor:poi
 a{color:#5b8cff}
 </style>`
 
+// setOAuthHTMLHeaders applies the headers every /oauth/* HTML page (login,
+// consent, error) needs: no-store so a shared/cached browser never persists
+// a copy carrying an auth code or session-bound form, and anti-framing so the
+// consent page's Approve button can't be UI-redressed into an invisible
+// frame on an attacker's page.
+func setOAuthHTMLHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'")
+	h.Set("X-Frame-Options", "DENY")
+	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("X-Content-Type-Options", "nosniff")
+}
+
 // renderOAuthErrorPage renders body as plain text (HTML-escaped): every call
 // site passes a fixed, developer-authored string today, but escaping keeps
 // it that way if a future caller ever interpolates a client- or
 // request-derived value here.
 func (s *Server) renderOAuthErrorPage(w http.ResponseWriter, status int, title, body string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	setOAuthHTMLHeaders(w)
 	w.WriteHeader(status)
 	fmt.Fprintf(w, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>%s</title>%s</head><body><div class="card"><h1>%s</h1><p>%s</p></div></body></html>`,
 		html.EscapeString(title), oauthPageStyle, html.EscapeString(title), html.EscapeString(body))
 }
 
 func (s *Server) renderOAuthLoginPage(w http.ResponseWriter, client store.OAuthClient) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	setOAuthHTMLHeaders(w)
 	w.WriteHeader(http.StatusOK)
 	name := client.ClientName
 	if name == "" {
@@ -549,7 +665,7 @@ function doLogin() {
 }
 
 func (s *Server) renderOAuthConsentPage(w http.ResponseWriter, client store.OAuthClient, params authorizeParams) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	setOAuthHTMLHeaders(w)
 	w.WriteHeader(http.StatusOK)
 	name := client.ClientName
 	if name == "" {
