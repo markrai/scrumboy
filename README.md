@@ -386,8 +386,8 @@ None of these are required for basic startup.
 | `SCRUMBOY_SMTP_FROM` | (empty) - Envelope + header `From`, e.g. `Scrumboy <no-reply@example.com>`. Required with Host. |
 | `SCRUMBOY_SMTP_TLS_MODE` | `starttls` (or `implicit`, `none`) - see [`docs/smtp.md`](docs/smtp.md). |
 | `SCRUMBOY_SMTP_DEBUG` | (empty) - Set to `1` to log SMTP send attempts (never credentials/body). |
-| `SCRUMBOY_PUBLIC_BASE_URL` | (empty) - **Required for self-service password-reset email.** Canonical public origin (e.g. `https://scrumboy.example.com`). Must be absolute `http`/`https` with hostname; no path, query, fragment, or userinfo. Missing or invalid → self-service emails disabled (generic API response only). Also used for admin-generated reset links when set. See [`docs/smtp.md`](docs/smtp.md#reset-link-url). |
-| `SCRUMBOY_TRUST_PROXY` | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth/OAuth rate-limit IP keys. Default off: use `RemoteAddr` only. Enable only behind a reverse proxy that overwrites/strips client XFF. |
+| `SCRUMBOY_PUBLIC_BASE_URL` | (empty) - **Required for self-service password-reset email.** Canonical public origin (e.g. `https://scrumboy.example.com`). Must be absolute `http`/`https` with hostname; no path, query, fragment, or userinfo. Missing or invalid → self-service emails disabled (generic API response only). Also used for admin-generated reset links and as the canonical OAuth discovery issuer when set. See [`docs/smtp.md`](docs/smtp.md#reset-link-url) and [`docs/oauth.md`](docs/oauth.md#issuer--discovery-origin). |
+| `SCRUMBOY_TRUST_PROXY` | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth/OAuth rate-limit IP keys. Default off: use `RemoteAddr` only. Enable only behind a reverse proxy that overwrites/strips client XFF. When enabled, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication; `X-Forwarded-Proto` alone results in 503. |
 
 `docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
 

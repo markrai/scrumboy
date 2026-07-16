@@ -1,8 +1,8 @@
 # OAuth 2.1 for MCP Clients
 
-Updated: 2026-07-13
+Updated: 2026-07-16
 
-Scrumboy's MCP endpoint (`/mcp`, `/mcp/rpc`) supports OAuth 2.1 for clients that implement automatic discovery, PKCE, and Dynamic Client Registration (DCR) — for example Claude Code's `claude mcp add --transport http` flow. This is an alternative to manually minting a static API token via `POST /api/me/tokens`; no manual client registration is needed — the client self-registers and the user approves access through a normal browser consent screen. **No environment variables are required for a direct-TLS or loopback/localhost deployment.** Behind a reverse proxy, set `SCRUMBOY_PUBLIC_BASE_URL` (and `SCRUMBOY_TRUST_PROXY` where applicable) — see [Issuer / discovery origin](#issuer--discovery-origin) below.
+Scrumboy's MCP endpoint (`/mcp`, `/mcp/rpc`) supports OAuth 2.1 for clients that implement automatic discovery, PKCE, and Dynamic Client Registration (DCR) — for example Claude Code's `claude mcp add --transport http` flow. This is an alternative to manually minting a static API token via `POST /api/me/tokens`; no manual client registration is needed — the client self-registers and the user approves access through a normal browser consent screen. **No environment variables are required for a direct-TLS or loopback/localhost deployment.** When `SCRUMBOY_TRUST_PROXY=1`, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication. See [Issuer / discovery origin](#issuer--discovery-origin) below.
 
 Compatible clients: any MCP client that speaks HTTP OAuth discovery (RFC 8414 / RFC 9728), PKCE (RFC 7636, S256 only), and Dynamic Client Registration (RFC 7591). Claude Code is the primary target; any other MCP-over-HTTP client with the same OAuth support works identically.
 
@@ -10,7 +10,7 @@ Compatible clients: any MCP client that speaks HTTP OAuth discovery (RFC 8414 / 
 
 ## Quick Start
 
-No setup required. Point an MCP client at your Scrumboy instance's `/mcp` endpoint:
+For direct-TLS and loopback/localhost deployments, point an MCP client at your Scrumboy instance's `/mcp` endpoint:
 
 ```sh
 claude mcp add --transport http scrumboy https://scrumboy.example.com/mcp
@@ -63,7 +63,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 
 - `POST /oauth/register` is rate-limited (shares `authRateLimit`, 10/min per IP; the IP key honors `X-Forwarded-For` only when `SCRUMBOY_TRUST_PROXY=1`, otherwise `RemoteAddr` — see `SCRUMBOY_TRUST_PROXY` in the README — so a client can't spoof a fresh bucket per request) since it's otherwise an unauthenticated, unbounded way to create `oauth_clients` rows.
 - `POST /oauth/register` requires `Content-Type: application/json` strictly, rejecting any other value. This isn't just input validation: a cross-origin browser request with e.g. `Content-Type: text/plain` is a CORS "simple request" that needs no preflight, so without this check a hostile webpage could get many unwitting visitors' browsers to each register a client from their own IP — defeating the per-IP rate limit above by distributing registration load across real, distinct addresses instead of one attacker IP.
-- `redirect_uris` must contain exactly one entry (extras are rejected, not silently dropped), which must be a well-formed absolute `http`/`https` URL with a host, no userinfo, and no fragment. `https` is allowed for any host; plain `http` is allowed only for loopback (`localhost`, `127.0.0.0/8`, `::1` — not RFC1918/LAN addresses), per RFC 8252, for native/CLI clients. This is a structural sanity check only — it does not make a registered client trustworthy; exact-match comparison against the registered value is still what prevents redirect-target tampering during the authorize/token flow.
+- `redirect_uris` must contain exactly one entry (extras are rejected, not silently dropped), which must be a well-formed absolute `http`/`https` URL with a valid host and optional numeric port in the range 1–65535, no userinfo, and no fragment delimiter. `https` is allowed for any host; plain `http` is allowed only for loopback (`localhost`, `127.0.0.0/8`, `::1` — not RFC1918/LAN addresses), per RFC 8252, for native/CLI clients. This is a structural sanity check only — it does not make a registered client trustworthy; exact-match comparison against the registered value is still what prevents redirect-target tampering during the authorize/token flow.
 
 **Mode**
 
@@ -71,7 +71,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 
 **Issuer / discovery origin**
 
-- <a name="issuer--discovery-origin"></a>**Issuer / discovery origin.** The `issuer`/`resource` values in the two discovery documents, and the absolute endpoint URLs built from them, are chosen in order: (1) `SCRUMBOY_PUBLIC_BASE_URL`, used verbatim, same as the password-reset link origin; (2) direct TLS (`https://` + the request's `Host`) — safe because `r.TLS` is only ever set by Go's own TLS listener, never by the client; (3) when `SCRUMBOY_TRUST_PROXY=1`, a validated forwarded origin — `X-Forwarded-Proto` must say `https` and `X-Forwarded-Host` (falling back to `Host`) is used, scheme and host trusted together as one decision; (4) a loopback request host (`localhost`, `127.0.0.0/8`, `::1`) over plain `http`, since that traffic never leaves the machine. If none of these apply — e.g. a cleartext request to a non-loopback host with no `SCRUMBOY_PUBLIC_BASE_URL` and no `SCRUMBOY_TRUST_PROXY` — the discovery endpoints fail closed with `503 server_error` rather than ever reflecting a forged `Host` header or an ungated `X-Forwarded-Proto` back as the issuer. Deployments behind a reverse proxy should set `SCRUMBOY_PUBLIC_BASE_URL` (preferred) or `SCRUMBOY_TRUST_PROXY`.
+- <a name="issuer--discovery-origin"></a>**Issuer / discovery origin.** The `issuer`/`resource` values in the two discovery documents, and the absolute endpoint URLs built from them, are chosen in order: (1) `SCRUMBOY_PUBLIC_BASE_URL`, used verbatim, same as the password-reset link origin; (2) direct TLS, where TLS supplies the `https` scheme and the request's `Host` is used only after strict authority and port validation; (3) when `SCRUMBOY_TRUST_PROXY=1`, a validated forwarded origin — `X-Forwarded-Proto` (or `CF-Visitor`) must indicate `https` and the proxy must provide an explicit, valid `X-Forwarded-Host`; (4) a validated loopback request host (`localhost`, `127.0.0.0/8`, `::1`) over plain `http`, since that traffic never leaves the machine. The proxy branch never falls back to the backend-facing request `Host`. When `SCRUMBOY_TRUST_PROXY=1`, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication. A proxy that sends only `X-Forwarded-Proto` receives `503 server_error`. If no ladder branch applies, discovery fails closed with the same controlled 503 rather than guessing an issuer.
 
 **Token lifetimes**
 
@@ -93,7 +93,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected �
 | `POST` | `/oauth/token` | RFC 6749 §3.2 — exchanges a code or refresh token for an access token. |
 | `POST` | `/oauth/revoke` | RFC 7009 — revokes an access or refresh token. |
 
-`/oauth/*` is deliberately outside `/api/*`: it does not require the `X-Scrumboy: 1` CSRF header that `/api/*` writes require. The consent form at `/oauth/authorize` relies on `SameSite=Lax` session-cookie semantics instead — a cross-site top-level form POST never carries the session cookie, so a forged consent-approval submission cannot succeed.
+`/oauth/*` is deliberately outside `/api/*`: it does not require the `X-Scrumboy: 1` CSRF header that `/api/*` writes require. The consent form at `/oauth/authorize` instead combines `SameSite=Lax` session-cookie semantics with a canonical `Origin` check (falling back to `Referer`). A submission whose browser origin does not match the OAuth issuer is rejected.
 
 ---
 

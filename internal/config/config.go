@@ -76,7 +76,8 @@ type Config struct {
 	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
 	// password-reset emails: missing or invalid values fail closed (no email
 	// sent). When set to a valid absolute http/https origin, reset links use
-	// this origin for both self-service email and admin-generated links.
+	// this origin for both self-service email and admin-generated links, and
+	// OAuth discovery uses it as the canonical issuer origin.
 	// Example: "https://scrumboy.example.com".
 	PublicBaseURL string
 
@@ -84,6 +85,8 @@ type Config struct {
 	// rate-limit IP keys honor X-Forwarded-For (first hop). Default false: use
 	// RemoteAddr only so clients cannot spoof the per-IP limiter. Enable only
 	// when a reverse proxy is the sole network path and overwrites/strips XFF.
+	// Without PublicBaseURL, OAuth discovery also requires forwarded HTTPS and
+	// an explicit X-Forwarded-Host; it never falls back to the request Host.
 	TrustProxy bool
 }
 

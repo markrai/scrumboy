@@ -20,9 +20,8 @@ import (
 // handleOAuth dispatches the /oauth/* surface (RFC 6749/7591/7636/7009). All
 // of it is deliberately outside /api/*: OAuth clients authenticate via PKCE
 // and client_id, not the X-Scrumboy CSRF header /api/* requires, and the
-// consent form at /oauth/authorize relies on SameSite=Lax cookie semantics
-// (a cross-site top-level POST navigation never carries the session cookie)
-// rather than that header for its own CSRF protection.
+// consent form at /oauth/authorize instead combines SameSite=Lax cookie
+// semantics with canonical Origin/Referer validation for CSRF protection.
 func (s *Server) handleOAuth(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/oauth/register":
@@ -48,11 +47,10 @@ var errOAuthIssuerUnavailable = errors.New("no trustworthy issuer origin for thi
 //
 //  1. SCRUMBOY_PUBLIC_BASE_URL, used verbatim — the inbound request is never
 //     consulted, mirroring resetBaseURL.
-//  2. Direct TLS: r.TLS is only set by Go's own TLS listener, so it can't be
-//     forged by a client.
-//  3. SCRUMBOY_TRUST_PROXY: a single validated forwarded-origin decision (see
-//     forwardedOAuthOrigin) — scheme and host are trusted together, never
-//     mixed with the raw, potentially-rewritten r.Host.
+//  2. Direct TLS: TLS supplies the HTTPS scheme and r.Host supplies the HTTP
+//     request authority after strict syntax and port validation.
+//  3. SCRUMBOY_TRUST_PROXY: forwarded HTTPS plus an explicit, validated
+//     X-Forwarded-Host (see forwardedOAuthOrigin), with no r.Host fallback.
 //  4. A loopback request host (localhost, 127.0.0.0/8, ::1) — cleartext HTTP
 //     is acceptable there since it never leaves the machine.
 //  5. Otherwise: fail closed. Advertising a guessed issuer (e.g. reflecting
@@ -63,23 +61,25 @@ func (s *Server) oauthIssuer(r *http.Request) (string, error) {
 	if s.publicBaseURL != "" {
 		return s.publicBaseURL, nil
 	}
-	if r.TLS != nil {
-		return "https://" + r.Host, nil
+	authority, hostname, authorityOK := parseHTTPAuthority(r.Host)
+	if r.TLS != nil && authorityOK {
+		return "https://" + authority, nil
 	}
 	if s.trustProxy {
 		if origin, ok := forwardedOAuthOrigin(r); ok {
 			return origin, nil
 		}
 	}
-	if isLoopbackHost(r.Host) {
-		return "http://" + r.Host, nil
+	if authorityOK && isLoopbackHostname(hostname) {
+		return "http://" + authority, nil
 	}
 	return "", errOAuthIssuerUnavailable
 }
 
 // forwardedOAuthOrigin derives scheme+host as one validated decision from
-// X-Forwarded-Proto/X-Forwarded-Host (falling back to CF-Visitor for scheme
-// and r.Host for host). Only called when SCRUMBOY_TRUST_PROXY is enabled.
+// X-Forwarded-Proto/X-Forwarded-Host (falling back to CF-Visitor for scheme).
+// Only called when SCRUMBOY_TRUST_PROXY is enabled. X-Forwarded-Host is
+// required explicitly; the backend-facing r.Host is never used as a fallback.
 // Only https is accepted here: a proxy that terminates TLS and forwards
 // plaintext http should not have that http advertised as this server's
 // issuer scheme. Comma-separated or otherwise malformed forwarded-host
@@ -98,30 +98,26 @@ func forwardedOAuthOrigin(r *http.Request) (string, bool) {
 	if proto != "https" {
 		return "", false
 	}
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host == "" {
-		host = r.Host
-	}
-	if host == "" || strings.ContainsAny(host, ", ") {
+	hostValues := r.Header.Values("X-Forwarded-Host")
+	if len(hostValues) != 1 {
 		return "", false
 	}
-	return "https://" + host, true
+	authority, _, ok := parseHTTPAuthority(hostValues[0])
+	if !ok {
+		return "", false
+	}
+	return "https://" + authority, true
 }
 
-// isLoopbackHost reports whether hostport (an optional-port host, as found in
-// r.Host or a URL's Hostname()) refers to localhost, 127.0.0.0/8, or ::1.
+// isLoopbackHostname reports whether a validated, port-free hostname refers
+// to localhost, 127.0.0.0/8, or ::1.
 // Deliberately does not treat RFC1918/LAN addresses (192.168.x.x, etc.) as
 // loopback — LAN cleartext HTTP is a separate product decision.
-func isLoopbackHost(hostport string) bool {
-	host := hostport
-	if h, _, err := net.SplitHostPort(hostport); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if strings.EqualFold(host, "localhost") {
+func isLoopbackHostname(hostname string) bool {
+	if strings.EqualFold(hostname, "localhost") {
 		return true
 	}
-	ip := net.ParseIP(host)
+	ip := net.ParseIP(hostname)
 	return ip != nil && ip.IsLoopback()
 }
 
@@ -544,15 +540,22 @@ func (s *Server) writeOAuthIssuerUnavailable(w http.ResponseWriter) {
 		"unable to determine a trustworthy issuer for this request; configure SCRUMBOY_PUBLIC_BASE_URL")
 }
 
-// isValidOAuthRedirectURI reports whether raw is a well-formed absolute http(s) URL with a host.
+// isValidOAuthRedirectURI reports whether raw is a well-formed absolute http(s) URL with a
+// validated host[:port].
 // This doesn't make DCR trustworthy on its own (registration stays unauthenticated, and exact-match
 // comparison against the registered value is what actually prevents redirect-target tampering later
 // in the flow) — it only rejects garbage/malformed input at registration time: non-URL strings,
-// non-http(s) schemes, a missing host, embedded userinfo/fragments (phishing display tricks), or a
-// plain-http URI targeting anything other than loopback. https is allowed for any host; http is only
-// allowed for loopback (localhost, 127.0.0.0/8, ::1 — not RFC1918/LAN) since native/CLI clients
-// commonly redirect there (RFC 8252) and it has no TLS.
+// non-http(s) schemes, a missing host, invalid ports, embedded userinfo/fragment delimiters (phishing
+// display tricks), or a plain-http URI targeting anything other than loopback. https is allowed for
+// any host; http is only allowed for loopback (localhost, 127.0.0.0/8, ::1 — not RFC1918/LAN) since
+// native/CLI clients commonly redirect there (RFC 8252) and it has no TLS.
 func isValidOAuthRedirectURI(raw string) bool {
+	// url.Parse represents both no fragment and a trailing empty fragment as
+	// Fragment == "". Reject the delimiter itself before parsing so the two
+	// cases cannot collapse into the same accepted value.
+	if strings.Contains(raw, "#") {
+		return false
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return false
@@ -563,11 +566,11 @@ func isValidOAuthRedirectURI(raw string) bool {
 	if u.User != nil || u.Fragment != "" {
 		return false
 	}
-	host := u.Hostname()
-	if host == "" {
+	_, hostname, ok := parseHTTPAuthority(u.Host)
+	if !ok {
 		return false
 	}
-	if u.Scheme == "http" && !isLoopbackHost(host) {
+	if u.Scheme == "http" && !isLoopbackHostname(hostname) {
 		return false
 	}
 	return true

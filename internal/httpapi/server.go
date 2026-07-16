@@ -74,13 +74,15 @@ type Options struct {
 
 	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
 	// password-reset emails; missing or invalid values fail closed. When set,
-	// overrides the request-derived origin for reset links (see resetBaseURL).
+	// overrides the request-derived origin for reset links (see resetBaseURL)
+	// and is the canonical OAuth discovery issuer.
 	PublicBaseURL string
 
 	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, clientIP honors
 	// X-Forwarded-For for authentication and OAuth rate-limit IP keys. Default
 	// false (RemoteAddr only). Enable only behind a reverse proxy that
-	// overwrites or strips client-supplied XFF.
+	// overwrites or strips client-supplied XFF. Without PublicBaseURL, OAuth
+	// discovery also requires forwarded HTTPS and an explicit X-Forwarded-Host.
 	TrustProxy bool
 }
 
@@ -113,8 +115,8 @@ type Server struct {
 
 	smtpConfigured bool // Host+port+From statically valid; gates request-password-reset email sending
 
-	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty disables self-service reset email (see resetBaseURL)
-	trustProxy    bool   // SCRUMBOY_TRUST_PROXY; when true, clientIP honors X-Forwarded-For
+	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; reset-link origin and canonical OAuth issuer when set
+	trustProxy    bool   // SCRUMBOY_TRUST_PROXY; gates forwarded client IP and OAuth origin signals
 
 	webFS               fs.FS
 	fileSrv             http.Handler

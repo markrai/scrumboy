@@ -174,14 +174,10 @@ func exchangeToken(t *testing.T, baseURL string, form url.Values) (int, map[stri
 	return resp.StatusCode, out
 }
 
-// TestOAuthDiscovery_PublicBaseURLOverridesSpoofedHostAndProto guards against
-// the same class of issue fixed for password-reset links (see resetBaseURL):
-// without SCRUMBOY_PUBLIC_BASE_URL configured, oauthIssuer built the
-// "issuer"/"resource" values in discovery metadata from the inbound Host
-// header and X-Forwarded-Proto, both attacker-controlled when
-// SCRUMBOY_TRUST_PROXY is unset. A request claiming Host: attacker.example
-// (or forging X-Forwarded-Proto: https on a cleartext connection) must not
-// be able to make Scrumboy advertise itself as attacker.example.
+// TestOAuthDiscovery_PublicBaseURLOverridesSpoofedHostAndProto guards the top
+// issuer rung: a configured canonical origin must win without consulting the
+// request authority or forwarded headers. Separately, untrusted forwarded
+// protocol cannot turn a cleartext non-loopback request into an HTTPS issuer.
 func TestOAuthDiscovery_PublicBaseURLOverridesSpoofedHostAndProto(t *testing.T) {
 	dir := t.TempDir()
 	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
@@ -659,6 +655,35 @@ func TestOAuth_DCRRejectsMalformedRedirectURI(t *testing.T) {
 	}
 }
 
+// TestOAuth_DCRRejectsInvalidPortsAndEmptyFragment covers the authority-parser residuals at the
+// unauthenticated registration boundary. url.Parse alone accepts several of these, including an
+// explicit empty port and a trailing fragment delimiter whose parsed Fragment value is empty.
+func TestOAuth_DCRRejectsInvalidPortsAndEmptyFragment(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	for _, bad := range []string{
+		"https://example.com:/callback",
+		"https://example.com:0/callback",
+		"https://example.com:65536/callback",
+		"https://example.com:99999/callback",
+		"https://example.com:bad/callback",
+		"https://example.com/callback#",
+	} {
+		var out map[string]any
+		resp, body := doJSON(t, http.DefaultClient, http.MethodPost, ts.URL+"/oauth/register", map[string]any{
+			"client_name":   "Bad Redirect Authority",
+			"redirect_uris": []string{bad},
+		}, &out)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("redirect_uri=%q: expected 400, got %d body=%s", bad, resp.StatusCode, string(body))
+		}
+		if out["error"] != "invalid_redirect_uri" {
+			t.Fatalf("redirect_uri=%q: expected invalid_redirect_uri, got %+v", bad, out)
+		}
+	}
+}
+
 // TestOAuth_DCRAcceptsLoopbackHTTP guards against over-tightening the redirect_uri check: native/CLI
 // clients (RFC 8252) commonly redirect to a plain-http loopback address, which must keep working.
 func TestOAuth_DCRAcceptsLoopbackHTTP(t *testing.T) {
@@ -860,6 +885,7 @@ func TestOAuth_DCRAcceptsCleanHTTPSAndLoopback(t *testing.T) {
 		"http://[::1]:49152/callback",
 		"http://localhost/callback",
 		"https://example.com/callback",
+		"https://example.com:65535/callback",
 	} {
 		if clientID := registerOAuthClient(t, ts.URL, good); clientID == "" {
 			t.Fatalf("redirect_uri=%q: expected registration to succeed", good)
@@ -882,9 +908,9 @@ func TestOAuthIssuer_PrefersPublicBaseURL(t *testing.T) {
 	}
 }
 
-// TestOAuthIssuer_DirectTLSUsesRequestHost guards the second rung: r.TLS is set only by Go's own
-// TLS listener, so a request that has it is unforgeable by the client.
-func TestOAuthIssuer_DirectTLSUsesRequestHost(t *testing.T) {
+// TestOAuthIssuer_DirectTLSUsesValidatedRequestHost guards the second rung: direct TLS supplies the
+// HTTPS scheme, while the HTTP request authority still has to pass the shared syntax/port parser.
+func TestOAuthIssuer_DirectTLSUsesValidatedRequestHost(t *testing.T) {
 	srv := newTestOAuthServer(t, Options{})
 	req := httptest.NewRequest(http.MethodGet, "https://scrumboy.internal/oauth/authorize", nil)
 	req.TLS = &tls.ConnectionState{}
@@ -894,6 +920,35 @@ func TestOAuthIssuer_DirectTLSUsesRequestHost(t *testing.T) {
 	}
 	if got != "https://scrumboy.internal" {
 		t.Fatalf("expected https://scrumboy.internal, got %q", got)
+	}
+}
+
+func TestOAuthIssuer_DirectTLSRejectsMalformedAuthority(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{})
+	for _, host := range []string{
+		"",
+		"https://evil.example",
+		"evil.example/path",
+		"user@evil.example",
+		"evil.example?query",
+		"evil.example#fragment",
+		"evil.example:",
+		"evil.example:0",
+		"evil.example:65536",
+		"evil.example:99999",
+		"evil.example:bad",
+		"[::1",
+		"host1.example,host2.example",
+		"evil%2f.example",
+	} {
+		t.Run(host, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "https://valid.example/oauth/authorize", nil)
+			req.Host = host
+			req.TLS = &tls.ConnectionState{}
+			if _, err := srv.oauthIssuer(req); err == nil {
+				t.Fatalf("host=%q: expected direct-TLS issuer derivation to reject malformed authority", host)
+			}
+		})
 	}
 }
 
@@ -924,6 +979,54 @@ func TestOAuthIssuer_TrustProxyHonorsForwardedOrigin(t *testing.T) {
 	if got != "https://scrumboy.example.com" {
 		t.Fatalf("expected https://scrumboy.example.com, got %q", got)
 	}
+}
+
+// TestOAuthIssuer_TrustProxyRequiresForwardedHost is the primary proxy hardening regression test:
+// forwarded HTTPS alone must not fall back to the backend-facing request Host.
+func TestOAuthIssuer_TrustProxyRequiresForwardedHost(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+	req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	if _, err := srv.oauthIssuer(req); err == nil {
+		t.Fatal("expected oauthIssuer to fail closed when X-Forwarded-Host is missing")
+	}
+}
+
+func TestOAuthIssuer_TrustProxyRejectsMalformedForwardedHost(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+	for _, host := range []string{
+		"",
+		"https://evil.example",
+		"evil.example/path",
+		"user@evil.example",
+		"evil.example?query",
+		"evil.example#fragment",
+		"evil.example:",
+		"evil.example:99999",
+		"evil.example:bad",
+		"[::1",
+		"host1.example,host2.example",
+		"evil%2f.example",
+	} {
+		t.Run(host, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+			req.Header.Set("X-Forwarded-Proto", "https")
+			req.Header.Set("X-Forwarded-Host", host)
+			if _, err := srv.oauthIssuer(req); err == nil {
+				t.Fatalf("X-Forwarded-Host=%q: expected oauthIssuer to fail closed", host)
+			}
+		})
+	}
+
+	t.Run("duplicate header fields", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/oauth/authorize", nil)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Add("X-Forwarded-Host", "first.example")
+		req.Header.Add("X-Forwarded-Host", "second.example")
+		if _, err := srv.oauthIssuer(req); err == nil {
+			t.Fatal("expected oauthIssuer to reject multiple X-Forwarded-Host fields")
+		}
+	})
 }
 
 // TestOAuthIssuer_TrustProxyRejectsInsecureForwardedProto guards against a proxy (or spoofed
@@ -957,6 +1060,17 @@ func TestOAuthIssuer_LoopbackAllowsPlainHTTP(t *testing.T) {
 	}
 }
 
+func TestOAuthIssuer_LoopbackRejectsMalformedAuthority(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{})
+	for _, host := range []string{"localhost:", "127.0.0.1:0", "[::1", "[::1]:65536"} {
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/oauth/authorize", nil)
+		req.Host = host
+		if _, err := srv.oauthIssuer(req); err == nil {
+			t.Fatalf("host=%q: expected loopback issuer derivation to reject malformed authority", host)
+		}
+	}
+}
+
 func TestOAuthIssuer_FailsClosedForUnknownHost(t *testing.T) {
 	srv := newTestOAuthServer(t, Options{})
 	req := httptest.NewRequest(http.MethodGet, "http://random-internet-host.example/oauth/authorize", nil)
@@ -984,6 +1098,19 @@ func TestOAuthDiscovery_FailsClosedReturns503(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 when no trustworthy issuer can be derived, got %d", resp.StatusCode)
+	}
+}
+
+func TestOAuthDiscovery_TrustProxyWithoutForwardedHostReturns503(t *testing.T) {
+	srv := newTestOAuthServer(t, Options{TrustProxy: true})
+	req := httptest.NewRequest(http.MethodGet, "http://internal-backend:8080/.well-known/oauth-authorization-server", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	w := httptest.NewRecorder()
+
+	srv.handleOAuthASMetadata(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when a trusted proxy sends only X-Forwarded-Proto, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
