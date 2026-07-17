@@ -70,7 +70,11 @@ func newTestOAuthServer(t *testing.T, opts Options) *Server {
 	if err := migrate.Apply(context.Background(), sqlDB); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	st := store.New(sqlDB, nil)
+	var storeOpts *store.StoreOptions
+	if len(opts.EncryptionKey) > 0 {
+		storeOpts = &store.StoreOptions{EncryptionKey: opts.EncryptionKey}
+	}
+	st := store.New(sqlDB, storeOpts)
 	if opts.MaxRequestBody == 0 {
 		opts.MaxRequestBody = 1 << 20
 	}

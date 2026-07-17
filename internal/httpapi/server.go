@@ -27,10 +27,12 @@ type Options struct {
 	ScrumboyMode        string // "full" or "anonymous"
 	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
 	// Empty disables wallpaper upload/serve (returns 503 for those routes).
-	DataDir       string
-	AuthRateLimit *ratelimit.Limiter
-	MCPHandler    http.Handler
-	AgoraHandler  http.Handler
+	DataDir             string
+	AuthRateLimit       *ratelimit.Limiter
+	OAuthDCRRateLimit   *ratelimit.Limiter
+	OAuthTokenRateLimit *ratelimit.Limiter
+	MCPHandler          http.Handler
+	AgoraHandler        http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
@@ -105,7 +107,9 @@ type Server struct {
 	mailCancel          context.CancelFunc
 	mailDone            <-chan struct{} // closed once the mail worker's shutdown flush completes; nil if SMTP isn't configured
 
-	authRateLimit *ratelimit.Limiter
+	authRateLimit       *ratelimit.Limiter
+	oauthDCRRateLimit   *ratelimit.Limiter
+	oauthTokenRateLimit *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
@@ -385,6 +389,14 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if authRateLimit == nil {
 		authRateLimit = ratelimit.New(10, time.Minute)
 	}
+	oauthDCRRateLimit := opts.OAuthDCRRateLimit
+	if oauthDCRRateLimit == nil {
+		oauthDCRRateLimit = ratelimit.New(10, time.Minute)
+	}
+	oauthTokenRateLimit := opts.OAuthTokenRateLimit
+	if oauthTokenRateLimit == nil {
+		oauthTokenRateLimit = ratelimit.New(60, time.Minute)
+	}
 	hub := NewHub(defaultSubscriberBuffer)
 	sseBridgeConsumer := newSSEBridge(hub)
 	whQueue := newWebhookQueue(logger)
@@ -448,6 +460,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		mailCancel:                  mailCancel,
 		mailDone:                    mailDone,
 		authRateLimit:               authRateLimit,
+		oauthDCRRateLimit:           oauthDCRRateLimit,
+		oauthTokenRateLimit:         oauthTokenRateLimit,
 		encryptionKey:               encKey,
 		oidcService:                 opts.OIDCService,
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,

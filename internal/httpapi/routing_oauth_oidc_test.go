@@ -90,6 +90,47 @@ func TestOAuthLoginPageAuthModes(t *testing.T) {
 		if !strings.Contains(body, `id="email"`) || !strings.Contains(body, `id="password"`) || !strings.Contains(body, "/api/auth/login") {
 			t.Fatalf("local-only login page must retain the password form: %s", body)
 		}
+		for _, want := range []string{
+			`id="two-factor-login" hidden`,
+			`id="two-factor-code" type="text"`,
+			`autocomplete="one-time-code"`,
+			`id="verify-two-factor"`,
+			">Verify</button>",
+			">Start over</button>",
+			"Authenticator or recovery code",
+			"/api/auth/login/2fa",
+			"Invalid authentication code.",
+			"Your sign-in attempt expired. Start over to try again.",
+			"Too many attempts. Try again shortly.",
+			"Verification failed. Please try again.",
+			"typeof r.body.tempToken !== 'string' || !r.body.tempToken",
+			"document.getElementById('password').value = ''",
+			"verifyButton.disabled = true",
+			"var tempToken = ''",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("local-only login page is missing inline 2FA contract %q: %s", want, body)
+			}
+		}
+		if strings.Contains(body, "innerHTML") || strings.Contains(body, "localStorage") || strings.Contains(body, "sessionStorage") {
+			t.Fatalf("OAuth 2FA must use textContent and in-memory token state only: %s", body)
+		}
+		missingTokenGuard := strings.Index(body, "typeof r.body.tempToken !== 'string' || !r.body.tempToken")
+		hidePassword := strings.Index(body, "document.getElementById('password-login').hidden = true")
+		if missingTokenGuard < 0 || hidePassword < 0 || missingTokenGuard > hidePassword {
+			t.Fatalf("missing tempToken must fail generically before hiding the password surface: %s", body)
+		}
+		for _, want := range []string{
+			"tempToken = ''",
+			"document.getElementById('two-factor-code').value = ''",
+			"document.getElementById('err').textContent = ''",
+			"document.getElementById('two-factor-login').hidden = true",
+			"document.getElementById('password-login').hidden = false",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("Start over does not restore the password surface contract %q: %s", want, body)
+			}
+		}
 		if strings.Contains(body, "Continue with SSO") || strings.Contains(body, `id="oauth-oidc-login"`) {
 			t.Fatalf("local-only login page must not show an SSO action: %s", body)
 		}
@@ -109,8 +150,11 @@ func TestOAuthLoginPageAuthModes(t *testing.T) {
 		if !strings.Contains(body, "<h1>Sign in to continue</h1>") || !strings.Contains(body, `id="email"`) || !strings.Contains(body, `id="password"`) {
 			t.Fatalf("hybrid login page must retain password login under the resolved heading: %s", body)
 		}
-		if !strings.Contains(body, "<span>or</span>") || !strings.Contains(body, "Continue with SSO") {
-			t.Fatalf("hybrid login page must show SSO as a clear alternative: %s", body)
+		if !strings.Contains(body, `id="two-factor-login" hidden`) || !strings.Contains(body, "<span>or</span>") || !strings.Contains(body, "Continue with SSO") {
+			t.Fatalf("hybrid login page must show inline 2FA and keep SSO as a clear alternative: %s", body)
+		}
+		if strings.Contains(body, "document.getElementById('oauth-oidc-login').hidden") {
+			t.Fatalf("hybrid inline 2FA must not hide the SSO alternative: %s", body)
 		}
 
 		href := oauthOIDCLoginHref(t, body)
@@ -143,8 +187,8 @@ func TestOAuthLoginPageAuthModes(t *testing.T) {
 		if !strings.Contains(body, `class="sso-button btn-primary"`) {
 			t.Fatalf("OIDC-only SSO continuation must be styled as the primary action: %s", body)
 		}
-		if strings.Contains(body, `id="email"`) || strings.Contains(body, `id="password"`) || strings.Contains(body, "/api/auth/login") || strings.Contains(body, "main app first") {
-			t.Fatalf("OIDC-only login page must not render the dead password form or main-app-first copy: %s", body)
+		if strings.Contains(body, `id="email"`) || strings.Contains(body, `id="password"`) || strings.Contains(body, `id="two-factor-login"`) || strings.Contains(body, `id="two-factor-code"`) || strings.Contains(body, "/api/auth/login") || strings.Contains(body, "main app first") {
+			t.Fatalf("OIDC-only login page must not render password/2FA surfaces or main-app-first copy: %s", body)
 		}
 	})
 }

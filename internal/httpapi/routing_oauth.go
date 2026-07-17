@@ -12,9 +12,15 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"scrumboy/internal/oauth"
 	"scrumboy/internal/store"
+)
+
+const (
+	maxOAuthClientNameRunes  = 128
+	maxOAuthRedirectURIBytes = 2048
 )
 
 // handleOAuth dispatches the /oauth/* surface (RFC 6749/7591/7636/7009). All
@@ -248,7 +254,7 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 	// Unauthenticated by design (DCR is inherently self-service), so this is the only thing
 	// standing between the endpoint and unbounded oauth_clients row growth / free client-identity
 	// minting for a phishing-style consent-screen attack (see renderOAuthConsentPage).
-	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
+	if s.oauthDCRRateLimit != nil && !s.oauthDCRRateLimit.Allow("ip:"+s.clientIP(r), "") {
 		oauth.WriteJSON(w, http.StatusTooManyRequests, oauth.ErrInvalidRequest, "too many attempts; try again later")
 		return
 	}
@@ -266,19 +272,31 @@ func (s *Server) handleOAuthRegister(w http.ResponseWriter, r *http.Request) {
 		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidClientMetadata, "invalid JSON body")
 		return
 	}
+	clientName := strings.TrimSpace(in.ClientName)
+	if utf8.RuneCountInString(clientName) > maxOAuthClientNameRunes {
+		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidClientMetadata, "client_name must not exceed 128 Unicode characters")
+		return
+	}
 	// Exactly one redirect_uris entry is required and enforced — silently registering
 	// only redirect_uris[0] while ignoring the rest would let a client list additional,
 	// unvalidated URIs that this server never checked but the client believes were accepted.
-	if len(in.RedirectURIs) != 1 || strings.TrimSpace(in.RedirectURIs[0]) == "" {
+	if len(in.RedirectURIs) != 1 {
 		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "exactly one redirect_uris entry is required")
 		return
 	}
 	redirectURI := strings.TrimSpace(in.RedirectURIs[0])
+	if redirectURI == "" {
+		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "exactly one redirect_uris entry is required")
+		return
+	}
+	if len(redirectURI) > maxOAuthRedirectURIBytes {
+		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "redirect_uris[0] must not exceed 2048 bytes")
+		return
+	}
 	if !isValidOAuthRedirectURI(redirectURI) {
 		oauth.WriteJSON(w, http.StatusBadRequest, oauth.ErrInvalidRedirectURI, "redirect_uris[0] must be an absolute http(s) URL")
 		return
 	}
-	clientName := strings.TrimSpace(in.ClientName)
 
 	clientID, err := oauth.GenerateClientID()
 	if err != nil {
@@ -453,7 +471,7 @@ func (s *Server) handleOAuthToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
 	}
-	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
+	if s.oauthTokenRateLimit != nil && !s.oauthTokenRateLimit.Allow("ip:"+s.clientIP(r), "") {
 		oauth.WriteJSON(w, http.StatusTooManyRequests, oauth.ErrInvalidRequest, "too many attempts; try again later")
 		return
 	}
@@ -709,10 +727,21 @@ func (s *Server) renderOAuthLoginPage(w http.ResponseWriter, r *http.Request, cl
 	var actions strings.Builder
 	if localAuthEnabled {
 		actions.WriteString(`<div id="err" class="err"></div>
+<div id="password-login">
 <input id="email" type="email" placeholder="Email" autocomplete="username">
 <input id="password" type="password" placeholder="Password" autocomplete="current-password">
-<button class="btn-primary" onclick="doLogin()">Log in</button>
+<button class="btn-primary" type="button" onclick="doLogin()">Log in</button>
+</div>
+<div id="two-factor-login" hidden>
+<p><label for="two-factor-code">Enter your authentication code</label></p>
+<input id="two-factor-code" type="text" placeholder="Code" autocomplete="one-time-code">
+<p>Authenticator or recovery code</p>
+<button id="verify-two-factor" class="btn-primary" type="button" onclick="doVerify2FA()">Verify</button>
+<button class="btn-secondary" type="button" onclick="startOver()">Start over</button>
+</div>
 <script>
+var tempToken = '';
+
 function doLogin() {
   var email = document.getElementById('email').value;
   var password = document.getElementById('password').value;
@@ -725,18 +754,82 @@ function doLogin() {
   }).then(function(res) {
     return res.json().then(function(body) { return {status: res.status, body: body}; });
   }).then(function(r) {
-    if (r.status === 200 && !r.body.requires2fa) {
-      window.location.reload();
+    if (r.status === 200 && r.body && r.body.requires2fa) {
+      if (typeof r.body.tempToken !== 'string' || !r.body.tempToken) {
+        err.textContent = 'Verification failed. Please try again.';
+        return;
+      }
+      tempToken = r.body.tempToken;
+      document.getElementById('password').value = '';
+      document.getElementById('password-login').hidden = true;
+      document.getElementById('two-factor-login').hidden = false;
+      document.getElementById('two-factor-code').focus();
       return;
     }
-    if (r.body && r.body.requires2fa) {
-      err.textContent = 'This account has 2FA enabled. Please log in at the main app first, then reopen this link.';
+    if (r.status === 200) {
+      window.location.reload();
       return;
     }
     err.textContent = 'Login failed. Check your email and password.';
   }).catch(function() {
     err.textContent = 'Login failed. Please try again.';
   });
+}
+
+function twoFactorErrorMessage(status, body) {
+  if (status === 429) {
+    return 'Too many attempts. Try again shortly.';
+  }
+  var message = body && body.error && body.error.message;
+  if (status === 401 && message === 'invalid code') {
+    return 'Invalid authentication code.';
+  }
+  if (status === 401 && (message === 'invalid or expired code' || message === 'too many attempts; please sign in again')) {
+    return 'Your sign-in attempt expired. Start over to try again.';
+  }
+  return 'Verification failed. Please try again.';
+}
+
+function doVerify2FA() {
+  var code = document.getElementById('two-factor-code').value;
+  var err = document.getElementById('err');
+  var verifyButton = document.getElementById('verify-two-factor');
+  if (!tempToken) {
+    err.textContent = 'Verification failed. Please try again.';
+    return;
+  }
+  err.textContent = '';
+  verifyButton.disabled = true;
+  fetch('/api/auth/login/2fa', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-Scrumboy': '1'},
+    body: JSON.stringify({tempToken: tempToken, code: code})
+  }).then(function(res) {
+    return res.json().then(function(body) { return {status: res.status, body: body}; });
+  }).then(function(r) {
+    if (r.status === 200) {
+      window.location.reload();
+      return;
+    }
+    err.textContent = twoFactorErrorMessage(r.status, r.body);
+  }).catch(function() {
+    err.textContent = 'Verification failed. Please try again.';
+  }).then(function() {
+    if (tempToken) {
+      verifyButton.disabled = false;
+    }
+  });
+}
+
+function startOver() {
+  tempToken = '';
+  document.getElementById('two-factor-code').value = '';
+  document.getElementById('err').textContent = '';
+  document.getElementById('verify-two-factor').disabled = false;
+  document.getElementById('two-factor-login').hidden = true;
+  document.getElementById('password-login').hidden = false;
+  document.getElementById('password').value = '';
+  document.getElementById('password').focus();
 }
 </script>`)
 	}

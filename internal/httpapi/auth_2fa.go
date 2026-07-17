@@ -18,7 +18,8 @@ import (
 // clientIP returns the key used for per-IP rate limiting. X-Forwarded-For is only honored when
 // s.trustProxy is set (SCRUMBOY_TRUST_PROXY) — otherwise any client could spoof it to get a fresh
 // rate-limit bucket on every request, defeating IP-based limits for login, 2FA, OAuth DCR/token,
-// and other authentication rate limits. Default to RemoteAddr, which a client cannot forge.
+// and other authentication rate limits. OAuth endpoints have dedicated limiter instances but use
+// this same trusted client-IP boundary. Default to RemoteAddr, which a client cannot forge.
 func (s *Server) clientIP(r *http.Request) string {
 	if s != nil && s.trustProxy {
 		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
