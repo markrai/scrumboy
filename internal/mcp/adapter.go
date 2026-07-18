@@ -53,12 +53,21 @@ type storeAPI interface {
 
 type Options struct {
 	Mode string
+
+	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL, already normalized) is used to
+	// build the resource_metadata URL advertised in the WWW-Authenticate
+	// challenge (RFC 9728) on 401s. Left blank, the challenge omits
+	// resource_metadata rather than guess an origin the server can't vouch
+	// for; this mirrors the fail-closed issuer resolution in the OAuth
+	// discovery endpoints (see httpapi.oauthIssuer).
+	PublicBaseURL string
 }
 
 type Adapter struct {
-	store storeAPI
-	mode  string
-	tools toolRegistry
+	store               storeAPI
+	mode                string
+	tools               toolRegistry
+	resourceMetadataURL string
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -72,8 +81,22 @@ func New(st storeAPI, opts Options) *Adapter {
 		mode:  mode,
 		tools: make(toolRegistry),
 	}
+	if opts.PublicBaseURL != "" {
+		a.resourceMetadataURL = strings.TrimRight(opts.PublicBaseURL, "/") + "/.well-known/oauth-protected-resource"
+	}
 	a.registerTools()
 	return a
+}
+
+// writeWWWAuthenticate sets the RFC 9728 challenge header so MCP clients
+// (e.g. claude.ai's connector) know to start the OAuth flow instead of
+// treating an unauthenticated request as merely "connected". No-op in
+// anonymous mode or when no trustworthy resource_metadata URL is configured.
+func (a *Adapter) writeWWWAuthenticate(w http.ResponseWriter) {
+	if a.mode == "anonymous" || a.resourceMetadataURL == "" {
+		return
+	}
+	w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+a.resourceMetadataURL+`"`)
 }
 
 // parseBearerAuthorization parses Authorization: Bearer. The credential is the segment after the first

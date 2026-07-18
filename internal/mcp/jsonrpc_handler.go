@@ -226,12 +226,16 @@ func (a *Adapter) handleJSONRPCToolsCall(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if authRes.BearerAuthFailed {
-		writeJSONRPCToolErrorResult(w, req.ID, "authentication required")
+		a.writeJSONRPCAuthRequiredResult(w, req.ID, "authentication required")
 		return
 	}
 
 	data, _, toolErr := handler(authRes.Ctx, args)
 	if toolErr != nil {
+		if toolErr.Code == CodeAuthRequired {
+			a.writeJSONRPCAuthRequiredResult(w, req.ID, toolErr.Message)
+			return
+		}
 		writeJSONRPCToolErrorResult(w, req.ID, toolErr.Message)
 		return
 	}
@@ -307,6 +311,26 @@ func writeJSONRPCToolErrorResult(w http.ResponseWriter, id any, message string) 
 			{Type: "text", Text: message},
 		},
 		"isError": true,
+	})
+}
+
+// writeJSONRPCAuthRequiredResult reports an unauthenticated tools/call with an
+// actual HTTP 401 (plus the RFC 9728 WWW-Authenticate challenge) instead of
+// the usual HTTP 200 + isError body. A 200 here previously gave MCP clients
+// no transport-level signal to start the OAuth flow, so "Add connector"
+// would silently connect anonymously rather than prompting sign-in.
+func (a *Adapter) writeJSONRPCAuthRequiredResult(w http.ResponseWriter, id any, message string) {
+	a.writeWWWAuthenticate(w)
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      id,
+		Result: map[string]any{
+			"content": []mcpTextContent{
+				{Type: "text", Text: message},
+			},
+			"isError": true,
+		},
 	})
 }
 

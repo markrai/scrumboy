@@ -53,6 +53,40 @@ func newTestServer(t *testing.T, mode string) (*httptest.Server, *sql.DB, func()
 	}
 }
 
+// newTestServerWithPublicBaseURL is a variant of newTestServer for the small
+// number of tests that need the WWW-Authenticate resource_metadata URL
+// (RFC 9728) to be populated, which requires SCRUMBOY_PUBLIC_BASE_URL.
+func newTestServerWithPublicBaseURL(t *testing.T, mode, publicBaseURL string) (*httptest.Server, *sql.DB, func()) {
+	t.Helper()
+
+	dir := t.TempDir()
+	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
+		BusyTimeout: 5000,
+		JournalMode: "WAL",
+		Synchronous: "FULL",
+	})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := migrate.Apply(context.Background(), sqlDB); err != nil {
+		_ = sqlDB.Close()
+		t.Fatalf("migrate: %v", err)
+	}
+
+	st := store.New(sqlDB, nil)
+	srv := httpapi.NewServer(st, httpapi.Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   mode,
+		PublicBaseURL:  publicBaseURL,
+		MCPHandler:     mcp.New(st, mcp.Options{Mode: mode, PublicBaseURL: publicBaseURL}),
+	})
+	ts := httptest.NewServer(srv)
+	return ts, sqlDB, func() {
+		ts.Close()
+		_ = sqlDB.Close()
+	}
+}
+
 func doMCP(t *testing.T, client *http.Client, url string, body any) (*http.Response, map[string]any) {
 	t.Helper()
 

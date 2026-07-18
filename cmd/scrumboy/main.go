@@ -93,7 +93,7 @@ func main() {
 	if maxB <= 0 {
 		maxB = 1 << 20
 	}
-	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode})
+	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicBaseURL: cfg.PublicBaseURL})
 	srv := httpapi.NewServer(st, httpapi.Options{
 		Logger:               logger,
 		MaxRequestBody:       cfg.MaxRequestBodyBytes,

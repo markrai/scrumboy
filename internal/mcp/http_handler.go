@@ -13,11 +13,11 @@ import (
 func (a *Adapter) resolveAndValidateAuth(w http.ResponseWriter, r *http.Request) (ctx context.Context, ok bool) {
 	authRes := a.resolveRequestAuth(r)
 	if authRes.Err != nil {
-		writeError(w, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": authRes.Err.Error()}))
+		a.writeError(w, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": authRes.Err.Error()}))
 		return nil, false
 	}
 	if authRes.BearerAuthFailed {
-		writeError(w, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Authentication required", nil))
+		a.writeError(w, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Authentication required", nil))
 		return nil, false
 	}
 	return authRes.Ctx, true
@@ -32,7 +32,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Path != "/mcp" && r.URL.Path != "/mcp/" {
-		writeError(w, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil))
+		a.writeError(w, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil))
 		return
 	}
 
@@ -43,7 +43,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		data, meta, err := a.handleSystemGetCapabilities(ctx, nil)
 		if err != nil {
-			writeError(w, err)
+			a.writeError(w, err)
 			return
 		}
 		writeSuccess(w, http.StatusOK, data, meta)
@@ -51,23 +51,23 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodPost {
-		writeError(w, newAdapterError(http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed", nil))
+		a.writeError(w, newAdapterError(http.StatusMethodNotAllowed, CodeMethodNotAllowed, "method not allowed", nil))
 		return
 	}
 
 	var req requestEnvelope
 	if err := readJSON(r, &req); err != nil {
-		writeError(w, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid json", map[string]any{"detail": err.Error()}))
+		a.writeError(w, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid json", map[string]any{"detail": err.Error()}))
 		return
 	}
 	if req.Tool == "" {
-		writeError(w, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing tool", map[string]any{"field": "tool"}))
+		a.writeError(w, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing tool", map[string]any{"field": "tool"}))
 		return
 	}
 
 	handler, ok := a.tools[req.Tool]
 	if !ok {
-		writeError(w, newAdapterError(http.StatusNotFound, CodeNotFound, "tool not found", map[string]any{"tool": req.Tool}))
+		a.writeError(w, newAdapterError(http.StatusNotFound, CodeNotFound, "tool not found", map[string]any{"tool": req.Tool}))
 		return
 	}
 
@@ -77,7 +77,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	data, meta, toolErr := handler(ctx, req.Input)
 	if toolErr != nil {
-		writeError(w, toolErr)
+		a.writeError(w, toolErr)
 		return
 	}
 	writeSuccess(w, http.StatusOK, data, meta)
@@ -111,8 +111,11 @@ func writeSuccess(w http.ResponseWriter, status int, data any, meta map[string]a
 	})
 }
 
-func writeError(w http.ResponseWriter, err *adapterError) {
+func (a *Adapter) writeError(w http.ResponseWriter, err *adapterError) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err.Status == http.StatusUnauthorized {
+		a.writeWWWAuthenticate(w)
+	}
 	w.WriteHeader(err.Status)
 	_ = json.NewEncoder(w).Encode(errorResponse{
 		OK: false,

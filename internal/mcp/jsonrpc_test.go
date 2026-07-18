@@ -866,7 +866,7 @@ func TestJSONRPC_ToolsCall_ErrorMapping_AuthRequired(t *testing.T) {
 	client := newStatelessClient(ts)
 	bootstrapUser(t, newCookieClient(t, ts), ts.URL)
 
-	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+	resp, out := doJSONRPC(t, client, ts.URL, map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "tools/call",
@@ -876,6 +876,12 @@ func TestJSONRPC_ToolsCall_ErrorMapping_AuthRequired(t *testing.T) {
 		},
 	})
 
+	// A 401 here (rather than 200) is what tells MCP clients like claude.ai's
+	// connector to start the OAuth flow instead of silently treating the
+	// connection as anonymous.
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
 	if out["error"] != nil {
 		t.Fatalf("expected tool result error, got %v", out["error"])
 	}
@@ -890,6 +896,32 @@ func TestJSONRPC_ToolsCall_ErrorMapping_AuthRequired(t *testing.T) {
 	}
 	if out["ok"] != nil {
 		t.Fatal("JSON-RPC response must not contain legacy ok field")
+	}
+}
+
+func TestJSONRPC_ToolsCall_AuthRequired_SetsWWWAuthenticateChallenge(t *testing.T) {
+	ts, _, cleanup := newTestServerWithPublicBaseURL(t, "full", "https://scrumboy.example.com")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	bootstrapUser(t, newCookieClient(t, ts), ts.URL)
+
+	resp, _ := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "projects.list",
+			"arguments": map[string]any{},
+		},
+	})
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", resp.StatusCode)
+	}
+	want := `Bearer resource_metadata="https://scrumboy.example.com/.well-known/oauth-protected-resource"`
+	if got := resp.Header.Get("WWW-Authenticate"); got != want {
+		t.Fatalf("WWW-Authenticate = %q, want %q", got, want)
 	}
 }
 
