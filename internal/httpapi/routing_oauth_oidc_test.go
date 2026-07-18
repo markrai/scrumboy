@@ -305,6 +305,90 @@ func TestOAuthOIDCContinuationPreservesAuthorizeRequest(t *testing.T) {
 	}
 }
 
+// TestOAuthOIDCContinuationConsentApproveRefererOnly continues through OIDC to
+// the consent page, then approves with a classic form-shaped POST (no Origin,
+// same-origin Referer) and expects a client redirect carrying code+state.
+func TestOAuthOIDCContinuationConsentApproveRefererOnly(t *testing.T) {
+	_, ts, _, _ := newTestOAuthServerWithOIDC(t, true, true)
+	redirectURI := "https://client.example.com/callback"
+	clientID := registerOAuthClient(t, ts.URL, redirectURI)
+	_, challenge := pkcePair(t)
+	state := "oidc-referer-only"
+	authorize := authorizeURL(ts.URL, clientID, redirectURI, challenge, state)
+	authorizeURLParsed, err := url.Parse(authorize)
+	if err != nil {
+		t.Fatalf("parse authorize URL: %v", err)
+	}
+	wantReturnTo := authorizeURLParsed.RequestURI()
+
+	client := newCookieClient(t)
+	client.CheckRedirect = nil
+	status, location, loginBody := oauthPageResponse(t, client, authorize)
+	if status != http.StatusOK || location != "" {
+		t.Fatalf("initial OIDC-only authorize status=%d Location=%q", status, location)
+	}
+	href := oauthOIDCLoginHref(t, loginBody)
+
+	resp, err := client.Get(ts.URL + href)
+	if err != nil {
+		t.Fatalf("follow OAuth OIDC continuation: %v", err)
+	}
+	consentBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read consent page: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.RequestURI() != wantReturnTo {
+		t.Fatalf("OIDC continuation did not reach consent authorize URL: status=%d URL=%s", resp.StatusCode, resp.Request.URL)
+	}
+	if !strings.Contains(string(consentBody), "Approve access for") {
+		t.Fatalf("OIDC continuation did not render consent: %s", consentBody)
+	}
+	if got := resp.Header.Get("Referrer-Policy"); got != "same-origin" {
+		t.Fatalf("consent Referrer-Policy=%q, want same-origin", got)
+	}
+
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientID},
+		"redirect_uri":          {redirectURI},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"state":                 {state},
+		"action":                {"approve"},
+	}
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/oauth/authorize", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new Referer-only consent POST: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Referer", authorize)
+	postResp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Referer-only consent POST: %v", err)
+	}
+	defer postResp.Body.Close()
+	if postResp.StatusCode != http.StatusFound {
+		t.Fatalf("OIDC Referer-only consent POST status=%d, want 302", postResp.StatusCode)
+	}
+	loc, err := url.Parse(postResp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if loc.Scheme+"://"+loc.Host+loc.Path != "https://client.example.com/callback" {
+		t.Fatalf("redirect target=%s, want client callback", loc)
+	}
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("redirect missing authorization code: %s", loc)
+	}
+	if loc.Query().Get("state") != state {
+		t.Fatalf("redirect state=%q, want %q", loc.Query().Get("state"), state)
+	}
+}
+
 func TestOAuthExpiredConsentPOSTReturnsToCompleteAuthorizeGET(t *testing.T) {
 	_, ts, _, _ := newTestOAuthServerWithOIDC(t, true, true)
 	redirectURI := "https://client.example.com/callback?existing=a%2Bb"

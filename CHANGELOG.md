@@ -11,14 +11,19 @@
 ### Changed
 
 - **`SCRUMBOY_TRUST_PROXY` consumers** - Per-IP auth rate limiting now also covers OAuth DCR (`POST /oauth/register`) and `POST /oauth/token`. As before, `X-Forwarded-For` is honored only when TrustProxy is enabled.
+- **OAuth HTML `Referrer-Policy`** - Login, consent, and error pages send `Referrer-Policy: same-origin` (not `no-referrer`) so classic browser form Approve POSTs that omit `Origin` still carry a same-origin `Referer` for consent CSRF validation, while cross-origin navigations continue to withhold `Referer`. Exact-origin matching remains required, so sibling subdomains remain rejected.
+
+### Fixed
+
+- **OAuth consent Approve in browsers that omit `Origin`** - `Referrer-Policy: no-referrer` had suppressed the `Referer` fallback used by `oauthConsentOriginAllowed`, so legitimate consent submissions could fail with “Invalid request origin.”
 
 ### Documentation
 
-- **OAuth for MCP** - Added `docs/oauth.md` (discovery, DCR, PKCE, authorize/token/revoke, token lifetimes, deliberately unimplemented items); linked from `README.md` and `docs/mcp.md`.
+- **OAuth for MCP** - Added `docs/oauth.md` (discovery, DCR, PKCE, authorize/token/revoke, token lifetimes, deliberately unimplemented items); linked from `README.md` and `docs/mcp.md`. Documents consent Origin/Referer CSRF checks and `Referrer-Policy: same-origin`.
 
 ### Tests
 
-- **OAuth** - Happy-path register → authorize → consent → token → MCP call; PKCE mismatch; expired/replayed auth codes; redirect URI mismatch; anonymous-mode 404s; refresh rotation/reuse rejection; revoked-token rejection by MCP; DCR validation (malformed redirect URI, loopback HTTP allowed); strict JSON Content-Type on DCR; DCR rate limit ignores spoofed XFF by default.
+- **OAuth** - Happy-path register → authorize → consent → token → MCP call; PKCE mismatch; expired/replayed auth codes; redirect URI mismatch; anonymous-mode 404s; refresh rotation/reuse rejection; revoked-token rejection by MCP; DCR validation (malformed redirect URI, loopback HTTP allowed); strict JSON Content-Type on DCR; DCR rate limit ignores spoofed XFF by default; consent Origin/Referer matrix (including Referer-only Approve and missing-header rejection); OIDC continuation with Referer-only consent approval.
 - **MCP** - Invalid Bearer (including OAuth-shaped tokens) does not fall back to the session cookie.
 
 ## [3.19.0] - 2026-07-14

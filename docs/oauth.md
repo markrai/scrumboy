@@ -65,8 +65,8 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected â
 - Single fixed scope ("read and manage projects, todos, sprints, and tags"); there is no granular per-scope consent screen.
 - The user approving consent must have an authenticated Scrumboy session established through one of the methods above.
 - Because `client_name` is unauthenticated, self-registered metadata (any client can call itself "Claude Code" or anything else), the consent screen also shows the actual `redirect_uri` destination the code will be sent to, not just the name, so a user has something to check before approving.
-- The consent form POST requires `Origin` (falling back to `Referer`) to match this server's own origin, rejecting the request otherwise. `SameSite=Lax` on the session cookie alone isn't sufficient: "site" for SameSite purposes is the registrable domain, not this exact origin, so a form auto-submitted from any sibling subdomain sharing that cookie's Domain would otherwise still carry it into this endpoint.
-- The login, consent, and error HTML pages all send `Cache-Control: no-store`, `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`, so the Approve button can't be framed for a clickjacking-style attack and a shared/cached browser never retains a copy of these pages.
+- The consent form POST requires `Origin` (falling back to `Referer`) to match this server's own origin, rejecting the request otherwise. `SameSite=Lax` on the session cookie alone isn't sufficient: "site" for SameSite purposes is the registrable domain, not this exact origin, so a form auto-submitted from any sibling subdomain sharing that cookie's Domain would otherwise still carry it into this endpoint. Classic HTML form navigations may omit `Origin`; OAuth HTML pages therefore send `Referrer-Policy: same-origin` so a same-origin Approve POST still includes `Referer` for that fallback, while cross-origin navigations (including to an MCP client's redirect URI or an IdP) withhold `Referer`. Missing both headers fails closed. Sibling-subdomain attackers still fail because their `Origin`/`Referer` host does not match this Scrumboy instance's canonical issuer.
+- The login, consent, and error HTML pages all send `Cache-Control: no-store`, `Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, and `X-Content-Type-Options: nosniff`, so the Approve button can't be framed for a clickjacking-style attack and a shared/cached browser never retains a copy of these pages.
 
 **OAuth abuse resistance**
 
@@ -104,7 +104,7 @@ Static Bearer API tokens (`docs/mcp.md`) remain fully supported and unaffected â
 | `POST` | `/oauth/token` | RFC 6749 Â§3.2 â€” exchanges a code or refresh token for an access token. |
 | `POST` | `/oauth/revoke` | RFC 7009 â€” revokes an access or refresh token. |
 
-`/oauth/*` is deliberately outside `/api/*`: it does not require the `X-Scrumboy: 1` CSRF header that `/api/*` writes require. The consent form at `/oauth/authorize` instead combines `SameSite=Lax` session-cookie semantics with a canonical `Origin` check (falling back to `Referer`). A submission whose browser origin does not match the OAuth issuer is rejected.
+`/oauth/*` is deliberately outside `/api/*`: it does not require the `X-Scrumboy: 1` CSRF header that `/api/*` writes require. The consent form at `/oauth/authorize` instead combines `SameSite=Lax` session-cookie semantics with a canonical `Origin` check (falling back to `Referer` when `Origin` is absent). A submission whose browser origin does not match the OAuth issuer is rejected. See the Consent section for why `Referrer-Policy: same-origin` is required for that fallback.
 
 ---
 

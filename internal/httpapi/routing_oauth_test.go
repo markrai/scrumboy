@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -835,6 +836,187 @@ func TestOAuth_ConsentSubmitRejectsCrossOriginPost(t *testing.T) {
 	}
 }
 
+// postConsentApprove builds a consent-form POST. Empty origin/referer omit those headers.
+func postConsentApprove(t *testing.T, client *http.Client, baseURL, clientID, redirectURI, challenge, state, origin, referer string) *http.Response {
+	t.Helper()
+	form := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {clientID},
+		"redirect_uri":          {redirectURI},
+		"code_challenge":        {challenge},
+		"code_challenge_method": {"S256"},
+		"state":                 {state},
+		"action":                {"approve"},
+	}
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/oauth/authorize", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("new consent POST: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("consent POST: %v", err)
+	}
+	return resp
+}
+
+// TestOAuth_ConsentOriginRefererMatrix covers oauthConsentOriginAllowed with
+// classic form-POST shapes (Origin may be absent; Referer is the fallback).
+func TestOAuth_ConsentOriginRefererMatrix(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	cookieClient := newCookieClient(t)
+	cookieClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "origin-referer@example.com", "password123")
+
+	redirectURI := "https://client.example.com/callback"
+	clientID := registerOAuthClient(t, ts.URL, redirectURI)
+
+	assertReject := func(t *testing.T, resp *http.Response, label string) {
+		t.Helper()
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%s: expected 400, got %d", label, resp.StatusCode)
+		}
+		if loc := resp.Header.Get("Location"); loc != "" {
+			t.Fatalf("%s: must not redirect (would leak a code), got Location: %s", label, loc)
+		}
+	}
+	assertAccept := func(t *testing.T, resp *http.Response, state, label string) {
+		t.Helper()
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusFound {
+			t.Fatalf("%s: expected 302, got %d", label, resp.StatusCode)
+		}
+		loc, err := url.Parse(resp.Header.Get("Location"))
+		if err != nil {
+			t.Fatalf("%s: parse Location: %v", label, err)
+		}
+		if loc.Query().Get("code") == "" {
+			t.Fatalf("%s: Location missing code: %s", label, loc)
+		}
+		if loc.Query().Get("state") != state {
+			t.Fatalf("%s: state=%q, want %q", label, loc.Query().Get("state"), state)
+		}
+	}
+
+	t.Run("matching Origin succeeds", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "origin-ok", ts.URL, "")
+		assertAccept(t, resp, "origin-ok", "matching Origin")
+	})
+
+	t.Run("mismatching Origin fails", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "origin-bad", "https://evil.example.com", "")
+		assertReject(t, resp, "mismatching Origin")
+	})
+
+	t.Run("matching Origin wins over evil Referer", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "origin-wins-accept", ts.URL, "https://evil.example.com/")
+		assertAccept(t, resp, "origin-wins-accept", "Origin precedence accept")
+	})
+
+	t.Run("mismatching Origin wins over matching Referer", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		authURL := authorizeURL(ts.URL, clientID, redirectURI, challenge, "origin-wins-reject")
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "origin-wins-reject", "https://evil.example.com", authURL)
+		assertReject(t, resp, "Origin precedence reject")
+	})
+
+	t.Run("Referer-only same-origin succeeds", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		authURL := authorizeURL(ts.URL, clientID, redirectURI, challenge, "referer-ok")
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "referer-ok", "", authURL)
+		assertAccept(t, resp, "referer-ok", "same-origin Referer")
+	})
+
+	t.Run("Referer-only cross-origin rejected", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "referer-evil", "", "https://evil.example.com/oauth/authorize")
+		assertReject(t, resp, "cross-origin Referer")
+	})
+
+	t.Run("Referer-only malformed rejected", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "referer-bad", "", "://not a url")
+		assertReject(t, resp, "malformed Referer")
+	})
+
+	t.Run("missing Origin and Referer rejected", func(t *testing.T) {
+		_, challenge := pkcePair(t)
+		resp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, "neither", "", "")
+		assertReject(t, resp, "missing both headers")
+	})
+}
+
+// TestOAuth_ConsentFormRoundTripRefererOnly simulates a browser form Approve:
+// GET consent (session retained), then POST without Origin using the GET URL as Referer.
+func TestOAuth_ConsentFormRoundTripRefererOnly(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
+	defer cleanup()
+
+	cookieClient := newCookieClient(t)
+	cookieClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	bootstrapUserClient(t, cookieClient, ts.URL, "Owner", "form-roundtrip@example.com", "password123")
+
+	redirectURI := "https://client.example.com/callback"
+	clientID := registerOAuthClient(t, ts.URL, redirectURI)
+	_, challenge := pkcePair(t)
+	state := "form-roundtrip"
+	authURL := authorizeURL(ts.URL, clientID, redirectURI, challenge, state)
+
+	getResp, err := cookieClient.Get(authURL)
+	if err != nil {
+		t.Fatalf("consent GET: %v", err)
+	}
+	body, err := io.ReadAll(getResp.Body)
+	getResp.Body.Close()
+	if err != nil {
+		t.Fatalf("read consent GET: %v", err)
+	}
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("consent GET status=%d", getResp.StatusCode)
+	}
+	if got := getResp.Header.Get("Referrer-Policy"); got != "same-origin" {
+		t.Fatalf("consent Referrer-Policy=%q, want same-origin", got)
+	}
+	if !strings.Contains(string(body), "Approve access") || !strings.Contains(string(body), `method="POST"`) {
+		t.Fatalf("expected consent form HTML: %s", body)
+	}
+
+	postResp := postConsentApprove(t, cookieClient, ts.URL, clientID, redirectURI, challenge, state, "", authURL)
+	defer postResp.Body.Close()
+	if postResp.StatusCode != http.StatusFound {
+		t.Fatalf("Referer-only consent POST status=%d, want 302", postResp.StatusCode)
+	}
+	loc, err := url.Parse(postResp.Header.Get("Location"))
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if loc.Scheme+"://"+loc.Host+loc.Path != "https://client.example.com/callback" {
+		t.Fatalf("redirect target=%s, want client callback", loc)
+	}
+	if loc.Query().Get("code") == "" {
+		t.Fatalf("redirect missing authorization code: %s", loc)
+	}
+	if loc.Query().Get("state") != state {
+		t.Fatalf("redirect state=%q, want %q", loc.Query().Get("state"), state)
+	}
+}
+
 func TestOAuth_ConsentPageDisclosesRedirectDestination(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServerWithMCP(t, "full")
 	defer cleanup()
@@ -1249,8 +1431,8 @@ func TestOAuthHTMLPages_SecurityHeaders(t *testing.T) {
 		if got := resp.Header.Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'none'") {
 			t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'", got)
 		}
-		if got := resp.Header.Get("Referrer-Policy"); got != "no-referrer" {
-			t.Errorf("Referrer-Policy = %q, want no-referrer", got)
+		if got := resp.Header.Get("Referrer-Policy"); got != "same-origin" {
+			t.Errorf("Referrer-Policy = %q, want same-origin", got)
 		}
 		if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
 			t.Errorf("X-Content-Type-Options = %q, want nosniff", got)

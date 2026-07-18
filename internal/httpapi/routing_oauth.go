@@ -420,8 +420,11 @@ func (s *Server) handleOAuthAuthorizeSubmit(w http.ResponseWriter, r *http.Reque
 	// subdomain the cookie's Domain also covers is same-site and would still
 	// carry the session cookie into an auto-submitting POST here. Requiring
 	// Origin (falling back to Referer) to match this server's own origin
-	// closes that gap; genuine browser form/fetch POSTs always send one of
-	// the two.
+	// closes that gap. Classic HTML form navigations may omit Origin; the
+	// OAuth HTML pages therefore send Referrer-Policy: same-origin so a
+	// same-origin consent POST still carries Referer for this fallback,
+	// while cross-origin navigations withhold it. Missing both headers
+	// fails closed.
 	if !s.oauthConsentOriginAllowed(r) {
 		s.renderOAuthErrorPage(w, http.StatusBadRequest, "Invalid request origin", "This consent submission did not originate from this Scrumboy instance.")
 		return
@@ -688,14 +691,17 @@ a{color:#5b8cff}
 // consent, error) needs: no-store so a shared/cached browser never persists
 // a copy carrying an auth code or session-bound form, and anti-framing so the
 // consent page's Approve button can't be UI-redressed into an invisible
-// frame on an attacker's page.
+// frame on an attacker's page. Referrer-Policy is same-origin (not
+// no-referrer) so classic form POSTs that omit Origin still send a
+// same-origin Referer for oauthConsentOriginAllowed, while cross-origin
+// navigations omit Referer entirely.
 func setOAuthHTMLHeaders(w http.ResponseWriter) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Cache-Control", "no-store")
 	h.Set("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'none'")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Referrer-Policy", "no-referrer")
+	h.Set("Referrer-Policy", "same-origin")
 	h.Set("X-Content-Type-Options", "nosniff")
 }
 
