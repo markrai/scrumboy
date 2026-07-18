@@ -57,7 +57,21 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		return
 	}
 
-	// GET /api/auth/oidc/login, GET /api/auth/oidc/callback
+	if len(rest) == 3 && rest[0] == "oidc" && rest[1] == "set-password" {
+		switch rest[2] {
+		case "start":
+			s.handleOIDCSetPasswordStart(w, r)
+			return
+		case "status":
+			s.handleOIDCSetPasswordStatus(w, r)
+			return
+		}
+	}
+	if len(rest) == 3 && rest[0] == "oidc" && rest[1] == "link" && rest[2] == "start" {
+		s.handleOIDCLinkStart(w, r)
+		return
+	}
+	// OIDC login/callback and first-password completion.
 	if len(rest) == 2 && rest[0] == "oidc" {
 		switch rest[1] {
 		case "login":
@@ -65,6 +79,9 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 			return
 		case "callback":
 			s.handleOIDCCallback(w, r)
+			return
+		case "set-password":
+			s.handleOIDCSetPassword(w, r)
 			return
 		}
 	}
@@ -291,6 +308,10 @@ func (s *Server) handleAuthResetPassword(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return
 	}
+	if s.oidcService != nil && s.oidcService.Config().LocalAuthDisabled {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
+	}
 
 	// Rate limit by IP (reuse auth ratelimit)
 	if s.authRateLimit != nil && !s.authRateLimit.Allow("ip:"+s.clientIP(r), "") {
@@ -329,14 +350,8 @@ func (s *Server) handleAuthResetPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Store enforces auth.ValidatePassword internally
-	if err := s.store.UpdateUserPassword(ctx, userID, in.NewPassword); err != nil {
+	if err := s.store.ResetLocalPassword(ctx, userID, passwordHash, in.NewPassword); err != nil {
 		writeStoreErr(w, err, true)
-		return
-	}
-
-	if err := s.store.DeleteSessionsByUserID(ctx, userID); err != nil {
-		writeInternal(w, err)
 		return
 	}
 	clearSessionCookie(w, r)
@@ -366,6 +381,10 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 		return
 	}
 	if s.mode == "anonymous" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
+	}
+	if s.oidcService != nil && s.oidcService.Config().LocalAuthDisabled {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return
 	}

@@ -175,6 +175,8 @@ async function setupSettingsView(options: {
   user?: Record<string, unknown> | null;
   authStatusAvailable?: boolean;
   pushConfigured?: boolean;
+	oidcEnabled?: boolean;
+	localAuthEnabled?: boolean;
 }) {
   const i18n = await initI18nFor('en');
   const settings = await import('./settings.js');
@@ -182,6 +184,8 @@ async function setupSettingsView(options: {
   state.pushConfigured = options.pushConfigured ?? false;
   mutations.setAuthStatusAvailable(options.authStatusAvailable ?? true);
   mutations.setPushConfigured(options.pushConfigured ?? false);
+	mutations.setOidcEnabled(options.oidcEnabled ?? false);
+	mutations.setLocalAuthEnabled(options.localAuthEnabled ?? true);
   mutations.setUser((options.user as any) ?? null);
   mutations.setSlug(null);
   mutations.setBoard(null);
@@ -204,7 +208,7 @@ async function setupSettingsView(options: {
   return { i18n, settings, mutations };
 }
 
-describe('settings phase 5 i18n (profile / users / backup / customization)', () => {
+describe('settings i18n (profile / users / backup / customization)', () => {
   beforeEach(() => {
     vi.resetModules();
     installBaseDOM();
@@ -246,6 +250,100 @@ describe('settings phase 5 i18n (profile / users / backup / customization)', () 
   });
 
   // ---- Profile ----------------------------------------------------------
+
+	it('shows configured-provider authentication state, recovery warning, and eligible method actions', async () => {
+	  const ssoOwner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false, hasLocalPassword: false, oidcLinked: true };
+	  await setupSettingsView({ activeTab: 'profile', user: ssoOwner, oidcEnabled: true, localAuthEnabled: true });
+	  const content = document.getElementById('settingsTabContent');
+	  expect(content?.textContent).toContain('SSO');
+	  expect(content?.textContent).toContain('relies on the external SSO provider');
+	  expect(document.getElementById('setScrumboyPasswordBtn')).not.toBeNull();
+	  expect(document.getElementById('connectSSOBtn')).toBeNull();
+	  expect(content?.textContent).toContain('MFA for normal SSO sign-in is controlled by the configured identity provider');
+
+	  const historical = { ...ssoOwner, hasLocalPassword: true, oidcLinked: false };
+	  const mutations = await import('../state/mutations.js');
+	  mutations.setUser(historical as any);
+	  await (await import('./settings.js')).renderSettingsModal({ skipProfileRefetch: true });
+	  expect(document.getElementById('connectSSOBtn')).not.toBeNull();
+
+	  mutations.setUser({ ...historical, hasLocalPassword: false } as any);
+	  await (await import('./settings.js')).renderSettingsModal({ skipProfileRefetch: true });
+	  expect(document.getElementById('connectSSOBtn')).toBeNull();
+	  expect(document.getElementById('settingsTabContent')?.textContent).toContain('Connect SSO');
+	  expect(document.getElementById('settingsTabContent')?.textContent).toContain('Set or recover a Scrumboy password');
+	});
+
+	it('scopes the no-effective-method warning to this owner account', async () => {
+	  const strandedOwner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false, hasLocalPassword: false, oidcLinked: false };
+	  await setupSettingsView({ activeTab: 'profile', user: strandedOwner, oidcEnabled: true, localAuthEnabled: true });
+	  const text = document.getElementById('settingsTabContent')?.textContent ?? '';
+	  expect(text).toContain('This owner account has no effective sign-in method');
+	  expect(text).not.toContain('No effective owner login method is available');
+	});
+
+	it('makes the local-auth-disabled owner warning conditional on SSO becoming unavailable', async () => {
+	  const ssoOnlyOwner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false, hasLocalPassword: false, oidcLinked: true };
+	  await setupSettingsView({ activeTab: 'profile', user: ssoOnlyOwner, oidcEnabled: true, localAuthEnabled: false });
+	  const text = document.getElementById('settingsTabContent')?.textContent ?? '';
+	  expect(text).toContain('If SSO becomes unavailable');
+	  expect(text).not.toMatch(/disabled\. Recovery requires host access/);
+	});
+
+	it('relocalizes first-password dialog without clearing typed secrets and releases it on close', async () => {
+	  const user = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: true, hasLocalPassword: false, oidcLinked: true };
+	  apiFetchMock.mockImplementation(async (url: string) => {
+	    if (url === '/api/auth/oidc/set-password/status') return { authorized: true, localAuthEnabled: true };
+	    return undefined;
+	  });
+	  const { i18n } = await setupSettingsView({ activeTab: 'profile', user, oidcEnabled: true });
+	  document.getElementById('setScrumboyPasswordBtn')?.dispatchEvent(new Event('click'));
+	  await flushPromises();
+	  const dialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement;
+	  const password = dialog.querySelector('#setScrumboyPasswordNew') as HTMLInputElement;
+	  const factor = dialog.querySelector('#setScrumboyPassword2FA') as HTMLInputElement;
+	  password.value = 'TypedSecret123!'; factor.value = '123456';
+	  await i18n.setLocale('de'); await flushPromises();
+	  expect(password.value).toBe('TypedSecret123!');
+	  expect(factor.value).toBe('123456');
+	  dialog.querySelector('#setScrumboyPasswordCancel')?.dispatchEvent(new Event('click'));
+	  expect(document.body.contains(dialog)).toBe(false);
+	});
+
+	it('clears and removes authentication-method secrets when Escape cancels a dialog', async () => {
+	  const ssoUser = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: true, hasLocalPassword: false, oidcLinked: true };
+	  apiFetchMock.mockImplementation(async (url: string) => {
+	    if (url === '/api/auth/oidc/set-password/status') return { authorized: true, localAuthEnabled: true };
+	    return undefined;
+	  });
+	  await setupSettingsView({ activeTab: 'profile', user: ssoUser, oidcEnabled: true });
+	  document.getElementById('setScrumboyPasswordBtn')?.dispatchEvent(new Event('click'));
+	  await flushPromises();
+	  const passwordDialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement;
+	  const newPassword = passwordDialog.querySelector('#setScrumboyPasswordNew') as HTMLInputElement;
+	  const passwordFactor = passwordDialog.querySelector('#setScrumboyPassword2FA') as HTMLInputElement;
+	  newPassword.value = 'TypedSecret123!';
+	  passwordFactor.value = 'ABCD-EFGH';
+	  passwordDialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+	  expect(newPassword.value).toBe('');
+	  expect(passwordFactor.value).toBe('');
+	  expect(document.body.contains(passwordDialog)).toBe(false);
+
+	  const localUser = { ...ssoUser, hasLocalPassword: true, oidcLinked: false };
+	  const mutations = await import('../state/mutations.js');
+	  mutations.setUser(localUser as any);
+	  await (await import('./settings.js')).renderSettingsModal({ skipProfileRefetch: true });
+	  document.getElementById('connectSSOBtn')?.dispatchEvent(new Event('click'));
+	  const linkDialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement;
+	  const currentPassword = linkDialog.querySelector('#connectSSOPassword') as HTMLInputElement;
+	  const linkFactor = linkDialog.querySelector('#connectSSO2FA') as HTMLInputElement;
+	  currentPassword.value = 'CurrentSecret123!';
+	  linkFactor.value = '123456';
+	  linkDialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+	  expect(currentPassword.value).toBe('');
+	  expect(linkFactor.value).toBe('');
+	  expect(document.body.contains(linkDialog)).toBe(false);
+	});
 
   it('relocalizes profile tab chrome on locale change without /api/me refetch and preserves raw identity values', async () => {
     const user = { id: 42, name: 'Ada Lovelace', email: 'ada@example.com', systemRole: 'owner', twoFactorEnabled: false };
@@ -326,8 +424,9 @@ describe('settings phase 5 i18n (profile / users / backup / customization)', () 
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/admin/users') {
         return [
-          { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' },
-          { id: 2, name: 'Bob Member', email: 'bob@example.com', systemRole: 'user' },
+		  { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', hasLocalPassword: true, oidcLinked: true },
+		  { id: 2, name: 'Bob Member', email: 'bob@example.com', systemRole: 'user', hasLocalPassword: true, oidcLinked: false },
+		  { id: 3, name: 'SSO Member', email: 'sso@example.com', systemRole: 'user', hasLocalPassword: false, oidcLinked: true },
         ];
       }
       return undefined;
@@ -339,6 +438,9 @@ describe('settings phase 5 i18n (profile / users / backup / customization)', () 
     expect(tabContent?.querySelector('[data-action="promote"]')?.textContent).toBe('Promote');
     expect(tabContent?.textContent).toContain('Bob Member');
     expect(tabContent?.textContent).toContain('bob@example.com');
+	expect(tabContent?.textContent).toContain('Local password + SSO');
+	expect(tabContent?.textContent).toContain('Local password');
+	expect(tabContent?.querySelectorAll('[data-action="password"]')).toHaveLength(1);
 
     apiFetchMock.mockClear();
     await i18n.setLocale('de');
@@ -351,6 +453,22 @@ describe('settings phase 5 i18n (profile / users / backup / customization)', () 
     expect(tabContent?.textContent).toContain('Bob Member');
     expect(tabContent?.textContent).toContain('bob@example.com');
     expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('hides admin Scrumboy-password actions when local authentication is disabled', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') {
+        return [
+          { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', hasLocalPassword: true, oidcLinked: true },
+          { id: 2, name: 'Local User', email: 'local@example.com', systemRole: 'user', hasLocalPassword: true, oidcLinked: false },
+        ];
+      }
+      return undefined;
+    });
+    await setupSettingsView({ activeTab: 'users', user: owner, localAuthEnabled: false, oidcEnabled: true });
+    expect(document.querySelectorAll('[data-action="password"]')).toHaveLength(0);
+    expect(document.getElementById('settingsTabContent')?.textContent).toContain('Local password');
   });
 
   it('relocalizes an open Create-User dialog in place, preserving typed fields and password visibility', async () => {

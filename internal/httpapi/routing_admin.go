@@ -177,6 +177,10 @@ func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Request, requesterID int64, targetIDStr string) {
+	if s.oidcService != nil && s.oidcService.Config().LocalAuthDisabled {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return

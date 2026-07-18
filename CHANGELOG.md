@@ -1,6 +1,27 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** unless noted below.
+
+## [3.21.0] - 2026-07-18
+
+### Added
+
+- **Explicit SSO account linking and first Scrumboy password** - Authenticated users can connect the configured OIDC provider to a local-password account (`POST /api/auth/oidc/link/start`) or establish a first Scrumboy password after fresh SSO reauthentication (`/api/auth/oidc/set-password/*`). Sensitive flows require CSRF protection, short-lived hashed single-use server state, session binding, PKCE/nonce/`max_age=0`/`auth_time`, and Scrumboy 2FA when enabled. Migration `056_add_first_password_grants.sql` stores first-password grants.
+- **`recover-owner` break-glass CLI** - Host-side owner recovery that can set or replace a local password without the IdP, without clearing 2FA configuration, and with revocation of that owner's sessions and pending local-login 2FA challenges. Does not run migrations.
+- **Profile authentication method UI** - Settings → Profile surfaces effective local/SSO/dual state, owner outage warnings, **Set Scrumboy password**, and **Connect SSO**, with localized copy across public locales.
+
+### Changed
+
+- **OIDC login no longer auto-links by email** - Normal SSO login identifies accounts only by `(issuer, subject)`. Matching verified IdP email no longer silently attaches an OIDC identity to an existing local-password user; those users must sign in locally and use **Connect SSO**. Canonical `users.email` stays independent of mutable IdP email.
+- **Local-auth-disabled gating** - When `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED` is set, local login/reset surfaces and admin password-reset for local passwords stay unavailable; User Management hides nonfunctional Scrumboy-password actions.
+
+### Documentation
+
+- **Human auth** - Added `docs/authentication-api.md`, `docs/recovery.md`, and `docs/security.md`; rewrote `docs/oidc.md` for method model, canonical email, Connect SSO, and first-password flows; updated `README.md`, `FAQ.md`, and `docs/smtp.md`.
+
+### Tests
+
+- **Auth methods / recovery** - Store and HTTP coverage for first-password grants, explicit linking, rate limits, recovery-code consumption, and `recover-owner`; frontend i18n coverage for authentication wording and Settings profile/users/backup surfaces.
 
 ## [3.20.0] - 2026-07-15
 

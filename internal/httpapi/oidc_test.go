@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -38,6 +39,8 @@ type fakeIdP struct {
 	email           string
 	emailVer        bool
 	name            string
+	omitAuthTime    bool
+	authTimeValue   any
 
 	mu     sync.Mutex
 	nonces map[string]string // auth code → nonce
@@ -112,9 +115,10 @@ func (f *fakeIdP) handleJWKS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (f *fakeIdP) handleAuthorize(w http.ResponseWriter, r *http.Request) {
-	state := r.URL.Query().Get("state")
-	nonce := r.URL.Query().Get("nonce")
-	redir := r.URL.Query().Get("redirect_uri")
+	_ = r.ParseForm()
+	state := r.Form.Get("state")
+	nonce := r.Form.Get("nonce")
+	redir := r.Form.Get("redirect_uri")
 
 	code := "code-" + state[:8]
 
@@ -160,6 +164,13 @@ func (f *fakeIdP) handleToken(w http.ResponseWriter, r *http.Request) {
 		"email":          f.email,
 		"email_verified": f.emailVer,
 		"name":           f.name,
+	}
+	if !f.omitAuthTime {
+		if f.authTimeValue != nil {
+			claims["auth_time"] = f.authTimeValue
+		} else {
+			claims["auth_time"] = now.Unix()
+		}
 	}
 
 	raw, err := jwt.Signed(signer).Claims(claims).Serialize()
@@ -210,7 +221,7 @@ func newTestOIDCServer(t *testing.T, idp *fakeIdP) (*httptest.Server, func()) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	st := store.New(sqlDB, nil)
+	st := store.New(sqlDB, &store.StoreOptions{ConfiguredOIDCIssuer: idp.issuer, EncryptionKey: testEncryptionKey})
 
 	// Create OIDC service with the fake IdP as issuer.
 	// RedirectURL is set to a placeholder; we override per test as needed.
@@ -225,6 +236,7 @@ func newTestOIDCServer(t *testing.T, idp *fakeIdP) (*httptest.Server, func()) {
 		MaxRequestBody: 1 << 20,
 		ScrumboyMode:   "full",
 		OIDCService:    oidcSvc,
+		EncryptionKey:  testEncryptionKey,
 	})
 	ts := httptest.NewServer(srv)
 
@@ -264,6 +276,57 @@ func TestOIDCStatusFlags(t *testing.T) {
 	}
 }
 
+func TestOIDCLocalAuthDisabledMakesLocalLoginAndResetUnavailable(t *testing.T) {
+	service := oidc.New(oidc.Config{
+		IssuerCanonical:   "https://idp.example",
+		ClientID:          "client",
+		ClientSecret:      "secret",
+		RedirectURL:       "https://scrumboy.example/api/auth/oidc/callback",
+		LocalAuthDisabled: true,
+	})
+	ts, database, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+		OIDCService:    service,
+		SMTPHost:       "smtp.example.com",
+		SMTPPort:       587,
+		SMTPFrom:       "no-reply@example.com",
+		PublicBaseURL:  "https://scrumboy.example",
+	})
+	defer cleanup()
+	st := store.New(database, nil)
+	owner, err := st.BootstrapUser(context.Background(), "owner@example.com", "Password123!", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := st.CreateUser(context.Background(), "target@example.com", "Password123!", "Target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := authenticatedOIDCTestClient(t, ts, st, owner.ID)
+
+	var status map[string]any
+	doJSON(t, client, http.MethodGet, ts.URL+"/api/auth/status", nil, &status)
+	if status["localAuthEnabled"] != false || status["selfServicePasswordResetEnabled"] != false {
+		t.Fatalf("disabled-local status exposed local recovery: %#v", status)
+	}
+	for _, request := range []struct {
+		path string
+		body map[string]any
+	}{
+		{path: "/api/auth/login", body: map[string]any{"email": owner.Email, "password": "Password123!"}},
+		{path: "/api/auth/request-password-reset", body: map[string]any{"email": owner.Email}},
+		{path: "/api/auth/reset-password", body: map[string]any{"token": "unused", "new_password": "Replacement123!"}},
+		{path: "/api/admin/users/" + strconv.FormatInt(target.ID, 10) + "/password-reset", body: map[string]any{}},
+	} {
+		resp, _ := doJSON(t, client, http.MethodPost, ts.URL+request.path, request.body, nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("disabled local endpoint %s status=%d", request.path, resp.StatusCode)
+		}
+	}
+}
+
 func TestOIDCLoginRedirect(t *testing.T) {
 	idp := newFakeIdP(t)
 	defer idp.close()
@@ -284,16 +347,28 @@ func TestOIDCLoginRedirect(t *testing.T) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusFound {
-		t.Fatalf("expected 302, got %d", resp.StatusCode)
+		t.Fatalf("expected OIDC redirect, got %d", resp.StatusCode)
 	}
+	location := resp.Header.Get("Location")
+	redirectURL, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse OIDC redirect: %v", err)
+	}
+	if redirectURL.Scheme+"://"+redirectURL.Host+redirectURL.Path != idp.issuer+"/authorize" {
+		t.Fatalf("OIDC redirect = %q, want provider authorization endpoint", location)
+	}
+	if redirectURL.Query().Get("code_challenge_method") != "S256" || redirectURL.Query().Get("nonce") == "" {
+		t.Errorf("OIDC redirect missing PKCE or nonce: %s", location)
+	}
+}
 
-	loc := resp.Header.Get("Location")
-	if !strings.HasPrefix(loc, idp.issuer+"/authorize") {
-		t.Errorf("expected redirect to IdP, got %q", loc)
+func followOIDCLogin(t *testing.T, client *http.Client, loginURL string) *http.Response {
+	t.Helper()
+	resp, err := client.Get(loginURL)
+	if err != nil {
+		t.Fatalf("follow OIDC login redirect: %v", err)
 	}
-	if !strings.Contains(loc, "code_challenge_method=S256") {
-		t.Errorf("expected PKCE S256 in authorize URL, got %q", loc)
-	}
+	return resp
 }
 
 func TestOIDCTrailingSlashIssuerLoginStoresCanonicalIdentity(t *testing.T) {
@@ -308,10 +383,7 @@ func TestOIDCTrailingSlashIssuerLoginStoresCanonicalIdentity(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 
-	resp, err := client.Get(ts.URL + "/api/auth/oidc/login?return_to=/dashboard")
-	if err != nil {
-		t.Fatalf("oidc login: %v", err)
-	}
+	resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/dashboard")
 	resp.Body.Close()
 
 	if finalURL := resp.Request.URL.String(); strings.Contains(finalURL, "oidc_error") {
@@ -345,10 +417,7 @@ func TestOIDCTrailingSlashDiscoveryRejectsNonSlashIDTokenIssuer(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 
-	resp, err := client.Get(ts.URL + "/api/auth/oidc/login?return_to=/")
-	if err != nil {
-		t.Fatalf("oidc login: %v", err)
-	}
+	resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/")
 	resp.Body.Close()
 
 	finalURL := resp.Request.URL.String()
@@ -457,7 +526,7 @@ func newTestOIDCServerWithStore(t *testing.T, idp *fakeIdP) (*httptest.Server, *
 		t.Fatalf("migrate: %v", err)
 	}
 
-	st := store.New(sqlDB, nil)
+	st := store.New(sqlDB, &store.StoreOptions{ConfiguredOIDCIssuer: idp.issuer, EncryptionKey: testEncryptionKey})
 
 	oidcSvc := oidc.New(oidc.Config{
 		IssuerCanonical: idp.issuer,
@@ -470,6 +539,7 @@ func newTestOIDCServerWithStore(t *testing.T, idp *fakeIdP) (*httptest.Server, *
 		MaxRequestBody: 1 << 20,
 		ScrumboyMode:   "full",
 		OIDCService:    oidcSvc,
+		EncryptionKey:  testEncryptionKey,
 	})
 	ts := httptest.NewServer(srv)
 
@@ -487,10 +557,25 @@ func newTestOIDCServerWithStore(t *testing.T, idp *fakeIdP) (*httptest.Server, *
 	}
 }
 
-// TestOIDCAutoLinkExistingUser verifies that when a pre-existing local-password
-// user tries OIDC login with a matching verified email, the identity is
-// auto-linked and login succeeds (instead of failing with a conflict error).
-func TestOIDCAutoLinkExistingUser(t *testing.T) {
+func authenticatedOIDCTestClient(t *testing.T, ts *httptest.Server, st *store.Store, userID int64) *http.Client {
+	t.Helper()
+	token, expires, err := st.CreateSession(context.Background(), userID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jar.SetCookies(base, []*http.Cookie{{Name: "scrumboy_session", Value: token, Path: "/", Expires: expires}})
+	return &http.Client{Jar: jar}
+}
+
+func TestOIDCMatchingEmailRequiresExplicitLink(t *testing.T) {
 	idp := newFakeIdP(t)
 	defer idp.close()
 
@@ -509,40 +594,391 @@ func TestOIDCAutoLinkExistingUser(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
 
-	resp, err := client.Get(ts.URL + "/api/auth/oidc/login?return_to=/")
-	if err != nil {
-		t.Fatalf("oidc login: %v", err)
-	}
+	resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/")
 	resp.Body.Close()
-
-	// After the full redirect chain the user should land on "/" with a session
-	// cookie, NOT on "/?oidc_error=token".
 	finalURL := resp.Request.URL.String()
-	if strings.Contains(finalURL, "oidc_error") {
-		t.Fatalf("expected successful login, got redirect to %s", finalURL)
+	if !strings.Contains(finalURL, "oidc_error=link_required") {
+		t.Fatalf("expected explicit-link guidance, got %s", finalURL)
 	}
-
-	// Verify the session is live: GET /api/auth/status should return the user.
 	var status map[string]any
 	doJSON(t, client, "GET", ts.URL+"/api/auth/status", nil, &status)
-	user, ok := status["user"].(map[string]any)
-	if !ok || user == nil {
-		t.Fatalf("expected authenticated user in status, got %v", status)
+	if status["user"] != nil {
+		t.Fatalf("email collision must not authenticate or create a session: %v", status)
 	}
-	if user["email"] != idp.email {
-		t.Errorf("expected email=%s, got %v", idp.email, user["email"])
+	if _, err := st.GetUserByOIDCIdentity(ctx, idp.issuer, idp.subject); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("matching email was implicitly linked: %v", err)
+	}
+}
+
+func submitOIDCAuthorizationRequest(t *testing.T, client *http.Client, response map[string]any) *http.Response {
+	t.Helper()
+	endpoint, ok := response["authorizationEndpoint"].(string)
+	if !ok || endpoint == "" {
+		t.Fatalf("missing authorization endpoint: %#v", response)
+	}
+	rawParams, ok := response["authorizationParameters"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing authorization parameters: %#v", response)
+	}
+	params := url.Values{}
+	for key, value := range rawParams {
+		text, ok := value.(string)
+		if !ok {
+			t.Fatalf("non-string authorization parameter %s", key)
+		}
+		params.Set(key, text)
+	}
+	if params.Get("max_age") != "0" || params.Get("prompt") != "" {
+		t.Fatalf("sensitive flow freshness parameters=%v", params)
+	}
+	if strings.Contains(endpoint, "nonce") || strings.Contains(endpoint, params.Get("nonce")) {
+		t.Fatalf("nonce leaked into authorization endpoint URL")
+	}
+	resp, err := client.PostForm(endpoint, params)
+	if err != nil {
+		t.Fatalf("submit authorization request: %v", err)
+	}
+	return resp
+}
+
+func TestOIDCFirstPasswordStepUpProducesDualAuthentication(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/")
+	resp.Body.Close()
+	var initial map[string]any
+	doJSON(t, client, http.MethodGet, ts.URL+"/api/auth/status", nil, &initial)
+	initialUser := initial["user"].(map[string]any)
+	if initialUser["hasLocalPassword"] != false || initialUser["oidcLinked"] != true {
+		t.Fatalf("expected current-provider SSO-only account: %#v", initialUser)
 	}
 
-	// A second OIDC login with the same identity should succeed (identity
-	// already linked, no conflict).
-	jar2, _ := cookiejar.New(nil)
-	client2 := &http.Client{Jar: jar2}
-	resp2, err := client2.Get(ts.URL + "/api/auth/oidc/login?return_to=/")
+	// An ordinary authenticated session has no authority to set a first password.
+	unauthorized, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password", map[string]any{"newPassword": "NewPassword123!"}, nil)
+	if unauthorized.StatusCode == http.StatusNoContent {
+		t.Fatal("ordinary session set a first password")
+	}
+
+	var start map[string]any
+	doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password/start", map[string]any{}, &start)
+	stepUp := submitOIDCAuthorizationRequest(t, client, start)
+	stepUp.Body.Close()
+	if !strings.Contains(stepUp.Request.URL.String(), "auth_method=set_password") {
+		t.Fatalf("step-up callback did not return to password flow: %s", stepUp.Request.URL)
+	}
+	var grantStatus map[string]any
+	doJSON(t, client, http.MethodGet, ts.URL+"/api/auth/oidc/set-password/status", nil, &grantStatus)
+	if grantStatus["authorized"] != true {
+		t.Fatalf("first-password grant not authorized: %#v", grantStatus)
+	}
+	weak, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password", map[string]any{"newPassword": "weak"}, nil)
+	if weak.StatusCode == http.StatusNoContent {
+		t.Fatal("first-password flow bypassed the Scrumboy password policy")
+	}
+	complete, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password", map[string]any{"newPassword": "NewPassword123!"}, nil)
+	if complete.StatusCode != http.StatusNoContent {
+		t.Fatalf("first-password completion status=%d", complete.StatusCode)
+	}
+
+	var final map[string]any
+	doJSON(t, client, http.MethodGet, ts.URL+"/api/auth/status", nil, &final)
+	finalUser := final["user"].(map[string]any)
+	if finalUser["hasLocalPassword"] != true || finalUser["oidcLinked"] != true {
+		t.Fatalf("expected dual authentication: %#v", finalUser)
+	}
+	localJar, _ := cookiejar.New(nil)
+	localClient := &http.Client{Jar: localJar}
+	var localLogin map[string]any
+	loginResp, _ := doJSON(t, localClient, http.MethodPost, ts.URL+"/api/auth/login", map[string]any{"email": idp.email, "password": "NewPassword123!"}, &localLogin)
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("local login after first password status=%d", loginResp.StatusCode)
+	}
+	replay, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password", map[string]any{"newPassword": "AnotherPassword123!"}, nil)
+	if replay.StatusCode == http.StatusNoContent {
+		t.Fatal("first-password grant replay succeeded")
+	}
+}
+
+func TestOIDCSensitiveFlowRequiresAuthTime(t *testing.T) {
+	cases := []struct {
+		name  string
+		omit  bool
+		value any
+	}{
+		{name: "missing", omit: true},
+		{name: "malformed", value: "not-a-time"},
+		{name: "stale", value: time.Now().Add(-10 * time.Minute).Unix()},
+		{name: "future", value: time.Now().Add(10 * time.Minute).Unix()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			idp := newFakeIdP(t)
+			defer idp.close()
+			ts, cleanup := newTestOIDCServer(t, idp)
+			defer cleanup()
+			jar, _ := cookiejar.New(nil)
+			client := &http.Client{Jar: jar}
+			resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/")
+			resp.Body.Close()
+			idp.omitAuthTime, idp.authTimeValue = tc.omit, tc.value
+			var start map[string]any
+			doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password/start", map[string]any{}, &start)
+			stepUp := submitOIDCAuthorizationRequest(t, client, start)
+			stepUp.Body.Close()
+			if !strings.Contains(stepUp.Request.URL.String(), "oidc_error=auth_time") {
+				t.Fatalf("invalid auth_time did not fail closed: %s", stepUp.Request.URL)
+			}
+		})
+	}
+}
+
+func TestOIDCFirstPasswordRejectsDifferentIdentityAndMissingSession(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*fakeIdP, *http.Client, *store.Store, int64)
+	}{
+		{name: "different subject", mutate: func(idp *fakeIdP, _ *http.Client, _ *store.Store, _ int64) { idp.subject = "different-subject" }},
+		{name: "missing session", mutate: func(_ *fakeIdP, _ *http.Client, st *store.Store, userID int64) {
+			_ = st.DeleteSessionsByUserID(context.Background(), userID)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idp := newFakeIdP(t)
+			defer idp.close()
+			ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+			defer cleanup()
+			jar, _ := cookiejar.New(nil)
+			client := &http.Client{Jar: jar}
+			resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/")
+			resp.Body.Close()
+			u, err := st.GetUserByOIDCIdentity(context.Background(), idp.issuer, idp.subject)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var start map[string]any
+			doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password/start", map[string]any{}, &start)
+			tc.mutate(idp, client, st, u.ID)
+			stepUp := submitOIDCAuthorizationRequest(t, client, start)
+			stepUp.Body.Close()
+			if !strings.Contains(stepUp.Request.URL.String(), "oidc_error=") || strings.Contains(stepUp.Request.URL.String(), "auth_method=set_password") {
+				t.Fatalf("sensitive callback accepted changed identity/session: %s", stepUp.Request.URL)
+			}
+		})
+	}
+}
+
+func TestOIDCExplicitLinkAndCanonicalEmailOwnership(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, idp.email, "Password123!", "Canonical Name")
 	if err != nil {
-		t.Fatalf("second oidc login: %v", err)
+		t.Fatal(err)
 	}
-	resp2.Body.Close()
-	if strings.Contains(resp2.Request.URL.String(), "oidc_error") {
-		t.Fatalf("second login failed: %s", resp2.Request.URL.String())
+	token, expires, err := st.CreateSession(ctx, owner.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
 	}
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	base, _ := url.Parse(ts.URL)
+	jar.SetCookies(base, []*http.Cookie{{Name: "scrumboy_session", Value: token, Path: "/", Expires: expires}})
+	var start map[string]any
+	doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/link/start", map[string]any{"currentPassword": "Password123!"}, &start)
+	linked := submitOIDCAuthorizationRequest(t, client, start)
+	linked.Body.Close()
+	u, err := st.GetUser(ctx, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !u.HasLocalPassword || !u.OIDCLinked {
+		t.Fatalf("explicit link did not produce dual auth: %+v", u)
+	}
+
+	// A later IdP email change, even one colliding with another canonical user,
+	// must continue identifying by issuer/subject without transferring ownership.
+	other, err := st.CreateUser(ctx, "other@example.com", "Password123!", "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idp.email = other.Email
+	idp.name = "Changed IdP Name"
+	newJar, _ := cookiejar.New(nil)
+	newClient := &http.Client{Jar: newJar}
+	login := followOIDCLogin(t, newClient, ts.URL+"/api/auth/oidc/login?return_to=/")
+	login.Body.Close()
+	original, _ := st.GetUser(ctx, owner.ID)
+	collision, _ := st.GetUser(ctx, other.ID)
+	if original.Email != "alice@example.com" || original.Name != "Canonical Name" || collision.Email != "other@example.com" {
+		t.Fatalf("IdP profile change transferred canonical ownership: original=%+v collision=%+v", original, collision)
+	}
+	if _, err := st.AuthenticateUser(ctx, "alice@example.com", "Password123!"); err != nil {
+		t.Fatalf("canonical local login was not retained: %v", err)
+	}
+}
+
+func TestOIDCLinkDiscoveryFailureDoesNotConsumeRecoveryCode(t *testing.T) {
+	idp := newFakeIdP(t)
+	ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, idp.email, "Password123!", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserTwoFactor(ctx, owner.ID, "test-secret"); err != nil {
+		t.Fatal(err)
+	}
+	const recoveryCode = "ABCD-EFGH"
+	if err := st.AddRecoveryCodes(ctx, owner.ID, []string{recoveryCode}); err != nil {
+		t.Fatal(err)
+	}
+	client := authenticatedOIDCTestClient(t, ts, st, owner.ID)
+	idp.close()
+	resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/link/start", map[string]any{
+		"currentPassword": "Password123!",
+		"twoFactorCode":   recoveryCode,
+	}, nil)
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("link start with unavailable provider status=%d, want 503", resp.StatusCode)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, owner.ID, recoveryCode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !consumed {
+		t.Fatal("provider discovery failure consumed the recovery code")
+	}
+}
+
+func TestOIDCFirstPasswordValidationFailureDoesNotConsumeRecoveryCode(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+	defer cleanup()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	resp := followOIDCLogin(t, client, ts.URL+"/api/auth/oidc/login?return_to=/")
+	resp.Body.Close()
+	u, err := st.GetUserByOIDCIdentity(context.Background(), idp.issuer, idp.subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserTwoFactor(context.Background(), u.ID, "test-secret"); err != nil {
+		t.Fatal(err)
+	}
+	const recoveryCode = "ABCD-EFGH"
+	if err := st.AddRecoveryCodes(context.Background(), u.ID, []string{recoveryCode}); err != nil {
+		t.Fatal(err)
+	}
+	var start map[string]any
+	doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password/start", map[string]any{}, &start)
+	stepUp := submitOIDCAuthorizationRequest(t, client, start)
+	stepUp.Body.Close()
+	weak, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password", map[string]any{
+		"newPassword":   "weak",
+		"twoFactorCode": recoveryCode,
+	}, nil)
+	if weak.StatusCode == http.StatusNoContent {
+		t.Fatal("weak first password unexpectedly succeeded")
+	}
+	complete, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/set-password", map[string]any{
+		"newPassword":   "NewPassword123!",
+		"twoFactorCode": recoveryCode,
+	}, nil)
+	if complete.StatusCode != http.StatusNoContent {
+		t.Fatalf("recovery code was not reusable after validation failure: status=%d", complete.StatusCode)
+	}
+}
+
+func TestOIDCExplicitLinkRejectsMissingLocalProofAndIdentityInvariants(t *testing.T) {
+	t.Run("current password required", func(t *testing.T) {
+		idp := newFakeIdP(t)
+		defer idp.close()
+		ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+		defer cleanup()
+		owner, err := st.BootstrapUser(context.Background(), idp.email, "Password123!", "Owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := authenticatedOIDCTestClient(t, ts, st, owner.ID)
+		resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/link/start", map[string]any{"currentPassword": "wrong-password"}, nil)
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("link start without current-password proof status=%d", resp.StatusCode)
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		ownerMail string
+		verified  bool
+	}{
+		{name: "unverified email", ownerMail: "alice@example.com", verified: false},
+		{name: "mismatched email", ownerMail: "owner@example.com", verified: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			idp := newFakeIdP(t)
+			defer idp.close()
+			idp.emailVer = tc.verified
+			ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+			defer cleanup()
+			owner, err := st.BootstrapUser(context.Background(), tc.ownerMail, "Password123!", "Owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client := authenticatedOIDCTestClient(t, ts, st, owner.ID)
+			var start map[string]any
+			resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/link/start", map[string]any{"currentPassword": "Password123!"}, &start)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("link start status=%d", resp.StatusCode)
+			}
+			callback := submitOIDCAuthorizationRequest(t, client, start)
+			callback.Body.Close()
+			if !strings.Contains(callback.Request.URL.String(), "oidc_error=") {
+				t.Fatalf("invalid identity invariant linked successfully: %s", callback.Request.URL)
+			}
+			if _, err := st.GetUserByOIDCIdentity(context.Background(), idp.issuer, idp.subject); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("rejected identity became linked: %v", err)
+			}
+		})
+	}
+
+	t.Run("identity already belongs to another user", func(t *testing.T) {
+		idp := newFakeIdP(t)
+		defer idp.close()
+		idp.email = "other@example.com"
+		ts, st, cleanup := newTestOIDCServerWithStore(t, idp)
+		defer cleanup()
+		ctx := context.Background()
+		owner, err := st.BootstrapUser(ctx, "owner@example.com", "Password123!", "Owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		other, err := st.CreateUser(ctx, idp.email, "Password123!", "Other")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := st.LinkOIDCIdentityExplicit(ctx, other.ID, idp.issuer, idp.subject, other.Email); err != nil {
+			t.Fatal(err)
+		}
+		idp.email = owner.Email
+		client := authenticatedOIDCTestClient(t, ts, st, owner.ID)
+		var start map[string]any
+		doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/link/start", map[string]any{"currentPassword": "Password123!"}, &start)
+		callback := submitOIDCAuthorizationRequest(t, client, start)
+		callback.Body.Close()
+		if !strings.Contains(callback.Request.URL.String(), "oidc_error=link_rejected") {
+			t.Fatalf("identity ownership conflict was not rejected: %s", callback.Request.URL)
+		}
+		linked, err := st.GetUserByOIDCIdentity(ctx, idp.issuer, idp.subject)
+		if err != nil || linked.ID != other.ID {
+			t.Fatalf("identity ownership changed: linked=%+v err=%v", linked, err)
+		}
+	})
 }

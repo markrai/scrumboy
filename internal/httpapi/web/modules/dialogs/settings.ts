@@ -18,6 +18,8 @@ import {
   getTagColors, 
   getUser, 
   getAuthStatusAvailable,
+  getOidcEnabled,
+  getLocalAuthEnabled,
   getPushConfigured,
   getBackupImportBtn,
   getBackupData,
@@ -1405,8 +1407,34 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   syncSettingsDialogVersionText();
 
   const profileHTML = (() => {
-    if (!showProfileTab) return "";
+    if (!showProfileTab || getSettingsActiveTab() !== "profile") return "";
     const u = getUser();
+	const authenticationKey = u?.hasLocalPassword && u?.oidcLinked
+	  ? "settings.profile.authentication.dual"
+	  : u?.hasLocalPassword
+	    ? "settings.profile.authentication.local"
+	    : u?.oidcLinked
+	      ? "settings.profile.authentication.sso"
+	      : "settings.profile.authentication.none";
+	const effectiveLocal = !!u?.hasLocalPassword && getLocalAuthEnabled();
+	const effectiveSSO = !!u?.oidcLinked && getOidcEnabled();
+	const ownerWarning = u?.systemRole === "owner" && !effectiveLocal && !effectiveSSO
+	  ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.noEffectiveOwner">This owner account has no effective sign-in method under the current authentication configuration. The current session may be temporary; host recovery may be required.</div>`
+	  : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO && !getLocalAuthEnabled()
+	    ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.localDisabledOwner">This owner relies on SSO while local authentication is disabled. If SSO becomes unavailable, recovery requires host access, recover-owner, and re-enabling local authentication.</div>`
+	    : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO
+	      ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.providerOnly">This owner relies on the external SSO provider. Set a local recovery password to prepare for an outage.</div>`
+	    : "";
+	const connectSSOAction = u && getOidcEnabled() && !u.oidcLinked
+	  ? u.hasLocalPassword
+	    ? `<button class="btn" id="connectSSOBtn" data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</button>`
+	    : `<div class="muted"><strong data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</strong>: <span data-i18n-text="settings.profile.authentication.connectRequiresLocal">Set or recover a Scrumboy password before connecting the current SSO provider.</span></div>`
+	  : "";
+	const methodActions = u ? `
+	  <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
+	    ${u.oidcLinked && !u.hasLocalPassword ? `<button class="btn" id="setScrumboyPasswordBtn" data-i18n-text="settings.profile.authentication.setPassword">Set Scrumboy password</button>` : ""}
+	    ${connectSSOAction}
+	  </div>` : "";
     const twoFactorSection = u ? (u.twoFactorEnabled
       ? `
         <div class="settings-section" style="margin-top: 24px;">
@@ -1442,13 +1470,17 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
             <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.email">Email</div><div>${escapeHTML(u.email || "")}</div></div>
             <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.userId">User ID</div><div>${u.id != null ? escapeHTML(String(u.id)) : ""}</div></div>
             <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.systemRole">System Role</div><div>${u.systemRole ? escapeHTML(u.systemRole.charAt(0).toUpperCase() + u.systemRole.slice(1)) : "User"}</div></div>
-            <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.authentication">Authentication</div><div data-i18n-text="settings.profile.authenticated">Authenticated</div></div>
+			<div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.authentication">Authentication</div><div data-i18n-text="${authenticationKey}">${escapeHTML(t(authenticationKey))}</div></div>
           </div>
+		  ${ownerWarning}
+		  ${!getLocalAuthEnabled() && u.hasLocalPassword ? `<div class="settings-section__description muted" data-i18n-text="settings.profile.authentication.localDisabled">A local password is stored, but local login is disabled by the operator.</div>` : ""}
+		  ${methodActions}
           <div style="margin-top: 16px; display: flex; gap: 8px;">
             <button class="btn btn--danger" id="logoutBtn" data-i18n-text="settings.profile.logout">Log out</button>
             ${u.isBootstrap ? `<button class="btn" id="createUserBtn" data-i18n-text="settings.profile.createUser">Create User</button>` : ""}
           </div>
           ${twoFactorSection}
+		  <div class="settings-section__description muted" style="margin-top: 12px;" data-i18n-text="settings.profile.twoFactor.responsibility">Scrumboy 2FA protects local-password sign-in and sensitive authentication-method changes. MFA for normal SSO sign-in is controlled by the configured identity provider.</div>
         ` : `
           <div class="muted" data-i18n-text="settings.profile.notSignedIn">Not signed in.</div>
         `}
@@ -1841,6 +1873,10 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       showCreateUserDialog();
     }, { signal });
   }
+	const setPasswordBtn = document.getElementById("setScrumboyPasswordBtn");
+	if (setPasswordBtn) setPasswordBtn.addEventListener("click", () => void beginSetScrumboyPassword(), { signal });
+	const connectSSOBtn = document.getElementById("connectSSOBtn");
+	if (connectSSOBtn) connectSSOBtn.addEventListener("click", () => showConnectSSODialog(), { signal });
 
   // Setup 2FA buttons
   const enable2FABtn = document.getElementById("enable2FABtn");
@@ -2220,7 +2256,7 @@ async function renderUsersTabContent(): Promise<string> {
             <div class="users-table__actions">
               <button class="btn btn--ghost btn--small" data-action="demote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.demote">Demote</button>
               <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-              <button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Password</button>
+			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
             </div>
           `;
         } else if (isUserRole) {
@@ -2229,7 +2265,7 @@ async function renderUsersTabContent(): Promise<string> {
             <div class="users-table__actions">
               <button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.promote">Promote</button>
               <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-              <button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Password</button>
+			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
             </div>
           `;
         }
@@ -2240,11 +2276,19 @@ async function renderUsersTabContent(): Promise<string> {
 
       const roleDisplay = userRole.charAt(0).toUpperCase() + userRole.slice(1);
       const userDisplay = user.name || user.email || `User ${user.id}`;
+	  const authKey = user.hasLocalPassword && user.oidcLinked
+	    ? "settings.profile.authentication.dual"
+	    : user.hasLocalPassword
+	      ? "settings.profile.authentication.local"
+	      : user.oidcLinked
+	        ? "settings.profile.authentication.sso"
+	        : "settings.profile.authentication.none";
 
       return `
         <tr>
           <td>${escapeHTML(userDisplay)}${user.email && user.name ? ` <span class="muted">(${escapeHTML(user.email)})</span>` : ""}</td>
           <td>${escapeHTML(roleDisplay)}</td>
+		  <td data-i18n-text="${authKey}">${escapeHTML(t(authKey))}</td>
           <td>${actionsHTML}</td>
         </tr>
       `;
@@ -2259,6 +2303,7 @@ async function renderUsersTabContent(): Promise<string> {
             <tr>
               <th style="width: 35%;" data-i18n-text="settings.users.table.user">User</th>
               <th data-i18n-text="settings.users.table.systemRole">System Role</th>
+			  <th data-i18n-text="settings.users.table.authentication">Authentication</th>
               <th data-i18n-text="settings.users.table.actions">Actions</th>
             </tr>
           </thead>
@@ -2529,6 +2574,148 @@ function showCreateUserDialog(): void {
         showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.createUser.failed" }));
       }
     });
+  }
+}
+
+type OIDCAuthorizationResponse = {
+  authorizationEndpoint: string;
+  authorizationParameters: Record<string, string>;
+};
+
+function submitOIDCAuthorizationForm(request: OIDCAuthorizationResponse): void {
+  const endpoint = new URL(request.authorizationEndpoint, window.location.origin);
+  if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
+    throw new Error(t("settings.profile.authentication.providerInvalid"));
+  }
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = endpoint.toString();
+  form.referrerPolicy = "no-referrer";
+  for (const [name, value] of Object.entries(request.authorizationParameters || {})) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    form.appendChild(input);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+
+async function beginSetScrumboyPassword(): Promise<void> {
+  try {
+    const status = await apiFetch<{ authorized: boolean; localAuthEnabled: boolean }>("/api/auth/oidc/set-password/status");
+    if (status.authorized) {
+      showSetScrumboyPasswordDialog(status.localAuthEnabled);
+      return;
+    }
+    const request = await apiFetch<OIDCAuthorizationResponse>("/api/auth/oidc/set-password/start", { method: "POST" });
+    submitOIDCAuthorizationForm(request);
+  } catch (err: any) {
+    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.authentication.startFailed" }));
+  }
+}
+
+function showSetScrumboyPasswordDialog(localAuthEnabled: boolean): void {
+  const u = getUser();
+  if (!u) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog";
+  dialog.innerHTML = `
+    <form method="dialog" class="dialog__form" id="setScrumboyPasswordForm">
+      <div class="dialog__header">
+        <div class="dialog__title" data-i18n-text="settings.profile.authentication.setPassword">Set Scrumboy password</div>
+        <button class="btn btn--ghost" type="button" id="setScrumboyPasswordClose" data-i18n-aria-label="common.close">✕</button>
+      </div>
+      <div class="muted" data-i18n-text="settings.profile.authentication.setPasswordDescription">Your recent SSO reauthentication authorizes one first-password change for five minutes.</div>
+      ${!localAuthEnabled ? `<div role="alert" data-i18n-text="settings.profile.authentication.localDisabledSet">The password will be stored, but it cannot be used until the operator re-enables local authentication.</div>` : ""}
+      <label class="field"><div class="field__label" data-i18n-text="auth.fields.newPassword.label">New password</div><input class="input" id="setScrumboyPasswordNew" type="password" autocomplete="new-password" required /></label>
+      <label class="field"><div class="field__label" data-i18n-text="auth.fields.confirmPassword.label">Confirm password</div><input class="input" id="setScrumboyPasswordConfirm" type="password" autocomplete="new-password" required /></label>
+      ${u.twoFactorEnabled ? `<label class="field"><div class="field__label" data-i18n-text="settings.profile.authentication.twoFactorCode">Authenticator or recovery code</div><input class="input" id="setScrumboyPassword2FA" type="text" autocomplete="one-time-code" required /></label>` : ""}
+      <div class="dialog__footer"><div class="spacer"></div><button class="btn btn--ghost" type="button" id="setScrumboyPasswordCancel" data-i18n-text="common.cancel">Cancel</button><button class="btn" type="submit" data-i18n-text="settings.profile.authentication.savePassword">Save password</button></div>
+    </form>`;
+  document.body.appendChild(dialog);
+  (dialog as HTMLDialogElement).showModal();
+  const releaseLocale = bindDialogLocale(dialog);
+  let removed = false;
+  const close = () => {
+    if (removed) return;
+    removed = true;
+    dialog.querySelectorAll<HTMLInputElement>('input[type="password"], input[autocomplete="one-time-code"]').forEach((input) => { input.value = ""; });
+    releaseLocale();
+    dialog.remove();
+  };
+  dialog.querySelector("#setScrumboyPasswordClose")?.addEventListener("click", close);
+  dialog.querySelector("#setScrumboyPasswordCancel")?.addEventListener("click", close);
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+  dialog.addEventListener("close", close);
+  dialog.querySelector("form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const password = (dialog.querySelector("#setScrumboyPasswordNew") as HTMLInputElement).value;
+    const confirmation = (dialog.querySelector("#setScrumboyPasswordConfirm") as HTMLInputElement).value;
+    if (password !== confirmation) { showToast(t("auth.reset.passwordsMismatch")); return; }
+    const twoFactorCode = (dialog.querySelector("#setScrumboyPassword2FA") as HTMLInputElement | null)?.value || "";
+    try {
+      await apiFetch("/api/auth/oidc/set-password", { method: "POST", body: JSON.stringify({ newPassword: password, twoFactorCode }) });
+      const updated = await apiFetch<User>("/api/me");
+      setUser(updated);
+      close();
+      showToast(t("settings.profile.authentication.passwordSet"));
+      await renderSettingsModal({ skipProfileRefetch: true });
+    } catch (err: any) {
+      showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.authentication.setFailed" }));
+    }
+  });
+}
+
+function showConnectSSODialog(): void {
+  const u = getUser();
+  if (!u) return;
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog";
+  dialog.innerHTML = `
+    <form method="dialog" class="dialog__form" id="connectSSOForm">
+      <div class="dialog__header"><div class="dialog__title" data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</div><button class="btn btn--ghost" type="button" id="connectSSOClose" data-i18n-aria-label="common.close">✕</button></div>
+      <div class="muted" data-i18n-text="settings.profile.authentication.connectDescription">Confirm your current Scrumboy password, then reauthenticate with SSO. The verified SSO email must match your Scrumboy email.</div>
+      <label class="field"><div class="field__label" data-i18n-text="settings.profile.authentication.currentPassword">Current Scrumboy password</div><input class="input" id="connectSSOPassword" type="password" autocomplete="current-password" required /></label>
+      ${u.twoFactorEnabled ? `<label class="field"><div class="field__label" data-i18n-text="settings.profile.authentication.twoFactorCode">Authenticator or recovery code</div><input class="input" id="connectSSO2FA" type="text" autocomplete="one-time-code" required /></label>` : ""}
+      <div class="dialog__footer"><div class="spacer"></div><button class="btn btn--ghost" type="button" id="connectSSOCancel" data-i18n-text="common.cancel">Cancel</button><button class="btn" type="submit" data-i18n-text="settings.profile.authentication.continueSSO">Continue with SSO</button></div>
+    </form>`;
+  document.body.appendChild(dialog);
+  (dialog as HTMLDialogElement).showModal();
+  const releaseLocale = bindDialogLocale(dialog);
+  let removed = false;
+  const close = () => {
+    if (removed) return;
+    removed = true;
+    dialog.querySelectorAll<HTMLInputElement>('input[type="password"], input[autocomplete="one-time-code"]').forEach((input) => { input.value = ""; });
+    releaseLocale();
+    dialog.remove();
+  };
+  dialog.querySelector("#connectSSOClose")?.addEventListener("click", close);
+  dialog.querySelector("#connectSSOCancel")?.addEventListener("click", close);
+  dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
+  dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+  dialog.addEventListener("close", close);
+  dialog.querySelector("form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const currentPassword = (dialog.querySelector("#connectSSOPassword") as HTMLInputElement).value;
+    const twoFactorCode = (dialog.querySelector("#connectSSO2FA") as HTMLInputElement | null)?.value || "";
+    try {
+      const request = await apiFetch<OIDCAuthorizationResponse>("/api/auth/oidc/link/start", { method: "POST", body: JSON.stringify({ currentPassword, twoFactorCode, returnTo: "/?auth_method=linked" }) });
+      submitOIDCAuthorizationForm(request);
+    } catch (err: any) {
+      showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.authentication.linkFailed" }));
+    }
+  });
+}
+
+export async function resumeAuthenticationMethodFlow(kind: string): Promise<void> {
+  if (kind === "set_password") {
+    await beginSetScrumboyPassword();
+  } else if (kind === "linked") {
+    showToast(t("settings.profile.authentication.linked"));
   }
 }
 

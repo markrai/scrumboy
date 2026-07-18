@@ -32,5 +32,6 @@ func SMTPPartiallyConfigured(host string, port int, from string, portExplicit bo
 func (s *Server) selfServicePasswordResetEnabled() bool {
 	return s.smtpConfigured &&
 		len(s.encryptionKey) > 0 &&
-		s.publicBaseURL != ""
+		s.publicBaseURL != "" &&
+		(s.oidcService == nil || !s.oidcService.Config().LocalAuthDisabled)
 }

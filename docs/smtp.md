@@ -1,6 +1,6 @@
 # SMTP and self-service password reset in Scrumboy
 
-SMTP is optional. Without it, administrators can always generate password reset links manually. Configuring SMTP additionally enables self-service password reset via email.
+SMTP is optional and applies only to accounts that already have a usable Scrumboy-local password. Owners may generate a local reset link for those accounts when local authentication is enabled. SSO-only credential recovery belongs to the identity provider; Scrumboy never resets an IdP password.
 
 ## Contents
 
@@ -23,7 +23,7 @@ SMTP is optional. Without it, administrators can always generate password reset 
 
 ## Required env vars
 
-Self-service password-reset email is gated by **four** environment variables. Miss any one and `selfServicePasswordResetEnabled` silently stays `false` (generic 200 response, no email sent, admin-generated link still works). There's no single "here's what's missing" error; check each one if the **Forgot password?** control never appears.
+Self-service password-reset email is gated by **four** environment variables and effective local authentication. Miss any one, or set `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true` in an OIDC installation, and `selfServicePasswordResetEnabled` stays `false`. There is no single "here's what's missing" error; check each setting if **Forgot your Scrumboy password?** never appears.
 
 Those four turn the feature **on**. They do **not** guarantee delivery: hosted relays almost always also need SMTP auth (and often a verified sending domain). Scrumboy's readiness check does not dial the relay or validate credentials.
 
@@ -106,7 +106,7 @@ Do **not** leave literal quote characters *inside* the address Scrumboy parses (
 
 ## What SMTP enables
 
-When the [required env vars](#required-env-vars) are set, Scrumboy can show **Forgot password?** and deliver reset mail. Route shapes, status codes, and the enumeration-safe generic `200` live under [HTTP endpoints](#http-endpoints). This section is only the delivery and ops behavior that those contracts do not cover.
+When the [required env vars](#required-env-vars) are set and local authentication is enabled, Scrumboy can show **Forgot your Scrumboy password?** and deliver reset mail for local-only or dual-authentication accounts. SSO-only and malformed-hash accounts receive the same generic public response but no token or mail.
 
 **Delivery.** Accepted reset requests enqueue mail on an in-memory queue (same pattern as outbound webhooks). Transient failures (dial errors, timeouts, SMTP 4xx) retry up to 3 times with backoff while the worker is running. Permanent failures (SMTP 5xx and local validation/config errors such as invalid `SCRUMBOY_SMTP_FROM`, CR/LF in headers, or STARTTLS required but not advertised) are logged once and not retried. Each send has a single timeout (default 10s) from dial through quit. On shutdown, `Server.Close(ctx)` seals the queue and drains against `ctx`; in-flight sends may finish under their own timeout, and some queued items may remain undelivered if the process exits first.
 
@@ -130,10 +130,10 @@ These auth routes are **not** documented in `[API.md](../API.md)` (MCP-only). Sh
 
 ### `GET /api/auth/status`
 
-- **Capability:** `selfServicePasswordResetEnabled` is `true` only in full mode when the required SMTP host/from/port settings are present and valid, `SCRUMBOY_ENCRYPTION_KEY` is present, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid normalized origin. `SCRUMBOY_SMTP_FROM` must be a parseable RFC 5322 address (no CR/LF); empty or malformed values keep the capability false.
+- **Capability:** `selfServicePasswordResetEnabled` is `true` only in full mode when local authentication is enabled, the required SMTP host/from/port settings are valid, `SCRUMBOY_ENCRYPTION_KEY` is present, and `SCRUMBOY_PUBLIC_BASE_URL` is a valid normalized origin.
 - **Scope:** this is a static settings-readiness signal. It does not validate SMTP credentials, contact the relay, verify TLS support, or guarantee delivery.
 - **Privacy:** this flag describes instance configuration only. It never reflects whether a submitted email belongs to an account.
-- **UI:** the SPA also requires normal local-password sign-in (not bootstrap or OIDC-only) before showing **Forgot password?**. Anonymous mode reports the capability as `false`.
+- **UI:** the SPA also requires effective local authentication before showing **Forgot your Scrumboy password?**. Anonymous and local-auth-disabled modes report the capability as `false`.
 
 
 
@@ -141,24 +141,24 @@ These auth routes are **not** documented in `[API.md](../API.md)` (MCP-only). Sh
 
 - **Body:** `{"email": "user@example.com"}`
 - **Success:** always `200` with `{"message": "If that account exists, a password reset email has been sent."}` - identical whether the account exists, SMTP is configured, or `SCRUMBOY_PUBLIC_BASE_URL` is set. A 200 does **not** confirm an email was sent.
-- **Other:** `404` in anonymous mode; `429` when rate-limited (5/min per IP and per email).
-- **Sends email only when:** user exists, SMTP host/from/port settings are present and valid (including a parseable `SCRUMBOY_SMTP_FROM`), `SCRUMBOY_ENCRYPTION_KEY` set, valid `SCRUMBOY_PUBLIC_BASE_URL` set.
+- **Other:** `404` in anonymous or local-auth-disabled mode; `429` when rate-limited (5/min per IP and per email).
+- **Sends email only when:** the user exists and already has a valid local password, SMTP settings are valid, the encryption key and public base URL are configured, and local authentication is enabled. OIDC-only accounts produce no token and no mail.
 
 
 
 ### `POST /api/auth/reset-password`
 
 - **Body:** `{"token": "...", "new_password": "..."}` (token from the reset link query string)
-- **Success:** `200` with empty body; existing sessions for that user are cleared.
-- **Other:** `400` invalid/expired token; `404` in anonymous mode; `429` rate-limited; `503` if encryption key not configured.
+- **Success:** `200` with empty body; existing sessions and pending local-login 2FA challenges for that user are cleared. OIDC identities remain linked.
+- **Other:** `400` invalid/expired token; `404` in anonymous or local-auth-disabled mode; `429` rate-limited; `503` if encryption key not configured.
 - **SPA:** users can also complete reset at `/auth/reset-password?token=...` (same API under the hood).
 
 
 
 ### `POST /api/admin/users/{id}/password-reset`
 
-- **Auth:** owner session required.
-- **Response:** JSON with a reset URL (not emailed). Unaffected by SMTP. When `SCRUMBOY_PUBLIC_BASE_URL` is unset, the link uses the request's `Host`/`X-Forwarded-Proto`.
+- **Auth:** owner session required; target must already have a valid local password. The UI does not offer this action for SSO-only accounts.
+- **Response:** JSON with a Scrumboy-local reset URL (not emailed). It never resets the identity-provider password. The API is unavailable while local authentication is disabled.
 
 ---
 
@@ -201,7 +201,7 @@ If `SCRUMBOY_PUBLIC_BASE_URL` is **missing or invalid**, the self-service endpoi
 1. Confirm env vars are visible to the running process (e.g. `docker exec scrumboy env | grep SCRUMBOY_SMTP`).
 2. Check the startup log for `smtp: enabled (...)`.
 3. For local testing, run a catcher like [Mailpit](https://github.com/axllent/mailpit): `docker run --rm -p 1025:1025 -p 8025:8025 axllent/mailpit`, set `SCRUMBOY_SMTP_HOST=127.0.0.1`, `SCRUMBOY_SMTP_PORT=1025`, `SCRUMBOY_SMTP_TLS_MODE=none`.
-4. After at least one user exists, sign out from a local-password deployment. Confirm **Forgot password?** is visible, submit the user's email, and check the catcher's UI (`http://localhost:8025` for Mailpit) for the delivered email.
+4. After at least one local-password user exists, sign out. Confirm **Forgot your Scrumboy password?** is visible, submit that user's email, and check the catcher's UI (`http://localhost:8025` for Mailpit).
 5. Optionally verify the low-level contract with `curl -X POST http://localhost:8080/api/auth/request-password-reset -H 'Content-Type: application/json' -H 'X-Scrumboy: 1' -d '{"email":"you@example.com"}'`. The response remains generic. Mutating auth JSON routes require the custom header (same as login).
 6. Follow the link in the email (or POST its token to `/api/auth/reset-password`) to confirm the full reset loop works end to end.
 
@@ -249,5 +249,5 @@ Confirmed working end-to-end against a live Scrumboy instance (bootstrap → req
 ## Related documentation
 
 - `[docs/vapid.md](vapid.md)` - the parallel optional-feature model this design mirrors (config gate, startup log states, partial-config handling).
-- `[FAQ.md](../FAQ.md)` - [Do I need to configure SMTP? What happens if I don't?](../FAQ.md#do-i-need-to-configure-smtp-what-happens-if-i-dont); [I configured SMTP - why don't I see Forgot password?](../FAQ.md#i-configured-smtp---why-dont-i-see-forgot-password).
+- [`FAQ.md`](../FAQ.md) - [Do I need to configure SMTP? What happens if I don't?](../FAQ.md#do-i-need-to-configure-smtp-what-happens-if-i-dont); [I configured SMTP - why don't I see Forgot your Scrumboy password?](../FAQ.md#i-configured-smtp---why-dont-i-see-forgot-your-scrumboy-password).
 - `[README.md](../README.md#config)` - env variable table.

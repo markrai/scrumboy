@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"scrumboy/internal/crypto"
@@ -133,6 +134,53 @@ func TestRecoveryCodesAndConsume(t *testing.T) {
 	consumed, _ = st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
 	if consumed {
 		t.Fatal("expected consumed=false on reuse")
+	}
+}
+
+func TestRecoveryCodeConcurrentConsumptionIsSingleUse(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "concurrent@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	const code = "ABCD-EFGH"
+	if err := st.AddRecoveryCodes(ctx, u.ID, []string{code}); err != nil {
+		t.Fatalf("AddRecoveryCodes: %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, code)
+			results <- consumed
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("ConsumeRecoveryCode: %v", err)
+		}
+	}
+	successes := 0
+	for consumed := range results {
+		if consumed {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("successful concurrent consumptions = %d, want 1", successes)
 	}
 }
 

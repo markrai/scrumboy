@@ -65,6 +65,8 @@ export interface User {
   isBootstrap?: boolean;
   systemRole?: string;
   twoFactorEnabled?: boolean;
+  hasLocalPassword?: boolean;
+  oidcLinked?: boolean;
 }
 
 export interface ActiveSprintInfo {

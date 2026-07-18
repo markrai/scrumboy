@@ -1,14 +1,10 @@
-# OIDC / SSO Configuration
+# OIDC / SSO configuration
 
-Scrumboy supports OpenID Connect (OIDC) for single sign-on. After a successful OIDC login the user gets a normal `scrumboy_session` cookie — no JWTs are exposed to the browser.
+Scrumboy supports one configured OpenID Connect provider for human sign-in. This is separate from Scrumboy's OAuth server for MCP clients.
 
-Compatible providers: Keycloak, Auth0, Authentik, Zitadel, Azure AD (external tenant), Google Workspace (when configured as a standard OIDC client), and any provider with standard OIDC Discovery.
+## Configuration
 
----
-
-## Quick Start
-
-Set all four required environment variables and restart the server.
+Set all four values and restart Scrumboy:
 
 ```sh
 SCRUMBOY_OIDC_ISSUER=https://auth.example.com/realms/myrealm
@@ -17,197 +13,109 @@ SCRUMBOY_OIDC_CLIENT_SECRET=your-client-secret
 SCRUMBOY_OIDC_REDIRECT_URL=https://scrumboy.example.com/api/auth/oidc/callback
 ```
 
-**Localhost example** (e.g. Keycloak running locally):
-
-```sh
-SCRUMBOY_OIDC_ISSUER=http://localhost:8180/realms/dev
-SCRUMBOY_OIDC_CLIENT_ID=scrumboy-local
-SCRUMBOY_OIDC_CLIENT_SECRET=secret
-SCRUMBOY_OIDC_REDIRECT_URL=http://localhost:8080/api/auth/oidc/callback
-```
-
-Requirements:
-
-- All four variables must be set. Any missing variable disables OIDC entirely.
-- The redirect URL must be registered at the provider exactly as written here.
-- Restart the server after changing any of these values.
-
-If configured correctly, a **Continue with SSO** button appears on the login screen (and on first-time setup when local password bootstrap is also available).
-
-OIDC is disabled by default. Local password login remains available unless you also set:
+Local login remains enabled by default. To operate as SSO-only at the instance level:
 
 ```sh
 SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true
 ```
 
----
+All four OIDC settings are required. The redirect URL must exactly match the provider registration. The issuer is trimmed and normalized without a trailing slash; discovery may accept that issuer's single trailing-slash form, but no unrelated issuer.
 
-## How It Works
+## Account authentication methods
 
-1. User clicks **Continue with SSO** on the login screen.
-2. Browser is redirected to the provider's authorization endpoint.
-3. User authenticates at the provider.
-4. Provider redirects back to `/api/auth/oidc/callback` with an authorization code.
-5. Scrumboy exchanges the code for tokens server-side, validates the ID token, and creates a session.
-6. Browser receives a `scrumboy_session` cookie and is redirected to the original page.
+A user can have:
 
-All token handling happens on the server. The browser never sees access tokens or ID tokens.
+- **Local password**: a usable Scrumboy bcrypt password.
+- **SSO**: an OIDC identity for the currently configured normalized issuer.
+- **Local password + SSO**: both methods on the same account.
 
----
+An identity saved for an old issuer remains in the database, but does not make SSO appear usable after the configured issuer changes. If the old issuer is configured again, that historical link can become usable again.
 
-## Requirements & Constraints
+The hybrid login screen intentionally shows both **Sign in with your Scrumboy password** and **Continue with SSO**. The visitor has not identified an account yet, and an installation may contain all three account combinations.
 
-**Email**
+When local authentication is disabled, the local form, forgot-password action, reset page, and local/admin reset APIs are unavailable. A stored local password does not become usable until the operator re-enables local authentication.
 
-- The ID token must include an `email` claim (non-empty).
-- `email_verified` must be `true` (boolean or string). If absent or false, login is denied.
-- Email is stored normalized to lowercase.
-- On **first** OIDC login for a given `(issuer, subject)`, `users.email` is set from the token. On later logins, Scrumboy does **not** sync email or display name from the IdP (matches current server behavior).
+## Canonical email ownership
 
-**Identity**
+`users.email` is the canonical Scrumboy email. Normal OIDC login identifies an existing account only by `(issuer, subject)`; email is not an account join key.
 
-- Identity is tracked by `(issuer, subject)` — Scrumboy's normalized configured issuer + the token's `sub` claim.
-- Email is not used as a join key. Changing your email at the provider does not break the link; the row in Scrumboy keeps the email from first login until you change it in-app or via admin.
-- There is no account linking between local password accounts and OIDC accounts.
+- The first login for a new, non-colliding identity may provision a user using the verified IdP email and display name.
+- Later logins update only the linked identity's latest verified `email_at_login`.
+- Later logins do not rewrite the canonical Scrumboy email, name, role, ownership, or profile.
+- An IdP email change or collision therefore cannot transfer account ownership, and the account's existing local login remains tied to its canonical Scrumboy email.
+- If an unlinked identity's normalized email already has a canonical owner, Scrumboy creates no duplicate and performs no implicit link. Sign in locally and use **Connect SSO**.
 
-**First user / ownership**
+Changing the canonical Scrumboy email is a separate operation and is not part of OIDC login or linking.
 
-- If no users exist when an OIDC login succeeds, that user becomes the instance owner. Discovery accepts only the configured issuer after normalization, or that same issuer with one trailing slash.
-- If a local password account was created first via bootstrap, subsequent OIDC users are created as normal users.
+## Connect SSO
 
-**Display name**
+A user with a local password can open **Settings → Profile → Connect SSO**. Scrumboy requires:
 
-- Set from the `name` claim at account creation.
-- Falls back to `preferred_username`, then to the last segment of `sub`.
-- Not updated on subsequent logins.
+1. the current Scrumboy password;
+2. Scrumboy 2FA when enabled;
+3. fresh authentication at the configured provider; and
+4. a verified normalized IdP email that exactly matches the canonical Scrumboy email.
 
-**Scopes requested**
+The identity must not belong to another user. A historical identity for a different issuer does not block connecting the current provider. Linking is explicit because matching email alone is not sufficient proof of account ownership. Unlinking is not provided.
 
-- `openid email profile` — fixed, not configurable.
+If an existing session has neither a usable local password nor an identity for the current provider (for example, after an issuer change), Security settings still explain **Connect SSO**, but the flow cannot start from the session alone. Use host-side owner recovery where applicable to establish a local password first; Scrumboy never treats the old session as sufficient linking proof.
 
----
+## Setting the first Scrumboy password
 
-## Configuration Notes
+An SSO-only user linked to the current provider can choose **Settings → Profile → Set Scrumboy password**. A Scrumboy session alone is insufficient. Scrumboy performs a fresh OIDC step-up using `max_age=0` and requires a valid recent `auth_time` claim.
 
-**Issuer normalization**
+After the callback, Scrumboy issues a single-use five-minute authorization bound to the exact user and Scrumboy session. The new password is sent only in the final JSON POST, is validated by the normal Scrumboy password policy, and uses the normal bcrypt hashing implementation. Roles, projects, ownership, profile, 2FA, sessions, and the OIDC link remain intact.
 
-Scrumboy strips trailing slashes and whitespace from `SCRUMBOY_OIDC_ISSUER` at startup. Set the issuer without a trailing slash to avoid confusion:
+If the provider omits or returns invalid `auth_time`, the operation fails closed with a provider-compatibility message. Normal SSO login does not require `auth_time`.
 
-```sh
-# Correct
-SCRUMBOY_OIDC_ISSUER=https://auth.example.com/realms/myrealm
+When local authentication is disabled, the password can still be established for recovery preparation, but the UI explains that it is unusable until the operator re-enables local login.
 
-# Avoid (will be normalized, but don't rely on it)
-SCRUMBOY_OIDC_ISSUER=https://auth.example.com/realms/myrealm/
+## Password recovery responsibilities
+
+- **Local-only**: Scrumboy reset email or an owner-generated Scrumboy reset link resets the local password.
+- **SSO-only**: credential recovery belongs to the identity provider. Scrumboy sends no local reset email and administrators are not offered an IdP-password reset action.
+- **Dual authentication**: Scrumboy reset changes only the local password. It neither changes the provider password nor removes any OIDC identity.
+
+Public reset requests stay enumeration-safe. Passwordless and unknown accounts receive the same generic response and timing; no token or Scrumboy reset mail is produced. A completed local reset revokes Scrumboy sessions and pending local-login 2FA challenges.
+
+## Provider outage and owner recovery
+
+Existing Scrumboy sessions can continue until they expire or are revoked because they are local sessions. New SSO logins and sensitive OIDC reauthentication cannot complete while the provider is unavailable.
+
+Scrumboy warns at startup when no owner has an effective login method and warns separately when owners depend exclusively on the configured provider. Effective methods are:
+
+```text
+effectiveLocal = localAuthEnabled && hasLocalPassword
+effectiveSSO = oidcEnabled && identityForConfiguredIssuer
 ```
 
-Discovery first tries the normalized configured issuer, then exactly the same issuer with one trailing slash. Once discovery succeeds, ID-token validation uses the discovered issuer normally. Some providers, such as Authentik, advertise and sign tokens with the slash form. No other issuer variations are accepted, and stored OIDC identities use the normalized configured issuer.
+The calculation treats null, empty, and malformed password hashes as unusable and treats old-issuer identities as historical only. Startup is not blocked. See [owner disaster recovery](recovery.md) before an outage occurs.
 
-**Redirect URL**
+## Security details
 
-- Must be an absolute URL.
-- Must match the redirect URI registered at the provider exactly — including scheme, host, port, and path.
-- Path is always `/api/auth/oidc/callback`.
-- Do not derive it from request headers. Set it explicitly.
+- Authorization Code flow with PKCE S256, issuer/audience verification, state, and nonce.
+- OIDC state is random, stored only as a hash, expiring, and single-use. Sensitive state is bound to purpose, initiating user, and the exact hashed Scrumboy session.
+- Ordinary **Continue with SSO** uses a top-level redirect GET so identity-provider `SameSite=Lax` session cookies continue to support seamless SSO. Its state, nonce, and PKCE challenge are standard authorization-request query parameters on the provider URL; the PKCE verifier remains server-side.
+- Sensitive Set Password and Connect SSO requests use form POST, keeping their state, nonce, and PKCE challenge out of Scrumboy-controlled redirect URLs.
+- Sensitive operations use `max_age=0` without also requiring `prompt=login`, and validate `auth_time` with a small clock-skew allowance.
+- Callback authorization codes and state may necessarily be present in the callback URL. Scrumboy does not log or echo them. Passwords, first-password grants, session tokens, PKCE verifiers, TOTP values, and recovery codes are never put in URLs or application logs. Sensitive-flow nonces are form fields; the ordinary-login nonce is present only in the provider authorization URL.
+- Return paths are restricted to safe local paths.
+- Scrumboy 2FA protects local-password sign-in and sensitive authentication-method changes. MFA for normal SSO sign-in is the configured provider's responsibility.
+- Sensitive current-password and second-factor attempts are independently limited per user and per trusted client IP. TOTP and recovery-code attempts also share an aggregate limit.
 
-**Behind a reverse proxy**
+The configured provider must accept form-POST authorization requests for sensitive method changes and support `max_age=0` plus a valid `auth_time` claim. Ordinary SSO login uses redirect GET and does not require `auth_time`.
 
-OIDC works behind nginx, Caddy, Traefik, etc. as long as:
-
-- `SCRUMBOY_OIDC_REDIRECT_URL` reflects the public-facing URL (not the internal address).
-- The proxy forwards `X-Forwarded-Proto: https` if terminating TLS — Scrumboy uses this to set `Secure` on the session cookie.
-
-**Discovery**
-
-Scrumboy fetches the provider's discovery document (`{issuer}/.well-known/openid-configuration`) on the first login attempt, not at startup. Discovery first validates the normalized configured issuer, then exactly the same issuer with one trailing slash. The app starts normally even if the provider is unreachable; OIDC is unavailable until discovery succeeds.
-
----
+The `first_password_grants` table may be present in full SQLite backups. Grant values are hashed, short-lived, bound to a session, excluded from Scrumboy logical project exports, unusable after expiration or session deletion, and cleaned up opportunistically.
 
 ## Troubleshooting
 
-### `oidcEnabled: false` in `/api/auth/status`
+- **SSO button missing**: `/api/auth/status` must report `oidcEnabled: true`; verify all four settings and restart.
+- **503 when continuing with SSO**: discovery is lazy and the provider is unreachable or its advertised issuer does not match.
+- **`oidc_error=email`**: a verified email claim is missing.
+- **`oidc_error=link_required`**: the identity is unlinked and its email collides with a canonical Scrumboy account. Sign in locally and use Connect SSO.
+- **`oidc_error=auth_time`**: the provider did not honor the sensitive reauthentication contract. Confirm support for `max_age=0` and a valid `auth_time` claim.
+- **`oidc_error=identity_mismatch` or `session_changed`**: the provider identity or Scrumboy session changed during a sensitive operation; start again from Settings.
 
-- One or more of the four required env vars is missing or empty.
-- The server has not been restarted since the vars were set.
+## Deliberate limitations
 
-Check:
-
-```sh
-curl http://localhost:8080/api/auth/status | jq .oidcEnabled
-```
-
-### `503` on the SSO button click
-
-`oidcEnabled` only means the four env vars are set — discovery runs on the first click. The SSO button can appear even when discovery has not succeeded yet; clicking it returns **503** until the provider is reachable and discovery succeeds.
-
-Discovery failed. Possible causes:
-
-- Provider is unreachable from the Scrumboy server.
-- `SCRUMBOY_OIDC_ISSUER` points to the wrong URL (wrong realm, wrong host).
-- The issuer field in the discovery document is not `SCRUMBOY_OIDC_ISSUER` after normalization, or exactly that same issuer with one trailing slash.
-
-Check the server logs for a line like:
-
-```
-oidc: discovery/login error: oidc discovery failed for "...": ...
-```
-
-### Redirect loop or "invalid redirect URI" at the provider
-
-- `SCRUMBOY_OIDC_REDIRECT_URL` does not match the redirect URI configured at the provider.
-- Common mismatches: `http` vs `https`, missing port, trailing slash.
-
-### Login fails after returning from the provider (`oidc_error=token`)
-
-The ID token was rejected. Common causes:
-
-- Token audience (`aud`) does not match `SCRUMBOY_OIDC_CLIENT_ID`.
-- Issuer in the token does not match the issuer accepted during discovery.
-- Token has expired in transit (clock skew between server and provider).
-- Wrong `client_secret`.
-
-Check server logs for `oidc: callback error: token`.
-
-### Login fails with `oidc_error=email`
-
-- Provider did not include an `email` claim.
-- `email_verified` is `false` or absent.
-- Enable email verification in the provider, or check whether the client/scope configuration returns the email claim.
-
-### Login fails with `oidc_error=token` and email conflict in logs
-
-A different user already has that email address (registered via local password login). Account linking is not supported. The server logs will contain:
-
-```
-oidc login aborted: email already in use by existing user (OIDC identity not linked)
-```
-
-Options: delete the local account via admin UI, or use a different email at the provider.
-
-### SSO button not showing
-
-`GET /api/auth/status` must return `"oidcEnabled": true`. If it does not, see the first troubleshooting entry above. If it does, hard-refresh the browser (the SPA caches auth status for the page lifetime).
-
----
-
-## Security Notes
-
-- Uses Authorization Code flow with PKCE (S256). The code verifier and state are stored server-side in memory with a 10-minute TTL.
-- State and nonce are validated on every callback. Replayed or expired state values are rejected.
-- `return_to` (post-login redirect) is validated strictly: must be a path-only relative URL, no `//`, no `://`, no `..` segments, no fragments.
-- Session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` when served over HTTPS.
-- The client secret never leaves the server.
-
----
-
-## Not Implemented
-
-The following are explicitly out of scope in the current version:
-
-- **IdP logout** — clicking logout ends the Scrumboy session only; the provider session remains active.
-- **Role or group claim mapping** — all OIDC users are created as `user` role (except the first user who becomes `owner`).
-- **Account linking** — an existing local-password account cannot be linked to an OIDC identity.
-- **Multiple OIDC providers** — only one provider can be configured.
-- **Userinfo endpoint** — claims are taken from the ID token only.
-- **Refresh token usage** — sessions use the existing Scrumboy session TTL (30 days), not provider token lifetimes.
-- **Domain allowlists or invitation-only provisioning** — any user the provider authenticates can log in.
+There is no canonical-email change flow, unlinking, IdP logout, multiple simultaneous OIDC providers, role/group claim mapping, provider 2FA policy enforcement, 2FA-reset recovery command, userinfo use, or refresh-token use.

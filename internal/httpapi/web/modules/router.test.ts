@@ -257,4 +257,16 @@ describe('router push autosubscribe gate', () => {
       selfServicePasswordResetEnabled: true,
     });
   });
+
+	it('does not render the direct local reset page when local authentication is disabled', async () => {
+	  window.history.replaceState({}, '', '/auth/reset-password?token=secret');
+	  apiFetchMock.mockImplementation(async (url: string) => {
+	    if (url === '/api/auth/status') return { user: null, bootstrapAvailable: false, mode: 'full', oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false };
+	    throw new Error(`unexpected apiFetch url: ${url}`);
+	  });
+	  const mod = await loadRouterModule();
+	  await mod.router();
+	  expect(renderResetPasswordMock).not.toHaveBeenCalled();
+	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
+	});
 });

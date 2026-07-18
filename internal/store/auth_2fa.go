@@ -359,20 +359,21 @@ func (s *Store) AddRecoveryCodes(ctx context.Context, userID int64, codes []stri
 	return nil
 }
 
-// ConsumeRecoveryCode finds an unused code for the user, verifies it, marks used_at.
-func (s *Store) ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error) {
+// MatchRecoveryCode finds an unused recovery code without consuming it. Callers
+// must use ConsumeRecoveryCodeID, or a transactional operation that consumes the
+// returned row, before treating the proof as authorized.
+func (s *Store) MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error) {
 	code = strings.TrimSpace(strings.ToUpper(code))
 	code = strings.ReplaceAll(code, "-", "")
 	if len(code) != recoveryCodeLength {
-		return false, nil
+		return 0, nil
 	}
 
 	rows, err := s.db.QueryContext(ctx, `SELECT id, code_hash FROM user_recovery_codes WHERE user_id = ? AND used_at IS NULL`, userID)
 	if err != nil {
-		return false, fmt.Errorf("list recovery codes: %w", err)
+		return 0, fmt.Errorf("list recovery codes: %w", err)
 	}
 
-	nowMs := time.Now().UTC().UnixMilli()
 	var matchingID int64
 	var scanErr error
 	for rows.Next() {
@@ -388,22 +389,42 @@ func (s *Store) ConsumeRecoveryCode(ctx context.Context, userID int64, code stri
 		}
 	}
 	if err := rows.Close(); err != nil {
-		return false, fmt.Errorf("close recovery code rows: %w", err)
+		return 0, fmt.Errorf("close recovery code rows: %w", err)
 	}
 	if scanErr != nil {
-		return false, fmt.Errorf("scan recovery code: %w", scanErr)
+		return 0, fmt.Errorf("scan recovery code: %w", scanErr)
 	}
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("iterate recovery codes: %w", err)
+		return 0, fmt.Errorf("iterate recovery codes: %w", err)
 	}
-	if matchingID == 0 {
+	return matchingID, nil
+}
+
+// ConsumeRecoveryCodeID atomically marks a matched code used. The used_at
+// predicate is the replay guard when two requests verify the same bcrypt hash.
+func (s *Store) ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error) {
+	if userID <= 0 || recoveryCodeID <= 0 {
 		return false, nil
 	}
-
-	if _, err := s.db.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ?`, nowMs, matchingID); err != nil {
+	result, err := s.db.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL`, time.Now().UTC().UnixMilli(), recoveryCodeID, userID)
+	if err != nil {
 		return false, fmt.Errorf("mark recovery code used: %w", err)
 	}
-	return true, nil
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("count consumed recovery codes: %w", err)
+	}
+	return changed == 1, nil
+}
+
+// ConsumeRecoveryCode finds an unused code, verifies it, and atomically marks
+// it used. Exactly one concurrent caller can consume a matching row.
+func (s *Store) ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error) {
+	recoveryCodeID, err := s.MatchRecoveryCode(ctx, userID, code)
+	if err != nil || recoveryCodeID == 0 {
+		return false, err
+	}
+	return s.ConsumeRecoveryCodeID(ctx, userID, recoveryCodeID)
 }
 
 // DeleteRecoveryCodesByUser removes all recovery codes for the user.

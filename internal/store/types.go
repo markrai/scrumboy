@@ -89,14 +89,14 @@ func StatusToColumnKey(s Status) string {
 
 // WorkflowColumn defines one ordered workflow lane for a project.
 type WorkflowColumn struct {
-	ID       int64
+	ID        int64
 	ProjectID int64
-	Key      string
-	Name     string
-	Color    string
-	Position int
-	IsDone   bool
-	System   bool
+	Key       string
+	Name      string
+	Color     string
+	Position  int
+	IsDone    bool
+	System    bool
 }
 
 // SprintFilter represents the sprint filter for board queries.
@@ -156,7 +156,7 @@ type ProjectMember struct {
 // Used by ListProjects so the UI can hide Delete/Rename for non-maintainers.
 type ProjectListEntry struct {
 	Project Project
-	Role   ProjectRole
+	Role    ProjectRole
 }
 
 // SystemRole represents a user's system-wide role (Owner, Admin, User).
@@ -197,6 +197,10 @@ type User struct {
 	SystemRole       SystemRole
 	CreatedAt        time.Time
 	TwoFactorEnabled bool // Store-only: use IsTwoFactorActive() for "is 2FA on?"
+	HasLocalPassword bool
+	OIDCLinked       bool // Linked to the currently configured issuer.
+	// HasAnyOIDCIdentity is internal account state. API serializers deliberately omit it.
+	HasAnyOIDCIdentity bool
 	// two_factor_secret_enc is never loaded into User. Fetched only in GetUserTwoFactorSecret when verifying TOTP.
 }
 
@@ -304,7 +308,7 @@ const (
 	RoleEditor      ProjectRole = "editor"      // Deprecated: merged into Contributor; kept for ParseProjectRole
 	RoleViewer      ProjectRole = "viewer"      // Legacy: used in project_members
 	RoleMaintainer  ProjectRole = "maintainer"  // Project authority role
-	RoleContributor ProjectRole = "contributor"  // Canonical write role (Editor deprecated)
+	RoleContributor ProjectRole = "contributor" // Canonical write role (Editor deprecated)
 )
 
 var validProjectRoleSet = map[ProjectRole]struct{}{

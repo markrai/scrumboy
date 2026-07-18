@@ -3,7 +3,9 @@ package oidc
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -93,58 +95,128 @@ func (s *Service) oauth2Config(provider *gooidc.Provider) *oauth2.Config {
 	}
 }
 
-// LoginRedirectURL builds the authorization URL and stores PKCE/nonce/state in memory.
+type AuthorizationRequest struct {
+	AuthorizationEndpoint string            `json:"authorizationEndpoint"`
+	Parameters            map[string]string `json:"authorizationParameters"`
+}
+
+// LoginRedirectURL builds the ordinary top-level authorization redirect. The
+// sensitive account-method flows use AuthorizationRequest form POSTs instead.
 func (s *Service) LoginRedirectURL(ctx context.Context, returnTo string) (string, error) {
-	provider, _, err := s.ensureProvider(ctx)
+	req, err := s.LoginAuthorizationRequest(ctx, returnTo)
 	if err != nil {
 		return "", err
+	}
+	u, err := url.Parse(req.AuthorizationEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse authorization endpoint: %w", err)
+	}
+	q := u.Query()
+	for key, value := range req.Parameters {
+		q.Set(key, value)
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+func (s *Service) LoginAuthorizationRequest(ctx context.Context, returnTo string) (*AuthorizationRequest, error) {
+	return s.startAuthorization(ctx, FlowLogin, 0, "", returnTo)
+}
+
+func (s *Service) SensitiveAuthorizationRequest(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string) (*AuthorizationRequest, error) {
+	if purpose != FlowSetPassword && purpose != FlowLink {
+		return nil, fmt.Errorf("invalid sensitive OIDC purpose")
+	}
+	if userID <= 0 || sessionToken == "" {
+		return nil, fmt.Errorf("authenticated session required")
+	}
+	return s.startAuthorization(ctx, purpose, userID, sessionToken, returnTo)
+}
+
+func (s *Service) startAuthorization(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string) (*AuthorizationRequest, error) {
+	provider, _, err := s.ensureProvider(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	stateRaw, err := randomString(32)
 	if err != nil {
-		return "", fmt.Errorf("generate state: %w", err)
+		return nil, fmt.Errorf("generate state: %w", err)
 	}
 
 	nonce, err := randomString(32)
 	if err != nil {
-		return "", fmt.Errorf("generate nonce: %w", err)
+		return nil, fmt.Errorf("generate nonce: %w", err)
 	}
 
 	verifier := oauth2.GenerateVerifier()
 
 	s.states.Put(stateRaw, &loginState{
-		Nonce:        nonce,
-		PKCEVerifier: verifier,
-		ReturnTo:     returnTo,
-		CreatedAt:    time.Now(),
+		Purpose:          purpose,
+		Nonce:            nonce,
+		PKCEVerifier:     verifier,
+		ReturnTo:         SanitizeReturnTo(returnTo),
+		UserID:           userID,
+		SessionTokenHash: sessionHash(sessionToken),
+		CreatedAt:        time.Now(),
 	})
 
 	cfg := s.oauth2Config(provider)
-	authURL := cfg.AuthCodeURL(
-		stateRaw,
+	params := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("nonce", nonce),
 		oauth2.S256ChallengeOption(verifier),
+	}
+	if purpose != FlowLogin {
+		params = append(params, oauth2.SetAuthURLParam("max_age", "0"))
+	}
+	authURL := cfg.AuthCodeURL(
+		stateRaw,
+		params...,
 	)
-
-	return authURL, nil
+	u, err := url.Parse(authURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse authorization endpoint: %w", err)
+	}
+	parameters := make(map[string]string)
+	for key, values := range u.Query() {
+		if len(values) > 0 {
+			parameters[key] = values[len(values)-1]
+		}
+	}
+	u.RawQuery = ""
+	u.ForceQuery = false
+	return &AuthorizationRequest{AuthorizationEndpoint: u.String(), Parameters: parameters}, nil
 }
 
 // CallbackResult holds the validated identity after a successful callback.
 type CallbackResult struct {
-	Issuer   string
-	Subject  string
-	Email    string
-	Name     string
-	ReturnTo string
+	Issuer           string
+	Subject          string
+	Email            string
+	Name             string
+	ReturnTo         string
+	Purpose          FlowPurpose
+	UserID           int64
+	SessionTokenHash [32]byte
+}
+
+func (r *CallbackResult) SessionMatches(raw string) bool {
+	if r == nil || raw == "" {
+		return false
+	}
+	got := sessionHash(raw)
+	return subtle.ConstantTimeCompare(r.SessionTokenHash[:], got[:]) == 1
 }
 
 // HandleCallback validates the callback, exchanges the code, and verifies the ID token.
 func (s *Service) HandleCallback(ctx context.Context, r *http.Request) (*CallbackResult, string) {
+	stateParam := r.URL.Query().Get("state")
 	if errParam := r.URL.Query().Get("error"); errParam != "" {
+		if stateParam != "" {
+			_ = s.states.Take(stateParam)
+		}
 		return nil, "provider"
 	}
-
-	stateParam := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
 	if stateParam == "" || code == "" {
 		return nil, "state_invalid"
@@ -181,10 +253,11 @@ func (s *Service) HandleCallback(ctx context.Context, r *http.Request) (*Callbac
 	}
 
 	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified any    `json:"email_verified"`
-		Name          string `json:"name"`
-		PreferredUser string `json:"preferred_username"`
+		Email         string          `json:"email"`
+		EmailVerified any             `json:"email_verified"`
+		Name          string          `json:"name"`
+		PreferredUser string          `json:"preferred_username"`
+		AuthTime      json.RawMessage `json:"auth_time"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		return nil, "token"
@@ -198,6 +271,18 @@ func (s *Service) HandleCallback(ctx context.Context, r *http.Request) (*Callbac
 	if !isEmailVerified(claims.EmailVerified) {
 		return nil, "email"
 	}
+	if ls.sensitive() {
+		var authTime int64
+		if len(claims.AuthTime) == 0 || string(claims.AuthTime) == "null" || json.Unmarshal(claims.AuthTime, &authTime) != nil || authTime <= 0 {
+			return nil, "auth_time"
+		}
+		authenticatedAt := time.Unix(authTime, 0)
+		now := time.Now()
+		const skew = 2 * time.Minute
+		if authenticatedAt.Before(ls.CreatedAt.Add(-skew)) || authenticatedAt.After(now.Add(skew)) {
+			return nil, "auth_time"
+		}
+	}
 
 	name := strings.TrimSpace(claims.Name)
 	if name == "" {
@@ -209,11 +294,14 @@ func (s *Service) HandleCallback(ctx context.Context, r *http.Request) (*Callbac
 	}
 
 	return &CallbackResult{
-		Issuer:   s.cfg.IssuerCanonical,
-		Subject:  idToken.Subject,
-		Email:    strings.ToLower(email),
-		Name:     name,
-		ReturnTo: ls.ReturnTo,
+		Issuer:           s.cfg.IssuerCanonical,
+		Subject:          idToken.Subject,
+		Email:            strings.ToLower(email),
+		Name:             name,
+		ReturnTo:         ls.ReturnTo,
+		Purpose:          ls.Purpose,
+		UserID:           ls.UserID,
+		SessionTokenHash: ls.SessionTokenHash,
 	}, ""
 }
 

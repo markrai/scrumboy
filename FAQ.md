@@ -10,10 +10,12 @@
 - [Are tag colors personal, or shared with the team?](#are-tag-colors-personal-or-shared-with-the-team)
 - [How do I use Scrumboy with Claude or other MCP clients?](#how-do-i-use-scrumboy-with-claude-or-other-mcp-clients)
 - [Can Scrumboy MCP OAuth work with OIDC-only login?](#can-scrumboy-mcp-oauth-work-with-oidc-only-login)
+- [Can one account use both a Scrumboy password and SSO?](#can-one-account-use-both-a-scrumboy-password-and-sso)
+- [What happens if the SSO provider is unavailable?](#what-happens-if-the-sso-provider-is-unavailable)
 - [What are VAPID keys, and do I need them?](#what-are-vapid-keys-and-do-i-need-them)
 - [How do I generate SCRUMBOY_ENCRYPTION_KEY?](#how-do-i-generate-scrumboy_encryption_key)
 - [Do I need to configure SMTP? What happens if I don't?](#do-i-need-to-configure-smtp-what-happens-if-i-dont)
-- [I configured SMTP - why don't I see Forgot password?](#i-configured-smtp---why-dont-i-see-forgot-password)
+- [I configured SMTP - why don't I see Forgot your Scrumboy password?](#i-configured-smtp---why-dont-i-see-forgot-your-scrumboy-password)
 - [How does auditing work, and where can I see it?](#how-does-auditing-work-and-where-can-i-see-it)
 - [Does Scrumboy use telemetry, tracking, or “phone home”?](#does-scrumboy-use-telemetry-tracking-or-phone-home)
 - [What do I need to do to contribute?](#what-do-i-need-to-do-to-contribute)
@@ -21,6 +23,18 @@
 - [Does this project accept donations?](#does-this-project-accept-donations)
 
 # Notes
+
+## Can one account use both a Scrumboy password and SSO?
+
+Yes. Accounts may be local-only, SSO-only, or dual-authentication. An SSO-only user can choose **Set Scrumboy password** after fresh SSO reauthentication. A local user can choose **Connect SSO**, confirm the current Scrumboy password and Scrumboy 2FA when enabled, then authenticate at the provider. The verified provider email must match the canonical Scrumboy email.
+
+Normal SSO login identifies an existing account only by provider issuer and subject. A matching email never silently links an identity or transfers account ownership. See [`docs/oidc.md`](docs/oidc.md).
+
+## What happens if the SSO provider is unavailable?
+
+Existing Scrumboy sessions may continue until they expire or are revoked. New SSO sign-ins and sensitive SSO step-up operations fail until the provider returns. A dual-authentication owner can use the local form when local authentication is enabled.
+
+If no owner has an effective local method, a host operator must stop Scrumboy, back up the SQLite database/volume, and run `scrumboy recover-owner --email owner@example.com`. Recovery revokes the owner's sessions, does not clear 2FA, and does not automatically enable local authentication. Follow [`docs/recovery.md`](docs/recovery.md).
 ## How do I enable Markdown in my notes?
 
 Set `SCRUMBOY_MARKDOWN_NOTES_ENABLED=1` on the server (also accepts `true`, `on`, or `yes`; case-insensitive). The feature defaults to off.
@@ -232,11 +246,11 @@ If OpenSSL is installed on Windows, `openssl rand -base64 32` works the same as 
 
 **No.** SMTP is optional server config for self-service password-reset email delivery. Without it, admins can still generate password-reset links manually (Settings → Users → Password) and hand them to the user out of band - that flow is unaffected by SMTP configuration.
 
-To let users request their own reset email, configure `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535; `SCRUMBOY_SMTP_FROM` must be a parseable RFC 5322 address), `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL`. When those required static settings are present and valid, users can choose **Forgot password?** on the local-password sign-in screen. The control is hidden during first-time setup, on OIDC-only or anonymous deployments, and whenever a required setting is missing or invalid; the admin-generated link remains the fallback. The capability does not test relay reachability or guarantee delivery. The request endpoint stays enumeration-safe: its generic accepted result does not confirm an account or email delivery. See [`docs/smtp.md`](docs/smtp.md) for TLS modes, the HTTP contract, and setup/verification steps.
+To let users who already have a local password request their own reset email, configure `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM`, `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL`, and keep local authentication enabled. Users can then choose **Forgot your Scrumboy password?**. SSO-only accounts use provider recovery and receive no Scrumboy reset mail; owners can generate a link only for accounts with a usable local password. The generic request response does not confirm an account or delivery. See [`docs/smtp.md`](docs/smtp.md).
 
-## I configured SMTP - why don't I see Forgot password?
+## I configured SMTP - why don't I see Forgot your Scrumboy password?
 
-Setting the SMTP host alone is not enough. Scrumboy only shows **Forgot password?** when self-service reset is fully ready **and** you are on the normal local-password sign-in screen. Work through this checklist:
+Setting the SMTP host alone is not enough. Scrumboy only shows **Forgot your Scrumboy password?** when self-service reset is fully ready, local authentication is enabled, and you are on the local-password sign-in screen. Work through this checklist:
 
 1. **Full mode** - anonymous mode never offers self-service reset (`selfServicePasswordResetEnabled` is always `false`).
 2. **Startup logs** - look for `smtp: enabled (host=… port=…)`. Do **not** stop there: also confirm there is **no** `SCRUMBOY_PUBLIC_BASE_URL is missing or invalid…` line and **no** `invalid SCRUMBOY_ENCRYPTION_KEY ignored… password reset disabled` warning. You need all four: `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM`, `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL` (see [`docs/smtp.md`](docs/smtp.md#required-env-vars)).

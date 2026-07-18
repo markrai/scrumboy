@@ -26,6 +26,13 @@ func newTestOAuthServerWithOIDC(t *testing.T, localAuthDisabled, withExistingUse
 	if withExistingUser {
 		sessionClient = newCookieClient(t)
 		bootstrapUserClient(t, sessionClient, ts.URL, idp.name, idp.email, "password123")
+		u, err := srv.store.GetUserByEmail(context.Background(), idp.email)
+		if err != nil {
+			t.Fatalf("get explicit-link test user: %v", err)
+		}
+		if err := srv.store.LinkOIDCIdentity(context.Background(), u.ID, idp.issuer, idp.subject, idp.email); err != nil {
+			t.Fatalf("pre-link OIDC identity: %v", err)
+		}
 	}
 
 	srv.oidcService = oidc.New(oidc.Config{
@@ -275,10 +282,7 @@ func TestOAuthOIDCContinuationPreservesAuthorizeRequest(t *testing.T) {
 		t.Fatalf("inner return_to was filtered or replaced: got %q", got)
 	}
 
-	resp, err := client.Get(ts.URL + href)
-	if err != nil {
-		t.Fatalf("follow OAuth OIDC continuation: %v", err)
-	}
+	resp := followOIDCLogin(t, client, ts.URL+href)
 	defer resp.Body.Close()
 	consentBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -329,10 +333,7 @@ func TestOAuthOIDCContinuationConsentApproveRefererOnly(t *testing.T) {
 	}
 	href := oauthOIDCLoginHref(t, loginBody)
 
-	resp, err := client.Get(ts.URL + href)
-	if err != nil {
-		t.Fatalf("follow OAuth OIDC continuation: %v", err)
-	}
+	resp := followOIDCLogin(t, client, ts.URL+href)
 	consentBody, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
@@ -453,10 +454,7 @@ func TestOAuthExpiredConsentPOSTReturnsToCompleteAuthorizeGET(t *testing.T) {
 		t.Fatalf("expired-session OIDC continuation=%q, want %q", got, wantRequestURI)
 	}
 
-	resp, err = client.Get(ts.URL + href)
-	if err != nil {
-		t.Fatalf("follow expired-session OIDC continuation: %v", err)
-	}
+	resp = followOIDCLogin(t, client, ts.URL+href)
 	defer resp.Body.Close()
 	consentBody, err := io.ReadAll(resp.Body)
 	if err != nil {

@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.20.0-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.21.0-blue" alt="version" />
   <img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" />
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml">
@@ -165,11 +165,21 @@ In both cases, the deployment manager is injecting the environment variable. Scr
 
 ### SMTP for self-service password reset (optional)
 
-Optional SMTP lets users request a password-reset email (**Forgot password?** on local-password sign-in). You need a relay (`SCRUMBOY_SMTP_*`), **`SCRUMBOY_ENCRYPTION_KEY`**, and a valid **`SCRUMBOY_PUBLIC_BASE_URL`**. Without that, admins can still generate reset links under Settings → Users → Password. Setup, env vars, providers, and troubleshooting: [`docs/smtp.md`](docs/smtp.md). Also [`FAQ.md`](FAQ.md#do-i-need-to-configure-smtp-what-happens-if-i-dont).
+Optional SMTP lets users who already have a Scrumboy-local password request a reset email (**Forgot your Scrumboy password?**). You need a relay (`SCRUMBOY_SMTP_*`), **`SCRUMBOY_ENCRYPTION_KEY`**, a valid **`SCRUMBOY_PUBLIC_BASE_URL`**, and local authentication enabled. Owners can generate links only for users with a usable local password; SSO credential recovery belongs to the identity provider. Setup and troubleshooting: [`docs/smtp.md`](docs/smtp.md).
 
 ### OIDC / SSO login (optional)
 
-Optional OpenID Connect SSO with any standards-compliant IdP (Keycloak, Authentik, Auth0, Entra ID, etc.). Enable with `SCRUMBOY_OIDC_ISSUER`, `SCRUMBOY_OIDC_CLIENT_ID`, `SCRUMBOY_OIDC_CLIENT_SECRET`, and `SCRUMBOY_OIDC_REDIRECT_URL`. Local password login stays available unless you set `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`. Setup, constraints, and troubleshooting: [`docs/oidc.md`](docs/oidc.md).
+Optional OpenID Connect SSO with any standards-compliant IdP (Keycloak, Authentik, Auth0, Entra ID, etc.). Accounts may use a local password, SSO, or both. Local users connect SSO explicitly from Settings; SSO-only users can establish a local recovery password after fresh provider reauthentication. Matching email never silently links an identity, and `users.email` remains the canonical Scrumboy email. Local login stays available unless `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`. See [`docs/oidc.md`](docs/oidc.md), [`docs/security.md`](docs/security.md), [`docs/authentication-api.md`](docs/authentication-api.md), and [`docs/recovery.md`](docs/recovery.md).
+
+### Owner disaster recovery
+
+If the identity provider is unavailable, a host operator can recover an existing owner's local password without starting the HTTP server or applying migrations:
+
+```sh
+./scrumboy recover-owner --email owner@example.com
+```
+
+Stop Scrumboy and back up the SQLite database/volume first. Container, bind-mount, named-volume, stdin automation, schema-compatibility, session-revocation, and local-auth-disabled instructions are in [`docs/recovery.md`](docs/recovery.md).
 
 ### TLS / HTTPS (optional)
 

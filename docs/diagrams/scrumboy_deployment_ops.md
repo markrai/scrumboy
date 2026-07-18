@@ -82,6 +82,7 @@ flowchart TB
 - **File backup:** stop the process (or ensure no concurrent writes), copy `app.db` and any `-wal` / `-shm` files together.
 - **JSON backup:** scoped export via API; import supports replace, merge, or copy-as-new (see `scrumboy_backup_import.md`).
 - **2FA:** back up `SCRUMBOY_ENCRYPTION_KEY` with the database; rotating it breaks stored TOTP secrets. Once encrypted auth/security data exists, startup requires the original valid key. On a fresh install with no encrypted data yet, an invalid key is ignored with a warning (2FA and password-reset encryption stay off until a valid key is set).
+- **Owner recovery:** host-side `recover-owner` can establish or replace an owner local password without the IdP; see `docs/recovery.md` (stop the service and back up SQLite first).
 - **Upgrade:** replace the binary or image, keep the data volume, restart; pending migrations apply automatically in `main.go`.
 
 ## Operational limits

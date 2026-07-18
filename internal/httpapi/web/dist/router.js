@@ -199,6 +199,13 @@ async function routeOnce() {
         }
     }
     const r = parseRoute();
+    const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
+    if (authMethodReturn && getUser()) {
+        const cleanURL = new URL(window.location.href);
+        cleanURL.searchParams.delete("auth_method");
+        window.history.replaceState({}, "", cleanURL.pathname + cleanURL.search + cleanURL.hash);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("scrumboy:auth-method-return", { detail: authMethodReturn })), 0);
+    }
     console.log("Router: parsed route:", r);
     setRoute(r.name);
     setTag(r.tag || "");
@@ -213,7 +220,12 @@ async function routeOnce() {
     }
     // Reset password page: no auth required (token is auth)
     if (r.name === "reset-password") {
-        renderResetPassword(r.token);
+        if (getLocalAuthEnabled()) {
+            renderResetPassword(r.token);
+        }
+        else {
+            renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
+        }
         return;
     }
     // Show auth UI when not logged in (full mode): projects list and dashboard only.

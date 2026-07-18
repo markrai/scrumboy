@@ -74,6 +74,9 @@ func (s *Store) GetUser(ctx context.Context, userID int64) (User, error) {
 	}
 	u.CreatedAt = time.UnixMilli(createdAt).UTC()
 	u.TwoFactorEnabled = twoFactorEnabled
+	if err := s.populateUserAuthMethods(ctx, &u); err != nil {
+		return User{}, err
+	}
 	return u, nil
 }
 
@@ -95,14 +98,17 @@ func (s *Store) UpdateUserImage(ctx context.Context, userID int64, image *string
 
 // GetUserPasswordHash returns the password hash for the given user.
 func (s *Store) GetUserPasswordHash(ctx context.Context, userID int64) (string, error) {
-	var hash string
+	var hash sql.NullString
 	if err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash); err != nil {
 		if err == sql.ErrNoRows {
 			return "", ErrNotFound
 		}
 		return "", fmt.Errorf("get user password hash: %w", err)
 	}
-	return hash, nil
+	if !hash.Valid || !IsUsablePasswordHash(hash.String) {
+		return "", ErrNotFound
+	}
+	return hash.String, nil
 }
 
 // UpdateUserPassword updates the user's password. Validates via auth.ValidatePassword first.
@@ -175,7 +181,7 @@ func (s *Store) BootstrapUser(ctx context.Context, email, password, name string)
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit bootstrap tx: %w", err)
 	}
-	return User{ID: id, Email: email, Name: name, IsBootstrap: true, SystemRole: SystemRoleOwner, CreatedAt: time.UnixMilli(nowMs).UTC()}, nil
+	return User{ID: id, Email: email, Name: name, IsBootstrap: true, SystemRole: SystemRoleOwner, CreatedAt: time.UnixMilli(nowMs).UTC(), HasLocalPassword: true}, nil
 }
 
 func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (User, error) {
@@ -211,6 +217,9 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 	}
 	u.CreatedAt = time.UnixMilli(createdAtMs).UTC()
 	u.TwoFactorEnabled = twoFactorEnabled
+	if err := s.populateUserAuthMethods(ctx, &u); err != nil {
+		return User{}, err
+	}
 	return u, nil
 }
 
@@ -467,6 +476,9 @@ WHERE s.token_hash = ?
 	}
 	u.CreatedAt = time.UnixMilli(createdAt).UTC()
 	u.TwoFactorEnabled = twoFactorEnabled
+	if err := s.populateUserAuthMethods(ctx, &u); err != nil {
+		return User{}, err
+	}
 
 	// Best-effort: refresh last_seen_at; do not fail auth if this update fails.
 	_, _ = s.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?`, nowMs, tokenHash)
@@ -516,7 +528,7 @@ func (s *Store) CreateUser(ctx context.Context, email, password, name string) (U
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit create user tx: %w", err)
 	}
-	return User{ID: id, Email: email, Name: name, IsBootstrap: false, SystemRole: SystemRoleUser, CreatedAt: time.UnixMilli(nowMs).UTC()}, nil
+	return User{ID: id, Email: email, Name: name, IsBootstrap: false, SystemRole: SystemRoleUser, CreatedAt: time.UnixMilli(nowMs).UTC(), HasLocalPassword: true}, nil
 }
 
 // ListUsers returns all users. Requires admin or owner role.
@@ -525,7 +537,11 @@ func (s *Store) ListUsers(ctx context.Context, requesterID int64) ([]User, error
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT id, email, name, is_bootstrap, system_role, created_at, two_factor_enabled FROM users ORDER BY created_at`)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, email, name, is_bootstrap, system_role, created_at, two_factor_enabled, password_hash,
+       EXISTS(SELECT 1 FROM user_oidc_identities WHERE user_id = users.id),
+       CASE WHEN ? = '' THEN FALSE ELSE EXISTS(SELECT 1 FROM user_oidc_identities WHERE user_id = users.id AND issuer = ?) END
+FROM users ORDER BY created_at`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
@@ -537,7 +553,8 @@ func (s *Store) ListUsers(ctx context.Context, requesterID int64) ([]User, error
 		var isBootstrap bool
 		var systemRoleStr string
 		var createdAt int64
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &u.TwoFactorEnabled); err != nil {
+		var passwordHash sql.NullString
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &u.TwoFactorEnabled, &passwordHash, &u.HasAnyOIDCIdentity, &u.OIDCLinked); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		u.IsBootstrap = isBootstrap
@@ -547,6 +564,7 @@ func (s *Store) ListUsers(ctx context.Context, requesterID int64) ([]User, error
 			u.SystemRole = SystemRoleUser
 		}
 		u.CreatedAt = time.UnixMilli(createdAt).UTC()
+		u.HasLocalPassword = passwordHash.Valid && IsUsablePasswordHash(passwordHash.String)
 		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {
@@ -680,6 +698,9 @@ WHERE oi.issuer = ? AND oi.subject = ?
 	}
 	u.CreatedAt = time.UnixMilli(createdAt).UTC()
 	u.TwoFactorEnabled = twoFactorEnabled
+	if err := s.populateUserAuthMethods(ctx, &u); err != nil {
+		return User{}, err
+	}
 	return u, nil
 }
 
@@ -708,6 +729,13 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 	var n int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
 		return User{}, fmt.Errorf("count users: %w", err)
+	}
+	var canonicalOwners int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE LOWER(TRIM(email)) = ?`, email).Scan(&canonicalOwners); err != nil {
+		return User{}, fmt.Errorf("check oidc email ownership: %w", err)
+	}
+	if canonicalOwners != 0 {
+		return User{}, ErrConflict
 	}
 
 	role := SystemRoleUser
@@ -747,12 +775,14 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 	}
 
 	return User{
-		ID:          userID,
-		Email:       email,
-		Name:        name,
-		IsBootstrap: isBootstrap,
-		SystemRole:  role,
-		CreatedAt:   time.UnixMilli(nowMs).UTC(),
+		ID:                 userID,
+		Email:              email,
+		Name:               name,
+		IsBootstrap:        isBootstrap,
+		SystemRole:         role,
+		CreatedAt:          time.UnixMilli(nowMs).UTC(),
+		OIDCLinked:         issuer == s.configuredOIDCIssuer && s.configuredOIDCIssuer != "",
+		HasAnyOIDCIdentity: true,
 	}, nil
 }
 
@@ -790,6 +820,9 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) 
 	}
 	u.CreatedAt = time.UnixMilli(createdAt).UTC()
 	u.TwoFactorEnabled = twoFactorEnabled
+	if err := s.populateUserAuthMethods(ctx, &u); err != nil {
+		return User{}, err
+	}
 	return u, nil
 }
 
@@ -808,24 +841,6 @@ func (s *Store) LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subj
 			return ErrConflict
 		}
 		return fmt.Errorf("link oidc identity: %w", err)
-	}
-	return nil
-}
-
-// UpdateUserOIDCProfile updates email and name for an existing user on OIDC login.
-func (s *Store) UpdateUserOIDCProfile(ctx context.Context, userID int64, email, name string) error {
-	email = normalizeEmail(email)
-	name = strings.TrimSpace(name)
-	if email == "" {
-		return nil
-	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE users SET email = ?, name = ? WHERE id = ?`, email, name, userID)
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: users.email") {
-			return ErrConflict
-		}
-		return fmt.Errorf("update oidc profile: %w", err)
 	}
 	return nil
 }

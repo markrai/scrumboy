@@ -24,15 +24,32 @@ flowchart TB
 flowchart LR
   Local[Email password]
   TOTP[2FA TOTP step]
-  OIDCFlow[OIDC redirect]
+  OIDCFlow[OIDC authorization code flow]
   Bootstrap[Bootstrap first user]
+  Identity[Lookup issuer and subject]
+  Existing[Existing linked user]
+  Provision[Provision only when verified email is unowned]
+  Connect[Explicit Connect SSO from authenticated settings]
+  SetPassword[Set first Scrumboy password from settings]
+  StepUp[Sensitive OIDC step-up]
+  Grant[Session-bound first-password grant]
+  LocalPW[Write first local password]
 
   Local --> TOTP
-  OIDCFlow --> Link[Link or create user]
+  OIDCFlow --> Identity
+  Identity --> Existing
+  Identity --> Provision
+  Connect --> OIDCFlow
+  SetPassword --> StepUp
+  StepUp --> Grant
+  Grant --> LocalPW
   Bootstrap --> Session[CreateSession cookie]
   TOTP --> Session
-  Link --> Session
+  Existing --> Session
+  Provision --> Session
 ```
+
+Normal OIDC login never links by matching email and never rewrites the canonical `users.email`. A local user connects a new identity explicitly after current-password confirmation, Scrumboy 2FA when enabled, and fresh provider authentication. An SSO-only user sets a first local password only after a separate provider step-up and a short-lived session-bound grant.
 
 - **Full mode:** sessions, users, API tokens, admin routes
 - **Anonymous mode:** `requestContext` ignores cookies; temp boards have no owner until claimed

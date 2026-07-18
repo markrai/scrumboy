@@ -29,6 +29,13 @@ func main() {
 	cfg := config.FromEnv()
 
 	logger := log.New(os.Stdout, "", log.LstdFlags)
+	if len(os.Args) > 1 && os.Args[1] == "recover-owner" {
+		if err := runRecoverOwner(cfg, os.Args[2:], os.Stdin, os.Stdout); err != nil {
+			logger.Printf("recover-owner failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	sqlDB, err := db.Open(cfg.DBPath, db.Options{
 		BusyTimeout: cfg.SQLiteBusyTimeout,
@@ -61,11 +68,31 @@ func main() {
 		logger.Printf("warning: invalid SCRUMBOY_ENCRYPTION_KEY ignored because no encrypted auth/security data exists; continuing with 2FA setup and password reset disabled until a valid key is configured")
 	}
 	encKey := keyResolution.Key
-	var storeOpts *store.StoreOptions
-	if len(encKey) > 0 {
-		storeOpts = &store.StoreOptions{EncryptionKey: encKey}
+	configuredOIDCIssuer := ""
+	if cfg.OIDCEnabled() {
+		configuredOIDCIssuer = cfg.OIDCIssuerCanonical
 	}
+	storeOpts := &store.StoreOptions{EncryptionKey: encKey, ConfiguredOIDCIssuer: configuredOIDCIssuer}
 	st := store.New(sqlDB, storeOpts)
+	if malformed, err := st.CountMalformedPasswordHashes(ctx); err != nil {
+		logger.Printf("warning: could not inspect local password hash health: %v", err)
+	} else if malformed > 0 {
+		logger.Printf("warning: %d user account(s) contain a malformed local password hash; those passwords are unusable until repaired through authenticated first-password setup or host-side recovery", malformed)
+	}
+	localAuthEnabled := !cfg.OIDCEnabled() || !cfg.OIDCLocalAuthDisabled
+	if posture, err := st.OwnerRecoveryPosture(ctx, localAuthEnabled, cfg.OIDCEnabled()); err != nil {
+		logger.Printf("warning: could not evaluate owner recovery posture: %v", err)
+	} else if posture.OwnerCount > 0 {
+		if posture.EffectiveOwnerCount == 0 {
+			logger.Printf("WARNING: no owner has an effective login method under the current authentication configuration. Existing sessions may remain temporarily usable. Stop the service, back up the database, use 'scrumboy recover-owner --email <owner>' and enable the required authentication method.")
+		} else if posture.EffectiveLocalOwners == 0 && posture.EffectiveSSOOwners > 0 {
+			if posture.ProviderOnlyOwners == posture.OwnerCount {
+				logger.Printf("warning: every owner relies exclusively on the configured external OIDC provider; establish at least one local owner recovery password to survive a provider outage")
+			} else {
+				logger.Printf("warning: no owner has effective local authentication; owner access currently depends on the configured external OIDC provider")
+			}
+		}
+	}
 
 	// One-time backfill: extract dominant colors for projects that have an image but still
 	// carry the migration default '#888888'. Runs at startup and is a no-op once complete.

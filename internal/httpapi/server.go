@@ -116,6 +116,13 @@ type Server struct {
 
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
+	firstPasswordStartLimiter   *ratelimit.Limiter
+	firstPasswordFinishLimiter  *ratelimit.Limiter
+	oidcLinkStartLimiter        *ratelimit.Limiter
+	currentPasswordLimiter      *ratelimit.Limiter
+	secondFactorLimiter         *ratelimit.Limiter
+	totpLimiter                 *ratelimit.Limiter
+	recoveryCodeLimiter         *ratelimit.Limiter
 
 	smtpConfigured bool // Host+port+From statically valid; gates request-password-reset email sending
 
@@ -150,6 +157,7 @@ type storeAPI interface {
 	GetUserPasswordHash(ctx context.Context, userID int64) (string, error)
 	UpdateUserImage(ctx context.Context, userID int64, image *string) error
 	UpdateUserPassword(ctx context.Context, userID int64, newPassword string) error
+	ResetLocalPassword(ctx context.Context, userID int64, expectedHash, password string) error
 	BootstrapUser(ctx context.Context, email, password, name string) (store.User, error)
 	AuthenticateUser(ctx context.Context, email, password string) (store.User, error)
 	CreateUser(ctx context.Context, email, password, name string) (store.User, error)
@@ -176,9 +184,15 @@ type storeAPI interface {
 	RevokeOAuthToken(ctx context.Context, rawToken, hint string) error
 
 	GetUserByOIDCIdentity(ctx context.Context, issuer, subject string) (store.User, error)
+	UpdateOIDCIdentityEmailAtLogin(ctx context.Context, userID int64, issuer, subject, email string) error
 	GetUserByEmail(ctx context.Context, email string) (store.User, error)
 	LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subject, email string) error
+	LinkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string) error
 	CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (store.User, error)
+	CreateFirstPasswordGrant(ctx context.Context, userID int64, sessionToken string, ttl time.Duration) (string, time.Time, error)
+	FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionToken string, userID int64) (bool, error)
+	SetFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string) error
+	SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, recoveryCodeID int64) error
 
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)
@@ -278,6 +292,8 @@ type storeAPI interface {
 	ClearUserTwoFactor(ctx context.Context, userID int64) error
 	AddRecoveryCodes(ctx context.Context, userID int64, codes []string) error
 	ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error)
+	MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error)
+	ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error)
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)
 	DecryptTOTPSecret(encrypted string) ([]byte, error)
@@ -412,6 +428,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 	go whWorker.Run(workerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
 	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
+	firstPasswordStartLimiter := ratelimit.New(5, time.Minute)
+	firstPasswordFinishLimiter := ratelimit.New(5, time.Minute)
+	oidcLinkStartLimiter := ratelimit.New(5, time.Minute)
+	currentPasswordLimiter := ratelimit.New(5, time.Minute)
+	secondFactorLimiter := ratelimit.New(5, time.Minute)
+	totpLimiter := ratelimit.New(5, time.Minute)
+	recoveryCodeLimiter := ratelimit.New(5, time.Minute)
 
 	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
 	mQueue := newMailQueue(logger)
@@ -466,6 +489,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 		oidcService:                 opts.OIDCService,
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,
 		passwordResetRequestLimiter: passwordResetRequestLimiter,
+		firstPasswordStartLimiter:   firstPasswordStartLimiter,
+		firstPasswordFinishLimiter:  firstPasswordFinishLimiter,
+		oidcLinkStartLimiter:        oidcLinkStartLimiter,
+		currentPasswordLimiter:      currentPasswordLimiter,
+		secondFactorLimiter:         secondFactorLimiter,
+		totpLimiter:                 totpLimiter,
+		recoveryCodeLimiter:         recoveryCodeLimiter,
 		smtpConfigured:              smtpConfigured,
 		publicBaseURL:               config.NormalizeBaseURL(opts.PublicBaseURL),
 		trustProxy:                  opts.TrustProxy,
