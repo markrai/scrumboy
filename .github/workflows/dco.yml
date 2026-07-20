@@ -24,6 +24,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
 
@@ -32,15 +33,27 @@ jobs:
           )
 
           if (( ${#commits[@]} == 0 )); then
-            echo "No commits found in pull request."
+            echo "No non-merge commits found in pull request."
             exit 0
           fi
 
           failures=0
+          checked=0
+          skipped=0
 
           for commit in "${commits[@]}"; do
             author_name="$(git show -s --format='%an' "$commit")"
             author_email="$(git show -s --format='%ae' "$commit")"
+
+            if [[ "$PR_AUTHOR" == "dependabot[bot]" &&
+                  "$author_name" == "dependabot[bot]" &&
+                  "$author_email" == "49699333+dependabot[bot]@users.noreply.github.com" ]]; then
+              echo "SKIP ${commit:0:12} Dependabot-authored commit"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            checked=$((checked + 1))
             expected="${author_name} <${author_email}>"
             matched=false
 
@@ -66,8 +79,8 @@ jobs:
           done
 
           if (( failures > 0 )); then
-            echo "DCO check failed for ${failures} commit(s)."
+            echo "DCO check failed for ${failures} of ${checked} checked commit(s); ${skipped} Dependabot commit(s) skipped."
             exit 1
           fi
 
-          echo "DCO check passed for ${#commits[@]} commit(s)."
+          echo "DCO check passed for ${checked} checked commit(s); ${skipped} Dependabot commit(s) skipped."
