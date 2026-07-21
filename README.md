@@ -495,6 +495,8 @@ Invariants (e.g. canonical URL `/{slug}`, no UI links to `/p/{id}`) are enforced
 
 # Documentation
 
+- **Docs index:** [`docs/README.md`](docs/README.md) - audience-grouped index (ops, features, security, integrations, architecture, manual checks) and `node docs/scripts/verify-docs.mjs`
+- **i18n architecture:** [`docs/i18n.md`](docs/i18n.md) - catalogs, locales, landings, change gates (rules SoT: [`AGENTS.md`](AGENTS.md))
 - **Architecture diagrams:** [`docs/diagrams/`](docs/diagrams/) - Mermaid sources and self-contained viewer (`serve-diagrams.bat` or `python serve.py` in that folder, then open `http://127.0.0.1:8775/`)
 - **MCP (HTTP tools + JSON-RPC):** [`docs/mcp.md`](docs/mcp.md) - tool catalog, auth, legacy vs `/mcp/rpc`, examples (agents & automation). See also [`API.md`](API.md) for exhaustive MCP HTTP detail.
 - **OAuth 2.1 for MCP clients:** [`docs/oauth.md`](docs/oauth.md) - resource discovery, Dynamic Client Registration, PKCE, and resource-bound authorize/token/revoke flows for native clients such as Cursor and Claude Code.

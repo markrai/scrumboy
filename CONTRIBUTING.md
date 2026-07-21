@@ -92,6 +92,22 @@ Binds `127.0.0.1:8080:8080` and uses the config in `docker-compose.yml`.
 3. **Build:** Ensure `go build ./cmd/scrumboy` succeeds. If you change the frontend, run `npm run build` in `internal/httpapi/web` and include the built output.
 4. **Description:** Provide a clear description of the change and why it is needed.
 5. **Scope:** One logical change per PR when possible.
+6. **Documentation impact:** See below when the change touches contracts that docs describe.
+
+### Documentation impact
+
+Before merge/release, if the change touches **migrations**, **public routes**, **env vars**, **persistence files**, **auth methods**, or **frontend dependency versions cited in docs**:
+
+1. Update the affected docs/diagrams (and `docs/diagrams/catalog.json` if adding a diagram), **or**
+2. Record **“no documentation impact”** with a one-line reason in the PR description.
+
+When you change docs or the diagram catalog, run:
+
+```powershell
+node docs/scripts/verify-docs.mjs
+```
+
+Docs index: [`docs/README.md`](docs/README.md).
 
 ## Questions
 

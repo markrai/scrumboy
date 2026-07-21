@@ -63,6 +63,8 @@ sequenceDiagram
 - Locale changes hydrate static `data-i18n-*` DOM in place and trigger targeted re-renders for state-derived copy in views and dialogs that stay open; listeners must detach on dialog close.
 - **`index.html`** marks the shell `translate="no"` so browser translation does not double-translate Scrumboy's own i18n UI.
 
+See also [`docs/i18n.md`](../i18n.md) (catalogs, landings, change gates) and [`AGENTS.md`](../../AGENTS.md) (localization rules).
+
 ## API error localization
 
 - Backend validation failures may include stable `error.details.reason` (snake_case). `apiErrorMessage()` maps known reasons to catalog keys; `apiErrorMessageOrRaw()` keeps raw backend text for dynamic import/backup diagnostics.

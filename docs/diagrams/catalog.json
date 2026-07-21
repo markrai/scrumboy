@@ -1,0 +1,117 @@
+{
+  "categories": [
+    {
+      "id": "overview",
+      "label": "Overview",
+      "docs": [
+        {
+          "file": "scrumboy_overview.md",
+          "title": "System overview",
+          "desc": "Context and package map"
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "label": "Operations",
+      "docs": [
+        {
+          "file": "scrumboy_deployment_ops.md",
+          "title": "Deployment and ops",
+          "desc": "Docker SQLite backup upgrade"
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "label": "Server",
+      "docs": [
+        {
+          "file": "scrumboy_http_routing.md",
+          "title": "HTTP routing",
+          "desc": "ServeHTTP dispatch tree"
+        },
+        {
+          "file": "scrumboy_bootstrap.md",
+          "title": "Bootstrap",
+          "desc": "main.go startup and jobs"
+        }
+      ]
+    },
+    {
+      "id": "data",
+      "label": "Data",
+      "docs": [
+        {
+          "file": "scrumboy_data_model.md",
+          "title": "Data model",
+          "desc": "SQLite store migrations"
+        }
+      ]
+    },
+    {
+      "id": "auth",
+      "label": "Auth",
+      "docs": [
+        {
+          "file": "scrumboy_auth_permissions.md",
+          "title": "Auth and permissions",
+          "desc": "Sessions OIDC 2FA roles"
+        }
+      ]
+    },
+    {
+      "id": "features",
+      "label": "Features",
+      "docs": [
+        {
+          "file": "scrumboy_board_kanban.md",
+          "title": "Board Kanban",
+          "desc": "Lanes drag-drop workflows"
+        },
+        {
+          "file": "scrumboy_wall_canvas.md",
+          "title": "Wall canvas",
+          "desc": "Sticky-note wall canvas"
+        },
+        {
+          "file": "scrumboy_backup_import.md",
+          "title": "Backup import",
+          "desc": "JSON export Trello import"
+        },
+        {
+          "file": "scrumboy_voiceflow.md",
+          "title": "VoiceFlow",
+          "desc": "Speech commands; UI localized, grammar English-centric"
+        }
+      ]
+    },
+    {
+      "id": "integrations",
+      "label": "Integrations",
+      "docs": [
+        {
+          "file": "scrumboy_realtime_events.md",
+          "title": "Realtime events",
+          "desc": "SSE webhooks push"
+        },
+        {
+          "file": "scrumboy_mcp_agora.md",
+          "title": "MCP and Agora",
+          "desc": "Optional API automation"
+        }
+      ]
+    },
+    {
+      "id": "frontend",
+      "label": "Frontend",
+      "docs": [
+        {
+          "file": "scrumboy_frontend_spa.md",
+          "title": "Frontend SPA",
+          "desc": "Router state 23-locale i18n locale picker API errors"
+        }
+      ]
+    }
+  ]
+}

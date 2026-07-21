@@ -57,6 +57,18 @@ WAL allows readers during writes but SQLite still has a **single writer**. Do no
 | `SQLITE_SYNCHRONOUS` | Default `FULL` |
 | `SQLITE_BUSY_TIMEOUT_MS` | Writer lock wait (Compose sets `5000`) |
 
+### Persistence matrix
+
+What lives where, what JSON export covers, and what a full restore needs. See also [docs/recovery.md](../recovery.md) for owner password recovery (stop service and back up `DATA_DIR` first).
+
+| State | Location | In JSON export | Needed for full restore |
+|-------|----------|----------------|-------------------------|
+| SQLite | `SQLITE_PATH` (default under `DATA_DIR`) | scoped projects | yes |
+| WAL/SHM | beside DB | no | quiesce/copy with DB |
+| Wallpapers | `DATA_DIR/user-wallpapers/` | no | yes |
+| Encryption key | env/secret (`SCRUMBOY_ENCRYPTION_KEY`) | no | yes if encrypted auth data |
+| Mermaid override | `DATA_DIR/mermaid-semantic-edges.json` when used | no | only for that override |
+
 ## Backup, restore, and upgrade
 
 ```mermaid

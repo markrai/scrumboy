@@ -8,6 +8,8 @@ Host and database access is the security boundary. The command intentionally byp
 
 Never run recovery concurrently with the active SQLite service.
 
+For what a full `DATA_DIR` restore includes (SQLite, WAL/SHM, wallpapers, encryption key), see the [persistence matrix](diagrams/scrumboy_deployment_ops.md#persistence-matrix).
+
 1. Stop the active Scrumboy service or container.
 2. Back up the stopped SQLite database, bind mount, or named volume.
 3. Use the same Scrumboy binary/image version as the database, or another schema-compatible version.
