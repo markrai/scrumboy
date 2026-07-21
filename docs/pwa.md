@@ -1,15 +1,15 @@
 # Progressive Web App (PWA) and Web Push (VAPID)
 
-For what VAPID keys are, whether you need them, and how they relate to Scrumboy, see [`docs/vapid.md`](vapid.md). This document covers PWA install, operator setup, Docker verification, and client auto-subscribe behavior.
+For what VAPID keys are, whether you need them, **effective enablement / status reasons**, and **what assignment payloads contain**, see [`docs/vapid.md`](vapid.md). This document covers PWA install, operator Docker setup, verification commands, and client auto-subscribe behavior.
 
-Scrumboy can be installed as a PWA. For **background assignment notifications** (when the app is closed or not focused), the server must expose **VAPID** keys. Users still must **allow notifications** in the browser when prompted; there is no way to bypass OS/browser permission.
+Scrumboy can be installed as a PWA. For **background assignment notifications** (when the app is closed or not focused), the server must have **effectively enabled** Web Push (validated matching VAPID key pair in full mode — not merely non-empty env strings). Users still must **allow notifications** in the browser when prompted; there is no way to bypass OS/browser permission.
 
 ## VAPID keys and the subscriber contact
 
 - Generate a key pair (for example with [`web-push` npm](https://www.npmjs.com/package/web-push), the [VapidKeys.com](https://vapidkeys.com/) generator, or any VAPID tool).
-- Set **`SCRUMBOY_VAPID_PUBLIC_KEY`** and **`SCRUMBOY_VAPID_PRIVATE_KEY`** (URL-safe base64, as typically output by generators).
+- Set **`SCRUMBOY_VAPID_PUBLIC_KEY`** and **`SCRUMBOY_VAPID_PRIVATE_KEY`** (URL-safe base64, as typically output by generators). Use a matching pair from the same generation.
 
-When **both** keys are set **and the server is running in full mode**, the server enables Web Push for the instance: subscribe/unsubscribe APIs work, assignment events can be pushed, and **`GET /api/push/vapid-public-key`** returns **`{ "publicKey": "..." }`**. That is treated as operator intent to offer push on this deployment. Anonymous mode keeps Web Push unavailable even if keys are present.
+Web Push is active only when prepared status is **`enabled`** (full mode + valid 65-byte public + valid 32-byte private + matching pair + valid/default subscriber). Then subscribe/unsubscribe APIs work, assignment events can be pushed, **`pushConfigured`** is true on auth status, and **`GET /api/push/vapid-public-key`** returns **`{ "publicKey": "..." }`**. See the status/reason table in [`docs/vapid.md`](vapid.md#effective-enablement-not-just-keys-present). Anonymous mode keeps Web Push unavailable even if keys are present.
 
 ### `SCRUMBOY_VAPID_SUBSCRIBER`
 
@@ -17,10 +17,10 @@ This value becomes the JWT **`sub`** (subject) claim on outbound Web Push reques
 
 - **Any stable contact is fine** - operations email, `admin@yourcompany.com`, a `https://` policy URL, etc.
 - It does **not** need to match your OIDC issuer, user emails, or IdP.
-- Use a **plain email** in the environment variable, e.g. `ops@example.com`. The server normalizes it to `mailto:ops@example.com`.
-- If you already use a full URL, use **`mailto:...`** or **`https://...`** explicitly - do **not** prefix a bare email with `mailto:` in env if you are also pasting a full `mailto:user@host` (avoid `mailto:mailto:...`).
+- Use a **plain email** in the environment variable, e.g. `ops@example.com`, or an explicit **`mailto:...`** / **`https://...`** URL. Do **not** create nested `mailto:mailto:...`.
+- Invalid subscriber values leave push **`invalid`** / `invalid_subscriber` (push stays off).
 
-If unset, the server falls back to an internal default contact for `sub` (see `internal/httpapi/push_notify.go`).
+If unset, the server falls back to an internal default contact for `sub` (see `prepareWebPushSubscriber` in `internal/httpapi/push_config.go`).
 
 ## Docker setup and verification
 
@@ -47,7 +47,7 @@ SCRUMBOY_VAPID_SUBSCRIBER=ops@example.com
 
 Notes:
 
-- **Both** `SCRUMBOY_VAPID_PUBLIC_KEY` and `SCRUMBOY_VAPID_PRIVATE_KEY` are required. One without the other is treated as disabled.
+- **Both** `SCRUMBOY_VAPID_PUBLIC_KEY` and `SCRUMBOY_VAPID_PRIVATE_KEY` are required for enablement. One without the other yields prepared status **`invalid`** (not “silently ignored”); startup may still log `web push: partial config ignored`.
 - Scrumboy does **not** auto-load env files inside the container; Compose must inject the variables into the service.
 - After changing Compose or the injected env values, recreate the container so the process starts with the new environment:
 
@@ -69,15 +69,10 @@ curl -sS -D- http://127.0.0.1:8080/api/push/vapid-public-key
 
 Expected results:
 
-- `200` with `publicKey` means VAPID is active.
-- `503` with `PUSH_UNAVAILABLE` means the running process still does not have both keys.
+- `200` with `publicKey` means Web Push is **effectively enabled**.
+- `503` with `PUSH_UNAVAILABLE` means push is **not** effectively enabled (missing keys, invalid/mismatched keys, bad subscriber, anonymous mode, or other non-`enabled` state) — not only “keys missing.”
 
-At startup the server also logs one of:
-
-- `web push: enabled`
-- `web push: disabled (anonymous mode)`
-- `web push: disabled (set SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY)`
-- `web push: partial config ignored`
+At startup the server also logs a presence-oriented `web push: …` line and may log `push: disabled: <reason>` when validation fails. Prefer signed-in **`GET /api/auth/status`** (`pushConfigured` and `push.state` / `push.reason`) over the startup banner alone. Details: [`docs/vapid.md`](vapid.md#startup-logs-vs-effective-status).
 
 ## Auto-subscribe after sign-in
 
@@ -108,12 +103,12 @@ The legacy key **`scrumboy_push_autosub_v1`** (global) is **no longer read**; it
 | `SCRUMBOY_VAPID_SUBSCRIBER` | Contact for VAPID `sub` (plain email or `mailto:` / `https:` URL). |
 | `SCRUMBOY_DEBUG_PUSH` | `1` - server logs for push send/prune. |
 
-See also the main [README](../README.md#config) env table.
+See also the main [README](../README.md#config) env table and [`docs/vapid.md`](vapid.md) for validation rules.
 
 ## User-facing controls
 
 - **Desktop notifications** (in-page / tab background): Settings -> **Enable notifications** (Notification API).
-- **Background Web Push** (installed PWA / closed app): automatic attempt when VAPID is configured; **Web Push on this device** in Settings to opt out or opt back in.
+- **Background Web Push** (installed PWA / closed app): automatic attempt when Web Push is effectively enabled; **Web Push on this device** in Settings to opt out or opt back in.
 
 Both can be used together; Web Push is what reaches users when SSE is throttled in the background.
 

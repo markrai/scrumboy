@@ -102,7 +102,7 @@ Preview typography and colors are scoped under `#todoDialog .todo-markdown-previ
 
 ### 1. markdown-it
 
-Loaded from `/vendor/markdown-it.min.js` (global `window.markdownit`). Pinned dependency: `markdown-it@14.2.0` in `internal/httpapi/web/package.json`, copied by `scripts/sync-vendor.mjs`.
+Loaded from `/vendor/markdown-it.min.js` (global `window.markdownit`). Pinned dependency: `markdown-it@14.3.0` in `internal/httpapi/web/package.json`, copied by `scripts/sync-vendor.mjs`.
 
 Instance options (`getMarkdownRenderer()`):
 
@@ -116,7 +116,7 @@ Instance options (`getMarkdownRenderer()`):
 
 ### 2. DOMPurify
 
-Second pass via `/vendor/purify.min.js` (`dompurify@3.4.11`):
+Second pass via `/vendor/purify.min.js` (`dompurify@3.4.12`):
 
 - **`ALLOWED_TAGS`:** `a`, `blockquote`, `br`, `code`, `em`, `h1`–`h6`, `hr`, `li`, `ol`, `p`, `pre`, `strong`, `ul`
 - **`ALLOWED_ATTR`:** `href`, `rel`, `target` only
@@ -176,7 +176,7 @@ Verified in `modules/markdown-preview.test.ts`:
 - **CSP / trust:** preview depends on vendored `markdown-it` and DOMPurify; `npm test` in `internal/httpapi/web` runs `verify-vendor.mjs` before Vitest.
 - **Link exfiltration:** only `http`/`https` external navigation; `noopener noreferrer` on external tabs.
 - **No Markdown on titles** avoids XSS or layout surprises on shared boards and SSE-driven card updates.
-- **Mermaid isolation:** in Mermaid `11.15.0`, the preview uses `securityLevel: "strict"` (Mermaid's secure default), which encodes HTML in diagram text and renders inline SVG. Diagram output is never passed through the general Markdown allow-list as arbitrary SVG/HTML. Inline (rather than sandboxed-iframe) rendering is what lets the semantic label coloring recolor matched label backgrounds via the DOM after render.
+- **Mermaid isolation:** in Mermaid `11.16.0`, the preview uses `securityLevel: "strict"` (Mermaid's secure default), which encodes HTML in diagram text and renders inline SVG. Diagram output is never passed through the general Markdown allow-list as arbitrary SVG/HTML. Inline (rather than sandboxed-iframe) rendering is what lets the semantic label coloring recolor matched label backgrounds via the DOM after render.
 - **Mermaid scope:** diagrams only render in the todo dialog preview, never on the board or server.
 
 ---

@@ -106,7 +106,7 @@ self.addEventListener('push', (event) => {
       }
       const title = data.title || 'Scrumboy';
       const body = typeof data.body === 'string' ? data.body : '';
-      // Stash payload for a future cross-project notification center / deep-links — not used for click routing yet.
+      // Stash payload for notification click deep-links (and any future notification-center UI).
       await self.registration.showNotification(title, {
         body: body || undefined,
         data: {

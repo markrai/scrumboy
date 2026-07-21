@@ -1,34 +1,49 @@
 # Backup and import
 
-Project export and restore plus Trello JSON import.
+Project export/restore and Trello JSON import use separate HTTP and store paths.
 
 ```mermaid
 flowchart TB
-  Export["GET api backup export"]
-  Import["POST api backup import"]
-  Trello["POST api import trello"]
+  Export["GET /api/backup/export"]
+  PreviewN["POST /api/backup/preview"]
+  ImportN["POST /api/backup/import"]
+  PreviewT["POST /api/import/trello/preview"]
+  ImportT["POST /api/import/trello"]
 
-  Export --> JSON[Scoped JSON snapshot]
-  Import --> Mode{import mode}
-  Mode --> Replace[replace]
+  Export --> JSON[Scoped JSON ExportData]
+  PreviewN --> PrevStore["store.PreviewImport"]
+  ImportN --> Mode{importMode}
+  Mode --> Replace[replace plus confirmation REPLACE]
   Mode --> Merge[merge]
-  Mode --> Copy[copy as new]
+  Mode --> Copy[copy]
+  Replace --> Native["store.ImportProjectsWithTarget"]
+  Merge --> Native
+  Copy --> Native
 
-  Trello --> Transform[trelloimport package]
-  Transform --> StoreI[store ImportProjects]
-  Import --> StoreI
+  PreviewT --> Bundle["trelloimport.BuildImportBundle"]
+  Bundle --> TPrev[Preview warnings and hardErrors]
+  ImportT --> Bundle2["trelloimport.BuildImportBundle"]
+  Bundle2 --> Gate{hardErrors empty?}
+  Gate -->|yes| TrelloStore["store.ImportTrelloProject"]
+  Gate -->|no| Reject[validation error]
 ```
+
+Native backup: preview via `PreviewImport`; mutate via `ImportProjectsWithTarget` (`replace` / `merge` / `copy`). Replace requires `confirmation: "REPLACE"`.
+
+Trello import uses dedicated `ImportTrelloProject` (not the generic `ImportProjects` path). Preview and import both use `trelloimport.BuildImportBundle`. Import rejects when preview `hardErrors` is non-empty. Body size is capped separately (`MaxTrelloImportBody`).
 
 ## Trello transform
 
 ```mermaid
 flowchart LR
-  TrelloJSON[Trello board JSON upload]
-  Map[Column and card mapping]
-  Tags[Tag and member mapping]
-  Proj[New or target project]
+  TrelloJSON[Trello board JSON]
+  Map[Lists cards labels checklists]
+  Notes["Member names into todo body"]
+  Proj["New project via ImportTrelloProject"]
 
-  TrelloJSON --> Map --> Tags --> Proj
+  TrelloJSON --> Map --> Notes --> Proj
 ```
 
-Import body size is capped separately (`MaxTrelloImportBody`). Audit trail records destructive import operations when enabled.
+Trello members do **not** become Scrumboy assignees automatically; member information is preserved in note text where applicable (see Trello import warnings).
+
+Backup and Trello import paths do **not** append import audit events. Do not treat imports as audited actions unless product code adds that later.

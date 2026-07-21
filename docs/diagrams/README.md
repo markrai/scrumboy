@@ -31,7 +31,13 @@ You should see **`index.html`**, **`serve.py`**, and about **13** `scrumboy_*.md
 
 ### Yes/no branch label colors
 
-The viewer ports Scrumboy's semantic edge coloring (`mermaid-semantic-edges.js` + `mermaid-semantic-edges.json`): paired branch labels (`yes`/`no`, `true`/`false`, `pass`/`fail`) get green/red **label backgrounds only** after render. Keep in sync with `internal/httpapi/web/modules/mermaid-semantic-edges.ts` when changing behavior.
+The viewer applies semantic edge coloring via `mermaid-semantic-edges.js` + `mermaid-semantic-edges.json`: paired branch labels (`yes`/`no`, `true`/`false`, `pass`/`fail`) get green/red **label backgrounds** after render.
+
+**Divergence (intentional for the docs viewer):** this helper is **not** kept in lockstep with `internal/httpapi/web/modules/mermaid-semantic-edges.ts`. The SPA module only recolors label backgrounds. The docs helper adds extra **layout** behavior (foreignObject/`labelBkg` sizing and min widths, border-radius, paint retries aimed at Mermaid HTML labels). Treat config pair/color defaults as shared; treat paint/layout code as viewer-specific. Do not assume “keep in sync” when changing either side.
+
+### Viewer CDN dependencies
+
+`index.html` loads Mermaid from jsDelivr pinned to **11.16.0** (aligned with `internal/httpapi/web/package.json`) and Marked pinned to **18.0.7**.
 
 | File | Topic |
 |------|--------|

@@ -223,13 +223,13 @@ Do not confuse them: turning on desktop notifications does **not** replace VAPID
 - `SCRUMBOY_VAPID_PUBLIC_KEY`
 - `SCRUMBOY_VAPID_PRIVATE_KEY`
 
-(URL-safe base64 from a VAPID generator.) When both are set in **full mode**, signed-in clients may try to subscribe automatically; each user must still **allow notifications** in the browser. **Settings → Customization → Web Push** can turn push off or back on per device.
+(URL-safe base64 from a VAPID generator — a **matching** pair.) Non-empty strings alone are not enough: the keys must decode to a valid matching P-256 pair, the optional subscriber must be valid (or unset for the default), and the server must run in **full mode**. When push is **effectively enabled** (`pushConfigured: true` / `push.state: "enabled"` on signed-in auth status), signed-in clients may try to subscribe automatically; each user must still **allow notifications** in the browser. **Settings → Customization → Web Push** can turn push off or back on per device.
 
 Optional: `SCRUMBOY_VAPID_SUBSCRIBER` is a **contact hint for push providers** (plain email or `mailto:` / `https:` URL). It does **not** control who can sign in and does not need to match OIDC or user emails.
 
-**Not telemetry:** VAPID identifies **your** Scrumboy server to the push network so assignment events can be delivered. It is not product analytics and does not send board data to Scrumboy’s project maintainers.
+**Not telemetry:** VAPID identifies **your** Scrumboy server to the push network so assignment events can be delivered. It is not product analytics and does not send board data to Scrumboy’s project maintainers. Assignment push payloads do include the **todo title** (and project slug / todo id) in the encrypted Web Push body — see [`docs/vapid.md`](docs/vapid.md#what-gets-sent-and-what-does-not).
 
-For what VAPID is, how it fits this project, key generation, and verification, see [`docs/vapid.md`](docs/vapid.md). For PWA install, Docker wiring, and auto-subscribe behavior, see [`docs/pwa.md`](docs/pwa.md).
+For enablement validation, status/reason fields, key generation, and verification, see [`docs/vapid.md`](docs/vapid.md). For PWA install, Docker wiring, and auto-subscribe behavior, see [`docs/pwa.md`](docs/pwa.md).
 
 ## How do I generate SCRUMBOY_ENCRYPTION_KEY?
 
@@ -305,7 +305,7 @@ Scrumboy **records an audit trail automatically** while you use the product. The
 - Project created, renamed, image updated, default sprint weeks changed, or deleted
 - Todo links added or removed
 
-Each event stores **who** did it (`actor_user_id`, or NULL on anonymous boards), **what** happened (`action`), **which entity** (`target_type` / `target_id`), and **JSON metadata** (for example column moves or changed field names - not full note bodies). Rows are **append-only** (the database blocks updates and deletes on `audit_events`).
+Each event stores **who** did it (`actor_user_id`, or NULL on anonymous boards), **what** happened (`action`), **which entity** (`target_type` / `target_id`), and **JSON metadata**. Metadata varies by action: some events store full user-provided strings (todo titles on create, project names on create/rename/delete, tag names in tag diffs); title/body **updates** store lengths only; note bodies are never stored in audit metadata. Rows are **append-only** at the application level (database triggers reject ordinary updates and deletes on `audit_events`; that is not a guarantee against privileged database or filesystem access).
 
 **Assignee changes** are tracked separately in **`todo_assignee_events`**, not duplicated in `audit_events`.
 
@@ -319,9 +319,9 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-Project backups/exports may also include audit data depending on scope; see your backup workflow.
+JSON project backups/exports do **not** include `audit_events`. Keep a file-level `DATA_DIR` backup if you need the audit table for disaster recovery.
 
-For the full action list, metadata shapes, and security notes, see [`docs/audit_trail.md`](docs/audit_trail.md).
+For the full action list, metadata disclosure table, and security notes, see [`docs/audit_trail.md`](docs/audit_trail.md).
 
 # Privacy
 

@@ -1,29 +1,37 @@
 # Realtime events pipeline
 
-Store mutations publish domain events; `eventbus.Fanout` fans out to SSE, webhooks, and push.
+Most domain events are published by HTTP handlers after successful store operations (`emitRefreshNeeded`, `emitMembersUpdated`, `emitWallRefreshNeeded`, `emitWallTransient` → `Server.PublishEvent`). Store mutations do not generally publish. Exception: todo assignee changes call `store.TodoAssignedFunc` set via `SetTodoAssignedPublisher(srv.PublishTodoAssigned)` in `main.go`.
 
 ```mermaid
 flowchart TB
-  Mut[store mutation]
-  Pub[PublishEvent]
+  Handler[HTTP handlers after store success]
+  Emit["emitRefreshNeeded emitMembersUpdated emitWall"]
+  Pub[Server.PublishEvent]
   Fan[eventbus.Fanout]
 
-  Mut --> Pub --> Fan
+  Handler --> Emit --> Pub --> Fan
+
+  AssignStore[store assignee change]
+  CB["TodoAssignedFunc PublishTodoAssigned"]
+  AssignStore --> CB --> Pub
+
+  Transient["emitWallTransient no DB write"]
+  Transient --> Pub
+
   Fan --> Bridge[SSE bridge]
   Fan --> WHDisp[webhook dispatcher]
   Fan --> PushN[push notifier]
 
-  Bridge --> Hub[Hub per project and user channels]
-  Hub --> BoardSSE["GET /api/board/slug/events SSE"]
-  Hub --> UserSSE["GET /api/me/realtime SSE"]
-  BoardSSE --> AnonClient[board-realtime.ts anonymous boards]
-  UserSSE --> LoggedClient[core/realtime.ts logged-in users]
-  AnonClient --> Refresh[orchestration/board-refresh.ts reload board]
+  Bridge --> Hub[Hub project and user channels]
+  Hub --> BoardSSE["GET /api/board/slug/events"]
+  Hub --> UserSSE["GET /api/me/realtime"]
+  BoardSSE --> BoardClient[board-realtime.ts unauthenticated board stream]
+  UserSSE --> LoggedClient[core/realtime.ts authenticated merged stream]
+  BoardClient --> Refresh[orchestration/board-refresh.ts]
   LoggedClient --> Refresh
 
   WHDisp --> Queue[webhook queue]
-  Queue --> Worker[webhook worker HTTP POST]
-
+  Queue --> Worker[webhook worker]
   PushN --> VAPID[Web Push VAPID]
 ```
 
@@ -31,8 +39,8 @@ flowchart TB
 
 | Client context | Endpoint | Module |
 |----------------|----------|--------|
-| Logged-in user | `GET /api/me/realtime` | `core/realtime.ts` (merged cross-project stream) |
-| Anonymous board | `GET /api/board/{slug}/events` | `board-realtime.ts` (per-board stream) |
+| Authenticated user | `GET /api/me/realtime` | `core/realtime.ts` (merged user + accessible projects) |
+| Unauthenticated board client | `GET /api/board/{slug}/events` | `board-realtime.ts` (per-board; also temp/share-style boards in full mode) |
 
 Both paths share `sse-client.ts` for the EventSource connection.
 
@@ -44,4 +52,4 @@ Both paths share `sse-client.ts` for the EventSource connection.
 | `board.members_updated` | SSE plus membership UI refresh |
 | `todo.assigned` | Push notification to assignee; also on merged user stream |
 | `wall.refresh_needed` | Wall canvas full refetch |
-| `wall.transient` | Wall canvas incremental DOM update without refetch |
+| `wall.transient` | Ephemeral drag/move only (`emitWallTransient`); not a durable store mutation; SSE wire only |

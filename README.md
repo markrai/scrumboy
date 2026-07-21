@@ -69,7 +69,7 @@ docker run -d \
   ghcr.io/markrai/scrumboy:latest
 ```
 
-The image defaults to `DATA_DIR=/data` and `SQLITE_PATH=/data/app.db`. Mount a volume or host directory on `/data` so the database survives container recreation.
+The image defaults to `DATA_DIR=/data` and `SQLITE_PATH=/data/app.db`. Mount a volume or host directory on `/data` so the database **and** file-backed uploads (for example `user-wallpapers/`) survive container recreation. Back up the whole `/data` volume (or at least `app.db` plus WAL/SHM sidecars **and** `user-wallpapers/`); see [`docs/diagrams/scrumboy_deployment_ops.md`](docs/diagrams/scrumboy_deployment_ops.md).
 
 **Docker Compose** (minimal example; save as `docker-compose.yml`):
 
@@ -103,9 +103,9 @@ gh attestation verify scrumboy-<tag>-windows-amd64.exe -R markrai/scrumboy
 
 Put the exe in a dedicated writable folder before running it, for example `%USERPROFILE%\Scrumboy`. The exe starts a local Scrumboy server; open [http://localhost:8080](http://localhost:8080) after it starts.
 
-Scrumboy creates runtime data under `./data` by default. The default SQLite database is `./data/app.db`, and SQLite may also create `app.db-wal` and `app.db-shm` while the server is running. The exe is single-file for distribution, but it is not "no runtime files ever."
+Scrumboy creates runtime data under `./data` by default. The default SQLite database is `./data/app.db`, and SQLite may also create `app.db-wal` and `app.db-shm` while the server is running. Uploaded custom wallpapers are stored as JPEGs under `./data/user-wallpapers/` (wallpaper preference JSON stays in SQLite). The exe is single-file for distribution, but it is not "no runtime files ever."
 
-Advanced users can set `DATA_DIR` to choose the runtime data directory and `BIND_ADDR` to choose the listen address or port.
+Advanced users can set `DATA_DIR` to choose the runtime data directory and `BIND_ADDR` to choose the listen address or port. For disaster recovery, treat the whole `DATA_DIR` as the file-level backup unit (not only `app.db`).
 
 ### Build locally from source
 
@@ -145,7 +145,7 @@ Open [http://localhost:8080](http://localhost:8080).
   - 2FA
   - Password reset flows
 - If an existing database already has 2FA-enabled users, startup fails without this key.
-- The key is part of the same backup/restore unit as `data/app.db`. Back them up together.
+- The key is part of the same backup/restore unit as the instance `DATA_DIR` (including `data/app.db`). Back them up together.
 - Do **not** regenerate or replace the key casually after encrypted auth/security data exists, or you can break access to 2FA/password-reset data.
 - If a bad key is configured before any encrypted auth/security data exists, Scrumboy may warn and continue with 2FA setup/password reset disabled until you configure a valid key.
 
@@ -195,7 +195,7 @@ Stop Scrumboy and back up the SQLite database/volume first. Container, bind-moun
 
 ### PWA / Web Push (optional)
 
-Install the app from the browser for a standalone window and better mobile UX. **Background assignment alerts** use the **Web Push API** with **VAPID** keys on the server. When both keys are set, signed-in clients attempt to subscribe automatically (browser permission may be prompted). Docker users must pass the VAPID variables into the container environment and recreate the container after changes. Details, Docker verification steps, and subscriber contact semantics: **[`docs/pwa.md`](docs/pwa.md)**.
+Install the app from the browser for a standalone window and better mobile UX. **Background assignment alerts** use the **Web Push API** with **VAPID** keys on the server. When Web Push is **effectively enabled** (validated matching key pair in full mode — not merely non-empty env strings), signed-in clients attempt to subscribe automatically (browser permission may be prompted). Docker users must pass the VAPID variables into the container environment and recreate the container after changes. Details, validation/status, Docker verification, and subscriber contact semantics: **[`docs/vapid.md`](docs/vapid.md)**, **[`docs/pwa.md`](docs/pwa.md)**.
 
 ### Frontend build note
 
@@ -247,7 +247,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit_trail.md](docs/audit_trail.md)).
 
-- Backup: export/import JSON; merge or replace; scope full or single project (see store backup logic).
+- Backup: export/import JSON; merge or replace; scope full or single project. JSON export is not a complete `DATA_DIR` disaster-recovery backup (uploaded wallpapers and `audit_events` are omitted); see [`docs/diagrams/scrumboy_deployment_ops.md`](docs/diagrams/scrumboy_deployment_ops.md).
 
 - PWA: Excellent UX for mobile users.
 
@@ -259,7 +259,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see [docs/wall.md](docs/wall.md)).
 
-- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ` ```mermaid ` blocks in preview only (see `FAQ.md`, `docs/markdown&mermaid.md`).
+- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ` ```mermaid ` blocks in preview only (see [`FAQ.md`](FAQ.md), [`docs/markdown&mermaid.md`](docs/markdown&mermaid.md)).
 
 ---
 
@@ -394,14 +394,14 @@ None of these are required for basic startup.
 | Variable | Default (from code) |
 |----------|---------------------|
 | `BIND_ADDR` | `:8080` |
-| `DATA_DIR` | `./data` |
+| `DATA_DIR` | `./data` - Instance data directory for SQLite and file-backed uploads such as `user-wallpapers/` |
 | `SQLITE_PATH` | (empty; then `$DATA_DIR/app.db`) |
 | `SQLITE_BUSY_TIMEOUT_MS` | `30000` |
 | `SQLITE_JOURNAL_MODE` | `WAL` |
 | `SQLITE_SYNCHRONOUS` | `FULL` |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) |
 | `SCRUMBOY_MODE` | `full` (or `anonymous`) |
-| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA and password reset.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503 and password-reset tokens cannot be issued. Back this key up with `data/app.db`; do not replace it casually once encrypted auth/security data exists. |
+| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA and password reset.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503 and password-reset tokens cannot be issued. Back this key up with the instance `DATA_DIR` (including `data/app.db`); do not replace it casually once encrypted auth/security data exists. |
 | `SCRUMBOY_TLS_CERT` | `./cert.pem` - TLS cert for HTTPS |
 | `SCRUMBOY_TLS_KEY` | `./key.pem` - TLS key for HTTPS |
 | `SCRUMBOY_INTRANET_IP` | `192.168.1.250` - LAN IP to log for intranet access |

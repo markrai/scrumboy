@@ -9,11 +9,22 @@ flowchart TD
   Health -->|yes| HZ[handleHealthz]
   Health -->|no| Agora{agora v1 prefix?}
   Agora -->|yes| AgH[Agora handler]
-  Agora -->|no| MCP{mcp prefix?}
-  MCP -->|yes| McpH[MCP handler]
-  MCP -->|no| API{api prefix?}
+  Agora -->|no| MCP{mcp or mcp slash prefix?}
+  MCP -->|yes| McpH[mcp.Adapter ServeHTTP]
+  MCP -->|no| PRM{oauth-protected-resource metadata?}
+  PRM -->|yes| OAuthPR[handleOAuthProtectedResourceMetadata]
+  PRM -->|no| ASMeta{oauth-authorization-server?}
+  ASMeta -->|yes| OAuthAS[handleOAuthASMetadata]
+  ASMeta -->|no| OAuthP{oauth slash prefix?}
+  OAuthP -->|yes| OAuthH[handleOAuth]
+  OAuthP -->|no| API{api slash prefix?}
   API -->|yes| ApiH[handleAPI namespaces]
   API -->|no| SpaH[handleSPA static and slug routes]
+
+  OAuthH --> Reg["/oauth/register"]
+  OAuthH --> Authz["/oauth/authorize"]
+  OAuthH --> Tok["/oauth/token"]
+  OAuthH --> Rev["/oauth/revoke"]
 
   ApiH --> RProj[routing_projects]
   ApiH --> RBoard[routing_board incl wall]
@@ -23,13 +34,17 @@ flowchart TD
   ApiH --> RImport[routing_import backup]
 ```
 
+Dispatch order: `healthz` → Agora → MCP → OAuth protected-resource metadata → OAuth authorization-server metadata → `/oauth/*` → `/api/*` → SPA.
+
+OAuth discovery paths include `/.well-known/oauth-protected-resource`, `/.well-known/oauth-protected-resource/mcp/rpc`, and `/.well-known/oauth-authorization-server`. OAuth routes live **outside** `/api/*` (no `X-Scrumboy` CSRF). Full mode only; anonymous mode returns 404 from the OAuth handlers. See [`oauth.md`](../oauth.md).
+
 Wall REST lives under **`/api/board/{slug}/wall`** via `routing_board_wall.go` (nested under board, not a top-level API namespace).
 
 ## API namespaces (`routing.go`)
 
 Top-level `/api/*` segments: `projects`, `board`, `todos`, `auth`, `me`, `backup`, `import`, `user`, `admin`, `version`, `tags`, `dashboard`, `webhooks`, `push`.
 
-API lives under `/api/*` only; everything else falls through to embedded `web/dist` assets or slug canonicalization.
+API lives under `/api/*` only; everything else falls through to embedded `web/dist` assets or slug canonicalization (except the OAuth and MCP/Agora surfaces above).
 
 ## SPA paths (`spa.go`)
 

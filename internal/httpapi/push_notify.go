@@ -80,7 +80,7 @@ func (p *pushNotifier) handle(ctx context.Context, e eventbus.Event) {
 		return
 	}
 
-	// projectSlug/todoId are for a future notification center; the service worker does not route taps on them yet.
+	// projectSlug/todoId are used by the service worker for notification click deep-links.
 	payload := map[string]any{
 		"type":         "todo_assigned",
 		"title":        "Assigned to you",

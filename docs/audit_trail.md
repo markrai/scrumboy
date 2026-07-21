@@ -51,24 +51,34 @@ Canonical past-tense event names:
 
 ---
 
-## Metadata
+## Metadata disclosure
 
-JSON is generated from Go structs; no hand-rolled strings. Examples:
+JSON is generated from Go maps via `insertAuditEventTx`; no hand-rolled strings. Some events store **full user-provided strings** (titles, project names, tag names). Those strings can contain personal or sensitive information — there is no blanket “no PII” guarantee. Other events store only lengths, identifiers, or structured change fields.
 
-- **todo_created:** `{"local_id": 1, "column_key": "backlog", "title": "..."}` — full title stored
-- **todo_updated:** `{"changed_fields": ["body"], "before_len": 120, "after_len": 240}` or `{"tags_added": ["bug"], "tags_removed": ["enhancement"]}` — no full body/title content
-- **todo_moved:** `{"from_column": "backlog", "to_column": "doing", "local_id": 1}`
-- **member_added:** `{"user_id": 5, "role": "contributor"}`
-- **member_role_changed:** `{"user_id": 5, "from_role": "contributor", "to_role": "maintainer"}`
-- **project_renamed:** `{"from_name": "Old", "to_name": "New"}`
-- **link_added / link_removed:** `{"from_todo_id": 1, "to_todo_id": 2, "from_local_id": 1, "to_local_id": 2, "link_type": "blocks"}`
+| Action | Metadata keys | Full user-provided strings? |
+|--------|---------------|----------------------------|
+| todo_created | `local_id`, `column_key`, `title` | **Yes — full todo title** |
+| todo_updated | `changed_fields`; for title/body: `before_len` / `after_len`; for tags: `tags_added` / `tags_removed`; for sprint/estimation: `before` / `after` | **Tag names yes.** Title and body content **no** (lengths only). Note bodies are never stored in audit metadata. |
+| todo_deleted | `local_id`, `column_key` | No |
+| todo_moved | `from_column`, `to_column`, `local_id` | No (column keys only) |
+| member_added | `user_id`, `role` | No |
+| member_removed | `user_id`, `role` | No |
+| member_role_changed | `user_id`, `from_role`, `to_role` | No |
+| project_created | `name`, `is_anonymous` | **Yes — full project name** (system names for anon/temp boards) |
+| project_deleted | `name` | **Yes — full project name** |
+| project_renamed | `from_name`, `to_name` | **Yes — both names** |
+| project_image_updated | `changed` (`image` or `dominant_color`) | No |
+| project_default_sprint_weeks_updated | `from_weeks`, `to_weeks` | No |
+| link_added / link_removed | `from_todo_id`, `to_todo_id`, `from_local_id`, `to_local_id`, `link_type` | No |
+
+Length-only title/body metadata applies to **`todo_updated` content diffs**, not to every event. `todo_created` stores the full title. If both title and body change in one update, they share the same `before_len` / `after_len` keys (last field processed wins).
 
 ---
 
 ## Storage
 
 - **Table:** `audit_events`
-- **Append-only:** Triggers prevent UPDATE and DELETE
+- **Append-only (application-level):** Migration 047 triggers reject ordinary `UPDATE` and `DELETE` on audit rows
 - **Indexes:** `project_id`, `action`, `actor_user_id` (with `created_at` for efficient queries)
 
 ---
@@ -107,13 +117,16 @@ Store methods that write audit events:
 
 `audit_events` references `project_id` but has **no foreign key** to `projects` and is **append-only** (migration 047 blocks updates and deletes on audit rows). When an expired temporary board is removed, dependent todos/tags cascade via `ON DELETE CASCADE`, but audit rows for that `project_id` may remain on purpose. That is expected, not a missing cascade.
 
+There is **no** configurable retention, purge job, or audit export mode today. JSON project backup/export (`ExportData`) does **not** include `audit_events`.
+
 ---
 
-## Security
+## Security and access
 
-- **Immutability:** Append-only triggers prevent tampering
-- **No PII in metadata:** Default metadata avoids full content; body/title use lengths only
-- **Actor identification:** `actor_user_id` is NULL for anonymous boards
+- **Immutability (bounded):** Append-only triggers reject ordinary application-level `UPDATE` and `DELETE` on `audit_events`. They do **not** protect against a database administrator or attacker who can alter the schema, drop or replace triggers, replace the database file, or issue privileged SQL (including forged `INSERT`s).
+- **Metadata sensitivity:** Some events store full user-provided titles, project names, and tag names. Treat audit rows as potentially sensitive. Do not assume metadata is free of personal or confidential content.
+- **Access today:** There is no audit UI or public HTTP read API. Review requires direct database access. Writes are side effects of role-checked store operations; reads are unconstrained at the database level.
+- **Actor identification:** `actor_user_id` is NULL for anonymous boards.
 
 ---
 
