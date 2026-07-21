@@ -245,7 +245,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 
-- Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit_trail.md](docs/audit_trail.md)).
+- Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit-trail.md](docs/audit-trail.md)).
 
 - Backup: export/import JSON; merge or replace; scope full or single project. JSON export is not a complete `DATA_DIR` disaster-recovery backup (uploaded wallpapers and `audit_events` are omitted); see [`docs/diagrams/scrumboy_deployment_ops.md`](docs/diagrams/scrumboy_deployment_ops.md).
 
@@ -259,7 +259,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 - Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see [docs/wall.md](docs/wall.md)).
 
-- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ` ```mermaid ` blocks in preview only (see [`FAQ.md`](FAQ.md), [`docs/markdown&mermaid.md`](docs/markdown&mermaid.md)).
+- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ` ```mermaid ` blocks in preview only (see [`FAQ.md`](FAQ.md), [`docs/markdown-and-mermaid.md`](docs/markdown-and-mermaid.md)).
 
 ---
 
@@ -503,8 +503,8 @@ Invariants (e.g. canonical URL `/{slug}`, no UI links to `/p/{id}`) are enforced
 - **Remote MCP/OAuth release acceptance:** [`docs/mcp-oauth-acceptance.md`](docs/mcp-oauth-acceptance.md) - Vega/Keycloak evidence record plus Cursor, Claude Code, cookie/static, legacy, and negative-resource gates.
 - **Agent plugin package:** [`plugins/scrumboy-board-operator`](plugins/scrumboy-board-operator) - local/manual plugin metadata, board-operator Skill, and seed eval cases for MCP/Agoragentic agent workflows.
 - **PWA / Web Push (VAPID):** [`docs/pwa.md`](docs/pwa.md) - keys, subscriber contact, post-login auto-subscribe when VAPID is configured, Settings opt-out, tradeoffs.
-- **Roles and permissions:** [`docs/roles_and_permissions.md`](docs/roles_and_permissions.md) - project roles, backend authorization, anonymous boards.
-- **Audit trail:** [`docs/audit_trail.md`](docs/audit_trail.md) - action vocabulary, event model, integration points.
+- **Roles and permissions:** [`docs/roles-and-permissions.md`](docs/roles-and-permissions.md) - project roles, backend authorization, anonymous boards.
+- **Audit trail:** [`docs/audit-trail.md`](docs/audit-trail.md) - action vocabulary, event model, integration points.
 
 ---
 

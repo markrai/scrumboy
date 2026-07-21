@@ -39,7 +39,7 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 |-----|----------|-----------------|--------|
 | [wall.md](wall.md) | Users / contributors | wall modules + API | current |
 | [voiceflow.md](voiceflow.md) | Users / contributors | VoiceFlow parser / UI | current |
-| [markdown&mermaid.md](markdown&mermaid.md) | Users / contributors | `internal/httpapi/web` markdown/mermaid deps | current |
+| [markdown-and-mermaid.md](markdown-and-mermaid.md) | Users / contributors | `internal/httpapi/web` markdown/mermaid deps | current |
 
 ---
 
@@ -47,8 +47,8 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
-| [roles_and_permissions.md](roles_and_permissions.md) | Contributors / operators | authz / project roles | current |
-| [audit_trail.md](audit_trail.md) | Operators / security | `audit_events` / insert path | current |
+| [roles-and-permissions.md](roles-and-permissions.md) | Contributors / operators | authz / project roles | current |
+| [audit-trail.md](audit-trail.md) | Operators / security | `audit_events` / insert path | current |
 
 ---
 

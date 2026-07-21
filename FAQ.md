@@ -46,7 +46,7 @@ Notes are still stored as raw markdown in `todos.body`. Todo titles and board ca
 
 Preview hardening: HTML in notes is not rendered; images stay as escaped text; dangerous link schemes and embedded content are stripped or neutralized.
 
-For architecture, security, and source references, see [`docs/markdown&mermaid.md`](docs/markdown&mermaid.md).
+For architecture, security, and source references, see [`docs/markdown-and-mermaid.md`](docs/markdown-and-mermaid.md).
 
 ## How do I enable Mermaid diagrams in my notes?
 
@@ -75,7 +75,7 @@ User-authored Mermaid `%%{init: ...}%%` directive blocks are stripped before ren
 
 The server exposes `mermaidNotesEnabled` on `/api/auth/status` alongside `markdownNotesEnabled`.
 
-For full architecture and security details, see [`docs/markdown&mermaid.md`](docs/markdown&mermaid.md).
+For full architecture and security details, see [`docs/markdown-and-mermaid.md`](docs/markdown-and-mermaid.md).
 
 # Board
 
@@ -113,7 +113,7 @@ A **temporary board** is a Scrumboy project with an **`expires_at`** timestamp. 
 | Sharing | Link-based; anonymous temps need no login | Members and roles |
 | Delete project | Not offered for anonymous temps | Maintainers can delete |
 
-For permissions detail, see [`docs/roles_and_permissions.md`](docs/roles_and_permissions.md).
+For permissions detail, see [`docs/roles-and-permissions.md`](docs/roles-and-permissions.md).
 
 # Dashboard
 
@@ -321,7 +321,7 @@ LIMIT 50;
 
 JSON project backups/exports do **not** include `audit_events`. Keep a file-level `DATA_DIR` backup if you need the audit table for disaster recovery.
 
-For the full action list, metadata disclosure table, and security notes, see [`docs/audit_trail.md`](docs/audit_trail.md).
+For the full action list, metadata disclosure table, and security notes, see [`docs/audit-trail.md`](docs/audit-trail.md).
 
 # Privacy
 

@@ -14,7 +14,7 @@ const CATALOG_PATH = path.join(DIAGRAMS_DIR, "catalog.json");
 const MCP_MD = path.join(REPO_ROOT, "docs", "mcp.md");
 const ADAPTER_GO = path.join(REPO_ROOT, "internal", "mcp", "adapter.go");
 const PACKAGE_JSON = path.join(REPO_ROOT, "internal", "httpapi", "web", "package.json");
-const MARKDOWN_MD = path.join(REPO_ROOT, "docs", "markdown&mermaid.md");
+const MARKDOWN_MD = path.join(REPO_ROOT, "docs", "markdown-and-mermaid.md");
 const INDEX_HTML = path.join(DIAGRAMS_DIR, "index.html");
 
 let failures = 0;
@@ -122,9 +122,9 @@ function checkDependencyPins() {
     const re = new RegExp(`${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@${ver.replace(/\./g, "\\.")}`);
     if (name === "mermaid") {
       if (!md.includes(`Mermaid \`${ver}\``) && !md.includes(`mermaid@${ver}`) && !md.includes(`Mermaid ${ver}`)) {
-        // markdown&mermaid uses "Mermaid `11.16.0`"
+        // markdown-and-mermaid.md uses phrasing like Mermaid `11.16.0`
         if (!md.includes(`\`${ver}\``) || !md.toLowerCase().includes("mermaid")) {
-          fail(`docs/markdown&mermaid.md does not document Mermaid ${ver}`);
+          fail(`docs/markdown-and-mermaid.md does not document Mermaid ${ver}`);
         }
       }
       if (!html.includes(`mermaid@${ver}/`)) {
@@ -134,13 +134,13 @@ function checkDependencyPins() {
       }
     } else if (name === "markdown-it") {
       if (!md.includes(`markdown-it@${ver}`)) {
-        fail(`docs/markdown&mermaid.md missing markdown-it@${ver}`);
+        fail(`docs/markdown-and-mermaid.md missing markdown-it@${ver}`);
       } else {
         ok(`markdown-it pin ${ver}`);
       }
     } else if (name === "dompurify") {
       if (!md.includes(`dompurify@${ver}`)) {
-        fail(`docs/markdown&mermaid.md missing dompurify@${ver}`);
+        fail(`docs/markdown-and-mermaid.md missing dompurify@${ver}`);
       } else {
         ok(`dompurify pin ${ver}`);
       }

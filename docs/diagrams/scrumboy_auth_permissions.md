@@ -57,4 +57,4 @@ Normal OIDC login never links by matching email and never rewrites the canonical
 - **Pre-auth locale picker:** auth shell (sign-in, bootstrap, 2FA, password reset) exposes the shared public locale listbox in the topbar; copy comes from the i18n bootstrap catalog until the full locale JSON loads.
 - **Post-login redirect:** bootstrap, login, and 2FA completion redirect via sanitized `next` from auth state (strips stale OIDC query noise).
 
-See `docs/roles_and_permissions.md` for role matrix detail.
+See `docs/roles-and-permissions.md` for role matrix detail.
