@@ -1,7 +1,5 @@
 # Remote MCP/OAuth release acceptance
 
-Updated: 2026-07-18
-
 This is the release gate for Scrumboy's remote MCP OAuth boundary. Run it against the exact release candidate deployed to Vega. Do not record client secrets, authorization codes, access or refresh tokens, session cookies, or PKCE verifiers.
 
 Production authentication remains provider-neutral. Vega uses Keycloak as its upstream OIDC provider for this acceptance run; Keycloak is not Scrumboy's MCP authorization server and its access tokens are not MCP credentials.

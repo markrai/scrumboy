@@ -1,7 +1,5 @@
 # Scrumboy MCP HTTP API
 
-Updated: 2026-07-18
-
 This API is intended for programmatic clients (e.g., agents or integrations), not direct browser use.
 
 This document describes the **Model Context Protocol (MCP) HTTP surface** implemented under `internal/mcp` and mounted by the Scrumboy HTTP server. It reflects **current behavior only**, not a roadmap.

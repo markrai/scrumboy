@@ -1,7 +1,5 @@
 # OAuth 2.1 for MCP Clients
 
-Updated: 2026-07-18
-
 Scrumboy's canonical MCP Streamable HTTP endpoint, `/mcp/rpc`, supports OAuth 2.1 for clients that implement automatic discovery, PKCE, and Dynamic Client Registration (DCR) — for example Cursor and Claude Code. `/mcp/rpc` is the sole OAuth protected resource. The separate `/mcp` endpoint remains Scrumboy's legacy bootstrap/tool API and accepts session cookies or static `sb_…` API tokens, never OAuth access tokens. **No environment variables are required for a direct-TLS or loopback/localhost deployment.** When `SCRUMBOY_TRUST_PROXY=1`, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication. See [Issuer / discovery origin](#issuer--discovery-origin) below.
 
 Compatible clients: any MCP client that speaks HTTP OAuth discovery (RFC 8414 / RFC 9728), PKCE (RFC 7636, S256 only), Dynamic Client Registration (RFC 7591), and OAuth resource indicators. Cursor and Claude Code are the live-acceptance targets; other compatible MCP-over-HTTP clients use the same protocol.

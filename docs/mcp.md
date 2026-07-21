@@ -1,7 +1,5 @@
 # Scrumboy MCP Interface
 
-Updated: 2026-07-18
-
 Designed for use by AI agents (Claude, custom MCP clients) and automation workflows.
 
 Scrumboy provides an MCP-compatible tool interface over HTTP for managing projects, todos, sprints, tags, and members.
