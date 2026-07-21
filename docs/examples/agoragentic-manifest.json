@@ -21,7 +21,12 @@
         "type": "object",
         "properties": {
           "tool": { "type": "string" },
-          "arguments": { "type": "object" }
+          "arguments": {
+            "anyOf": [
+              { "type": "object" },
+              { "type": "null" }
+            ]
+          }
         },
         "required": ["tool", "arguments"],
         "additionalProperties": false

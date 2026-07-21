@@ -178,7 +178,7 @@ Always **`null`**, with **`error.message`** (and sometimes **`code` / `data`**) 
 
 5. **Do not assume** the adapter replaces MCP documentation for tool **input** validation—each tool’s **`inputSchema`** in discover describes allowed keys; the server may still return tool errors for bad inputs.
 
-6. For **integration listings**, align your static schema (e.g. `arguments: { "type": "object" }`) with the runtime rule that **JSON `null` for `arguments` is allowed** and normalized to an empty object.
+6. For **integration listings**, align your static schema with the runtime rule that **JSON `null` for `arguments` is allowed** and normalized to an empty object (see [`agoragentic-manifest.json`](examples/agoragentic-manifest.json): `arguments` as `anyOf` object or null).
 
 ---
 

@@ -87,13 +87,20 @@ Permissions flow: `permissions.go` → store enforcement → API error mapping �
 
 ## Settings Dialog Tabs
 
-| Tab      | Visible To                     |
-|----------|---------------------------------|
-| Sprints  | Maintainer (board view)         |
-| Tags     | Any project member              |
-| Charts   | Any project member (durable boards) |
-| Profile  | Authenticated (full mode)       |
-| Users    | System Admin, System Owner      |
+This table is **Settings tab visibility** in the SPA (`modules/dialogs/settings.ts` / `renderSettingsModal`), not the system-role or project-role permission matrices above.
+
+| Tab | Visible when |
+|-----|----------------|
+| Profile | Full mode (auth status available) |
+| Users | Full mode **and** system role Admin or Owner |
+| Sprints | Board view (`slug` set) **and** project role Maintainer |
+| Workflow | Board view **and** project role Maintainer |
+| Customization | Always when Settings is open |
+| Tag Colors | Always when Settings is open (replaces older “Tags” label) |
+| Charts | Board view, full mode, **and** durable project (not temporary/anonymous expiry boards) |
+| Backup | Always when Settings is open |
+
+Contributor/Viewer on a durable board typically see Customization, Tag Colors, Charts, and Backup (not Sprints/Workflow). Anonymous/temporary boards omit Charts; Profile/Users require full mode.
 
 ---
 

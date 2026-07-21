@@ -33,10 +33,14 @@ stateDiagram-v2
   [*] --> Idle
   Idle --> Listening: push to talk or hands free
   Listening --> Parsing: utterance final
-  Parsing --> Confirming: ambiguous target
-  Confirming --> Executing: user confirms
-  Parsing --> Executing: high confidence
+  Parsing --> Disambiguating: ambiguous target
+  Disambiguating --> Resolved: choice selected
+  Parsing --> Resolved: unique target
+  Resolved --> Confirming: policy requires confirm
+  Resolved --> Executing: no confirm needed
+  Confirming --> Executing: yes
+  Confirming --> Idle: no or cancel
   Executing --> Idle: success or error
 ```
 
-Preferences (`voiceflow-preferences.ts`) control enabled flag, hands-free confirmation, and mode. See `docs/voiceflow.md` for command vocabulary.
+Preferences (`voiceflow-preferences.ts`) control enabled flag, mode (`safe` | `hands-free`), and Hands-Free confirmation policy (`deletes` default | `mutations`). Under `deletes`, only destructive delete commands require spoken yes/no; under `mutations`, create/move/delete/assign require confirmation; open/edit never does. Disambiguation (pick among matches) is separate from action confirmation. See `docs/voiceflow.md` for command vocabulary.

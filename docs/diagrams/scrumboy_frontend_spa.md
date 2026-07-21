@@ -80,4 +80,4 @@ sequenceDiagram
 
 Login, bootstrap, and 2FA render as **auth overlays** when unauthenticated (not separate URL routes). Anonymous-mode server routes `/{locale}/` marketing landings in `spa.go` (see `scrumboy_http_routing.md`).
 
-`theme.ts` applies dark default (`:root`) or `[data-theme="light"]`; density via `--ui-scale`. PWA: `sw.js` with version injected at server startup, `manifest.json`.
+Theme preference defaults to `system` (`theme.ts` / `THEME_SYSTEM`), resolving via `prefers-color-scheme`. Effective dark leaves `data-theme` unset (CSS `:root` dark tokens); light sets `[data-theme="light"]`. Pre-hydration CSS may still look dark. Density via `--ui-scale`. PWA: `sw.js` with version injected at server startup, `manifest.json`.
