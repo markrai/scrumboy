@@ -47,6 +47,7 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
+| [security.md](security.md) | Operators / contributors | auth, crypto, workflows, scanners | current |
 | [roles-and-permissions.md](roles-and-permissions.md) | Contributors / operators | authz / project roles | current |
 | [audit-trail.md](audit-trail.md) | Operators / security | `audit_events` / insert path | current |
 
@@ -88,6 +89,7 @@ Viewer: `cd docs/diagrams` then `python serve.py` (or `serve-diagrams.bat`), ope
 - [README.md](../README.md) — install, config, feature overview
 - [API.md](../API.md) — HTTP/MCP API reference
 - [FAQ.md](../FAQ.md) — common operator questions
-- [SECURITY.md](../SECURITY.md) — security policy
+- [SECURITY.md](../SECURITY.md) — vulnerability disclosure policy
+- [docs/security.md](security.md) — technical security architecture and practices
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — build, DCO, docs-impact gate
 - [AGENTS.md](../AGENTS.md) — i18n localization rules (SoT for copy/plumbing constraints)
