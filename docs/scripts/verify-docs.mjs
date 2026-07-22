@@ -119,7 +119,6 @@ function checkDependencyPins() {
       fail(`package.json missing dependency ${name}`);
       continue;
     }
-    const re = new RegExp(`${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@${ver.replace(/\./g, "\\.")}`);
     if (name === "mermaid") {
       if (!md.includes(`Mermaid \`${ver}\``) && !md.includes(`mermaid@${ver}`) && !md.includes(`Mermaid ${ver}`)) {
         // markdown-and-mermaid.md uses phrasing like Mermaid `11.16.0`
@@ -145,7 +144,6 @@ function checkDependencyPins() {
         ok(`dompurify pin ${ver}`);
       }
     }
-    void re;
   }
 }
 
