@@ -71,7 +71,7 @@ import {
 } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
-import { getStoredEmailNotifyPref, setEmailNotifyPref, type EmailNotifyCategory } from '../core/email-notify-preferences.js';
+import { getEmailNotifyViewState, setEmailNotifyPref, type EmailNotifyCategory } from '../core/email-notify-preferences.js';
 import {
   bindWorkflowTabInteractions,
   clearWorkflowDraftState,
@@ -1642,7 +1642,10 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     `;
 
   const emailNotifyAvailable = showProfileTab && getEmailNotifyAvailable();
-  const emailNotifyPref = showProfileTab ? getStoredEmailNotifyPref() : null;
+  const emailNotifyState = showProfileTab ? getEmailNotifyViewState() : null;
+  const emailNotifyPref = emailNotifyState?.value ?? null;
+  const emailNotifyReady = emailNotifyState?.status === "ready";
+  const emailNotifyInteractive = emailNotifyAvailable && emailNotifyReady;
   const emailCategoryRows: Array<{ key: EmailNotifyCategory; labelKey: string; label: string }> = [
     { key: "assigned", labelKey: "settings.customization.emailNotify.category.assigned", label: "When a card is assigned to me" },
     { key: "cardActivity", labelKey: "settings.customization.emailNotify.category.cardActivity", label: "Card created, moved, or deleted" },
@@ -1655,14 +1658,15 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         <div class="settings-section__title" data-i18n-text="settings.customization.emailNotify.title">Email notifications</div>
         <div class="settings-section__description muted" data-i18n-text="settings.customization.emailNotify.description">Get emailed about activity on your boards. Off by default.</div>
         ${!emailNotifyAvailable ? `<p class="muted" style="margin:8px 0;font-size:13px;" data-i18n-text="settings.customization.emailNotify.unavailableNotice">Email notifications require SMTP to be configured on the server (see docs).</p>` : ""}
+        ${emailNotifyAvailable && emailNotifyState?.status === "error" ? `<p class="muted" style="margin:8px 0;font-size:13px;" data-i18n-text="settings.customization.emailNotify.loadFailed">Could not load email notification settings. Reload the page to try again.</p>` : ""}
         <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
-          <input type="checkbox" id="emailNotifyEnabledToggle" ${!emailNotifyAvailable ? "disabled" : ""} ${emailNotifyPref?.enabled ? "checked" : ""} />
+          <input type="checkbox" id="emailNotifyEnabledToggle" ${!emailNotifyInteractive ? "disabled" : ""} ${emailNotifyPref?.enabled ? "checked" : ""} />
           <span data-i18n-text="settings.customization.emailNotify.toggleLabel">Email notifications on</span>
         </label>
         <div class="email-notify-categories" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;">
           ${emailCategoryRows.map((row) => `
           <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
-            <input type="checkbox" class="email-notify-category-toggle" data-category="${row.key}" ${(!emailNotifyAvailable || !emailNotifyPref?.enabled) ? "disabled" : ""} ${emailNotifyPref?.[row.key] ? "checked" : ""} />
+            <input type="checkbox" class="email-notify-category-toggle" data-category="${row.key}" ${(!emailNotifyInteractive || !emailNotifyPref?.enabled) ? "disabled" : ""} ${emailNotifyPref?.[row.key] ? "checked" : ""} />
             <span data-i18n-text="${row.labelKey}">${escapeHTML(row.label)}</span>
           </label>`).join("")}
         </div>
@@ -2262,8 +2266,16 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       emailNotifyEnabledToggle.addEventListener(
         "change",
         async () => {
-          const pref = getStoredEmailNotifyPref();
-          await setEmailNotifyPref({ ...pref, enabled: emailNotifyEnabledToggle.checked });
+          const pref = getEmailNotifyViewState().value;
+          if (!pref) return;
+          document.querySelectorAll<HTMLInputElement>("#emailNotifyEnabledToggle, .email-notify-category-toggle").forEach((control) => {
+            control.disabled = true;
+          });
+          try {
+            await setEmailNotifyPref({ ...pref, enabled: emailNotifyEnabledToggle.checked });
+          } catch {
+            showToast(t("settings.customization.emailNotify.saveFailed"));
+          }
           await renderSettingsModal();
         },
         { signal }
@@ -2276,8 +2288,17 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         async () => {
           const category = toggle.getAttribute("data-category") as EmailNotifyCategory | null;
           if (!category) return;
-          const pref = getStoredEmailNotifyPref();
-          await setEmailNotifyPref({ ...pref, [category]: toggle.checked });
+          const pref = getEmailNotifyViewState().value;
+          if (!pref) return;
+          document.querySelectorAll<HTMLInputElement>("#emailNotifyEnabledToggle, .email-notify-category-toggle").forEach((control) => {
+            control.disabled = true;
+          });
+          try {
+            await setEmailNotifyPref({ ...pref, [category]: toggle.checked });
+          } catch {
+            showToast(t("settings.customization.emailNotify.saveFailed"));
+          }
+          await renderSettingsModal();
         },
         { signal }
       );

@@ -19,9 +19,21 @@ func (d mailDelivery) logRef() string { return d.LogRef }
 type mailQueue = deliveryQueue[mailDelivery]
 
 func newMailQueue(logger *log.Logger) *mailQueue {
-	return newMailQueueWithCapacity(logger, defaultMailQueueCapacity)
+	return newMailQueueWithCapacityAndKind(logger, defaultMailQueueCapacity, "mail")
 }
 
 func newMailQueueWithCapacity(logger *log.Logger, capacity int) *mailQueue {
-	return newDeliveryQueue[mailDelivery](logger, capacity, "mail")
+	return newMailQueueWithCapacityAndKind(logger, capacity, "mail")
+}
+
+func newTransactionalMailQueue(logger *log.Logger) *mailQueue {
+	return newMailQueueWithCapacityAndKind(logger, defaultMailQueueCapacity, "transactional mail")
+}
+
+func newNotificationMailQueue(logger *log.Logger) *mailQueue {
+	return newMailQueueWithCapacityAndKind(logger, defaultMailQueueCapacity, "notification mail")
+}
+
+func newMailQueueWithCapacityAndKind(logger *log.Logger, capacity int, kind string) *mailQueue {
+	return newDeliveryQueue[mailDelivery](logger, capacity, kind)
 }

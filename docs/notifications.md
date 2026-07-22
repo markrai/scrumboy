@@ -11,6 +11,7 @@ self-service password reset and notification email.
 - [Categories](#categories)
 - [Recipients](#recipients)
 - [User settings](#user-settings)
+- [Delivery isolation](#delivery-isolation)
 - [HTTP endpoints](#http-endpoints)
 - [Quick verification](#quick-verification)
 - [Related documentation](#related-documentation)
@@ -24,7 +25,8 @@ reset, minus the encryption key (notification email carries no token):
 
 - `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM` (and `SCRUMBOY_SMTP_PORT` if not 587) — see
   [Required env vars](smtp.md#required-env-vars).
-- `SCRUMBOY_PUBLIC_BASE_URL` — used to build the board link included in every notification email.
+- `SCRUMBOY_PUBLIC_BASE_URL` — used to build board links for notifications about projects that
+  still exist. Project-deletion messages intentionally have no board action link.
 
 `GET /api/auth/status` reports both readiness signals independently:
 `selfServicePasswordResetEnabled` (also needs `SCRUMBOY_ENCRYPTION_KEY`) and
@@ -46,7 +48,7 @@ toggle:
 | Assigned to me      | A card is assigned to you (mirrors the existing Web Push assignment notification)             | on      |
 | Card activity        | A card is created, updated, moved, deleted, or its links change                              | off     |
 | Sprint activity       | A sprint is created, updated, deleted, activated, or closed                                   | off     |
-| Project activity      | Project settings, workflow columns, or tags change                                            | off     |
+| Project activity      | A project is updated or deleted, or its settings, workflow columns, or tags change             | off     |
 | Added to a project | You are added as a member of a project                                                        | on      |
 
 Categories map onto the server's existing event taxonomy (the same `reason` values already used
@@ -62,13 +64,26 @@ for realtime board refresh) rather than introducing a parallel event system — 
   made the change.
 - **Added to a project:** the newly added user only. No email if you add yourself.
 
+When a card mutation also changes its assignee, the new assignee receives only the targeted
+**Assigned to me** message for that event. Other eligible members can receive the separate
+**Card activity** message. Removing an assignment still counts as card activity. This keeps the
+assignment and activity meanings distinct without duplicating mail to the new assignee.
+
+Project deletion is captured from a committed pre-deletion snapshot. Eligible members are checked
+against their server-side preferences after the deletion succeeds, the actor is skipped, and the
+message has no link to the now-deleted board. The recipient snapshot is passed directly to the
+internal email notifier and is never included in SSE, webhook, or Push event payloads. A failed
+deletion sends no email.
+
 Each recipient's own preference is checked independently — a project can have five members with
 five different opt-in configurations, and each gets email only for what they've enabled.
 
-**Debouncing.** Card/sprint/project activity is coalesced per (project, category): a burst of
-mutations (e.g. reordering many cards) sends at most one round of activity email per category
-every 2 minutes, rather than one email per member per mutation. Assignment and added-to-project
-notifications are not debounced — they already target a single recipient per event.
+**Debouncing.** Card/sprint/project activity is suppressed per project, category, and recipient:
+a recipient receives at most one activity email for the same project and category every 2 minutes.
+The window starts only after that recipient's message is accepted by the notification queue.
+Lookup failures, opt-outs, a lack of eligible recipients, and queue rejection do not consume the
+window. Assignment and added-to-project notifications are not debounced because they already
+target a single recipient per event. This is repeat suppression, not a digest or aggregation.
 
 ---
 
@@ -83,6 +98,22 @@ Settings → Customization → **Email notifications**:
 Preferences are stored as a JSON blob under the existing generic `user_preferences` table (key
 `emailNotifications`), the same mechanism used for wallpaper and other structured preferences —
 no dedicated database table.
+
+While signed in, the server value is authoritative. The browser does not use or update its local
+anonymous preference cache for an authenticated account. Settings are shown as saved only after a
+successful server write; a failed write restores the previous visible value and shows generic,
+localized failure copy. A failed initial load leaves the authenticated controls disabled rather
+than showing defaults or state from another account. Signing out or changing accounts clears the
+in-memory authenticated preference state. Signed-out/anonymous use may retain a local-only value.
+
+## Delivery isolation
+
+Transactional account mail and bulk notification mail use separate bounded queues and separate
+workers. Password-reset mail is accepted and delivered through the transactional lane; assignment,
+membership, and activity mail use the notification lane. Filling or slowing the notification lane
+therefore cannot consume password-reset queue capacity or place a reset behind its backlog. Both
+lanes use the same SMTP configuration and retry behavior. Queue rejection is logged internally;
+the public password-reset response remains enumeration-safe and unchanged.
 
 ---
 
@@ -108,8 +139,12 @@ The JSON shape is:
 }
 ```
 
-Malformed or unsupported-version JSON is rejected with a validation error; unset preferences fall
-back to the defaults above.
+Unset or empty stored values use the complete defaults above. Otherwise the value must be a JSON
+object. Missing `v` is accepted as legacy v1 and normalized to `v: 1`, so `{}` also means the
+canonical defaults. An explicit `v` must be numeric `1`. Known boolean fields may be omitted and
+inherit their canonical defaults, while explicit `false` is preserved. Unknown fields, `null`,
+arrays, malformed JSON, unsupported or invalid versions, and non-boolean category values are
+rejected. Every write emits the complete canonical v1 object shown above in stable field order.
 
 ---
 

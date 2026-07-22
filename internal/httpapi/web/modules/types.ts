@@ -172,6 +172,24 @@ export interface WebPushStatus {
   reason: WebPushReason | null;
 }
 
+export interface EmailNotifyPref {
+  v: 1;
+  enabled: boolean;
+  assigned: boolean;
+  cardActivity: boolean;
+  sprintActivity: boolean;
+  projectActivity: boolean;
+  addedToProject: boolean;
+}
+
+export type EmailNotifyPreferenceStatus = 'idle' | 'loading' | 'ready' | 'saving' | 'error';
+
+export interface EmailNotifyPreferenceState {
+  userId: number | null;
+  status: EmailNotifyPreferenceStatus;
+  value: EmailNotifyPref | null;
+}
+
 // API-specific response shapes
 export interface AuthStatusResponse {
   user?: User | null;

@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Notifications par e-mail",
   "settings.customization.emailNotify.description": "Recevez un e-mail pour l'activité sur vos tableaux. Désactivé par défaut.",
   "settings.customization.emailNotify.unavailableNotice": "Les notifications par e-mail nécessitent que le SMTP soit configuré sur le serveur (voir la doc).",
+  "settings.customization.emailNotify.loadFailed": "Impossible de charger les paramètres de notification par e-mail. Rechargez la page pour réessayer.",
+  "settings.customization.emailNotify.saveFailed": "Impossible d’enregistrer les paramètres de notification par e-mail. Vos paramètres précédents restent actifs.",
   "settings.customization.emailNotify.toggleLabel": "Notifications par e-mail activées",
   "settings.customization.emailNotify.category.assigned": "Quand un todo m'est assigné",
   "settings.customization.emailNotify.category.cardActivity": "Todo créé, déplacé ou supprimé",

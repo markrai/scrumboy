@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WebPushStatus } from '../types.js';
+import type { EmailNotifyPreferenceState, WebPushStatus } from '../types.js';
 
 const {
   apiFetchMock,
@@ -12,6 +12,7 @@ const {
   handleThemeChangeMock,
   saveKeybindingOverrideMock,
   setKeybindingsCaptureListeningMock,
+  showToastMock,
   state,
 } = vi.hoisted(() => {
   const state = {
@@ -38,6 +39,7 @@ const {
     setKeybindingsCaptureListeningMock: vi.fn((active: boolean) => {
       state.captureListening = active;
     }),
+    showToastMock: vi.fn(),
     state,
   };
 });
@@ -58,7 +60,7 @@ vi.mock('../utils.js', () => ({
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;'),
-  showToast: vi.fn(),
+  showToast: showToastMock,
   getAppVersion: () => 'test-version',
   showConfirmDialog: vi.fn(),
   confirmDelete: vi.fn(),
@@ -249,6 +251,8 @@ const enCatalog = {
   'settings.customization.emailNotify.title': 'Email notifications',
   'settings.customization.emailNotify.description': 'Get emailed about activity on your boards. Off by default.',
   'settings.customization.emailNotify.unavailableNotice': 'Email notifications require SMTP to be configured on the server (see docs).',
+  'settings.customization.emailNotify.loadFailed': 'Could not load email notification settings. Reload the page to try again.',
+  'settings.customization.emailNotify.saveFailed': 'Could not save email notification settings. Your previous settings are still active.',
   'settings.customization.emailNotify.toggleLabel': 'Email notifications on',
   'settings.customization.emailNotify.category.assigned': 'When a card is assigned to me',
   'settings.customization.emailNotify.category.cardActivity': 'Card created, moved, or deleted',
@@ -333,6 +337,8 @@ async function setupSettingsView(options: {
   board?: Record<string, unknown> | null;
   pushConfigured?: boolean;
   pushStatus?: WebPushStatus | null;
+  emailNotifyAvailable?: boolean;
+  emailNotifyPreference?: EmailNotifyPreferenceState;
   user?: Record<string, unknown> | null;
   open?: boolean;
 } = {}) {
@@ -340,9 +346,13 @@ async function setupSettingsView(options: {
   const settings = await loadSettingsModule();
   const mutations = await loadStateMutations();
   mutations.setAuthStatusAvailable(options.authStatusAvailable ?? true);
+  mutations.setUser((options.user as any) ?? null);
   mutations.setPushConfigured(options.pushConfigured ?? false);
   mutations.setPushStatus(options.pushStatus ?? null);
-  mutations.setUser((options.user as any) ?? null);
+  mutations.setEmailNotifyAvailable(options.emailNotifyAvailable ?? false);
+  if (options.emailNotifyPreference) {
+    mutations.setEmailNotifyPreferenceState(options.emailNotifyPreference);
+  }
   mutations.setSlug(options.slug ?? null);
   mutations.setBoard((options.board as any) ?? null);
   mutations.setProjects(null);
@@ -379,6 +389,7 @@ describe('settings customization i18n', () => {
     handleThemeChangeMock.mockClear();
     saveKeybindingOverrideMock.mockClear();
     setKeybindingsCaptureListeningMock.mockClear();
+    showToastMock.mockClear();
     state.theme = 'system';
     state.wallpaperState = { v: 1, mode: 'off', hex: '#8b919a' };
     state.desktopNotificationKind = 'default';
@@ -582,6 +593,56 @@ describe('settings customization i18n', () => {
     expect(document.querySelector('.settings-push-vapid-notice')?.textContent).toBe(
       `DE ${enCatalog['settings.customization.push.adminWarning.invalidSubscriber']}`,
     );
+  });
+
+  it('renders a localized load failure with disabled email controls', async () => {
+    await setupSettingsView({
+      locale: 'pseudo',
+      user: { id: 1, name: 'Alex' },
+      emailNotifyAvailable: true,
+      emailNotifyPreference: { userId: 1, status: 'error', value: null },
+    });
+
+    expect(document.querySelector('.settings-section--email-notify p')?.textContent).toBe(
+      '[!! Could not load email notification settings. Reload the page to try again. !!]',
+    );
+    expect((document.getElementById('emailNotifyEnabledToggle') as HTMLInputElement).disabled).toBe(true);
+    expect(Array.from(document.querySelectorAll<HTMLInputElement>('.email-notify-category-toggle')).every((input) => input.disabled)).toBe(true);
+  });
+
+  it('restores the previous email preference and shows localized generic copy after a rejected save', async () => {
+    await setupSettingsView({
+      locale: 'pseudo',
+      user: { id: 1, name: 'Alex' },
+      emailNotifyAvailable: true,
+      emailNotifyPreference: {
+        userId: 1,
+        status: 'ready',
+        value: {
+          v: 1,
+          enabled: false,
+          assigned: true,
+          cardActivity: false,
+          sprintActivity: false,
+          projectActivity: false,
+          addedToProject: true,
+        },
+      },
+    });
+    apiFetchMock.mockRejectedValueOnce(new Error('sensitive backend detail'));
+
+    const toggle = document.getElementById('emailNotifyEnabledToggle') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises(16);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises(8);
+
+    expect((document.getElementById('emailNotifyEnabledToggle') as HTMLInputElement).checked).toBe(false);
+    expect(showToastMock).toHaveBeenCalledWith(
+      '[!! Could not save email notification settings. Your previous settings are still active. !!]',
+    );
+    expect(showToastMock).not.toHaveBeenCalledWith('sensitive backend detail');
   });
 
   it('relocalizes backup tab static chrome in place on locale change without API calls', async () => {

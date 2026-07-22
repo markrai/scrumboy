@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "E-posta bildirimleri",
   "settings.customization.emailNotify.description": "Panolarınızdaki etkinlikler hakkında e-posta alın. Varsayılan olarak kapalı.",
   "settings.customization.emailNotify.unavailableNotice": "E-posta bildirimleri sunucuda SMTP yapılandırması gerektirir (belgelere bakın).",
+  "settings.customization.emailNotify.loadFailed": "E-posta bildirimi ayarları yüklenemedi. Tekrar denemek için sayfayı yenileyin.",
+  "settings.customization.emailNotify.saveFailed": "E-posta bildirimi ayarları kaydedilemedi. Önceki ayarlarınız hâlâ etkin.",
   "settings.customization.emailNotify.toggleLabel": "E-posta bildirimleri açık",
   "settings.customization.emailNotify.category.assigned": "Bana bir Todo atandığında",
   "settings.customization.emailNotify.category.cardActivity": "Todo oluşturuldu, taşındı veya silindi",

@@ -43,6 +43,17 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 	})
 }
 
+func (s *Server) emitProjectDeleted(ctx context.Context, deleted store.DeletedProjectSnapshot) {
+	var actorUserID int64
+	if uid, ok := store.UserIDFromContext(ctx); ok {
+		actorUserID = uid
+	}
+	s.emitRefreshNeeded(ctx, deleted.ProjectID, "project_deleted")
+	if s.emailNotifier != nil {
+		s.emailNotifier.OnProjectDeleted(deleted, actorUserID)
+	}
+}
+
 func (s *Server) emitMembersUpdated(ctx context.Context, projectID int64) {
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      "board.members_updated",

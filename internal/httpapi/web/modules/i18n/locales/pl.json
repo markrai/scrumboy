@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Powiadomienia e-mail",
   "settings.customization.emailNotify.description": "Otrzymuj e-maile o aktywności na swoich tablicach. Domyślnie wyłączone.",
   "settings.customization.emailNotify.unavailableNotice": "Powiadomienia e-mail wymagają skonfigurowania SMTP na serwerze (zobacz dokumentację).",
+  "settings.customization.emailNotify.loadFailed": "Nie udało się wczytać ustawień powiadomień e-mail. Odśwież stronę, aby spróbować ponownie.",
+  "settings.customization.emailNotify.saveFailed": "Nie udało się zapisać ustawień powiadomień e-mail. Poprzednie ustawienia są nadal aktywne.",
   "settings.customization.emailNotify.toggleLabel": "Powiadomienia e-mail włączone",
   "settings.customization.emailNotify.category.assigned": "Gdy Todo zostanie mi przypisane",
   "settings.customization.emailNotify.category.cardActivity": "Todo utworzone, przeniesione lub usunięte",

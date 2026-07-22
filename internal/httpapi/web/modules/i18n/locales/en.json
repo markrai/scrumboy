@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Email notifications",
   "settings.customization.emailNotify.description": "Get emailed about activity on your boards. Off by default.",
   "settings.customization.emailNotify.unavailableNotice": "Email notifications require SMTP to be configured on the server (see docs).",
+  "settings.customization.emailNotify.loadFailed": "Could not load email notification settings. Reload the page to try again.",
+  "settings.customization.emailNotify.saveFailed": "Could not save email notification settings. Your previous settings are still active.",
   "settings.customization.emailNotify.toggleLabel": "Email notifications on",
   "settings.customization.emailNotify.category.assigned": "When a card is assigned to me",
   "settings.customization.emailNotify.category.cardActivity": "Card created, moved, or deleted",

@@ -11,6 +11,7 @@ type TodoAssignedPayload struct {
 	LocalID         int64  `json:"localId"`
 	Title           string `json:"title"`
 	Reason          string `json:"reason,omitempty"`
+	ActivityReason  string `json:"activityReason,omitempty"`
 	FromAssigneeUID *int64 `json:"fromAssigneeUserId,omitempty"`
 	ToAssigneeUID   *int64 `json:"toAssigneeUserId,omitempty"`
 	ActorUserID     int64  `json:"actorUserId"`

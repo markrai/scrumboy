@@ -17,6 +17,7 @@ let _current = {
     projects: null,
     settingsProjectId: null,
     authStatusAvailable: false,
+    emailNotifyPreference: { userId: null, status: 'idle', value: null },
     boardMembers: [],
     trelloImportBtn: null,
     trelloImportData: null,

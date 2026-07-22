@@ -33,9 +33,12 @@ func TestMailQueue_EnqueueDrainOrder(t *testing.T) {
 
 func TestMailQueue_CapacityDrop(t *testing.T) {
 	q := newMailQueueWithCapacity(discardLogger(), 2)
-	q.Enqueue(mailDelivery{LogRef: "1"})
-	q.Enqueue(mailDelivery{LogRef: "2"})
-	q.Enqueue(mailDelivery{LogRef: "3"}) // dropped, over capacity
+	if !q.Enqueue(mailDelivery{LogRef: "1"}) || !q.Enqueue(mailDelivery{LogRef: "2"}) {
+		t.Fatal("expected queue to accept entries within capacity")
+	}
+	if q.Enqueue(mailDelivery{LogRef: "3"}) {
+		t.Fatal("expected queue to reject an entry over capacity")
+	}
 
 	batch := q.Drain()
 	if len(batch) != 2 {
@@ -87,7 +90,9 @@ func TestMailQueue_SealDropsNewEntries(t *testing.T) {
 	q := newMailQueue(logger)
 	q.Enqueue(mailDelivery{LogRef: "before-seal"})
 	q.Seal()
-	q.Enqueue(mailDelivery{LogRef: "after-seal"})
+	if q.Enqueue(mailDelivery{LogRef: "after-seal"}) {
+		t.Fatal("expected sealed queue to reject new entries")
+	}
 
 	batch := q.Drain()
 	if len(batch) != 1 || batch[0].LogRef != "before-seal" {
@@ -95,6 +100,20 @@ func TestMailQueue_SealDropsNewEntries(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "mail queue sealed, dropping delivery: after-seal") {
 		t.Fatalf("expected sealed drop log, got: %s", buf.String())
+	}
+}
+
+func TestMailQueue_TransactionalCapacityIsIndependent(t *testing.T) {
+	notifications := newMailQueueWithCapacityAndKind(discardLogger(), 1, "notification mail")
+	transactional := newMailQueueWithCapacityAndKind(discardLogger(), 1, "transactional mail")
+	if !notifications.Enqueue(mailDelivery{LogRef: "activity"}) {
+		t.Fatal("expected notification queue prefill to succeed")
+	}
+	if notifications.Enqueue(mailDelivery{LogRef: "overflow"}) {
+		t.Fatal("expected full notification queue to reject overflow")
+	}
+	if !transactional.Enqueue(mailDelivery{LogRef: "password-reset"}) {
+		t.Fatal("full notification queue consumed transactional capacity")
 	}
 }
 

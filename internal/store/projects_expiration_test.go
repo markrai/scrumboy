@@ -47,9 +47,45 @@ func TestDeleteProject_AnonymousTempBoard_Blocked(t *testing.T) {
 		t.Fatalf("CreateAnonymousBoard: %v", err)
 	}
 
-	err = st.DeleteProject(ctx, p.ID, 1)
+	_, err = st.DeleteProject(ctx, p.ID, 1)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestDeleteProject_ReturnsCommittedNotificationSnapshot(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "owner-delete@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := st.CreateUser(ctx, "member-delete@example.com", "password123", "Member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, owner.ID)
+	project, err := st.CreateProject(ownerCtx, "Delete Snapshot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(ownerCtx, owner.ID, project.ID, member.ID, RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := st.DeleteProject(ownerCtx, project.ID, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ProjectID != project.ID || snapshot.Name != "Delete Snapshot" {
+		t.Fatalf("unexpected deletion snapshot: %+v", snapshot)
+	}
+	if len(snapshot.MemberUserIDs) != 2 || snapshot.MemberUserIDs[0] != owner.ID || snapshot.MemberUserIDs[1] != member.ID {
+		t.Fatalf("unexpected snapshot recipients: %+v", snapshot.MemberUserIDs)
+	}
+	if _, err := st.GetProject(ctx, project.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected project to be deleted before snapshot returned, got %v", err)
 	}
 }
 

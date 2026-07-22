@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Notifiche email",
   "settings.customization.emailNotify.description": "Ricevi un'email sulle attività delle tue board. Disattivato per impostazione predefinita.",
   "settings.customization.emailNotify.unavailableNotice": "Le notifiche email richiedono la configurazione SMTP sul server (vedi documentazione).",
+  "settings.customization.emailNotify.loadFailed": "Impossibile caricare le impostazioni delle notifiche email. Ricarica la pagina per riprovare.",
+  "settings.customization.emailNotify.saveFailed": "Impossibile salvare le impostazioni delle notifiche email. Le impostazioni precedenti sono ancora attive.",
   "settings.customization.emailNotify.toggleLabel": "Notifiche email attive",
   "settings.customization.emailNotify.category.assigned": "Quando mi viene assegnato un Todo",
   "settings.customization.emailNotify.category.cardActivity": "Todo creato, spostato o eliminato",

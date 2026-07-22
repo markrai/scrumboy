@@ -160,11 +160,12 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 			return true
 		}
-		if err := s.store.DeleteProject(ctx, projectID, userID); err != nil {
+		deleted, err := s.store.DeleteProject(ctx, projectID, userID)
+		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "project_deleted")
+		s.emitProjectDeleted(ctx, deleted)
 		w.WriteHeader(http.StatusNoContent)
 		return true
 

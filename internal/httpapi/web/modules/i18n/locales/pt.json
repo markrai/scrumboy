@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Notificações por e-mail",
   "settings.customization.emailNotify.description": "Receba e-mails sobre a atividade nos seus quadros. Desativado por padrão.",
   "settings.customization.emailNotify.unavailableNotice": "As notificações por e-mail exigem que o SMTP esteja configurado no servidor (consulte a documentação).",
+  "settings.customization.emailNotify.loadFailed": "Não foi possível carregar as configurações de notificação por e-mail. Recarregue a página para tentar novamente.",
+  "settings.customization.emailNotify.saveFailed": "Não foi possível salvar as configurações de notificação por e-mail. Suas configurações anteriores continuam ativas.",
   "settings.customization.emailNotify.toggleLabel": "Notificações por e-mail ativadas",
   "settings.customization.emailNotify.category.assigned": "Quando um todo é atribuído a mim",
   "settings.customization.emailNotify.category.cardActivity": "Todo criado, movido ou excluído",

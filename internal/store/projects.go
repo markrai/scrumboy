@@ -611,57 +611,83 @@ func slugExistsTx(ctx context.Context, tx *sql.Tx, slug string) (bool, error) {
 	return exists, nil
 }
 
-func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64) error {
+type DeletedProjectSnapshot struct {
+	ProjectID     int64
+	Name          string
+	MemberUserIDs []int64
+}
+
+func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64) (DeletedProjectSnapshot, error) {
 	// Load project to check if it's an anonymous temp board
 	p, err := s.getProject(ctx, projectID)
 	if err != nil {
-		return err
+		return DeletedProjectSnapshot{}, err
 	}
 
 	// CRITICAL: Anonymous temporary boards are immutable at the project level.
 	// They can only be deleted by expiration, not by user action.
 	// Return ErrNotFound to avoid leaking existence of anonymous temp boards.
 	if isAnonymousTemporaryBoard(p) {
-		return ErrNotFound
+		return DeletedProjectSnapshot{}, ErrNotFound
 	}
 
 	if err := s.CheckProjectRole(ctx, projectID, userID, RoleMaintainer); err != nil {
-		return err
+		return DeletedProjectSnapshot{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("begin delete project: %w", err)
+		return DeletedProjectSnapshot{}, fmt.Errorf("begin delete project: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var name string
 	if err := tx.QueryRowContext(ctx, `SELECT name FROM projects WHERE id = ?`, projectID).Scan(&name); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
+			return DeletedProjectSnapshot{}, ErrNotFound
 		}
-		return fmt.Errorf("get project name: %w", err)
+		return DeletedProjectSnapshot{}, fmt.Errorf("get project name: %w", err)
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT user_id FROM project_members WHERE project_id = ? ORDER BY created_at, user_id`, projectID)
+	if err != nil {
+		return DeletedProjectSnapshot{}, fmt.Errorf("list deleted project members: %w", err)
+	}
+	var memberUserIDs []int64
+	for rows.Next() {
+		var memberUserID int64
+		if err := rows.Scan(&memberUserID); err != nil {
+			_ = rows.Close()
+			return DeletedProjectSnapshot{}, fmt.Errorf("scan deleted project member: %w", err)
+		}
+		memberUserIDs = append(memberUserIDs, memberUserID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return DeletedProjectSnapshot{}, fmt.Errorf("iterate deleted project members: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return DeletedProjectSnapshot{}, fmt.Errorf("close deleted project members: %w", err)
 	}
 	actorUserID := &userID
 	meta := map[string]any{"name": name}
 	if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_deleted", "project", &projectID, meta); err != nil {
-		return fmt.Errorf("audit project_deleted: %w", err)
+		return DeletedProjectSnapshot{}, fmt.Errorf("audit project_deleted: %w", err)
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
 	if err != nil {
-		return fmt.Errorf("delete project: %w", err)
+		return DeletedProjectSnapshot{}, fmt.Errorf("delete project: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("rows affected delete project: %w", err)
+		return DeletedProjectSnapshot{}, fmt.Errorf("rows affected delete project: %w", err)
 	}
 	if n == 0 {
-		return ErrNotFound
+		return DeletedProjectSnapshot{}, ErrNotFound
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit delete project: %w", err)
+		return DeletedProjectSnapshot{}, fmt.Errorf("commit delete project: %w", err)
 	}
-	return nil
+	return DeletedProjectSnapshot{ProjectID: projectID, Name: name, MemberUserIDs: memberUserIDs}, nil
 }
 
 // userCanCreateTagsInProject checks if user has access to create tags in a project.

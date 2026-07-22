@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Уведомления по email",
   "settings.customization.emailNotify.description": "Получайте письма об активности на ваших досках. По умолчанию отключено.",
   "settings.customization.emailNotify.unavailableNotice": "Для уведомлений по email на сервере должен быть настроен SMTP (см. документацию).",
+  "settings.customization.emailNotify.loadFailed": "Не удалось загрузить настройки уведомлений по электронной почте. Перезагрузите страницу и попробуйте снова.",
+  "settings.customization.emailNotify.saveFailed": "Не удалось сохранить настройки уведомлений по электронной почте. Предыдущие настройки остаются активными.",
   "settings.customization.emailNotify.toggleLabel": "Уведомления по email включены",
   "settings.customization.emailNotify.category.assigned": "Когда мне назначают Todo",
   "settings.customization.emailNotify.category.cardActivity": "Todo создан, перемещён или удалён",

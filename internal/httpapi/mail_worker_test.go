@@ -24,6 +24,24 @@ type fakeMailSender struct {
 	sent      []mailer.Message
 }
 
+type isolatedLaneMailSender struct {
+	notificationStarted chan struct{}
+	notificationRelease chan struct{}
+	transactionalSent   chan struct{}
+}
+
+func (s *isolatedLaneMailSender) Send(message mailer.Message) error {
+	if message.To == "notification@example.com" {
+		close(s.notificationStarted)
+		<-s.notificationRelease
+		return nil
+	}
+	if message.To == "reset@example.com" {
+		close(s.transactionalSent)
+	}
+	return nil
+}
+
 func (f *fakeMailSender) Send(m mailer.Message) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -140,11 +158,11 @@ func TestServerClose_WaitsForMailFlush(t *testing.T) {
 	q.Enqueue(mailDelivery{To: "pending@example.com", LogRef: "pending"})
 
 	srv := &Server{
-		logger:     discardLogger(),
-		mailQueue:  q,
-		mailWorker: w,
-		mailCancel: mailCancel,
-		mailDone:   w.Done(),
+		logger:                  discardLogger(),
+		transactionalMailQueue:  q,
+		transactionalMailWorker: w,
+		transactionalMailCancel: mailCancel,
+		transactionalMailDone:   w.Done(),
 	}
 
 	done := make(chan struct{})
@@ -185,11 +203,11 @@ func TestServerClose_PreservesMailRetriesDuringActiveFlush(t *testing.T) {
 	}
 
 	srv := &Server{
-		logger:     discardLogger(),
-		mailQueue:  q,
-		mailWorker: w,
-		mailCancel: mailCancel,
-		mailDone:   w.Done(),
+		logger:                  discardLogger(),
+		transactionalMailQueue:  q,
+		transactionalMailWorker: w,
+		transactionalMailCancel: mailCancel,
+		transactionalMailDone:   w.Done(),
 	}
 
 	closeDone := make(chan struct{})
@@ -232,11 +250,11 @@ func TestServerClose_MailDeadlineExpiresDuringBackoff(t *testing.T) {
 	}
 
 	srv := &Server{
-		logger:     discardLogger(),
-		mailQueue:  q,
-		mailWorker: w,
-		mailCancel: mailCancel,
-		mailDone:   w.Done(),
+		logger:                  discardLogger(),
+		transactionalMailQueue:  q,
+		transactionalMailWorker: w,
+		transactionalMailCancel: mailCancel,
+		transactionalMailDone:   w.Done(),
 	}
 
 	closeCtx, closeCancel := context.WithCancel(context.Background())
@@ -272,9 +290,9 @@ func TestServerClose_ReturnsAtDeadlineIfMailFlushHangs(t *testing.T) {
 	_, mailCancel := context.WithCancel(context.Background())
 
 	srv := &Server{
-		logger:     discardLogger(),
-		mailCancel: mailCancel,
-		mailDone:   blockingDone,
+		logger:                  discardLogger(),
+		transactionalMailCancel: mailCancel,
+		transactionalMailDone:   blockingDone,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -347,5 +365,56 @@ func TestMailWorker_EmptyQueue_RunExitsCleanlyOnCancel(t *testing.T) {
 	}
 	if sender.callCount() != 0 {
 		t.Fatalf("expected no send attempts on empty queue, got %d", sender.callCount())
+	}
+}
+
+func TestMailWorkers_NotificationBacklogDoesNotDelayTransactionalMail(t *testing.T) {
+	sender := &isolatedLaneMailSender{
+		notificationStarted: make(chan struct{}),
+		notificationRelease: make(chan struct{}),
+		transactionalSent:   make(chan struct{}),
+	}
+	notificationQueue := newNotificationMailQueue(discardLogger())
+	transactionalQueue := newTransactionalMailQueue(discardLogger())
+	notificationWorker := newMailWorkerWithKind(notificationQueue, sender, discardLogger(), "notification mail")
+	transactionalWorker := newMailWorkerWithKind(transactionalQueue, sender, discardLogger(), "transactional mail")
+	notificationCtx, cancelNotification := context.WithCancel(context.Background())
+	transactionalCtx, cancelTransactional := context.WithCancel(context.Background())
+	go notificationWorker.Run(notificationCtx)
+	go transactionalWorker.Run(transactionalCtx)
+
+	if !notificationQueue.Enqueue(mailDelivery{To: "notification@example.com", LogRef: "activity"}) {
+		t.Fatal("expected notification enqueue to succeed")
+	}
+	select {
+	case <-sender.notificationStarted:
+	case <-time.After(time.Second):
+		t.Fatal("notification delivery did not start")
+	}
+	if !transactionalQueue.Enqueue(mailDelivery{To: "reset@example.com", LogRef: "password-reset"}) {
+		t.Fatal("expected transactional enqueue to succeed")
+	}
+	select {
+	case <-sender.transactionalSent:
+	case <-time.After(time.Second):
+		t.Fatal("password reset remained behind notification delivery")
+	}
+
+	close(sender.notificationRelease)
+	notificationQueue.Seal()
+	transactionalQueue.Seal()
+	notificationWorker.beginShutdown(context.Background())
+	transactionalWorker.beginShutdown(context.Background())
+	cancelNotification()
+	cancelTransactional()
+	for name, done := range map[string]<-chan struct{}{
+		"notification":  notificationWorker.Done(),
+		"transactional": transactionalWorker.Done(),
+	} {
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s worker did not shut down", name)
+		}
 	}
 }

@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Notifikasi email",
   "settings.customization.emailNotify.description": "Dapatkan email tentang aktivitas di papan Anda. Nonaktif secara default.",
   "settings.customization.emailNotify.unavailableNotice": "Notifikasi email memerlukan SMTP yang dikonfigurasi di server (lihat docs).",
+  "settings.customization.emailNotify.loadFailed": "Pengaturan notifikasi email tidak dapat dimuat. Muat ulang halaman untuk mencoba lagi.",
+  "settings.customization.emailNotify.saveFailed": "Pengaturan notifikasi email tidak dapat disimpan. Pengaturan sebelumnya masih aktif.",
   "settings.customization.emailNotify.toggleLabel": "Notifikasi email aktif",
   "settings.customization.emailNotify.category.assigned": "Saat sebuah Todo ditugaskan kepada saya",
   "settings.customization.emailNotify.category.cardActivity": "Todo dibuat, dipindahkan, atau dihapus",

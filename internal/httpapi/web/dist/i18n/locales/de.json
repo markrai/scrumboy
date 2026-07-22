@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "E-Mail-Benachrichtigungen",
   "settings.customization.emailNotify.description": "Per E-Mail über Aktivität auf deinen Boards informiert werden. Standardmäßig deaktiviert.",
   "settings.customization.emailNotify.unavailableNotice": "E-Mail-Benachrichtigungen erfordern SMTP-Konfiguration auf dem Server (siehe Doku).",
+  "settings.customization.emailNotify.loadFailed": "Die Einstellungen für E-Mail-Benachrichtigungen konnten nicht geladen werden. Lade die Seite neu, um es erneut zu versuchen.",
+  "settings.customization.emailNotify.saveFailed": "Die Einstellungen für E-Mail-Benachrichtigungen konnten nicht gespeichert werden. Deine bisherigen Einstellungen bleiben aktiv.",
   "settings.customization.emailNotify.toggleLabel": "E-Mail-Benachrichtigungen aktiviert",
   "settings.customization.emailNotify.category.assigned": "Wenn mir ein Todo zugewiesen wird",
   "settings.customization.emailNotify.category.cardActivity": "Todo erstellt, verschoben oder gelöscht",

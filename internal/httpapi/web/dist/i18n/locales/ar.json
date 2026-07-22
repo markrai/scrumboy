@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "إشعارات البريد الإلكتروني",
   "settings.customization.emailNotify.description": "احصل على بريد إلكتروني حول النشاط في لوحاتك. مُعطّلة افتراضيًا.",
   "settings.customization.emailNotify.unavailableNotice": "تتطلب إشعارات البريد الإلكتروني تكوين SMTP على الخادم (راجع الوثائق).",
+  "settings.customization.emailNotify.loadFailed": "تعذر تحميل إعدادات إشعارات البريد الإلكتروني. أعد تحميل الصفحة للمحاولة مرة أخرى.",
+  "settings.customization.emailNotify.saveFailed": "تعذر حفظ إعدادات إشعارات البريد الإلكتروني. لا تزال إعداداتك السابقة سارية.",
   "settings.customization.emailNotify.toggleLabel": "إشعارات البريد الإلكتروني مفعّلة",
   "settings.customization.emailNotify.category.assigned": "عند إسناد Todo إليّ",
   "settings.customization.emailNotify.category.cardActivity": "إنشاء Todo أو نقله أو حذفه",

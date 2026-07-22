@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Thông báo qua email",
   "settings.customization.emailNotify.description": "Nhận email về hoạt động trên các bảng của bạn. Mặc định tắt.",
   "settings.customization.emailNotify.unavailableNotice": "Thông báo qua email yêu cầu SMTP được cấu hình trên máy chủ (xem tài liệu).",
+  "settings.customization.emailNotify.loadFailed": "Không thể tải cài đặt thông báo email. Hãy tải lại trang để thử lại.",
+  "settings.customization.emailNotify.saveFailed": "Không thể lưu cài đặt thông báo email. Cài đặt trước đó của bạn vẫn đang có hiệu lực.",
   "settings.customization.emailNotify.toggleLabel": "Đã bật thông báo qua email",
   "settings.customization.emailNotify.category.assigned": "Khi tôi được giao một Todo",
   "settings.customization.emailNotify.category.cardActivity": "Todo được tạo, di chuyển hoặc xóa",

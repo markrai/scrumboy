@@ -76,6 +76,9 @@ export function getSelfServicePasswordResetEnabled() {
 export function getEmailNotifyAvailable() {
     return !!current._emailNotifyAvailable;
 }
+export function getEmailNotifyPreferenceState() {
+    return current.emailNotifyPreference;
+}
 export function getOidcEnabled() {
     return !!current._oidcEnabled;
 }

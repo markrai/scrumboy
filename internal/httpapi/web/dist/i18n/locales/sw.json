@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Arifa za barua pepe",
   "settings.customization.emailNotify.description": "Pata barua pepe kuhusu shughuli kwenye bodi zako. Imezimwa kwa chaguo-msingi.",
   "settings.customization.emailNotify.unavailableNotice": "Arifa za barua pepe zinahitaji SMTP kusanidiwa kwenye seva (angalia docs).",
+  "settings.customization.emailNotify.loadFailed": "Mipangilio ya arifa za barua pepe haikuweza kupakiwa. Pakia ukurasa upya ili ujaribu tena.",
+  "settings.customization.emailNotify.saveFailed": "Mipangilio ya arifa za barua pepe haikuweza kuhifadhiwa. Mipangilio yako ya awali bado inatumika.",
   "settings.customization.emailNotify.toggleLabel": "Arifa za barua pepe zimewashwa",
   "settings.customization.emailNotify.category.assigned": "Ninapopangiwa Todo",
   "settings.customization.emailNotify.category.cardActivity": "Todo imeundwa, kuhamishwa, au kufutwa",

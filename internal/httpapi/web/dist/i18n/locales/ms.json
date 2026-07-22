@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "Notifikasi e-mel",
   "settings.customization.emailNotify.description": "Dapatkan e-mel tentang aktiviti pada papan anda. Dimatikan secara lalai.",
   "settings.customization.emailNotify.unavailableNotice": "Notifikasi e-mel memerlukan SMTP dikonfigurasikan pada server (lihat dokumentasi).",
+  "settings.customization.emailNotify.loadFailed": "Tetapan pemberitahuan e-mel tidak dapat dimuatkan. Muat semula halaman untuk mencuba lagi.",
+  "settings.customization.emailNotify.saveFailed": "Tetapan pemberitahuan e-mel tidak dapat disimpan. Tetapan terdahulu anda masih aktif.",
   "settings.customization.emailNotify.toggleLabel": "Notifikasi e-mel dihidupkan",
   "settings.customization.emailNotify.category.assigned": "Apabila Todo ditugaskan kepada saya",
   "settings.customization.emailNotify.category.cardActivity": "Todo dicipta, dipindahkan atau dipadam",

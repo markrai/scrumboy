@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -137,6 +138,119 @@ func TestEventbus_CreateWithoutAssignee_SingleRefresh(t *testing.T) {
 	}
 }
 
+func TestEventbus_DeleteProjectPublishesCommittedSnapshotOnce(t *testing.T) {
+	srv, st, collector := newTestServerWithCollector(t)
+	ctx, owner, project := setupAuthenticatedProject(t, st)
+	member, err := st.CreateUser(context.Background(), "delete-member@example.com", "pass1234A!", "Member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(ctx, owner.ID, project.ID, member.ID, store.RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+	pref := store.DefaultEmailNotifyPref()
+	pref.Enabled = true
+	pref.ProjectActivity = true
+	prefJSON, err := json.Marshal(pref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetUserPreference(ctx, member.ID, "emailNotifications", string(prefJSON)); err != nil {
+		t.Fatal(err)
+	}
+	mailQueue := newMailQueue(discardLogger())
+	srv.emailNotifier = newEmailNotifier(st, mailQueue, "https://scrumboy.example.com", true, discardLogger())
+	token, _, err := st.CreateSession(ctx, owner.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hubCh, unsubscribe := srv.hub.Subscribe(project.ID)
+	defer unsubscribe()
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodDelete, "/api/projects/1", nil)
+		req.AddCookie(&http.Cookie{Name: "scrumboy_session", Value: token})
+		recorder := httptest.NewRecorder()
+		srv.handleProjectsProjectItem(recorder, req, []string{"1"}, project.ID)
+		return recorder
+	}
+
+	if recorder := request(); recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected delete success, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if len(collector.events) != 1 || collector.events[0].Type != "board.refresh_needed" {
+		t.Fatalf("expected one deletion event, got %+v", collector.events)
+	}
+	var payload struct {
+		Reason      string `json:"reason"`
+		ActorUserID int64  `json:"actorUserId"`
+	}
+	if err := json.Unmarshal(collector.events[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Reason != "project_deleted" || payload.ActorUserID != owner.ID {
+		t.Fatalf("unexpected deletion payload: %+v", payload)
+	}
+	if strings.Contains(string(collector.events[0].Payload), "recipientUserIds") || strings.Contains(string(collector.events[0].Payload), project.Name) {
+		t.Fatalf("external deletion event exposed internal snapshot data: %s", collector.events[0].Payload)
+	}
+	select {
+	case message := <-hubCh:
+		var event refreshNeededEvent
+		if err := json.Unmarshal(message, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Type != "refresh_needed" || event.Reason != "project_deleted" {
+			t.Fatalf("unexpected SSE deletion refresh: %+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for deletion refresh")
+	}
+	mail := drainAfterAsync(mailQueue)
+	if len(mail) != 1 || mail[0].To != member.Email || strings.Contains(mail[0].Body, "http") {
+		t.Fatalf("unexpected private deletion notification: %+v", mail)
+	}
+	if recorder := request(); recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected repeated deletion to fail, got %d", recorder.Code)
+	}
+	if len(collector.events) != 1 {
+		t.Fatalf("failed deletion published an event: %+v", collector.events)
+	}
+	if mail := drainAfterAsync(mailQueue); len(mail) != 0 {
+		t.Fatalf("failed deletion produced mail: %+v", mail)
+	}
+}
+
+func TestProjectDeletionExternalConsumersFilterRecipientSnapshot(t *testing.T) {
+	payload := json.RawMessage(`{"reason":"project_deleted","actorUserId":1,"projectName":"Sensitive Project","recipientUserIds":[812345,898765]}`)
+	event := eventbus.Event{ID: "delete-event", Type: "board.refresh_needed", ProjectID: 7, Payload: payload}
+
+	hub := NewHub(defaultSubscriberBuffer)
+	hubEvents, unsubscribe := hub.Subscribe(7)
+	defer unsubscribe()
+	newSSEBridge(hub).OnEvent(context.Background(), event)
+	select {
+	case message := <-hubEvents:
+		if bytes.Contains(message, []byte("recipientUserIds")) || bytes.Contains(message, []byte("812345")) || bytes.Contains(message, []byte("Sensitive Project")) {
+			t.Fatalf("SSE exposed internal deletion snapshot: %s", message)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for deletion SSE event")
+	}
+
+	var logs bytes.Buffer
+	logger := log.New(&logs, "", 0)
+	st := newTestStore(t)
+	webhookQueue := newWebhookQueue(logger)
+	newWebhookDispatcher(st, webhookQueue, logger).OnEvent(context.Background(), event)
+	if deliveries := webhookQueue.Drain(); len(deliveries) != 0 {
+		t.Fatalf("internal deletion refresh produced webhook delivery: %+v", deliveries)
+	}
+	newPushNotifier(st, logger, "public", "private", "mailto:test@example.com", true, true).OnEvent(context.Background(), event)
+	if strings.Contains(logs.String(), "recipientUserIds") || strings.Contains(logs.String(), "812345") || strings.Contains(logs.String(), "Sensitive Project") {
+		t.Fatalf("external consumer logging exposed deletion snapshot: %s", logs.String())
+	}
+}
+
 // --- Test 2: create todo with assignee => refresh_needed + todo.assigned on hub ---
 
 func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
@@ -174,6 +288,13 @@ func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 
 	if len(assignedEvents) != 1 {
 		t.Fatalf("expected 1 todo.assigned event, got %d", len(assignedEvents))
+	}
+	var assignedPayload eventbus.TodoAssignedPayload
+	if err := json.Unmarshal(assignedEvents[0].Payload, &assignedPayload); err != nil {
+		t.Fatal(err)
+	}
+	if assignedPayload.Reason != "todo_assigned" || assignedPayload.ActivityReason != "todo_created" {
+		t.Fatalf("unexpected assignment reasons: reason=%q activityReason=%q", assignedPayload.Reason, assignedPayload.ActivityReason)
 	}
 	if len(fanoutRefreshEvents) != 0 {
 		t.Fatalf("expected 0 board.refresh_needed through fanout (gated), got %d", len(fanoutRefreshEvents))
@@ -339,6 +460,13 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 
 	if len(assignedEvents) != 1 {
 		t.Fatalf("expected 1 todo.assigned, got %d", len(assignedEvents))
+	}
+	var assignedPayload eventbus.TodoAssignedPayload
+	if err := json.Unmarshal(assignedEvents[0].Payload, &assignedPayload); err != nil {
+		t.Fatal(err)
+	}
+	if assignedPayload.Reason != "todo_assigned" || assignedPayload.ActivityReason != "todo_updated" {
+		t.Fatalf("unexpected assignment reasons: reason=%q activityReason=%q", assignedPayload.Reason, assignedPayload.ActivityReason)
 	}
 	if len(fanoutRefreshEvents) != 0 {
 		t.Fatalf("expected 0 board.refresh_needed through fanout (gated), got %d; double-refresh detected", len(fanoutRefreshEvents))

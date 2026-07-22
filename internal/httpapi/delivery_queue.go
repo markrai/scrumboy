@@ -41,17 +41,17 @@ func (q *deliveryQueue[T]) Seal() {
 	q.mu.Unlock()
 }
 
-func (q *deliveryQueue[T]) Enqueue(d T) {
+func (q *deliveryQueue[T]) Enqueue(d T) bool {
 	q.mu.Lock()
 	if q.sealed {
 		q.mu.Unlock()
 		q.logger.Printf("%s queue sealed, dropping delivery: %s", q.kind, d.logRef())
-		return
+		return false
 	}
 	if len(q.items) >= q.cap {
 		q.mu.Unlock()
 		q.logger.Printf("%s queue full, dropping delivery: %s", q.kind, d.logRef())
-		return
+		return false
 	}
 	q.items = append(q.items, d)
 	depth := len(q.items)
@@ -67,6 +67,7 @@ func (q *deliveryQueue[T]) Enqueue(d T) {
 	case q.notify <- struct{}{}:
 	default:
 	}
+	return true
 }
 
 func (q *deliveryQueue[T]) Drain() []T {

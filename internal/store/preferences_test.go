@@ -72,6 +72,13 @@ func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *test
 	if !pref.Enabled || !pref.CardActivity {
 		t.Fatalf("expected round-tripped pref, got %+v", pref)
 	}
+	raw, err := st.GetUserPreference(ctx, user.ID, "emailNotifications")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != `{"v":1,"enabled":true,"assigned":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
+		t.Fatalf("expected canonical stored preference, got %s", raw)
+	}
 
 	// Malformed JSON should reject.
 	err = st.SetUserPreference(ctx, user.ID, "emailNotifications", `not json`)
@@ -89,5 +96,11 @@ func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *test
 	}
 	if !errors.Is(err, ErrValidation) {
 		t.Errorf("expected ErrValidation, got: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE user_preferences SET value = ? WHERE user_id = ? AND key = ?`, `{"v":2}`, user.ID, "emailNotifications"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetEmailNotifyPref(ctx, user.ID); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected invalid stored preference to remain an error, got %v", err)
 	}
 }

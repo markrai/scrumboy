@@ -93,21 +93,26 @@ type Options struct {
 type Server struct {
 	store storeAPI
 
-	logger              *log.Logger
-	maxBody             int64
-	maxTrelloImportBody int64
-	mode                string // "full" or "anonymous"
-	hub                 *Hub
-	sink                EventSink
-	fanout              *eventbus.Fanout
-	webhookQueue        *webhookQueue
-	webhookWorker       *webhookWorker
-	webhookCancel       context.CancelFunc
-	webhookDone         <-chan struct{} // closed once the webhook worker's shutdown flush completes
-	mailQueue           *mailQueue
-	mailWorker          *mailWorker // nil when SMTP isn't configured
-	mailCancel          context.CancelFunc
-	mailDone            <-chan struct{} // closed once the mail worker's shutdown flush completes; nil if SMTP isn't configured
+	logger                  *log.Logger
+	maxBody                 int64
+	maxTrelloImportBody     int64
+	mode                    string // "full" or "anonymous"
+	hub                     *Hub
+	sink                    EventSink
+	fanout                  *eventbus.Fanout
+	webhookQueue            *webhookQueue
+	webhookWorker           *webhookWorker
+	webhookCancel           context.CancelFunc
+	webhookDone             <-chan struct{} // closed once the webhook worker's shutdown flush completes
+	transactionalMailQueue  *mailQueue
+	transactionalMailWorker *mailWorker
+	transactionalMailCancel context.CancelFunc
+	transactionalMailDone   <-chan struct{}
+	notificationMailQueue   *mailQueue
+	notificationMailWorker  *mailWorker
+	notificationMailCancel  context.CancelFunc
+	notificationMailDone    <-chan struct{}
+	emailNotifier           *emailNotifier
 
 	authRateLimit       *ratelimit.Limiter
 	oauthDCRRateLimit   *ratelimit.Limiter
@@ -204,7 +209,7 @@ type storeAPI interface {
 	GetProjectContextForRead(ctx context.Context, projectID int64, mode store.Mode) (store.ProjectContext, error)
 	CreateProject(ctx context.Context, name string) (store.Project, error)
 	CreateProjectWithWorkflow(ctx context.Context, name string, workflow []store.WorkflowColumn) (store.Project, error)
-	DeleteProject(ctx context.Context, projectID int64, userID int64) error
+	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
 	UpdateProjectImage(ctx context.Context, projectID int64, userID int64, image *string, dominantColor string) error
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
@@ -430,9 +435,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	pushNotifier := newPushNotifier(st, logger, preparedPush.publicKey, preparedPush.privateKey, preparedPush.subscriber, pushVapidConfigured, pushDebug)
 
 	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
-	mQueue := newMailQueue(logger)
+	transactionalMailQueue := newTransactionalMailQueue(logger)
+	notificationMailQueue := newNotificationMailQueue(logger)
 	publicBaseURL := config.NormalizeBaseURL(opts.PublicBaseURL)
-	emailNotifier := newEmailNotifier(st, mQueue, publicBaseURL, smtpConfigured, logger)
+	emailNotifier := newEmailNotifier(st, notificationMailQueue, publicBaseURL, smtpConfigured, logger)
 
 	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier, emailNotifier)
 	whWorker := newWebhookWorker(whQueue, logger)
@@ -449,9 +455,12 @@ func NewServer(st storeAPI, opts Options) *Server {
 	totpLimiter := ratelimit.New(5, time.Minute)
 	recoveryCodeLimiter := ratelimit.New(5, time.Minute)
 
-	var mWorker *mailWorker
-	var mailCancel context.CancelFunc
-	var mailDone <-chan struct{}
+	var transactionalMailWorker *mailWorker
+	var transactionalMailCancel context.CancelFunc
+	var transactionalMailDone <-chan struct{}
+	var notificationMailWorker *mailWorker
+	var notificationMailCancel context.CancelFunc
+	var notificationMailDone <-chan struct{}
 	if smtpConfigured {
 		sender := mailer.New(mailer.Config{
 			Host:     opts.SMTPHost,
@@ -463,11 +472,17 @@ func NewServer(st storeAPI, opts Options) *Server {
 			Debug:    opts.SMTPDebug,
 			Logger:   logger,
 		})
-		mWorker = newMailWorker(mQueue, sender, logger)
-		mailCtx, cancel := context.WithCancel(context.Background())
-		mailCancel = cancel
-		mailDone = mWorker.Done()
-		go mWorker.Run(mailCtx)
+		transactionalMailWorker = newMailWorkerWithKind(transactionalMailQueue, sender, logger, "transactional mail")
+		transactionalCtx, transactionalCancel := context.WithCancel(context.Background())
+		transactionalMailCancel = transactionalCancel
+		transactionalMailDone = transactionalMailWorker.Done()
+		go transactionalMailWorker.Run(transactionalCtx)
+
+		notificationMailWorker = newMailWorkerWithKind(notificationMailQueue, sender, logger, "notification mail")
+		notificationCtx, notificationCancel := context.WithCancel(context.Background())
+		notificationMailCancel = notificationCancel
+		notificationMailDone = notificationMailWorker.Done()
+		go notificationMailWorker.Run(notificationCtx)
 	}
 
 	var encKey []byte
@@ -493,10 +508,15 @@ func NewServer(st storeAPI, opts Options) *Server {
 		webhookWorker:               whWorker,
 		webhookCancel:               workerCancel,
 		webhookDone:                 webhookDone,
-		mailQueue:                   mQueue,
-		mailWorker:                  mWorker,
-		mailCancel:                  mailCancel,
-		mailDone:                    mailDone,
+		transactionalMailQueue:      transactionalMailQueue,
+		transactionalMailWorker:     transactionalMailWorker,
+		transactionalMailCancel:     transactionalMailCancel,
+		transactionalMailDone:       transactionalMailDone,
+		notificationMailQueue:       notificationMailQueue,
+		notificationMailWorker:      notificationMailWorker,
+		notificationMailCancel:      notificationMailCancel,
+		notificationMailDone:        notificationMailDone,
+		emailNotifier:               emailNotifier,
 		authRateLimit:               authRateLimit,
 		oauthDCRRateLimit:           oauthDCRRateLimit,
 		oauthTokenRateLimit:         oauthTokenRateLimit,
@@ -640,20 +660,29 @@ func (s *Server) Close(ctx context.Context) {
 	if s.webhookQueue != nil {
 		s.webhookQueue.Seal()
 	}
-	if s.mailQueue != nil {
-		s.mailQueue.Seal()
+	if s.transactionalMailQueue != nil {
+		s.transactionalMailQueue.Seal()
+	}
+	if s.notificationMailQueue != nil {
+		s.notificationMailQueue.Seal()
 	}
 	if s.webhookWorker != nil {
 		s.webhookWorker.beginShutdown(ctx)
 	}
-	if s.mailWorker != nil {
-		s.mailWorker.beginShutdown(ctx)
+	if s.transactionalMailWorker != nil {
+		s.transactionalMailWorker.beginShutdown(ctx)
+	}
+	if s.notificationMailWorker != nil {
+		s.notificationMailWorker.beginShutdown(ctx)
 	}
 	if s.webhookCancel != nil {
 		s.webhookCancel()
 	}
-	if s.mailCancel != nil {
-		s.mailCancel()
+	if s.transactionalMailCancel != nil {
+		s.transactionalMailCancel()
+	}
+	if s.notificationMailCancel != nil {
+		s.notificationMailCancel()
 	}
 
 	for _, w := range []struct {
@@ -661,7 +690,8 @@ func (s *Server) Close(ctx context.Context) {
 		done <-chan struct{}
 	}{
 		{"webhook", s.webhookDone},
-		{"mail", s.mailDone},
+		{"transactional mail", s.transactionalMailDone},
+		{"notification mail", s.notificationMailDone},
 	} {
 		if w.done == nil {
 			continue
@@ -685,13 +715,15 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 
 // PublishTodoAssigned emits a "todo.assigned" event through the event bus.
 // Designed to be passed to store.SetTodoAssignedPublisher.
-func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug string, from, to *int64, actorUserID int64) {
+func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64) {
 	payload, _ := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:       projectID,
 		ProjectSlug:     projectSlug,
 		TodoID:          todoID,
 		LocalID:         localID,
 		Title:           title,
+		Reason:          "todo_assigned",
+		ActivityReason:  activityReason,
 		FromAssigneeUID: from,
 		ToAssigneeUID:   to,
 		ActorUserID:     actorUserID,

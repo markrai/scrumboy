@@ -1,24 +1,25 @@
-// Email notification preferences — JSON preference blob, mirrors wallpaper.ts's pattern.
 import { apiFetch } from '../api.js';
-import { getUser } from '../state/selectors.js';
+import { setEmailNotifyPreferenceState } from '../state/mutations.js';
+import { getEmailNotifyPreferenceState, getUser } from '../state/selectors.js';
+import type { EmailNotifyPref, EmailNotifyPreferenceState } from '../types.js';
 
 export const EMAIL_NOTIFY_PREF_KEY = 'emailNotifications';
 const EMAIL_NOTIFY_STORAGE_KEY = 'scrumboy_emailNotifications';
 const EMAIL_NOTIFY_PREF_VERSION = 1;
+const EMAIL_NOTIFY_FIELDS = new Set([
+  'v',
+  'enabled',
+  'assigned',
+  'cardActivity',
+  'sprintActivity',
+  'projectActivity',
+  'addedToProject',
+]);
 
-export interface EmailNotifyPref {
-  v: 1;
-  enabled: boolean;
-  assigned: boolean;
-  cardActivity: boolean;
-  sprintActivity: boolean;
-  projectActivity: boolean;
-  addedToProject: boolean;
-}
-
+export type { EmailNotifyPref } from '../types.js';
 export type EmailNotifyCategory = Exclude<keyof EmailNotifyPref, 'v' | 'enabled'>;
 
-function defaultEmailNotifyPref(): EmailNotifyPref {
+export function defaultEmailNotifyPref(): EmailNotifyPref {
   return {
     v: EMAIL_NOTIFY_PREF_VERSION,
     enabled: false,
@@ -31,34 +32,54 @@ function defaultEmailNotifyPref(): EmailNotifyPref {
 }
 
 export function parseEmailNotifyPref(raw: string | null | undefined): EmailNotifyPref {
-  const s = (raw || '').trim();
-  if (!s) return defaultEmailNotifyPref();
+  const value = (raw || '').trim();
+  if (!value) return defaultEmailNotifyPref();
+  let parsed: unknown;
   try {
-    const o = JSON.parse(s) as Partial<EmailNotifyPref>;
-    if (!o || typeof o !== 'object') return defaultEmailNotifyPref();
-    const d = defaultEmailNotifyPref();
-    return {
-      v: EMAIL_NOTIFY_PREF_VERSION,
-      enabled: !!o.enabled,
-      assigned: o.assigned === undefined ? d.assigned : !!o.assigned,
-      cardActivity: !!o.cardActivity,
-      sprintActivity: !!o.sprintActivity,
-      projectActivity: !!o.projectActivity,
-      addedToProject: o.addedToProject === undefined ? d.addedToProject : !!o.addedToProject,
-    };
+    parsed = JSON.parse(value);
   } catch {
-    return defaultEmailNotifyPref();
+    throw new Error('invalid email notification preference');
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('invalid email notification preference');
+  }
+  const fields = parsed as Record<string, unknown>;
+  for (const key of Object.keys(fields)) {
+    if (!EMAIL_NOTIFY_FIELDS.has(key)) {
+      throw new Error('invalid email notification preference');
+    }
+  }
+  if ('v' in fields && fields.v !== EMAIL_NOTIFY_PREF_VERSION) {
+    throw new Error('invalid email notification preference');
+  }
+  const pref = defaultEmailNotifyPref();
+  for (const key of ['enabled', 'assigned', 'cardActivity', 'sprintActivity', 'projectActivity', 'addedToProject'] as const) {
+    if (!(key in fields)) continue;
+    if (typeof fields[key] !== 'boolean') {
+      throw new Error('invalid email notification preference');
+    }
+    pref[key] = fields[key];
+  }
+  return pref;
 }
 
-function serializeEmailNotifyPref(p: EmailNotifyPref): string {
-  return JSON.stringify(p);
+function canonicalEmailNotifyPref(pref: EmailNotifyPref): EmailNotifyPref {
+  return {
+    v: EMAIL_NOTIFY_PREF_VERSION,
+    enabled: pref.enabled,
+    assigned: pref.assigned,
+    cardActivity: pref.cardActivity,
+    sprintActivity: pref.sprintActivity,
+    projectActivity: pref.projectActivity,
+    addedToProject: pref.addedToProject,
+  };
 }
 
-let cachedJSON: string | null = null;
+function serializeEmailNotifyPref(pref: EmailNotifyPref): string {
+  return JSON.stringify(canonicalEmailNotifyPref(pref));
+}
 
-export function getStoredEmailNotifyPref(): EmailNotifyPref {
-  if (cachedJSON !== null) return parseEmailNotifyPref(cachedJSON);
+function getAnonymousEmailNotifyPref(): EmailNotifyPref {
   try {
     return parseEmailNotifyPref(localStorage.getItem(EMAIL_NOTIFY_STORAGE_KEY));
   } catch {
@@ -66,46 +87,89 @@ export function getStoredEmailNotifyPref(): EmailNotifyPref {
   }
 }
 
-function setStoredEmailNotifyPref(p: EmailNotifyPref): void {
-  const json = serializeEmailNotifyPref(p);
-  cachedJSON = json;
+function setAnonymousEmailNotifyPref(pref: EmailNotifyPref): void {
   try {
-    localStorage.setItem(EMAIL_NOTIFY_STORAGE_KEY, json);
+    localStorage.setItem(EMAIL_NOTIFY_STORAGE_KEY, serializeEmailNotifyPref(pref));
   } catch {
-    // ignore
   }
 }
 
-async function savePrefToBackend(json: string): Promise<void> {
-  if (!getUser()) return;
+export function getEmailNotifyViewState(): EmailNotifyPreferenceState {
+  const user = getUser();
+  if (!user) {
+    return { userId: null, status: 'ready', value: getAnonymousEmailNotifyPref() };
+  }
+  const state = getEmailNotifyPreferenceState();
+  if (state.userId !== user.id) {
+    return { userId: user.id, status: 'idle', value: null };
+  }
+  return state;
+}
+
+export function getStoredEmailNotifyPref(): EmailNotifyPref | null {
+  return getEmailNotifyViewState().value;
+}
+
+export function hydrateEmailNotifyFromServer(value: unknown, userId?: number): EmailNotifyPref {
+  if (typeof value !== 'string') {
+    throw new Error('invalid email notification preference');
+  }
+  const pref = parseEmailNotifyPref(value);
+  const user = getUser();
+  const ownerUserId = userId ?? user?.id;
+  if (ownerUserId === undefined || user?.id !== ownerUserId) {
+    throw new Error('email notification preference user changed');
+  }
+  setEmailNotifyPreferenceState({ userId: ownerUserId, status: 'ready', value: pref });
+  return pref;
+}
+
+export async function loadUserEmailNotifyPref(): Promise<boolean> {
+  const user = getUser();
+  if (!user) return false;
+  const userId = user.id;
+  setEmailNotifyPreferenceState({ userId, status: 'loading', value: null });
+  try {
+    const response = await apiFetch<{ value: string }>(
+      `/api/user/preferences?key=${encodeURIComponent(EMAIL_NOTIFY_PREF_KEY)}`
+    );
+    if (getUser()?.id !== userId) return false;
+    hydrateEmailNotifyFromServer(response?.value, userId);
+    return true;
+  } catch {
+    if (getUser()?.id === userId) {
+      setEmailNotifyPreferenceState({ userId, status: 'error', value: null });
+    }
+    return false;
+  }
+}
+
+export async function setEmailNotifyPref(pref: EmailNotifyPref): Promise<void> {
+  const next = canonicalEmailNotifyPref(pref);
+  const user = getUser();
+  if (!user) {
+    setAnonymousEmailNotifyPref(next);
+    return;
+  }
+  const userId = user.id;
+  const state = getEmailNotifyPreferenceState();
+  if (state.userId !== userId || state.status !== 'ready' || !state.value) {
+    throw new Error('email notification preference is not ready');
+  }
+  const previous = state.value;
+  setEmailNotifyPreferenceState({ userId, status: 'saving', value: previous });
   try {
     await apiFetch('/api/user/preferences', {
       method: 'PUT',
-      body: JSON.stringify({ key: EMAIL_NOTIFY_PREF_KEY, value: json }),
+      body: JSON.stringify({ key: EMAIL_NOTIFY_PREF_KEY, value: serializeEmailNotifyPref(next) }),
     });
-  } catch {
-    // ignore
+  } catch (error) {
+    if (getUser()?.id === userId) {
+      setEmailNotifyPreferenceState({ userId, status: 'ready', value: previous });
+    }
+    throw error;
   }
-}
-
-export async function setEmailNotifyPref(p: EmailNotifyPref): Promise<void> {
-  setStoredEmailNotifyPref(p);
-  await savePrefToBackend(serializeEmailNotifyPref(p));
-}
-
-export function hydrateEmailNotifyFromServer(value: unknown): void {
-  const p = parseEmailNotifyPref(typeof value === 'string' ? value : null);
-  setStoredEmailNotifyPref(p);
-}
-
-export async function loadUserEmailNotifyPref(): Promise<void> {
-  if (!getUser()) return;
-  try {
-    const resp = await apiFetch<{ value: string }>(
-      `/api/user/preferences?key=${encodeURIComponent(EMAIL_NOTIFY_PREF_KEY)}`
-    );
-    if (resp) hydrateEmailNotifyFromServer(resp.value);
-  } catch {
-    // ignore
+  if (getUser()?.id === userId) {
+    setEmailNotifyPreferenceState({ userId, status: 'ready', value: next });
   }
 }

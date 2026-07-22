@@ -1,5 +1,5 @@
 import { current } from './state.js';
-import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus } from '../types.js';
+import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
 import type { BoardMember } from './state.js';
 
 export function getRoute(): RouteName | null {
@@ -102,6 +102,10 @@ export function getSelfServicePasswordResetEnabled(): boolean {
 
 export function getEmailNotifyAvailable(): boolean {
   return !!current._emailNotifyAvailable;
+}
+
+export function getEmailNotifyPreferenceState(): EmailNotifyPreferenceState {
+  return current.emailNotifyPreference;
 }
 
 export function getOidcEnabled(): boolean {

@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "ইমেইল বিজ্ঞপ্তি",
   "settings.customization.emailNotify.description": "আপনার বোর্ডের কার্যকলাপ সম্পর্কে ইমেইল পান। ডিফল্টে বন্ধ।",
   "settings.customization.emailNotify.unavailableNotice": "ইমেইল বিজ্ঞপ্তির জন্য সার্ভারে SMTP কনফিগার থাকতে হবে (docs দেখুন)।",
+  "settings.customization.emailNotify.loadFailed": "ইমেইল বিজ্ঞপ্তির সেটিংস লোড করা যায়নি। আবার চেষ্টা করতে পৃষ্ঠাটি রিলোড করুন।",
+  "settings.customization.emailNotify.saveFailed": "ইমেইল বিজ্ঞপ্তির সেটিংস সংরক্ষণ করা যায়নি। আপনার আগের সেটিংস এখনও সক্রিয় আছে।",
   "settings.customization.emailNotify.toggleLabel": "ইমেইল বিজ্ঞপ্তি চালু",
   "settings.customization.emailNotify.category.assigned": "যখন আমাকে একটি Todo বরাদ্দ করা হয়",
   "settings.customization.emailNotify.category.cardActivity": "Todo তৈরি, সরানো বা মুছে ফেলা হয়েছে",

@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "邮件通知",
   "settings.customization.emailNotify.description": "通过邮件接收看板上的活动通知。默认关闭。",
   "settings.customization.emailNotify.unavailableNotice": "邮件通知需要在服务器上配置 SMTP（参见文档）。",
+  "settings.customization.emailNotify.loadFailed": "无法加载电子邮件通知设置。请重新加载页面后再试。",
+  "settings.customization.emailNotify.saveFailed": "无法保存电子邮件通知设置。之前的设置仍然有效。",
   "settings.customization.emailNotify.toggleLabel": "邮件通知已开启",
   "settings.customization.emailNotify.category.assigned": "当有 Todo 分配给我时",
   "settings.customization.emailNotify.category.cardActivity": "Todo 已创建、移动或删除",

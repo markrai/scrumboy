@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "メール通知",
   "settings.customization.emailNotify.description": "ボードのアクティビティをメールで受け取ります。デフォルトではオフです。",
   "settings.customization.emailNotify.unavailableNotice": "メール通知にはサーバーで SMTP の設定が必要です（ドキュメントを参照）。",
+  "settings.customization.emailNotify.loadFailed": "メール通知設定を読み込めませんでした。ページを再読み込みしてもう一度お試しください。",
+  "settings.customization.emailNotify.saveFailed": "メール通知設定を保存できませんでした。以前の設定が引き続き有効です。",
   "settings.customization.emailNotify.toggleLabel": "メール通知オン",
   "settings.customization.emailNotify.category.assigned": "Todo が自分に割り当てられたとき",
   "settings.customization.emailNotify.category.cardActivity": "Todo の作成・移動・削除",

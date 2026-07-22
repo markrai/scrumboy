@@ -864,6 +864,8 @@
   "settings.customization.emailNotify.title": "اعلان‌های ایمیل",
   "settings.customization.emailNotify.description": "درباره فعالیت روی boardهای خود ایمیل دریافت کنید. به‌طور پیش‌فرض خاموش است.",
   "settings.customization.emailNotify.unavailableNotice": "اعلان‌های ایمیل نیاز به پیکربندی SMTP روی سرور دارند (docs را ببینید).",
+  "settings.customization.emailNotify.loadFailed": "تنظیمات اعلان ایمیلی بارگیری نشد. برای تلاش دوباره صفحه را بازخوانی کنید.",
+  "settings.customization.emailNotify.saveFailed": "تنظیمات اعلان ایمیلی ذخیره نشد. تنظیمات قبلی شما همچنان فعال است.",
   "settings.customization.emailNotify.toggleLabel": "اعلان‌های ایمیل روشن",
   "settings.customization.emailNotify.category.assigned": "وقتی Todoای به من اختصاص داده می‌شود",
   "settings.customization.emailNotify.category.cardActivity": "ایجاد، جابه‌جایی یا حذف Todo",

@@ -37,14 +37,43 @@ func ParseEmailNotifyPref(raw string) (EmailNotifyPref, error) {
 	if raw == "" {
 		return DefaultEmailNotifyPref(), nil
 	}
-	var p EmailNotifyPref
-	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil || fields == nil {
 		return EmailNotifyPref{}, fmt.Errorf("%w: email notification preference JSON", ErrValidation)
 	}
-	if p.V != 0 && p.V != EmailNotifyPrefVersion {
-		return EmailNotifyPref{}, fmt.Errorf("%w: unsupported email notification preference version", ErrValidation)
+	allowed := map[string]bool{
+		"v": true, "enabled": true, "assigned": true, "cardActivity": true,
+		"sprintActivity": true, "projectActivity": true, "addedToProject": true,
 	}
-	p.V = EmailNotifyPrefVersion
+	for key := range fields {
+		if !allowed[key] {
+			return EmailNotifyPref{}, fmt.Errorf("%w: unknown email notification preference field", ErrValidation)
+		}
+	}
+	if value, ok := fields["v"]; ok {
+		var version float64
+		if err := json.Unmarshal(value, &version); err != nil || version != EmailNotifyPrefVersion {
+			return EmailNotifyPref{}, fmt.Errorf("%w: unsupported email notification preference version", ErrValidation)
+		}
+	}
+	p := DefaultEmailNotifyPref()
+	for key, target := range map[string]*bool{
+		"enabled": &p.Enabled, "assigned": &p.Assigned, "cardActivity": &p.CardActivity,
+		"sprintActivity": &p.SprintActivity, "projectActivity": &p.ProjectActivity,
+		"addedToProject": &p.AddedToProject,
+	} {
+		if value, ok := fields[key]; ok {
+			var decoded any
+			if err := json.Unmarshal(value, &decoded); err != nil {
+				return EmailNotifyPref{}, fmt.Errorf("%w: invalid email notification preference field", ErrValidation)
+			}
+			boolean, ok := decoded.(bool)
+			if !ok {
+				return EmailNotifyPref{}, fmt.Errorf("%w: invalid email notification preference field", ErrValidation)
+			}
+			*target = boolean
+		}
+	}
 	return p, nil
 }
 
@@ -63,8 +92,7 @@ func (s *Store) GetEmailNotifyPref(ctx context.Context, userID int64) (EmailNoti
 	}
 	p, err := ParseEmailNotifyPref(raw)
 	if err != nil {
-		// Stored value should already be valid (validated on write); fail safe to defaults.
-		return DefaultEmailNotifyPref(), nil
+		return EmailNotifyPref{}, err
 	}
 	return p, nil
 }

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -124,6 +125,51 @@ func TestRequestPasswordReset_ExistingUser_DeliversEmail(t *testing.T) {
 	}
 	if gotUserID != userID {
 		t.Fatalf("token user id = %d, want %d", gotUserID, userID)
+	}
+}
+
+func TestRequestPasswordReset_QueueRejectionIsLoggedWithGenericResponse(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "reset-queue@example.com", "password123", "Reset User")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	queue := newMailQueueWithCapacityAndKind(log.New(&logs, "", 0), 1, "transactional mail")
+	if !queue.Enqueue(mailDelivery{To: "occupied@example.com", LogRef: "occupied"}) {
+		t.Fatal("expected queue prefill to succeed")
+	}
+	srv := &Server{
+		store:                  st,
+		logger:                 log.New(&logs, "", 0),
+		maxBody:                1 << 20,
+		mode:                   "full",
+		encryptionKey:          testEncryptionKey,
+		smtpConfigured:         true,
+		publicBaseURL:          "https://scrumboy.example.com",
+		transactionalMailQueue: queue,
+	}
+	request := func(email string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, marshalErr := json.Marshal(map[string]string{"email": email})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/request-password-reset", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		srv.handleAuthRequestPasswordReset(recorder, req)
+		return recorder
+	}
+
+	existing := request(user.Email)
+	missing := request("missing-reset-queue@example.com")
+	if existing.Code != http.StatusOK || missing.Code != http.StatusOK || existing.Body.String() != missing.Body.String() {
+		t.Fatalf("queue rejection changed anti-enumeration response: existing=%d %q missing=%d %q", existing.Code, existing.Body.String(), missing.Code, missing.Body.String())
+	}
+	if !strings.Contains(logs.String(), "transactional mail queue rejected user=") {
+		t.Fatalf("expected internal queue rejection log, got %q", logs.String())
 	}
 }
 

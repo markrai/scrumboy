@@ -462,14 +462,16 @@ func (s *Server) handleAuthRequestPasswordReset(w http.ResponseWriter, r *http.R
 
 	resetURL := s.resetBaseURL(r) + "/auth/reset-password?token=" + url.QueryEscape(token)
 
-	s.mailQueue.Enqueue(mailDelivery{
+	if !s.transactionalMailQueue.Enqueue(mailDelivery{
 		To:      u.Email,
 		Subject: "Reset your Scrumboy password",
 		Body: "A password reset was requested for your Scrumboy account.\n\n" +
 			"Reset your password using this link (expires in 30 minutes):\n" + resetURL + "\n\n" +
 			"If you did not request this, you can safely ignore this email.\n",
 		LogRef: fmt.Sprintf("password-reset user=%d", u.ID),
-	})
+	}) {
+		s.logger.Printf("password reset request: transactional mail queue rejected user=%d", u.ID)
+	}
 
 	respond()
 }

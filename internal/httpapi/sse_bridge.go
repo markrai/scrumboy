@@ -86,10 +86,6 @@ func (b *sseBridge) OnEvent(_ context.Context, e eventbus.Event) {
 		if err := json.Unmarshal(e.Payload, &domain); err != nil {
 			return
 		}
-		reason := domain.Reason
-		if reason == "" {
-			reason = "todo_assigned"
-		}
 		// Distinct id from the structured todo.assigned payload (same domain event id) so clients
 		// can dedupe assignments without swallowing this refresh line.
 		refreshWireID := fmt.Sprintf("%s:refresh_needed", e.ID)
@@ -97,7 +93,7 @@ func (b *sseBridge) OnEvent(_ context.Context, e eventbus.Event) {
 			ID:        refreshWireID,
 			Type:      "refresh_needed",
 			ProjectID: e.ProjectID,
-			Reason:    reason,
+			Reason:    "todo_assigned",
 		})
 		if err != nil {
 			return
