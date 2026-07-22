@@ -1,4 +1,17 @@
+<p align="center">
+  <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
+  <br />
+  <img src="https://img.shields.io/badge/version-v3.22.5-blue" alt="version" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
+  <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
+  <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/Snyk-monitored-8A2BE2?logo=snyk&logoColor=white" alt="snyk monitored" /></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/markrai/scrumboy"><img src="https://api.scorecard.dev/projects/github.com/markrai/scrumboy/badge" alt="OpenSSF Scorecard" /></a>
+</p>
+
 #### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP-compatible client support
+
+<img width="2975" height="1078" alt="image" src="internal/httpapi/web/github_preview.jpg" />
 
 ## Table of contents
 
