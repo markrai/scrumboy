@@ -6,9 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+
+	"scrumboy/internal/mcp"
 )
 
-func roundTrip(mcp http.Handler, r *http.Request, rpcBody []byte) (int, []byte) {
+type roundTripResponse struct {
+	Status int
+	Body   []byte
+}
+
+func roundTrip(mcpHandler http.Handler, r *http.Request, rpcBody []byte) roundTripResponse {
 	rec := httptest.NewRecorder()
 	u := url.URL{Scheme: "http", Host: "127.0.0.1", Path: "/mcp/rpc"}
 	sub := r.Clone(r.Context())
@@ -22,6 +29,9 @@ func roundTrip(mcp http.Handler, r *http.Request, rpcBody []byte) (int, []byte) 
 	}
 	sub.Header = r.Header.Clone()
 	sub.Header.Set("Content-Type", "application/json; charset=utf-8")
-	mcp.ServeHTTP(rec, sub)
-	return rec.Code, rec.Body.Bytes()
+	sub.Header.Set("Accept", "application/json, text/event-stream")
+	sub.Header.Set("MCP-Protocol-Version", "2025-11-25")
+	sub = mcp.WithoutOAuthBearer(sub)
+	mcpHandler.ServeHTTP(rec, sub)
+	return roundTripResponse{Status: rec.Code, Body: rec.Body.Bytes()}
 }

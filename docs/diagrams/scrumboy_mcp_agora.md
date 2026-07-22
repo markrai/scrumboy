@@ -1,28 +1,36 @@
 # MCP and Agora integration
 
-Optional automation surface: API-token or session-authenticated clients can call the same store-backed tools as the REST API, via MCP HTTP or Agoragentic envelopes.
+Automation surfaces share store-backed tools but **not** the same bearer credential model. Only canonical `POST /mcp/rpc` accepts Scrumboy OAuth access tokens (resource-bound to `<origin>/mcp/rpc`). Legacy `/mcp` and Agora deliberately do not.
 
 ```mermaid
 flowchart TB
-  Client[Automation client MCP or Agora]
-  AuthC[Session cookie or API token]
+  Client[Automation client]
+  Client --> Entry{entry point}
 
-  Client --> AuthC
-  AuthC --> Entry{entry point}
+  Entry --> McpRpc["POST /mcp/rpc JSON-RPC"]
+  Entry --> McpRoot["GET/POST /mcp legacy"]
+  Entry --> AgoraD["POST /agora/v1/discover"]
+  Entry --> AgoraI["POST /agora/v1/invoke"]
 
-  Entry --> McpRoot["GET POST mcp"]
-  Entry --> McpRpc["POST mcp rpc JSON-RPC"]
-  Entry --> AgoraD["POST agora v1 discover"]
-  Entry --> AgoraI["POST agora v1 invoke"]
+  McpRpc --> AuthRpc["resolveRequestAuth allowOAuth"]
+  McpRoot --> AuthLeg["resolveRequestAuth allowOAuth false"]
+  AgoraD --> Strip["mcp.WithoutOAuthBearer then internal /mcp/rpc"]
+  AgoraI --> Strip
 
-  McpRoot --> Adapter[mcp.Adapter tool registry]
-  McpRpc --> Adapter
-  AgoraD --> AgoraH[agora.Handler]
-  AgoraI --> AgoraH
-  AgoraH --> Adapter
+  AuthRpc --> CredRpc["session cookie OR sb_ API token OR OAuth access token"]
+  AuthLeg --> CredLeg["session cookie OR sb_ API token only"]
+  Strip --> AuthRpc
 
-  Adapter --> Tools[projects todos sprints tags members]
-  Tools --> Store[store with same authz as REST]
+  CredRpc --> Chal["401 WWW-Authenticate Bearer resource_metadata mcp/rpc"]
+  CredRpc --> Adapter[mcp.Adapter tools]
+  CredLeg --> Adapter
+  Adapter --> Store[store authz same as REST]
 ```
 
-Tools are registered in `internal/mcp`; mode (`full` vs `anonymous`) gates which operations are exposed. Agora wraps MCP tool discovery and invocation for Agoragentic-compatible clients.
+| Surface | Session cookie | `sb_…` API token | OAuth access token | Protected-resource challenge |
+|---------|---------------:|-----------------:|-------------------:|-----------------------------:|
+| Canonical `POST /mcp/rpc` | yes | yes | yes | yes |
+| Legacy `/mcp` | yes | yes | no | no |
+| `/agora/v1/*` | yes | yes | no (`WithoutOAuthBearer`) | no |
+
+OAuth access tokens are **not** portable to legacy MCP or Agora. Tools are registered in `internal/mcp`; mode (`full` vs `anonymous`) gates which operations are exposed. Agora wraps MCP tool discovery and invocation for Agoragentic-compatible clients.

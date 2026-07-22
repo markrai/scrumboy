@@ -1,7 +1,5 @@
 # Scrumboy MCP Interface
 
-Updated: 2026-04-23 14:28:12 -04:00
-
 Designed for use by AI agents (Claude, custom MCP clients) and automation workflows.
 
 Scrumboy provides an MCP-compatible tool interface over HTTP for managing projects, todos, sprints, tags, and members.
@@ -86,16 +84,16 @@ JSON-RPC responses on **`POST /mcp/rpc`** use JSON-RPC **`result`** / **`error`*
 
 ## Base URL
 
-The MCP handler is mounted at **`/mcp`** on the same origin as the Scrumboy HTTP server (see `internal/httpapi/server.go`: requests where the path is `/mcp` or `/mcp/` or `/mcp/rpc` are dispatched to the MCP handler).
+The MCP handler exposes two deliberately separate interfaces on the same origin:
 
 - **Legacy tool API:** `GET /mcp`, `POST /mcp` (and optional trailing slash).
-- **JSON-RPC API:** `POST /mcp/rpc` only.
+- **Canonical MCP Streamable HTTP transport:** `/mcp/rpc`. Native MCP clients must be configured with this exact URL. `/mcp/rpc/` redirects to `/mcp/rpc` and is not a second resource identity.
 
 There are no other MCP paths under `/mcp/` in the current implementation.
 
 ## Agoragentic HTTP adapter (Agora)
 
-For **Agoragentic**-style listings (HTTP envelope and fixed paths), Scrumboy exposes **`POST /agora/v1/discover`** and **`POST /agora/v1/invoke`**, which delegate in-process to the same JSON-RPC **`tools/list`** and **`tools/call`** flow as **`POST /mcp/rpc`**. **`/mcp`** and **`/mcp/rpc`** remain the canonical MCP surfaces; this layer is an edge adapter only. Request/response shapes, required fields, and schema notes are documented in **`docs/agoragentic.md`**, with a minimal example manifest at **`docs/examples/agoragentic-manifest.json`**.
+For **Agoragentic**-style listings (HTTP envelope and fixed paths), Scrumboy exposes **`POST /agora/v1/discover`** and **`POST /agora/v1/invoke`**, which delegate in-process to the same JSON-RPC **`tools/list`** and **`tools/call`** flow as **`POST /mcp/rpc`**. **`/mcp`** remains the legacy Scrumboy surface and **`/mcp/rpc`** is the canonical standards-based MCP transport; this layer is an edge adapter only. Request/response shapes, required fields, and schema notes are documented in **`docs/agoragentic.md`**, with a minimal example manifest at **`docs/examples/agoragentic-manifest.json`**.
 
 ## Choosing an Interface
 
@@ -114,12 +112,24 @@ Both interfaces expose the **same** underlying tools.
 
 ## Authentication
 
-Behavior is implemented in `internal/mcp/adapter.go` (`resolveRequestAuth`).
+Behavior is implemented at the endpoint boundary in `internal/mcp`.
 
 **Full mode (`SCRUMBOY_MODE=full`):**
 
-1. If `Authorization` is present and the scheme is **`Bearer`** (case-insensitive, with a space after `Bearer` per normal header parsing), the remainder of the header is treated as a **user API token** (same secret the app issues, including the `sb_` prefix). Valid token → request context gets that user. Invalid or missing token after `Bearer` → **401** with `AUTH_REQUIRED` and message **`Authentication required`** on the legacy surface (`resolveAndValidateAuth` in `internal/mcp/http_handler.go`); **no** tool runs, **including** **`GET /mcp`** and **`system.getCapabilities`**. JSON-RPC **`tools/call`** uses the same auth resolution and returns a tool error result with text **`authentication required`**. **Invalid Bearer does not fall back to the session cookie.**
-2. If Bearer is **not** sent, the **`scrumboy_session`** cookie is read. Valid session → user is attached to context. Missing or invalid cookie → request is **unauthenticated** (no user in context). In that case **`GET /mcp`** and tool **`system.getCapabilities`** still run and return capabilities; other tools may return **401** / `AUTH_REQUIRED` with **`Sign-in required for this tool`** (or **`CAPABILITY_UNAVAILABLE`** when anonymous / pre-bootstrap).
+| Endpoint | Session cookie | Static `sb_…` Bearer | Scrumboy OAuth Bearer |
+|---|---:|---:|---:|
+| `/mcp` | Yes | Yes | No |
+| `/mcp/rpc` | Yes | Yes | Yes, only when bound to `<origin>/mcp/rpc` |
+
+If `Authorization: Bearer` is present, a failed token never falls back to a valid cookie. On legacy `/mcp`, a rejected Bearer returns the existing **401** `AUTH_REQUIRED` envelope and no OAuth discovery challenge. OAuth tokens are deliberately rejected there. Without a Bearer, `/mcp` preserves its existing cookie and unauthenticated capability/bootstrap behavior.
+
+In full mode, authentication protects the entire `/mcp/rpc` transport, including `initialize`, `tools/list`, and `GET`. Missing credentials return an empty **401** with:
+
+```text
+WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource/mcp/rpc"
+```
+
+Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens return the same empty **401** with `error="invalid_token"`. Valid session cookies, static API tokens, and Scrumboy-issued OAuth tokens bound to `/mcp/rpc` continue. Upstream OIDC-provider tokens are never accepted as MCP credentials.
 
 **Anonymous mode (`SCRUMBOY_MODE=anonymous`):**
 
@@ -128,6 +138,8 @@ Behavior is implemented in `internal/mcp/adapter.go` (`resolveRequestAuth`).
 - Tools that require a signed-in user or multi-user instance return **`CAPABILITY_UNAVAILABLE`** (HTTP **403** on the legacy surface) with messages such as *unavailable in anonymous mode*.
 
 **Bootstrap:** When the user table is empty (`CountUsers == 0`), capabilities include `bootstrapAvailable: true` and `auth.authenticatedToolsUsable: false`. Most tools return **`CAPABILITY_UNAVAILABLE`** (*unavailable before bootstrap*) until the first user exists.
+
+**OAuth 2.1 (full mode only):** `/mcp/rpc` is the sole OAuth protected resource. Clients discover its Scrumboy authorization server through the path-derived RFC 9728 metadata URL in the 401 challenge. See **[`docs/oauth.md`](oauth.md)** for DCR, PKCE, resource binding, authorize/token/revoke, and token lifetimes. `/mcp` never accepts these OAuth tokens.
 
 ## Capabilities
 
@@ -141,7 +153,7 @@ Behavior is implemented in `internal/mcp/adapter.go` (`resolveRequestAuth`).
 
 **JSON-RPC:**
 
-- After `initialize`, call **`tools/list`** to receive the catalog (`name`, `description`, `inputSchema` per tool), implemented in `internal/mcp/jsonrpc_handler.go` / `internal/mcp/tool_catalog.go`. **`tools/list`** does **not** invoke **`resolveRequestAuth`**; the catalog is returned without an MCP-layer auth check (any caller that can `POST /mcp/rpc` receives the tool list and schemas).
+- After authentication and `initialize`, call **`tools/list`** to receive the catalog (`name`, `description`, `inputSchema` per tool), implemented in `internal/mcp/jsonrpc_handler.go` / `internal/mcp/tool_catalog.go`.
 
 **Example `data` object** (structure from `internal/mcp/types.go` `capabilitiesData`; values below match a **full-mode, pre-bootstrap** instance as asserted in tests — your `serverMode`, `bootstrapAvailable`, and `implementedTools` may differ):
 
@@ -472,19 +484,21 @@ This demonstrates a complete interaction cycle using MCP tools: discover context
 
 The JSON-RPC interface follows **MCP-style** tool discovery and invocation: **`tools/list`** (catalog + `inputSchema`) and **`tools/call`** (invoke by name with `arguments`), plus **`initialize`** / optional **`notifications/initialized`** as implemented in `internal/mcp/jsonrpc_handler.go`.
 
-All requests are **`POST /mcp/rpc`** with **`Content-Type: application/json`** and body **`{"jsonrpc":"2.0",...}`**. Responses are JSON-RPC **`result`** or **`error`**; normal protocol responses use **HTTP 200** (see Error Handling).
+All requests are **`POST /mcp/rpc`** with **`Content-Type: application/json`**, **`Accept: application/json, text/event-stream`**, credentials in full mode, and body **`{"jsonrpc":"2.0",...}`**. After initialization, send **`MCP-Protocol-Version`** on later requests. Responses are JSON-RPC **`result`** or **`error`**; normal protocol responses use **HTTP 200** (see Error Handling).
 
 **1. `initialize`** (request must include **`id`**):
 
 ```bash
 curl -sS -X POST 'https://YOUR_HOST/mcp/rpc' \
   -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'Authorization: Bearer sb_YOUR_TOKEN' \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
     "method": "initialize",
     "params": {
-      "protocolVersion": "2024-11-05",
+      "protocolVersion": "2025-11-25",
       "capabilities": {},
       "clientInfo": { "name": "my-agent", "version": "1.0.0" }
     }
@@ -498,7 +512,7 @@ Example **`result`** (values from `internal/mcp/jsonrpc_handler.go`):
   "jsonrpc": "2.0",
   "id": 1,
   "result": {
-    "protocolVersion": "2024-11-05",
+    "protocolVersion": "2025-11-25",
     "capabilities": {
       "tools": { "listChanged": false }
     },
@@ -511,23 +525,28 @@ Example **`result`** (values from `internal/mcp/jsonrpc_handler.go`):
 }
 ```
 
-**2. `notifications/initialized`** (optional client ack): POST body with **`method`** **`notifications/initialized`** or **`initialized`** (both accepted), **no `id`**. Server responds **204 No Content** and an empty body.
+**2. `notifications/initialized`** (optional client ack): POST body with **`method`** **`notifications/initialized`** or **`initialized`** (both accepted), **no `id`**. Accepted notifications return **202 Accepted** with an empty body. A structurally invalid notification (for example, scalar or `null` `params`) returns **400** and has no side effect.
 
 **3. `tools/list`**:
 
 ```bash
 curl -sS -X POST 'https://YOUR_HOST/mcp/rpc' \
   -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-11-25' \
+  -H 'Authorization: Bearer sb_YOUR_TOKEN' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
 **`result`** contains **`tools`**: an array of objects with **`name`**, **`description`**, **`inputSchema`** (one entry per implemented tool; length matches **`implementedTools`** in capabilities).
 
-**4. `tools/call`** — same auth resolution as legacy **`POST /mcp`** (**`resolveRequestAuth`**: session cookie or **`Authorization: Bearer`**), but Bearer failures map to a JSON-RPC **tool** result with **`isError: true`** and message **`authentication required`**, not the legacy **`AUTH_REQUIRED`** envelope. **`params.name`** is the tool name; **`params.arguments`** is the tool input object (catalog **`required`** keys are checked before the handler; unknown keys in **`arguments`** fail **`decodeInput`** for most tools — see **Overview** for exceptions).
+**4. `tools/call`** — **`params.name`** is the tool name; **`params.arguments`** is the tool input object (catalog **`required`** keys are checked before the handler; unknown keys in **`arguments`** fail **`decodeInput`** for most tools — see **Overview** for exceptions). Transport authentication has already completed before dispatch.
 
 ```bash
 curl -sS -X POST 'https://YOUR_HOST/mcp/rpc' \
   -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'MCP-Protocol-Version: 2025-11-25' \
   -H 'Cookie: scrumboy_session=YOUR_SESSION_TOKEN' \
   -d '{
     "jsonrpc": "2.0",
@@ -585,14 +604,19 @@ Same **`code`** for a rejected **Bearer** token, with **`message`: `Authenticati
 
 ### JSON-RPC `POST /mcp/rpc`
 
-- **Protocol errors** (bad JSON, unknown method, etc.): response is JSON-RPC **`error`** with integer **`code`** (e.g. `-32700` parse error, `-32601` method not found). **HTTP status is 200** for these encoded responses (see `writeJSONRPCError`).
+- **Transport authentication failure:** empty HTTP **401**, no JSON-RPC `result` or tool result, and a complete RFC 9728 `WWW-Authenticate` challenge. Invalid Bearers add `error="invalid_token"`.
+- **Invalid Origin:** empty HTTP **403** without an OAuth challenge. Requests with no `Origin` remain valid for non-browser clients; a supplied Origin must match the trusted public origin.
+- **Method/media/transport failures:** authenticated GET and unsupported methods return empty **405** with `Allow: POST`; restrictive `Accept` values that do not allow both JSON and SSE return **406**; unsupported JSON content types return **415**; accepted notifications return empty **202**. Structurally rejected notifications and known request-only methods (`initialize`, `ping`, `tools/list`, and `tools/call`) sent without an `id` return **400** and do not run a handler.
+- **Protocol errors** (bad JSON, unknown method, etc.): response is JSON-RPC **`error`** with integer **`code`** (e.g. `-32700` parse error, `-32601` method not found). Valid requests with an `id` keep the normal **200** protocol-error response. Rejected no-`id` messages use **400**, with `id: null` when an error body is emitted.
 - **Tool execution failure** (`tools/call`): HTTP **200** with a **`result`** object containing **`isError: true`**, **`content`** (text), and no successful `structuredContent` in the error path (`writeJSONRPCToolErrorResult` in `internal/mcp/jsonrpc_handler.go`).
 - **Tool success**: **`result`** includes **`content`** (JSON text of payload) and **`structuredContent`** (parsed tool `data`).
 
 ## Notes / Limitations
 
 - This is not a stdio-based MCP server. All interactions occur over HTTP.
-- **Two wire formats:** Legacy `{tool,input}` vs JSON-RPC `initialize` / `tools/list` / `tools/call`. Pick one consistently for a client; they share the same tool handlers and auth.
+- **Two wire formats:** Legacy `{tool,input}` vs JSON-RPC `initialize` / `tools/list` / `tools/call`. Pick one consistently for a client; they share tool handlers but deliberately have different OAuth boundaries.
+- **Stateless JSON-only transport:** Scrumboy does not issue MCP session IDs, offer an SSE GET stream, resumability, or server-initiated requests. An authenticated GET returns 405.
+- **Protocol versions:** Streamable HTTP supports `2025-03-26`, `2025-06-18`, and `2025-11-25`. Unsupported initialize versions negotiate to `2025-11-25`. A missing post-initialize header defaults to `2025-03-26`; malformed or unsupported headers return 400.
 - **Anonymous mode:** Effectively no authenticated tools; capabilities still describe the server.
 - **Pagination:** Global defaults in capabilities mention `limit` / `cursor` / `nextCursor` / `hasMore`; **`board.get`** uses **`cursorByColumn`** (per column key) — see `tool_catalog.go` and `pagination.futureSpecialCases` in capabilities.
 - **`sprints.update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints.create`).

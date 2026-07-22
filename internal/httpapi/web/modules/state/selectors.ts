@@ -1,5 +1,5 @@
 import { current } from './state.js';
-import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus } from '../types.js';
+import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus } from '../types.js';
 import type { BoardMember } from './state.js';
 
 export function getRoute(): RouteName | null {
@@ -90,6 +90,10 @@ export function getBootstrapAvailable(): boolean | undefined {
 
 export function getPushConfigured(): boolean {
   return !!current._pushConfigured;
+}
+
+export function getPushStatus(): WebPushStatus | null {
+  return current._pushStatus ?? null;
 }
 
 export function getSelfServicePasswordResetEnabled(): boolean {

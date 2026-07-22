@@ -1,8 +1,8 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** unless noted below.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** / **3.22.x** / **3.23.x** unless noted below. **3.22.0** has MCP/OAuth upgrade impact — see that release.
 
-## [3.20.0] - 2026-07-15
+## [3.23.0] - 2026-07-22
 
 ### Added
 
@@ -12,6 +12,161 @@
 ### Changed
 
 - **`board.refresh_needed` payload** - Now includes a best-effort `actorUserId` (from the ambient request actor) alongside the existing `reason` string. Additive; existing SSE consumers are unaffected.
+
+## [3.22.7] - 2026-07-22
+
+### Fixed
+
+- **Settings Create User dialog lifecycle** - Escape / native dismiss no longer leaves an orphaned `<dialog>` in the DOM with duplicate IDs, which previously broke Cancel, password reveal, and Create (submit closed without calling `POST /api/admin/users`). Dynamic Settings dialogs now use scoped lookups and an idempotent remove-on-close teardown; Create User also clears the temporary password on close.
+- **Keybindings chord parsing** - `chordFromKeyboardEvent` null-guards missing `code`/`key` so IME or synthetic keydowns no longer throw in the capture-phase global handler.
+
+## [3.22.6] - 2026-07-22
+
+### Security
+
+- **Temporary Board claim authorization (GHSA-vph4-pmmh-ch6x)** — `POST /api/board/{slug}/claim` now permits conversion only by the recorded creator of a Full Mode Temporary Board. Previously, claim authorization checked `owner_user_id`, which is null before a Temporary Board is claimed, instead of verifying `creator_user_id`; an authenticated user with the shared slug could therefore claim another user's board and lock the creator out. Anonymous Boards cannot be claimed, and conversion now uses an atomic state transition before maintainer membership is granted.
+
+## [3.22.5] - 2026-07-21
+
+### Changed
+
+- **Frontend dependency upgrades** - Bump `dompurify` to `3.4.12`, `markdown-it` to `14.3.0`, `mermaid` to `11.16.0`, and `happy-dom` to `20.10.6`; sync vendored `/vendor` browser assets.
+
+## [3.22.4] - 2026-07-20
+
+### Security
+
+- **Pin CI/CD dependencies** - Pin GitHub Actions and reusable OSV workflows to immutable commit SHAs, and pin Dockerfile base images (`golang:1.25.12-alpine`, `alpine:3.20`) to multi-platform manifest digests.
+
+## [3.22.3] - 2026-07-20
+
+### Added
+
+- **OSV Scanner CI** - GitHub Actions workflow scans Go and npm lockfiles with OSV Scanner on dependency-path PRs, merges, pushes, and a weekly schedule.
+
+### Changed
+
+- **Go dependency upgrades** - Bump `golang.org/x/crypto` to `v0.54.0`, `golang.org/x/oauth2` to `v0.36.0`, `golang.org/x/term` to `v0.45.0`, and transitive `golang.org/x/sys` to `v0.47.0`; promote `golang-jwt/jwt/v5` to a direct require.
+
+### Security
+
+- **OSV ignore for `GO-2026-5932`** - `osv-scanner.toml` documents that Scrumboy does not import `golang.org/x/crypto/openpgp` or its affected subpackages.
+
+## [3.22.2] - 2026-07-19
+
+### Changed
+
+- **Frontend test toolchain remediation** - Pin `vitest` to `3.2.6` and add a direct `vite` `6.4.3` pin for the web package; add `vitest.config.ts` so Vitest 3 fake timers match the prior Vitest 2 set (avoid faking `performance.now()`).
+
+## [3.22.1] - 2026-07-19
+
+### Added
+
+- **Web Push status on auth status** - Authenticated `GET /api/auth/status` includes a `push` object (`state` / `reason`) so Settings can distinguish not-configured, invalid, unavailable, and enabled VAPID setups. Existing `pushConfigured` remains.
+- **Settings Web Push diagnostics** - Owners/admins see reason-specific notices when push is disabled by bad VAPID keys, subscriber, or initialization failure; other signed-in users get a generic unavailable notice.
+
+### Changed
+
+- **Dependency upgrades** - Go module bumps include `webpush-go` `v1.4.0`, `go-jose/v4`, `golang.org/x/crypto`, and JWT via `golang-jwt/jwt/v5`; Docker build image is `golang:1.25.12-alpine`; frontend vendors `dompurify@3.4.11` and `markdown-it@14.2.0`; web package documents Node/npm engines and Docker publish uses `npm ci`.
+- **Prepared VAPID configuration** - Server startup validates and normalizes public/private keys and subscriber together, enables the notifier only when status is `enabled`, and serves the trimmed public key from `/api/push/vapid-public-key`.
+
+### Fixed
+
+- **VAPID key whitespace** - Surrounding whitespace in configured VAPID keys no longer prevents enablement or leaves dirty keys in the notifier and public-key API.
+
+### Documentation
+
+- **Frontend toolchain** - `CONTRIBUTING.md` notes required Node versions and canonical npm for lockfile maintenance; markdown/mermaid pin notes match the vendored library versions.
+
+### Tests
+
+- **Web Push status and prep** - Coverage for auth-status push states/reasons, admin vs non-admin Settings notices, whitespace/padded-base64 key normalization, and a cancellable timeout around the async VAPID request capture test.
+
+## [3.22.0] - 2026-07-18
+
+### Breaking / upgrade impact
+
+These are intentional compatibility breaks for remote MCP OAuth and Streamable HTTP. Cookies, static `sb_…` API tokens, human OIDC login, and DCR client registrations are unaffected unless noted.
+
+- **Reauthorize MCP OAuth clients** - Migration `057_bind_oauth_tokens_to_mcp_resource.sql` invalidates existing unbound authorization codes, access tokens, and refresh tokens. Clear stale client credentials and complete consent again. DCR registrations remain; cookies and static API tokens keep working.
+- **Point native clients at `/mcp/rpc`, not `/mcp`** - Claude Code, Cursor, and other Streamable HTTP clients must use `https://<host>/mcp/rpc` (for example `claude mcp add --transport http scrumboy https://<host>/mcp/rpc`). Legacy `/mcp` still serves the `{ "tool", "input" }` API with cookies or static tokens, but **rejects OAuth Bearers** and emits no OAuth discovery challenge.
+- **Require `resource=<origin>/mcp/rpc`** - Authorize, token, and refresh requests must send exactly one absolute resource URI for the trusted public origin's `/mcp/rpc`. Missing, duplicate, or wrong values fail with `invalid_target`. Tokens minted for another audience are rejected on `/mcp/rpc`.
+- **OAuth tokens are `/mcp/rpc`-only** - A valid `/mcp/rpc` OAuth access token does not authorize legacy `/mcp` or `/agora/v1/*`.
+- **Drop Streamable HTTP protocol `2024-11-05`** - Supported versions are `2025-03-26`, `2025-06-18`, and `2025-11-25`.
+- **Stricter `/mcp/rpc` transport and initialize** - Invalid browser `Origin` returns empty 403; media-type / Accept / protocol-version rules are enforced; accepted notifications return empty 202; authenticated GET returns 405. `initialize` requires nonempty `clientInfo.name` and `clientInfo.version`.
+
+See [`docs/oauth.md`](docs/oauth.md), [`docs/mcp.md`](docs/mcp.md), and [`docs/mcp-oauth-acceptance.md`](docs/mcp-oauth-acceptance.md).
+
+### Added
+
+- **Resource-bound remote MCP OAuth** - `/mcp/rpc` is the sole OAuth protected resource. Authorization codes, access tokens, and refresh tokens are bound to the trusted canonical `<origin>/mcp/rpc` URI throughout authorization, exchange, refresh, storage, and validation. Invalid client, redirect, PKCE, or resource attempts no longer consume otherwise valid grants.
+- **Path-derived protected-resource discovery** - `/.well-known/oauth-protected-resource/mcp/rpc` publishes the canonical resource and authorization server. The root RFC 9728 endpoint remains a compatibility alias with the same identity, and authorization-server metadata advertises `protected_resources`.
+- **Streamable HTTP transport normalization** - `/mcp/rpc` now enforces Origin, method, JSON media, Accept, JSON-RPC message classification, and stable MCP protocol-version rules. Accepted notifications return empty 202 responses; authenticated GET returns 405 because Scrumboy remains stateless and JSON-only.
+
+### Changed
+
+- **Endpoint-specific MCP authentication** - Legacy `/mcp` continues to accept cookies and static `sb_…` tokens. `/mcp/rpc` accepts cookies, static tokens, and Scrumboy OAuth tokens bound exactly to its canonical resource. Agora remains cookie/static only and cannot act as a deputy for `/mcp/rpc` OAuth tokens.
+- **MCP protocol versions** - Streamable HTTP advertises and accepts `2025-03-26`, `2025-06-18`, and `2025-11-25`.
+
+### Fixed
+
+- **Native client OAuth discovery** - Full-mode unauthenticated `/mcp/rpc` requests now return an empty HTTP 401 with a path-derived RFC 9728 `WWW-Authenticate` challenge. Invalid Bearers add `error="invalid_token"`; transport authentication failures never masquerade as successful JSON-RPC tool results.
+- **MCP JSON-RPC lifecycle and parsing** - `/mcp/rpc` handles `ping`, requires nonempty `clientInfo.version` on `initialize`, rejects non-object/array `params`, and echoes recoverable request IDs on Invalid Request errors.
+- **OAuth token exchange atomicity** - Authorization-code and refresh-token exchanges consume/revoke the grant and insert the new token pair in one database transaction.
+- **OAuth form parse errors** - Malformed authorize/token form bodies return `invalid_request`; `invalid_target` is reserved for resource parameter problems after a successful parse.
+
+### Documentation
+
+- **Remote client and deployment acceptance** - Updated MCP/OAuth/API guidance to configure native clients directly with `/mcp/rpc`; added a provider-neutral release checklist using Keycloak only as Vega's documented upstream OIDC provider.
+
+### Tests
+
+- **Security and compatibility boundary** - Added trusted-origin/resource canonicalization, migration invalidation, non-burning concurrent grant redemption, OAuth continuation, metadata/challenge, transport, Origin, protocol-version, Agora, legacy `/mcp`, cookie/static, wrong-resource, and no-cookie-fallback coverage.
+
+## [3.21.0] - 2026-07-18
+
+### Added
+
+- **Explicit SSO account linking and first Scrumboy password** - Authenticated users can connect the configured OIDC provider to a local-password account (`POST /api/auth/oidc/link/start`) or establish a first Scrumboy password after fresh SSO reauthentication (`/api/auth/oidc/set-password/*`). Sensitive flows require CSRF protection, short-lived hashed single-use server state, session binding, PKCE/nonce/`max_age=0`/`auth_time`, and Scrumboy 2FA when enabled. Migration `056_add_first_password_grants.sql` stores first-password grants.
+- **`recover-owner` break-glass CLI** - Host-side owner recovery that can set or replace a local password without the IdP, without clearing 2FA configuration, and with revocation of that owner's sessions and pending local-login 2FA challenges. Does not run migrations.
+- **Profile authentication method UI** - Settings → Profile surfaces effective local/SSO/dual state, owner outage warnings, **Set Scrumboy password**, and **Connect SSO**, with localized copy across public locales.
+
+### Changed
+
+- **OIDC login no longer auto-links by email** - Normal SSO login identifies accounts only by `(issuer, subject)`. Matching verified IdP email no longer silently attaches an OIDC identity to an existing local-password user; those users must sign in locally and use **Connect SSO**. Canonical `users.email` stays independent of mutable IdP email.
+- **Local-auth-disabled gating** - When `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED` is set, local login/reset surfaces and admin password-reset for local passwords stay unavailable; User Management hides nonfunctional Scrumboy-password actions.
+
+### Documentation
+
+- **Human auth** - Added `docs/authentication-api.md`, `docs/recovery.md`, and `docs/security.md`; rewrote `docs/oidc.md` for method model, canonical email, Connect SSO, and first-password flows; updated `README.md`, `FAQ.md`, and `docs/smtp.md`.
+
+### Tests
+
+- **Auth methods / recovery** - Store and HTTP coverage for first-password grants, explicit linking, rate limits, recovery-code consumption, and `recover-owner`; frontend i18n coverage for authentication wording and Settings profile/users/backup surfaces.
+
+## [3.20.0] - 2026-07-15
+
+### Added
+
+- **OAuth 2.1 authorization server for MCP clients** - Full-mode support for MCP clients that use automatic OAuth discovery, PKCE, and Dynamic Client Registration (e.g. Claude Code's `claude mcp add --transport http`). Adds RFC 8414/9728 discovery (`/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource`), RFC 7591 `POST /oauth/register` (public clients only), consent-gated `/oauth/authorize`, `/oauth/token` (authorization code + refresh rotation), and RFC 7009 `/oauth/revoke`. OAuth access tokens are accepted as Bearer credentials on `/mcp` and `/mcp/rpc` additively alongside existing static API tokens and session cookies. Migration `055_add_oauth_authorization_server.sql` adds `oauth_clients`, `oauth_auth_codes`, `oauth_access_tokens`, and `oauth_refresh_tokens`.
+
+### Changed
+
+- **`SCRUMBOY_TRUST_PROXY` consumers** - Per-IP auth rate limiting now also covers OAuth DCR (`POST /oauth/register`) and `POST /oauth/token`. As before, `X-Forwarded-For` is honored only when TrustProxy is enabled.
+- **OAuth HTML `Referrer-Policy`** - Login, consent, and error pages send `Referrer-Policy: same-origin` (not `no-referrer`) so classic browser form Approve POSTs that omit `Origin` still carry a same-origin `Referer` for consent CSRF validation, while cross-origin navigations continue to withhold `Referer`. Exact-origin matching remains required, so sibling subdomains remain rejected.
+
+### Fixed
+
+- **OAuth consent Approve in browsers that omit `Origin`** - `Referrer-Policy: no-referrer` had suppressed the `Referer` fallback used by `oauthConsentOriginAllowed`, so legitimate consent submissions could fail with “Invalid request origin.”
+
+### Documentation
+
+- **OAuth for MCP** - Added `docs/oauth.md` (discovery, DCR, PKCE, authorize/token/revoke, token lifetimes, deliberately unimplemented items); linked from `README.md` and `docs/mcp.md`. Documents consent Origin/Referer CSRF checks and `Referrer-Policy: same-origin`.
+
+### Tests
+
+- **OAuth** - Happy-path register → authorize → consent → token → MCP call; PKCE mismatch; expired/replayed auth codes; redirect URI mismatch; anonymous-mode 404s; refresh rotation/reuse rejection; revoked-token rejection by MCP; DCR validation (malformed redirect URI, loopback HTTP allowed); strict JSON Content-Type on DCR; DCR rate limit ignores spoofed XFF by default; consent Origin/Referer matrix (including Referer-only Approve and missing-header rejection); OIDC continuation with Referer-only consent approval.
+- **MCP** - Invalid Bearer (including OAuth-shaped tokens) does not fall back to the session cookie.
 
 ## [3.19.0] - 2026-07-14
 

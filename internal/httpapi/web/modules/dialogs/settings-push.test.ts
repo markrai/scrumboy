@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WebPushStatus } from '../types.js';
 
 const {
   apiFetchMock,
   fetchProjectMembersMock,
   loadTagSettingsContentMock,
   windowFetchMock,
+  isPushSubscribedMock,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   fetchProjectMembersMock: vi.fn(),
@@ -14,6 +16,7 @@ const {
     ok: false,
     json: async () => ({}),
   }),
+  isPushSubscribedMock: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('../api.js', () => ({
@@ -91,7 +94,7 @@ vi.mock('../core/assignmentNotify.js', () => ({
 }));
 
 vi.mock('../core/push.js', () => ({
-  isPushSubscribed: vi.fn(),
+  isPushSubscribed: isPushSubscribedMock,
   subscribeToPush: vi.fn(),
   unsubscribeFromPush: vi.fn(),
 }));
@@ -144,6 +147,32 @@ async function loadStateMutations() {
   return import('../state/mutations.js');
 }
 
+async function renderPushSettings(options: {
+  pushConfigured?: boolean;
+  pushStatus?: WebPushStatus | null;
+  role?: 'user' | 'admin' | 'owner';
+} = {}) {
+  const settings = await loadSettingsModule();
+  const state = await loadStateMutations();
+  state.setAuthStatusAvailable(true);
+  state.setPushConfigured(options.pushConfigured ?? false);
+  state.setPushStatus(options.pushStatus ?? null);
+  state.setUser({
+    id: 1,
+    email: 'user@example.com',
+    name: 'User',
+    systemRole: options.role ?? 'user',
+  } as any);
+  state.setSlug(null);
+  state.setBoard(null);
+  state.setProjects(null);
+  state.setProjectId(null);
+  state.setSettingsProjectId(null);
+  state.setSettingsActiveTab('customization');
+  state.setBoardMembers([]);
+  await settings.renderSettingsModal();
+}
+
 describe('settings-push', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -154,10 +183,13 @@ describe('settings-push', () => {
     fetchProjectMembersMock.mockResolvedValue([]);
     loadTagSettingsContentMock.mockClear();
     windowFetchMock.mockClear();
+    isPushSubscribedMock.mockReset();
+    isPushSubscribedMock.mockResolvedValue(false);
     vi.stubGlobal('fetch', windowFetchMock);
   });
 
   afterEach(() => {
+    delete (navigator as Navigator & { serviceWorker?: unknown }).serviceWorker;
     document.body.innerHTML = '';
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -165,20 +197,7 @@ describe('settings-push', () => {
   });
 
   it('renders the disabled push notice from auth status without probing the vapid route', async () => {
-    const settings = await loadSettingsModule();
-    const state = await loadStateMutations();
-    state.setAuthStatusAvailable(true);
-    state.setPushConfigured(false);
-    state.setUser(null);
-    state.setSlug(null);
-    state.setBoard(null);
-    state.setProjects(null);
-    state.setProjectId(null);
-    state.setSettingsProjectId(null);
-    state.setSettingsActiveTab('customization');
-    state.setBoardMembers([]);
-
-    await settings.renderSettingsModal();
+    await renderPushSettings({ pushStatus: { state: 'not_configured', reason: null } });
 
     expect(windowFetchMock).not.toHaveBeenCalled();
     const notice = document.querySelector('.settings-push-vapid-notice');
@@ -191,5 +210,66 @@ describe('settings-push', () => {
       throw new Error('missing push toggle');
     }
     expect(pushToggle.disabled).toBe(true);
+  });
+
+  it('renders no warning and keeps the Web Push section enabled when configured', async () => {
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {} });
+    vi.stubGlobal('PushManager', class PushManager {});
+    await renderPushSettings({
+      pushConfigured: true,
+      pushStatus: { state: 'enabled', reason: null },
+      role: 'admin',
+    });
+
+    expect(document.querySelector('.settings-push-vapid-notice')).toBeNull();
+    expect(document.querySelector('.settings-section--push-pwa')?.classList.contains('settings-section--push-pwa-disabled')).toBe(false);
+  });
+
+  it.each([
+    ['invalid_subscriber', 'Web Push is disabled because SCRUMBOY_VAPID_SUBSCRIBER is invalid.'],
+    ['invalid_vapid_public_key', 'Web Push is disabled because SCRUMBOY_VAPID_PUBLIC_KEY is invalid.'],
+    ['invalid_vapid_private_key', 'Web Push is disabled because SCRUMBOY_VAPID_PRIVATE_KEY is invalid.'],
+    ['initialization_failed', 'Web Push is disabled because initialization failed. Check the server logs.'],
+  ] as const)('shows the sanitized %s warning to administrators', async (reason, expected) => {
+    await renderPushSettings({
+      pushStatus: { state: reason === 'initialization_failed' ? 'unavailable' : 'invalid', reason },
+      role: 'admin',
+    });
+
+    expect(document.querySelector('.settings-push-vapid-notice')?.textContent).toBe(expected);
+  });
+
+  it('shows configuration detail to owners as well as administrators', async () => {
+    await renderPushSettings({
+      pushStatus: { state: 'invalid', reason: 'invalid_subscriber' },
+      role: 'owner',
+    });
+
+    expect(document.querySelector('.settings-push-vapid-notice')?.textContent).toBe(
+      'Web Push is disabled because SCRUMBOY_VAPID_SUBSCRIBER is invalid.',
+    );
+  });
+
+  it('hides configuration details from regular users', async () => {
+    await renderPushSettings({
+      pushStatus: { state: 'invalid', reason: 'invalid_subscriber' },
+      role: 'user',
+    });
+
+    const warning = document.querySelector('.settings-push-vapid-notice')?.textContent ?? '';
+    expect(warning).toBe('Web Push is currently unavailable.');
+    expect(warning).not.toContain('SCRUMBOY_VAPID_SUBSCRIBER');
+  });
+
+  it('uses a safe generic administrator warning for an unknown future reason', async () => {
+    const rawReason = '<configured-value-must-not-render>';
+    await renderPushSettings({
+      pushStatus: { state: 'invalid', reason: rawReason } as unknown as WebPushStatus,
+      role: 'admin',
+    });
+
+    const warning = document.querySelector('.settings-push-vapid-notice')?.textContent ?? '';
+    expect(warning).toBe('Web Push is disabled because of a server configuration error. Check the server logs.');
+    expect(warning).not.toContain(rawReason);
   });
 });

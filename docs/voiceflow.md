@@ -94,16 +94,18 @@ Custom lane **names** and **keys** are also accepted when they resolve to a sing
 ### Hands-Free
 
 * Starts listening immediately when mic is pressed
-* Uses voice confirmations instead of UI
-* You will hear: “Delete story 13. Confirm?”
+* Uses spoken confirmations instead of the Safe-Mode Review/Execute UI when the confirmation policy requires it
+* **Confirmation policy** (toggle under the transcript; stored as `scrumboy.voiceFlowHandsFreeConfirmation` / preference `voiceFlowHandsFreeConfirmation`):
+  * **Confirm only deletes** (`deletes`, default) — spoken confirm for **delete** only; create, move, assign, and open run without a confirm prompt
+  * **Confirm every action before execution** (`mutations`) — spoken confirm for **create, move, delete, and assign**; **open / edit** still runs without spoken confirm
+* When confirmation is required you will hear a prompt such as: “Delete story 13. Confirm?”
 * Respond with:
-
   * yes
   * no
 
 Only “yes” or “no” will be accepted during confirmation.
 
-* When **disambiguating todos** after an ambiguous title, you can say e.g. **“one”**, **“number one”**, **“option one”** (and similarly for options 2–3), matching the spoken option list
+* **Disambiguation** (pick among ambiguous title matches) is separate from action confirmation. After an ambiguous title, you can say e.g. **“one”**, **“number one”**, **“option one”** (and similarly for options 2–3), matching the spoken option list. That choice happens before any yes/no confirmation when the policy requires it.
 
 ## Tips
 

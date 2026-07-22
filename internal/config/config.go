@@ -64,26 +64,29 @@ type Config struct {
 	// From are required; Port defaults to 587 when omitted. Invalid explicit
 	// port values become 0 (SMTP stays off). Username/Password are optional
 	// (some relays allow trusted-network submission without auth).
-	SMTPHost          string // SCRUMBOY_SMTP_HOST
-	SMTPPort          int    // SCRUMBOY_SMTP_PORT, default defaultSMTPPort when unset
-	SMTPPortExplicit  bool   // true when SCRUMBOY_SMTP_PORT key is present in the environment
-	SMTPUsername      string // SCRUMBOY_SMTP_USERNAME (optional)
-	SMTPPassword string // SCRUMBOY_SMTP_PASSWORD (optional; never logged)
-	SMTPFrom     string // SCRUMBOY_SMTP_FROM, e.g. "Scrumboy <no-reply@example.com>"
-	SMTPTLSMode  string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
-	SMTPDebug    bool   // SCRUMBOY_SMTP_DEBUG=1 — log send attempts (never credentials/body)
+	SMTPHost         string // SCRUMBOY_SMTP_HOST
+	SMTPPort         int    // SCRUMBOY_SMTP_PORT, default defaultSMTPPort when unset
+	SMTPPortExplicit bool   // true when SCRUMBOY_SMTP_PORT key is present in the environment
+	SMTPUsername     string // SCRUMBOY_SMTP_USERNAME (optional)
+	SMTPPassword     string // SCRUMBOY_SMTP_PASSWORD (optional; never logged)
+	SMTPFrom         string // SCRUMBOY_SMTP_FROM, e.g. "Scrumboy <no-reply@example.com>"
+	SMTPTLSMode      string // SCRUMBOY_SMTP_TLS_MODE: "starttls" (default) | "implicit" | "none"
+	SMTPDebug        bool   // SCRUMBOY_SMTP_DEBUG=1 — log send attempts (never credentials/body)
 
 	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
 	// password-reset emails: missing or invalid values fail closed (no email
 	// sent). When set to a valid absolute http/https origin, reset links use
-	// this origin for both self-service email and admin-generated links.
+	// this origin for both self-service email and admin-generated links, and
+	// OAuth discovery uses it as the canonical issuer origin.
 	// Example: "https://scrumboy.example.com".
 	PublicBaseURL string
 
-	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, auth rate-limit IP keys
-	// honor X-Forwarded-For (first hop). Default false: use RemoteAddr only
-	// so clients cannot spoof the per-IP limiter. Enable only when a reverse
-	// proxy is the sole network path and overwrites/strips client XFF.
+	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, authentication and OAuth
+	// rate-limit IP keys honor X-Forwarded-For (first hop). Default false: use
+	// RemoteAddr only so clients cannot spoof the per-IP limiter. Enable only
+	// when a reverse proxy is the sole network path and overwrites/strips XFF.
+	// Without PublicBaseURL, OAuth discovery also requires forwarded HTTPS and
+	// an explicit X-Forwarded-Host; it never falls back to the request Host.
 	TrustProxy bool
 }
 
@@ -140,10 +143,10 @@ func FromEnv() Config {
 		SMTPPort:         smtpPort,
 		SMTPPortExplicit: smtpPortExplicit,
 		SMTPUsername:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_USERNAME")),
-		SMTPPassword: strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_PASSWORD")),
-		SMTPFrom:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_FROM")),
-		SMTPTLSMode:  normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
-		SMTPDebug:    strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
+		SMTPPassword:     strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_PASSWORD")),
+		SMTPFrom:         strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_FROM")),
+		SMTPTLSMode:      normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
+		SMTPDebug:        strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
 
 		PublicBaseURL: NormalizeBaseURL(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")),
 		TrustProxy:    trustProxyFromEnv(),

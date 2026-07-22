@@ -4,7 +4,7 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
@@ -85,6 +85,7 @@ async function routeOnce() {
         setUser(newUser);
         setBootstrapAvailable(!!(st && st.bootstrapAvailable));
         setPushConfigured(!!(st && st.pushConfigured));
+        setPushStatus(newUser ? st.push : null);
         setSelfServicePasswordResetEnabled(!!(st && st.selfServicePasswordResetEnabled));
         setEmailNotifyAvailable(!!(st && st.emailNotifyAvailable));
         setOidcEnabled(!!(st && st.oidcEnabled));
@@ -203,6 +204,13 @@ async function routeOnce() {
         }
     }
     const r = parseRoute();
+    const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
+    if (authMethodReturn && getUser()) {
+        const cleanURL = new URL(window.location.href);
+        cleanURL.searchParams.delete("auth_method");
+        window.history.replaceState({}, "", cleanURL.pathname + cleanURL.search + cleanURL.hash);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("scrumboy:auth-method-return", { detail: authMethodReturn })), 0);
+    }
     console.log("Router: parsed route:", r);
     setRoute(r.name);
     setTag(r.tag || "");
@@ -217,7 +225,12 @@ async function routeOnce() {
     }
     // Reset password page: no auth required (token is auth)
     if (r.name === "reset-password") {
-        renderResetPassword(r.token);
+        if (getLocalAuthEnabled()) {
+            renderResetPassword(r.token);
+        }
+        else {
+            renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
+        }
         return;
     }
     // Show auth UI when not logged in (full mode): projects list and dashboard only.

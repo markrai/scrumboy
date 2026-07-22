@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Scrumboy does not import golang.org/x/crypto/openpgp or any affected OpenPGP subpackage, as confirmed by the Go dependency graph."
+

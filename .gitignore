@@ -45,6 +45,7 @@ coverage.out
 /docs/draft/
 f.bat
 a.bat
+tests.bat
 win_reset_factory.bat
 win_build_web.bat
 *.pem

@@ -318,13 +318,18 @@ export function chordFromKeyboardEvent(ev: KeyboardEvent): string | null {
     return order.indexOf(a) - order.indexOf(b);
   });
 
+  // Some keydown events (IME composition, synthetic events, certain extensions)
+  // arrive with an undefined `code`/`key`; coerce to a safe string so the
+  // capture-phase global handler never throws.
+  const code = ev.code ?? "";
+  const key = ev.key ?? "";
   let base: string | null = null;
-  if (ev.code === "Escape") base = "escape";
-  else if (ev.code === "Tab") base = "tab";
-  else if (ev.code === "Space") base = "space";
-  else if (ev.code.startsWith("Digit")) base = ev.code.slice(5).toLowerCase();
-  else if (ev.code.startsWith("Key")) base = ev.code.slice(3).toLowerCase();
-  else if (ev.key.length === 1) base = ev.key.toLowerCase();
+  if (code === "Escape") base = "escape";
+  else if (code === "Tab") base = "tab";
+  else if (code === "Space") base = "space";
+  else if (code.startsWith("Digit")) base = code.slice(5).toLowerCase();
+  else if (code.startsWith("Key")) base = code.slice(3).toLowerCase();
+  else if (key.length === 1) base = key.toLowerCase();
 
   if (base === null) return null;
   const prefix = mods.length ? `${mods.join("+")}+` : "";

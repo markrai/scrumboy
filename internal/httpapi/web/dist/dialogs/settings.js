@@ -5,7 +5,7 @@ import { escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete,
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import { processWallpaperFileForUpload } from '../utils.js';
-import { getSlug, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getPushConfigured, getEmailNotifyAvailable, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers } from '../state/selectors.js';
+import { getSlug, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers } from '../state/selectors.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
 import { emit } from '../events.js';
@@ -409,6 +409,32 @@ function bindDialogLocale(dialog, sync) {
     dialog.addEventListener("cancel", handleNativeCleanup);
     dialog.addEventListener("close", handleNativeCleanup);
     return release;
+}
+/**
+ * Wire uniform, orphan-free teardown for a dynamically-created dialog.
+ *
+ * Returns an idempotent `close()` that releases the locale listener, runs any
+ * caller cleanup, and removes the node from the DOM. Native dismiss paths
+ * (Escape / light-dismiss `cancel`, and the `close` event) are routed through
+ * the same `close()` so the node can never be left detached-but-present, which
+ * would otherwise duplicate element IDs and misbind handlers on reopen.
+ */
+function attachDialogClose(dialog, releaseLocale, extraCleanup) {
+    let removed = false;
+    const close = () => {
+        if (removed)
+            return;
+        removed = true;
+        extraCleanup?.();
+        releaseLocale();
+        dialog.remove();
+    };
+    dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        close();
+    });
+    dialog.addEventListener("close", close);
+    return close;
 }
 /**
  * Re-localize the Web Push hint without probing push capability or changing the
@@ -1083,6 +1109,7 @@ export async function renderSettingsModal(options) {
     // Show Users tab only if user has admin or owner role
     const currentUser = getUser();
     const showUsersTab = showProfileTab && (currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin");
+    const canSeePushConfigurationDetails = currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin";
     // In board view we have a slug and can use capability routes.
     // In projects listing view (full mode), show all tags from all projects the user has access to.
     let tagsURL = null;
@@ -1262,9 +1289,35 @@ export async function renderSettingsModal(options) {
     }
     syncSettingsDialogVersionText();
     const profileHTML = (() => {
-        if (!showProfileTab)
+        if (!showProfileTab || getSettingsActiveTab() !== "profile")
             return "";
         const u = getUser();
+        const authenticationKey = u?.hasLocalPassword && u?.oidcLinked
+            ? "settings.profile.authentication.dual"
+            : u?.hasLocalPassword
+                ? "settings.profile.authentication.local"
+                : u?.oidcLinked
+                    ? "settings.profile.authentication.sso"
+                    : "settings.profile.authentication.none";
+        const effectiveLocal = !!u?.hasLocalPassword && getLocalAuthEnabled();
+        const effectiveSSO = !!u?.oidcLinked && getOidcEnabled();
+        const ownerWarning = u?.systemRole === "owner" && !effectiveLocal && !effectiveSSO
+            ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.noEffectiveOwner">This owner account has no effective sign-in method under the current authentication configuration. The current session may be temporary; host recovery may be required.</div>`
+            : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO && !getLocalAuthEnabled()
+                ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.localDisabledOwner">This owner relies on SSO while local authentication is disabled. If SSO becomes unavailable, recovery requires host access, recover-owner, and re-enabling local authentication.</div>`
+                : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO
+                    ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.providerOnly">This owner relies on the external SSO provider. Set a local recovery password to prepare for an outage.</div>`
+                    : "";
+        const connectSSOAction = u && getOidcEnabled() && !u.oidcLinked
+            ? u.hasLocalPassword
+                ? `<button class="btn" id="connectSSOBtn" data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</button>`
+                : `<div class="muted"><strong data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</strong>: <span data-i18n-text="settings.profile.authentication.connectRequiresLocal">Set or recover a Scrumboy password before connecting the current SSO provider.</span></div>`
+            : "";
+        const methodActions = u ? `
+	  <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
+	    ${u.oidcLinked && !u.hasLocalPassword ? `<button class="btn" id="setScrumboyPasswordBtn" data-i18n-text="settings.profile.authentication.setPassword">Set Scrumboy password</button>` : ""}
+	    ${connectSSOAction}
+	  </div>` : "";
         const twoFactorSection = u ? (u.twoFactorEnabled
             ? `
         <div class="settings-section" style="margin-top: 24px;">
@@ -1300,13 +1353,17 @@ export async function renderSettingsModal(options) {
             <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.email">Email</div><div>${escapeHTML(u.email || "")}</div></div>
             <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.userId">User ID</div><div>${u.id != null ? escapeHTML(String(u.id)) : ""}</div></div>
             <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.systemRole">System Role</div><div>${u.systemRole ? escapeHTML(u.systemRole.charAt(0).toUpperCase() + u.systemRole.slice(1)) : "User"}</div></div>
-            <div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.authentication">Authentication</div><div data-i18n-text="settings.profile.authenticated">Authenticated</div></div>
+			<div class="settings-kv__row"><div class="muted" data-i18n-text="settings.profile.fields.authentication">Authentication</div><div data-i18n-text="${authenticationKey}">${escapeHTML(t(authenticationKey))}</div></div>
           </div>
+		  ${ownerWarning}
+		  ${!getLocalAuthEnabled() && u.hasLocalPassword ? `<div class="settings-section__description muted" data-i18n-text="settings.profile.authentication.localDisabled">A local password is stored, but local login is disabled by the operator.</div>` : ""}
+		  ${methodActions}
           <div style="margin-top: 16px; display: flex; gap: 8px;">
             <button class="btn btn--danger" id="logoutBtn" data-i18n-text="settings.profile.logout">Log out</button>
             ${u.isBootstrap ? `<button class="btn" id="createUserBtn" data-i18n-text="settings.profile.createUser">Create User</button>` : ""}
           </div>
           ${twoFactorSection}
+		  <div class="settings-section__description muted" style="margin-top: 12px;" data-i18n-text="settings.profile.twoFactor.responsibility">Scrumboy 2FA protects local-password sign-in and sensitive authentication-method changes. MFA for normal SSO sign-in is controlled by the configured identity provider.</div>
         ` : `
           <div class="muted" data-i18n-text="settings.profile.notSignedIn">Not signed in.</div>
         `}
@@ -1327,6 +1384,7 @@ export async function renderSettingsModal(options) {
     const desktopNotifyStatusKind = getDesktopNotificationStatusKind();
     const desktopNotifyGranted = desktopNotifyStatusKind === "granted";
     const pushVapidServerReady = showProfileTab && getPushConfigured();
+    const pushStatus = getPushStatus();
     const activeSettingsTab = getSettingsActiveTab();
     const showWallpaperSettings = getAuthStatusAvailable();
     const wallpaperState = showWallpaperSettings ? getStoredWallpaperState() : { v: 1, mode: "off" };
@@ -1375,16 +1433,48 @@ export async function renderSettingsModal(options) {
       </div>
     `
         : "";
-    const pushPwaDisabledNoticeKey = !pushVapidServerReady
-        ? showProfileTab
-            ? "settings.customization.push.vapidNotice"
-            : "settings.customization.push.anonymousNotice"
-        : "";
-    const pushPwaDisabledNoticeText = !pushVapidServerReady
-        ? showProfileTab
-            ? "Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY; see docs)."
-            : "Web Push is not available in anonymous mode."
-        : "";
+    let pushPwaDisabledNoticeKey = "";
+    let pushPwaDisabledNoticeText = "";
+    if (!pushVapidServerReady) {
+        if (!showProfileTab) {
+            pushPwaDisabledNoticeKey = "settings.customization.push.anonymousNotice";
+            pushPwaDisabledNoticeText = "Web Push is not available in anonymous mode.";
+        }
+        else if (!pushStatus || pushStatus.state === "not_configured") {
+            pushPwaDisabledNoticeKey = "settings.customization.push.vapidNotice";
+            pushPwaDisabledNoticeText = "Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY; see docs).";
+        }
+        else if (!canSeePushConfigurationDetails) {
+            pushPwaDisabledNoticeKey = "settings.customization.push.unavailableNotice";
+            pushPwaDisabledNoticeText = "Web Push is currently unavailable.";
+        }
+        else {
+            const adminNoticeByReason = {
+                invalid_subscriber: {
+                    key: "settings.customization.push.adminWarning.invalidSubscriber",
+                    text: "Web Push is disabled because SCRUMBOY_VAPID_SUBSCRIBER is invalid.",
+                },
+                invalid_vapid_public_key: {
+                    key: "settings.customization.push.adminWarning.invalidPublicKey",
+                    text: "Web Push is disabled because SCRUMBOY_VAPID_PUBLIC_KEY is invalid.",
+                },
+                invalid_vapid_private_key: {
+                    key: "settings.customization.push.adminWarning.invalidPrivateKey",
+                    text: "Web Push is disabled because SCRUMBOY_VAPID_PRIVATE_KEY is invalid.",
+                },
+                initialization_failed: {
+                    key: "settings.customization.push.adminWarning.initializationFailed",
+                    text: "Web Push is disabled because initialization failed. Check the server logs.",
+                },
+            };
+            const notice = (pushStatus.reason && adminNoticeByReason[pushStatus.reason]) || {
+                key: "settings.customization.push.adminWarning.unknown",
+                text: "Web Push is disabled because of a server configuration error. Check the server logs.",
+            };
+            pushPwaDisabledNoticeKey = notice.key;
+            pushPwaDisabledNoticeText = notice.text;
+        }
+    }
     const languageSectionHTML = `
       <div class="settings-section">
         <label class="settings-section__title" for="settingsLocaleSelect" data-i18n-text="settings.language.title">Language</label>
@@ -1448,10 +1538,10 @@ export async function renderSettingsModal(options) {
         <p class="muted" id="desktopNotifyStatus" style="margin: 8px 0;" data-i18n-text="${getDesktopNotificationStatusMessageKey(desktopNotifyStatusKind)}">${escapeHTML(getDesktopNotificationStatusDescription())}</p>
         <button type="button" class="btn" id="desktopNotifyEnableBtn" ${desktopNotifyGranted ? "disabled" : ""} data-i18n-text="${getDesktopNotificationButtonMessageKey(desktopNotifyStatusKind)}">${desktopNotifyGranted ? "Notifications enabled" : "Enable notifications"}</button>
       </div>
-      ${pushPwaDisabledNoticeKey ? `<p class="settings-push-vapid-notice" role="status" data-i18n-text="${pushPwaDisabledNoticeKey}">${escapeHTML(pushPwaDisabledNoticeText)}</p>` : ""}
       <div class="settings-section settings-section--push-pwa${!pushVapidServerReady ? " settings-section--push-pwa-disabled" : ""}">
         <div class="settings-section__title" data-i18n-text="settings.customization.push.title">Background notifications (PWA)</div>
         <div class="settings-section__description muted" data-i18n-text="settings.customization.push.description">Alerts when someone assigns you a todo while this app is in the background or closed (best on an installed PWA). Requires VAPID keys on the server. When configured, sign-in triggers an automatic subscribe attempt (the browser may ask for permission). Use the toggle to turn Web Push off or back on for this browser only.</div>
+        ${pushPwaDisabledNoticeKey ? `<p class="settings-push-vapid-notice" role="status" data-i18n-text="${pushPwaDisabledNoticeKey}">${escapeHTML(pushPwaDisabledNoticeText)}</p>` : ""}
         <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
           <input type="checkbox" id="pushNotifyToggle" ${!pushVapidServerReady ? "disabled" : ""} />
           <span data-i18n-text="settings.customization.push.toggleLabel">Web Push on this device</span>
@@ -1707,6 +1797,12 @@ export async function renderSettingsModal(options) {
             showCreateUserDialog();
         }, { signal });
     }
+    const setPasswordBtn = document.getElementById("setScrumboyPasswordBtn");
+    if (setPasswordBtn)
+        setPasswordBtn.addEventListener("click", () => void beginSetScrumboyPassword(), { signal });
+    const connectSSOBtn = document.getElementById("connectSSOBtn");
+    if (connectSSOBtn)
+        connectSSOBtn.addEventListener("click", () => showConnectSSODialog(), { signal });
     // Setup 2FA buttons
     const enable2FABtn = document.getElementById("enable2FABtn");
     if (enable2FABtn) {
@@ -2066,7 +2162,7 @@ async function renderUsersTabContent() {
             <div class="users-table__actions">
               <button class="btn btn--ghost btn--small" data-action="demote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.demote">Demote</button>
               <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-              <button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Password</button>
+			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
             </div>
           `;
                 }
@@ -2076,7 +2172,7 @@ async function renderUsersTabContent() {
             <div class="users-table__actions">
               <button class="btn btn--ghost btn--small" data-action="promote" data-user-id="${user.id}" data-user-role="${userRole}" data-i18n-text="settings.users.actions.promote">Promote</button>
               <button class="btn btn--danger btn--small" data-action="delete" data-user-id="${user.id}" data-i18n-text="settings.users.actions.delete">Delete</button>
-              <button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Password</button>
+			  ${getLocalAuthEnabled() && user.hasLocalPassword ? `<button class="btn btn--ghost btn--small" data-action="password" data-user-id="${user.id}" data-i18n-text="settings.users.actions.password">Scrumboy password</button>` : ""}
             </div>
           `;
                 }
@@ -2087,10 +2183,18 @@ async function renderUsersTabContent() {
             }
             const roleDisplay = userRole.charAt(0).toUpperCase() + userRole.slice(1);
             const userDisplay = user.name || user.email || `User ${user.id}`;
+            const authKey = user.hasLocalPassword && user.oidcLinked
+                ? "settings.profile.authentication.dual"
+                : user.hasLocalPassword
+                    ? "settings.profile.authentication.local"
+                    : user.oidcLinked
+                        ? "settings.profile.authentication.sso"
+                        : "settings.profile.authentication.none";
             return `
         <tr>
           <td>${escapeHTML(userDisplay)}${user.email && user.name ? ` <span class="muted">(${escapeHTML(user.email)})</span>` : ""}</td>
           <td>${escapeHTML(roleDisplay)}</td>
+		  <td data-i18n-text="${authKey}">${escapeHTML(t(authKey))}</td>
           <td>${actionsHTML}</td>
         </tr>
       `;
@@ -2104,6 +2208,7 @@ async function renderUsersTabContent() {
             <tr>
               <th style="width: 35%;" data-i18n-text="settings.users.table.user">User</th>
               <th data-i18n-text="settings.users.table.systemRole">System Role</th>
+			  <th data-i18n-text="settings.users.table.authentication">Authentication</th>
               <th data-i18n-text="settings.users.table.actions">Actions</th>
             </tr>
           </thead>
@@ -2141,13 +2246,10 @@ function showPasswordResetDialog(userId) {
     document.body.appendChild(dialog);
     dialog.showModal();
     const releaseLocale = bindDialogLocale(dialog);
-    const closeBtn = document.getElementById("passwordResetDialogClose");
-    const cancelBtn = document.getElementById("passwordResetCancel");
-    const form = document.getElementById("passwordResetForm");
-    const close = () => {
-        releaseLocale();
-        document.body.removeChild(dialog);
-    };
+    const closeBtn = dialog.querySelector("#passwordResetDialogClose");
+    const cancelBtn = dialog.querySelector("#passwordResetCancel");
+    const form = dialog.querySelector("#passwordResetForm");
+    const close = attachDialogClose(dialog, releaseLocale);
     if (closeBtn)
         closeBtn.addEventListener("click", close);
     if (cancelBtn)
@@ -2205,13 +2307,10 @@ function showPasswordResetFallbackDialog(resetUrl) {
     document.body.appendChild(dialog);
     dialog.showModal();
     const releaseLocale = bindDialogLocale(dialog);
-    const closeBtn = document.getElementById("passwordResetFallbackClose");
-    const copyBtn = document.getElementById("passwordResetFallbackCopy");
-    const urlInput = document.getElementById("passwordResetUrlDisplay");
-    const close = () => {
-        releaseLocale();
-        document.body.removeChild(dialog);
-    };
+    const closeBtn = dialog.querySelector("#passwordResetFallbackClose");
+    const copyBtn = dialog.querySelector("#passwordResetFallbackCopy");
+    const urlInput = dialog.querySelector("#passwordResetUrlDisplay");
+    const close = attachDialogClose(dialog, releaseLocale);
     if (closeBtn)
         closeBtn.addEventListener("click", close);
     dialog.addEventListener("click", (e) => {
@@ -2297,13 +2396,13 @@ function showCreateUserDialog() {
   `;
     document.body.appendChild(dialog);
     dialog.showModal();
-    const closeBtn = document.getElementById("createUserDialogClose");
-    const cancelBtn = document.getElementById("createUserCancel");
-    const form = document.getElementById("createUserForm");
-    const emailInput = document.getElementById("createUserEmail");
-    const nameInput = document.getElementById("createUserName");
-    const passwordInput = document.getElementById("createUserPassword");
-    const passwordToggle = document.getElementById("createUserPasswordToggle");
+    const closeBtn = dialog.querySelector("#createUserDialogClose");
+    const cancelBtn = dialog.querySelector("#createUserCancel");
+    const form = dialog.querySelector("#createUserForm");
+    const emailInput = dialog.querySelector("#createUserEmail");
+    const nameInput = dialog.querySelector("#createUserName");
+    const passwordInput = dialog.querySelector("#createUserPassword");
+    const passwordToggle = dialog.querySelector("#createUserPasswordToggle");
     const passwordIconPath = passwordToggle?.querySelector("path");
     const PATH_SHOW = "M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z";
     const PATH_HIDE = "M2 5.27L3.28 4 20 20.72 18.73 22 15.65 18.92C14.5 19.3 13.28 19.5 12 19.5 7 19.5 2.73 16.39 1 12c.69-1.76 1.79-3.31 3.19-4.54L2 5.27zM12 9a3 3 0 0 1 3 3c0 .35-.06.69-.17 1l-3.83-3.83c.31-.06.65-.17 1-.17zM12 4.5c5 0 9.27 3.11 11 7.5-.82 2.08-2.21 3.88-4 5.19L17.58 15.76C18.94 14.82 20.06 13.54 20.82 12 19.17 8.64 15.76 6.5 12 6.5c-1.09 0-2.16.18-3.16.5L7.3 5.47C8.74 4.85 10.33 4.5 12 4.5zM3.18 12C4.83 15.36 8.24 17.5 12 17.5c.69 0 1.37-.07 2-.21L11.72 15c-1.43-.15-2.57-1.29-2.72-2.72L5.6 8.87C4.61 9.72 3.78 10.78 3.18 12z";
@@ -2326,10 +2425,10 @@ function showCreateUserDialog() {
             syncPasswordToggleLabel();
         });
     }
-    const close = () => {
-        releaseLocale();
-        document.body.removeChild(dialog);
-    };
+    const close = attachDialogClose(dialog, releaseLocale, () => {
+        if (passwordInput)
+            passwordInput.value = "";
+    });
     if (closeBtn) {
         closeBtn.addEventListener("click", close);
     }
@@ -2341,7 +2440,7 @@ function showCreateUserDialog() {
             close();
         }
     });
-    if (form) {
+    if (form && emailInput && nameInput && passwordInput) {
         form.addEventListener("submit", async (e) => {
             e.preventDefault();
             const email = emailInput.value.trim();
@@ -2363,6 +2462,151 @@ function showCreateUserDialog() {
                 showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.createUser.failed" }));
             }
         });
+    }
+}
+function submitOIDCAuthorizationForm(request) {
+    const endpoint = new URL(request.authorizationEndpoint, window.location.origin);
+    if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
+        throw new Error(t("settings.profile.authentication.providerInvalid"));
+    }
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = endpoint.toString();
+    form.referrerPolicy = "no-referrer";
+    for (const [name, value] of Object.entries(request.authorizationParameters || {})) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
+}
+async function beginSetScrumboyPassword() {
+    try {
+        const status = await apiFetch("/api/auth/oidc/set-password/status");
+        if (status.authorized) {
+            showSetScrumboyPasswordDialog(status.localAuthEnabled);
+            return;
+        }
+        const request = await apiFetch("/api/auth/oidc/set-password/start", { method: "POST" });
+        submitOIDCAuthorizationForm(request);
+    }
+    catch (err) {
+        showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.authentication.startFailed" }));
+    }
+}
+function showSetScrumboyPasswordDialog(localAuthEnabled) {
+    const u = getUser();
+    if (!u)
+        return;
+    const dialog = document.createElement("dialog");
+    dialog.className = "dialog";
+    dialog.innerHTML = `
+    <form method="dialog" class="dialog__form" id="setScrumboyPasswordForm">
+      <div class="dialog__header">
+        <div class="dialog__title" data-i18n-text="settings.profile.authentication.setPassword">Set Scrumboy password</div>
+        <button class="btn btn--ghost" type="button" id="setScrumboyPasswordClose" data-i18n-aria-label="common.close">✕</button>
+      </div>
+      <div class="muted" data-i18n-text="settings.profile.authentication.setPasswordDescription">Your recent SSO reauthentication authorizes one first-password change for five minutes.</div>
+      ${!localAuthEnabled ? `<div role="alert" data-i18n-text="settings.profile.authentication.localDisabledSet">The password will be stored, but it cannot be used until the operator re-enables local authentication.</div>` : ""}
+      <label class="field"><div class="field__label" data-i18n-text="auth.fields.newPassword.label">New password</div><input class="input" id="setScrumboyPasswordNew" type="password" autocomplete="new-password" required /></label>
+      <label class="field"><div class="field__label" data-i18n-text="auth.fields.confirmPassword.label">Confirm password</div><input class="input" id="setScrumboyPasswordConfirm" type="password" autocomplete="new-password" required /></label>
+      ${u.twoFactorEnabled ? `<label class="field"><div class="field__label" data-i18n-text="settings.profile.authentication.twoFactorCode">Authenticator or recovery code</div><input class="input" id="setScrumboyPassword2FA" type="text" autocomplete="one-time-code" required /></label>` : ""}
+      <div class="dialog__footer"><div class="spacer"></div><button class="btn btn--ghost" type="button" id="setScrumboyPasswordCancel" data-i18n-text="common.cancel">Cancel</button><button class="btn" type="submit" data-i18n-text="settings.profile.authentication.savePassword">Save password</button></div>
+    </form>`;
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    const releaseLocale = bindDialogLocale(dialog);
+    let removed = false;
+    const close = () => {
+        if (removed)
+            return;
+        removed = true;
+        dialog.querySelectorAll('input[type="password"], input[autocomplete="one-time-code"]').forEach((input) => { input.value = ""; });
+        releaseLocale();
+        dialog.remove();
+    };
+    dialog.querySelector("#setScrumboyPasswordClose")?.addEventListener("click", close);
+    dialog.querySelector("#setScrumboyPasswordCancel")?.addEventListener("click", close);
+    dialog.addEventListener("click", (event) => { if (event.target === dialog)
+        close(); });
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+    dialog.addEventListener("close", close);
+    dialog.querySelector("form")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const password = dialog.querySelector("#setScrumboyPasswordNew").value;
+        const confirmation = dialog.querySelector("#setScrumboyPasswordConfirm").value;
+        if (password !== confirmation) {
+            showToast(t("auth.reset.passwordsMismatch"));
+            return;
+        }
+        const twoFactorCode = dialog.querySelector("#setScrumboyPassword2FA")?.value || "";
+        try {
+            await apiFetch("/api/auth/oidc/set-password", { method: "POST", body: JSON.stringify({ newPassword: password, twoFactorCode }) });
+            const updated = await apiFetch("/api/me");
+            setUser(updated);
+            close();
+            showToast(t("settings.profile.authentication.passwordSet"));
+            await renderSettingsModal({ skipProfileRefetch: true });
+        }
+        catch (err) {
+            showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.authentication.setFailed" }));
+        }
+    });
+}
+function showConnectSSODialog() {
+    const u = getUser();
+    if (!u)
+        return;
+    const dialog = document.createElement("dialog");
+    dialog.className = "dialog";
+    dialog.innerHTML = `
+    <form method="dialog" class="dialog__form" id="connectSSOForm">
+      <div class="dialog__header"><div class="dialog__title" data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</div><button class="btn btn--ghost" type="button" id="connectSSOClose" data-i18n-aria-label="common.close">✕</button></div>
+      <div class="muted" data-i18n-text="settings.profile.authentication.connectDescription">Confirm your current Scrumboy password, then reauthenticate with SSO. The verified SSO email must match your Scrumboy email.</div>
+      <label class="field"><div class="field__label" data-i18n-text="settings.profile.authentication.currentPassword">Current Scrumboy password</div><input class="input" id="connectSSOPassword" type="password" autocomplete="current-password" required /></label>
+      ${u.twoFactorEnabled ? `<label class="field"><div class="field__label" data-i18n-text="settings.profile.authentication.twoFactorCode">Authenticator or recovery code</div><input class="input" id="connectSSO2FA" type="text" autocomplete="one-time-code" required /></label>` : ""}
+      <div class="dialog__footer"><div class="spacer"></div><button class="btn btn--ghost" type="button" id="connectSSOCancel" data-i18n-text="common.cancel">Cancel</button><button class="btn" type="submit" data-i18n-text="settings.profile.authentication.continueSSO">Continue with SSO</button></div>
+    </form>`;
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    const releaseLocale = bindDialogLocale(dialog);
+    let removed = false;
+    const close = () => {
+        if (removed)
+            return;
+        removed = true;
+        dialog.querySelectorAll('input[type="password"], input[autocomplete="one-time-code"]').forEach((input) => { input.value = ""; });
+        releaseLocale();
+        dialog.remove();
+    };
+    dialog.querySelector("#connectSSOClose")?.addEventListener("click", close);
+    dialog.querySelector("#connectSSOCancel")?.addEventListener("click", close);
+    dialog.addEventListener("click", (event) => { if (event.target === dialog)
+        close(); });
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); close(); });
+    dialog.addEventListener("close", close);
+    dialog.querySelector("form")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const currentPassword = dialog.querySelector("#connectSSOPassword").value;
+        const twoFactorCode = dialog.querySelector("#connectSSO2FA")?.value || "";
+        try {
+            const request = await apiFetch("/api/auth/oidc/link/start", { method: "POST", body: JSON.stringify({ currentPassword, twoFactorCode, returnTo: "/?auth_method=linked" }) });
+            submitOIDCAuthorizationForm(request);
+        }
+        catch (err) {
+            showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.authentication.linkFailed" }));
+        }
+    });
+}
+export async function resumeAuthenticationMethodFlow(kind) {
+    if (kind === "set_password") {
+        await beginSetScrumboyPassword();
+    }
+    else if (kind === "linked") {
+        showToast(t("settings.profile.authentication.linked"));
     }
 }
 async function showEnable2FADialog() {
@@ -2399,19 +2643,19 @@ async function showEnable2FADialog() {
         document.body.appendChild(dialog);
         dialog.showModal();
         const releaseLocale = bindDialogLocale(dialog);
-        const close = () => {
-            releaseLocale();
-            document.body.removeChild(dialog);
-        };
-        document.getElementById("enable2FAClose")?.addEventListener("click", close);
-        document.getElementById("enable2FACancel")?.addEventListener("click", close);
+        const form = dialog.querySelector("#enable2FAForm");
+        const codeInput = dialog.querySelector("#enable2FACode");
+        const errorEl = dialog.querySelector("#enable2FAError");
+        const close = attachDialogClose(dialog, releaseLocale, () => {
+            if (codeInput)
+                codeInput.value = "";
+        });
+        dialog.querySelector("#enable2FAClose")?.addEventListener("click", close);
+        dialog.querySelector("#enable2FACancel")?.addEventListener("click", close);
         dialog.addEventListener("click", (e) => {
             if (e.target === dialog)
                 close();
         });
-        const form = document.getElementById("enable2FAForm");
-        const codeInput = document.getElementById("enable2FACode");
-        const errorEl = document.getElementById("enable2FAError");
         const showError = (msg) => {
             if (errorEl) {
                 errorEl.textContent = msg;
@@ -2480,12 +2724,9 @@ function showRecoveryCodesDialog(codes) {
     document.body.appendChild(dialog);
     dialog.showModal();
     const releaseLocale = bindDialogLocale(dialog);
-    const close = () => {
-        releaseLocale();
-        document.body.removeChild(dialog);
-    };
-    document.getElementById("recoveryCodesClose")?.addEventListener("click", close);
-    document.getElementById("recoveryCodesDone")?.addEventListener("click", close);
+    const close = attachDialogClose(dialog, releaseLocale);
+    dialog.querySelector("#recoveryCodesClose")?.addEventListener("click", close);
+    dialog.querySelector("#recoveryCodesDone")?.addEventListener("click", close);
     dialog.addEventListener("click", (e) => {
         if (e.target === dialog)
             close();
@@ -2515,18 +2756,18 @@ function showDisable2FADialog() {
     document.body.appendChild(dialog);
     dialog.showModal();
     const releaseLocale = bindDialogLocale(dialog);
-    const close = () => {
-        releaseLocale();
-        document.body.removeChild(dialog);
-    };
-    document.getElementById("disable2FAClose")?.addEventListener("click", close);
-    document.getElementById("disable2FACancel")?.addEventListener("click", close);
+    const form = dialog.querySelector("#disable2FAForm");
+    const passwordInput = dialog.querySelector("#disable2FAPassword");
+    const close = attachDialogClose(dialog, releaseLocale, () => {
+        if (passwordInput)
+            passwordInput.value = "";
+    });
+    dialog.querySelector("#disable2FAClose")?.addEventListener("click", close);
+    dialog.querySelector("#disable2FACancel")?.addEventListener("click", close);
     dialog.addEventListener("click", (e) => {
         if (e.target === dialog)
             close();
     });
-    const form = document.getElementById("disable2FAForm");
-    const passwordInput = document.getElementById("disable2FAPassword");
     if (form && passwordInput) {
         form.addEventListener("submit", async (e) => {
             e.preventDefault();

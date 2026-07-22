@@ -34,7 +34,7 @@ const enCatalog = {
   "auth.2fa.submit": "Verify",
   "auth.2fa.title": "Two-factor authentication",
   "auth.actions.bootstrap": "Bootstrap",
-  "auth.actions.login": "Login",
+  "auth.actions.login": "Sign in with your Scrumboy password",
   "auth.actions.resetPassword": "Reset Password",
   "auth.bootstrap.failed": "Setup failed.",
   "auth.bootstrap.title": "First-time setup",
@@ -47,8 +47,8 @@ const enCatalog = {
   "auth.fields.password.placeholder": "Password",
   "auth.forgot.backToSignIn": "Back to sign in",
   "auth.forgot.failed": "Could not request a password reset.",
-  "auth.forgot.helper": "Enter your email. If an account exists for that email address, we’ll send a password reset link that expires in 30 minutes.",
-  "auth.forgot.link": "Forgot password?",
+  "auth.forgot.helper": "Enter your email to reset your Scrumboy password. If you sign in with SSO, reset your SSO credentials through your organization’s identity provider.",
+  "auth.forgot.link": "Forgot your Scrumboy password?",
   "auth.forgot.submit": "Send reset link",
   "auth.forgot.success": "If an account exists for that email address, a password reset email has been sent.",
   "auth.forgot.title": "Reset your password",
@@ -85,7 +85,7 @@ const deCatalog = {
   "auth.2fa.submit": "Bestätigen",
   "auth.2fa.title": "Zwei-Faktor-Authentifizierung",
   "auth.actions.bootstrap": "Einrichten",
-  "auth.actions.login": "Anmelden",
+  "auth.actions.login": "Mit deinem Scrumboy-Passwort anmelden",
   "auth.actions.resetPassword": "Passwort zurücksetzen",
   "auth.bootstrap.failed": "Einrichtung fehlgeschlagen.",
   "auth.bootstrap.title": "Ersteinrichtung",
@@ -98,8 +98,8 @@ const deCatalog = {
   "auth.fields.password.placeholder": "Passwort",
   "auth.forgot.backToSignIn": "Zurück zur Anmeldung",
   "auth.forgot.failed": "Die Anfrage zum Zurücksetzen des Passworts konnte nicht gesendet werden.",
-  "auth.forgot.helper": "Gib deine E-Mail-Adresse ein. Falls ein Konto mit dieser Adresse existiert, senden wir einen Link zum Zurücksetzen, der in 30 Minuten abläuft.",
-  "auth.forgot.link": "Passwort vergessen?",
+  "auth.forgot.helper": "Gib deine E-Mail-Adresse ein, um dein Scrumboy-Passwort zurückzusetzen. Wenn du dich per SSO anmeldest, setze deine SSO-Anmeldedaten über den Identitätsanbieter deiner Organisation zurück.",
+  "auth.forgot.link": "Scrumboy-Passwort vergessen?",
   "auth.forgot.submit": "Link zum Zurücksetzen senden",
   "auth.forgot.success": "Falls ein Konto mit dieser E-Mail-Adresse existiert, wurde eine E-Mail zum Zurücksetzen des Passworts gesendet.",
   "auth.forgot.title": "Passwort zurücksetzen",
@@ -136,7 +136,7 @@ const frCatalog = {
   "auth.2fa.submit": "Vérifier",
   "auth.2fa.title": "Authentification à deux facteurs",
   "auth.actions.bootstrap": "Initialiser",
-  "auth.actions.login": "Se connecter",
+  "auth.actions.login": "Se connecter avec le mot de passe Scrumboy",
   "auth.actions.resetPassword": "Réinitialiser le mot de passe",
   "auth.bootstrap.failed": "Échec de la configuration initiale.",
   "auth.bootstrap.title": "Configuration initiale",
@@ -180,7 +180,7 @@ const ptCatalog = {
   "auth.2fa.submit": "Verificar",
   "auth.2fa.title": "Autenticação de dois fatores",
   "auth.actions.bootstrap": "Configurar",
-  "auth.actions.login": "Entrar",
+  "auth.actions.login": "Entrar com a senha do Scrumboy",
   "auth.actions.resetPassword": "Redefinir senha",
   "auth.bootstrap.failed": "Falha na configuração inicial.",
   "auth.bootstrap.title": "Configuração inicial",
@@ -224,7 +224,7 @@ const arCatalog = {
   "auth.2fa.submit": "تحقق",
   "auth.2fa.title": "المصادقة الثنائية",
   "auth.actions.bootstrap": "إعداد أولي",
-  "auth.actions.login": "تسجيل الدخول",
+  "auth.actions.login": "سجّل الدخول بكلمة مرور Scrumboy",
   "auth.actions.resetPassword": "إعادة تعيين كلمة المرور",
   "auth.bootstrap.failed": "فشل الإعداد.",
   "auth.bootstrap.title": "الإعداد لأول مرة",
@@ -268,7 +268,7 @@ const ruCatalog = {
   "auth.2fa.submit": "Проверить",
   "auth.2fa.title": "Двухфакторная аутентификация",
   "auth.actions.bootstrap": "Настройка",
-  "auth.actions.login": "Войти",
+  "auth.actions.login": "Войти с паролем Scrumboy",
   "auth.actions.resetPassword": "Сбросить пароль",
   "auth.bootstrap.failed": "Настройка не удалась.",
   "auth.bootstrap.title": "Первоначальная настройка",
@@ -312,7 +312,7 @@ const jaCatalog = {
   "auth.2fa.submit": "確認",
   "auth.2fa.title": "二要素認証",
   "auth.actions.bootstrap": "初期設定",
-  "auth.actions.login": "ログイン",
+  "auth.actions.login": "Scrumboy パスワードでサインイン",
   "auth.actions.resetPassword": "パスワードをリセット",
   "auth.bootstrap.failed": "セットアップに失敗しました。",
   "auth.bootstrap.title": "初回セットアップ",
@@ -356,7 +356,7 @@ const trCatalog = {
   "auth.2fa.submit": "Doğrula",
   "auth.2fa.title": "İki faktörlü kimlik doğrulama",
   "auth.actions.bootstrap": "Kurulum",
-  "auth.actions.login": "Giriş yap",
+  "auth.actions.login": "Scrumboy parolanızla oturum açın",
   "auth.actions.resetPassword": "Parolayı sıfırla",
   "auth.bootstrap.failed": "Kurulum başarısız.",
   "auth.bootstrap.title": "İlk kurulum",
@@ -400,7 +400,7 @@ const koCatalog = {
   "auth.2fa.submit": "인증",
   "auth.2fa.title": "2단계 인증",
   "auth.actions.bootstrap": "초기 설정",
-  "auth.actions.login": "로그인",
+  "auth.actions.login": "Scrumboy 비밀번호로 로그인",
   "auth.actions.resetPassword": "비밀번호 재설정",
   "auth.bootstrap.failed": "설정에 실패했습니다.",
   "auth.bootstrap.title": "최초 설정",
@@ -444,7 +444,7 @@ const zhCatalog = {
   "auth.2fa.submit": "验证",
   "auth.2fa.title": "双因素认证",
   "auth.actions.bootstrap": "初始化",
-  "auth.actions.login": "登录",
+  "auth.actions.login": "使用 Scrumboy 密码登录",
   "auth.actions.resetPassword": "重置密码",
   "auth.bootstrap.failed": "设置失败。",
   "auth.bootstrap.title": "首次设置",
@@ -488,7 +488,7 @@ const idCatalog = {
   "auth.2fa.submit": "Verifikasi",
   "auth.2fa.title": "Autentikasi dua faktor",
   "auth.actions.bootstrap": "Penyiapan",
-  "auth.actions.login": "Masuk",
+  "auth.actions.login": "Masuk dengan kata sandi Scrumboy Anda",
   "auth.actions.resetPassword": "Atur ulang kata sandi",
   "auth.bootstrap.failed": "Penyiapan gagal.",
   "auth.bootstrap.title": "Penyiapan pertama",
@@ -532,7 +532,7 @@ const viCatalog = {
   "auth.2fa.submit": "Xác minh",
   "auth.2fa.title": "Xác thực hai yếu tố",
   "auth.actions.bootstrap": "Thiết lập",
-  "auth.actions.login": "Đăng nhập",
+  "auth.actions.login": "Đăng nhập bằng mật khẩu Scrumboy của bạn",
   "auth.actions.resetPassword": "Đặt lại mật khẩu",
   "auth.bootstrap.failed": "Thiết lập thất bại.",
   "auth.bootstrap.title": "Thiết lập lần đầu",
@@ -576,7 +576,7 @@ const thCatalog = {
   "auth.2fa.submit": "ยืนยัน",
   "auth.2fa.title": "การยืนยันตัวตนสองขั้นตอน",
   "auth.actions.bootstrap": "เริ่มตั้งค่า",
-  "auth.actions.login": "เข้าสู่ระบบ",
+  "auth.actions.login": "ลงชื่อเข้าใช้ด้วยรหัสผ่าน Scrumboy ของคุณ",
   "auth.actions.resetPassword": "รีเซ็ตรหัสผ่าน",
   "auth.bootstrap.failed": "การตั้งค่าล้มเหลว",
   "auth.bootstrap.title": "การตั้งค่าครั้งแรก",
@@ -620,7 +620,7 @@ const urCatalog = {
   "auth.2fa.submit": "تصدیق کریں",
   "auth.2fa.title": "دو عنصر کی تصدیق",
   "auth.actions.bootstrap": "ابتدائی سیٹ اپ",
-  "auth.actions.login": "لاگ ان",
+  "auth.actions.login": "اپنے Scrumboy پاس ورڈ سے سائن اِن کریں",
   "auth.actions.resetPassword": "پاس ورڈ ری سیٹ",
   "auth.bootstrap.failed": "سیٹ اپ ناکام رہا۔",
   "auth.bootstrap.title": "پہلی بار سیٹ اپ",
@@ -664,7 +664,7 @@ const hiCatalog = {
   "auth.2fa.submit": "सत्यापित करें",
   "auth.2fa.title": "दो-कारक प्रमाणीकरण",
   "auth.actions.bootstrap": "प्रारंभिक सेटअप",
-  "auth.actions.login": "लॉग इन",
+  "auth.actions.login": "अपने Scrumboy पासवर्ड से साइन इन करें",
   "auth.actions.resetPassword": "पासवर्ड रीसेट",
   "auth.bootstrap.failed": "सेटअप विफल रहा।",
   "auth.bootstrap.title": "पहली बार सेटअप",
@@ -708,7 +708,7 @@ const esCatalog = {
   "auth.2fa.submit": "Verificar",
   "auth.2fa.title": "Autenticación de dos factores",
   "auth.actions.bootstrap": "Configuración inicial",
-  "auth.actions.login": "Iniciar sesión",
+  "auth.actions.login": "Iniciar sesión con la contraseña de Scrumboy",
   "auth.actions.resetPassword": "Restablecer contraseña",
   "auth.bootstrap.failed": "La configuración falló.",
   "auth.bootstrap.title": "Configuración inicial",
@@ -752,7 +752,7 @@ const itCatalog = {
   "auth.2fa.submit": "Verifica",
   "auth.2fa.title": "Autenticazione a due fattori",
   "auth.actions.bootstrap": "Configurazione iniziale",
-  "auth.actions.login": "Accedi",
+  "auth.actions.login": "Accedi con la password Scrumboy",
   "auth.actions.resetPassword": "Reimposta password",
   "auth.bootstrap.failed": "Configurazione non riuscita.",
   "auth.bootstrap.title": "Configurazione iniziale",
@@ -796,7 +796,7 @@ const pseudoCatalog = {
   "auth.2fa.submit": "[!! Verify !!]",
   "auth.2fa.title": "[!! Two-factor authentication !!]",
   "auth.actions.bootstrap": "[!! Bootstrap !!]",
-  "auth.actions.login": "[!! Login !!]",
+  "auth.actions.login": "[!! Sign in with your Scrumboy password !!]",
   "auth.actions.resetPassword": "[!! Reset Password !!]",
   "auth.bootstrap.failed": "[!! Setup failed. !!]",
   "auth.bootstrap.title": "[!! First-time setup !!]",
@@ -809,8 +809,8 @@ const pseudoCatalog = {
   "auth.fields.password.placeholder": "[!! Password !!]",
   "auth.forgot.backToSignIn": "[!! Back to sign in !!]",
   "auth.forgot.failed": "[!! Could not request a password reset. !!]",
-  "auth.forgot.helper": "[!! Enter your email. If an account exists for that email address, we’ll send a password reset link that expires in 30 minutes. !!]",
-  "auth.forgot.link": "[!! Forgot password? !!]",
+  "auth.forgot.helper": "[!! Enter your email to reset your Scrumboy password. If you sign in with SSO, reset your SSO credentials through your organization’s identity provider. !!]",
+  "auth.forgot.link": "[!! Forgot your Scrumboy password? !!]",
   "auth.forgot.submit": "[!! Send reset link !!]",
   "auth.forgot.success": "[!! If an account exists for that email address, a password reset email has been sent. !!]",
   "auth.forgot.title": "[!! Reset your password !!]",
@@ -979,7 +979,7 @@ describe("auth view i18n", () => {
     expect(document.querySelector(".auth-divider span")?.textContent).toBe("or");
     expect((document.getElementById("authEmail") as HTMLInputElement | null)?.placeholder).toBe("Email");
     expect((document.getElementById("authPassword") as HTMLInputElement | null)?.placeholder).toBe("Password");
-    expect(document.getElementById("loginBtn")?.textContent).toBe("Login");
+    expect(document.getElementById("loginBtn")?.textContent).toBe("Sign in with your Scrumboy password");
     expect(document.getElementById("authPasswordToggle")?.getAttribute("aria-label")).toBe("Show password");
   });
 
@@ -988,7 +988,7 @@ describe("auth view i18n", () => {
     const auth = await import("./auth.js");
 
     auth.renderAuth({ localAuthEnabled: true, selfServicePasswordResetEnabled: true });
-    expect(document.getElementById("authForgotPassword")?.textContent).toBe("Forgot password?");
+    expect(document.getElementById("authForgotPassword")?.textContent).toBe("Forgot your Scrumboy password?");
 
     auth.renderAuth({ bootstrap: true, localAuthEnabled: true, selfServicePasswordResetEnabled: true });
     expect(document.getElementById("authForgotPassword")).toBeNull();
@@ -1196,7 +1196,8 @@ describe("auth view i18n", () => {
     await flushPromises();
 
     expect(document.querySelector(".panel__title")?.textContent).toBe("Passwort zurücksetzen");
-    expect(document.querySelector(".muted")?.textContent).toContain("30 Minuten");
+    expect(document.querySelector(".muted")?.textContent).toContain("Scrumboy-Passwort");
+    expect(document.querySelector(".muted")?.textContent).toContain("SSO");
     expect(document.getElementById("authForgotSubmit")?.textContent).toBe("Link zum Zurücksetzen senden");
     expect(document.getElementById("authForgotBack")?.textContent).toBe("Zurück zur Anmeldung");
     expect((document.getElementById("authForgotEmail") as HTMLInputElement).value).toBe("edited@example.com");

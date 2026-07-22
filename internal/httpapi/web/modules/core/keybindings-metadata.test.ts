@@ -75,4 +75,26 @@ describe('keybinding metadata compatibility', () => {
       contexts: ['board'],
     });
   });
+
+  it('does not throw when a keydown event has an undefined code/key', async () => {
+    const keybindings = await import('./keybindings.js');
+
+    // IME/synthetic events can arrive without `code`/`key`; the capture-phase
+    // global handler must never throw on them.
+    const bare = { ctrlKey: false, altKey: false, metaKey: false, shiftKey: false } as unknown as KeyboardEvent;
+    expect(() => keybindings.chordFromKeyboardEvent(bare)).not.toThrow();
+    expect(keybindings.chordFromKeyboardEvent(bare)).toBeNull();
+
+    // A modifier-only event (undefined code) with a real key still resolves.
+    const withKey = {
+      code: undefined,
+      key: 'a',
+      ctrlKey: true,
+      altKey: false,
+      metaKey: false,
+      shiftKey: false,
+    } as unknown as KeyboardEvent;
+    expect(() => keybindings.chordFromKeyboardEvent(withKey)).not.toThrow();
+    expect(keybindings.chordFromKeyboardEvent(withKey)).toBe('ctrl+a');
+  });
 });

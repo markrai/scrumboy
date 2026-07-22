@@ -124,6 +124,8 @@ type userJSON struct {
 	SystemRole       string    `json:"systemRole"`
 	CreatedAt        time.Time `json:"createdAt"`
 	TwoFactorEnabled bool      `json:"twoFactorEnabled"`
+	HasLocalPassword bool      `json:"hasLocalPassword"`
+	OIDCLinked       bool      `json:"oidcLinked"`
 }
 
 // userStatusJSON omits createdAt for /api/auth/status (status response contract).
@@ -135,6 +137,8 @@ func userStatusJSON(u store.User) map[string]any {
 		"isBootstrap":      u.IsBootstrap,
 		"systemRole":       u.SystemRole.String(),
 		"twoFactorEnabled": u.IsTwoFactorActive(),
+		"hasLocalPassword": u.HasLocalPassword,
+		"oidcLinked":       u.OIDCLinked,
 	}
 }
 
@@ -148,6 +152,8 @@ func userToJSON(u store.User) userJSON {
 		SystemRole:       u.SystemRole.String(),
 		CreatedAt:        u.CreatedAt,
 		TwoFactorEnabled: u.IsTwoFactorActive(),
+		HasLocalPassword: u.HasLocalPassword,
+		OIDCLinked:       u.OIDCLinked,
 	}
 }
 

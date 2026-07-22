@@ -63,6 +63,8 @@ sequenceDiagram
 - Locale changes hydrate static `data-i18n-*` DOM in place and trigger targeted re-renders for state-derived copy in views and dialogs that stay open; listeners must detach on dialog close.
 - **`index.html`** marks the shell `translate="no"` so browser translation does not double-translate Scrumboy's own i18n UI.
 
+See also [`docs/i18n.md`](../i18n.md) (catalogs, landings, change gates) and [`AGENTS.md`](../../AGENTS.md) (localization rules).
+
 ## API error localization
 
 - Backend validation failures may include stable `error.details.reason` (snake_case). `apiErrorMessage()` maps known reasons to catalog keys; `apiErrorMessageOrRaw()` keeps raw backend text for dynamic import/backup diagnostics.
@@ -80,4 +82,4 @@ sequenceDiagram
 
 Login, bootstrap, and 2FA render as **auth overlays** when unauthenticated (not separate URL routes). Anonymous-mode server routes `/{locale}/` marketing landings in `spa.go` (see `scrumboy_http_routing.md`).
 
-`theme.ts` applies dark default (`:root`) or `[data-theme="light"]`; density via `--ui-scale`. PWA: `sw.js` with version injected at server startup, `manifest.json`.
+Theme preference defaults to `system` (`theme.ts` / `THEME_SYSTEM`), resolving via `prefers-color-scheme`. Effective dark leaves `data-theme` unset (CSS `:root` dark tokens); light sets `[data-theme="light"]`. Pre-hydration CSS may still look dark. Density via `--ui-scale`. PWA: `sw.js` with version injected at server startup, `manifest.json`.

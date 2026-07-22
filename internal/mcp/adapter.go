@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
 )
 
@@ -16,6 +17,7 @@ type storeAPI interface {
 	CountUsers(ctx context.Context) (int, error)
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
 	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
+	GetUserByOAuthAccessToken(ctx context.Context, rawToken, expectedResource string) (store.User, error)
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProjectContextBySlug(ctx context.Context, slug string, mode store.Mode) (store.ProjectContext, error)
 	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
@@ -51,13 +53,15 @@ type storeAPI interface {
 }
 
 type Options struct {
-	Mode string
+	Mode         string
+	PublicOrigin *publicorigin.Resolver
 }
 
 type Adapter struct {
-	store storeAPI
-	mode  string
-	tools toolRegistry
+	store        storeAPI
+	mode         string
+	tools        toolRegistry
+	publicOrigin *publicorigin.Resolver
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -65,11 +69,16 @@ func New(st storeAPI, opts Options) *Adapter {
 	if mode != "full" && mode != "anonymous" {
 		mode = "full"
 	}
+	resolver := opts.PublicOrigin
+	if resolver == nil {
+		resolver = publicorigin.New("", false)
+	}
 
 	a := &Adapter{
-		store: st,
-		mode:  mode,
-		tools: make(toolRegistry),
+		store:        st,
+		mode:         mode,
+		tools:        make(toolRegistry),
+		publicOrigin: resolver,
 	}
 	a.registerTools()
 	return a
@@ -101,6 +110,7 @@ func parseBearerAuthorization(headerValue string) (ok bool, credential string) {
 // requestAuthResult is the outcome of MCP credential-to-actor resolution.
 type requestAuthResult struct {
 	Ctx              context.Context
+	Authenticated    bool
 	BearerAuthFailed bool
 	Err              error // non-nil store failure (caller should map to 500)
 }
@@ -110,7 +120,7 @@ type requestAuthResult struct {
 // present, but it does not authorize access to any specific resource. MCP
 // tools may gate capability/UX early; store methods remain the authority for
 // resource authorization.
-func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
+func (a *Adapter) resolveRequestAuth(r *http.Request, allowOAuth bool) requestAuthResult {
 	ctx := r.Context()
 
 	// Anonymous mode intentionally establishes no actor, matching the HTTP API
@@ -125,6 +135,16 @@ func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 			return requestAuthResult{Ctx: ctx, BearerAuthFailed: true}
 		}
 		u, err := a.store.GetUserByAPIToken(ctx, cred)
+		if allowOAuth && errors.Is(err, store.ErrNotFound) {
+			// OAuth-issued access tokens (RFC 6749) live in a separate table
+			// from manually-created API tokens; fall back to that lookup
+			// before giving up. This never falls back to the session cookie.
+			resource, resourceErr := a.publicOrigin.MCPResource(r)
+			if resourceErr != nil {
+				return requestAuthResult{Ctx: ctx, Err: resourceErr}
+			}
+			u, err = a.store.GetUserByOAuthAccessToken(ctx, cred, resource)
+		}
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return requestAuthResult{Ctx: ctx, BearerAuthFailed: true}
@@ -134,7 +154,7 @@ func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 		ctx = store.WithUserID(ctx, u.ID)
 		ctx = store.WithUserEmail(ctx, u.Email)
 		ctx = store.WithUserName(ctx, u.Name)
-		return requestAuthResult{Ctx: ctx}
+		return requestAuthResult{Ctx: ctx, Authenticated: true}
 	}
 
 	c, err := r.Cookie("scrumboy_session")
@@ -144,13 +164,16 @@ func (a *Adapter) resolveRequestAuth(r *http.Request) requestAuthResult {
 
 	u, err := a.store.GetUserBySessionToken(ctx, c.Value)
 	if err != nil {
-		return requestAuthResult{Ctx: ctx}
+		if errors.Is(err, store.ErrNotFound) {
+			return requestAuthResult{Ctx: ctx}
+		}
+		return requestAuthResult{Ctx: ctx, Err: err}
 	}
 
 	ctx = store.WithUserID(ctx, u.ID)
 	ctx = store.WithUserEmail(ctx, u.Email)
 	ctx = store.WithUserName(ctx, u.Name)
-	return requestAuthResult{Ctx: ctx}
+	return requestAuthResult{Ctx: ctx, Authenticated: true}
 }
 
 // authState reports whether authenticated MCP tools are usable for this

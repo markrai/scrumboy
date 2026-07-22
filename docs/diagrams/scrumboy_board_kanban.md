@@ -45,13 +45,13 @@ flowchart LR
   subgraph example [Default template example]
     B[backlog]
     NS[not_started]
-    IP[in_progress]
+    IP[doing]
     T[testing]
     D["done (is_done)"]
     B --> NS --> IP --> T --> D
   end
 ```
 
-Projects may add lanes (up to store limit), rename labels, recolor columns, reorder them, and choose which lane counts as done. Todos reference lanes by `column_key`, not a fixed enum.
+Projects may add lanes (at most **12** columns; `maxWorkflowColumns` in `internal/store/workflows.go`), rename labels, recolor columns, reorder them, and choose which lane counts as done. Todos reference lanes by `column_key`, not a fixed enum. The default mid-lane display name is “In Progress”; its stable key is `doing` (not `in_progress`).
 
 Lane colors and sprint chips use `styles.css` CSS variables. Sprints filter board scope via `sprintId` query param; tags and search filters apply client-side in `board-filters.ts`. Agile field labels and native `title` hover hints (`field-tooltips.ts`) localize with the active locale.

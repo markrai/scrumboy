@@ -1,27 +1,74 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"mime"
 	"net/http"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"scrumboy/internal/publicorigin"
 )
 
-const mcpProtocolVersion = "2024-11-05"
+const (
+	mcpLatestProtocolVersion  = "2025-11-25"
+	mcpDefaultProtocolVersion = "2025-03-26"
+	maxJSONRPCBodyBytes       = 1 << 20
+)
 
-// JSON-RPC 2.0 wire types.
+var supportedMCPProtocolVersions = map[string]bool{
+	"2025-03-26": true,
+	"2025-06-18": true,
+	"2025-11-25": true,
+}
 
 type jsonRPCRequest struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      any             `json:"id,omitempty"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params,omitempty"`
+	JSONRPC string
+	ID      json.RawMessage
+	HasID   bool
+	Method  string
+	Params  json.RawMessage
+	IsReply bool
+}
+
+// jsonRPCParseFailure is a structurally invalid JSON-RPC object (-32600).
+// Malformed JSON remains a separate -32700 path in serveJSONRPC and must not
+// be routed through this type.
+type jsonRPCParseFailure struct {
+	ID      json.RawMessage
+	HasID   bool
+	Code    int
+	Message string
+}
+
+func (e *jsonRPCParseFailure) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+func invalidJSONRPCRequest(req *jsonRPCRequest, message string) error {
+	fail := &jsonRPCParseFailure{
+		Code:    jsonRPCInvalidRequest,
+		Message: message,
+	}
+	if req != nil && req.HasID {
+		fail.ID = append(json.RawMessage(nil), req.ID...)
+		fail.HasID = true
+	}
+	return fail
 }
 
 type jsonRPCResponse struct {
-	JSONRPC string        `json:"jsonrpc"`
-	ID      any           `json:"id"`
-	Result  any           `json:"result,omitempty"`
-	Error   *jsonRPCError `json:"error,omitempty"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  any             `json:"result,omitempty"`
+	Error   *jsonRPCError   `json:"error,omitempty"`
 }
 
 type jsonRPCError struct {
@@ -38,12 +85,10 @@ const (
 	jsonRPCInternalError  = -32603
 )
 
-// MCP initialize handshake types.
-
 type mcpInitializeParams struct {
 	ProtocolVersion string         `json:"protocolVersion"`
 	Capabilities    map[string]any `json:"capabilities"`
-	ClientInfo      mcpClientInfo  `json:"clientInfo"`
+	ClientInfo      *mcpClientInfo `json:"clientInfo"`
 }
 
 type mcpClientInfo struct {
@@ -71,126 +116,300 @@ type mcpServerInfo struct {
 	Version string `json:"version"`
 }
 
-// serveJSONRPC handles POST /mcp/rpc with JSON-RPC 2.0 framing.
-// This is the spec-compliant MCP endpoint; the legacy /mcp endpoint is unchanged.
 func (a *Adapter) serveJSONRPC(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+
+	allowed, err := a.publicOrigin.OriginAllowed(r)
+	if err != nil {
+		writeEmptyStatus(w, http.StatusServiceUnavailable)
+		return
+	}
+	if !allowed {
+		writeEmptyStatus(w, http.StatusForbidden)
+		return
+	}
+
+	if a.mode != "anonymous" {
+		authRes := a.resolveRequestAuth(r, oauthBearerAllowed(r))
+		if authRes.Err != nil {
+			if errors.Is(authRes.Err, publicorigin.ErrUnavailable) {
+				writeEmptyStatus(w, http.StatusServiceUnavailable)
+			} else {
+				writeEmptyStatus(w, http.StatusInternalServerError)
+			}
+			return
+		}
+		if !authRes.Authenticated || authRes.BearerAuthFailed {
+			metadataURL, err := a.publicOrigin.MCPResourceMetadataURL(r)
+			if err != nil {
+				writeEmptyStatus(w, http.StatusServiceUnavailable)
+				return
+			}
+			challenge := `Bearer resource_metadata="` + metadataURL + `"`
+			if authRes.BearerAuthFailed {
+				challenge = `Bearer error="invalid_token", resource_metadata="` + metadataURL + `"`
+			}
+			w.Header().Set("WWW-Authenticate", challenge)
+			writeEmptyStatus(w, http.StatusUnauthorized)
+			return
+		}
+		r = r.WithContext(authRes.Ctx)
+	}
 
 	if r.Method != http.MethodPost {
-		writeJSONRPCError(w, nil, jsonRPCInvalidRequest, "only POST is accepted")
+		w.Header().Set("Allow", http.MethodPost)
+		writeEmptyStatus(w, http.StatusMethodNotAllowed)
+		return
+	}
+	if !acceptsJSONAndSSE(r.Header.Values("Accept")) {
+		writeEmptyStatus(w, http.StatusNotAcceptable)
+		return
+	}
+	if !isJSONContentType(r.Header.Values("Content-Type")) {
+		writeEmptyStatus(w, http.StatusUnsupportedMediaType)
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, tooLarge, err := readJSONRPCBody(r.Body)
 	if err != nil {
-		writeJSONRPCError(w, nil, jsonRPCParseError, "failed to read body")
+		writeEmptyStatus(w, http.StatusBadRequest)
 		return
 	}
-
-	var req jsonRPCRequest
-	if err := json.Unmarshal(body, &req); err != nil {
+	if tooLarge {
+		writeEmptyStatus(w, http.StatusRequestEntityTooLarge)
+		return
+	}
+	if !utf8.Valid(body) || !json.Valid(body) {
 		writeJSONRPCError(w, nil, jsonRPCParseError, "invalid JSON")
 		return
 	}
-
-	if req.JSONRPC != "2.0" {
-		writeJSONRPCError(w, req.ID, jsonRPCInvalidRequest, "jsonrpc must be \"2.0\"")
-		return
-	}
-	if req.Method == "" {
-		writeJSONRPCError(w, req.ID, jsonRPCInvalidRequest, "method is required")
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		writeEmptyStatus(w, http.StatusBadRequest)
 		return
 	}
 
-	isNotification := req.ID == nil
+	req, err := parseJSONRPCMessage(trimmed)
+	if err != nil {
+		var fail *jsonRPCParseFailure
+		if errors.As(err, &fail) {
+			if fail.HasID {
+				writeJSONRPCError(w, fail.ID, fail.Code, fail.Message)
+			} else {
+				writeJSONRPCErrorStatus(w, http.StatusBadRequest, nil, fail.Code, fail.Message)
+			}
+			return
+		}
+		writeJSONRPCErrorStatus(w, http.StatusBadRequest, nil, jsonRPCInvalidRequest, err.Error())
+		return
+	}
+	if req.IsReply {
+		writeEmptyStatus(w, http.StatusBadRequest)
+		return
+	}
+
+	if !req.HasID {
+		if isMCPRequestOnlyMethod(req.Method) {
+			writeJSONRPCErrorStatus(w, http.StatusBadRequest, nil, jsonRPCInvalidRequest, "method requires a request id")
+			return
+		}
+		if !validMCPProtocolHeader(r.Header.Values("MCP-Protocol-Version")) {
+			writeEmptyStatus(w, http.StatusBadRequest)
+			return
+		}
+		writeEmptyStatus(w, http.StatusAccepted)
+		return
+	}
+	if req.Method != "initialize" && !validMCPProtocolHeader(r.Header.Values("MCP-Protocol-Version")) {
+		writeEmptyStatus(w, http.StatusBadRequest)
+		return
+	}
 
 	switch req.Method {
 	case "initialize":
-		a.handleJSONRPCInitialize(w, &req)
+		a.handleJSONRPCInitialize(w, req)
 	case "notifications/initialized", "initialized":
-		if !isNotification {
-			writeJSONRPCError(w, req.ID, jsonRPCInvalidRequest, "initialized must be a notification (no id)")
-			return
-		}
-		// Spec: notifications get no response body.
-		w.WriteHeader(http.StatusNoContent)
+		writeJSONRPCError(w, req.ID, jsonRPCInvalidRequest, "initialized must be a notification (no id)")
+	case "ping":
+		writeJSONRPCResult(w, req.ID, map[string]any{})
 	case "tools/list":
-		a.handleJSONRPCToolsList(w, &req)
+		a.handleJSONRPCToolsList(w, req)
 	case "tools/call":
-		a.handleJSONRPCToolsCall(w, r, &req)
+		a.handleJSONRPCToolsCall(w, r, req)
 	default:
 		writeJSONRPCError(w, req.ID, jsonRPCMethodNotFound, "method not found")
 	}
 }
 
-func (a *Adapter) handleJSONRPCInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
-	if req.ID == nil {
-		writeJSONRPCError(w, nil, jsonRPCInvalidRequest, "initialize must be a request (requires id)")
-		return
+func isMCPRequestOnlyMethod(method string) bool {
+	switch method {
+	case "initialize", "ping", "tools/list", "tools/call":
+		return true
+	default:
+		return false
 	}
+}
 
-	var params mcpInitializeParams
-	if req.Params != nil {
-		if err := json.Unmarshal(req.Params, &params); err != nil {
-			writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "invalid initialize params")
-			return
+func parseJSONRPCMessage(body []byte) (*jsonRPCRequest, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil || fields == nil {
+		return nil, invalidJSONRPCRequest(nil, "JSON-RPC message must be an object")
+	}
+	var req jsonRPCRequest
+	if raw, ok := fields["jsonrpc"]; !ok || json.Unmarshal(raw, &req.JSONRPC) != nil || req.JSONRPC != "2.0" {
+		return nil, invalidJSONRPCRequest(nil, `jsonrpc must be "2.0"`)
+	}
+	if raw, ok := fields["id"]; ok {
+		if !validJSONRPCID(raw) {
+			return nil, invalidJSONRPCRequest(nil, "id must be a string, number, or null")
+		}
+		req.ID = append(json.RawMessage(nil), raw...)
+		req.HasID = true
+	}
+	if raw, ok := fields["method"]; ok {
+		if json.Unmarshal(raw, &req.Method) != nil || req.Method == "" {
+			return nil, invalidJSONRPCRequest(&req, "method must be a non-empty string")
 		}
 	}
-
-	result := mcpInitializeResult{
-		ProtocolVersion: mcpProtocolVersion,
-		Capabilities: mcpCapabilities{
-			Tools: &mcpToolsCapability{ListChanged: false},
-		},
-		ServerInfo: mcpServerInfo{
-			Name:    "scrumboy",
-			Version: "1.0.0",
-		},
-		Instructions: "Scrumboy MCP server. Use tools/list to discover available tools.",
+	if raw, ok := fields["params"]; ok {
+		trimmedParams := bytes.TrimSpace(raw)
+		if len(trimmedParams) == 0 || (trimmedParams[0] != '{' && trimmedParams[0] != '[') {
+			return nil, invalidJSONRPCRequest(&req, "params must be an object or array")
+		}
+		req.Params = append(json.RawMessage(nil), raw...)
 	}
+	_, hasResult := fields["result"]
+	_, hasError := fields["error"]
+	if req.Method == "" && req.HasID && hasResult != hasError {
+		req.IsReply = true
+		return &req, nil
+	}
+	if req.Method == "" {
+		return nil, invalidJSONRPCRequest(&req, "method is required")
+	}
+	if hasResult || hasError {
+		return nil, invalidJSONRPCRequest(&req, "request must not contain result or error")
+	}
+	return &req, nil
+}
 
+func validJSONRPCID(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if bytes.Equal(trimmed, []byte("null")) {
+		return true
+	}
+	if len(trimmed) == 0 {
+		return false
+	}
+	if trimmed[0] == '"' {
+		var value string
+		return json.Unmarshal(trimmed, &value) == nil
+	}
+	var number json.Number
+	return json.Unmarshal(trimmed, &number) == nil
+}
+
+func readJSONRPCBody(body io.Reader) ([]byte, bool, error) {
+	data, err := io.ReadAll(io.LimitReader(body, maxJSONRPCBodyBytes+1))
+	if err != nil {
+		return nil, false, err
+	}
+	if len(data) > maxJSONRPCBodyBytes {
+		return nil, true, nil
+	}
+	return data, false, nil
+}
+
+func isJSONContentType(values []string) bool {
+	if len(values) != 1 || strings.Contains(values[0], ",") {
+		return false
+	}
+	mediaType, params, err := mime.ParseMediaType(values[0])
+	if err != nil || !strings.EqualFold(mediaType, "application/json") {
+		return false
+	}
+	charset := params["charset"]
+	return charset == "" || strings.EqualFold(charset, "utf-8")
+}
+
+func acceptsJSONAndSSE(values []string) bool {
+	if len(values) == 0 {
+		return true
+	}
+	hasJSON, hasSSE := false, false
+	for _, field := range values {
+		for _, item := range strings.Split(field, ",") {
+			mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(item))
+			if err != nil {
+				return false
+			}
+			if q, ok := params["q"]; ok {
+				quality, err := strconv.ParseFloat(q, 64)
+				if err != nil || quality < 0 || quality > 1 {
+					return false
+				}
+				if quality == 0 {
+					continue
+				}
+			}
+			switch strings.ToLower(mediaType) {
+			case "*/*":
+				return true
+			case "application/json":
+				hasJSON = true
+			case "text/event-stream":
+				hasSSE = true
+			}
+		}
+	}
+	return hasJSON && hasSSE
+}
+
+func validMCPProtocolHeader(values []string) bool {
+	if len(values) == 0 {
+		return supportedMCPProtocolVersions[mcpDefaultProtocolVersion]
+	}
+	if len(values) != 1 || strings.Contains(values[0], ",") {
+		return false
+	}
+	return supportedMCPProtocolVersions[strings.TrimSpace(values[0])]
+}
+
+func (a *Adapter) handleJSONRPCInitialize(w http.ResponseWriter, req *jsonRPCRequest) {
+	var params mcpInitializeParams
+	if len(req.Params) == 0 || bytes.Equal(bytes.TrimSpace(req.Params), []byte("null")) || json.Unmarshal(req.Params, &params) != nil || params.ProtocolVersion == "" || params.Capabilities == nil || params.ClientInfo == nil || strings.TrimSpace(params.ClientInfo.Name) == "" || strings.TrimSpace(params.ClientInfo.Version) == "" {
+		writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "initialize requires protocolVersion, capabilities, clientInfo.name, and clientInfo.version")
+		return
+	}
+	selected := params.ProtocolVersion
+	if !supportedMCPProtocolVersions[selected] {
+		selected = mcpLatestProtocolVersion
+	}
+	result := mcpInitializeResult{
+		ProtocolVersion: selected,
+		Capabilities:    mcpCapabilities{Tools: &mcpToolsCapability{ListChanged: false}},
+		ServerInfo:      mcpServerInfo{Name: "scrumboy", Version: "1.0.0"},
+		Instructions:    "Scrumboy MCP server. Use tools/list to discover available tools.",
+	}
 	writeJSONRPCResult(w, req.ID, result)
 }
 
-func writeJSONRPCResult(w http.ResponseWriter, id any, result any) {
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Result:  result,
-	})
-}
-
 func (a *Adapter) handleJSONRPCToolsList(w http.ResponseWriter, req *jsonRPCRequest) {
-	if req.ID == nil {
-		writeJSONRPCError(w, nil, jsonRPCInvalidRequest, "tools/list must be a request (requires id)")
-		return
-	}
-	writeJSONRPCResult(w, req.ID, map[string]any{
-		"tools": a.toolCatalog(),
-	})
+	writeJSONRPCResult(w, req.ID, map[string]any{"tools": a.toolCatalog()})
 }
 
-// tools/call params shape per MCP spec.
 type toolsCallParams struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments"`
 }
 
-// MCP text content block for tool results.
 type mcpTextContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
 }
 
 func (a *Adapter) handleJSONRPCToolsCall(w http.ResponseWriter, r *http.Request, req *jsonRPCRequest) {
-	if req.ID == nil {
-		writeJSONRPCError(w, nil, jsonRPCInvalidRequest, "tools/call must be a request (requires id)")
-		return
-	}
-
-	if req.Params == nil {
+	if len(req.Params) == 0 {
 		writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "missing params")
 		return
 	}
@@ -203,57 +422,38 @@ func (a *Adapter) handleJSONRPCToolsCall(w http.ResponseWriter, r *http.Request,
 		writeJSONRPCError(w, req.ID, jsonRPCInvalidParams, "missing params.name")
 		return
 	}
-
 	handler, ok := a.tools[params.Name]
 	if !ok {
 		writeJSONRPCToolErrorResult(w, req.ID, "tool not found")
 		return
 	}
-
 	args := params.Arguments
 	if args == nil {
 		args = map[string]any{}
 	}
-
 	if err := validateRequiredFields(params.Name, args); err != "" {
 		writeJSONRPCToolErrorResult(w, req.ID, err)
 		return
 	}
-
-	authRes := a.resolveRequestAuth(r)
-	if authRes.Err != nil {
-		writeJSONRPCToolErrorResult(w, req.ID, "internal error")
-		return
-	}
-	if authRes.BearerAuthFailed {
-		writeJSONRPCToolErrorResult(w, req.ID, "authentication required")
-		return
-	}
-
-	data, _, toolErr := handler(authRes.Ctx, args)
+	data, _, toolErr := handler(r.Context(), args)
 	if toolErr != nil {
 		writeJSONRPCToolErrorResult(w, req.ID, toolErr.Message)
 		return
 	}
-
 	writeJSONRPCToolSuccessResult(w, req.ID, data)
 }
 
-// requiredFieldNamesFromSchema extracts the "required" keyword from a JSON Schema object.
-// Accepts []string (in-memory catalog) and []any (e.g. after JSON round-trip).
 func requiredFieldNamesFromSchema(schema map[string]any) []string {
 	raw := schema["required"]
-	switch v := raw.(type) {
+	switch value := raw.(type) {
 	case []string:
-		return v
+		return value
 	case []any:
-		out := make([]string, 0, len(v))
-		for _, el := range v {
-			s, ok := el.(string)
-			if !ok || s == "" {
-				continue
+		out := make([]string, 0, len(value))
+		for _, element := range value {
+			if field, ok := element.(string); ok && field != "" {
+				out = append(out, field)
 			}
-			out = append(out, s)
 		}
 		return out
 	default:
@@ -261,22 +461,16 @@ func requiredFieldNamesFromSchema(schema map[string]any) []string {
 	}
 }
 
-// validateRequiredFields checks that required fields from the tool catalog are present.
-// Returns an error message string, or "" if valid.
 func validateRequiredFields(toolName string, args map[string]any) string {
-	def, ok := toolCatalogDefinitions()[toolName]
+	definition, ok := toolCatalogDefinitions()[toolName]
 	if !ok {
 		return ""
 	}
-	schema, ok := def.InputSchema.(map[string]any)
+	schema, ok := definition.InputSchema.(map[string]any)
 	if !ok {
 		return ""
 	}
-	required := requiredFieldNamesFromSchema(schema)
-	if len(required) == 0 {
-		return ""
-	}
-	for _, field := range required {
+	for _, field := range requiredFieldNamesFromSchema(schema) {
 		if _, exists := args[field]; !exists {
 			return "missing required field: " + field
 		}
@@ -284,53 +478,55 @@ func validateRequiredFields(toolName string, args map[string]any) string {
 	return ""
 }
 
-func toolResultText(v any) string {
-	b, err := json.Marshal(v)
+func toolResultText(value any) string {
+	encoded, err := json.Marshal(value)
 	if err != nil {
 		return "{}"
 	}
-	return string(b)
+	return string(encoded)
 }
 
-func writeJSONRPCToolSuccessResult(w http.ResponseWriter, id any, data any) {
+func writeJSONRPCResult(w http.ResponseWriter, id json.RawMessage, result any) {
+	writeJSONRPCResponse(w, jsonRPCResponse{JSONRPC: "2.0", ID: id, Result: result})
+}
+
+func writeJSONRPCToolSuccessResult(w http.ResponseWriter, id json.RawMessage, data any) {
 	writeJSONRPCResult(w, id, map[string]any{
-		"content": []mcpTextContent{
-			{Type: "text", Text: toolResultText(data)},
-		},
+		"content":           []mcpTextContent{{Type: "text", Text: toolResultText(data)}},
 		"structuredContent": data,
 	})
 }
 
-func writeJSONRPCToolErrorResult(w http.ResponseWriter, id any, message string) {
+func writeJSONRPCToolErrorResult(w http.ResponseWriter, id json.RawMessage, message string) {
 	writeJSONRPCResult(w, id, map[string]any{
-		"content": []mcpTextContent{
-			{Type: "text", Text: message},
-		},
+		"content": []mcpTextContent{{Type: "text", Text: message}},
 		"isError": true,
 	})
 }
 
-func writeJSONRPCErrorWithData(w http.ResponseWriter, id any, code int, message string, data any) {
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: &jsonRPCError{
-			Code:    code,
-			Message: message,
-			Data:    data,
-		},
-	})
+func writeJSONRPCErrorWithData(w http.ResponseWriter, id json.RawMessage, code int, message string, data any) {
+	writeJSONRPCResponse(w, jsonRPCResponse{JSONRPC: "2.0", ID: id, Error: &jsonRPCError{Code: code, Message: message, Data: data}})
 }
 
-func writeJSONRPCError(w http.ResponseWriter, id any, code int, message string) {
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(jsonRPCResponse{
-		JSONRPC: "2.0",
-		ID:      id,
-		Error: &jsonRPCError{
-			Code:    code,
-			Message: message,
-		},
-	})
+func writeJSONRPCError(w http.ResponseWriter, id json.RawMessage, code int, message string) {
+	writeJSONRPCErrorStatus(w, http.StatusOK, id, code, message)
+}
+
+func writeJSONRPCErrorStatus(w http.ResponseWriter, status int, id json.RawMessage, code int, message string) {
+	writeJSONRPCResponseStatus(w, status, jsonRPCResponse{JSONRPC: "2.0", ID: id, Error: &jsonRPCError{Code: code, Message: message}})
+}
+
+func writeJSONRPCResponse(w http.ResponseWriter, response jsonRPCResponse) {
+	writeJSONRPCResponseStatus(w, http.StatusOK, response)
+}
+
+func writeJSONRPCResponseStatus(w http.ResponseWriter, status int, response jsonRPCResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func writeEmptyStatus(w http.ResponseWriter, status int) {
+	w.Header().Del("Content-Type")
+	w.WriteHeader(status)
 }

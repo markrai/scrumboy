@@ -1,4 +1,5 @@
-// @vitest-environment happy-dom
+// @vitest-environment jsdom
+// DOMPurify does not support happy-dom. Use jsdom for sanitizer tests.
 import createDOMPurify from "dompurify";
 import MarkdownIt from "markdown-it";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

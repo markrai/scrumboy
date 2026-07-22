@@ -9,10 +9,14 @@
 - [What does the done lane mean for dashboard stats?](#what-does-the-done-lane-mean-for-dashboard-stats)
 - [Are tag colors personal, or shared with the team?](#are-tag-colors-personal-or-shared-with-the-team)
 - [How do I use Scrumboy with Claude or other MCP clients?](#how-do-i-use-scrumboy-with-claude-or-other-mcp-clients)
+- [My Claude or Cursor MCP connection broke after upgrading to 3.22 — what do I do?](#my-claude-or-cursor-mcp-connection-broke-after-upgrading-to-322--what-do-i-do)
+- [Can Scrumboy MCP OAuth work with OIDC-only login?](#can-scrumboy-mcp-oauth-work-with-oidc-only-login)
+- [Can one account use both a Scrumboy password and SSO?](#can-one-account-use-both-a-scrumboy-password-and-sso)
+- [What happens if the SSO provider is unavailable?](#what-happens-if-the-sso-provider-is-unavailable)
 - [What are VAPID keys, and do I need them?](#what-are-vapid-keys-and-do-i-need-them)
 - [How do I generate SCRUMBOY_ENCRYPTION_KEY?](#how-do-i-generate-scrumboy_encryption_key)
 - [Do I need to configure SMTP? What happens if I don't?](#do-i-need-to-configure-smtp-what-happens-if-i-dont)
-- [I configured SMTP - why don't I see Forgot password?](#i-configured-smtp---why-dont-i-see-forgot-password)
+- [I configured SMTP - why don't I see Forgot your Scrumboy password?](#i-configured-smtp---why-dont-i-see-forgot-your-scrumboy-password)
 - [How do I turn on email notifications?](#how-do-i-turn-on-email-notifications)
 - [How does auditing work, and where can I see it?](#how-does-auditing-work-and-where-can-i-see-it)
 - [Does Scrumboy use telemetry, tracking, or “phone home”?](#does-scrumboy-use-telemetry-tracking-or-phone-home)
@@ -21,6 +25,18 @@
 - [Does this project accept donations?](#does-this-project-accept-donations)
 
 # Notes
+
+## Can one account use both a Scrumboy password and SSO?
+
+Yes. Accounts may be local-only, SSO-only, or dual-authentication. An SSO-only user can choose **Set Scrumboy password** after fresh SSO reauthentication. A local user can choose **Connect SSO**, confirm the current Scrumboy password and Scrumboy 2FA when enabled, then authenticate at the provider. The verified provider email must match the canonical Scrumboy email.
+
+Normal SSO login identifies an existing account only by provider issuer and subject. A matching email never silently links an identity or transfers account ownership. See [`docs/oidc.md`](docs/oidc.md).
+
+## What happens if the SSO provider is unavailable?
+
+Existing Scrumboy sessions may continue until they expire or are revoked. New SSO sign-ins and sensitive SSO step-up operations fail until the provider returns. A dual-authentication owner can use the local form when local authentication is enabled.
+
+If no owner has an effective local method, a host operator must stop Scrumboy, back up the SQLite database/volume, and run `scrumboy recover-owner --email owner@example.com`. Recovery revokes the owner's sessions, does not clear 2FA, and does not automatically enable local authentication. Follow [`docs/recovery.md`](docs/recovery.md).
 ## How do I enable Markdown in my notes?
 
 Set `SCRUMBOY_MARKDOWN_NOTES_ENABLED=1` on the server (also accepts `true`, `on`, or `yes`; case-insensitive). The feature defaults to off.
@@ -31,7 +47,7 @@ Notes are still stored as raw markdown in `todos.body`. Todo titles and board ca
 
 Preview hardening: HTML in notes is not rendered; images stay as escaped text; dangerous link schemes and embedded content are stripped or neutralized.
 
-For architecture, security, and source references, see [`docs/markdown&mermaid.md`](docs/markdown&mermaid.md).
+For architecture, security, and source references, see [`docs/markdown-and-mermaid.md`](docs/markdown-and-mermaid.md).
 
 ## How do I enable Mermaid diagrams in my notes?
 
@@ -60,7 +76,7 @@ User-authored Mermaid `%%{init: ...}%%` directive blocks are stripped before ren
 
 The server exposes `mermaidNotesEnabled` on `/api/auth/status` alongside `markdownNotesEnabled`.
 
-For full architecture and security details, see [`docs/markdown&mermaid.md`](docs/markdown&mermaid.md).
+For full architecture and security details, see [`docs/markdown-and-mermaid.md`](docs/markdown-and-mermaid.md).
 
 # Board
 
@@ -72,33 +88,46 @@ In that dialog, turn on only the changes you want (each field has its own checkb
 
 A normal click on a card (without Ctrl/⌘) opens the usual single-todo editor and clears the selection. Viewers cannot use multi-select; Ctrl/⌘+click still opens one todo for them.
 
-## What is a temporary board?
+## What is a Temporary Board?
 
-A **temporary board** is a Scrumboy project with an **`expires_at`** timestamp. It is meant to be shared by URL (pastebin-style) rather than kept as a long-lived team project. Durable projects have **`expires_at` unset** and use normal sign-in, members, and roles.
+Scrumboy has three kinds of board, distinguished by two columns (`expires_at` and `creator_user_id`):
+
+- **Anonymous Board** - an expiring board with **no recorded creator** (`expires_at` set, `creator_user_id` null). Pastebin-style: anyone with the link can use it, and it **cannot be claimed**.
+- **Temporary Board** - an expiring board **attributed to the signed-in user who created it** (`expires_at` set, `creator_user_id` set). Shareable by link while temporary, and claimable **only by that creator**.
+- **Durable Project** - a normal, **non-expiring** project (`expires_at` unset) governed by owner/member roles. It is **not** publicly accessible just by knowing the slug.
 
 **How you get one**
 
-- Open **`/anon`** (or **`/temp`**, which redirects there). Scrumboy creates a new board and sends you to **`/{slug}`** - that link is how you share it.
-- In **full mode**, if you are signed in when the board is created, it is still temporary but recorded as yours (**“Temporary Board”**, with a `creator_user_id`). You can later **claim** it to turn it into a durable project (`POST /api/board/{slug}/claim` while logged in).
-- In **anonymous server mode** (`SCRUMBOY_MODE=anonymous`), the instance is built for temporary boards only; new boards from `/anon` have **no owner** (**“Anonymous Board”**, `creator_user_id` is null).
+- Open **`/anon`** (or **`/temp`**, which redirects there). Scrumboy creates a new expiring board and sends you to **`/{slug}`** - that link is how you share it.
+- In **Anonymous Mode** (`SCRUMBOY_MODE=anonymous`), the instance has no users; **Anonymous Mode is built for Anonymous Boards only**, so `/anon` always creates an **Anonymous Board**.
+- In **Full Mode while signed out**, `/anon` also creates an **Anonymous Board** (no creator).
+- In **Full Mode while signed in**, `/anon` creates a **Temporary Board** attributed to you (`creator_user_id` = your user).
 
-**Anonymous temporary boards** (no owner: `expires_at` is set and `creator_user_id` is null) can be used **without signing in**. Anyone with the link can create, edit, move, and delete todos and rename the board. They cannot assign todos to users, change the project image, or delete the whole project from the UI. Tag colors on that board are shared for everyone on the link.
+**Claiming (Temporary Board → Durable Project)**
+
+- Only the **recorded creator** of a Temporary Board can claim it: `POST /api/board/{slug}/claim` while signed in as that creator. Claiming clears `expires_at`, makes you the owner, and grants you maintainer membership.
+- **Anonymous Boards cannot be claimed** - there is no creator to authorize the conversion - and the claim route is **disabled entirely in Anonymous Mode**.
+- Another signed-in user who merely has the link **cannot** claim your Temporary Board; they receive **not found**.
+- After a successful claim the board becomes a **Durable Project**: the **slug is retained**, but it **stops granting public access**. From then on access requires **ownership or membership** - an unrelated authenticated user, or an unauthenticated visitor, requesting the same slug receives **404**. Because it is no longer temporary, a **repeat** `POST /api/board/{slug}/claim` also returns **not found**.
+
+**Using an Anonymous Board** (`expires_at` set, `creator_user_id` null) works **without signing in**. Anyone with the link can create, edit, move, and delete todos and rename the board. They cannot assign todos to users, change the project image, or delete the whole project from the UI. Tag colors on that board are shared for everyone on the link.
 
 **When it expires**
 
-- New temporary boards start with **`expires_at` about 90 days ahead** (`TemporaryBoardLifetimeDays` in the server code).
+- New expiring boards (Temporary and Anonymous Boards) start with **`expires_at` about 90 days ahead** (`TemporaryBoardLifetimeDays` in the server code).
 - **Yes, activity resets the expiry window** - but not as a separate “inactivity counter.” When the board is used, the server runs **`UpdateBoardActivity`**, which sets **`expires_at` to about 90 days from that moment** (rolling lifetime). Qualifying activity includes loading the board (for example a full board read) and todo changes (create, update, move, delete). Updates are **throttled to at most once every 5 minutes** per board so rapid refreshes do not hammer the database.
 - After **`expires_at` has passed**, the board URL returns **404** for reads and edits until the server removes the expired row. There is no “grace period” in the API after expiry.
 
-**Compared to a normal project**
+**Compared to a Durable Project**
 
-| | Temporary board | Durable project |
+| | Expiring board (Temporary / Anonymous) | Durable Project |
 |--|-----------------|-----------------|
 | Lifetime | `expires_at` (90-day rolling window with activity) | No expiry |
-| Sharing | Link-based; anonymous temps need no login | Members and roles |
-| Delete project | Not offered for anonymous temps | Maintainers can delete |
+| Sharing | Link-based; Anonymous Boards need no login | Members and roles |
+| Claimable | Temporary Boards, by their creator only; Anonymous Boards never | n/a (already durable) |
+| Delete project | Not offered for Anonymous Boards | Maintainers can delete |
 
-For permissions detail, see [`docs/roles_and_permissions.md`](docs/roles_and_permissions.md).
+For permissions detail, see [`docs/roles-and-permissions.md`](docs/roles-and-permissions.md).
 
 # Dashboard
 
@@ -137,20 +166,56 @@ When you open a board, Scrumboy refreshes colors from that board so what you see
 
 ## How do I use Scrumboy with Claude or other MCP clients?
 
-**Yes.** Scrumboy exposes an **MCP-compatible HTTP API** on the instance you run. AI assistants and automation (Claude, Cursor, custom agents, scripts) can list and call tools to manage projects, todos, sprints, tags, members, and board snapshots - without using the web UI for every change.
+Scrumboy exposes an **MCP-compatible HTTP API** on the instance you run. AI assistants and automation (Claude, Cursor, custom agents, scripts) can list and call tools to manage projects, todos, sprints, tags, members, and board snapshots — without using the web UI for every change.
 
-**Recommended for MCP-style clients:** `POST /mcp/rpc` with **JSON-RPC 2.0** (`initialize`, `tools/list`, `tools/call`). That is the same protocol shape many MCP clients expect, served over HTTP to your Scrumboy URL.
+**Canonical endpoint for native MCP clients (Claude Code, Cursor, and similar):** `https://YOUR_HOST/mcp/rpc`
 
-**Also available:** `POST /mcp` with a simple `{"tool":"…","input":{…}}` envelope for scripts and older integrations.
+Configure the client with that exact URL, for example:
 
-**Authentication:** sign in and use your session cookie, or create an **API access token** (starts with `sb_`) and send `Authorization: Bearer sb_…`. Tokens are created via the API while logged in (see the **Integrations & API Access** section in [`README.md`](README.md)).
+```sh
+claude mcp add --transport http scrumboy https://YOUR_HOST/mcp/rpc
+```
+
+That surface speaks **JSON-RPC 2.0** (`initialize`, `ping`, `tools/list`, `tools/call`) over Streamable HTTP. It is also the **sole OAuth protected resource**: clients discover Scrumboy’s authorization server from the 401 `WWW-Authenticate` challenge, register via DCR, and send Bearer tokens only to `/mcp/rpc`.
+
+**Legacy envelope (scripts / older integrations):** `POST /mcp` with `{"tool":"…","input":{…}}`. It accepts a session cookie or a static **`sb_…` API token**, not MCP OAuth access tokens.
+
+**Authentication options:**
+
+| Credential | `/mcp/rpc` | `/mcp` |
+|------------|------------|--------|
+| Session cookie | Yes | Yes |
+| Static `sb_…` Bearer | Yes | Yes |
+| Scrumboy MCP OAuth access token (bound to `/mcp/rpc`) | Yes | No |
 
 **Important limits today:**
 
 - Scrumboy is an **HTTP** MCP server on your host. It does **not** speak **stdio** MCP (the process-spawn model some desktop apps use). Clients must connect to your Scrumboy base URL over HTTP, or use a bridge that translates stdio to HTTP.
 - All traffic stays between the client and **your** Scrumboy server. Scrumboy does not host a cloud MCP relay for you.
 
-For tool names, auth rules, examples, and the optional Agora discover/invoke edge, see [`docs/mcp.md`](docs/mcp.md). For full HTTP behavior, see [`API.md`](API.md).
+For OAuth details see [`docs/oauth.md`](docs/oauth.md). For tool names and examples see [`docs/mcp.md`](docs/mcp.md). For full HTTP behavior see [`API.md`](API.md). Upgrade impact is summarized in [`CHANGELOG.md`](CHANGELOG.md) under **3.22.0**.
+
+## My Claude or Cursor MCP connection broke after upgrading to 3.22 — what do I do?
+
+**3.22** tightened remote MCP OAuth on purpose. If a client that worked on **3.20 / 3.21** suddenly fails, check these in order:
+
+1. **URL must be `/mcp/rpc`, not `/mcp`.**  
+   Remove the old server entry and re-add with the canonical path, for example:  
+   `claude mcp add --transport http scrumboy https://YOUR_HOST/mcp/rpc`
+
+2. **Clear stale OAuth credentials and authorize again.**  
+   Migration `057` invalidates pre-3.22 authorization codes and access/refresh tokens. DCR client registrations remain; you still need a fresh browser consent. Cookies and static `sb_…` tokens are unaffected.
+
+3. **Do not expect an OAuth token to work on `/mcp` or Agora.**  
+   Those surfaces stay cookie / static-token only. Native clients use `/mcp/rpc` only.
+
+4. **Confirm the client speaks a supported protocol version** (`2025-03-26`, `2025-06-18`, or `2025-11-25`) and sends `clientInfo.name` **and** `clientInfo.version` on `initialize`.
+
+Details: [`CHANGELOG.md`](CHANGELOG.md) (**3.22.0 → Breaking / upgrade impact**), [`docs/oauth.md`](docs/oauth.md), [`docs/mcp-oauth-acceptance.md`](docs/mcp-oauth-acceptance.md).
+
+## Can Scrumboy MCP OAuth work with OIDC-only login?
+
+**Yes.** After the initial owner completes one-time setup through the main app, an OAuth authorization page can continue through configured SSO and return you to the pending consent request. See [`docs/oauth.md`](docs/oauth.md) for configuration, security behavior, and limitations.
 
 # Notifications
 
@@ -172,13 +237,13 @@ Do not confuse them: turning on desktop notifications does **not** replace VAPID
 - `SCRUMBOY_VAPID_PUBLIC_KEY`
 - `SCRUMBOY_VAPID_PRIVATE_KEY`
 
-(URL-safe base64 from a VAPID generator.) When both are set in **full mode**, signed-in clients may try to subscribe automatically; each user must still **allow notifications** in the browser. **Settings → Customization → Web Push** can turn push off or back on per device.
+(URL-safe base64 from a VAPID generator — a **matching** pair.) Non-empty strings alone are not enough: the keys must decode to a valid matching P-256 pair, the optional subscriber must be valid (or unset for the default), and the server must run in **full mode**. When push is **effectively enabled** (`pushConfigured: true` / `push.state: "enabled"` on signed-in auth status), signed-in clients may try to subscribe automatically; each user must still **allow notifications** in the browser. **Settings → Customization → Web Push** can turn push off or back on per device.
 
 Optional: `SCRUMBOY_VAPID_SUBSCRIBER` is a **contact hint for push providers** (plain email or `mailto:` / `https:` URL). It does **not** control who can sign in and does not need to match OIDC or user emails.
 
-**Not telemetry:** VAPID identifies **your** Scrumboy server to the push network so assignment events can be delivered. It is not product analytics and does not send board data to Scrumboy’s project maintainers.
+**Not telemetry:** VAPID identifies **your** Scrumboy server to the push network so assignment events can be delivered. It is not product analytics and does not send board data to Scrumboy’s project maintainers. Assignment push payloads do include the **todo title** (and project slug / todo id) in the encrypted Web Push body — see [`docs/vapid.md`](docs/vapid.md#what-gets-sent-and-what-does-not).
 
-For what VAPID is, how it fits this project, key generation, and verification, see [`docs/vapid.md`](docs/vapid.md). For PWA install, Docker wiring, and auto-subscribe behavior, see [`docs/pwa.md`](docs/pwa.md).
+For enablement validation, status/reason fields, key generation, and verification, see [`docs/vapid.md`](docs/vapid.md). For PWA install, Docker wiring, and auto-subscribe behavior, see [`docs/pwa.md`](docs/pwa.md).
 
 ## How do I generate SCRUMBOY_ENCRYPTION_KEY?
 
@@ -228,11 +293,11 @@ If OpenSSL is installed on Windows, `openssl rand -base64 32` works the same as 
 
 **No.** SMTP is optional server config for self-service password-reset email delivery. Without it, admins can still generate password-reset links manually (Settings → Users → Password) and hand them to the user out of band - that flow is unaffected by SMTP configuration.
 
-To let users request their own reset email, configure `SCRUMBOY_SMTP_HOST` and `SCRUMBOY_SMTP_FROM` (`SCRUMBOY_SMTP_PORT` defaults to `587` when omitted; if explicitly set, it must be between 1 and 65535; `SCRUMBOY_SMTP_FROM` must be a parseable RFC 5322 address), `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL`. When those required static settings are present and valid, users can choose **Forgot password?** on the local-password sign-in screen. The control is hidden during first-time setup, on OIDC-only or anonymous deployments, and whenever a required setting is missing or invalid; the admin-generated link remains the fallback. The capability does not test relay reachability or guarantee delivery. The request endpoint stays enumeration-safe: its generic accepted result does not confirm an account or email delivery. See [`docs/smtp.md`](docs/smtp.md) for TLS modes, the HTTP contract, and setup/verification steps.
+To let users who already have a local password request their own reset email, configure `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM`, `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL`, and keep local authentication enabled. Users can then choose **Forgot your Scrumboy password?**. SSO-only accounts use provider recovery and receive no Scrumboy reset mail; owners can generate a link only for accounts with a usable local password. The generic request response does not confirm an account or delivery. See [`docs/smtp.md`](docs/smtp.md).
 
-## I configured SMTP - why don't I see Forgot password?
+## I configured SMTP - why don't I see Forgot your Scrumboy password?
 
-Setting the SMTP host alone is not enough. Scrumboy only shows **Forgot password?** when self-service reset is fully ready **and** you are on the normal local-password sign-in screen. Work through this checklist:
+Setting the SMTP host alone is not enough. Scrumboy only shows **Forgot your Scrumboy password?** when self-service reset is fully ready, local authentication is enabled, and you are on the local-password sign-in screen. Work through this checklist:
 
 1. **Full mode** - anonymous mode never offers self-service reset (`selfServicePasswordResetEnabled` is always `false`).
 2. **Startup logs** - look for `smtp: enabled (host=… port=…)`. Do **not** stop there: also confirm there is **no** `SCRUMBOY_PUBLIC_BASE_URL is missing or invalid…` line and **no** `invalid SCRUMBOY_ENCRYPTION_KEY ignored… password reset disabled` warning. You need all four: `SCRUMBOY_SMTP_HOST`, `SCRUMBOY_SMTP_FROM`, `SCRUMBOY_ENCRYPTION_KEY`, and a valid `SCRUMBOY_PUBLIC_BASE_URL` (see [`docs/smtp.md`](docs/smtp.md#required-env-vars)).
@@ -258,7 +323,7 @@ Scrumboy **records an audit trail automatically** while you use the product. The
 - Project created, renamed, image updated, default sprint weeks changed, or deleted
 - Todo links added or removed
 
-Each event stores **who** did it (`actor_user_id`, or NULL on anonymous boards), **what** happened (`action`), **which entity** (`target_type` / `target_id`), and **JSON metadata** (for example column moves or changed field names - not full note bodies). Rows are **append-only** (the database blocks updates and deletes on `audit_events`).
+Each event stores **who** did it (`actor_user_id`, or NULL on anonymous boards), **what** happened (`action`), **which entity** (`target_type` / `target_id`), and **JSON metadata**. Metadata varies by action: some events store full user-provided strings (todo titles on create, project names on create/rename/delete, tag names in tag diffs); title/body **updates** store lengths only; note bodies are never stored in audit metadata. Rows are **append-only** at the application level (database triggers reject ordinary updates and deletes on `audit_events`; that is not a guarantee against privileged database or filesystem access).
 
 **Assignee changes** are tracked separately in **`todo_assignee_events`**, not duplicated in `audit_events`.
 
@@ -272,9 +337,9 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-Project backups/exports may also include audit data depending on scope; see your backup workflow.
+JSON project backups/exports do **not** include `audit_events`. Keep a file-level `DATA_DIR` backup if you need the audit table for disaster recovery.
 
-For the full action list, metadata shapes, and security notes, see [`docs/audit_trail.md`](docs/audit_trail.md).
+For the full action list, metadata disclosure table, and security notes, see [`docs/audit-trail.md`](docs/audit-trail.md).
 
 # Privacy
 

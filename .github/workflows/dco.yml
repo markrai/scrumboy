@@ -2,18 +2,85 @@ name: DCO Check
 
 on:
   pull_request:
-    branches: [main, master]
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
 
 jobs:
   dco:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Get PR commits
-        id: get-pr-commits
-        uses: tim-actions/get-pr-commits@v1.3.1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: DCO check
-        uses: tim-actions/dco@v1.1.0
-        with:
-          commits: ${{ steps.get-pr-commits.outputs.commits }}
+          fetch-depth: 0
+
+      - name: Check DCO sign-offs
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t commits < <(
+            git rev-list --reverse --no-merges "${BASE_SHA}..${HEAD_SHA}"
+          )
+
+          if (( ${#commits[@]} == 0 )); then
+            echo "No non-merge commits found in pull request."
+            exit 0
+          fi
+
+          failures=0
+          checked=0
+          skipped=0
+
+          for commit in "${commits[@]}"; do
+            author_name="$(git show -s --format='%an' "$commit")"
+            author_email="$(git show -s --format='%ae' "$commit")"
+
+            if [[ "$PR_AUTHOR" == "dependabot[bot]" &&
+                  "$author_name" == "dependabot[bot]" &&
+                  "$author_email" == "49699333+dependabot[bot]@users.noreply.github.com" ]]; then
+              echo "SKIP ${commit:0:12} Dependabot-authored commit"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            checked=$((checked + 1))
+            expected="${author_name} <${author_email}>"
+            matched=false
+
+            mapfile -t signoffs < <(
+              git show -s --format='%B' "$commit" |
+                git interpret-trailers --parse |
+                sed -nE 's/^Signed-off-by:[[:space:]]*//Ip'
+            )
+
+            for signoff in "${signoffs[@]}"; do
+              if [[ "${signoff,,}" == "${expected,,}" ]]; then
+                matched=true
+                break
+              fi
+            done
+
+            if [[ "$matched" == true ]]; then
+              echo "PASS ${commit:0:12} ${expected}"
+            else
+              echo "::error title=DCO sign-off missing::Commit ${commit:0:12} must contain: Signed-off-by: ${expected}"
+              failures=$((failures + 1))
+            fi
+          done
+
+          if (( failures > 0 )); then
+            echo "DCO check failed for ${failures} of ${checked} checked commit(s); ${skipped} Dependabot commit(s) skipped."
+            exit 1
+          fi
+
+          echo "DCO check passed for ${checked} checked commit(s); ${skipped} Dependabot commit(s) skipped."

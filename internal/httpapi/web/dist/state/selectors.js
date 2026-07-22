@@ -67,6 +67,9 @@ export function getBootstrapAvailable() {
 export function getPushConfigured() {
     return !!current._pushConfigured;
 }
+export function getPushStatus() {
+    return current._pushStatus ?? null;
+}
 export function getSelfServicePasswordResetEnabled() {
     return !!current._selfServicePasswordResetEnabled;
 }

@@ -1,30 +1,19 @@
 # Progressive Web App (PWA) and Web Push (VAPID)
 
-For what VAPID keys are, whether you need them, and how they relate to Scrumboy, see [`docs/vapid.md`](vapid.md). This document covers PWA install, operator setup, Docker verification, and client auto-subscribe behavior.
+Normative enablement, status/reason contract, and assignment **payload fields**: [`docs/vapid.md`](vapid.md). This document covers PWA install, Docker wiring, verification, client auto-subscribe, and notification click deep-links.
 
-Scrumboy can be installed as a PWA. For **background assignment notifications** (when the app is closed or not focused), the server must expose **VAPID** keys. Users still must **allow notifications** in the browser when prompted; there is no way to bypass OS/browser permission.
+Scrumboy can be installed as a PWA. **Background assignment notifications** need Web Push **effectively enabled** on the server (validated matching VAPID key pair in full mode — not merely non-empty env strings). Users must still **allow notifications** in the browser; there is no bypass for OS/browser permission.
 
-## VAPID keys and the subscriber contact
+## Enablement (summary)
 
-- Generate a key pair (for example with [`web-push` npm](https://www.npmjs.com/package/web-push), the [VapidKeys.com](https://vapidkeys.com/) generator, or any VAPID tool).
-- Set **`SCRUMBOY_VAPID_PUBLIC_KEY`** and **`SCRUMBOY_VAPID_PRIVATE_KEY`** (URL-safe base64, as typically output by generators).
-
-When **both** keys are set **and the server is running in full mode**, the server enables Web Push for the instance: subscribe/unsubscribe APIs work, assignment events can be pushed, and **`GET /api/push/vapid-public-key`** returns **`{ "publicKey": "..." }`**. That is treated as operator intent to offer push on this deployment. Anonymous mode keeps Web Push unavailable even if keys are present.
-
-### `SCRUMBOY_VAPID_SUBSCRIBER`
-
-This value becomes the JWT **`sub`** (subject) claim on outbound Web Push requests. It is a **contact hint for push services** (Mozilla/Google), not login identity.
-
-- **Any stable contact is fine** - operations email, `admin@yourcompany.com`, a `https://` policy URL, etc.
-- It does **not** need to match your OIDC issuer, user emails, or IdP.
-- Use a **plain email** in the environment variable, e.g. `ops@example.com`. The server normalizes it to `mailto:ops@example.com`.
-- If you already use a full URL, use **`mailto:...`** or **`https://...`** explicitly - do **not** prefix a bare email with `mailto:` in env if you are also pasting a full `mailto:user@host` (avoid `mailto:mailto:...`).
-
-If unset, the server falls back to an internal default contact for `sub` (see `internal/httpapi/push_notify.go`).
+- Generate a matching VAPID key pair; set `SCRUMBOY_VAPID_PUBLIC_KEY` and `SCRUMBOY_VAPID_PRIVATE_KEY`.
+- Optional `SCRUMBOY_VAPID_SUBSCRIBER` is the push-service contact (`sub` claim)—not login identity. Details: [`vapid.md`](vapid.md).
+- Push is active only when prepared status is **`enabled`** (full mode + valid matching keys + valid/default subscriber). Then subscribe APIs work, assignment events can be pushed, `pushConfigured` is true on auth status, and `GET /api/push/vapid-public-key` returns `{ "publicKey": "..." }`.
+- Anonymous mode keeps Web Push unavailable even if keys are present.
 
 ## Docker setup and verification
 
-The stock `docker-compose.yml` keeps Web Push optional. To enable it, Docker must pass the VAPID variables into the running container; setting them only in your shell or in an unrelated `.env` file is not enough.
+The stock `docker-compose.yml` keeps Web Push optional. Compose must inject VAPID variables into the container; setting them only in your shell or an unused `.env` is not enough.
 
 Example Compose wiring:
 
@@ -47,57 +36,52 @@ SCRUMBOY_VAPID_SUBSCRIBER=ops@example.com
 
 Notes:
 
-- **Both** `SCRUMBOY_VAPID_PUBLIC_KEY` and `SCRUMBOY_VAPID_PRIVATE_KEY` are required. One without the other is treated as disabled.
-- Scrumboy does **not** auto-load env files inside the container; Compose must inject the variables into the service.
-- After changing Compose or the injected env values, recreate the container so the process starts with the new environment:
+- Both public and private keys are required for enablement; one without the other yields prepared status **`invalid`**. Startup may still log `web push: partial config ignored`.
+- After changing Compose/env, recreate the container so the process sees the new values:
 
 ```bash
 docker compose up -d --build --force-recreate
 ```
 
-Verify the running container sees the variables:
+Verify:
 
 ```bash
 docker exec scrumboy env | grep SCRUMBOY_VAPID
-```
-
-Verify the live API returns the public key:
-
-```bash
 curl -sS -D- http://127.0.0.1:8080/api/push/vapid-public-key
 ```
 
-Expected results:
+- `200` with `publicKey` → Web Push **effectively enabled**.
+- `503` with `PUSH_UNAVAILABLE` → not effectively enabled (see [`vapid.md`](vapid.md#effective-enablement-not-just-keys-present)).
 
-- `200` with `publicKey` means VAPID is active.
-- `503` with `PUSH_UNAVAILABLE` means the running process still does not have both keys.
-
-At startup the server also logs one of:
-
-- `web push: enabled`
-- `web push: disabled (anonymous mode)`
-- `web push: disabled (set SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY)`
-- `web push: partial config ignored`
+Prefer signed-in **`GET /api/auth/status`** (`pushConfigured`, `push.state` / `push.reason`) over the presence-oriented startup `web push: …` banner alone.
 
 ## Auto-subscribe after sign-in
 
-After a user signs in (full mode, same origin), the SPA checks **`GET /api/auth/status`**. If that response says **`pushConfigured: true`**, it then calls **`maybeAutoSubscribePushAfterLogin`**, which:
+After sign-in (full mode, same origin), the SPA checks **`GET /api/auth/status`**. If **`pushConfigured: true`**, `maybeAutoSubscribePushAfterLogin`:
 
-1. Checks **browser support** (`serviceWorker`, `PushManager`).
-2. Fetches **`GET /api/push/vapid-public-key`** to get the actual public key for the subscribe flow.
-3. Attempts **`subscribeToPush()`** unless a **per-user** autosub outcome is already stored in **localStorage** (`scrumboy_push_autosub_v1_u{userId}`): **`done`** (already subscribed or subscribe succeeded) or **`denied`** (notification permission blocked). **Transient failures** and **dismissed prompts** (permission still **`default`**) do **not** lock the path, so a later reload can retry without opening Settings.
+1. Checks browser support (`serviceWorker`, `PushManager`).
+2. Fetches **`GET /api/push/vapid-public-key`**.
+3. Attempts **`subscribeToPush()`** unless a **per-user** autosub outcome is already in **localStorage** (`scrumboy_push_autosub_v1_u{userId}`): **`done`** or **`denied`**. Transient failures and dismissed prompts (`default` permission) do not lock the path.
 
-This is **per browser / per device**, not a server-side default stored in the database.
+This is **per browser / per device**, not a server-side default. The legacy global key **`scrumboy_push_autosub_v1`** is no longer read.
 
-The legacy key **`scrumboy_push_autosub_v1`** (global) is **no longer read**; it can be removed from storage manually if present.
+**Settings → Customization** still exposes a **Web Push** checkbox to opt out or re-enable. Settings uses `pushConfigured` from auth status (no VAPID probe on render).
 
-**Settings → Customization** still exposes a **Web Push** checkbox: optional override to **disable** (unsubscribe) or **re-enable** after the user turned push off. It is not required onboarding when VAPID is configured. The Settings screen now uses `pushConfigured` from auth status instead of probing the VAPID endpoint on render.
+### Trade-offs
 
-### Trade-offs (operator awareness)
+- Permission prompts on first sign-in can feel aggressive.
+- Shared machines / kiosks may not want auto prompts.
+- Blocked prompts require fixing site settings in the browser.
 
-- **Permission prompts** on first sign-in can feel aggressive; users may block notifications.
-- **Shared machines / kiosks**: auto prompts may be unwelcome; users can deny or disable in Settings.
-- **Browser variance**: blocked prompts require fixing site settings in the browser; the app cannot override that.
+## Notification click deep-link
+
+When the user opens an assignment notification, the service worker (`sw.js`) deep-links to:
+
+```text
+/{projectSlug}?openTodoId={todoId}
+```
+
+when the push payload includes both `projectSlug` and `todoId`; otherwise it opens `/`. Payload field contract and privacy notes: [`vapid.md`](vapid.md). **Automated tests do not cover** this click → URL contract today; treat it as a manual/browser check before release when changing push payloads or `sw.js` click handling.
 
 ## Related environment variables
 
@@ -108,15 +92,15 @@ The legacy key **`scrumboy_push_autosub_v1`** (global) is **no longer read**; it
 | `SCRUMBOY_VAPID_SUBSCRIBER` | Contact for VAPID `sub` (plain email or `mailto:` / `https:` URL). |
 | `SCRUMBOY_DEBUG_PUSH` | `1` - server logs for push send/prune. |
 
-See also the main [README](../README.md#config) env table.
+See the main [README](../README.md#config) env table and [`docs/vapid.md`](vapid.md).
 
 ## User-facing controls
 
-- **Desktop notifications** (in-page / tab background): Settings -> **Enable notifications** (Notification API).
-- **Background Web Push** (installed PWA / closed app): automatic attempt when VAPID is configured; **Web Push on this device** in Settings to opt out or opt back in.
+- **Desktop notifications** (in-page / tab background): Settings → **Enable notifications** (Notification API).
+- **Background Web Push** (installed PWA / closed app): automatic attempt when Web Push is effectively enabled; **Web Push on this device** in Settings to opt out or opt back in.
 
-Both can be used together; Web Push is what reaches users when SSE is throttled in the background.
+Both can be used together; Web Push reaches users when SSE is throttled in the background.
 
 ## Automated tests
 
-There is no browser test suite wired for `push.ts` auto-subscribe state today; behavior is covered by code review and manual checks. Adding a small unit test around storage-key helpers or a headless flow would reduce regression risk as this logic grows.
+There is no browser test suite wired for `push.ts` auto-subscribe or notification-click deep-links today; behavior is covered by code review and manual checks. Adding unit tests around storage-key helpers, payload fields, or a headless click flow would reduce regression risk.

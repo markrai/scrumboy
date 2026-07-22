@@ -1,0 +1,53 @@
+version: 2
+
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    cooldown:
+      semver-patch-days: 3
+      semver-minor-days: 7
+      semver-major-days: 45
+
+    open-pull-requests-limit: 2
+
+    groups:
+      go-updates:
+        update-types:
+          - "patch"
+          - "minor"
+
+  - package-ecosystem: "npm"
+    directory: "/internal/httpapi/web"
+    schedule:
+      interval: "weekly"
+
+    cooldown:
+      semver-patch-days: 3
+      semver-minor-days: 7
+      semver-major-days: 45
+
+    open-pull-requests-limit: 2
+
+    groups:
+      npm-updates:
+        update-types:
+          - "patch"
+          - "minor"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+
+    cooldown:
+      default-days: 7
+
+    open-pull-requests-limit: 1
+
+    groups:
+      github-actions:
+        patterns:
+          - "*"

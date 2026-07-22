@@ -15,7 +15,7 @@ import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab,
 import { setProjectId, setBoard, setSlug, setTag, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
 import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload } from './dist/dialogs/todo-submit.js';
-import { renderSettingsModal, invalidateTagsCache } from './dist/dialogs/settings.js';
+import { renderSettingsModal, invalidateTagsCache, resumeAuthenticationMethodFlow } from './dist/dialogs/settings.js';
 import { initDnD, columnsSpec, dragInProgress, dragJustEnded } from './dist/features/drag-drop.js';
 import { setupContextMenuCloseHandler } from './dist/features/context-menu.js';
 import { setupContextMenuButtonHandler } from './dist/features/context-menu-button.js';
@@ -50,6 +50,14 @@ initKeybindings({
 
 document.addEventListener(I18N_LOCALE_CHANGED, () => {
   hydrateI18n(document.body);
+});
+
+window.addEventListener("scrumboy:auth-method-return", async (event) => {
+  const kind = typeof event.detail === "string" ? event.detail : "";
+  setSettingsActiveTab("profile");
+  await renderSettingsModal();
+  settingsDialog.showModal();
+  await resumeAuthenticationMethodFlow(kind);
 });
 
 // User avatar button: delegated so it works on dashboard/projects/board even if a cached view bundle didn't bind it

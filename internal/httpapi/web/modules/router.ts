@@ -4,7 +4,7 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
@@ -112,6 +112,7 @@ async function routeOnce(): Promise<void> {
     setUser(newUser);
     setBootstrapAvailable(!!(st && st.bootstrapAvailable));
     setPushConfigured(!!(st && st.pushConfigured));
+    setPushStatus(newUser ? st.push : null);
     setSelfServicePasswordResetEnabled(!!(st && st.selfServicePasswordResetEnabled));
     setEmailNotifyAvailable(!!(st && st.emailNotifyAvailable));
     setOidcEnabled(!!(st && st.oidcEnabled));
@@ -229,6 +230,13 @@ async function routeOnce(): Promise<void> {
   }
 
   const r = parseRoute();
+	const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
+	if (authMethodReturn && getUser()) {
+		const cleanURL = new URL(window.location.href);
+		cleanURL.searchParams.delete("auth_method");
+		window.history.replaceState({}, "", cleanURL.pathname + cleanURL.search + cleanURL.hash);
+		window.setTimeout(() => window.dispatchEvent(new CustomEvent("scrumboy:auth-method-return", { detail: authMethodReturn })), 0);
+	}
   console.log("Router: parsed route:", r);
   setRoute(r.name);
   setTag(r.tag || "");
@@ -244,7 +252,11 @@ async function routeOnce(): Promise<void> {
 
   // Reset password page: no auth required (token is auth)
   if (r.name === "reset-password") {
-    renderResetPassword(r.token);
+		if (getLocalAuthEnabled()) {
+			renderResetPassword(r.token);
+		} else {
+			renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
+		}
     return;
   }
 

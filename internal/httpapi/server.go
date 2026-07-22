@@ -16,6 +16,7 @@ import (
 	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/mailer"
 	"scrumboy/internal/oidc"
+	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
 	"scrumboy/internal/version"
 )
@@ -27,10 +28,12 @@ type Options struct {
 	ScrumboyMode        string // "full" or "anonymous"
 	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
 	// Empty disables wallpaper upload/serve (returns 503 for those routes).
-	DataDir       string
-	AuthRateLimit *ratelimit.Limiter
-	MCPHandler    http.Handler
-	AgoraHandler  http.Handler
+	DataDir             string
+	AuthRateLimit       *ratelimit.Limiter
+	OAuthDCRRateLimit   *ratelimit.Limiter
+	OAuthTokenRateLimit *ratelimit.Limiter
+	MCPHandler          http.Handler
+	AgoraHandler        http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
@@ -40,7 +43,7 @@ type Options struct {
 	// Web Push (optional). Push is enabled only in full mode with both public/private VAPID keys set.
 	VAPIDPublicKey  string
 	VAPIDPrivateKey string
-	VAPIDSubscriber string // VAPID JWT "sub" (e.g. mailto:ops@example.com); default in notifier if empty
+	VAPIDSubscriber string // VAPID JWT "sub" (e.g. mailto:ops@example.com); defaults during configuration preparation
 	PushDebug       bool   // Log push send/skip (also SCRUMBOY_DEBUG_PUSH in config)
 
 	// WallEnabled gates the Scrumbaby feature. When false, all /wall routes
@@ -74,11 +77,16 @@ type Options struct {
 
 	// PublicBaseURL (SCRUMBOY_PUBLIC_BASE_URL). Required for self-service
 	// password-reset emails; missing or invalid values fail closed. When set,
-	// overrides the request-derived origin for reset links (see resetBaseURL).
+	// overrides the request-derived origin for reset links (see resetBaseURL)
+	// and is the canonical OAuth discovery issuer.
 	PublicBaseURL string
+	PublicOrigin  *publicorigin.Resolver
 
 	// TrustProxy (SCRUMBOY_TRUST_PROXY). When true, clientIP honors
-	// X-Forwarded-For for auth rate limits. Default false (RemoteAddr only).
+	// X-Forwarded-For for authentication and OAuth rate-limit IP keys. Default
+	// false (RemoteAddr only). Enable only behind a reverse proxy that
+	// overwrites or strips client-supplied XFF. Without PublicBaseURL, OAuth
+	// discovery also requires forwarded HTTPS and an explicit X-Forwarded-Host.
 	TrustProxy bool
 }
 
@@ -101,18 +109,28 @@ type Server struct {
 	mailCancel          context.CancelFunc
 	mailDone            <-chan struct{} // closed once the mail worker's shutdown flush completes; nil if SMTP isn't configured
 
-	authRateLimit *ratelimit.Limiter
+	authRateLimit       *ratelimit.Limiter
+	oauthDCRRateLimit   *ratelimit.Limiter
+	oauthTokenRateLimit *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
 
 	passwordResetAdminLimiter   *ratelimit.Limiter // 10 resets/min per admin
 	passwordResetRequestLimiter *ratelimit.Limiter // 5/min per IP+email, self-service request
+	firstPasswordStartLimiter   *ratelimit.Limiter
+	firstPasswordFinishLimiter  *ratelimit.Limiter
+	oidcLinkStartLimiter        *ratelimit.Limiter
+	currentPasswordLimiter      *ratelimit.Limiter
+	secondFactorLimiter         *ratelimit.Limiter
+	totpLimiter                 *ratelimit.Limiter
+	recoveryCodeLimiter         *ratelimit.Limiter
 
 	smtpConfigured bool // Host+port+From statically valid; gates request-password-reset email sending
 
-	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; empty disables self-service reset email (see resetBaseURL)
-	trustProxy    bool   // SCRUMBOY_TRUST_PROXY; when true, clientIP honors X-Forwarded-For
+	publicBaseURL string // SCRUMBOY_PUBLIC_BASE_URL; reset-link origin and canonical OAuth issuer when set
+	trustProxy    bool   // SCRUMBOY_TRUST_PROXY; gates forwarded client IP and OAuth origin signals
+	publicOrigin  *publicorigin.Resolver
 
 	webFS               fs.FS
 	fileSrv             http.Handler
@@ -125,6 +143,7 @@ type Server struct {
 
 	vapidPublicKey      string
 	pushVapidConfigured bool // full mode + both VAPID keys present; subscribe and push notify use this
+	pushStatus          pushStatus
 	pushDebug           bool
 
 	dataDir string // user-wallpapers storage; empty = disabled
@@ -142,6 +161,7 @@ type storeAPI interface {
 	GetUserPasswordHash(ctx context.Context, userID int64) (string, error)
 	UpdateUserImage(ctx context.Context, userID int64, image *string) error
 	UpdateUserPassword(ctx context.Context, userID int64, newPassword string) error
+	ResetLocalPassword(ctx context.Context, userID int64, expectedHash, password string) error
 	BootstrapUser(ctx context.Context, email, password, name string) (store.User, error)
 	AuthenticateUser(ctx context.Context, email, password string) (store.User, error)
 	CreateUser(ctx context.Context, email, password, name string) (store.User, error)
@@ -158,10 +178,24 @@ type storeAPI interface {
 	ListUserAPITokens(ctx context.Context, userID int64) ([]store.APITokenMeta, error)
 	RevokeUserAPIToken(ctx context.Context, userID, tokenID int64) error
 
+	// OAuth 2.1 authorization server (RFC 7591/6749/7636/7009) for MCP clients.
+	CreateOAuthClient(ctx context.Context, clientID, clientName, redirectURI string) (store.OAuthClient, error)
+	GetOAuthClient(ctx context.Context, clientID string) (store.OAuthClient, error)
+	CreateOAuthAuthCode(ctx context.Context, clientID string, userID int64, redirectURI, codeChallenge, codeChallengeMethod, resource string) (string, error)
+	RedeemOAuthAuthCodeAndIssue(ctx context.Context, rawCode, expectedClientID, expectedRedirectURI, expectedResource, codeVerifier string) (store.OAuthTokenPair, error)
+	ConsumeOAuthRefreshTokenAndIssue(ctx context.Context, rawToken, expectedClientID, expectedResource string) (store.OAuthTokenPair, error)
+	RevokeOAuthToken(ctx context.Context, rawToken, hint string) error
+
 	GetUserByOIDCIdentity(ctx context.Context, issuer, subject string) (store.User, error)
+	UpdateOIDCIdentityEmailAtLogin(ctx context.Context, userID int64, issuer, subject, email string) error
 	GetUserByEmail(ctx context.Context, email string) (store.User, error)
 	LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subject, email string) error
+	LinkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string) error
 	CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (store.User, error)
+	CreateFirstPasswordGrant(ctx context.Context, userID int64, sessionToken string, ttl time.Duration) (string, time.Time, error)
+	FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionToken string, userID int64) (bool, error)
+	SetFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string) error
+	SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, recoveryCodeID int64) error
 
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)
@@ -262,6 +296,8 @@ type storeAPI interface {
 	ClearUserTwoFactor(ctx context.Context, userID int64) error
 	AddRecoveryCodes(ctx context.Context, userID int64, codes []string) error
 	ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error)
+	MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error)
+	ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error)
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)
 	DecryptTOTPSecret(encrypted string) ([]byte, error)
@@ -373,14 +409,25 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if authRateLimit == nil {
 		authRateLimit = ratelimit.New(10, time.Minute)
 	}
+	oauthDCRRateLimit := opts.OAuthDCRRateLimit
+	if oauthDCRRateLimit == nil {
+		oauthDCRRateLimit = ratelimit.New(10, time.Minute)
+	}
+	oauthTokenRateLimit := opts.OAuthTokenRateLimit
+	if oauthTokenRateLimit == nil {
+		oauthTokenRateLimit = ratelimit.New(60, time.Minute)
+	}
 	hub := NewHub(defaultSubscriberBuffer)
 	sseBridgeConsumer := newSSEBridge(hub)
 	whQueue := newWebhookQueue(logger)
 	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
 	pushDebug := opts.PushDebug
-	vapidPub := strings.TrimSpace(opts.VAPIDPublicKey)
-	pushVapidConfigured := PushConfigured(mode, opts.VAPIDPublicKey, opts.VAPIDPrivateKey)
-	pushNotifier := newPushNotifier(st, logger, opts.VAPIDPublicKey, opts.VAPIDPrivateKey, opts.VAPIDSubscriber, pushDebug)
+	preparedPush := prepareWebPushConfiguration(mode, opts.VAPIDPublicKey, opts.VAPIDPrivateKey, opts.VAPIDSubscriber)
+	pushVapidConfigured := preparedPush.status.State == pushStateEnabled
+	if preparedPush.status.Reason != nil {
+		logger.Printf("push: disabled: %s", *preparedPush.status.Reason)
+	}
+	pushNotifier := newPushNotifier(st, logger, preparedPush.publicKey, preparedPush.privateKey, preparedPush.subscriber, pushVapidConfigured, pushDebug)
 
 	smtpConfigured := SMTPConfigured(opts.SMTPHost, opts.SMTPPort, opts.SMTPFrom)
 	mQueue := newMailQueue(logger)
@@ -394,6 +441,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 	go whWorker.Run(workerCtx)
 	passwordResetAdminLimiter := ratelimit.New(10, time.Minute)
 	passwordResetRequestLimiter := ratelimit.New(5, time.Minute)
+	firstPasswordStartLimiter := ratelimit.New(5, time.Minute)
+	firstPasswordFinishLimiter := ratelimit.New(5, time.Minute)
+	oidcLinkStartLimiter := ratelimit.New(5, time.Minute)
+	currentPasswordLimiter := ratelimit.New(5, time.Minute)
+	secondFactorLimiter := ratelimit.New(5, time.Minute)
+	totpLimiter := ratelimit.New(5, time.Minute)
+	recoveryCodeLimiter := ratelimit.New(5, time.Minute)
 
 	var mWorker *mailWorker
 	var mailCancel context.CancelFunc
@@ -420,6 +474,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if opts.EncryptionKey != nil {
 		encKey = opts.EncryptionKey
 	}
+	publicOrigin := opts.PublicOrigin
+	if publicOrigin == nil {
+		publicOrigin = publicorigin.New(publicBaseURL, opts.TrustProxy)
+	}
 
 	return &Server{
 		store:                       st,
@@ -440,13 +498,23 @@ func NewServer(st storeAPI, opts Options) *Server {
 		mailCancel:                  mailCancel,
 		mailDone:                    mailDone,
 		authRateLimit:               authRateLimit,
+		oauthDCRRateLimit:           oauthDCRRateLimit,
+		oauthTokenRateLimit:         oauthTokenRateLimit,
 		encryptionKey:               encKey,
 		oidcService:                 opts.OIDCService,
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,
 		passwordResetRequestLimiter: passwordResetRequestLimiter,
+		firstPasswordStartLimiter:   firstPasswordStartLimiter,
+		firstPasswordFinishLimiter:  firstPasswordFinishLimiter,
+		oidcLinkStartLimiter:        oidcLinkStartLimiter,
+		currentPasswordLimiter:      currentPasswordLimiter,
+		secondFactorLimiter:         secondFactorLimiter,
+		totpLimiter:                 totpLimiter,
+		recoveryCodeLimiter:         recoveryCodeLimiter,
 		smtpConfigured:              smtpConfigured,
 		publicBaseURL:               publicBaseURL,
 		trustProxy:                  opts.TrustProxy,
+		publicOrigin:                publicOrigin,
 		webFS:                       webFS,
 		fileSrv:                     http.FileServer(http.FS(webFS)),
 		indexHTML:                   indexHTML,
@@ -455,8 +523,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		swJS:                        swJS,
 		mcpHandler:                  opts.MCPHandler,
 		agoraHandler:                opts.AgoraHandler,
-		vapidPublicKey:              vapidPub,
+		vapidPublicKey:              preparedPush.publicKey,
 		pushVapidConfigured:         pushVapidConfigured,
+		pushStatus:                  preparedPush.status,
 		pushDebug:                   pushDebug,
 		wallEnabled:                 opts.WallEnabled,
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
@@ -496,6 +565,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if s.mcpHandler != nil && (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) {
 		s.mcpHandler.ServeHTTP(w, r)
+		return
+	}
+
+	if r.URL.Path == "/.well-known/oauth-protected-resource" || r.URL.Path == publicorigin.MCPResourceMetadataPath {
+		s.handleOAuthProtectedResourceMetadata(w, r)
+		return
+	}
+	if r.URL.Path == "/.well-known/oauth-authorization-server" {
+		s.handleOAuthASMetadata(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/oauth/") {
+		s.handleOAuth(w, r)
 		return
 	}
 

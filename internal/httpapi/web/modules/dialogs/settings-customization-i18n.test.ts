@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WebPushStatus } from '../types.js';
 
 const {
   apiFetchMock,
@@ -237,6 +238,12 @@ const enCatalog = {
   'settings.customization.push.description': 'Alerts when someone assigns you a todo while this app is in the background or closed.',
   'settings.customization.push.toggleLabel': 'Web Push on this device',
   'settings.customization.push.vapidNotice': 'Web Push needs VAPID keys on the server (SCRUMBOY_VAPID_PUBLIC_KEY and SCRUMBOY_VAPID_PRIVATE_KEY; see docs).',
+  'settings.customization.push.unavailableNotice': 'Web Push is currently unavailable.',
+  'settings.customization.push.adminWarning.invalidSubscriber': 'Web Push is disabled because SCRUMBOY_VAPID_SUBSCRIBER is invalid.',
+  'settings.customization.push.adminWarning.invalidPublicKey': 'Web Push is disabled because SCRUMBOY_VAPID_PUBLIC_KEY is invalid.',
+  'settings.customization.push.adminWarning.invalidPrivateKey': 'Web Push is disabled because SCRUMBOY_VAPID_PRIVATE_KEY is invalid.',
+  'settings.customization.push.adminWarning.initializationFailed': 'Web Push is disabled because initialization failed. Check the server logs.',
+  'settings.customization.push.adminWarning.unknown': 'Web Push is disabled because of a server configuration error. Check the server logs.',
   'settings.customization.push.anonymousNotice': 'Web Push is not available in anonymous mode.',
   'settings.customization.push.unsupported': 'Web Push is not supported in this browser.',
   'settings.customization.emailNotify.title': 'Email notifications',
@@ -325,6 +332,7 @@ async function setupSettingsView(options: {
   slug?: string | null;
   board?: Record<string, unknown> | null;
   pushConfigured?: boolean;
+  pushStatus?: WebPushStatus | null;
   user?: Record<string, unknown> | null;
   open?: boolean;
 } = {}) {
@@ -333,6 +341,7 @@ async function setupSettingsView(options: {
   const mutations = await loadStateMutations();
   mutations.setAuthStatusAvailable(options.authStatusAvailable ?? true);
   mutations.setPushConfigured(options.pushConfigured ?? false);
+  mutations.setPushStatus(options.pushStatus ?? null);
   mutations.setUser((options.user as any) ?? null);
   mutations.setSlug(options.slug ?? null);
   mutations.setBoard((options.board as any) ?? null);
@@ -556,6 +565,23 @@ describe('settings customization i18n', () => {
     expect(button.textContent).toBe(`DE ${enCatalog['settings.customization.notifications.actions.enabled']}`);
     expect(button.disabled).toBe(true);
     expect(requestDesktopNotificationPermissionMock).not.toHaveBeenCalled();
+  });
+
+  it('relocalizes an open administrator Web Push warning', async () => {
+    const { i18n } = await setupSettingsView({
+      user: { id: 1, name: 'Admin', systemRole: 'owner' },
+      pushStatus: { state: 'invalid', reason: 'invalid_subscriber' },
+    });
+
+    const warning = document.querySelector<HTMLElement>('.settings-push-vapid-notice');
+    expect(warning?.textContent).toBe(enCatalog['settings.customization.push.adminWarning.invalidSubscriber']);
+
+    await i18n.setLocale('de');
+    await flushPromises();
+
+    expect(document.querySelector('.settings-push-vapid-notice')?.textContent).toBe(
+      `DE ${enCatalog['settings.customization.push.adminWarning.invalidSubscriber']}`,
+    );
   });
 
   it('relocalizes backup tab static chrome in place on locale change without API calls', async () => {

@@ -364,6 +364,33 @@ func TestMCP_InvalidBearerDoesNotFallBackToSessionCookie(t *testing.T) {
 			t.Fatalf("expected AUTH_REQUIRED, got %#v", errObj["code"])
 		}
 	})
+
+	// An invalid OAuth-shaped bearer token (no sb_ prefix, matching what
+	// GetUserByOAuthAccessToken checks) must behave identically: 401, no
+	// fallback to the valid session cookie carried by this same client.
+	t.Run("OAuthShapedToken", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, ts.URL+"/mcp", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.Repeat("z", 43))
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("GET status=%d want 401", resp.StatusCode)
+		}
+		var out map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+		errObj := out["error"].(map[string]any)
+		if errObj["code"] != "AUTH_REQUIRED" {
+			t.Fatalf("expected AUTH_REQUIRED, got %#v", errObj["code"])
+		}
+	})
 }
 
 func TestMCP_BearerTokenEndToEnd(t *testing.T) {

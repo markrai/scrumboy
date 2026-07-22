@@ -161,7 +161,9 @@ func (s *Store) GetProjectContextForRead(ctx context.Context, projectID int64, m
 func (s *Store) buildProjectContext(ctx context.Context, p Project, mode Mode) (ProjectContext, error) {
 	pc := ProjectContext{Project: p}
 
-	// Temporary boards bypass ownership checks
+	// Expiring boards (Temporary Boards and Anonymous Boards) are link-shareable and bypass
+	// ownership/role checks while they remain temporary. Durable Projects fall through to the
+	// owner/member authorization below.
 	if p.ExpiresAt != nil {
 		if err := rejectIfExpiredTemporaryProject(p); err != nil {
 			return ProjectContext{}, err
@@ -208,7 +210,7 @@ func (s *Store) getProjectForWrite(ctx context.Context, projectID int64, mode Mo
 		return Project{}, err
 	}
 
-	// Temporary boards bypass role checks
+	// Expiring boards (Temporary Boards and Anonymous Boards) bypass role checks while temporary
 	if p.ExpiresAt != nil {
 		return p, nil
 	}
@@ -236,16 +238,19 @@ func (s *Store) getProjectForWrite(ctx context.Context, projectID int64, mode Mo
 	return p, nil
 }
 
-// isAnonymousTemporaryBoard checks if a project is an anonymous temporary board.
-// Anonymous temp boards are identified by: expires_at IS NOT NULL AND creator_user_id IS NULL.
-// These boards are immutable at the project level - only todo-level operations are allowed.
+// isAnonymousTemporaryBoard reports whether a project is an Anonymous Board: an expiring board
+// with no recorded creator (expires_at IS NOT NULL AND creator_user_id IS NULL). Anonymous
+// Boards are created by unauthenticated board creation (always in Anonymous Mode, and in Full
+// Mode when signed out). They are immutable at the project level - only todo-level operations
+// are allowed - and they are never claimable.
 func isAnonymousTemporaryBoard(p Project) bool {
 	return p.ExpiresAt != nil && p.CreatorUserID == nil
 }
 
-// isTemporaryProject is true for any link-expiring board (expires_at set): unowned anonymous temps
-// and FULL-mode temporary boards with a creator. Durable projects have ExpiresAt == nil.
-// Use this for "link collaboration" write paths; use isAnonymousTemporaryBoard for unowned-only semantics.
+// isTemporaryProject reports whether a project is any expiring board (expires_at set): both
+// Anonymous Boards (no creator) and Full Mode Temporary Boards (with a creator). Durable
+// Projects have ExpiresAt == nil. Use this for "link collaboration" write paths; use
+// isAnonymousTemporaryBoard for the creator-less (unclaimable) subset.
 func isTemporaryProject(p Project) bool {
 	return p.ExpiresAt != nil
 }
@@ -1086,7 +1091,14 @@ func (s *Store) UpdateProjectName(ctx context.Context, projectID int64, userID i
 	return nil
 }
 
-// CreateAnonymousBoard creates a new project for anonymous board mode.
+// CreateAnonymousBoard creates a new shareable, expiring board (the /anon entrypoint).
+// The board type depends on whether the request carries an authenticated user, NOT on the
+// deployment mode:
+//   - No authenticated user (always in Anonymous Mode; in Full Mode when signed out) ->
+//     an Anonymous Board (creator_user_id NULL), which is never claimable.
+//   - Authenticated user (Full Mode, signed in) -> a Temporary Board (creator_user_id set),
+//     which only that creator may later claim into a Durable Project.
+//
 // Sets expires_at = now + TemporaryBoardLifetimeDays and last_activity_at = now.
 func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 	nowMs := time.Now().UTC().UnixMilli()
@@ -1098,12 +1110,13 @@ func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 		slug          string
 		creatorUserID *int64
 	)
-	// Check if user is authenticated - set creator_user_id if authenticated
+	// An authenticated request records the creator (Temporary Board); an unauthenticated
+	// request leaves creator_user_id NULL (Anonymous Board).
 	if userID, ok := UserIDFromContext(ctx); ok {
 		creatorUserID = &userID
 	}
 
-	// Set name based on whether board is created in anonymous mode (no creator) or auth state (with creator)
+	// Name reflects the board type: Anonymous Board (no creator) vs Temporary Board (creator set).
 	var name string
 	if creatorUserID == nil {
 		name = "Anonymous Board"

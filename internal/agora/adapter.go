@@ -108,8 +108,11 @@ func (h *handler) serveDiscover(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rpc := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	_, out := roundTrip(h.mcp, r, rpc)
-	if err := h.writeDiscoverFromMCP(w, out); err != nil {
+	rpcResponse := roundTrip(h.mcp, r, rpc)
+	if h.forwardMCPTransportError(w, rpcResponse) {
+		return
+	}
+	if err := h.writeDiscoverFromMCP(w, rpcResponse.Body); err != nil {
 		h.writeAdapterError(w, http.StatusBadGateway, err.Error())
 	}
 }
@@ -169,10 +172,29 @@ func (h *handler) serveInvoke(w http.ResponseWriter, r *http.Request) {
 	rpc.WriteString(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":`)
 	rpc.Write(params)
 	rpc.WriteByte('}')
-	_, out := roundTrip(h.mcp, r, rpc.Bytes())
-	if err := h.writeInvokeFromMCP(w, out); err != nil {
+	rpcResponse := roundTrip(h.mcp, r, rpc.Bytes())
+	if h.forwardMCPTransportError(w, rpcResponse) {
+		return
+	}
+	if err := h.writeInvokeFromMCP(w, rpcResponse.Body); err != nil {
 		h.writeAdapterError(w, http.StatusBadGateway, err.Error())
 	}
+}
+
+func (h *handler) forwardMCPTransportError(w http.ResponseWriter, response roundTripResponse) bool {
+	if response.Status == http.StatusOK {
+		return false
+	}
+	if response.Status == http.StatusUnauthorized {
+		h.writeAdapterError(w, http.StatusUnauthorized, "authentication required")
+		return true
+	}
+	if response.Status == http.StatusForbidden {
+		h.writeAdapterError(w, http.StatusForbidden, "request origin is not allowed")
+		return true
+	}
+	h.writeAdapterError(w, http.StatusBadGateway, "MCP transport request failed")
+	return true
 }
 
 var errTooLarge = errors.New("body too large")

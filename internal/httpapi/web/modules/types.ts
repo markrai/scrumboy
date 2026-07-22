@@ -65,6 +65,8 @@ export interface User {
   isBootstrap?: boolean;
   systemRole?: string;
   twoFactorEnabled?: boolean;
+  hasLocalPassword?: boolean;
+  oidcLinked?: boolean;
 }
 
 export interface ActiveSprintInfo {
@@ -157,12 +159,26 @@ export interface DashboardTodosResponse {
   nextCursor?: string;
 }
 
+export type WebPushState = 'enabled' | 'not_configured' | 'invalid' | 'unavailable';
+
+export type WebPushReason =
+  | 'invalid_subscriber'
+  | 'invalid_vapid_public_key'
+  | 'invalid_vapid_private_key'
+  | 'initialization_failed';
+
+export interface WebPushStatus {
+  state: WebPushState;
+  reason: WebPushReason | null;
+}
+
 // API-specific response shapes
 export interface AuthStatusResponse {
   user?: User | null;
   bootstrapAvailable?: boolean;
   mode?: 'anonymous' | 'full';
   pushConfigured?: boolean;
+  push?: WebPushStatus;
   selfServicePasswordResetEnabled?: boolean;
   emailNotifyAvailable?: boolean;
   oidcEnabled?: boolean;

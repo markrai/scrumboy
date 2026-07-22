@@ -75,6 +75,9 @@ export function setBootstrapAvailable(available) {
 export function setPushConfigured(enabled) {
     current._pushConfigured = enabled;
 }
+export function setPushStatus(status) {
+    current._pushStatus = status ?? null;
+}
 export function setSelfServicePasswordResetEnabled(enabled) {
     current._selfServicePasswordResetEnabled = enabled;
 }
@@ -212,6 +215,7 @@ export function resetUserScopedState() {
     current.autocompleteSuggestion = null;
     current.openTodoSegment = null;
     current.settingsProjectId = null;
+    current._pushStatus = null;
     current.tagColors = {};
     current.backupData = undefined;
     current.backupPreview = undefined;

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"scrumboy/internal/db"
 )
@@ -229,6 +230,9 @@ func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 		{table: "todos", column: "import_metadata"},
 		{table: "project_walls", column: "edges"},
 		{table: "users", column: "two_factor_enabled"},
+		{table: "oauth_auth_codes", column: "resource"},
+		{table: "oauth_access_tokens", column: "resource"},
+		{table: "oauth_refresh_tokens", column: "resource"},
 	} {
 		if !columnExists(t, sqlDB, tc.table, tc.column) {
 			t.Fatalf("expected column %s.%s to exist", tc.table, tc.column)
@@ -252,6 +256,67 @@ func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 		if !triggerExists(t, sqlDB, trigger) {
 			t.Fatalf("expected trigger %s to exist", trigger)
 		}
+	}
+}
+
+func TestMigration057InvalidatesUnboundArtifactsAndPreservesClients(t *testing.T) {
+	ctx := context.Background()
+	sqlDB := openRawTestDB(t)
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	for _, version := range embeddedMigrationVersions(t) {
+		if version == "057_bind_oauth_tokens_to_mcp_resource.sql" {
+			break
+		}
+		if err := applyOne(ctx, sqlDB, version); err != nil {
+			t.Fatalf("apply %s: %v", version, err)
+		}
+	}
+
+	now := time.Now().UTC().UnixMilli()
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO users(id, email, created_at, name, system_role) VALUES (1, 'owner@example.com', ?, 'Owner', 'owner')`, now); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO oauth_clients(id, client_name, redirect_uri, created_at) VALUES ('client-1', 'Client', 'http://127.0.0.1/callback', ?)`, now); err != nil {
+		t.Fatalf("insert client: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO oauth_auth_codes(code_hash, client_id, user_id, redirect_uri, code_challenge, code_challenge_method, created_at, expires_at) VALUES ('code', 'client-1', 1, 'http://127.0.0.1/callback', 'challenge', 'S256', ?, ?)`, now, now+60000); err != nil {
+		t.Fatalf("insert code: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO oauth_access_tokens(token_hash, client_id, user_id, created_at, expires_at) VALUES ('access', 'client-1', 1, ?, ?)`, now, now+60000); err != nil {
+		t.Fatalf("insert access token: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO oauth_refresh_tokens(token_hash, client_id, user_id, created_at, expires_at) VALUES ('refresh', 'client-1', 1, ?, ?)`, now, now+60000); err != nil {
+		t.Fatalf("insert refresh token: %v", err)
+	}
+
+	if err := applyOne(ctx, sqlDB, "057_bind_oauth_tokens_to_mcp_resource.sql"); err != nil {
+		t.Fatalf("apply migration 057: %v", err)
+	}
+	for _, table := range []string{"oauth_auth_codes", "oauth_access_tokens", "oauth_refresh_tokens"} {
+		var count int
+		if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s retained %d unbound artifacts", table, count)
+		}
+		if !columnExists(t, sqlDB, table, "resource") {
+			t.Fatalf("%s.resource is missing", table)
+		}
+	}
+	for _, table := range []string{"users", "oauth_clients"} {
+		var count int
+		if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 1 {
+			t.Fatalf("%s count = %d, want 1", table, count)
+		}
+	}
+	if got := pragmaInt(t, sqlDB, "foreign_keys"); got != 1 {
+		t.Fatalf("foreign_keys = %d, want 1", got)
 	}
 }
 

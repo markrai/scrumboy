@@ -1,51 +1,67 @@
 package oidc
 
 import (
+	"crypto/sha256"
 	"sync"
 	"time"
 )
 
+type FlowPurpose string
+
+const (
+	FlowLogin       FlowPurpose = "login"
+	FlowSetPassword FlowPurpose = "set_password"
+	FlowLink        FlowPurpose = "link"
+)
+
 type loginState struct {
-	Nonce        string
-	PKCEVerifier string
-	ReturnTo     string
-	CreatedAt    time.Time
+	Purpose          FlowPurpose
+	Nonce            string
+	PKCEVerifier     string
+	ReturnTo         string
+	UserID           int64
+	SessionTokenHash [32]byte
+	CreatedAt        time.Time
 }
 
-// stateStore is an in-memory, TTL-evicting map for OIDC login state.
-// Not persisted to DB; restart drops in-flight logins (acceptable for MVP).
+func (s *loginState) sensitive() bool { return s.Purpose != "" && s.Purpose != FlowLogin }
+
 type stateStore struct {
-	mu  sync.Mutex
-	ttl time.Duration
-	m   map[string]*loginState
+	mu           sync.Mutex
+	loginTTL     time.Duration
+	sensitiveTTL time.Duration
+	m            map[[32]byte]*loginState
 }
 
-func newStateStore(ttl time.Duration) *stateStore {
-	return &stateStore{
-		ttl: ttl,
-		m:   make(map[string]*loginState),
-	}
+func newStateStore(loginTTL time.Duration) *stateStore {
+	return &stateStore{loginTTL: loginTTL, sensitiveTTL: 5 * time.Minute, m: make(map[[32]byte]*loginState)}
 }
 
-// Put stores a login state keyed by the opaque state string.
-func (s *stateStore) Put(state string, ls *loginState) {
+func stateHash(raw string) [32]byte { return sha256.Sum256([]byte(raw)) }
+
+func sessionHash(raw string) [32]byte { return sha256.Sum256([]byte(raw)) }
+
+func (s *stateStore) Put(raw string, ls *loginState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.evictLocked()
-	s.m[state] = ls
+	s.m[stateHash(raw)] = ls
 }
 
-// Take retrieves and deletes the login state (single-use).
-// Returns nil if not found or expired.
-func (s *stateStore) Take(state string) *loginState {
+func (s *stateStore) Take(raw string) *loginState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ls, ok := s.m[state]
+	key := stateHash(raw)
+	ls, ok := s.m[key]
 	if !ok {
 		return nil
 	}
-	delete(s.m, state)
-	if time.Since(ls.CreatedAt) > s.ttl {
+	delete(s.m, key)
+	ttl := s.loginTTL
+	if ls.sensitive() {
+		ttl = s.sensitiveTTL
+	}
+	if time.Since(ls.CreatedAt) > ttl {
 		return nil
 	}
 	return ls
@@ -54,7 +70,11 @@ func (s *stateStore) Take(state string) *loginState {
 func (s *stateStore) evictLocked() {
 	now := time.Now()
 	for k, v := range s.m {
-		if now.Sub(v.CreatedAt) > s.ttl {
+		ttl := s.loginTTL
+		if v.sensitive() {
+			ttl = s.sensitiveTTL
+		}
+		if now.Sub(v.CreatedAt) > ttl {
 			delete(s.m, k)
 		}
 	}

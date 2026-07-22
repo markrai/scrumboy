@@ -1,0 +1,64 @@
+name: OSV-Scanner
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - go.mod
+      - go.sum
+      - internal/httpapi/web/package.json
+      - internal/httpapi/web/package-lock.json
+      - .github/workflows/osv-scanner.yml
+
+  merge_group:
+    branches:
+      - main
+      - master
+
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - go.mod
+      - go.sum
+      - internal/httpapi/web/package.json
+      - internal/httpapi/web/package-lock.json
+      - .github/workflows/osv-scanner.yml
+
+  schedule:
+    - cron: "30 12 * * 1"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pull-request-scan:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      scan-args: |-
+        --recursive
+        ./
+
+  full-scan:
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+    with:
+      scan-args: |-
+        --recursive
+        ./
+      fail-on-vuln: true
+      upload-sarif: true

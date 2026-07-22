@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WebPushStatus } from './types.js';
 
 const {
   apiFetchMock,
@@ -145,7 +146,7 @@ describe('router push autosubscribe gate', () => {
     vi.restoreAllMocks();
   });
 
-  function installAuthStatus(pushConfigured: boolean): void {
+  function installAuthStatus(pushConfigured: boolean, push?: WebPushStatus): void {
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/auth/status') {
         return {
@@ -153,6 +154,7 @@ describe('router push autosubscribe gate', () => {
           bootstrapAvailable: false,
           mode: 'full',
           pushConfigured,
+          push,
           selfServicePasswordResetEnabled: false,
           oidcEnabled: false,
           localAuthEnabled: true,
@@ -215,6 +217,23 @@ describe('router push autosubscribe gate', () => {
     expect(renderProjectsMock).toHaveBeenCalledTimes(1);
   });
 
+  it('hydrates structured Web Push status and clears it on logout', async () => {
+    installAuthStatus(false, { state: 'invalid', reason: 'invalid_subscriber' });
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    const selectors = await import('./state/selectors.js');
+    const mutations = await import('./state/mutations.js');
+    expect(selectors.getPushStatus()).toEqual({ state: 'invalid', reason: 'invalid_subscriber' });
+
+    mutations.setAuthStatusChecked(false);
+    installSignedOutAuthStatus();
+    await mod.router();
+
+    expect(selectors.getPushStatus()).toBeNull();
+  });
+
   it('passes the self-service password-reset capability to the signed-out auth view', async () => {
     installSignedOutAuthStatus(true);
     const mod = await loadRouterModule();
@@ -257,4 +276,16 @@ describe('router push autosubscribe gate', () => {
       selfServicePasswordResetEnabled: true,
     });
   });
+
+	it('does not render the direct local reset page when local authentication is disabled', async () => {
+	  window.history.replaceState({}, '', '/auth/reset-password?token=secret');
+	  apiFetchMock.mockImplementation(async (url: string) => {
+	    if (url === '/api/auth/status') return { user: null, bootstrapAvailable: false, mode: 'full', oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false };
+	    throw new Error(`unexpected apiFetch url: ${url}`);
+	  });
+	  const mod = await loadRouterModule();
+	  await mod.router();
+	  expect(renderResetPasswordMock).not.toHaveBeenCalled();
+	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
+	});
 });

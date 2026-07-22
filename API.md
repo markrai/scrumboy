@@ -1,12 +1,10 @@
 # Scrumboy MCP HTTP API
 
-Updated: 2026-04-23 14:28:12 -04:00
-
 This API is intended for programmatic clients (e.g., agents or integrations), not direct browser use.
 
 This document describes the **Model Context Protocol (MCP) HTTP surface** implemented under `internal/mcp` and mounted by the Scrumboy HTTP server. It reflects **current behavior only**, not a roadmap.
 
-**Base path:** `/mcp` (exactly; paths like `/mcp/foo` return 404).
+**Interfaces:** legacy `/mcp` and canonical MCP Streamable HTTP `/mcp/rpc`. They share tool implementations but not wire semantics or OAuth audience.
 
 The MCP adapter is constructed in `cmd/scrumboy/main.go` with server mode from configuration and registered on the main `httpapi` server.
 
@@ -45,7 +43,7 @@ Responses use `Cache-Control: no-store` and `Content-Type: application/json; cha
 
 In addition to the **`/mcp`** HTTP interface above, Scrumboy exposes a Model Context Protocol (MCP) oriented endpoint that speaks **JSON-RPC 2.0**. This is a **separate** transport from the legacy `{ "tool", "input" }` POST body; both are mounted on the same MCP adapter.
 
-**Endpoint:** `POST /mcp/rpc` (trailing slash `/mcp/rpc/` is accepted).
+**Endpoint:** `/mcp/rpc`. Native MCP clients must be configured with this exact URL. `/mcp/rpc/` returns a same-origin 308 redirect to the canonical path before authentication.
 
 **Intended use:** MCP-style clients (e.g. Claude Desktop, agent frameworks) that expect JSON-RPC framing.
 
@@ -54,10 +52,10 @@ In addition to the **`/mcp`** HTTP interface above, Scrumboy exposes a Model Con
 - Uses **JSON-RPC 2.0**.
 - **`jsonrpc`:** must be the string `"2.0"`.
 - **`method`:** required (string).
-- **`id`:** required for **requests** that expect a JSON body (`initialize`, `tools/list`, `tools/call`). Omitted for **notifications** (see below). For **parse errors**, the response uses `"id": null` per JSON-RPC.
-- **`params`:** optional for `initialize` and `tools/list` (may be omitted or an object). For **`tools/call`**, `params` must be a JSON object (see below).
+- **`id`:** required for supported request-only methods (`initialize`, `ping`, `tools/list`, `tools/call`). Omitted for **notifications** (see below). A request-only method without an `id` is rejected with HTTP **400** and is not dispatched. For **parse errors**, the response uses `"id": null` per JSON-RPC.
+- **`params`:** `initialize` requires `protocolVersion`, `capabilities`, `clientInfo.name`, and `clientInfo.version`. `tools/list` may omit it. For **`tools/call`**, `params` must be a JSON object (see below).
 
-**Non-POST** requests receive a JSON-RPC error (`id` null). **HTTP status** for normal JSON-RPC replies is **200** for both success and error objects in the body (errors are not signaled only by HTTP status). The **`notifications/initialized`** (or **`initialized`**) notification is answered with **204 No Content** and an empty body.
+After Origin validation and authentication, **non-POST** methods receive an empty **405 Method Not Allowed** with `Allow: POST`; authenticated GET does not open an SSE stream. **HTTP status** for normal JSON-RPC requests with IDs is **200** for both success and protocol error objects in the body. Accepted notifications, including **`notifications/initialized`**, receive empty **202 Accepted** responses. Structurally rejected notifications receive **400** and have no side effect; an emitted JSON-RPC error uses `id: null`.
 
 **Example request:**
 
@@ -66,17 +64,21 @@ In addition to the **`/mcp`** HTTP interface above, Scrumboy exposes a Model Con
   "jsonrpc": "2.0",
   "id": 1,
   "method": "initialize",
-  "params": {}
+  "params": {
+    "protocolVersion": "2025-11-25",
+    "capabilities": {},
+    "clientInfo": {"name": "example", "version": "1"}
+  }
 }
 ```
 
 ### Supported methods
 
-**`initialize`** — Initial handshake. Requires `id`. Returns `protocolVersion` (currently `2024-11-05`), `capabilities`, `serverInfo`, and optional `instructions`. `params` may be omitted or empty.
+**`initialize`** — Initial handshake. Requires `id` and the fields shown above. Supported stable versions are `2025-03-26`, `2025-06-18`, and `2025-11-25`; a supported requested version is echoed, while an unsupported initialize version negotiates to latest stable `2025-11-25`.
 
-**`notifications/initialized`** or **`initialized`** — Client acknowledgment after `initialize`. Must be sent **without** `id` (notification). Server responds with **204** and no JSON body. If an `id` is present, the server rejects the call.
+**`notifications/initialized`** or **`initialized`** — Client acknowledgment after `initialize`. Must be sent **without** `id` (notification). Server responds with **202** and no JSON body. If an `id` is present, the server rejects the call.
 
-**`tools/list`** — Requires `id`. Returns `{ "tools": [ ... ] }`. Each entry has `name`, `description`, and `inputSchema` (JSON Schema object). The array includes **every** tool in `implementedTools` from the in-code catalog (`internal/mcp/tool_catalog.go`), not a subset. **`tools/list` does not require a prior `initialize`.** The handler does **not** run `resolveRequestAuth`; the catalog is returned without an MCP-layer authentication gate (same visibility as any client that can reach `POST /mcp/rpc`).
+**`tools/list`** — Requires `id`. Returns `{ "tools": [ ... ] }`. Each entry has `name`, `description`, and `inputSchema` (JSON Schema object). The array includes **every** tool in `implementedTools` from the in-code catalog (`internal/mcp/tool_catalog.go`), not a subset. The transport is stateless and does not enforce a prior `initialize`, but full-mode authentication protects this request like every other `/mcp/rpc` request.
 
 **`tools/call`** — Invokes a tool by name. Requires `id` and a **`params` object** containing:
 
@@ -152,7 +154,11 @@ All JSON-RPC **responses with a body** include `"jsonrpc": "2.0"` and preserve t
 
 - **Stateless HTTP:** there is no server-side session between requests; behavior does not depend on having called `initialize` first for `tools/list` or `tools/call`.
 - **`initialize` is supported** for clients that expect the handshake; it is **not** enforced before discovery or tool calls on this server.
-- **Authentication** follows the same rules as **`/mcp`** (session cookie and Bearer token in `full` mode; anonymous mode boundary unchanged). See [Authentication and capability model](#authentication-and-capability-model).
+- **Authentication** is endpoint-specific. `/mcp/rpc` accepts a session cookie, static `sb_…` API token, or a Scrumboy OAuth token bound to `<origin>/mcp/rpc`; `/mcp` accepts only the first two. See [Authentication and capability model](#authentication-and-capability-model).
+- **Streamable HTTP media:** POST requires `Content-Type: application/json` (optional UTF-8 charset). Native clients send `Accept: application/json, text/event-stream`; missing Accept and `*/*` remain tolerated, while a restrictive value must allow both types. Accepted notifications return 202 without a body or content type.
+- **Protocol header:** after initialization, send `MCP-Protocol-Version`. Missing defaults to `2025-03-26`; malformed, duplicate, or unsupported values return 400.
+- **Origin:** validation runs before authentication. A supplied Origin must match the trusted public origin; invalid Origin returns empty 403 without an OAuth challenge. Non-browser requests may omit Origin.
+- **Stateless JSON-only:** Scrumboy emits no MCP session ID and offers no SSE GET stream, resumability, or server-initiated requests.
 - The **legacy `GET` / `POST /mcp`** endpoint remains **unchanged** and is documented in the sections above.
 
 ---
@@ -197,9 +203,9 @@ All JSON-RPC **responses with a body** include `"jsonrpc": "2.0"` and preserve t
 
 **Session (cookie):** In `full` mode, the adapter reads the `scrumboy_session` cookie and loads the user into request context when the cookie is valid.
 
-**Bearer (API access token):** In `full` mode, clients may send `Authorization: Bearer <token>` using an opaque secret minted via [`/api/me/tokens`](#api-access-tokens-rest) (prefix `sb_`, stored as a hash server-side).
+**Bearer credentials:** In `full` mode, clients may send an opaque static secret minted via [`/api/me/tokens`](#api-access-tokens-rest) (prefix `sb_`, stored as a hash server-side). `/mcp/rpc` additionally accepts Scrumboy's own opaque OAuth access tokens only when the stored audience equals its trusted canonical `<origin>/mcp/rpc` resource.
 
-**Precedence:** If the request includes a **`Bearer` authorization attempt** (scheme `Bearer` per RFC 9110, with the credential in the segment after the first space; trim applies **only** to that credential string), the adapter validates that token and **does not** fall back to the session cookie when validation fails for that attempt. On **legacy** `GET /mcp` and **`POST /mcp`**, a failed Bearer yields **401** with **`AUTH_REQUIRED`** before the handler runs. On **`POST /mcp/rpc`**, **`initialize`** and **`tools/list`** do **not** call **`resolveRequestAuth`**, so a bad Bearer alone does not fail those calls. **`tools/call`** does call **`resolveRequestAuth`**; a failed Bearer there returns HTTP **200** with a JSON-RPC **`result`** where **`isError`** is **`true`** and the text message is **`authentication required`** (not the legacy **`AUTH_REQUIRED`** envelope). If there is no Bearer attempt, the adapter uses the session cookie as before.
+**Precedence and endpoint boundary:** If the request includes a **`Bearer` authorization attempt** (scheme `Bearer` per RFC 9110, with the credential in the segment after the first space; trim applies **only** to that credential string), the adapter validates that token and **does not** fall back to the session cookie when validation fails. Legacy `GET /mcp` and `POST /mcp` accept static tokens only; an OAuth token or any other failed Bearer returns the existing **401** `AUTH_REQUIRED` envelope and no OAuth challenge. The whole `/mcp/rpc` transport accepts static or correctly resource-bound OAuth tokens; missing credentials return an empty **401** RFC 9728 challenge, while invalid Bearers add `error="invalid_token"`. No transport 401 contains a JSON-RPC `result` or `CallToolResult`.
 
 **Anonymous mode:** Session cookies and Bearer tokens are **not** applied for MCP (same anonymous boundary as the documented HTTP API for cookies).
 
@@ -209,7 +215,7 @@ All JSON-RPC **responses with a body** include `"jsonrpc": "2.0"` and preserve t
 
 **Typical codes:** `AUTH_REQUIRED` when the transport rejects the principal (failed Bearer, or tool needs a signed-in user but none is in context) or when a tool requires sign-in without a session/API token. `CAPABILITY_UNAVAILABLE` when the server is in **anonymous mode**, or **before bootstrap** (no users yet), or the tool is otherwise gated as unavailable.
 
-**Practical rule:** Almost all project-scoped tools (todos, sprints, tags, members, board) require **full mode**, **post-bootstrap**, and a **valid session or valid API bearer token**. When no `Authorization: Bearer` header is sent, **`GET /mcp`** / **`system.getCapabilities`** still run without sign-in so clients can inspect the server. **If** a Bearer attempt is present and invalid, **`GET /mcp`** and legacy **`POST /mcp`** fail at **401** first; JSON-RPC **`tools/call`** surfaces the failure as a tool error result instead (see above).
+**Practical rule:** Almost all project-scoped tools require full mode, post-bootstrap, and a valid principal. Legacy `/mcp` preserves unauthenticated capability/bootstrap inspection. In full mode, `/mcp/rpc` always authenticates before method, media, protocol, or JSON-RPC dispatch; use a cookie, static token, or correctly resource-bound Scrumboy OAuth token.
 
 ## Authentication example (curl)
 
@@ -252,7 +258,7 @@ When the server is configured with OIDC environment variables (`SCRUMBOY_OIDC_IS
 
 These are browser-redirect endpoints, not JSON APIs. After successful OIDC login, the user receives a standard `scrumboy_session` cookie. MCP and REST access work identically to password-based sessions.
 
-`GET /api/auth/status` includes `oidcEnabled` (bool) and `localAuthEnabled` (bool) when OIDC is configured, plus `pushConfigured` (bool) to indicate whether Web Push VAPID is fully configured on the server.
+`GET /api/auth/status` includes `oidcEnabled` (bool) and `localAuthEnabled` (bool) when OIDC is configured, plus `pushConfigured` (bool). `pushConfigured` is true only when Web Push is **effectively enabled** (validated matching VAPID key pair, valid/default subscriber, full mode) — not merely when env key strings are non-empty. In full mode, **signed-in** responses also include `push: { "state": "...", "reason": "..." | null }` with the prepared status (`enabled`, `not_configured`, `invalid`, `unavailable` and reasons such as `invalid_vapid_public_key`, `invalid_vapid_private_key`, `invalid_subscriber`, `initialization_failed`). Unauthenticated and anonymous-mode status omit the detailed `push` object. See [`docs/vapid.md`](docs/vapid.md#effective-enablement-not-just-keys-present).
 
 ### API access tokens (REST)
 

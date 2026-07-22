@@ -278,6 +278,11 @@ function renderOidcErrorToast(): boolean {
     "auth.oidc.error.provider",
     "auth.oidc.error.token",
     "auth.oidc.error.email",
+	"auth.oidc.error.auth_time",
+	"auth.oidc.error.identity_mismatch",
+	"auth.oidc.error.link_rejected",
+	"auth.oidc.error.link_required",
+	"auth.oidc.error.session_changed",
   ]);
   showToast(t(knownKeys.has(key) ? key : "auth.oidc.error.generic"));
   params.delete("oidc_error");

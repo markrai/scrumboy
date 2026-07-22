@@ -357,8 +357,10 @@ func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, r
 	project := pc.Project
 
 	// POST /api/board/{slug}/claim
-	// Escape hatch: convert an unowned temporary board into an owned durable project.
-	// No UI assumptions; server-side only.
+	// Escape hatch: the recorded creator of a Full Mode Temporary Board converts it into a
+	// Durable Project (owned, non-expiring). Anonymous Boards (no creator) are never claimable.
+	// Disabled entirely in Anonymous Mode. No UI assumptions; server-side only. Authorization is
+	// enforced in the store (ClaimTemporaryBoard); any unauthorized/ineligible state returns 404.
 	if len(rest) != 2 || rest[1] != "claim" || r.Method != http.MethodPost {
 		return false
 	}

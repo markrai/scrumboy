@@ -11,12 +11,22 @@ import (
 	"testing"
 	"time"
 
+	webpush "github.com/SherClockHolmes/webpush-go"
+
 	"scrumboy/internal/db"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/store"
 )
 
-const testVapidPub, testVapidPriv = "dGVzdC1wdWJsaWMta2V5LXBhZGRlZA", "dGVzdC1wcml2YXRlLWtleS1wYWRkZWQ"
+var testVapidPriv, testVapidPub = mustTestVAPIDKeys()
+
+func mustTestVAPIDKeys() (string, string) {
+	privateKey, publicKey, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		panic(err)
+	}
+	return privateKey, publicKey
+}
 
 func newPushTestServer(t *testing.T, mode string, withVAPID bool) (*httptest.Server, *store.Store, func()) {
 	t.Helper()
@@ -149,6 +159,33 @@ func TestPushRoutes_VapidPublicKeyAndSubscribeWhenConfigured(t *testing.T) {
 	}
 	if len(subs) != 1 || subs[0].Endpoint != ep {
 		t.Fatalf("subs=%+v", subs)
+	}
+}
+
+func TestPushRoutes_VapidPublicKeyTrimsConfiguredKeyWhitespace(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		ScrumboyMode:    "full",
+		VAPIDPublicKey:  " \t" + testVapidPub + "\r\n",
+		VAPIDPrivateKey: "\n" + testVapidPriv + "  ",
+	})
+	defer cleanup()
+
+	resp, err := ts.Client().Get(ts.URL + "/api/push/vapid-public-key")
+	if err != nil {
+		t.Fatalf("GET VAPID public key: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var body struct {
+		PublicKey string `json:"publicKey"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode VAPID public key response: %v", err)
+	}
+	if body.PublicKey != testVapidPub {
+		t.Fatalf("publicKey=%q, want normalized %q", body.PublicKey, testVapidPub)
 	}
 }
 

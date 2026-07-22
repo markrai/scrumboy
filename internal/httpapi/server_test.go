@@ -2369,55 +2369,273 @@ func TestAuthStatus_SelfServicePasswordResetCapability(t *testing.T) {
 	}
 }
 
-func TestClaimTemporaryBoard_FullMode(t *testing.T) {
+// claimTestProjectState reads the ownership-relevant columns for a project row.
+func claimTestProjectState(t *testing.T, sqlDB *sql.DB, projectID int64) (owner, creator, expires sql.NullInt64) {
+	t.Helper()
+	if err := sqlDB.QueryRow(
+		`SELECT owner_user_id, creator_user_id, expires_at FROM projects WHERE id = ?`, projectID,
+	).Scan(&owner, &creator, &expires); err != nil {
+		t.Fatalf("read project: %v", err)
+	}
+	return owner, creator, expires
+}
+
+// claimTestMemberRole returns the caller's project_members role, or "" if no row exists.
+func claimTestMemberRole(t *testing.T, sqlDB *sql.DB, projectID, userID int64) string {
+	t.Helper()
+	var role string
+	err := sqlDB.QueryRow(
+		`SELECT role FROM project_members WHERE project_id = ? AND user_id = ?`, projectID, userID,
+	).Scan(&role)
+	if err == sql.ErrNoRows {
+		return ""
+	}
+	if err != nil {
+		t.Fatalf("read membership: %v", err)
+	}
+	return role
+}
+
+// createAnonBoardViaHTTP hits the real GET /anon entrypoint using the given client and returns
+// the created board slug (parsed from the redirect Location). The client's authentication state
+// (its cookie jar) drives what the server records: signed in -> Temporary Board (creator set);
+// signed out, or Anonymous Mode which ignores auth -> Anonymous Board (creator NULL).
+func createAnonBoardViaHTTP(t *testing.T, client *http.Client, baseURL string) string {
+	t.Helper()
+	prev := client.CheckRedirect
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	defer func() { client.CheckRedirect = prev }()
+
+	resp, err := client.Get(baseURL + "/anon")
+	if err != nil {
+		t.Fatalf("GET /anon: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302 from /anon, got %d", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	slug := strings.TrimPrefix(loc, "/")
+	if slug == "" || slug == loc || strings.Contains(slug, "/") {
+		t.Fatalf("expected /{slug} redirect from /anon, got %q", loc)
+	}
+	return slug
+}
+
+// projectIDBySlug resolves a slug to its numeric project id for direct DB assertions.
+func projectIDBySlug(t *testing.T, sqlDB *sql.DB, slug string) int64 {
+	t.Helper()
+	var id int64
+	if err := sqlDB.QueryRow(`SELECT id FROM projects WHERE slug = ?`, slug).Scan(&id); err != nil {
+		t.Fatalf("resolve project id for slug %q: %v", slug, err)
+	}
+	return id
+}
+
+// TestClaimTemporaryBoard_AnonymousMode_RouteUnavailable exercises the real /anon route in
+// Anonymous Mode: it creates an Anonymous Board (no creator), and the claim route is disabled.
+func TestClaimTemporaryBoard_AnonymousMode_RouteUnavailable(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "anonymous")
+	defer cleanup()
+
+	// Anonymous Mode ignores authentication entirely; do not model a claimable user here.
+	client := newCookieClient(t)
+	slug := createAnonBoardViaHTTP(t, client, ts.URL)
+
+	projectID := projectIDBySlug(t, sqlDB, slug)
+	_, creator, expires := claimTestProjectState(t, sqlDB, projectID)
+	if creator.Valid {
+		t.Fatalf("expected Anonymous Board (creator_user_id NULL), got %+v", creator)
+	}
+	if !expires.Valid {
+		t.Fatalf("expected an expiring board (expires_at set)")
+	}
+
+	// The claim route must remain unavailable in Anonymous Mode.
+	resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+slug+"/claim", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for claim in Anonymous Mode, got %d", resp.StatusCode)
+	}
+
+	owner, _, expires2 := claimTestProjectState(t, sqlDB, projectID)
+	if owner.Valid || !expires2.Valid {
+		t.Fatalf("expected board unchanged (unowned, expiring), got owner=%+v expires=%+v", owner, expires2)
+	}
+}
+
+// TestClaimTemporaryBoard_FullMode_SignedOut_AnonymousBoardNotClaimable proves that a board
+// created through /anon while signed out on a Full Mode instance is an Anonymous Board and
+// stays unclaimable even after the caller authenticates.
+func TestClaimTemporaryBoard_FullMode_SignedOut_AnonymousBoardNotClaimable(t *testing.T) {
 	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
 	defer cleanup()
 
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Fatalf("cookie jar: %v", err)
-	}
-	client := &http.Client{Jar: jar}
+	// A real user exists (auth enabled, and used to attempt the claim later)...
+	alice := newCookieClient(t)
+	aliceUser := bootstrapUserClient(t, alice, ts.URL, "Alice", "alice@example.com", "password123")
+	aliceID := int64(aliceUser["id"].(float64))
 
-	// Bootstrap user (sets cookie)
-	var u map[string]any
-	resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/bootstrap", map[string]any{
-		"name":     "Alice",
-		"email":    "admin@example.com",
+	// ...but the board is created via /anon while SIGNED OUT -> Anonymous Board (no creator).
+	anon := newCookieClient(t)
+	slug := createAnonBoardViaHTTP(t, anon, ts.URL)
+
+	projectID := projectIDBySlug(t, sqlDB, slug)
+	if _, creator, expires := claimTestProjectState(t, sqlDB, projectID); creator.Valid || !expires.Valid {
+		t.Fatalf("expected Anonymous Board (creator NULL, expiring), got creator=%+v expires=%+v", creator, expires)
+	}
+
+	// Authenticated Alice cannot claim an Anonymous Board.
+	resp, _ := doJSON(t, alice, http.MethodPost, ts.URL+"/api/board/"+slug+"/claim", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 claiming Anonymous Board, got %d", resp.StatusCode)
+	}
+
+	owner, creator, expires := claimTestProjectState(t, sqlDB, projectID)
+	if owner.Valid {
+		t.Fatalf("expected owner_user_id still NULL, got %+v", owner)
+	}
+	if creator.Valid {
+		t.Fatalf("expected creator_user_id still NULL, got %+v", creator)
+	}
+	if !expires.Valid {
+		t.Fatalf("expected expires_at still set, got NULL")
+	}
+	if role := claimTestMemberRole(t, sqlDB, projectID, aliceID); role != "" {
+		t.Fatalf("expected no membership for the claimant, got %q", role)
+	}
+}
+
+// TestClaimTemporaryBoard_FullMode_SignedIn_Lifecycle is the primary security regression for
+// GHSA-vph4-pmmh-ch6x. It reproduces the real HTTP creation and sharing flow: Alice creates a
+// Temporary Board through /anon while signed in, Bob (an unrelated authenticated user with the
+// link) can read it while temporary but cannot claim it, Alice claims it into a Durable Project,
+// and the post-claim slug contract holds (slug retained, public capability removed).
+func TestClaimTemporaryBoard_FullMode_SignedIn_Lifecycle(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	// Alice (owner) plus a second, unrelated real account for Bob.
+	alice := newCookieClient(t)
+	aliceUser := bootstrapUserClient(t, alice, ts.URL, "Alice", "alice@example.com", "password123")
+	aliceID := int64(aliceUser["id"].(float64))
+
+	var bobUser map[string]any
+	resp, body := doJSON(t, alice, http.MethodPost, ts.URL+"/api/admin/users", map[string]any{
+		"name":     "Bob",
+		"email":    "bob@example.com",
 		"password": "password123",
-	}, &u)
+	}, &bobUser)
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("expected 201, got %d", resp.StatusCode)
+		t.Fatalf("create Bob: expected 201, got %d body=%s", resp.StatusCode, string(body))
 	}
-	userID := int64(u["id"].(float64))
+	bobID := int64(bobUser["id"].(float64))
 
-	// Create a temporary board directly in DB (matches /anon semantics).
-	st := store.New(sqlDB, nil)
-	p, err := st.CreateAnonymousBoard(context.Background())
-	if err != nil {
-		t.Fatalf("CreateAnonymousBoard: %v", err)
-	}
-	if p.ExpiresAt == nil {
-		t.Fatalf("expected temp board expiresAt")
+	bob := newCookieClient(t)
+	loginUserClient(t, bob, ts.URL, "bob@example.com", "password123")
+
+	// Alice creates a board through the REAL /anon route while signed in -> Temporary Board.
+	slug := createAnonBoardViaHTTP(t, alice, ts.URL)
+	projectID := projectIDBySlug(t, sqlDB, slug)
+	if _, creator, expires := claimTestProjectState(t, sqlDB, projectID); !creator.Valid || creator.Int64 != aliceID || !expires.Valid {
+		t.Fatalf("expected Temporary Board created by Alice, got creator=%+v expires=%+v", creator, expires)
 	}
 
-	// Claim it via API.
-	resp, _ = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/claim", map[string]any{}, nil)
+	// While temporary the slug is link-shareable: Bob can load it.
+	resp, _ = doJSON(t, bob, http.MethodGet, ts.URL+"/api/board/"+slug, nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected Bob to load the temporary board (200), got %d", resp.StatusCode)
+	}
+
+	// But Bob cannot claim it.
+	resp, _ = doJSON(t, bob, http.MethodPost, ts.URL+"/api/board/"+slug+"/claim", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for Bob's claim, got %d", resp.StatusCode)
+	}
+	if owner, creator, expires := claimTestProjectState(t, sqlDB, projectID); owner.Valid || !expires.Valid || !creator.Valid || creator.Int64 != aliceID {
+		t.Fatalf("expected board unchanged after Bob's claim, got owner=%+v creator=%+v expires=%+v", owner, creator, expires)
+	}
+	if role := claimTestMemberRole(t, sqlDB, projectID, bobID); role != "" {
+		t.Fatalf("expected Bob to have no membership, got %q", role)
+	}
+
+	// Alice can still load her temporary board.
+	resp, _ = doJSON(t, alice, http.MethodGet, ts.URL+"/api/board/"+slug, nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected Alice to load her temporary board (200), got %d", resp.StatusCode)
+	}
+
+	// Alice (the recorded creator) claims it -> Durable Project.
+	resp, body = doJSON(t, alice, http.MethodPost, ts.URL+"/api/board/"+slug+"/claim", map[string]any{}, nil)
 	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d", resp.StatusCode)
+		t.Fatalf("expected 204 for Alice's claim, got %d body=%s", resp.StatusCode, string(body))
 	}
-
-	// Verify DB updated: expires_at NULL and owner_user_id set.
-	var owner sql.NullInt64
-	var expires sql.NullInt64
-	if err := sqlDB.QueryRow(`SELECT owner_user_id, expires_at FROM projects WHERE id = ?`, p.ID).Scan(&owner, &expires); err != nil {
-		t.Fatalf("read project: %v", err)
-	}
-	if !owner.Valid || owner.Int64 != userID {
-		t.Fatalf("expected owner_user_id=%d, got %+v", userID, owner)
+	owner, creator, expires := claimTestProjectState(t, sqlDB, projectID)
+	if !owner.Valid || owner.Int64 != aliceID {
+		t.Fatalf("expected owner_user_id=%d, got %+v", aliceID, owner)
 	}
 	if expires.Valid {
 		t.Fatalf("expected expires_at NULL after claim")
+	}
+	if !creator.Valid || creator.Int64 != aliceID {
+		t.Fatalf("expected creator_user_id preserved as %d, got %+v", aliceID, creator)
+	}
+	if role := claimTestMemberRole(t, sqlDB, projectID, aliceID); role != "maintainer" {
+		t.Fatalf("expected Alice maintainer membership, got %q", role)
+	}
+
+	// Post-claim slug contract: same slug retained, but public capability removed.
+	// Owner can still load it using the same slug.
+	resp, _ = doJSON(t, alice, http.MethodGet, ts.URL+"/api/board/"+slug, nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected Alice to load the durable project (200), got %d", resp.StatusCode)
+	}
+	// Unrelated authenticated user (Bob) can no longer load it.
+	resp, _ = doJSON(t, bob, http.MethodGet, ts.URL+"/api/board/"+slug, nil, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for Bob loading the durable project, got %d", resp.StatusCode)
+	}
+	// Unauthenticated caller can no longer load it.
+	resp, _ = doJSON(t, &http.Client{}, http.MethodGet, ts.URL+"/api/board/"+slug, nil, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for unauthenticated load of the durable project, got %d", resp.StatusCode)
+	}
+	// Repeating the claim is no longer recognized.
+	resp, _ = doJSON(t, alice, http.MethodPost, ts.URL+"/api/board/"+slug+"/claim", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 on repeat claim, got %d", resp.StatusCode)
+	}
+}
+
+// TestClaimTemporaryBoard_ExpiredNotClaimable verifies an expired temporary board cannot be
+// claimed even by its creator.
+func TestClaimTemporaryBoard_ExpiredNotClaimable(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	alice := newCookieClient(t)
+	aliceUser := bootstrapUserClient(t, alice, ts.URL, "Alice", "alice@example.com", "password123")
+	aliceID := int64(aliceUser["id"].(float64))
+
+	st := store.New(sqlDB, nil)
+	p, err := st.CreateAnonymousBoard(store.WithUserID(context.Background(), aliceID))
+	if err != nil {
+		t.Fatalf("CreateAnonymousBoard: %v", err)
+	}
+
+	// Force the board past its expiry.
+	pastMs := time.Now().UTC().Add(-time.Hour).UnixMilli()
+	if _, err := sqlDB.Exec(`UPDATE projects SET expires_at = ? WHERE id = ?`, pastMs, p.ID); err != nil {
+		t.Fatalf("expire board: %v", err)
+	}
+
+	resp, _ := doJSON(t, alice, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/claim", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 claiming expired board, got %d", resp.StatusCode)
+	}
+
+	owner, _, _ := claimTestProjectState(t, sqlDB, p.ID)
+	if owner.Valid {
+		t.Fatalf("expected owner_user_id still NULL after expired claim, got %+v", owner)
 	}
 }
 
@@ -2425,14 +2643,18 @@ func TestClaimTemporaryBoard_Unauthorized(t *testing.T) {
 	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
 	defer cleanup()
 
-	// Create temp board.
+	// Seed a user so auth is enabled, then create a creator-owned temporary board.
+	alice := newCookieClient(t)
+	aliceUser := bootstrapUserClient(t, alice, ts.URL, "Alice", "alice@example.com", "password123")
+	aliceID := int64(aliceUser["id"].(float64))
+
 	st := store.New(sqlDB, nil)
-	p, err := st.CreateAnonymousBoard(context.Background())
+	p, err := st.CreateAnonymousBoard(store.WithUserID(context.Background(), aliceID))
 	if err != nil {
 		t.Fatalf("CreateAnonymousBoard: %v", err)
 	}
 
-	// No cookie -> 401
+	// No cookie -> 401 (auth gate runs before store authorization).
 	client := &http.Client{}
 	resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+p.Slug+"/claim", map[string]any{}, nil)
 	if resp.StatusCode != http.StatusUnauthorized {

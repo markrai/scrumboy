@@ -13,9 +13,14 @@ function stubFetch(response: Response): ReturnType<typeof vi.fn> {
 
 describe('voice MCP client', () => {
   it('returns data from valid legacy MCP envelopes', async () => {
-    stubFetch(new Response(JSON.stringify({ ok: true, data: { value: 1 }, meta: {} }), { status: 200 }));
+    const fetchMock = stubFetch(new Response(JSON.stringify({ ok: true, data: { value: 1 }, meta: {} }), { status: 200 }));
 
     await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).resolves.toEqual({ value: 1 });
+    expect(fetchMock).toHaveBeenCalledWith('/mcp', expect.objectContaining({
+      method: 'POST',
+      credentials: 'same-origin',
+      body: JSON.stringify({ tool: 'todos.get', input: { projectSlug: 'alpha', localId: 1 } }),
+    }));
   });
 
   it('throws server MCP errors with the server message', async () => {

@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 
 	"scrumboy/internal/auth/tokens"
 	"scrumboy/internal/mailer/mailertest"
+	"scrumboy/internal/store"
 )
 
 var testEncryptionKey = []byte("0123456789abcdef0123456789abcdef")
@@ -23,6 +26,11 @@ func newRequestPasswordResetTestServer(t *testing.T, smtpConfigured bool) (*http
 }
 
 func newRequestPasswordResetTestServerWith(t *testing.T, smtpConfigured, trustProxy bool) (*httptest.Server, *mailertest.Server, func()) {
+	ts, fake, _, cleanup := newRequestPasswordResetTestServerWithDB(t, smtpConfigured, trustProxy)
+	return ts, fake, cleanup
+}
+
+func newRequestPasswordResetTestServerWithDB(t *testing.T, smtpConfigured, trustProxy bool) (*httptest.Server, *mailertest.Server, *sql.DB, func()) {
 	t.Helper()
 
 	fake, err := mailertest.Start(mailertest.Options{})
@@ -47,8 +55,8 @@ func newRequestPasswordResetTestServerWith(t *testing.T, smtpConfigured, trustPr
 		// exercising the happy path rather than the fail-closed one.
 		opts.PublicBaseURL = "https://scrumboy.example.com"
 	}
-	ts, _, cleanup := newTestHTTPServerWithOptions(t, opts)
-	return ts, fake, func() {
+	ts, database, cleanup := newTestHTTPServerWithOptions(t, opts)
+	return ts, fake, database, func() {
 		cleanup()
 		fake.Close()
 	}
@@ -147,6 +155,40 @@ func TestRequestPasswordReset_NonexistentEmail_IdenticalResponseNoEmail(t *testi
 
 	if len(fake.Messages()) != 1 {
 		t.Fatalf("expected exactly 1 message (from the existing-user request only), got %d", len(fake.Messages()))
+	}
+}
+
+func TestRequestPasswordReset_UnusableLocalPasswordReturnsGenericResponseNoEmail(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		malformed bool
+	}{
+		{name: "OIDC only"},
+		{name: "malformed hash", malformed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, fake, database, cleanup := newRequestPasswordResetTestServerWithDB(t, true, false)
+			defer cleanup()
+			client := newCookieClient(t)
+			if tc.malformed {
+				u := bootstrapUserClient(t, client, ts.URL, "Malformed", "passwordless@example.com", "password123")
+				if _, err := database.ExecContext(context.Background(), `UPDATE users SET password_hash='not-bcrypt' WHERE id=?`, int64(u["id"].(float64))); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				st := store.New(database, &store.StoreOptions{ConfiguredOIDCIssuer: "https://idp.example"})
+				if _, err := st.CreateUserOIDC(context.Background(), "https://idp.example", "https://idp.example", "passwordless-subject", "passwordless@example.com", "Passwordless"); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var out map[string]any
+			resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/request-password-reset", map[string]any{"email": "passwordless@example.com"}, &out)
+			if resp.StatusCode != http.StatusOK || out["message"] == nil {
+				t.Fatalf("generic response status=%d body=%s", resp.StatusCode, string(body))
+			}
+			assertStillNoMessages(t, fake)
+		})
 	}
 }
 
