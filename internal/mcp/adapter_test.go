@@ -3741,6 +3741,59 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	}
 }
 
+// TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess covers the edge case @markrai
+// flagged on review: clearing a color (color: null) for a user-owned tag that never had a
+// custom color set. UpdateTagColor returns ErrNotFound from the user_tag_colors DELETE
+// affecting zero rows; tags.updateMineColor already normalizes that into a successful no-op,
+// and handleTagsUpdateProjectColor now mirrors that instead of surfacing a confusing 404.
+func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Update PC User Tag Clear Project",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+	slug := projectSlugByName(t, sqlDB, "Update PC User Tag Clear Project")
+
+	doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "todos.create",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"title":       "t",
+			"tags":        []string{"neverhadacolor"},
+		},
+	})
+
+	var userTagID int64
+	if err := sqlDB.QueryRow(`SELECT id FROM tags WHERE name = 'neverhadacolor' AND user_id IS NOT NULL`).Scan(&userTagID); err != nil {
+		t.Fatalf("query user-owned tag: %v", err)
+	}
+
+	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "tags.updateProjectColor",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"tagId":       userTagID,
+			"color":       nil,
+		},
+	})
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %#v", resp2.StatusCode, out)
+	}
+	tag := out["data"].(map[string]any)["tag"].(map[string]any)
+	if tag["tagId"] != float64(userTagID) {
+		t.Fatalf("unexpected tag response: %#v", tag)
+	}
+	if tag["color"] != nil {
+		t.Fatalf("expected no color, got %#v", tag["color"])
+	}
+}
+
 func TestMCPTagsDeleteProjectSuccess(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()

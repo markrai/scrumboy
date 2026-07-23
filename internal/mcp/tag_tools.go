@@ -297,7 +297,12 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 	// API uses for durable projects (see UpdateTagColorForProject in routing_board.go).
 	updateErr := a.store.UpdateTagColor(ctx, &userID, in.TagID, in.Color)
 	if updateErr != nil {
-		return nil, nil, mapStoreError(updateErr)
+		// Clearing a color that was never set on a user-owned tag returns ErrNotFound from
+		// UpdateTagColor; tags.updateMineColor already treats that as a harmless no-op, so
+		// mirror that here rather than surfacing a confusing 404 on a successful clear.
+		if !(isColorClear(in.Color) && errors.Is(updateErr, store.ErrNotFound)) {
+			return nil, nil, mapStoreError(updateErr)
+		}
 	}
 
 	projectTags, listErr = a.store.ListTagCounts(ctx, &pc)
