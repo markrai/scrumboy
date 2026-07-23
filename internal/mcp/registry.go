@@ -49,8 +49,9 @@ func (a *Adapter) registerTools() {
 //
 // This is dispatch-only: aliases are registered directly into a.tools and are
 // deliberately NOT added to implementedTools()/toolCatalog(), so they never
-// appear in tools/list or system.getCapabilities. This is a temporary
-// compatibility shim and is expected to be removed in a future release -- see
+// appear in tools/list or system.getCapabilities. This compatibility shim is
+// kept indefinitely (no planned removal, since the population of external
+// callers still depending on the dotted names is not observable) -- see
 // docs/mcp.md and CHANGELOG.md.
 var legacyToolAliases = map[string]string{
 	"system.getCapabilities":  "system_getCapabilities",

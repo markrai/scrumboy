@@ -220,7 +220,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 Exact names match `internal/mcp/registry.go` / `implementedTools()` (28 tools).
 
-> **Deprecated dotted names (transitional compatibility shim).** Tool names were
+> **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
 > underscore-separated (`todos_create`, `board_get`, ...) because Claude's MCP
 > client validates every tool name in `tools/list` against
@@ -231,8 +231,8 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (28 tools).
 > dispatch-only aliases in `internal/mcp/registry.go`, so existing integrations
 > keep working. They are **no longer advertised** in `tools/list` or
 > `system_getCapabilities` -- new integrations must use the underscore names.
-> The dotted aliases are deprecated and will be removed in a future major
-> version; see `CHANGELOG.md`.
+> The dotted aliases are kept indefinitely as a compatibility shim; there is no
+> planned removal. See `CHANGELOG.md`.
 
 **System**
 
