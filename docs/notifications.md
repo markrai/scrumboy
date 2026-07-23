@@ -11,6 +11,7 @@ self-service password reset and notification email.
 - [Categories](#categories)
 - [Recipients](#recipients)
 - [User settings](#user-settings)
+- [Org-wide default for new users](#org-wide-default-for-new-users)
 - [Delivery isolation](#delivery-isolation)
 - [HTTP endpoints](#http-endpoints)
 - [Quick verification](#quick-verification)
@@ -106,6 +107,28 @@ localized failure copy. A failed initial load leaves the authenticated controls 
 than showing defaults or state from another account. Signing out or changing accounts clears the
 in-memory authenticated preference state. Signed-out/anonymous use may retain a local-only value.
 
+## Org-wide default for new users
+
+By default, every newly created user starts with the hardcoded defaults shown in
+[Categories](#categories) (**Assigned to me** and **Added to a project** on, everything else off,
+master toggle off). An admin or owner can override this per-instance default via
+`GET`/`PUT /api/admin/settings/email-notify-default` (see [HTTP endpoints](#http-endpoints)) so
+that new users start with the organization's preferred configuration instead.
+
+This is a **seed at creation time only** (#169 Phase 1), not a live-applied policy:
+
+- Changing the org default has **no effect on existing users** — each user's own
+  `emailNotifications` row, once written, is never rewritten by a later org-default change.
+- A user created **before** an org-default change keeps whatever default was in effect at their
+  own creation time (the hardcoded default, if no override existed yet).
+- A user created **after** an org-default change is seeded with the new value at creation.
+- The very first (bootstrap) user is never seeded from an org default — there is no admin yet to
+  have configured one — and instead falls back to the hardcoded default via the normal unset-value
+  path described in [HTTP endpoints](#http-endpoints).
+- There is currently no bulk-apply action to retroactively push an org-default change onto
+  existing users who haven't customized their own preferences; that and an admin-facing settings
+  UI panel are tracked as follow-up work.
+
 ## Delivery isolation
 
 Transactional account mail and bulk notification mail use separate bounded queues and separate
@@ -145,6 +168,16 @@ canonical defaults. An explicit `v` must be numeric `1`. Known boolean fields ma
 inherit their canonical defaults, while explicit `false` is preserved. Unknown fields, `null`,
 arrays, malformed JSON, unsupported or invalid versions, and non-boolean category values are
 rejected. Every write emits the complete canonical v1 object shown above in stable field order.
+
+**Org-wide default** (admin/owner only — see
+[Org-wide default for new users](#org-wide-default-for-new-users)):
+
+- `GET /api/admin/settings/email-notify-default` → `{"value": "<JSON>", "customized": bool}`.
+  `value` is always the complete canonical object currently in effect (the hardcoded default when
+  no override exists); `customized` reports whether an admin has actually set one.
+- `PUT /api/admin/settings/email-notify-default` with `{"value": "<JSON>"}` — same JSON shape and
+  validation rules as the per-user preference above. Requires `system_role` of `admin` or `owner`;
+  returns `403` otherwise.
 
 ---
 
