@@ -1,6 +1,14 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** / **3.22.x** / **3.23.x** unless noted below. **3.22.0** has MCP/OAuth upgrade impact — see that release.
+> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** / **3.22.x** / **3.23.x** unless noted below. **3.22.0** has MCP/OAuth upgrade impact — see that release. **Unreleased** below has MCP tool-name upgrade impact for external integrations that hardcode tool names — see that entry; version number to be assigned on release.
+
+## [Unreleased]
+
+### Changed
+
+- **MCP tool names renamed from dot- to underscore-separated (compatibility-relevant)** — Claude's MCP client validates every tool name returned by `tools/list` against `^[a-zA-Z0-9_-]{1,64}$` (letters, digits, underscore, hyphen only). Scrumboy's MCP tools were named with dots (`todos.create`, `sprints.getActive`, `board.get`, etc.), which fail that regex; because Claude validates the whole `tools/list` array as one schema, a single invalid name broke tool-calling for *every* MCP server connected to the session, not just Scrumboy, until Scrumboy was disconnected. All 28 tool names now use underscores instead (e.g. `todos.create` → `todos_create`).
+  - **Compatibility:** The old dotted names are still accepted for direct tool invocation (`tools/call` and the legacy `POST /mcp {"tool": "..."}` endpoint) via a dispatch-only alias table, so existing external MCP callers keep working for now. They no longer appear in `tools/list` or `system_getCapabilities` discovery — new integrations must use the underscore names.
+  - **Action required:** external integrations that hardcode the old dotted tool names should migrate to the underscore names now. The dotted aliases are a transitional shim and are expected to be removed in a future release (timeline not yet finalized — see [docs/mcp.md](docs/mcp.md)).
 
 ## [3.23.0] - 2026-07-22
 

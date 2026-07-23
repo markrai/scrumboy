@@ -220,6 +220,20 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 Exact names match `internal/mcp/registry.go` / `implementedTools()` (28 tools).
 
+> **Deprecated dotted names (transitional compatibility shim).** Tool names were
+> renamed from dot-separated (`todos.create`, `board.get`, ...) to
+> underscore-separated (`todos_create`, `board_get`, ...) because Claude's MCP
+> client validates every tool name in `tools/list` against
+> `^[a-zA-Z0-9_-]{1,64}$`, and dots fail that pattern -- a single invalid name in
+> the array broke tool-calling for *every* MCP server in the session, not just
+> Scrumboy. The old dotted names are still accepted for direct tool invocation
+> (`tools/call` and the legacy `POST /mcp {"tool": "..."}` endpoint) via
+> dispatch-only aliases in `internal/mcp/registry.go`, so existing integrations
+> keep working. They are **no longer advertised** in `tools/list` or
+> `system_getCapabilities` -- new integrations must use the underscore names.
+> The dotted aliases are deprecated and will be removed in a future major
+> version; see `CHANGELOG.md`.
+
 **System**
 
 - `system_getCapabilities`

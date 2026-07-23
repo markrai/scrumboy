@@ -462,6 +462,12 @@ func requiredFieldNamesFromSchema(schema map[string]any) []string {
 }
 
 func validateRequiredFields(toolName string, args map[string]any) string {
+	// Resolve deprecated dotted aliases (see legacyToolAliases in registry.go) to
+	// their canonical underscore name so old-name callers still get the same
+	// required-field validation as new-name callers.
+	if canonical, ok := legacyToolAliases[toolName]; ok {
+		toolName = canonical
+	}
 	definition, ok := toolCatalogDefinitions()[toolName]
 	if !ok {
 		return ""
