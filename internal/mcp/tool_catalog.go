@@ -91,6 +91,33 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"beforeLocalId": jsonPropWithNull("integer", "Place before this todo local ID"),
 			}, []string{"projectSlug", "localId", "toColumnKey"}),
 		},
+		"todos_linksList": {
+			Name:        "todos_linksList",
+			Description: "List the outbound and inbound linked stories for a todo.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"localId":     jsonProp("integer", "Project-scoped todo ID"),
+			}, []string{"projectSlug", "localId"}),
+		},
+		"todos_linkAdd": {
+			Name:        "todos_linkAdd",
+			Description: "Link a todo to another todo (a \"linked story\"). Defaults to link type relates_to; also supports blocks, duplicates, and parent.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug":   jsonProp("string", "Project identifier (slug)"),
+				"localId":       jsonProp("integer", "Project-scoped todo ID to link from"),
+				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to link to"),
+				"linkType":      jsonProp("string", "Link type: relates_to (default), blocks, duplicates, or parent"),
+			}, []string{"projectSlug", "localId", "targetLocalId"}),
+		},
+		"todos_linkRemove": {
+			Name:        "todos_linkRemove",
+			Description: "Remove a link between two todos.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug":   jsonProp("string", "Project identifier (slug)"),
+				"localId":       jsonProp("integer", "Project-scoped todo ID to unlink from"),
+				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to unlink"),
+			}, []string{"projectSlug", "localId", "targetLocalId"}),
+		},
 		"sprints_list": {
 			Name:        "sprints_list",
 			Description: "List sprints for a project.",

@@ -473,7 +473,7 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		t.Fatalf("expected authenticatedToolsUsable false, got %#v", auth["authenticatedToolsUsable"])
 	}
 	tools := data["implementedTools"].([]any)
-	if len(tools) != 28 || tools[0] != "system_getCapabilities" || tools[1] != "projects_list" || tools[2] != "todos_create" || tools[3] != "todos_get" || tools[4] != "todos_search" || tools[5] != "todos_update" || tools[6] != "todos_delete" || tools[7] != "todos_move" || tools[8] != "sprints_list" || tools[9] != "sprints_get" || tools[10] != "sprints_getActive" || tools[11] != "sprints_create" || tools[12] != "sprints_activate" || tools[13] != "sprints_close" || tools[14] != "sprints_update" || tools[15] != "sprints_delete" || tools[16] != "tags_listProject" || tools[17] != "tags_listMine" || tools[18] != "tags_updateMineColor" || tools[19] != "tags_deleteMine" || tools[20] != "tags_updateProjectColor" || tools[21] != "tags_deleteProject" || tools[22] != "members_list" || tools[23] != "members_listAvailable" || tools[24] != "members_add" || tools[25] != "members_updateRole" || tools[26] != "members_remove" || tools[27] != "board_get" {
+	if len(tools) != 31 || tools[0] != "system_getCapabilities" || tools[1] != "projects_list" || tools[2] != "todos_create" || tools[3] != "todos_get" || tools[4] != "todos_search" || tools[5] != "todos_update" || tools[6] != "todos_delete" || tools[7] != "todos_move" || tools[8] != "todos_linksList" || tools[9] != "todos_linkAdd" || tools[10] != "todos_linkRemove" || tools[11] != "sprints_list" || tools[12] != "sprints_get" || tools[13] != "sprints_getActive" || tools[14] != "sprints_create" || tools[15] != "sprints_activate" || tools[16] != "sprints_close" || tools[17] != "sprints_update" || tools[18] != "sprints_delete" || tools[19] != "tags_listProject" || tools[20] != "tags_listMine" || tools[21] != "tags_updateMineColor" || tools[22] != "tags_deleteMine" || tools[23] != "tags_updateProjectColor" || tools[24] != "tags_deleteProject" || tools[25] != "members_list" || tools[26] != "members_listAvailable" || tools[27] != "members_add" || tools[28] != "members_updateRole" || tools[29] != "members_remove" || tools[30] != "board_get" {
 		t.Fatalf("unexpected implementedTools: %#v", tools)
 	}
 	if _, ok := data["plannedTools"]; ok {
@@ -3110,8 +3110,8 @@ func TestMCPTagsDeleteMineValidationUnknownField(t *testing.T) {
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
 		"tool": "tags_deleteMine",
 		"input": map[string]any{
-			"tagId":         float64(1),
-			"projectSlug":   "nope",
+			"tagId":       float64(1),
+			"projectSlug": "nope",
 		},
 	})
 	if resp2.StatusCode != http.StatusBadRequest {
@@ -5105,21 +5105,21 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	// Align with store TestUpdateProjectMemberRole_LastMaintainerCannotDemoteToViewer setup.
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {
 		t.Fatalf("mcp promote m2: %d", r1.StatusCode)
 	}
 	r2, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "contributor"},
 	})
 	if r2.StatusCode != http.StatusOK {
 		t.Fatalf("mcp demote m2: %d", r2.StatusCode)
 	}
 	r3, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r3.StatusCode != http.StatusOK {
@@ -5127,7 +5127,7 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	m2Client := newSessionClientForUser(t, ts, st, m2.ID)
 	r4, _ := doMCP(t, m2Client, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": ownerID, "role": "contributor"},
 	})
 	if r4.StatusCode != http.StatusOK {
@@ -5458,7 +5458,7 @@ func TestMCPMembersRemoveSelfSuccessWhenNotLastMaintainer(t *testing.T) {
 		t.Fatalf("add m2: %v", err)
 	}
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {
