@@ -413,7 +413,7 @@ Activate/close enforce sprint state (e.g. planned vs active); violations return 
 | `tags.listMine` | `{}` | `data.items` (mine tags; no `count`) |
 | `tags.updateMineColor` | `tagId`, `color` (hex or `null` to clear) | `data.tag` |
 | `tags.deleteMine` | `tagId` | `data.deleted` `{ tagId }` - only if tag is in the viewer’s mine list, then store delete |
-| `tags.updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must be **project-scoped** in that project |
+| `tags.updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must be part of that project's tag set (board-scoped or a user-owned tag used/linked in that project) |
 | `tags.deleteProject` | `projectSlug`, `tagId` | `data.deleted` `{ projectSlug, tagId }` - **maintainer+**; tag must exist as a **project-scoped** tag in that project |
 
 ### Members
