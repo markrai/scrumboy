@@ -52,7 +52,7 @@ async function resolveTodoByLocalId(localId: number, context: TodoTargetResolveC
   }
 
   try {
-    const data = await context.callTool<{ todo?: Todo }>("todos.get", {
+    const data = await context.callTool<{ todo?: Todo }>("todos_get", {
       projectSlug: context.projectSlug,
       localId,
     });
@@ -84,7 +84,7 @@ function localTitleCandidates(board: Board): TodoTargetCandidate[] {
 async function remoteTitleCandidates(phrase: string, context: TodoTargetResolveContext): Promise<TodoTargetCandidate[]> {
   if (!context.callTool) return [];
   try {
-    const data = await context.callTool<TodosSearchResponse>("todos.search", {
+    const data = await context.callTool<TodosSearchResponse>("todos_search", {
       projectSlug: context.projectSlug,
       query: phrase,
       limit: 10,

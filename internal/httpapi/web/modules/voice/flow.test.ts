@@ -272,7 +272,7 @@ describe('voice command flow', () => {
     expect(result.ok).toBe(true);
     expect(getContext).toHaveBeenCalledTimes(1);
     expect(callMcpToolMock).toHaveBeenCalledTimes(1);
-    expect(callMcpToolMock).toHaveBeenCalledWith('todos.get', { projectSlug: 'alpha', localId: 99 }, { signal: undefined });
+    expect(callMcpToolMock).toHaveBeenCalledWith('todos_get', { projectSlug: 'alpha', localId: 99 }, { signal: undefined });
   });
 
   it('rejects title alternatives that resolve to different command IRs', async () => {
@@ -289,8 +289,8 @@ describe('voice command flow', () => {
       message: 'Speech matched more than one command. Review the text and try again.',
     });
     expect(getContext).toHaveBeenCalledTimes(1);
-    expect(callMcpToolMock).toHaveBeenCalledWith('todos.search', { projectSlug: 'alpha', query: 'login redirect', limit: 10 }, { signal: undefined });
-    expect(callMcpToolMock).toHaveBeenCalledWith('todos.search', { projectSlug: 'alpha', query: 'login validation', limit: 10 }, { signal: undefined });
+    expect(callMcpToolMock).toHaveBeenCalledWith('todos_search', { projectSlug: 'alpha', query: 'login redirect', limit: 10 }, { signal: undefined });
+    expect(callMcpToolMock).toHaveBeenCalledWith('todos_search', { projectSlug: 'alpha', query: 'login validation', limit: 10 }, { signal: undefined });
   });
 
   it('normalizes to do speech alternatives into canonical todo text', async () => {

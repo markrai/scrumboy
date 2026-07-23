@@ -140,20 +140,20 @@ type projectMemberItem struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
-// membersAddInput is the input for members.add and members.updateRole (projectSlug + userId + canonical role only).
+// membersAddInput is the input for members_add and members_updateRole (projectSlug + userId + canonical role only).
 type membersAddInput struct {
 	ProjectSlug string `json:"projectSlug"`
 	UserID      int64  `json:"userId"`
 	Role        string `json:"role"`
 }
 
-// membersRemoveInput is the input for members.remove (projectSlug + userId only).
+// membersRemoveInput is the input for members_remove (projectSlug + userId only).
 type membersRemoveInput struct {
 	ProjectSlug string `json:"projectSlug"`
 	UserID      int64  `json:"userId"`
 }
 
-// availableUserItem is the shape for members.listAvailable only (users not yet in the project).
+// availableUserItem is the shape for members_listAvailable only (users not yet in the project).
 // It intentionally omits fields the store does not load for that query (e.g. image).
 type availableUserItem struct {
 	UserID      int64     `json:"userId"`

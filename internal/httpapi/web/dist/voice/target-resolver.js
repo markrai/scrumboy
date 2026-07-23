@@ -21,7 +21,7 @@ async function resolveTodoByLocalId(localId, context) {
         return localizedCommandFailure("unknown_story", "voice.errors.todoNotFound", "Todo #{localId} was not found in this project.", { localId });
     }
     try {
-        const data = await context.callTool("todos.get", {
+        const data = await context.callTool("todos_get", {
             projectSlug: context.projectSlug,
             localId,
         });
@@ -53,7 +53,7 @@ async function remoteTitleCandidates(phrase, context) {
     if (!context.callTool)
         return [];
     try {
-        const data = await context.callTool("todos.search", {
+        const data = await context.callTool("todos_search", {
             projectSlug: context.projectSlug,
             query: phrase,
             limit: 10,

@@ -336,7 +336,7 @@ func TestMCP_InvalidBearerDoesNotFallBackToSessionCookie(t *testing.T) {
 	})
 
 	t.Run("POST", func(t *testing.T) {
-		body := map[string]any{"tool": "projects.list", "input": map[string]any{}}
+		body := map[string]any{"tool": "projects_list", "input": map[string]any{}}
 		var buf bytes.Buffer
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
 			t.Fatal(err)
@@ -408,7 +408,7 @@ func TestMCP_BearerTokenEndToEnd(t *testing.T) {
 	token := created["token"].(string)
 	id := int64(created["id"].(float64))
 
-	mcpBody := map[string]any{"tool": "projects.list", "input": map[string]any{}}
+	mcpBody := map[string]any{"tool": "projects_list", "input": map[string]any{}}
 	// No session cookie: Bearer alone must authenticate.
 	bareClient := newStatelessClient(ts)
 	resp, out := postMCPWithBearer(t, bareClient, ts.URL, token, mcpBody)
@@ -473,11 +473,11 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		t.Fatalf("expected authenticatedToolsUsable false, got %#v", auth["authenticatedToolsUsable"])
 	}
 	tools := data["implementedTools"].([]any)
-	if len(tools) != 28 || tools[0] != "system.getCapabilities" || tools[1] != "projects.list" || tools[2] != "todos.create" || tools[3] != "todos.get" || tools[4] != "todos.search" || tools[5] != "todos.update" || tools[6] != "todos.delete" || tools[7] != "todos.move" || tools[8] != "sprints.list" || tools[9] != "sprints.get" || tools[10] != "sprints.getActive" || tools[11] != "sprints.create" || tools[12] != "sprints.activate" || tools[13] != "sprints.close" || tools[14] != "sprints.update" || tools[15] != "sprints.delete" || tools[16] != "tags.listProject" || tools[17] != "tags.listMine" || tools[18] != "tags.updateMineColor" || tools[19] != "tags.deleteMine" || tools[20] != "tags.updateProjectColor" || tools[21] != "tags.deleteProject" || tools[22] != "members.list" || tools[23] != "members.listAvailable" || tools[24] != "members.add" || tools[25] != "members.updateRole" || tools[26] != "members.remove" || tools[27] != "board.get" {
+	if len(tools) != 28 || tools[0] != "system_getCapabilities" || tools[1] != "projects_list" || tools[2] != "todos_create" || tools[3] != "todos_get" || tools[4] != "todos_search" || tools[5] != "todos_update" || tools[6] != "todos_delete" || tools[7] != "todos_move" || tools[8] != "sprints_list" || tools[9] != "sprints_get" || tools[10] != "sprints_getActive" || tools[11] != "sprints_create" || tools[12] != "sprints_activate" || tools[13] != "sprints_close" || tools[14] != "sprints_update" || tools[15] != "sprints_delete" || tools[16] != "tags_listProject" || tools[17] != "tags_listMine" || tools[18] != "tags_updateMineColor" || tools[19] != "tags_deleteMine" || tools[20] != "tags_updateProjectColor" || tools[21] != "tags_deleteProject" || tools[22] != "members_list" || tools[23] != "members_listAvailable" || tools[24] != "members_add" || tools[25] != "members_updateRole" || tools[26] != "members_remove" || tools[27] != "board_get" {
 		t.Fatalf("unexpected implementedTools: %#v", tools)
 	}
 	if _, ok := data["plannedTools"]; ok {
-		t.Fatalf("expected plannedTools omitted once board.get is implemented, got %#v", data["plannedTools"])
+		t.Fatalf("expected plannedTools omitted once board_get is implemented, got %#v", data["plannedTools"])
 	}
 }
 
@@ -517,7 +517,7 @@ func TestMCPProjectsListRequiresAuthAfterBootstrap(t *testing.T) {
 	bootstrapUser(t, authClient, ts.URL)
 
 	resp, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool":  "projects.list",
+		"tool":  "projects_list",
 		"input": map[string]any{},
 	})
 
@@ -549,7 +549,7 @@ func TestMCPProjectsListSuccessWithAuthenticatedSession(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "projects.list",
+		"tool":  "projects_list",
 		"input": map[string]any{},
 	})
 	if resp2.StatusCode != http.StatusOK {
@@ -581,7 +581,7 @@ func TestMCPProjectsListCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool":  "projects.list",
+		"tool":  "projects_list",
 		"input": map[string]any{},
 	})
 	if resp.StatusCode != http.StatusForbidden {
@@ -609,7 +609,7 @@ func TestMCPTodosCreateSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Create Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Add MCP adapter",
@@ -662,7 +662,7 @@ func TestMCPTodosCreateRequiresAuthAfterBootstrap(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Auth Required Todo Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Unauthed",
@@ -682,7 +682,7 @@ func TestMCPTodosCreateCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"title":       "Nope",
@@ -705,7 +705,7 @@ func TestMCPTodosCreateValidationErrorForMalformedInput(t *testing.T) {
 	bootstrapUser(t, client, ts.URL)
 
 	resp, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug":  "demo",
 			"title":        "Bad",
@@ -736,18 +736,18 @@ func TestMCPTodosGetSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Get Project")
 
 	resp = doJSON(t, client, http.MethodPost, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Fetch me",
 		},
 	}, &map[string]any{})
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("todos.create status=%d", resp.StatusCode)
+		t.Fatalf("todos_create status=%d", resp.StatusCode)
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.get",
+		"tool": "todos_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -787,7 +787,7 @@ func TestMCPTodosGetNotFound(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Missing Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.get",
+		"tool": "todos_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     999,
@@ -817,7 +817,7 @@ func TestMCPTodosGetRequiresAuth(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Get Auth Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.get",
+		"tool": "todos_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -847,14 +847,14 @@ func TestMCPTodosSearchSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Search Project")
 
 	doJSON(t, client, http.MethodPost, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Add MCP adapter",
 		},
 	}, &map[string]any{})
 	doJSON(t, client, http.MethodPost, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Other task",
@@ -863,7 +863,7 @@ func TestMCPTodosSearchSuccess(t *testing.T) {
 
 	limit := 20
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.search",
+		"tool": "todos_search",
 		"input": map[string]any{
 			"projectSlug":     slug,
 			"query":           "adapter",
@@ -905,7 +905,7 @@ func TestMCPTodosSearchValidationErrorForMalformedInput(t *testing.T) {
 	bootstrapUser(t, client, ts.URL)
 
 	resp, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.search",
+		"tool": "todos_search",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"limit":       0,
@@ -937,7 +937,7 @@ func TestMCPTodosUpdateSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Update Project")
 
 	createResp, createOut := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug":      slug,
 			"title":            "Original",
@@ -948,12 +948,12 @@ func TestMCPTodosUpdateSuccess(t *testing.T) {
 		},
 	})
 	if createResp.StatusCode != http.StatusOK {
-		t.Fatalf("todos.create status=%d", createResp.StatusCode)
+		t.Fatalf("todos_create status=%d", createResp.StatusCode)
 	}
 	localID := int(createOut["data"].(map[string]any)["todo"].(map[string]any)["localId"].(float64))
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     localID,
@@ -995,7 +995,7 @@ func TestMCPTodosUpdateOmittedFieldsRemainUnchanged(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Omit Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug":      slug,
 			"title":            "Keep title",
@@ -1006,7 +1006,7 @@ func TestMCPTodosUpdateOmittedFieldsRemainUnchanged(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1051,7 +1051,7 @@ func TestMCPTodosUpdateNullClearsSupportedFields(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Clear Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug":      slug,
 			"title":            "Clear me",
@@ -1061,7 +1061,7 @@ func TestMCPTodosUpdateNullClearsSupportedFields(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1106,7 +1106,7 @@ func TestMCPTodosUpdatePatchSprintIdAssignAndClear(t *testing.T) {
 	}
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Sprint patch todo",
@@ -1114,7 +1114,7 @@ func TestMCPTodosUpdatePatchSprintIdAssignAndClear(t *testing.T) {
 	})
 
 	respAssign, outAssign := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1124,7 +1124,7 @@ func TestMCPTodosUpdatePatchSprintIdAssignAndClear(t *testing.T) {
 		},
 	})
 	if respAssign.StatusCode != http.StatusOK {
-		t.Fatalf("todos.update assign sprint status=%d body=%#v", respAssign.StatusCode, outAssign)
+		t.Fatalf("todos_update assign sprint status=%d body=%#v", respAssign.StatusCode, outAssign)
 	}
 	todo := outAssign["data"].(map[string]any)["todo"].(map[string]any)
 	if todo["sprintId"] != float64(sp.ID) {
@@ -1132,7 +1132,7 @@ func TestMCPTodosUpdatePatchSprintIdAssignAndClear(t *testing.T) {
 	}
 
 	respClear, outClear := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1142,7 +1142,7 @@ func TestMCPTodosUpdatePatchSprintIdAssignAndClear(t *testing.T) {
 		},
 	})
 	if respClear.StatusCode != http.StatusOK {
-		t.Fatalf("todos.update clear sprint status=%d body=%#v", respClear.StatusCode, outClear)
+		t.Fatalf("todos_update clear sprint status=%d body=%#v", respClear.StatusCode, outClear)
 	}
 	todo2 := outClear["data"].(map[string]any)["todo"].(map[string]any)
 	if todo2["sprintId"] != nil {
@@ -1165,7 +1165,7 @@ func TestMCPTodosUpdateValidationErrorForMalformedPatch(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Bad Patch Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Patch target",
@@ -1173,7 +1173,7 @@ func TestMCPTodosUpdateValidationErrorForMalformedPatch(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1206,7 +1206,7 @@ func TestMCPTodosUpdateRejectsInvalidNullField(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Invalid Null Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Patch target",
@@ -1214,7 +1214,7 @@ func TestMCPTodosUpdateRejectsInvalidNullField(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1247,7 +1247,7 @@ func TestMCPTodosUpdateRequiresAuth(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Update Auth Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Patch me",
@@ -1255,7 +1255,7 @@ func TestMCPTodosUpdateRequiresAuth(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1278,7 +1278,7 @@ func TestMCPTodosUpdateCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.update",
+		"tool": "todos_update",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"localId":     1,
@@ -1311,7 +1311,7 @@ func TestMCPTodosDeleteSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Delete Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Delete me",
@@ -1319,7 +1319,7 @@ func TestMCPTodosDeleteSuccess(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.delete",
+		"tool": "todos_delete",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1361,7 +1361,7 @@ func TestMCPTodosDeleteNotFound(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Delete Missing Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.delete",
+		"tool": "todos_delete",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     999,
@@ -1391,7 +1391,7 @@ func TestMCPTodosDeleteRequiresAuth(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Delete Auth Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Delete me",
@@ -1399,7 +1399,7 @@ func TestMCPTodosDeleteRequiresAuth(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.delete",
+		"tool": "todos_delete",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1419,7 +1419,7 @@ func TestMCPTodosDeleteCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.delete",
+		"tool": "todos_delete",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"localId":     1,
@@ -1449,7 +1449,7 @@ func TestMCPTodosMoveSuccessToAnotherColumn(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Move Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Move me",
@@ -1457,7 +1457,7 @@ func TestMCPTodosMoveSuccessToAnotherColumn(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1498,7 +1498,7 @@ func TestMCPTodosMoveSuccessWithAfterLocalId(t *testing.T) {
 
 	for i := 1; i <= 2; i++ {
 		doMCP(t, client, ts.URL+"/mcp", map[string]any{
-			"tool": "todos.create",
+			"tool": "todos_create",
 			"input": map[string]any{
 				"projectSlug": slug,
 				"title":       "Task",
@@ -1507,11 +1507,11 @@ func TestMCPTodosMoveSuccessWithAfterLocalId(t *testing.T) {
 	}
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "todos.move",
+		"tool":  "todos_move",
 		"input": map[string]any{"projectSlug": slug, "localId": 1, "toColumnKey": "doing"},
 	})
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug":  slug,
 			"localId":      2,
@@ -1549,7 +1549,7 @@ func TestMCPTodosMoveSuccessWithBeforeLocalId(t *testing.T) {
 
 	for i := 1; i <= 2; i++ {
 		doMCP(t, client, ts.URL+"/mcp", map[string]any{
-			"tool": "todos.create",
+			"tool": "todos_create",
 			"input": map[string]any{
 				"projectSlug": slug,
 				"title":       "Task",
@@ -1558,12 +1558,12 @@ func TestMCPTodosMoveSuccessWithBeforeLocalId(t *testing.T) {
 	}
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "todos.move",
+		"tool":  "todos_move",
 		"input": map[string]any{"projectSlug": slug, "localId": 2, "toColumnKey": "doing"},
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug":   slug,
 			"localId":       1,
@@ -1593,7 +1593,7 @@ func TestMCPTodosMoveValidationErrorWhenBothNeighborsSet(t *testing.T) {
 	bootstrapUser(t, client, ts.URL)
 
 	resp, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug":   "demo",
 			"localId":       1,
@@ -1626,7 +1626,7 @@ func TestMCPTodosMoveValidationErrorForNonexistentNeighbor(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Move Missing Neighbor Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Task",
@@ -1634,7 +1634,7 @@ func TestMCPTodosMoveValidationErrorForNonexistentNeighbor(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug":  slug,
 			"localId":      1,
@@ -1667,7 +1667,7 @@ func TestMCPTodosMoveValidationErrorForWrongColumnNeighbor(t *testing.T) {
 
 	for i := 1; i <= 2; i++ {
 		doMCP(t, client, ts.URL+"/mcp", map[string]any{
-			"tool": "todos.create",
+			"tool": "todos_create",
 			"input": map[string]any{
 				"projectSlug": slug,
 				"title":       "Task",
@@ -1675,12 +1675,12 @@ func TestMCPTodosMoveValidationErrorForWrongColumnNeighbor(t *testing.T) {
 		})
 	}
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "todos.move",
+		"tool":  "todos_move",
 		"input": map[string]any{"projectSlug": slug, "localId": 1, "toColumnKey": "doing"},
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug":  slug,
 			"localId":      2,
@@ -1713,7 +1713,7 @@ func TestMCPTodosMoveValidationErrorForAmbiguousAfterPlacement(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		doMCP(t, client, ts.URL+"/mcp", map[string]any{
-			"tool": "todos.create",
+			"tool": "todos_create",
 			"input": map[string]any{
 				"projectSlug": slug,
 				"title":       "Task",
@@ -1722,16 +1722,16 @@ func TestMCPTodosMoveValidationErrorForAmbiguousAfterPlacement(t *testing.T) {
 	}
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "todos.move",
+		"tool":  "todos_move",
 		"input": map[string]any{"projectSlug": slug, "localId": 1, "toColumnKey": "doing"},
 	})
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "todos.move",
+		"tool":  "todos_move",
 		"input": map[string]any{"projectSlug": slug, "localId": 2, "toColumnKey": "doing"},
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug":  slug,
 			"localId":      3,
@@ -1763,7 +1763,7 @@ func TestMCPTodosMoveRequiresAuth(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Todo Move Auth Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Move me",
@@ -1771,7 +1771,7 @@ func TestMCPTodosMoveRequiresAuth(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"localId":     1,
@@ -1792,7 +1792,7 @@ func TestMCPTodosMoveCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "todos.move",
+		"tool": "todos_move",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"localId":     1,
@@ -1833,14 +1833,14 @@ func TestMCPSprintsListSuccess(t *testing.T) {
 	}
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Backlog todo",
 		},
 	})
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Sprint todo",
@@ -1849,7 +1849,7 @@ func TestMCPSprintsListSuccess(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.list",
+		"tool": "sprints_list",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -1894,7 +1894,7 @@ func TestMCPSprintsGetSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.get",
+		"tool": "sprints_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -1934,7 +1934,7 @@ func TestMCPSprintsGetActiveSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.getActive",
+		"tool": "sprints_getActive",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -1969,7 +1969,7 @@ func TestMCPSprintsGetActiveNoActiveSprintReturnsNull(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.getActive",
+		"tool": "sprints_getActive",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -1997,7 +1997,7 @@ func TestMCPSprintsAuthFailure(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Sprint Auth Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.list",
+		"tool": "sprints_list",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -2016,7 +2016,7 @@ func TestMCPSprintsCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.list",
+		"tool": "sprints_list",
 		"input": map[string]any{
 			"projectSlug": "demo",
 		},
@@ -2045,7 +2045,7 @@ func TestMCPSprintsCreateSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Sprint Create Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.create",
+		"tool": "sprints_create",
 		"input": map[string]any{
 			"projectSlug":    slug,
 			"name":           "Sprint 1",
@@ -2083,7 +2083,7 @@ func TestMCPSprintsCreateValidationErrorForMalformedInput(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Sprint Bad Input Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.create",
+		"tool": "sprints_create",
 		"input": map[string]any{
 			"projectSlug":    slug,
 			"name":           "Sprint 1",
@@ -2115,7 +2115,7 @@ func TestMCPSprintsCreateValidationErrorForInvalidDateRange(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Sprint Bad Range Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.create",
+		"tool": "sprints_create",
 		"input": map[string]any{
 			"projectSlug":    slug,
 			"name":           "Sprint 1",
@@ -2147,7 +2147,7 @@ func TestMCPSprintsCreateAuthFailure(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Sprint Create Auth Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.create",
+		"tool": "sprints_create",
 		"input": map[string]any{
 			"projectSlug":    slug,
 			"name":           "Sprint 1",
@@ -2169,7 +2169,7 @@ func TestMCPSprintsCreateCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.create",
+		"tool": "sprints_create",
 		"input": map[string]any{
 			"projectSlug":    "demo",
 			"name":           "Sprint 1",
@@ -2208,7 +2208,7 @@ func TestMCPSprintsActivateSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.activate",
+		"tool": "sprints_activate",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2251,7 +2251,7 @@ func TestMCPSprintsCloseSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.close",
+		"tool": "sprints_close",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2291,7 +2291,7 @@ func TestMCPSprintsActivateValidationErrorFromWrongState(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.activate",
+		"tool": "sprints_activate",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2328,7 +2328,7 @@ func TestMCPSprintsCloseValidationErrorFromWrongState(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.close",
+		"tool": "sprints_close",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2365,7 +2365,7 @@ func TestMCPSprintActionsAuthFailure(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.activate",
+		"tool": "sprints_activate",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2385,7 +2385,7 @@ func TestMCPSprintActionsCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.activate",
+		"tool": "sprints_activate",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"sprintId":    1,
@@ -2422,7 +2422,7 @@ func TestMCPSprintsUpdateSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2470,7 +2470,7 @@ func TestMCPSprintsUpdateOmissionLeavesFieldsUnchanged(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2516,7 +2516,7 @@ func TestMCPSprintsUpdateValidationErrorForStateFieldCombo(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2556,7 +2556,7 @@ func TestMCPSprintsUpdateMalformedTimestampValidation(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2596,7 +2596,7 @@ func TestMCPSprintsUpdateInvalidDateRangeValidation(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2637,7 +2637,7 @@ func TestMCPSprintsUpdateAuthFailure(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2660,7 +2660,7 @@ func TestMCPSprintsUpdateCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.update",
+		"tool": "sprints_update",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"sprintId":    1,
@@ -2700,7 +2700,7 @@ func TestMCPSprintsDeleteSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.delete",
+		"tool": "sprints_delete",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2739,7 +2739,7 @@ func TestMCPSprintsDeleteNotFound(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Sprint Delete Missing Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.delete",
+		"tool": "sprints_delete",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    999,
@@ -2776,7 +2776,7 @@ func TestMCPSprintsDeleteAuthFailure(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.delete",
+		"tool": "sprints_delete",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -2796,7 +2796,7 @@ func TestMCPSprintsDeleteCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "sprints.delete",
+		"tool": "sprints_delete",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"sprintId":    1,
@@ -2826,7 +2826,7 @@ func TestMCPTagsListProjectSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -2835,7 +2835,7 @@ func TestMCPTagsListProjectSuccess(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.listProject",
+		"tool": "tags_listProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -2874,7 +2874,7 @@ func TestMCPTagsListMineSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Mine Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -2883,7 +2883,7 @@ func TestMCPTagsListMineSuccess(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	if resp2.StatusCode != http.StatusOK {
@@ -2898,7 +2898,7 @@ func TestMCPTagsListMineSuccess(t *testing.T) {
 		t.Fatalf("unexpected mine tag shape: %#v", tag)
 	}
 	if _, hasCount := tag["count"]; hasCount {
-		t.Fatalf("did not expect count in tags.listMine shape: %#v", tag)
+		t.Fatalf("did not expect count in tags_listMine shape: %#v", tag)
 	}
 }
 
@@ -2917,7 +2917,7 @@ func TestMCPTagsAuthFailure(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Auth Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.listProject",
+		"tool": "tags_listProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -2936,7 +2936,7 @@ func TestMCPTagsCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	if resp.StatusCode != http.StatusForbidden {
@@ -2963,7 +2963,7 @@ func TestMCPTagsUpdateMineColorSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Color Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -2972,13 +2972,13 @@ func TestMCPTagsUpdateMineColorSuccess(t *testing.T) {
 	})
 
 	_, mine := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	tagID := mine["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["tagId"]
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": tagID,
 			"color": "#7c3aed",
@@ -3011,7 +3011,7 @@ func TestMCPTagsDeleteMineSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Delete Mine Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -3020,7 +3020,7 @@ func TestMCPTagsDeleteMineSuccess(t *testing.T) {
 	})
 
 	_, mine := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	var tagID int64
@@ -3036,7 +3036,7 @@ func TestMCPTagsDeleteMineSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId": tagID,
 		},
@@ -3056,7 +3056,7 @@ func TestMCPTagsDeleteMineSuccess(t *testing.T) {
 	}
 
 	_, mine2 := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	for _, it := range mine2["data"].(map[string]any)["items"].([]any) {
@@ -3081,7 +3081,7 @@ func TestMCPTagsDeleteMineValidationInvalidTagId(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId": float64(0),
 		},
@@ -3108,7 +3108,7 @@ func TestMCPTagsDeleteMineValidationUnknownField(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId":         float64(1),
 			"projectSlug":   "nope",
@@ -3137,7 +3137,7 @@ func TestMCPTagsDeleteMineAuthFailure(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Del Auth Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "t",
@@ -3145,13 +3145,13 @@ func TestMCPTagsDeleteMineAuthFailure(t *testing.T) {
 		},
 	})
 	_, mine := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	tagID := mine["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["tagId"]
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId": tagID,
 		},
@@ -3169,7 +3169,7 @@ func TestMCPTagsDeleteMineCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId": float64(1),
 		},
@@ -3187,7 +3187,7 @@ func TestMCPTagsDeleteMineCapabilityUnavailableBeforeBootstrap(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId": float64(1),
 		},
@@ -3215,7 +3215,7 @@ func TestMCPTagsDeleteMineNotInViewerLibraryNotFound(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Del Other Project")
 
 	doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "t",
@@ -3223,7 +3223,7 @@ func TestMCPTagsDeleteMineNotInViewerLibraryNotFound(t *testing.T) {
 		},
 	})
 	_, mine := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	var tagID int64
@@ -3246,7 +3246,7 @@ func TestMCPTagsDeleteMineNotInViewerLibraryNotFound(t *testing.T) {
 	otherClient := newSessionClientForUser(t, ts, st, other.ID)
 
 	resp2, out := doMCP(t, otherClient, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteMine",
+		"tool": "tags_deleteMine",
 		"input": map[string]any{
 			"tagId": tagID,
 		},
@@ -3274,7 +3274,7 @@ func TestMCPTagsUpdateMineColorClearSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Clear Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -3283,13 +3283,13 @@ func TestMCPTagsUpdateMineColorClearSuccess(t *testing.T) {
 	})
 
 	_, mine := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	tagID := mine["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["tagId"]
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": tagID,
 			"color": "#7c3aed",
@@ -3297,7 +3297,7 @@ func TestMCPTagsUpdateMineColorClearSuccess(t *testing.T) {
 	})
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": tagID,
 			"color": nil,
@@ -3327,7 +3327,7 @@ func TestMCPTagsUpdateMineColorMalformedColorValidation(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Bad Color Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -3336,13 +3336,13 @@ func TestMCPTagsUpdateMineColorMalformedColorValidation(t *testing.T) {
 	})
 
 	_, mine := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	tagID := mine["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["tagId"]
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": tagID,
 			"color": "purple",
@@ -3372,7 +3372,7 @@ func TestMCPTagsUpdateMineColorRejectsEmptyStringClear(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Tag Empty Clear Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "Tagged todo",
@@ -3381,13 +3381,13 @@ func TestMCPTagsUpdateMineColorRejectsEmptyStringClear(t *testing.T) {
 	})
 
 	_, mine := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool":  "tags.listMine",
+		"tool":  "tags_listMine",
 		"input": map[string]any{},
 	})
 	tagID := mine["data"].(map[string]any)["items"].([]any)[0].(map[string]any)["tagId"]
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": tagID,
 			"color": "",
@@ -3410,7 +3410,7 @@ func TestMCPTagsUpdateMineColorMalformedInputValidation(t *testing.T) {
 	bootstrapUser(t, client, ts.URL)
 
 	resp, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId":        1,
 			"color":        "#7c3aed",
@@ -3434,7 +3434,7 @@ func TestMCPTagsUpdateMineColorAuthFailure(t *testing.T) {
 	bootstrapUser(t, client, ts.URL)
 
 	resp, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": 1,
 			"color": "#7c3aed",
@@ -3454,7 +3454,7 @@ func TestMCPTagsUpdateMineColorCapabilityUnavailableInAnonymousMode(t *testing.T
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateMineColor",
+		"tool": "tags_updateMineColor",
 		"input": map[string]any{
 			"tagId": 1,
 			"color": "#7c3aed",
@@ -3486,7 +3486,7 @@ func TestMCPTagsUpdateProjectColorSuccess(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, projectID, "backend", nil)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -3510,7 +3510,7 @@ func TestMCPTagsUpdateProjectColorSuccess(t *testing.T) {
 
 // TestMCPTagsUpdateProjectColorVisibleToOtherMemberViaListProject checks that a project-scoped
 // color change is stored on the shared tag row (tags.color), not as a per-viewer preference:
-// a different project member sees the same color via tags.listProject / ListTagCounts.
+// a different project member sees the same color via tags_listProject / ListTagCounts.
 // The maintainer updates color before adding the viewer so the write path is unambiguously the owner session.
 func TestMCPTagsUpdateProjectColorVisibleToOtherMemberViaListProject(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
@@ -3531,7 +3531,7 @@ func TestMCPTagsUpdateProjectColorVisibleToOtherMemberViaListProject(t *testing.
 
 	wantColor := "#aabbcc"
 	resp2, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -3553,13 +3553,13 @@ func TestMCPTagsUpdateProjectColorVisibleToOtherMemberViaListProject(t *testing.
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp3, listOut := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.listProject",
+		"tool": "tags_listProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
 	})
 	if resp3.StatusCode != http.StatusOK {
-		t.Fatalf("tags.listProject status=%d", resp3.StatusCode)
+		t.Fatalf("tags_listProject status=%d", resp3.StatusCode)
 	}
 	items := listOut["data"].(map[string]any)["items"].([]any)
 	var found bool
@@ -3606,7 +3606,7 @@ func TestMCPTagsUpdateProjectColorPermissionFailure(t *testing.T) {
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -3646,7 +3646,7 @@ func TestMCPTagsUpdateProjectColorWrongProjectNotFound(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, secondProjectID, "backend", nil)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": firstSlug,
 			"tagId":       tagID,
@@ -3679,7 +3679,7 @@ func TestMCPTagsDeleteProjectSuccess(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, projectID, "scoped-del", nil)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -3724,7 +3724,7 @@ func TestMCPTagsDeleteProjectWrongProjectNotFound(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, secondProjectID, "xdel", nil)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": firstSlug,
 			"tagId":       tagID,
@@ -3753,7 +3753,7 @@ func TestMCPTagsDeleteProjectUserOwnedTagNotFound(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Del PT User Tag Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "t",
@@ -3767,7 +3767,7 @@ func TestMCPTagsDeleteProjectUserOwnedTagNotFound(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       userTagID,
@@ -3796,7 +3796,7 @@ func TestMCPTagsDeleteProjectValidationInvalidTagId(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Del PT Val Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       float64(0),
@@ -3825,7 +3825,7 @@ func TestMCPTagsDeleteProjectValidationUnknownField(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Del PT UF Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       float64(1),
@@ -3857,7 +3857,7 @@ func TestMCPTagsDeleteProjectAuthFailure(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, projectID, "authdel", nil)
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -3876,7 +3876,7 @@ func TestMCPTagsDeleteProjectCapabilityUnavailableInAnonymousMode(t *testing.T) 
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"tagId":       float64(1),
@@ -3895,7 +3895,7 @@ func TestMCPTagsDeleteProjectCapabilityUnavailableBeforeBootstrap(t *testing.T) 
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"tagId":       float64(1),
@@ -3937,7 +3937,7 @@ func TestMCPTagsDeleteProjectPermissionFailure(t *testing.T) {
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.deleteProject",
+		"tool": "tags_deleteProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -3968,7 +3968,7 @@ func TestMCPTagsUpdateProjectColorMalformedColorValidation(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, projectID, "backend", nil)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -4002,7 +4002,7 @@ func TestMCPTagsUpdateProjectColorClearSuccess(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, projectID, "backend", &initialColor)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -4035,7 +4035,7 @@ func TestMCPTagsUpdateProjectColorAuthFailure(t *testing.T) {
 	tagID := insertProjectScopedTag(t, sqlDB, projectID, "backend", nil)
 
 	resp, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       tagID,
@@ -4056,7 +4056,7 @@ func TestMCPTagsUpdateProjectColorCapabilityUnavailableInAnonymousMode(t *testin
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"tagId":       1,
@@ -4088,7 +4088,7 @@ func TestMCPMembersListSuccess(t *testing.T) {
 	ownerID := firstUserID(t, sqlDB)
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.list",
+		"tool": "members_list",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -4151,7 +4151,7 @@ func TestMCPMembersListNormalizesLegacyStoredRoles(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.list",
+		"tool": "members_list",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -4197,7 +4197,7 @@ func TestMCPMembersListAvailableSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.listAvailable",
+		"tool": "members_listAvailable",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -4233,7 +4233,7 @@ func TestMCPMembersListAuthFailure(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Members Auth Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "members.list",
+		"tool": "members_list",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -4252,7 +4252,7 @@ func TestMCPMembersListCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.list",
+		"tool": "members_list",
 		"input": map[string]any{
 			"projectSlug": "demo",
 		},
@@ -4271,7 +4271,7 @@ func TestMCPMembersListAvailableCapabilityUnavailableInAnonymousMode(t *testing.
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.listAvailable",
+		"tool": "members_listAvailable",
 		"input": map[string]any{
 			"projectSlug": "demo",
 		},
@@ -4312,7 +4312,7 @@ func TestMCPMembersListAvailablePermissionFailure(t *testing.T) {
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.listAvailable",
+		"tool": "members_listAvailable",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -4347,7 +4347,7 @@ func TestMCPMembersAddSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4400,7 +4400,7 @@ func TestMCPMembersAddDuplicateConflict(t *testing.T) {
 	}
 
 	body := map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4442,7 +4442,7 @@ func TestMCPMembersAddUnsupportedRole(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4473,7 +4473,7 @@ func TestMCPMembersAddUserNotFound(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Members NF User Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      int64(999999999),
@@ -4510,7 +4510,7 @@ func TestMCPMembersAddAuthFailure(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4531,7 +4531,7 @@ func TestMCPMembersAddCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"userId":      float64(1),
@@ -4552,7 +4552,7 @@ func TestMCPMembersAddCapabilityUnavailableBeforeBootstrap(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"userId":      float64(1),
@@ -4600,7 +4600,7 @@ func TestMCPMembersAddPermissionFailure(t *testing.T) {
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.add",
+		"tool": "members_add",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      target.ID,
@@ -4642,7 +4642,7 @@ func TestMCPMembersUpdateRoleSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4693,7 +4693,7 @@ func TestMCPMembersUpdateRoleUnchangedNoOp(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4735,7 +4735,7 @@ func TestMCPMembersUpdateRoleUnsupportedRole(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4771,7 +4771,7 @@ func TestMCPMembersUpdateRoleTargetNotMember(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      loner.ID,
@@ -4811,7 +4811,7 @@ func TestMCPMembersUpdateRoleAuthFailure(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -4831,7 +4831,7 @@ func TestMCPMembersUpdateRoleCapabilityUnavailableInAnonymousMode(t *testing.T) 
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"userId":      float64(1),
@@ -4851,7 +4851,7 @@ func TestMCPMembersUpdateRoleCapabilityUnavailableBeforeBootstrap(t *testing.T) 
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"userId":      float64(1),
@@ -4901,7 +4901,7 @@ func TestMCPMembersUpdateRolePermissionFailure(t *testing.T) {
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      target.ID,
@@ -4932,7 +4932,7 @@ func TestMCPMembersUpdateRoleSelfDemotionConflict(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Members Self Demo Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      ownerID,
@@ -4973,21 +4973,21 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	// Align with store TestUpdateProjectMemberRole_LastMaintainerCannotDemoteToViewer setup.
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {
 		t.Fatalf("mcp promote m2: %d", r1.StatusCode)
 	}
 	r2, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "contributor"},
 	})
 	if r2.StatusCode != http.StatusOK {
 		t.Fatalf("mcp demote m2: %d", r2.StatusCode)
 	}
 	r3, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r3.StatusCode != http.StatusOK {
@@ -4995,7 +4995,7 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	m2Client := newSessionClientForUser(t, ts, st, m2.ID)
 	r4, _ := doMCP(t, m2Client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": ownerID, "role": "contributor"},
 	})
 	if r4.StatusCode != http.StatusOK {
@@ -5003,7 +5003,7 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	// m2 is now the only maintainer; self-demotion to viewer must fail (ErrConflict, last-maintainer path in store).
 	resp2, out := doMCP(t, m2Client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      m2.ID,
@@ -5047,7 +5047,7 @@ func TestMCPMembersUpdateRoleLegacyOutputNormalization(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -5089,7 +5089,7 @@ func TestMCPMembersRemoveSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -5131,7 +5131,7 @@ func TestMCPMembersRemoveTargetNotMember(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      loner.ID,
@@ -5170,7 +5170,7 @@ func TestMCPMembersRemoveAuthFailure(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      other.ID,
@@ -5189,7 +5189,7 @@ func TestMCPMembersRemoveCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"userId":      float64(1),
@@ -5208,7 +5208,7 @@ func TestMCPMembersRemoveCapabilityUnavailableBeforeBootstrap(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": "demo",
 			"userId":      float64(1),
@@ -5257,7 +5257,7 @@ func TestMCPMembersRemovePermissionFailure(t *testing.T) {
 	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
 
 	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      target.ID,
@@ -5287,7 +5287,7 @@ func TestMCPMembersRemoveLastMaintainerValidation(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Members RM Last M Project")
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      ownerID,
@@ -5326,7 +5326,7 @@ func TestMCPMembersRemoveSelfSuccessWhenNotLastMaintainer(t *testing.T) {
 		t.Fatalf("add m2: %v", err)
 	}
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members.updateRole",
+		"tool": "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {
@@ -5335,7 +5335,7 @@ func TestMCPMembersRemoveSelfSuccessWhenNotLastMaintainer(t *testing.T) {
 
 	m2Client := newSessionClientForUser(t, ts, st, m2.ID)
 	resp2, out := doMCP(t, m2Client, ts.URL+"/mcp", map[string]any{
-		"tool": "members.remove",
+		"tool": "members_remove",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"userId":      m2.ID,
@@ -5383,7 +5383,7 @@ func TestMCPBoardGetSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -5448,7 +5448,7 @@ func TestMCPBoardGetPerColumnPagination(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"limit":       2,
@@ -5473,7 +5473,7 @@ func TestMCPBoardGetPerColumnPagination(t *testing.T) {
 	}
 
 	resp3, out2 := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"limit":       2,
@@ -5525,7 +5525,7 @@ func TestMCPBoardGetFilters(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tag":         "bug",
@@ -5579,7 +5579,7 @@ func TestMCPBoardGetSprintFilter(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"sprintId":    sp.ID,
@@ -5610,7 +5610,7 @@ func TestMCPBoardGetAuthFailure(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Board Auth Project")
 
 	resp2, out := doMCP(t, newStatelessClient(ts), ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -5629,7 +5629,7 @@ func TestMCPBoardGetCapabilityUnavailableInAnonymousMode(t *testing.T) {
 	defer cleanup()
 
 	resp, out := doMCP(t, ts.Client(), ts.URL+"/mcp", map[string]any{
-		"tool": "board.get",
+		"tool": "board_get",
 		"input": map[string]any{
 			"projectSlug": "demo",
 		},
@@ -5670,7 +5670,7 @@ func TestMCPInvalidJSONReturnsValidationError(t *testing.T) {
 	ts, _, cleanup := newTestServer(t, "full")
 	defer cleanup()
 
-	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewBufferString(`{"tool":"projects.list"} {"extra":true}`))
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewBufferString(`{"tool":"projects_list"} {"extra":true}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

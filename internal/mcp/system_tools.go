@@ -21,7 +21,7 @@ func (a *Adapter) handleSystemGetCapabilities(ctx context.Context, input any) (a
 		Pagination: paginationCapabilities{
 			DefaultInput:       []string{"limit", "cursor"},
 			DefaultOutput:      []string{"nextCursor", "hasMore"},
-			FutureSpecialCases: []string{"board.get"},
+			FutureSpecialCases: []string{"board_get"},
 		},
 		ImplementedTools: a.implementedTools(),
 		PlannedTools:     a.plannedTools(),

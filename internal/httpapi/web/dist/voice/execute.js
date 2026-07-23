@@ -5,7 +5,7 @@ export function buildMcpCall(ir) {
     switch (ir.intent) {
         case "todos.create":
             return {
-                tool: "todos.create",
+                tool: "todos_create",
                 input: {
                     projectSlug: ir.projectSlug,
                     title: ir.entities.title,
@@ -13,7 +13,7 @@ export function buildMcpCall(ir) {
             };
         case "todos.move":
             return {
-                tool: "todos.move",
+                tool: "todos_move",
                 input: {
                     projectSlug: ir.projectSlug,
                     localId: ir.entities.localId,
@@ -22,7 +22,7 @@ export function buildMcpCall(ir) {
             };
         case "todos.delete":
             return {
-                tool: "todos.delete",
+                tool: "todos_delete",
                 input: {
                     projectSlug: ir.projectSlug,
                     localId: ir.entities.localId,
@@ -30,7 +30,7 @@ export function buildMcpCall(ir) {
             };
         case "todos.assign":
             return {
-                tool: "todos.update",
+                tool: "todos_update",
                 input: {
                     projectSlug: ir.projectSlug,
                     localId: ir.entities.localId,

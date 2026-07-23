@@ -46,10 +46,10 @@ describe('VoiceFlow runtime i18n', () => {
 
   it('localizes generic MCP fallback errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 200 })));
-    await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow(de['voice.errors.mcpInvalidResponse']);
+    await expect(callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow(de['voice.errors.mcpInvalidResponse']);
 
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: false }), { status: 503 })));
-    await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow(
+    await expect(callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow(
       de['voice.errors.mcpHttpFailure'].replace('{status}', '503'),
     );
   });

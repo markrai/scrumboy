@@ -30,9 +30,9 @@ func (a *Adapter) handleMembersList(ctx context.Context, input any) (any, map[st
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.list is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_list is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.list is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_list is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -86,9 +86,9 @@ func (a *Adapter) handleMembersListAvailable(ctx context.Context, input any) (an
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.listAvailable is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_listAvailable is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.listAvailable is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_listAvailable is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -144,9 +144,9 @@ func (a *Adapter) handleMembersAdd(ctx context.Context, input any) (any, map[str
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.add is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_add is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.add is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_add is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -229,9 +229,9 @@ func (a *Adapter) handleMembersUpdateRole(ctx context.Context, input any) (any, 
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.updateRole is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_updateRole is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.updateRole is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_updateRole is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -322,9 +322,9 @@ func (a *Adapter) handleMembersRemove(ctx context.Context, input any) (any, map[
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.remove is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_remove is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members.remove is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "members_remove is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}

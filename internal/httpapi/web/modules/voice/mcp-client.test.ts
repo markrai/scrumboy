@@ -15,29 +15,29 @@ describe('voice MCP client', () => {
   it('returns data from valid legacy MCP envelopes', async () => {
     const fetchMock = stubFetch(new Response(JSON.stringify({ ok: true, data: { value: 1 }, meta: {} }), { status: 200 }));
 
-    await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).resolves.toEqual({ value: 1 });
+    await expect(callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 })).resolves.toEqual({ value: 1 });
     expect(fetchMock).toHaveBeenCalledWith('/mcp', expect.objectContaining({
       method: 'POST',
       credentials: 'same-origin',
-      body: JSON.stringify({ tool: 'todos.get', input: { projectSlug: 'alpha', localId: 1 } }),
+      body: JSON.stringify({ tool: 'todos_get', input: { projectSlug: 'alpha', localId: 1 } }),
     }));
   });
 
   it('throws server MCP errors with the server message', async () => {
     stubFetch(new Response(JSON.stringify({ ok: false, error: { message: 'forbidden' } }), { status: 403 }));
 
-    await expect(callMcpTool('todos.delete', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('forbidden');
+    await expect(callMcpTool('todos_delete', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('forbidden');
   });
 
   it('rejects invalid JSON and malformed envelopes', async () => {
     stubFetch(new Response('not json', { status: 200 }));
-    await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('Invalid MCP response');
+    await expect(callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('Invalid MCP response');
 
     stubFetch(new Response(JSON.stringify({ data: {} }), { status: 200 }));
-    await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('Invalid MCP response');
+    await expect(callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('Invalid MCP response');
 
     stubFetch(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    await expect(callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('Invalid MCP response');
+    await expect(callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 })).rejects.toThrow('Invalid MCP response');
   });
 
   it('passes abort signals to fetch', async () => {
@@ -45,7 +45,7 @@ describe('voice MCP client', () => {
     const fetchMock = stubFetch(response);
     const controller = new AbortController();
 
-    await callMcpTool('todos.get', { projectSlug: 'alpha', localId: 1 }, { signal: controller.signal });
+    await callMcpTool('todos_get', { projectSlug: 'alpha', localId: 1 }, { signal: controller.signal });
 
     expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
   });

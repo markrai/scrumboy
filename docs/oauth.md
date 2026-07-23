@@ -147,7 +147,7 @@ curl -X POST https://scrumboy.example.com/mcp/rpc \
   -H "Accept: application/json, text/event-stream" \
   -H "MCP-Protocol-Version: 2025-11-25" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects.list","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects_list","arguments":{}}}'
 ```
 
 ---

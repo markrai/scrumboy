@@ -39,9 +39,9 @@ func (a *Adapter) handleSprintsList(ctx context.Context, input any) (any, map[st
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.list is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_list is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.list is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_list is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -89,9 +89,9 @@ func (a *Adapter) handleSprintsGet(ctx context.Context, input any) (any, map[str
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.get is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_get is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.get is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_get is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -133,9 +133,9 @@ func (a *Adapter) handleSprintsGetActive(ctx context.Context, input any) (any, m
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.getActive is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_getActive is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.getActive is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_getActive is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -179,9 +179,9 @@ func (a *Adapter) handleSprintsCreate(ctx context.Context, input any) (any, map[
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.create is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_create is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.create is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_create is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -247,9 +247,9 @@ func (a *Adapter) handleSprintsUpdate(ctx context.Context, input any) (any, map[
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.update is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_update is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.update is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_update is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -331,9 +331,9 @@ func (a *Adapter) handleSprintsDelete(ctx context.Context, input any) (any, map[
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.delete is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_delete is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints.delete is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "sprints_delete is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -390,7 +390,7 @@ func (a *Adapter) handleSprintAction(ctx context.Context, input any, action stri
 		return nil, nil, err
 	}
 
-	toolName := "sprints." + action
+	toolName := "sprints_" + action
 	switch {
 	case a.mode == "anonymous":
 		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, toolName+" is unavailable in anonymous mode", nil)

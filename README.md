@@ -359,7 +359,7 @@ Use it with MCP:
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sb_your_token_here" \
-  -d '{"tool":"projects.list","input":{}}'
+  -d '{"tool":"projects_list","input":{}}'
 ```
 
 ### MCP (JSON-RPC) for AI agents
@@ -410,7 +410,7 @@ curl -X POST http://localhost:8080/mcp/rpc \
     "id":3,
     "method":"tools/call",
     "params":{
-      "name":"todos.create",
+      "name":"todos_create",
       "arguments":{
         "projectSlug":"my-project",
         "title":"Created via MCP"

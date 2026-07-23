@@ -335,7 +335,7 @@ func TestOAuth_FullHappyPath(t *testing.T) {
 	}
 
 	// Use the OAuth access token as a Bearer credential on the MCP endpoint.
-	mcpReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp/rpc", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects.list","arguments":{}}}`))
+	mcpReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp/rpc", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects_list","arguments":{}}}`))
 	mcpReq.Header.Set("Content-Type", "application/json")
 	mcpReq.Header.Set("Authorization", "Bearer "+accessToken)
 	mcpResp, err := http.DefaultClient.Do(mcpReq)
@@ -352,7 +352,7 @@ func TestOAuth_FullHappyPath(t *testing.T) {
 		t.Fatalf("expected successful MCP tool call with OAuth bearer token, got %+v", mcpOut)
 	}
 
-	legacyReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(`{"tool":"projects.list","input":{}}`))
+	legacyReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(`{"tool":"projects_list","input":{}}`))
 	legacyReq.Header.Set("Content-Type", "application/json")
 	legacyReq.Header.Set("Authorization", "Bearer "+accessToken)
 	legacyResp, err := http.DefaultClient.Do(legacyReq)
@@ -659,7 +659,7 @@ func TestOAuth_RefreshTokenFlow(t *testing.T) {
 	// Pre-rotation access token is unaffected by refresh rotation in v1 (only
 	// the refresh token itself is rotated) and remains usable until its own
 	// expiry.
-	mcpReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp/rpc", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects.list","arguments":{}}}`))
+	mcpReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp/rpc", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects_list","arguments":{}}}`))
 	mcpReq.Header.Set("Content-Type", "application/json")
 	mcpReq.Header.Set("Authorization", "Bearer "+firstAccessToken)
 	mcpResp, err := http.DefaultClient.Do(mcpReq)

@@ -106,7 +106,7 @@ func postRaw(t *testing.T, client *http.Client, targetURL string, contentType st
 func TestAgora_MCPJSONRPCUnchangedWithAgoraWired(t *testing.T) {
 	t.Parallel()
 	const listBody = `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
-	const callBody = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"system.getCapabilities","arguments":{}}}`
+	const callBody = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"system_getCapabilities","arguments":{}}}`
 
 	ts1, _, c1 := newAgoraTestServer(t, "full", false)
 	defer c1()
@@ -186,7 +186,7 @@ func TestAgora_InvokeSuccessStructured(t *testing.T) {
 	ts, _, cleanup := newAgoraTestServer(t, "full", true)
 	defer cleanup()
 	cl := &http.Client{}
-	body := []byte(`{"tool":"system.getCapabilities","arguments":{}}`)
+	body := []byte(`{"tool":"system_getCapabilities","arguments":{}}`)
 	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", body)
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -216,7 +216,7 @@ func TestAgora_BearerPassthroughInvoke(t *testing.T) {
 	ts, _, cleanup := newAgoraTestServer(t, "full", true)
 	defer cleanup()
 	cl := &http.Client{}
-	body := []byte(`{"tool":"projects.list","arguments":{}}`)
+	body := []byte(`{"tool":"projects_list","arguments":{}}`)
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/agora/v1/invoke", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestAgora_BearerPassthroughInvoke(t *testing.T) {
 	_ = rA.Body.Close()
 
 	req2, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp/rpc", bytes.NewReader([]byte(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects.list","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"projects_list","arguments":{}}}`,
 	)))
 	req2.Header.Set("Content-Type", "application/json")
 	req2.Header.Set("Authorization", "Bearer sb_invalidtoken_for_apitest_xxx")
@@ -291,7 +291,7 @@ func TestAgora_DoesNotAcceptMCPResourceOAuthToken(t *testing.T) {
 		t.Fatalf("direct MCP OAuth status = %d, want 200", rpcResp.StatusCode)
 	}
 
-	agoraBody := []byte(`{"tool":"projects.list","arguments":{}}`)
+	agoraBody := []byte(`{"tool":"projects_list","arguments":{}}`)
 	agoraReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/agora/v1/invoke", bytes.NewReader(agoraBody))
 	agoraReq.Header.Set("Content-Type", "application/json")
 	agoraReq.Header.Set("Authorization", "Bearer "+pair.AccessToken)
@@ -321,10 +321,10 @@ func TestAgora_InvokeArgumentsNonObjectRejected(t *testing.T) {
 	defer ts.Close()
 	cl := &http.Client{}
 	cases := []string{
-		`{"tool":"system.getCapabilities","arguments":[]}`,
-		`{"tool":"system.getCapabilities","arguments":"x"}`,
-		`{"tool":"system.getCapabilities","arguments":123}`,
-		`{"tool":"system.getCapabilities","arguments":true}`,
+		`{"tool":"system_getCapabilities","arguments":[]}`,
+		`{"tool":"system_getCapabilities","arguments":"x"}`,
+		`{"tool":"system_getCapabilities","arguments":123}`,
+		`{"tool":"system_getCapabilities","arguments":true}`,
 	}
 	for _, raw := range cases {
 		resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", []byte(raw))
@@ -379,7 +379,7 @@ func TestAgora_InvokeTopLevelUnknownRejected(t *testing.T) {
 	ts := httptest.NewServer(h)
 	defer ts.Close()
 	cl := &http.Client{}
-	bad := []byte(`{"tool":"system.getCapabilities","arguments":{},"metadata":{"x":1}}`)
+	bad := []byte(`{"tool":"system_getCapabilities","arguments":{},"metadata":{"x":1}}`)
 	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", bad)
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
@@ -418,7 +418,7 @@ func TestAgora_InvokeArgumentsPassThrough(t *testing.T) {
 	defer ts.Close()
 	registerAgoraTestStaticToken(t, ts.URL, st)
 	cl := &http.Client{}
-	invokeBody := `{"tool":"system.getCapabilities","arguments":{"unusedKey":1}}`
+	invokeBody := `{"tool":"system_getCapabilities","arguments":{"unusedKey":1}}`
 	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", []byte(invokeBody))
 	_, _ = io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
@@ -538,7 +538,7 @@ func TestAgora_InvokeMissingArgumentsKey(t *testing.T) {
 	ts, _, cleanup := newAgoraTestServer(t, "full", true)
 	defer cleanup()
 	cl := &http.Client{}
-	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", []byte(`{"tool":"system.getCapabilities"}`))
+	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", []byte(`{"tool":"system_getCapabilities"}`))
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -562,7 +562,7 @@ func TestAgora_InvokeArgumentsJSONNullNormalizes(t *testing.T) {
 	ts, _, cleanup := newAgoraTestServer(t, "full", true)
 	defer cleanup()
 	cl := &http.Client{}
-	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", []byte(`{"tool":"system.getCapabilities","arguments":null}`))
+	resp := postRaw(t, cl, ts.URL+"/agora/v1/invoke", "application/json", []byte(`{"tool":"system_getCapabilities","arguments":null}`))
 	b, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -738,7 +738,7 @@ func TestAgora_CookiePassthroughParity(t *testing.T) {
 	defer ts.Close()
 	cl := &http.Client{}
 	want := "scrumboy_session=" + sessionToken
-	r1, _ := http.NewRequest(http.MethodPost, ts.URL+"/agora/v1/invoke", bytes.NewBufferString(`{"tool":"system.getCapabilities","arguments":{}}`))
+	r1, _ := http.NewRequest(http.MethodPost, ts.URL+"/agora/v1/invoke", bytes.NewBufferString(`{"tool":"system_getCapabilities","arguments":{}}`))
 	r1.Header.Set("Content-Type", "application/json")
 	r1.Header.Set("Cookie", want)
 	resp1, err := cl.Do(r1)
@@ -751,7 +751,7 @@ func TestAgora_CookiePassthroughParity(t *testing.T) {
 		t.Fatalf("Agora cookie status = %d, want 200", resp1.StatusCode)
 	}
 	r2, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp/rpc", bytes.NewBufferString(
-		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"system.getCapabilities","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"system_getCapabilities","arguments":{}}}`,
 	))
 	r2.Header.Set("Content-Type", "application/json")
 	r2.Header.Set("Cookie", want)

@@ -9,7 +9,7 @@ describe('voice command MCP mapping', () => {
       projectSlug: 'alpha',
       entities: { title: 'Fix login' },
     })).toEqual({
-      tool: 'todos.create',
+      tool: 'todos_create',
       input: { projectSlug: 'alpha', title: 'Fix login' },
     });
 
@@ -19,7 +19,7 @@ describe('voice command MCP mapping', () => {
       projectSlug: 'alpha',
       entities: { localId: 56, toColumnKey: 'done' },
     })).toEqual({
-      tool: 'todos.move',
+      tool: 'todos_move',
       input: { projectSlug: 'alpha', localId: 56, toColumnKey: 'done' },
     });
 
@@ -29,7 +29,7 @@ describe('voice command MCP mapping', () => {
       projectSlug: 'alpha',
       entities: { localId: 56 },
     })).toEqual({
-      tool: 'todos.delete',
+      tool: 'todos_delete',
       input: { projectSlug: 'alpha', localId: 56 },
     });
 
@@ -39,7 +39,7 @@ describe('voice command MCP mapping', () => {
       projectSlug: 'alpha',
       entities: { localId: 56, assigneeUserId: 7 },
     })).toEqual({
-      tool: 'todos.update',
+      tool: 'todos_update',
       input: { projectSlug: 'alpha', localId: 56, patch: { assigneeUserId: 7 } },
     });
   });
@@ -63,7 +63,7 @@ describe('voice command MCP mapping', () => {
     }, { callTool, recordMutation, refreshBoard });
 
     expect(recordMutation).toHaveBeenCalledTimes(1);
-    expect(callTool).toHaveBeenCalledWith('todos.delete', { projectSlug: 'alpha', localId: 56 });
+    expect(callTool).toHaveBeenCalledWith('todos_delete', { projectSlug: 'alpha', localId: 56 });
     expect(refreshBoard).toHaveBeenCalledTimes(1);
     expect(events).toEqual(['record', 'call', 'refresh']);
   });
@@ -124,7 +124,7 @@ describe('voice command MCP mapping', () => {
     }, { callTool, signal: controller.signal });
 
     expect(callTool).toHaveBeenCalledWith(
-      'todos.move',
+      'todos_move',
       { projectSlug: 'alpha', localId: 56, toColumnKey: 'done' },
       { signal: controller.signal },
     );

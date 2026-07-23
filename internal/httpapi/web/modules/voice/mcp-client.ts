@@ -1,13 +1,13 @@
 import { voiceText } from './i18n.js';
 
 export type McpToolName =
-  | "todos.create"
-  | "todos.get"
-  | "todos.search"
-  | "todos.move"
-  | "todos.delete"
-  | "todos.update"
-  | "members.list";
+  | "todos_create"
+  | "todos_get"
+  | "todos_search"
+  | "todos_move"
+  | "todos_delete"
+  | "todos_update"
+  | "members_list";
 
 type McpEnvelope<T> =
   | { ok: true; data: T; meta?: Record<string, unknown> }

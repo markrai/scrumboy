@@ -14,9 +14,9 @@ func (a *Adapter) handleProjectsList(ctx context.Context, input any) (any, map[s
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(403, CodeCapabilityUnavailable, "projects.list is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(403, CodeCapabilityUnavailable, "projects_list is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(403, CodeCapabilityUnavailable, "projects.list is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(403, CodeCapabilityUnavailable, "projects_list is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(401, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}

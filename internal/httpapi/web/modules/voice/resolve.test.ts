@@ -174,7 +174,7 @@ describe('voice command resolution', () => {
       callTool,
     });
 
-    expect(callTool).toHaveBeenCalledWith('todos.get', { projectSlug: 'alpha', localId: 99 });
+    expect(callTool).toHaveBeenCalledWith('todos_get', { projectSlug: 'alpha', localId: 99 });
     expect(resolved).toMatchObject({
       ok: true,
       value: { ir: { intent: 'todos.delete', entities: { localId: 99 } } },
@@ -197,7 +197,7 @@ describe('voice command resolution', () => {
     });
 
     expect(callTool).toHaveBeenCalledTimes(1);
-    expect(callTool).toHaveBeenCalledWith('members.list', { projectSlug: 'alpha' });
+    expect(callTool).toHaveBeenCalledWith('members_list', { projectSlug: 'alpha' });
     expect(resolved).toMatchObject({
       ok: true,
       value: { ir: { intent: 'todos.assign', entities: { localId: 56, assigneeUserId: 8 } } },
@@ -325,7 +325,7 @@ describe('voice command resolution', () => {
     const parsed = parseCommand('move login redirect to done');
     if (!parsed.ok) throw new Error('parse failed');
     const callTool = vi.fn(async (tool: string, input: Record<string, unknown>) => {
-      if (tool === 'todos.search') {
+      if (tool === 'todos_search') {
         return {
           items: [
             { projectSlug: 'alpha', localId: 12, title: 'Fix login redirect' },
@@ -333,7 +333,7 @@ describe('voice command resolution', () => {
           ],
         };
       }
-      if (tool === 'todos.get' && input.projectSlug === 'alpha' && input.localId === 12) {
+      if (tool === 'todos_get' && input.projectSlug === 'alpha' && input.localId === 12) {
         return { todo: { id: 12, localId: 12, title: 'Fix login redirect', status: 'backlog' } };
       }
       throw new Error('unexpected call');
@@ -347,8 +347,8 @@ describe('voice command resolution', () => {
       callTool,
     });
 
-    expect(callTool).toHaveBeenCalledWith('todos.search', { projectSlug: 'alpha', query: 'login redirect', limit: 10 });
-    expect(callTool).toHaveBeenCalledWith('todos.get', { projectSlug: 'alpha', localId: 12 });
+    expect(callTool).toHaveBeenCalledWith('todos_search', { projectSlug: 'alpha', query: 'login redirect', limit: 10 });
+    expect(callTool).toHaveBeenCalledWith('todos_get', { projectSlug: 'alpha', localId: 12 });
     expect(resolved).toMatchObject({
       ok: true,
       value: { ir: { intent: 'todos.move', entities: { localId: 12, toColumnKey: 'done' } } },

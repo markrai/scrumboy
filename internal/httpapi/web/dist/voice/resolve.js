@@ -77,7 +77,7 @@ async function resolveMember(rawUser, context) {
     let matches = findMatchingMembers(rawUser, context.members);
     if (matches.length === 0 && context.callTool) {
         try {
-            const data = await context.callTool("members.list", {
+            const data = await context.callTool("members_list", {
                 projectSlug: context.projectSlug,
             });
             if (Array.isArray(data?.items)) {

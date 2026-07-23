@@ -12,7 +12,7 @@ The MCP adapter is constructed in `cmd/scrumboy/main.go` with server mode from c
 
 ## Transport
 
-- **`GET /mcp`** - Capabilities discovery (same `data` as `system.getCapabilities` via POST).
+- **`GET /mcp`** - Capabilities discovery (same `data` as `system_getCapabilities` via POST).
 - **`POST /mcp`** - Invoke a single tool.
 
 There are **no per-tool URL paths**. Every tool is invoked by posting a JSON body to `POST /mcp`.
@@ -97,7 +97,7 @@ After Origin validation and authentication, **non-POST** methods receive an empt
   "id": 2,
   "method": "tools/call",
   "params": {
-    "name": "todos.create",
+    "name": "todos_create",
     "arguments": {
       "projectSlug": "my-project",
       "title": "New todo"
@@ -244,7 +244,7 @@ Then call MCP with the session cookie:
 ```bash
 curl -b cookies.txt -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -d '{"tool":"projects.list","input":{}}'
+  -d '{"tool":"projects_list","input":{}}'
 ```
 
 ### OIDC login (optional)
@@ -285,7 +285,7 @@ Then call MCP with **Bearer** (no cookie required for this path):
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sb_paste_token_from_create_response" \
-  -d '{"tool":"projects.list","input":{}}'
+  -d '{"tool":"projects_list","input":{}}'
 ```
 
 ---
@@ -300,11 +300,11 @@ Tools use these **public** identifiers as primary keys in inputs and outputs:
 - **Mine-scope tag:** `tagId` (current user’s tag library)
 - **Project-scope tag:** `projectSlug` + `tagId` (tag row scoped to that project; not user-owned)
 - **Project member / membership target:** `projectSlug` + `userId`
-- **Available user (invite list):** `userId` (from `members.listAvailable`)
+- **Available user (invite list):** `userId` (from `members_listAvailable`)
 
-`system.getCapabilities` includes an `identity` object echoing some of these patterns.
+`system_getCapabilities` includes an `identity` object echoing some of these patterns.
 
-**Note:** `projects.list` returns **`projectId`** on each item in addition to `projectSlug`. MCP mutations still key off **`projectSlug`**. `projectId` is returned for informational purposes only and is not used as an input identifier in MCP tools.
+**Note:** `projects_list` returns **`projectId`** on each item in addition to `projectSlug`. MCP mutations still key off **`projectSlug`**. `projectId` is returned for informational purposes only and is not used as an input identifier in MCP tools.
 
 ---
 
@@ -314,31 +314,31 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 **system**
 
-- `system.getCapabilities` - Server mode, auth snapshot, identity/pagination hints, full tool list.
+- `system_getCapabilities` - Server mode, auth snapshot, identity/pagination hints, full tool list.
 
 **projects**
 
-- `projects.list` - Projects visible to the user (with role).
+- `projects_list` - Projects visible to the user (with role).
 
 **board**
 
-- `board.get` - Paged board view per workflow column (special pagination; see below).
+- `board_get` - Paged board view per workflow column (special pagination; see below).
 
 **todos**
 
-- `todos.create`, `todos.get`, `todos.search`, `todos.update`, `todos.delete`, `todos.move`
+- `todos_create`, `todos_get`, `todos_search`, `todos_update`, `todos_delete`, `todos_move`
 
 **sprints**
 
-- `sprints.list`, `sprints.get`, `sprints.getActive`, `sprints.create`, `sprints.activate`, `sprints.close`, `sprints.update`, `sprints.delete`
+- `sprints_list`, `sprints_get`, `sprints_getActive`, `sprints_create`, `sprints_activate`, `sprints_close`, `sprints_update`, `sprints_delete`
 
 **tags**
 
-- `tags.listProject`, `tags.listMine`, `tags.updateMineColor`, `tags.deleteMine`, `tags.updateProjectColor`, `tags.deleteProject`
+- `tags_listProject`, `tags_listMine`, `tags_updateMineColor`, `tags_deleteMine`, `tags_updateProjectColor`, `tags_deleteProject`
 
 **members**
 
-- `members.list`, `members.listAvailable`, `members.add`, `members.updateRole`, `members.remove`
+- `members_list`, `members_listAvailable`, `members_add`, `members_updateRole`, `members_remove`
 
 **Planned tools:** none exposed in capabilities today (`plannedTools` omitted when empty).
 
@@ -351,23 +351,23 @@ Conventions:
 - Inputs use **camelCase** JSON keys matching the Go structs; unknown keys are rejected where `decodeInput` is used.
 - Auth gates omitted below repeat: **anonymous mode** → `CAPABILITY_UNAVAILABLE`; **pre-bootstrap** → `CAPABILITY_UNAVAILABLE`; **no authenticated principal** (no valid session or API token on the request) → `AUTH_REQUIRED` for tools that require it.
 
-### `system.getCapabilities`
+### `system_getCapabilities`
 
 - **Purpose:** Describe server, auth, identities, pagination notes, and implemented tools.
 - **Input:** `{}` (use empty object for POST).
 - **Output:** `data` = capabilities object: `serverMode`, `auth`, `bootstrapAvailable`, `identity`, `pagination`, `implementedTools`, optional `plannedTools`.
 - **Meta:** e.g. `adapterVersion` (integer).
 - **Example (GET or POST):**  
-  `POST /mcp` `{"tool":"system.getCapabilities","input":{}}`  
+  `POST /mcp` `{"tool":"system_getCapabilities","input":{}}`  
   → `ok: true`, `data.implementedTools` = full tool array.
 
-### `projects.list`
+### `projects_list`
 
 - **Purpose:** List projects for the current user with role.
 - **Input:** `{}`
 - **Output:** `data.items` - array of projects (`projectSlug`, `projectId`, `name`, `image`, `dominantColor`, `defaultSprintWeeks`, `expiresAt`, `createdAt`, `updatedAt`, `role`).
 
-### `board.get`
+### `board_get`
 
 - **Purpose:** Board snapshot with optional tag/search/sprint filters and **per-column** pagination.
 - **Input:** `projectSlug` (required); optional `tag`, `search`, `sprintId` (sprint row id; must belong to the project when set); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` applies no sprint-based filter on the board query (internal mode `none`).
@@ -379,12 +379,12 @@ Conventions:
 
 | Tool | Input (summary) | Output (summary) |
 |------|-----------------|------------------|
-| `todos.create` | `projectSlug`, `title`, optional `body`, `tags`, `columnKey`, `estimationPoints`, `sprintId`, `assigneeUserId`, `position` | `data.todo` |
-| `todos.get` | `projectSlug`, `localId` | `data.todo` |
-| `todos.search` | `projectSlug`, `query`, optional `limit`, `excludeLocalIds` | `data.items` (lightweight search hits) |
-| `todos.update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
-| `todos.delete` | `projectSlug`, `localId` | `data` with `status: "deleted"`, `projectSlug`, `localId` |
-| `todos.move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
+| `todos_create` | `projectSlug`, `title`, optional `body`, `tags`, `columnKey`, `estimationPoints`, `sprintId`, `assigneeUserId`, `position` | `data.todo` |
+| `todos_get` | `projectSlug`, `localId` | `data.todo` |
+| `todos_search` | `projectSlug`, `query`, optional `limit`, `excludeLocalIds` | `data.items` (lightweight search hits) |
+| `todos_update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
+| `todos_delete` | `projectSlug`, `localId` | `data` with `status: "deleted"`, `projectSlug`, `localId` |
+| `todos_move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
 
 Column keys accept common aliases (normalized internally). Todo payloads use **`localId`** and **`projectSlug`**; they do not expose the internal global todo id.
 
@@ -394,14 +394,14 @@ Shared inputs: many tools use `projectSlug` only or `projectSlug` + `sprintId` (
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `sprints.list` | `projectSlug` | `data.items` (sprint rows + counts), `meta.unscheduledCount` |
-| `sprints.get` | `projectSlug`, `sprintId` | `data.sprint` |
-| `sprints.getActive` | `projectSlug` | `data.sprint` - sprint object or JSON `null` when there is no active sprint |
-| `sprints.create` | `projectSlug`, `name`, `plannedStartAt`, `plannedEndAt` (ISO-8601 strings) | `data.sprint` |
-| `sprints.activate` | `projectSlug`, `sprintId` | `data.sprint` |
-| `sprints.close` | `projectSlug`, `sprintId` | `data.sprint` (closed) |
-| `sprints.update` | `projectSlug`, `sprintId`, `patch` | `data.sprint` |
-| `sprints.delete` | `projectSlug`, `sprintId` (maintainer+) | `data` with `status: "deleted"`, `projectSlug`, `sprintId` |
+| `sprints_list` | `projectSlug` | `data.items` (sprint rows + counts), `meta.unscheduledCount` |
+| `sprints_get` | `projectSlug`, `sprintId` | `data.sprint` |
+| `sprints_getActive` | `projectSlug` | `data.sprint` - sprint object or JSON `null` when there is no active sprint |
+| `sprints_create` | `projectSlug`, `name`, `plannedStartAt`, `plannedEndAt` (ISO-8601 strings) | `data.sprint` |
+| `sprints_activate` | `projectSlug`, `sprintId` | `data.sprint` |
+| `sprints_close` | `projectSlug`, `sprintId` | `data.sprint` (closed) |
+| `sprints_update` | `projectSlug`, `sprintId`, `patch` | `data.sprint` |
+| `sprints_delete` | `projectSlug`, `sprintId` (maintainer+) | `data` with `status: "deleted"`, `projectSlug`, `sprintId` |
 
 Activate/close enforce sprint state (e.g. planned vs active); violations return `VALIDATION_ERROR` with details.
 
@@ -409,31 +409,31 @@ Activate/close enforce sprint state (e.g. planned vs active); violations return 
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `tags.listProject` | `projectSlug` | `data.items` (`tagId`, `name`, `count`, `color`, `canDelete`) |
-| `tags.listMine` | `{}` | `data.items` (mine tags; no `count`) |
-| `tags.updateMineColor` | `tagId`, `color` (hex or `null` to clear) | `data.tag` |
-| `tags.deleteMine` | `tagId` | `data.deleted` `{ tagId }` - only if tag is in the viewer’s mine list, then store delete |
-| `tags.updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must be **project-scoped** in that project |
-| `tags.deleteProject` | `projectSlug`, `tagId` | `data.deleted` `{ projectSlug, tagId }` - **maintainer+**; tag must exist as a **project-scoped** tag in that project |
+| `tags_listProject` | `projectSlug` | `data.items` (`tagId`, `name`, `count`, `color`, `canDelete`) |
+| `tags_listMine` | `{}` | `data.items` (mine tags; no `count`) |
+| `tags_updateMineColor` | `tagId`, `color` (hex or `null` to clear) | `data.tag` |
+| `tags_deleteMine` | `tagId` | `data.deleted` `{ tagId }` - only if tag is in the viewer’s mine list, then store delete |
+| `tags_updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must be **project-scoped** in that project |
+| `tags_deleteProject` | `projectSlug`, `tagId` | `data.deleted` `{ projectSlug, tagId }` - **maintainer+**; tag must exist as a **project-scoped** tag in that project |
 
 ### Members
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `members.list` | `projectSlug` | `data.items` (member rows with normalized roles where implemented) |
-| `members.listAvailable` | `projectSlug` | `data.items` (users not in project) - **maintainer+** |
-| `members.add` | `projectSlug`, `userId`, `role` (`maintainer` \| `contributor` \| `viewer` only) | `data.member` |
-| `members.updateRole` | `projectSlug`, `userId`, `role` (same three) | `data.member` |
-| `members.remove` | `projectSlug`, `userId` | `data.removed` `{ projectSlug, userId }` |
+| `members_list` | `projectSlug` | `data.items` (member rows with normalized roles where implemented) |
+| `members_listAvailable` | `projectSlug` | `data.items` (users not in project) - **maintainer+** |
+| `members_add` | `projectSlug`, `userId`, `role` (`maintainer` \| `contributor` \| `viewer` only) | `data.member` |
+| `members_updateRole` | `projectSlug`, `userId`, `role` (same three) | `data.member` |
+| `members_remove` | `projectSlug`, `userId` | `data.removed` `{ projectSlug, userId }` |
 
 Member list payloads normalize legacy role strings where the adapter applies mapping (`owner`→`maintainer`, `editor`→`contributor`).
 
-`members.updateRole`: self-demotion and last-maintainer demotion → `CONFLICT`.  
-`members.remove`: last maintainer removal → `VALIDATION_ERROR` (store mapping).
+`members_updateRole`: self-demotion and last-maintainer demotion → `CONFLICT`.  
+`members_remove`: last maintainer removal → `VALIDATION_ERROR` (store mapping).
 
 ---
 
-## Board pagination (`board.get`)
+## Board pagination (`board_get`)
 
 This is **not** a single cursor for the whole board.
 
