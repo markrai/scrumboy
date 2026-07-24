@@ -89,6 +89,12 @@ type todoSearchItem struct {
 	Title       string `json:"title"`
 }
 
+type todoLinkItem struct {
+	LocalID  int64  `json:"localId"`
+	Title    string `json:"title"`
+	LinkType string `json:"linkType"`
+}
+
 type sprintItem struct {
 	ProjectSlug    string `json:"projectSlug"`
 	SprintID       int64  `json:"sprintId"`

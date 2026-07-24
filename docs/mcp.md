@@ -188,6 +188,9 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_update",
     "todos_delete",
     "todos_move",
+    "todos_linksList",
+    "todos_linkAdd",
+    "todos_linkRemove",
     "sprints_list",
     "sprints_get",
     "sprints_getActive",
@@ -218,7 +221,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (28 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (31 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -250,6 +253,14 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (28 tools).
 - `todos_update`
 - `todos_delete`
 - `todos_move`
+- `todos_linksList`
+- `todos_linkAdd`
+- `todos_linkRemove`
+
+Linked stories are **directed** from `localId` to `targetLocalId`, and `linkType` describes `localId` as
+the subject (`blocks` = localId blocks target; `parent` = localId is parent of target; `duplicates` =
+localId duplicates target; `relates_to` is the default). `todos_linkRemove` deletes only that directed
+edge. See [API.md](../API.md#todos) for the full semantics.
 
 **Sprints**
 

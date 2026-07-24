@@ -2,6 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
 
+## [3.24.1] - 2026-07-24
+
+### Added
+
+- **MCP tools for Linked Stories** - `todos_linksList`, `todos_linkAdd`, and `todos_linkRemove` expose the todo detail page's "Linked Stories" relation (`relates_to`, `blocks`, `duplicates`, `parent`) over MCP, matching the existing `GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]` REST endpoints. Links are directed from `localId` to `targetLocalId` with `localId` as the subject of the type. Previously this relation had no MCP surface at all — the only related tool, `todos_search`, just searches link *targets* for the picker UI and never applied a link. See [API.md](API.md#todos).
+
+### Limitations
+
+- **MCP mutations do not refresh open web clients (or fan out card-activity email)** - Unlike REST, MCP tools call the store directly and do not emit `board.refresh_needed` (e.g. `todo_links_updated`). An agent can change links (or other board data) while a browser stays stale until another refresh.
+
+
 ## [3.24.0] - 2026-07-24
 
 ### Changed
