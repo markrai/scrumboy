@@ -46,9 +46,9 @@ func (a *Adapter) handleTodosLinksList(ctx context.Context, input any) (any, map
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos.linksList is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos_linksList is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos.linksList is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos_linksList is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -99,9 +99,9 @@ func (a *Adapter) handleTodosLinkAdd(ctx context.Context, input any) (any, map[s
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos.linkAdd is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos_linkAdd is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos.linkAdd is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos_linkAdd is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -167,9 +167,9 @@ func (a *Adapter) handleTodosLinkRemove(ctx context.Context, input any) (any, ma
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos.linkRemove is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos_linkRemove is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos.linkRemove is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "todos_linkRemove is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}

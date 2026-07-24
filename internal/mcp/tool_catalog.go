@@ -93,7 +93,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"todos_linksList": {
 			Name:        "todos_linksList",
-			Description: "List the outbound and inbound linked stories for a todo.",
+			Description: "List the linked stories for a todo. Returns outbound links (edges where this todo is the source) and inbound links (edges where this todo is the target).",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"localId":     jsonProp("integer", "Project-scoped todo ID"),
@@ -101,21 +101,21 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"todos_linkAdd": {
 			Name:        "todos_linkAdd",
-			Description: "Link a todo to another todo (a \"linked story\"). Defaults to link type relates_to; also supports blocks, duplicates, and parent.",
+			Description: "Link a todo to another todo (a \"linked story\"). The edge is directed from localId to targetLocalId, and the type describes localId as the subject: for blocks, localId blocks targetLocalId; for parent, localId is the parent of targetLocalId; for duplicates, localId duplicates targetLocalId; relates_to (the default) is a directed related-to edge with the same orientation.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug":   jsonProp("string", "Project identifier (slug)"),
-				"localId":       jsonProp("integer", "Project-scoped todo ID to link from"),
-				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to link to"),
-				"linkType":      jsonProp("string", "Link type: relates_to (default), blocks, duplicates, or parent"),
+				"localId":       jsonProp("integer", "Project-scoped todo ID to link from (the subject of the link type)"),
+				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to link to (the object of the link type)"),
+				"linkType":      jsonStringEnumProp("Link type describing localId as the subject: relates_to (default), blocks (localId blocks target), duplicates (localId duplicates target), or parent (localId is parent of target)", []string{"relates_to", "blocks", "duplicates", "parent"}),
 			}, []string{"projectSlug", "localId", "targetLocalId"}),
 		},
 		"todos_linkRemove": {
 			Name:        "todos_linkRemove",
-			Description: "Remove a link between two todos.",
+			Description: "Remove a linked story. Deletes only the directed edge from localId to targetLocalId (the same orientation used by todos_linkAdd); the reverse edge, if any, is left intact.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug":   jsonProp("string", "Project identifier (slug)"),
-				"localId":       jsonProp("integer", "Project-scoped todo ID to unlink from"),
-				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to unlink"),
+				"localId":       jsonProp("integer", "Project-scoped todo ID to unlink from (link source)"),
+				"targetLocalId": jsonProp("integer", "Project-scoped todo ID to unlink (link target)"),
 			}, []string{"projectSlug", "localId", "targetLocalId"}),
 		},
 		"sprints_list": {
@@ -326,6 +326,16 @@ func jsonSchema(typ string, properties map[string]any, required []string) map[st
 
 func jsonProp(typ, description string) map[string]any {
 	return map[string]any{"type": typ, "description": description}
+}
+
+// jsonStringEnumProp builds a string property constrained to a fixed set of
+// allowed values, so MCP clients can constrain generation to valid inputs.
+func jsonStringEnumProp(description string, values []string) map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": description,
+		"enum":        values,
+	}
 }
 
 func jsonPropWithNull(typ, description string) map[string]any {

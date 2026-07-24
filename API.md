@@ -396,6 +396,19 @@ web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]
 self-links (`targetLocalId == localId`) and links to a nonexistent todo both fail validation/not-found
 the same way the REST endpoint does.
 
+Links are **directed** from `localId` to `targetLocalId`, and the `linkType` describes `localId` as the
+subject of the relation:
+
+- `relates_to` (default) - `localId` is related to `targetLocalId` (directed related-to edge).
+- `blocks` - `localId` blocks `targetLocalId`.
+- `duplicates` - `localId` duplicates `targetLocalId`.
+- `parent` - `localId` is the parent of `targetLocalId`.
+
+`todos_linksList` reports `outbound` (edges where the todo is the source) separately from `inbound`
+(edges where the todo is the target). `todos_linkRemove` deletes only the directed `localId ->
+targetLocalId` edge with the same orientation used to add it; a reverse edge, if one exists, is left
+intact.
+
 ### Sprints
 
 Shared inputs: many tools use `projectSlug` only or `projectSlug` + `sprintId` (stored id).

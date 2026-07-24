@@ -257,6 +257,11 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (31 tools).
 - `todos_linkAdd`
 - `todos_linkRemove`
 
+Linked stories are **directed** from `localId` to `targetLocalId`, and `linkType` describes `localId` as
+the subject (`blocks` = localId blocks target; `parent` = localId is parent of target; `duplicates` =
+localId duplicates target; `relates_to` is the default). `todos_linkRemove` deletes only that directed
+edge. See [API.md](../API.md#todos) for the full semantics.
+
 **Sprints**
 
 - `sprints_list`
