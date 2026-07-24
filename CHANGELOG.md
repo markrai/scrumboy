@@ -2,6 +2,12 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
 
+## [3.25.0] - 2026-07-24
+
+### Added
+
+- **Configurable default board for newly created users** (#175) - Admins/owners can configure a single org-wide default board project; newly created users (`CreateUser`/`CreateUserOIDC`) are auto-enrolled as Viewer on it, in the same transaction as user creation. `GET`/`PUT`/`DELETE /api/admin/settings/default-board` (`PUT` body: `{ "projectId": <number> }`), following the same `org_settings` shape as #169/#171's email-notification default. Seeding happens at creation time only and never rewrites existing users' memberships; the bootstrap owner is never auto-enrolled (it already has implicit access via its system role); a project deleted after the setting was configured causes seeding to be silently skipped rather than failing account creation. `DELETE` resets to the unconfigured state (`204`, idempotent). See [docs/roles-and-permissions.md](docs/roles-and-permissions.md#org-wide-default-board-for-new-users).
+
 ## [3.24.0] - 2026-07-24
 
 ### Changed

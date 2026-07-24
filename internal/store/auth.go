@@ -502,6 +502,9 @@ func (s *Store) CreateUser(ctx context.Context, email, password, name string) (U
 	if err := seedEmailNotifyPrefTx(ctx, tx, id); err != nil {
 		return User{}, err
 	}
+	if err := seedDefaultBoardMembershipTx(ctx, tx, id); err != nil {
+		return User{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit create user tx: %w", err)
 	}
@@ -749,9 +752,14 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 
 	// Bootstrap (the first user, becoming owner) predates any org default an
 	// admin could have configured, so it keeps the hardcoded fallback via the
-	// normal lazy GetEmailNotifyPref path rather than seeding a row here.
+	// normal lazy GetEmailNotifyPref path rather than seeding a row here. The
+	// bootstrap owner also already has implicit access via system role, so it
+	// isn't auto-enrolled into a default board either.
 	if !isBootstrap {
 		if err := seedEmailNotifyPrefTx(ctx, tx, userID); err != nil {
+			return User{}, err
+		}
+		if err := seedDefaultBoardMembershipTx(ctx, tx, userID); err != nil {
 			return User{}, err
 		}
 	}

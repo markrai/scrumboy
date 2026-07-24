@@ -104,6 +104,29 @@ Contributor/Viewer on a durable board typically see Customization, Tag Colors, C
 
 ---
 
+## Org-Wide Default Board For New Users
+
+Admins/owners can configure a single org-wide default board: newly created users (via
+`CreateUser` or `CreateUserOIDC`) are auto-enrolled as **Viewer** (the lowest-appropriate
+project role) on that project, in the same transaction as user creation. This follows the same
+`org_settings` shape as the [email-notification org default](notifications.md#org-wide-default-for-new-users)
+from #169/#171.
+
+- **Endpoints:** `GET`/`PUT`/`DELETE /api/admin/settings/default-board`, gated the same as other
+  `/api/admin/*` routes (system role Admin or Owner). `PUT` body: `{ "projectId": <number> }`;
+  the project must currently exist. `DELETE` resets to unconfigured (`204`, idempotent).
+- **Seed at creation time only:** setting or changing the default never touches existing users'
+  memberships. Only users created *after* the setting takes effect are enrolled. Unset (no
+  override, or a later `DELETE`) means no membership is seeded at all — an untouched instance
+  behaves exactly as before this feature existed.
+- **Bootstrap owner excluded:** the first (bootstrap) user is never auto-enrolled, since it
+  already has implicit access to every project via its system role.
+- **Deleted-project safety:** if the configured project is deleted after the setting was made,
+  account creation still succeeds; seeding is silently skipped rather than failing user creation.
+- Out of scope for phase 1: an admin UI panel to pick the board, and any bulk-apply-to-existing-users action.
+
+---
+
 ## Access-Denied Response: 404 Only
 
 For project resources, access denial must return **404** (not 403). Returning 403 would leak project existence. Always return 404 when the user lacks project access.
