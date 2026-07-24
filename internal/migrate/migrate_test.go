@@ -337,3 +337,54 @@ func TestApplyWithCanceledContextReturnsError(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+// TestMigration059ClassifiesExistingPreferencesAsLegacy proves that a
+// user_preferences row written before migration 059 is classified as 'legacy'
+// (unknown writer, never auto-updated by a future bulk-apply), and that the
+// migration leaves the row's value and updated_at untouched.
+func TestMigration059ClassifiesExistingPreferencesAsLegacy(t *testing.T) {
+	ctx := context.Background()
+	sqlDB := openRawTestDB(t)
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	const target = "059_add_user_preferences_provenance.sql"
+	for _, version := range embeddedMigrationVersions(t) {
+		if version == target {
+			break
+		}
+		if err := applyOne(ctx, sqlDB, version); err != nil {
+			t.Fatalf("apply %s: %v", version, err)
+		}
+	}
+
+	now := time.Now().UTC().UnixMilli()
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO users(id, email, created_at, name, system_role) VALUES (1, 'owner@example.com', ?, 'Owner', 'owner')`, now); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	const value = `{"v":1,"enabled":true,"assigned":true,"cardActivity":false,"sprintActivity":false,"projectActivity":false,"addedToProject":true}`
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO user_preferences(user_id, key, value, updated_at) VALUES (1, 'emailNotifications', ?, ?)`, value, now); err != nil {
+		t.Fatalf("insert pre-059 preference: %v", err)
+	}
+
+	if err := applyOne(ctx, sqlDB, target); err != nil {
+		t.Fatalf("apply migration 059: %v", err)
+	}
+
+	var gotValue, gotProvenance string
+	var gotUpdatedAt int64
+	if err := sqlDB.QueryRowContext(ctx,
+		`SELECT value, provenance, updated_at FROM user_preferences WHERE user_id = 1 AND key = 'emailNotifications'`,
+	).Scan(&gotValue, &gotProvenance, &gotUpdatedAt); err != nil {
+		t.Fatalf("read migrated preference: %v", err)
+	}
+	if gotProvenance != "legacy" {
+		t.Fatalf("expected provenance 'legacy', got %q", gotProvenance)
+	}
+	if gotValue != value {
+		t.Fatalf("value changed by migration: got %q, want %q", gotValue, value)
+	}
+	if gotUpdatedAt != now {
+		t.Fatalf("updated_at changed by migration: got %d, want %d", gotUpdatedAt, now)
+	}
+}

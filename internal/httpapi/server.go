@@ -288,6 +288,7 @@ type storeAPI interface {
 	GetEmailNotifyPref(ctx context.Context, userID int64) (store.EmailNotifyPref, error)
 	GetEmailNotifyOrgDefault(ctx context.Context) (store.EmailNotifyPref, bool, error)
 	SetEmailNotifyOrgDefault(ctx context.Context, requesterID int64, raw string) error
+	ClearEmailNotifyOrgDefault(ctx context.Context, requesterID int64) error
 
 	// 2FA
 	CreateLogin2FAPending(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)

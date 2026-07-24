@@ -261,7 +261,7 @@ func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Re
 }
 
 // handleAdminEmailNotifyDefault gets/sets the org-wide default emailNotifications
-// preference newly created users are seeded with (#169 Phase 1). It never touches
+// preference newly created users are seeded with. It never touches
 // existing users' own preferences -- see seedEmailNotifyPrefTx in internal/store.
 func (s *Server) handleAdminEmailNotifyDefault(w http.ResponseWriter, r *http.Request, requesterID int64) {
 	ctx := s.requestContext(r)
@@ -311,6 +311,16 @@ func (s *Server) handleAdminEmailNotifyDefault(w http.ResponseWriter, r *http.Re
 			"value":      string(canonical),
 			"customized": true,
 		})
+		return
+
+	case http.MethodDelete:
+		// DELETE /api/admin/settings/email-notify-default - reset to unconfigured.
+		// Existing users' preferences are untouched; subsequent users get no seeded row.
+		if err := s.store.ClearEmailNotifyOrgDefault(ctx, requesterID); err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 		return
 
 	default:

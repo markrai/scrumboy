@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** / **3.22.x** / **3.23.x** unless noted below. **3.22.0** has MCP/OAuth upgrade impact — see that release.
 
+## [3.23.2] - 2026-07-24
+
+### Added
+
+- **Admin-configurable default email notification preferences for new users** - Admins/owners can set an org-wide default that newly created users inherit, via `GET`/`PUT`/`DELETE /api/admin/settings/email-notify-default`. Seeding happens at creation time only and never rewrites existing users. When no override is configured, no preference row is created for new users, so an untouched instance behaves exactly as before. `DELETE` resets to the unconfigured state (`204`, idempotent). See [docs/notifications.md](docs/notifications.md).
+
+### Changed
+
+- **`user_preferences` provenance** - New `provenance` column (migration 059; `legacy` / `user` / `org_default`) records how each preference row was written. Existing rows become `legacy`; explicit user saves are tagged `user`; org-seeded rows are `org_default`. This is groundwork so a future bulk-apply can safely target only org-seeded rows and never overwrite user-customized ones. **Upgrade note:** remove any hand-rolled `AFTER INSERT ON users` preference trigger before upgrading — explicit-column triggers keep working, but positional `INSERT INTO user_preferences VALUES (...)` triggers become structurally invalid once the column is added. Running an older binary against a 059-migrated database is unsupported (forward-only upgrades).
+
 ## [3.23.1] - 2026-07-24
 
 ### Fixed

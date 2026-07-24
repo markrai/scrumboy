@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+// Preference provenance records how a user_preferences row was written, so a
+// future bulk-apply can safely tell org-seeded rows apart from user-customized
+// ones. Values are application-defined; unknown values are treated conservatively
+// (never auto-updated). Kept unexported: bulk-apply is expected to live in this package.
+const (
+	preferenceProvenanceLegacy     = "legacy"
+	preferenceProvenanceUser       = "user"
+	preferenceProvenanceOrgDefault = "org_default"
+)
+
 // validateTagColorsJSON returns ErrValidation if any color in the tagColors JSON is invalid.
 func validateTagColorsJSON(value string) error {
 	var m map[string]string
@@ -63,11 +73,13 @@ func (s *Store) SetUserPreference(ctx context.Context, userID int64, key, value 
 		value = string(canonical)
 	}
 	nowMs := time.Now().UTC().UnixMilli()
+	// An explicit user write always marks the row as user-owned, including when
+	// it overwrites an inherited org_default row with the same value.
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO user_preferences (user_id, key, value, updated_at)
-VALUES (?, ?, ?, ?)
-ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-`, userID, key, value, nowMs)
+INSERT INTO user_preferences (user_id, key, value, updated_at, provenance)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, provenance = excluded.provenance
+`, userID, key, value, nowMs, preferenceProvenanceUser)
 	if err != nil {
 		return fmt.Errorf("set user preference: %w", err)
 	}

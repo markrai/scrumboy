@@ -185,6 +185,13 @@ func TestCreateUserOIDC_SeedsCurrentOrgDefault(t *testing.T) {
 	if !got.Enabled || !got.CardActivity {
 		t.Fatalf("OIDC user should have inherited org default, got %+v", got)
 	}
+	_, provenance, _, exists := preferenceRow(t, st, oidcUser.ID, "emailNotifications")
+	if !exists {
+		t.Fatalf("expected a seeded emailNotifications row for OIDC user when org default is set")
+	}
+	if provenance != preferenceProvenanceOrgDefault {
+		t.Fatalf("expected provenance %q, got %q", preferenceProvenanceOrgDefault, provenance)
+	}
 }
 
 // TestBootstrapUser_NotSeededFromOrgDefault documents that the first (bootstrap)
