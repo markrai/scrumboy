@@ -736,6 +736,58 @@ func TestJSONRPC_ToolsList_TodosUpdateSchema(t *testing.T) {
 	}
 }
 
+func TestJSONRPC_ToolsList_TodosLinkAddSchema(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newStatelessClient(ts)
+	_, out := doJSONRPC(t, client, ts.URL, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/list",
+	})
+
+	result := out["result"].(map[string]any)
+	tools := result["tools"].([]any)
+
+	var todosLinkAdd map[string]any
+	for _, t2 := range tools {
+		tool := t2.(map[string]any)
+		if tool["name"] == "todos_linkAdd" {
+			todosLinkAdd = tool
+			break
+		}
+	}
+	if todosLinkAdd == nil {
+		t.Fatal("todos_linkAdd not found in tools/list")
+	}
+
+	schema := todosLinkAdd["inputSchema"].(map[string]any)
+	props := schema["properties"].(map[string]any)
+
+	linkType, ok := props["linkType"].(map[string]any)
+	if !ok {
+		t.Fatalf("todos_linkAdd schema missing linkType property, got %#v", props["linkType"])
+	}
+	if linkType["type"] != "string" {
+		t.Fatalf("todos_linkAdd linkType type expected string, got %v", linkType["type"])
+	}
+
+	enum, ok := linkType["enum"].([]any)
+	if !ok {
+		t.Fatalf("todos_linkAdd linkType.enum expected array, got %T %#v", linkType["enum"], linkType["enum"])
+	}
+	want := []string{"relates_to", "blocks", "duplicates", "parent"}
+	if len(enum) != len(want) {
+		t.Fatalf("todos_linkAdd linkType.enum expected %v, got %#v", want, enum)
+	}
+	for i, v := range want {
+		if enum[i] != v {
+			t.Fatalf("todos_linkAdd linkType.enum[%d] expected %q, got %q", i, v, enum[i])
+		}
+	}
+}
+
 func TestJSONRPC_ToolsList_ProjectsListSchema(t *testing.T) {
 	ts, _, cleanup := newTestServer(t, "full")
 	defer cleanup()

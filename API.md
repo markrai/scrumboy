@@ -326,7 +326,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 **todos**
 
-- `todos_create`, `todos_get`, `todos_search`, `todos_update`, `todos_delete`, `todos_move`
+- `todos_create`, `todos_get`, `todos_search`, `todos_update`, `todos_delete`, `todos_move`, `todos_linksList`, `todos_linkAdd`, `todos_linkRemove`
 
 **sprints**
 
@@ -385,8 +385,29 @@ Conventions:
 | `todos_update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
 | `todos_delete` | `projectSlug`, `localId` | `data` with `status: "deleted"`, `projectSlug`, `localId` |
 | `todos_move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
+| `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType}`) |
+| `todos_linkAdd` | `projectSlug`, `localId`, `targetLocalId`, optional `linkType` (default `relates_to`; also `blocks`, `duplicates`, `parent`) | `data.outbound`, `data.inbound` (refreshed) |
+| `todos_linkRemove` | `projectSlug`, `localId`, `targetLocalId` | `data.outbound`, `data.inbound` (refreshed) |
 
 Column keys accept common aliases (normalized internally). Todo payloads use **`localId`** and **`projectSlug`**; they do not expose the internal global todo id.
+
+**Linked stories:** this is the same "Linked Stories" relation shown on the todo detail page in the
+web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]`). `todos_linkAdd`
+self-links (`targetLocalId == localId`) and links to a nonexistent todo both fail validation/not-found
+the same way the REST endpoint does.
+
+Links are **directed** from `localId` to `targetLocalId`, and the `linkType` describes `localId` as the
+subject of the relation:
+
+- `relates_to` (default) - `localId` is related to `targetLocalId` (directed related-to edge).
+- `blocks` - `localId` blocks `targetLocalId`.
+- `duplicates` - `localId` duplicates `targetLocalId`.
+- `parent` - `localId` is the parent of `targetLocalId`.
+
+`todos_linksList` reports `outbound` (edges where the todo is the source) separately from `inbound`
+(edges where the todo is the target). `todos_linkRemove` deletes only the directed `localId ->
+targetLocalId` edge with the same orientation used to add it; a reverse edge, if one exists, is left
+intact.
 
 ### Sprints
 
