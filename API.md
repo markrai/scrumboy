@@ -413,7 +413,7 @@ Activate/close enforce sprint state (e.g. planned vs active); violations return 
 | `tags_listMine` | `{}` | `data.items` (mine tags; no `count`) |
 | `tags_updateMineColor` | `tagId`, `color` (hex or `null` to clear) | `data.tag` |
 | `tags_deleteMine` | `tagId` | `data.deleted` `{ tagId }` - only if tag is in the viewer’s mine list, then store delete |
-| `tags_updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must be **project-scoped** in that project |
+| `tags_updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must appear in that project's `tags_listProject` set. Color semantics follow tag scope: **board-scoped** tags update shared `tags.color` (visible to all members); **user-owned** tags update this viewer's per-viewer preference in `user_tag_colors` (same as durable HTTP board color updates / `tags_updateMineColor`) |
 | `tags_deleteProject` | `projectSlug`, `tagId` | `data.deleted` `{ projectSlug, tagId }` - **maintainer+**; tag must exist as a **project-scoped** tag in that project |
 
 ### Members

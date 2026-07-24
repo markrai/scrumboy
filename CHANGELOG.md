@@ -10,6 +10,16 @@
   - **Compatibility:** The old dotted names are still accepted for direct tool invocation (`tools/call` and the legacy `POST /mcp {"tool": "..."}` endpoint) via a dispatch-only alias table, so existing external MCP callers keep working. They no longer appear in `tools/list` or `system_getCapabilities` discovery — new integrations must use the underscore names. Because existing callers using the dotted names continue to work unchanged, this ships as a minor version.
   - **Action required:** external integrations that hardcode the old dotted tool names should migrate to the underscore names when convenient. The dotted aliases are kept indefinitely as a compatibility shim — see [docs/mcp.md](docs/mcp.md) — there is no planned removal.
 
+## [3.23.1] - 2026-07-24
+
+### Fixed
+
+- **`tags.updateProjectColor` on durable projects** - The MCP tool no longer 404s for every user-owned tag on authenticated projects. Existence is checked against the same project tag set as `tags.listProject` (not board-scoped-only `GetProjectScopedTagByID`), and clearing an unset user-owned color preference is treated as a successful no-op (matching `tags.updateMineColor`). `tags.deleteProject` remains board-scoped-only.
+
+### Documentation
+
+- **`tags.updateProjectColor` color semantics** - `API.md` and the MCP `tools/list` description clarify that board-scoped tags update shared `tags.color`, while user-owned tags update this viewer's per-viewer preference.
+
 ## [3.23.0] - 2026-07-22
 
 ### Added
