@@ -1,13 +1,13 @@
 # Changelog
 
-> **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** / **3.22.x** / **3.23.x** unless noted below. **3.22.0** has MCP/OAuth upgrade impact — see that release. **Unreleased** below has MCP tool-name upgrade impact for external integrations that hardcode tool names — see that entry; version number to be assigned on release.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
 
-## [Unreleased]
+## [3.24.0] - 2026-07-24
 
 ### Changed
 
-- **MCP tool names renamed from dot- to underscore-separated (compatibility-relevant, minor)** — Claude's MCP client validates every tool name returned by `tools/list` against `^[a-zA-Z0-9_-]{1,64}$` (letters, digits, underscore, hyphen only). Scrumboy's MCP tools were named with dots (`todos.create`, `sprints.getActive`, `board.get`, etc.), which fail that regex; because Claude validates the whole `tools/list` array as one schema, a single invalid name broke tool-calling for *every* MCP server connected to the session, not just Scrumboy, until Scrumboy was disconnected. All 28 tool names now use underscores instead (e.g. `todos.create` → `todos_create`).
-  - **Compatibility:** The old dotted names are still accepted for direct tool invocation (`tools/call` and the legacy `POST /mcp {"tool": "..."}` endpoint) via a dispatch-only alias table, so existing external MCP callers keep working. They no longer appear in `tools/list` or `system_getCapabilities` discovery — new integrations must use the underscore names. Because existing callers using the dotted names continue to work unchanged, this ships as a minor version.
+- **MCP tool names renamed from dot- to underscore-separated (compatibility-relevant)** — Claude's MCP client validates every tool name returned by `tools/list` against `^[a-zA-Z0-9_-]{1,64}$` (letters, digits, underscore, hyphen only). Scrumboy's MCP tools were named with dots (`todos.create`, `sprints.getActive`, `board.get`, etc.), which fail that regex; because Claude validates the whole `tools/list` array as one schema, a single invalid name broke tool-calling for *every* MCP server connected to the session, not just Scrumboy, until Scrumboy was disconnected. All 28 tool names now use underscores instead (e.g. `todos.create` → `todos_create`).
+  - **Compatibility:** The old dotted names are still accepted for direct tool invocation (`tools/call` and the legacy `POST /mcp {"tool": "..."}` endpoint) via a dispatch-only alias table, so existing external MCP callers keep working. They no longer appear in `tools/list` or `system_getCapabilities` discovery — new integrations must use the underscore names. Direct invocation remains compatible, so this ships as a minor rather than a major.
   - **Action required:** external integrations that hardcode the old dotted tool names should migrate to the underscore names when convenient. The dotted aliases are kept indefinitely as a compatibility shim — see [docs/mcp.md](docs/mcp.md) — there is no planned removal.
 
 ## [3.23.2] - 2026-07-24

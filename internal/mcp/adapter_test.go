@@ -3663,11 +3663,11 @@ func TestMCPTagsUpdateProjectColorWrongProjectNotFound(t *testing.T) {
 }
 
 // TestMCPTagsUpdateProjectColorUserOwnedTagSuccess covers the real-world case that was broken:
-// on a durable/authenticated project, every tag reachable via todos.create's tags param is
+// on a durable/authenticated project, every tag reachable via todos_create's tags param is
 // user-owned (project_id NULL, user_id set) and merely linked via project_tags — board-scoped
 // rows (project_id set, user_id NULL) only ever exist on anonymous temporary boards (migration
 // 019). Before the fix, GetProjectScopedTagByID's `user_id IS NULL` filter meant this always
-// 404'd for every durable project, making tags.updateProjectColor unusable outside tests that
+// 404'd for every durable project, making tags_updateProjectColor unusable outside tests that
 // used the insertProjectScopedTag helper to fabricate a row no production code path creates.
 func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
@@ -3684,7 +3684,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Update PC User Tag Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "t",
@@ -3698,7 +3698,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       userTagID,
@@ -3717,7 +3717,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	}
 
 	resp3, listOut := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.listProject",
+		"tool": "tags_listProject",
 		"input": map[string]any{
 			"projectSlug": slug,
 		},
@@ -3744,7 +3744,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 // TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess covers the edge case @markrai
 // flagged on review: clearing a color (color: null) for a user-owned tag that never had a
 // custom color set. UpdateTagColor returns ErrNotFound from the user_tag_colors DELETE
-// affecting zero rows; tags.updateMineColor already normalizes that into a successful no-op,
+// affecting zero rows; tags_updateMineColor already normalizes that into a successful no-op,
 // and handleTagsUpdateProjectColor now mirrors that instead of surfacing a confusing 404.
 func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
@@ -3761,7 +3761,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
 	slug := projectSlugByName(t, sqlDB, "Update PC User Tag Clear Project")
 
 	doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "todos.create",
+		"tool": "todos_create",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"title":       "t",
@@ -3775,7 +3775,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
 	}
 
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
-		"tool": "tags.updateProjectColor",
+		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
 			"tagId":       userTagID,

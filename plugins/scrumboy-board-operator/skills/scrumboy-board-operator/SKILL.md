@@ -40,13 +40,13 @@ section for normal board operations.
 ## Workflow
 
 1. Confirm the request scope and whether the user wants read-only analysis or a board mutation.
-2. Call `system.getCapabilities` or `tools/list` first when interface support is unclear.
-3. Use `projects.list` and `board.get` before recommending todo or sprint changes.
+2. Call `system_getCapabilities` or `tools/list` first when interface support is unclear.
+3. Use `projects_list` and `board_get` before recommending todo or sprint changes.
 4. For JSON-RPC, call `tools/call` with `params.name` and `params.arguments`.
 5. For legacy MCP HTTP, call `/mcp` with `tool` and `input`.
 6. For Agoragentic, call `/agora/v1/discover` or `/agora/v1/invoke` with `tool` and `arguments`.
 7. Ask for human approval before any mutating action.
-8. Verify after approved changes with `board.get`, `todos.get`, sprint reads, or tag/member reads.
+8. Verify after approved changes with `board_get`, `todos_get`, sprint reads, or tag/member reads.
 
 ## Acceptance Checks
 

@@ -66,7 +66,7 @@ Verify the exact public values, saving sanitized headers and JSON:
 4. Complete DCR and record only the registered redirect URI shape. Current releases may use `http://localhost:8787/callback`; older releases may use `cursor://anysphere.cursor-mcp/oauth/callback` or multiple URIs.
 5. Complete Scrumboy authorization. When Scrumboy needs human authentication, follow its standard OIDC redirect to Keycloak.
 6. Confirm Keycloak returns only to `https://<vega-host>/api/auth/oidc/callback`, then Scrumboy resumes consent.
-7. Approve consent, complete the Scrumboy code exchange, and invoke `projects.list` successfully.
+7. Approve consent, complete the Scrumboy code exchange, and invoke `projects_list` successfully.
 
 If this exact Cursor build registers multiple redirect URIs or requires a private-use scheme that current DCR policy rejects, stop the release. Handle normalized multi-URI storage, exact selected-URI matching, and private-use-scheme policy in a separate prerequisite change; do not silently discard registration values in P1B.
 
@@ -81,7 +81,7 @@ If this exact Cursor build registers multiple redirect URIs or requires a privat
 
 3. Confirm the unauthenticated request receives the canonical challenge.
 4. Complete browser OAuth through Scrumboy's `/oauth/*` endpoints and Keycloak-backed human login.
-5. Invoke `projects.list` successfully.
+5. Invoke `projects_list` successfully.
 
 ## Compatibility and negative checks
 

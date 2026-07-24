@@ -43,16 +43,16 @@ func (a *Adapter) registerTools() {
 // the rename to underscore-separated names) to their current names. Claude's MCP
 // client validates every tool name in tools/list against
 // ^[a-zA-Z0-9_-]{1,64}$, which dots fail, so the dotted names were dropped from
-// discovery. These aliases exist purely so that existing external MCP callers
-// that still hardcode the old dotted names (via tools/call or the legacy
-// POST /mcp {"tool": "..."} endpoint) keep working during a transition period.
+// discovery. These are permanent backward-compatibility aliases so existing
+// external MCP callers that still hardcode the old dotted names (via tools/call
+// or the legacy POST /mcp {"tool": "..."} endpoint) keep working.
 //
 // This is dispatch-only: aliases are registered directly into a.tools and are
 // deliberately NOT added to implementedTools()/toolCatalog(), so they never
-// appear in tools/list or system.getCapabilities. This compatibility shim is
-// kept indefinitely (no planned removal, since the population of external
-// callers still depending on the dotted names is not observable) -- see
-// docs/mcp.md and CHANGELOG.md.
+// appear in tools/list or system_getCapabilities. The aliases are retained
+// indefinitely (no planned removal, since the population of external callers
+// still depending on the dotted names is not observable) -- see docs/mcp.md and
+// CHANGELOG.md.
 var legacyToolAliases = map[string]string{
 	"system.getCapabilities":  "system_getCapabilities",
 	"projects.list":           "projects_list",
