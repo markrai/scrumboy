@@ -10,6 +10,16 @@
   - **Compatibility:** The old dotted names are still accepted for direct tool invocation (`tools/call` and the legacy `POST /mcp {"tool": "..."}` endpoint) via a dispatch-only alias table, so existing external MCP callers keep working. They no longer appear in `tools/list` or `system_getCapabilities` discovery — new integrations must use the underscore names. Because existing callers using the dotted names continue to work unchanged, this ships as a minor version.
   - **Action required:** external integrations that hardcode the old dotted tool names should migrate to the underscore names when convenient. The dotted aliases are kept indefinitely as a compatibility shim — see [docs/mcp.md](docs/mcp.md) — there is no planned removal.
 
+## [3.23.2] - 2026-07-24
+
+### Added
+
+- **Admin-configurable default email notification preferences for new users** - Admins/owners can set an org-wide default that newly created users inherit, via `GET`/`PUT`/`DELETE /api/admin/settings/email-notify-default`. Seeding happens at creation time only and never rewrites existing users. When no override is configured, no preference row is created for new users, so an untouched instance behaves exactly as before. `DELETE` resets to the unconfigured state (`204`, idempotent). See [docs/notifications.md](docs/notifications.md).
+
+### Changed
+
+- **`user_preferences` provenance** - New `provenance` column (migration 059; `legacy` / `user` / `org_default`) records how each preference row was written. Existing rows become `legacy`; explicit user saves are tagged `user`; org-seeded rows are `org_default`. This is groundwork so a future bulk-apply can safely target only org-seeded rows and never overwrite user-customized ones. **Upgrade note:** remove any hand-rolled `AFTER INSERT ON users` preference trigger before upgrading — explicit-column triggers keep working, but positional `INSERT INTO user_preferences VALUES (...)` triggers become structurally invalid once the column is added. Running an older binary against a 059-migrated database is unsupported (forward-only upgrades).
+
 ## [3.23.1] - 2026-07-24
 
 ### Fixed

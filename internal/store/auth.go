@@ -499,6 +499,9 @@ func (s *Store) CreateUser(ctx context.Context, email, password, name string) (U
 	if err != nil {
 		return User{}, fmt.Errorf("last insert id user: %w", err)
 	}
+	if err := seedEmailNotifyPrefTx(ctx, tx, id); err != nil {
+		return User{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit create user tx: %w", err)
 	}
@@ -742,6 +745,15 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 			return User{}, ErrConflict
 		}
 		return User{}, fmt.Errorf("insert oidc identity: %w", err)
+	}
+
+	// Bootstrap (the first user, becoming owner) predates any org default an
+	// admin could have configured, so it keeps the hardcoded fallback via the
+	// normal lazy GetEmailNotifyPref path rather than seeding a row here.
+	if !isBootstrap {
+		if err := seedEmailNotifyPrefTx(ctx, tx, userID); err != nil {
+			return User{}, err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

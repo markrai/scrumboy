@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -61,6 +62,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 		} else {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		}
+		return
+	}
+
+	if rest[0] == "settings" && len(rest) == 2 && rest[1] == "email-notify-default" {
+		// GET/PUT /api/admin/settings/email-notify-default
+		s.handleAdminEmailNotifyDefault(w, r, userID)
 		return
 	}
 
@@ -251,4 +258,72 @@ func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Re
 		"reset_url":  resetURL,
 		"expires_at": expiresAt.UTC().Format(time.RFC3339),
 	})
+}
+
+// handleAdminEmailNotifyDefault gets/sets the org-wide default emailNotifications
+// preference newly created users are seeded with. It never touches
+// existing users' own preferences -- see seedEmailNotifyPrefTx in internal/store.
+func (s *Server) handleAdminEmailNotifyDefault(w http.ResponseWriter, r *http.Request, requesterID int64) {
+	ctx := s.requestContext(r)
+
+	switch r.Method {
+	case http.MethodGet:
+		// GET /api/admin/settings/email-notify-default
+		pref, customized, err := s.store.GetEmailNotifyOrgDefault(ctx)
+		if err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		canonical, err := json.Marshal(pref)
+		if err != nil {
+			writeInternal(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"value":      string(canonical),
+			"customized": customized,
+		})
+		return
+
+	case http.MethodPut:
+		// PUT /api/admin/settings/email-notify-default - Body: { value: string }
+		var in struct {
+			Value string `json:"value"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return
+		}
+		if err := s.store.SetEmailNotifyOrgDefault(ctx, requesterID, in.Value); err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		pref, _, err := s.store.GetEmailNotifyOrgDefault(ctx)
+		if err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		canonical, err := json.Marshal(pref)
+		if err != nil {
+			writeInternal(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"value":      string(canonical),
+			"customized": true,
+		})
+		return
+
+	case http.MethodDelete:
+		// DELETE /api/admin/settings/email-notify-default - reset to unconfigured.
+		// Existing users' preferences are untouched; subsequent users get no seeded row.
+		if err := s.store.ClearEmailNotifyOrgDefault(ctx, requesterID); err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
 }

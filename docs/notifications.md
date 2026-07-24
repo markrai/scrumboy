@@ -11,6 +11,7 @@ self-service password reset and notification email.
 - [Categories](#categories)
 - [Recipients](#recipients)
 - [User settings](#user-settings)
+- [Org-wide default for new users](#org-wide-default-for-new-users)
 - [Delivery isolation](#delivery-isolation)
 - [HTTP endpoints](#http-endpoints)
 - [Quick verification](#quick-verification)
@@ -106,6 +107,48 @@ localized failure copy. A failed initial load leaves the authenticated controls 
 than showing defaults or state from another account. Signing out or changing accounts clears the
 in-memory authenticated preference state. Signed-out/anonymous use may retain a local-only value.
 
+## Org-wide default for new users
+
+By default, every newly created user starts with the hardcoded defaults shown in
+[Categories](#categories) (**Assigned to me** and **Added to a project** on, everything else off,
+master toggle off). An admin or owner can override this per-instance default via
+`GET`/`PUT /api/admin/settings/email-notify-default` (see [HTTP endpoints](#http-endpoints)) so
+that new users start with the organization's preferred configuration instead.
+
+This is a **seed at creation time only**, not a live-applied policy:
+
+- Changing the org default has **no effect on existing users** — each user's own
+  `emailNotifications` row, once written, is never rewritten by a later org-default change.
+- **When no override is configured, new users are seeded no row at all** — they behave exactly
+  like an instance that never used this feature, resolving to the hardcoded default lazily. A row
+  is only written when an admin/owner has actually configured an override.
+- A user created **before** an override existed keeps that rowless state and is unaffected by any
+  later change.
+- A user created **after** an override is set is seeded with the current value at creation, tagged
+  internally as an org-seeded row (provenance `org_default`). When that user later saves their own
+  preferences, the row is re-tagged as user-owned (`user`).
+- The very first (bootstrap) user is never seeded from an org default — there is no admin yet to
+  have configured one — and instead falls back to the hardcoded default via the normal unset-value
+  path described in [HTTP endpoints](#http-endpoints).
+- A **corrupt** stored override (only reachable by editing the database directly) is non-fatal:
+  new users are simply not seeded (no fallback row is invented) so account creation still succeeds,
+  while admin `GET` continues to surface the corruption as an error.
+- To return to the unconfigured state, use `DELETE /api/admin/settings/email-notify-default`
+  (see [HTTP endpoints](#http-endpoints)). Re-`PUT`ting the hardcoded values is not the same as
+  clearing, because `customized` stays `true` until the override is deleted.
+- There is currently no bulk-apply action to retroactively push an org-default change onto
+  existing users who haven't customized their own preferences; that and an admin-facing settings
+  UI panel are tracked as follow-up work. The provenance tagging above exists so a future
+  bulk-apply can safely target only org-seeded rows and never overwrite user-customized ones.
+
+> **Upgrading from a hand-rolled trigger:** some self-hosted operators worked around the lack of
+> this feature with a custom `AFTER INSERT ON users` SQLite trigger that inserts an
+> `emailNotifications` row. Remove that trigger before upgrading. A trigger that lists columns
+> explicitly (`INSERT INTO user_preferences (user_id, key, value, updated_at) VALUES (...)`) will
+> keep working (the app's seed upsert overwrites its row when an override is configured), but a
+> **positional** trigger (`INSERT INTO user_preferences VALUES (...)`) becomes structurally invalid
+> once the `provenance` column is added and must be removed.
+
 ## Delivery isolation
 
 Transactional account mail and bulk notification mail use separate bounded queues and separate
@@ -145,6 +188,20 @@ canonical defaults. An explicit `v` must be numeric `1`. Known boolean fields ma
 inherit their canonical defaults, while explicit `false` is preserved. Unknown fields, `null`,
 arrays, malformed JSON, unsupported or invalid versions, and non-boolean category values are
 rejected. Every write emits the complete canonical v1 object shown above in stable field order.
+
+**Org-wide default** (admin/owner only — see
+[Org-wide default for new users](#org-wide-default-for-new-users)):
+
+- `GET /api/admin/settings/email-notify-default` → `{"value": "<JSON>", "customized": bool}`.
+  `value` is always the complete canonical object currently in effect (the hardcoded default when
+  no override exists); `customized` reports whether an admin has actually set one.
+- `PUT /api/admin/settings/email-notify-default` with `{"value": "<JSON>"}` — same JSON shape and
+  validation rules as the per-user preference above. Requires `system_role` of `admin` or `owner`;
+  returns `403` otherwise.
+- `DELETE /api/admin/settings/email-notify-default` — clears the override, returning `GET` to
+  `customized: false` and the hardcoded default. Existing users' preferences are untouched;
+  subsequently created users are seeded no row. Requires `system_role` of `admin` or `owner`
+  (`403` otherwise); returns `204 No Content` and is idempotent (deleting when unset still `204`).
 
 ---
 
