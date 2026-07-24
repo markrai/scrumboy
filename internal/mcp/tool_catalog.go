@@ -188,8 +188,10 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 			}, []string{"tagId"}),
 		},
 		"tags.updateProjectColor": {
-			Name:        "tags.updateProjectColor",
-			Description: "Set or clear the project-scoped color for a tag.",
+			Name: "tags.updateProjectColor",
+			Description: "Set or clear color for a tag in a project (maintainer+). " +
+				"Tag must appear in that project's tags.listProject set. " +
+				"Board-scoped tags update shared tags.color; user-owned tags update this viewer's per-viewer color preference.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"tagId":       jsonProp("integer", "Tag ID"),

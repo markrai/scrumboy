@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes in **3.7.x** / **3.8.x** / **3.9.x** / **3.10.x** / **3.11.x** / **3.12.x** / **3.13.x** / **3.14.x** / **3.15.x** / **3.16.x** / **3.17.x** / **3.18.x** / **3.19.x** / **3.20.x** / **3.21.x** / **3.22.x** / **3.23.x** unless noted below. **3.22.0** has MCP/OAuth upgrade impact — see that release.
 
+## [3.23.1] - 2026-07-24
+
+### Fixed
+
+- **`tags.updateProjectColor` on durable projects** - The MCP tool no longer 404s for every user-owned tag on authenticated projects. Existence is checked against the same project tag set as `tags.listProject` (not board-scoped-only `GetProjectScopedTagByID`), and clearing an unset user-owned color preference is treated as a successful no-op (matching `tags.updateMineColor`). `tags.deleteProject` remains board-scoped-only.
+
+### Documentation
+
+- **`tags.updateProjectColor` color semantics** - `API.md` and the MCP `tools/list` description clarify that board-scoped tags update shared `tags.color`, while user-owned tags update this viewer's per-viewer preference.
+
 ## [3.23.0] - 2026-07-22
 
 ### Added

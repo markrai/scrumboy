@@ -277,32 +277,48 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
 	}
 
-	if _, tagErr := a.store.GetProjectScopedTagByID(ctx, pc.Project.ID, in.TagID); tagErr != nil {
-		return nil, nil, mapStoreError(tagErr)
-	}
-
-	// UpdateTagColor mutates tags.color for project-scoped rows; viewerUserID is only used for user-owned tags.
-	updateErr := a.store.UpdateTagColor(ctx, &userID, in.TagID, in.Color)
-	if updateErr != nil {
-		return nil, nil, mapStoreError(updateErr)
-	}
-
+	// GetProjectScopedTagByID only matches board-scoped tags (project_id set, user_id NULL),
+	// which per migration 019 are created exclusively for anonymous temporary boards. On a
+	// durable/authenticated project every tag is user-owned and merely linked via project_tags,
+	// so that lookup always 404s here even though tags.listProject reports the tag as part of
+	// the project. Use the same project-tag set listProject exposes as the existence check
+	// instead, covering both board-scoped and user-owned-but-project-linked tags.
 	projectTags, listErr := a.store.ListTagCounts(ctx, &pc)
 	if listErr != nil {
 		return nil, nil, mapStoreError(listErr)
 	}
-	for _, tc := range projectTags {
-		if tc.TagID == in.TagID {
-			return map[string]any{
-				"tag": projectTagItem{
-					TagID:     tc.TagID,
-					Name:      tc.Name,
-					Count:     tc.Count,
-					Color:     tc.Color,
-					CanDelete: tc.CanDelete,
-				},
-			}, map[string]any{}, nil
+	if _, found := findProjectTagCount(projectTags, in.TagID); !found {
+		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	}
+
+	// UpdateTagColor dispatches on the tag row's own scope: board-scoped tags get their shared
+	// tags.color updated directly, while user-owned tags (the normal case on durable projects)
+	// get this viewer's per-viewer color preference updated — the same store call the HTTP board
+	// API uses for durable projects (see UpdateTagColorForProject in routing_board.go).
+	updateErr := a.store.UpdateTagColor(ctx, &userID, in.TagID, in.Color)
+	if updateErr != nil {
+		// Clearing a color that was never set on a user-owned tag returns ErrNotFound from
+		// UpdateTagColor; tags.updateMineColor already treats that as a harmless no-op, so
+		// mirror that here rather than surfacing a confusing 404 on a successful clear.
+		if !(isColorClear(in.Color) && errors.Is(updateErr, store.ErrNotFound)) {
+			return nil, nil, mapStoreError(updateErr)
 		}
+	}
+
+	projectTags, listErr = a.store.ListTagCounts(ctx, &pc)
+	if listErr != nil {
+		return nil, nil, mapStoreError(listErr)
+	}
+	if tc, found := findProjectTagCount(projectTags, in.TagID); found {
+		return map[string]any{
+			"tag": projectTagItem{
+				TagID:     tc.TagID,
+				Name:      tc.Name,
+				Count:     tc.Count,
+				Color:     tc.Color,
+				CanDelete: tc.CanDelete,
+			},
+		}, map[string]any{}, nil
 	}
 
 	// Tag existence in project scope was already verified above; if it disappears
@@ -348,6 +364,12 @@ func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, 
 		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
 	}
 
+	// Deliberately still board-scoped-only (unlike handleTagsUpdateProjectColor): DeleteTag on a
+	// user-owned tag deletes it across every project that user has used it in, not just this one,
+	// so tags.deleteProject intentionally 404s for user-owned tags (see
+	// TestMCPTagsDeleteProjectUserOwnedTagNotFound). tags.updateProjectColor is non-destructive
+	// and safely dispatches to a per-viewer color update for user-owned tags, so only that path
+	// was widened.
 	if _, tagErr := a.store.GetProjectScopedTagByID(ctx, pc.Project.ID, in.TagID); tagErr != nil {
 		return nil, nil, mapStoreError(tagErr)
 	}
@@ -374,6 +396,15 @@ func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, 
 			"tagId":       in.TagID,
 		},
 	}, map[string]any{}, nil
+}
+
+func findProjectTagCount(tags []store.TagCount, tagID int64) (store.TagCount, bool) {
+	for _, tag := range tags {
+		if tag.TagID == tagID {
+			return tag, true
+		}
+	}
+	return store.TagCount{}, false
 }
 
 func findMineTag(tags []store.TagWithColor, tagID int64) (store.TagWithColor, bool) {
