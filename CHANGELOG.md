@@ -2,6 +2,12 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
 
+## [3.24.2] - 2026-07-24
+
+### Added
+
+- **MCP tools for workflow columns** - `workflow_list`, `workflow_create`, `workflow_update`, and `workflow_delete` expose a project's workflow columns (board lanes) over MCP, calling the same store methods as the cookie-only `GET/POST/PATCH/DELETE /api/board/{slug}/workflow` REST endpoints so `sb_` Bearer API tokens can reach them. Create/update/delete require maintainer role or higher; `workflow_update` sets both name and color; `workflow_delete` removes an empty non-done column. See [API.md](API.md#workflow).
+
 ## [3.24.1] - 2026-07-24
 
 ### Added

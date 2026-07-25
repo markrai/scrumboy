@@ -306,7 +306,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"workflow_update": {
 			Name:        "workflow_update",
-			Description: "Rename a workflow column and/or change its color. Requires maintainer role or higher.",
+			Description: "Update a workflow column's display name and color (both required). Requires maintainer role or higher.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"columnKey":   jsonProp("string", "Workflow column key to update"),
@@ -316,7 +316,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"workflow_delete": {
 			Name:        "workflow_delete",
-			Description: "Delete an empty, non-done, non-system workflow column. Requires maintainer role or higher.",
+			Description: "Delete an empty non-done workflow column. Requires maintainer role or higher. Rejects the done column, non-empty columns, and deletes that would leave fewer than 2 columns.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"columnKey":   jsonProp("string", "Workflow column key to delete"),

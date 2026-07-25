@@ -210,7 +210,11 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "members_add",
     "members_updateRole",
     "members_remove",
-    "board_get"
+    "board_get",
+    "workflow_list",
+    "workflow_create",
+    "workflow_update",
+    "workflow_delete"
   ]
 }
 ```
@@ -221,7 +225,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (31 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (35 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -294,6 +298,19 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 
 - `board_get`
 
+**Workflow**
+
+- `workflow_list`
+- `workflow_create`
+- `workflow_update`
+- `workflow_delete`
+
+Manage a project's workflow columns (board lanes). `workflow_create`/`workflow_update`/`workflow_delete`
+require **maintainer role or higher**. `workflow_update` requires **both** `name` and `color` (not a
+partial update). `workflow_delete` removes an empty non-done column and rejects the done column, non-empty
+columns, and deletes that would leave fewer than 2 columns. See [API.md](../API.md#workflow) for full
+semantics.
+
 ### Tool Index (Flat)
 
 One tool name per line (same order as `implementedTools()` in code):
@@ -307,6 +324,9 @@ todos_search
 todos_update
 todos_delete
 todos_move
+todos_linksList
+todos_linkAdd
+todos_linkRemove
 sprints_list
 sprints_get
 sprints_getActive
@@ -327,6 +347,10 @@ members_add
 members_updateRole
 members_remove
 board_get
+workflow_list
+workflow_create
+workflow_update
+workflow_delete
 ```
 
 ## Tool Schemas (Representative)

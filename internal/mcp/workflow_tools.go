@@ -59,9 +59,9 @@ func (a *Adapter) handleWorkflowList(ctx context.Context, input any) (any, map[s
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.list is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_list is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.list is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_list is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -102,9 +102,9 @@ func (a *Adapter) handleWorkflowCreate(ctx context.Context, input any) (any, map
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.create is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_create is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.create is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_create is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -147,9 +147,9 @@ func (a *Adapter) handleWorkflowUpdate(ctx context.Context, input any) (any, map
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.update is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_update is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.update is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_update is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
@@ -215,9 +215,9 @@ func (a *Adapter) handleWorkflowDelete(ctx context.Context, input any) (any, map
 
 	switch {
 	case a.mode == "anonymous":
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.delete is unavailable in anonymous mode", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_delete is unavailable in anonymous mode", nil)
 	case bootstrapAvailable:
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow.delete is unavailable before bootstrap", nil)
+		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "workflow_delete is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
