@@ -752,9 +752,10 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 
 	// Bootstrap (the first user, becoming owner) predates any org default an
 	// admin could have configured, so it keeps the hardcoded fallback via the
-	// normal lazy GetEmailNotifyPref path rather than seeding a row here. The
-	// bootstrap owner also already has implicit access via system role, so it
-	// isn't auto-enrolled into a default board either.
+	// normal lazy GetEmailNotifyPref path rather than seeding a row here.
+	// Bootstrap is also excluded from default-board seeding: system roles never
+	// grant project access, and the first owner typically gains Maintainer on
+	// boards they create via CreateProject rather than via auto-enrollment.
 	if !isBootstrap {
 		if err := seedEmailNotifyPrefTx(ctx, tx, userID); err != nil {
 			return User{}, err

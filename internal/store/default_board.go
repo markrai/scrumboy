@@ -34,10 +34,13 @@ func (s *Store) GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64,
 
 // SetDefaultBoardOrgSetting sets the org-wide default board project new users
 // are auto-enrolled into (as RoleViewer, the lowest-appropriate project role)
-// at creation time. Requires admin or owner role. The project must currently
-// exist. Existing users are never retroactively enrolled -- the new default
-// only takes effect for users created after it's set (see
-// seedDefaultBoardMembershipTx).
+// at creation time. Requires system Admin/Owner and Maintainer membership on
+// the selected durable project (expires_at IS NULL). Existence, durability,
+// and maintainer checks run in the same transaction as the org_settings write.
+// Missing or inaccessible projects return ErrNotFound (404 / no existence leak).
+// Temporary and anonymous boards (expires_at set) return ErrValidation.
+// Existing users are never retroactively enrolled -- the new default only takes
+// effect for users created after it's set (see seedDefaultBoardMembershipTx).
 func (s *Store) SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64) error {
 	if err := s.requireAdmin(ctx, requesterID); err != nil {
 		return err
@@ -45,18 +48,38 @@ func (s *Store) SetDefaultBoardOrgSetting(ctx context.Context, requesterID, proj
 	if projectID <= 0 {
 		return fmt.Errorf("%w: invalid project id", ErrValidation)
 	}
-	if _, err := s.GetProject(ctx, projectID); err != nil {
-		if err == ErrNotFound {
-			return fmt.Errorf("%w: project does not exist", ErrValidation)
-		}
-		return err
-	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin set default board tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	var expiresAt sql.NullInt64
+	err = tx.QueryRowContext(ctx, `
+SELECT expires_at FROM projects WHERE id = ? AND import_batch_id IS NULL
+`, projectID).Scan(&expiresAt)
+	if err == sql.ErrNoRows {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("get default board project: %w", err)
+	}
+
+	// Membership is checked via project_members directly (not userHasProjectRoleTx),
+	// because that helper treats temporary boards as universally accessible.
+	role, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
+	if err != nil {
+		return err
+	}
+	if !role.HasMinimumRole(RoleMaintainer) {
+		return ErrNotFound
+	}
+
+	if expiresAt.Valid {
+		return fmt.Errorf("%w: default board must be a durable project", ErrValidation)
+	}
+
 	if err := setOrgSettingTx(ctx, tx, orgSettingDefaultBoardProjectID, strconv.FormatInt(projectID, 10)); err != nil {
 		return err
 	}
@@ -91,10 +114,11 @@ func (s *Store) ClearDefaultBoardOrgSetting(ctx context.Context, requesterID int
 //     conflict with (and never overrides) an already-existing membership.
 //   - Corrupt (non-empty, unparseable) override -> skip seeding rather than
 //     failing account creation.
-//   - Override points at a project that no longer exists (deleted after the
-//     setting was configured) -> skip seeding rather than failing account
-//     creation; the admin GET path still surfaces the current org_settings
-//     value as-is since validation only happens on write.
+//   - Override points at a project that no longer exists, or is no longer a
+//     durable project (expires_at set; e.g. stale setting after a board type
+//     change) -> skip seeding rather than failing account creation; the admin
+//     GET path still surfaces the current org_settings value as-is since
+//     validation only happens on write.
 func seedDefaultBoardMembershipTx(ctx context.Context, tx *sql.Tx, userID int64) error {
 	var raw string
 	err := tx.QueryRowContext(ctx, `SELECT value FROM org_settings WHERE key = ?`, orgSettingDefaultBoardProjectID).Scan(&raw)
@@ -114,12 +138,17 @@ func seedDefaultBoardMembershipTx(ctx context.Context, tx *sql.Tx, userID int64)
 	}
 
 	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM projects WHERE id = ? AND import_batch_id IS NULL)`, projectID).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `
+SELECT EXISTS(
+  SELECT 1 FROM projects
+  WHERE id = ? AND import_batch_id IS NULL AND expires_at IS NULL
+)`, projectID).Scan(&exists); err != nil {
 		return fmt.Errorf("check default board project exists: %w", err)
 	}
 	if !exists {
-		// Configured project was deleted since the setting was set; skip
-		// seeding rather than failing account creation or reviving a stub row.
+		// Configured project was deleted, or is no longer durable, since the
+		// setting was set; skip seeding rather than failing account creation
+		// or reviving a stub / temporary row.
 		return nil
 	}
 

@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
+
+	"scrumboy/internal/store"
 )
 
 const defaultBoardPath = "/api/admin/settings/default-board"
@@ -69,7 +72,7 @@ func TestAdminDefaultBoard_PutRequiresAdminOrOwnerAndSeedsNewUsers(t *testing.T)
 		t.Fatalf("plain user PUT: expected 403, got %d", resp.StatusCode)
 	}
 
-	// Owner sets the org default.
+	// Owner sets the org default (owner is Maintainer via CreateProject).
 	var out map[string]any
 	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
 		"projectId": projectID,
@@ -120,6 +123,100 @@ func TestAdminDefaultBoard_PutRequiresAdminOrOwnerAndSeedsNewUsers(t *testing.T)
 	}
 }
 
+// TestAdminDefaultBoard_AdminWithoutMembershipRejected returns 404 (no
+// existence leak) when a system Admin lacks Maintainer on the target project.
+func TestAdminDefaultBoard_AdminWithoutMembershipRejected(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Private"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	var adminUser map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPost, ts.URL+"/api/admin/users", map[string]any{
+		"name": "Admin", "email": "admin@example.com", "password": "password123",
+	}, &adminUser)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create admin user: expected 201, got %d", resp.StatusCode)
+	}
+	resp, _ = doJSON(t, owner, http.MethodPatch, ts.URL+fmt.Sprintf("/api/admin/users/%d/role", int64(adminUser["id"].(float64))), map[string]any{
+		"role": "admin",
+	}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("promote admin: expected 200, got %d", resp.StatusCode)
+	}
+
+	admin := newCookieClient(t)
+	loginUserClient(t, admin, ts.URL, "admin@example.com", "password123")
+
+	resp, _ = doJSON(t, admin, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+	}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("admin without membership PUT: expected 404, got %d", resp.StatusCode)
+	}
+}
+
+// TestAdminDefaultBoard_AdminWhoIsMaintainerSucceeds covers system Admin who
+// is also Maintainer of the selected durable project.
+func TestAdminDefaultBoard_AdminWhoIsMaintainerSucceeds(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Shared"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	var adminUser map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPost, ts.URL+"/api/admin/users", map[string]any{
+		"name": "Admin", "email": "admin@example.com", "password": "password123",
+	}, &adminUser)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create admin user: expected 201, got %d", resp.StatusCode)
+	}
+	adminID := int64(adminUser["id"].(float64))
+	resp, _ = doJSON(t, owner, http.MethodPatch, ts.URL+fmt.Sprintf("/api/admin/users/%d/role", adminID), map[string]any{
+		"role": "admin",
+	}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("promote admin: expected 200, got %d", resp.StatusCode)
+	}
+	resp, _ = doJSON(t, owner, http.MethodPost, ts.URL+fmt.Sprintf("/api/projects/%d/members", projectID), map[string]any{
+		"user_id": adminID,
+		"role":    "maintainer",
+	}, nil)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		t.Fatalf("add admin as maintainer: expected 200/201, got %d", resp.StatusCode)
+	}
+
+	admin := newCookieClient(t)
+	loginUserClient(t, admin, ts.URL, "admin@example.com", "password123")
+
+	var out map[string]any
+	resp, _ = doJSON(t, admin, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("admin+maintainer PUT: expected 200, got %d", resp.StatusCode)
+	}
+	if out["customized"] != true {
+		t.Fatalf("expected customized=true, got %v", out["customized"])
+	}
+}
+
 func TestAdminDefaultBoard_RejectsNonexistentProject(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServer(t, "full")
 	defer cleanup()
@@ -130,8 +227,58 @@ func TestAdminDefaultBoard_RejectsNonexistentProject(t *testing.T) {
 	resp, _ := doJSON(t, client, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
 		"projectId": 999999,
 	}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminDefaultBoard_RejectsTemporaryBoard(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+	st := store.New(sqlDB, nil)
+
+	owner := newCookieClient(t)
+	ownerUser := bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+	ownerID := int64(ownerUser["id"].(float64))
+
+	tempBoard, err := st.CreateAnonymousBoard(store.WithUserID(context.Background(), ownerID))
+	if err != nil {
+		t.Fatalf("CreateAnonymousBoard(temp): %v", err)
+	}
+	if err := st.EnsureMaintainerMembership(context.Background(), tempBoard.ID, ownerID); err != nil {
+		t.Fatalf("EnsureMaintainerMembership: %v", err)
+	}
+
+	resp, _ := doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": tempBoard.ID,
+	}, nil)
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", resp.StatusCode)
+		t.Fatalf("temporary board PUT: expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestAdminDefaultBoard_RejectsAnonymousBoard(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+	st := store.New(sqlDB, nil)
+
+	owner := newCookieClient(t)
+	ownerUser := bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+	ownerID := int64(ownerUser["id"].(float64))
+
+	anonBoard, err := st.CreateAnonymousBoard(context.Background())
+	if err != nil {
+		t.Fatalf("CreateAnonymousBoard(anon): %v", err)
+	}
+	if err := st.EnsureMaintainerMembership(context.Background(), anonBoard.ID, ownerID); err != nil {
+		t.Fatalf("EnsureMaintainerMembership: %v", err)
+	}
+
+	resp, _ := doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": anonBoard.ID,
+	}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("anonymous board PUT: expected 400, got %d", resp.StatusCode)
 	}
 }
 

@@ -113,17 +113,28 @@ project role) on that project, in the same transaction as user creation. This fo
 from #169/#171.
 
 - **Endpoints:** `GET`/`PUT`/`DELETE /api/admin/settings/default-board`, gated the same as other
-  `/api/admin/*` routes (system role Admin or Owner). `PUT` body: `{ "projectId": <number> }`;
-  the project must currently exist. `DELETE` resets to unconfigured (`204`, idempotent).
+  `/api/admin/*` routes (system role Admin or Owner). `PUT` body: `{ "projectId": <number> }`.
+  The selected project must currently exist, must be a **durable** project (`expires_at IS NULL`;
+  Full-mode Temporary Boards and creator-less Anonymous Boards are rejected), and the requester
+  must also be a **Maintainer** of that project. Missing or inaccessible projects return **404**
+  (no existence leak). Existence, durability, and maintainer checks run in the same transaction
+  as the `org_settings` write. `DELETE` resets to unconfigured (`204`, idempotent).
 - **Seed at creation time only:** setting or changing the default never touches existing users'
   memberships. Only users created *after* the setting takes effect are enrolled. Unset (no
   override, or a later `DELETE`) means no membership is seeded at all — an untouched instance
-  behaves exactly as before this feature existed.
-- **Bootstrap owner excluded:** the first (bootstrap) user is never auto-enrolled, since it
-  already has implicit access to every project via its system role.
+  behaves exactly as before this feature existed. Creation-time seeding also requires the
+  configured project to still be durable (`expires_at IS NULL`); otherwise seeding is skipped.
+- **Bootstrap owner excluded:** the first (bootstrap) user is never auto-enrolled. System roles
+  do not grant project access; when the bootstrap owner creates a board via `CreateProject`, that
+  path inserts their Maintainer membership — which is unrelated to default-board seeding.
 - **Deleted-project safety:** if the configured project is deleted after the setting was made,
   account creation still succeeds; seeding is silently skipped rather than failing user creation.
-- Out of scope for phase 1: an admin UI panel to pick the board, and any bulk-apply-to-existing-users action.
+- **Admin UI (Settings → Users):** Admins/Owners manage this from a "Default board for new users"
+  section at the top of the Users tab. An enable toggle is **off by default**; turning it on reveals
+  a project dropdown listing only durable boards the requester maintains. Selecting a project saves
+  it (`PUT`); turning the toggle off clears the setting (`DELETE`). The UI never enrolls existing
+  users and states that changing or disabling the default only affects users created afterward.
+- Out of scope for phase 1: any bulk-apply-to-existing-users action.
 
 ---
 
