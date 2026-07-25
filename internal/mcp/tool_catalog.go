@@ -289,6 +289,39 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				},
 			}, []string{"projectSlug"}),
 		},
+		"workflow_list": {
+			Name:        "workflow_list",
+			Description: "List a project's workflow columns (board lanes) in position order.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+			}, []string{"projectSlug"}),
+		},
+		"workflow_create": {
+			Name:        "workflow_create",
+			Description: "Add a new non-done workflow column (board lane) before the done column. Requires maintainer role or higher.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"name":        jsonProp("string", "Display name for the new column"),
+			}, []string{"projectSlug", "name"}),
+		},
+		"workflow_update": {
+			Name:        "workflow_update",
+			Description: "Update a workflow column's display name and color (both required). Requires maintainer role or higher.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"columnKey":   jsonProp("string", "Workflow column key to update"),
+				"name":        jsonProp("string", "New display name"),
+				"color":       jsonProp("string", "New color as a #RRGGBB hex value"),
+			}, []string{"projectSlug", "columnKey", "name", "color"}),
+		},
+		"workflow_delete": {
+			Name:        "workflow_delete",
+			Description: "Delete an empty non-done workflow column. Requires maintainer role or higher. Rejects the done column, non-empty columns, and deletes that would leave fewer than 2 columns.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"columnKey":   jsonProp("string", "Workflow column key to delete"),
+			}, []string{"projectSlug", "columnKey"}),
+		},
 	}
 }
 

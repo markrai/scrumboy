@@ -38,6 +38,10 @@ func (a *Adapter) registerTools() {
 	a.tools["members_updateRole"] = a.handleMembersUpdateRole
 	a.tools["members_remove"] = a.handleMembersRemove
 	a.tools["board_get"] = a.handleBoardGet
+	a.tools["workflow_list"] = a.handleWorkflowList
+	a.tools["workflow_create"] = a.handleWorkflowCreate
+	a.tools["workflow_update"] = a.handleWorkflowUpdate
+	a.tools["workflow_delete"] = a.handleWorkflowDelete
 
 	a.registerLegacyToolAliases()
 }

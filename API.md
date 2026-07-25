@@ -340,6 +340,10 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 - `members_list`, `members_listAvailable`, `members_add`, `members_updateRole`, `members_remove`
 
+**workflow**
+
+- `workflow_list`, `workflow_create`, `workflow_update`, `workflow_delete` - manage a project's workflow columns (board lanes).
+
 **Planned tools:** none exposed in capabilities today (`plannedTools` omitted when empty).
 
 ---
@@ -452,6 +456,23 @@ Member list payloads normalize legacy role strings where the adapter applies map
 `members_updateRole`: self-demotion and last-maintainer demotion → `CONFLICT`.  
 `members_remove`: last maintainer removal → `VALIDATION_ERROR` (store mapping).
 
+### Workflow
+
+Manage a project's workflow columns (board lanes). These call the same store methods (`GetProjectWorkflow`, `AddWorkflowColumn`, `UpdateWorkflowColumn`, `DeleteWorkflowColumn`) as the cookie-only REST endpoints (`GET/POST/PATCH/DELETE /api/board/{slug}/workflow`), exposing them to `sb_` Bearer API tokens.
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `workflow_list` | `projectSlug` | `data.items` (columns in position order; each `key`, `name`, `color`, `position`, `isDone`, `system`) |
+| `workflow_create` | `projectSlug`, `name` - **maintainer+** | `data.column` - new non-done column inserted before the done column |
+| `workflow_update` | `projectSlug`, `columnKey`, `name`, `color` (`#RRGGBB`) - **maintainer+** | `data.column` - updated column |
+| `workflow_delete` | `projectSlug`, `columnKey` - **maintainer+** | `data.deleted` `{ projectSlug, columnKey }` |
+
+`workflow_update` requires **both** `name` and `color`; it is not a partial update. `color` must be a valid `#RRGGBB` hex value or the call returns `VALIDATION_ERROR`.
+
+`workflow_delete` constraints (store-enforced): the **done** column cannot be deleted (`VALIDATION_ERROR`); a **non-empty** column cannot be deleted (`CONFLICT`); a project must keep **at least 2 columns** (`VALIDATION_ERROR`). System columns are not specially protected from deletion when empty.
+
+Like other MCP mutations, workflow changes call the store directly and do not emit `board.refresh_needed`, so open web clients stay stale until another refresh.
+
 ---
 
 ## Board pagination (`board_get`)
@@ -506,5 +527,5 @@ Some handlers return **`FORBIDDEN`** with a clear message where **`mapStoreError
 1. **Public identifiers first:** Mutations and reads are keyed by **`projectSlug`**, **`localId`**, and similar fields - not internal numeric ids for todos or projects in MCP command shapes (except `projectId` on list output as noted).
 2. **Capabilities match implementation:** `implementedTools` is the authoritative list of POST tool names.
 3. **Narrower than REST:** Some MCP tools intentionally pre-check scope (e.g. mine-tag delete via library membership) or map errors deterministically; behavior may differ from every REST edge case.
-4. **Anonymous MCP:** Tag, member, board, todo, and sprint tools are **not** offered in anonymous server mode through MCP (`CAPABILITY_UNAVAILABLE`), even if anonymous boards exist elsewhere in the product.
+4. **Anonymous MCP:** Tag, member, board, todo, sprint, and workflow tools are **not** offered in anonymous server mode through MCP (`CAPABILITY_UNAVAILABLE`), even if anonymous boards exist elsewhere in the product.
 

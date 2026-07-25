@@ -52,6 +52,9 @@ type storeAPI interface {
 	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error
 	GetProjectWorkflow(ctx context.Context, projectID int64) ([]store.WorkflowColumn, error)
+	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
+	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
+	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 }
@@ -251,6 +254,10 @@ func (a *Adapter) implementedTools() []string {
 		"members_updateRole",
 		"members_remove",
 		"board_get",
+		"workflow_list",
+		"workflow_create",
+		"workflow_update",
+		"workflow_delete",
 	}
 }
 

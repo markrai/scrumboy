@@ -8,6 +8,12 @@
 
 - **Configurable default board for newly created users** (#175) - Admins/owners can configure a single org-wide default board project; newly created users (`CreateUser`/`CreateUserOIDC`) are auto-enrolled as Viewer on it, in the same transaction as user creation. `GET`/`PUT`/`DELETE /api/admin/settings/default-board` (`PUT` body: `{ "projectId": <number> }`), following the same `org_settings` shape as #169/#171's email-notification default. Seeding happens at creation time only and never rewrites existing users' memberships; the bootstrap owner is never auto-enrolled (it already has implicit access via its system role); a project deleted after the setting was configured causes seeding to be silently skipped rather than failing account creation. `DELETE` resets to the unconfigured state (`204`, idempotent). See [docs/roles-and-permissions.md](docs/roles-and-permissions.md#org-wide-default-board-for-new-users).
 
+## [3.24.2] - 2026-07-24
+
+### Added
+
+- **MCP tools for workflow columns** - `workflow_list`, `workflow_create`, `workflow_update`, and `workflow_delete` expose a project's workflow columns (board lanes) over MCP, calling the same store methods as the cookie-only `GET/POST/PATCH/DELETE /api/board/{slug}/workflow` REST endpoints so `sb_` Bearer API tokens can reach them. Create/update/delete require maintainer role or higher; `workflow_update` sets both name and color; `workflow_delete` removes an empty non-done column. See [API.md](API.md#workflow).
+
 ## [3.24.1] - 2026-07-24
 
 ### Added

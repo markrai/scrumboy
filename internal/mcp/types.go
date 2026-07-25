@@ -129,6 +129,15 @@ type boardProjectItem struct {
 	Role        string `json:"role,omitempty"`
 }
 
+type workflowColumnItem struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Color    string `json:"color"`
+	Position int    `json:"position"`
+	IsDone   bool   `json:"isDone"`
+	System   bool   `json:"system"`
+}
+
 type boardColumnItem struct {
 	Key    string     `json:"key"`
 	Name   string     `json:"name"`
