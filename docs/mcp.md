@@ -298,6 +298,9 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 > **Temporary boards are not grouped.** Any project with an expiry keeps the previous
 > row-level projection: one entry per tag row, each with a real `tagId`. Their colors
 > and deletions are still addressed by `tagId`, so grouping would strand those writes.
+> For authenticated Full-mode callers, `tags_updateProjectColor` with `tagId` matches
+> REST link-holder semantics (`UpdateTagColorForTemporaryBoard`, no Maintainer gate).
+> Anonymous MCP mode remains unavailable; unauthenticated pastebin visitors use REST.
 >
 > A grouped entry is labelled by its canonical name. A legacy row whose stored name
 > cannot be canonicalized at all keeps its raw stored name as the label, and that label
@@ -308,9 +311,10 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 > empty `tagName` alongside the other field is rejected instead of silently falling
 > through to one path. An explicitly empty `tagName` counts as supplied. `tagName`
 > sets only the caller's own per-viewer color for a personal label on a durable project
-> and is allowed for any authenticated project member (non-members are rejected);
-> `tagId` updates a board-scoped tag's shared color and still requires maintainer or
-> above.
+> and is allowed for any authenticated project member (non-members are rejected;
+> temporary boards reject `tagName`). On durable projects, `tagId` updates a
+> board-scoped tag's shared color and requires maintainer or above; on temporary
+> boards, `tagId` uses link-holder color semantics (no Maintainer gate).
 >
 > **Known limitation:** a per-viewer color set by `tagName` lands on backing tag rows
 > the caller also uses in their other projects. Only the targeted project emits a

@@ -2,6 +2,12 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
 
+## [3.26.1] - 2026-07-26
+
+### Fixed
+
+- **MCP `tags_updateProjectColor` on temporary boards** - The `tagId` path no longer requires Maintainer (which could never pass because temporary-board `ProjectContext` leaves `Role` empty) and now calls `UpdateTagColorForTemporaryBoard`, matching REST link-holder semantics for authenticated Full-mode callers. Anonymous MCP mode remains unavailable.
+
 ## [3.26.0] - 2026-07-25
 
 ### Changed

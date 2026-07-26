@@ -3519,6 +3519,80 @@ func TestMCPTagsUpdateProjectColorSuccess(t *testing.T) {
 	}
 }
 
+// TestMCPTagsUpdateProjectColorTemporaryBoardSucceeds pins that authenticated Full-mode
+// MCP callers can update tag colors on temporary boards. buildProjectContext leaves
+// pc.Role empty for ExpiresAt != nil, so a Maintainer gate would always 403; the path
+// must skip that gate and use UpdateTagColorForTemporaryBoard (matching REST).
+func TestMCPTagsUpdateProjectColorTemporaryBoardSucceeds(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Temp Board Tag Color",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+	slug := projectSlugByName(t, sqlDB, "Temp Board Tag Color")
+	projectID := projectIDBySlug(t, sqlDB, slug)
+	expires := time.Now().UTC().Add(24 * time.Hour).UnixMilli()
+	if _, err := sqlDB.Exec(`UPDATE projects SET expires_at = ? WHERE id = ?`, expires, projectID); err != nil {
+		t.Fatalf("make project temporary: %v", err)
+	}
+	tagID := insertProjectScopedTag(t, sqlDB, projectID, "shared", nil)
+
+	listResp, listOut := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "tags_listProject",
+		"input": map[string]any{
+			"projectSlug": slug,
+		},
+	})
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("tags_listProject status=%d", listResp.StatusCode)
+	}
+	var listed bool
+	for _, it := range listOut["data"].(map[string]any)["items"].([]any) {
+		m := it.(map[string]any)
+		if int64(m["tagId"].(float64)) != tagID {
+			continue
+		}
+		listed = true
+		if m["canUpdateColor"] != true {
+			t.Fatalf("temporary-board listing must report canUpdateColor true, got %#v", m)
+		}
+	}
+	if !listed {
+		t.Fatalf("expected tag %d in temporary board listProject", tagID)
+	}
+
+	wantColor := "#123456"
+	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "tags_updateProjectColor",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"tagId":       tagID,
+			"color":       wantColor,
+		},
+	})
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on temporary board tagId color, got %d body=%#v", resp2.StatusCode, out)
+	}
+	tag := out["data"].(map[string]any)["tag"].(map[string]any)
+	if tag["color"] != wantColor {
+		t.Fatalf("expected color %q in response, got %#v", wantColor, tag["color"])
+	}
+
+	var stored sql.NullString
+	if err := sqlDB.QueryRow(`SELECT color FROM tags WHERE id = ?`, tagID).Scan(&stored); err != nil {
+		t.Fatalf("read tags.color: %v", err)
+	}
+	if !stored.Valid || stored.String != wantColor {
+		t.Fatalf("expected shared tags.color %q, got %#v", wantColor, stored)
+	}
+}
+
 // TestMCPTagsUpdateProjectColorVisibleToOtherMemberViaListProject checks that a project-scoped
 // color change is stored on the shared tag row (tags.color), not as a per-viewer preference:
 // a different project member sees the same color via tags_listProject / ListTagCounts.

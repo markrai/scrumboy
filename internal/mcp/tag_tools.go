@@ -333,17 +333,18 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
 	}
 
-	// tagId addresses a shared board-scoped color on durable projects (personal groups
-	// omit tagId from listProject) and remains maintainer+ on temporary boards too.
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-
 	var updateErr error
 	if pc.Project.ExpiresAt != nil {
-		updateErr = a.store.UpdateTagColor(ctx, &userID, tagID, in.Color)
+		// Temporary boards are link-shareable: buildProjectContext leaves pc.Role empty
+		// on purpose, and REST uses UpdateTagColorForTemporaryBoard with no Maintainer
+		// gate. Match that for authenticated Full-mode MCP callers (anonymous MCP mode
+		// remains unavailable; pastebin visitors use REST).
+		updateErr = a.store.UpdateTagColorForTemporaryBoard(ctx, pc.Project.ID, &userID, tagID, in.Color)
 	} else {
-		// Durable: also verify project membership and that the tag belongs here.
+		// Durable board-scoped tagId: shared tags.color requires Maintainer+.
+		if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
+			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+		}
 		updateErr = a.store.UpdateTagColorForDurableProjectByID(ctx, pc.Project.ID, userID, tagID, in.Color)
 	}
 	if updateErr != nil {
