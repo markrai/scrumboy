@@ -250,18 +250,9 @@ function resolveMobileTabKeyFromStorage(saved: string | null, cols: Array<{ key:
   return null;
 }
 
-function hasActiveBoardSubsetFilter(tag: string | null | undefined, search: string | null | undefined, sprintId: string | null | undefined): boolean {
-  return !!(
-    (tag && tag.trim() !== "")
-    || (search && search.trim() !== "")
-    || (sprintId && sprintId.trim() !== "")
-  );
-}
-
-function getRequestedBoardLimitPerLane(tag: string | null | undefined, search: string | null | undefined, sprintId: string | null | undefined): number {
-  if (!hasActiveBoardSubsetFilter(tag, search, sprintId)) return 20;
-
-  // Preserve the current filtered subset size across a drag-triggered refresh.
+function getRequestedBoardLimitPerLane(): number {
+  // Preserve the current on-screen lane size (e.g. cards revealed via "Load more")
+  // across any full-board refresh, filtered or not.
   const counts = Array.from(document.querySelectorAll<HTMLElement>(".col__list"))
     .map((el) => el.querySelectorAll("[data-todo-local-id]").length);
   return counts.length > 0 ? Math.max(20, ...counts) : 20;
@@ -1661,7 +1652,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   resetBoardFilterUiState();
   lastUpdateBoardContentBoard = null;
   const params = new URLSearchParams();
-  params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(requestTag, requestSearch, requestSprintId), getBoardLimitPerLaneFloor())));
+  params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(), getBoardLimitPerLaneFloor())));
   if (tag) params.set("tag", tag);
   if (search) params.set("search", search);
   if (requestSprintId) params.set("sprintId", requestSprintId);
