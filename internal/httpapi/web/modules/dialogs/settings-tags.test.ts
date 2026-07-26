@@ -137,13 +137,13 @@ describe('settings-tags', () => {
   it('loads tags sorted by name, updates local tag colors, and respects durable rendering rules', async () => {
     selectorState.projectId = 7;
     apiFetchMock.mockResolvedValue([
-      { name: 'zeta', color: '#00ff00', tagId: 9, canDelete: true },
-      { name: 'alpha', color: null, tagId: null, canDelete: true },
-      { name: 'bug', color: '#ff0000', tagId: 5, canDelete: true },
+      { name: 'zeta', color: '#00ff00', tagId: 9, deleteScope: 'project', canDelete: true, canUpdateColor: true },
+      { name: 'alpha', color: null, deleteScope: 'mine', canDelete: true, canUpdateColor: true },
+      { name: 'bug', color: '#ff0000', tagId: 5, deleteScope: 'none', canDelete: false, canUpdateColor: false },
     ]);
     const mod = await loadTagsModule();
 
-    const html = await mod.loadTagSettingsContent('/api/projects/7/tags');
+    const html = await mod.loadTagSettingsContent('/api/projects/7/tags', 'project');
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7/tags');
     expect(setTagColorsMock).toHaveBeenCalledWith({
@@ -155,15 +155,23 @@ describe('settings-tags', () => {
 
     render(html);
     const alphaPicker = document.querySelector('.settings-color-picker[data-tag="alpha"]');
+    const bugPicker = document.querySelector('.settings-color-picker[data-tag="bug"]');
     const alphaDelete = document.querySelector('.settings-tag-delete[data-tag="alpha"]');
     const bugDelete = document.querySelector('.settings-tag-delete[data-tag="bug"]');
+    const zetaDelete = document.querySelector('.settings-tag-delete[data-tag="zeta"]');
     if (!(alphaPicker instanceof HTMLInputElement)) throw new Error('missing alpha picker');
-    expect(alphaPicker.disabled).toBe(true);
-    expect(alphaDelete).toBeNull();
-    expect(bugDelete).not.toBeNull();
+    if (!(bugPicker instanceof HTMLInputElement)) throw new Error('missing bug picker');
+    // Grouped personal labels have no tagId but the picker is always usable and
+    // delete is driven by deleteScope, so alpha (deleteScope "mine") is deletable.
+    // Durable board-scoped tags with canUpdateColor false disable the shared picker.
+    expect(alphaPicker.disabled).toBe(false);
+    expect(bugPicker.disabled).toBe(true);
+    expect(alphaDelete).not.toBeNull();
+    expect(bugDelete).toBeNull();
+    expect(zetaDelete).not.toBeNull();
 
     apiFetchMock.mockClear();
-    const cachedHtml = await mod.loadTagSettingsContent('/api/projects/7/tags');
+    const cachedHtml = await mod.loadTagSettingsContent('/api/projects/7/tags', 'project');
     expect(apiFetchMock).not.toHaveBeenCalled();
     expect(cachedHtml).toBe(html);
   });
@@ -179,7 +187,7 @@ describe('settings-tags', () => {
     `);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: true,
+      scope: 'board',
       rerender,
     });
 
@@ -208,7 +216,7 @@ describe('settings-tags', () => {
     render(`<button class="settings-color-clear" data-tag="bug">Clear</button>`);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: true,
+      scope: 'board',
       rerender,
     });
 
@@ -227,7 +235,7 @@ describe('settings-tags', () => {
     expect(rerender).not.toHaveBeenCalled();
   });
 
-  it('uses the durable project color route when project settings are rendered without a board slug', async () => {
+  it('uses the durable project color route for explicit project scope', async () => {
     selectorState.projectId = 7;
     const rerender = vi.fn().mockResolvedValue(undefined);
     const mod = await loadTagsModule();
@@ -235,7 +243,7 @@ describe('settings-tags', () => {
     render(`<input type="color" class="settings-color-picker" data-tag="bug" data-tag-id="5" value="#ff0000" />`);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: true,
+      scope: 'project',
       rerender,
     });
 
@@ -253,6 +261,80 @@ describe('settings-tags', () => {
     expect(rerender).not.toHaveBeenCalled();
   });
 
+  it('uses mine routes for the global personal library even when settingsProjectId is set for charts', async () => {
+    // Projects-screen Settings sets settingsProjectId for burndown charts, but the
+    // Tag Colors list is /api/tags/mine — mutations must not use that arbitrary project.
+    selectorState.projectId = 7;
+    showConfirmDialogMock.mockResolvedValue(true);
+    const rerender = vi.fn().mockResolvedValue(undefined);
+    const mod = await loadTagsModule();
+
+    render(`
+      <input type="color" class="settings-color-picker" data-tag="bug" data-tag-id="42" value="#ff0000" />
+      <button class="settings-tag-delete" data-tag="bug" data-tag-id="42" data-delete-scope="mine">Delete</button>
+    `);
+    mod.bindTagTabInteractions({
+      signal: new AbortController().signal,
+      scope: 'mine',
+      rerender,
+    });
+
+    const picker = document.querySelector('.settings-color-picker[data-tag="bug"]');
+    if (!(picker instanceof HTMLInputElement)) throw new Error('missing mine picker');
+    picker.value = '#abcdef';
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/tags/mine/42/color', {
+      method: 'PATCH',
+      body: JSON.stringify({ color: '#abcdef' }),
+    });
+
+    apiFetchMock.mockClear();
+    const deleteBtn = document.querySelector('.settings-tag-delete[data-tag="bug"]');
+    if (!(deleteBtn instanceof HTMLElement)) throw new Error('missing mine delete');
+    deleteBtn.click();
+    await flushPromises();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/tags/mine/42', {
+      method: 'DELETE',
+    });
+  });
+
+  it('updates and deletes durable personal labels through name-based routes when tagId is absent', async () => {
+    selectorState.projectId = 7;
+    showConfirmDialogMock.mockResolvedValue(true);
+    const rerender = vi.fn().mockResolvedValue(undefined);
+    const mod = await loadTagsModule();
+
+    render(`
+      <input type="color" class="settings-color-picker" data-tag="bug" value="#ff0000" />
+      <button class="settings-tag-delete" data-tag="bug" data-delete-scope="mine">Delete</button>
+    `);
+    mod.bindTagTabInteractions({
+      signal: new AbortController().signal,
+      scope: 'project',
+      rerender,
+    });
+
+    const picker = document.querySelector('.settings-color-picker[data-tag="bug"]');
+    if (!(picker instanceof HTMLInputElement)) throw new Error('missing durable name picker');
+    picker.value = '#abcdef';
+    picker.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7/tags/bug/color', {
+      method: 'PATCH',
+      body: JSON.stringify({ color: '#abcdef' }),
+    });
+
+    apiFetchMock.mockClear();
+    const deleteBtn = document.querySelector('.settings-tag-delete[data-tag="bug"]');
+    if (!(deleteBtn instanceof HTMLElement)) throw new Error('missing durable name delete');
+    deleteBtn.click();
+    await flushPromises();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7/tags/bug', {
+      method: 'DELETE',
+    });
+  });
+
   it('shows a localized backend validation reason when a tag color update fails', async () => {
     selectorState.projectId = 7;
     const rerender = vi.fn().mockResolvedValue(undefined);
@@ -261,7 +343,7 @@ describe('settings-tags', () => {
     render(`<input type="color" class="settings-color-picker" data-tag="bug" data-tag-id="5" value="#ff0000" />`);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: true,
+      scope: 'project',
       rerender,
     });
 
@@ -296,7 +378,7 @@ describe('settings-tags', () => {
     render(`<button class="settings-tag-delete" data-tag="bug" data-tag-id="5">Delete</button>`);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: true,
+      scope: 'project',
       rerender,
     });
 
@@ -324,7 +406,7 @@ describe('settings-tags', () => {
     render(`<button class="settings-tag-delete" data-tag="bug" data-tag-id="5">Delete</button>`);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: true,
+      scope: 'project',
       rerender,
     });
 
@@ -339,7 +421,7 @@ describe('settings-tags', () => {
     );
   });
 
-  it('does not bind tag interactions when project access is unavailable', async () => {
+  it('does not bind tag interactions when scope is unavailable', async () => {
     selectorState.slug = 'alpha';
     const rerender = vi.fn().mockResolvedValue(undefined);
     const mod = await loadTagsModule();
@@ -350,7 +432,7 @@ describe('settings-tags', () => {
     `);
     mod.bindTagTabInteractions({
       signal: new AbortController().signal,
-      hasProjectAccess: false,
+      scope: null,
       rerender,
     });
 

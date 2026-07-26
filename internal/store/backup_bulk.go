@@ -433,19 +433,42 @@ func bulkUpsertTags(ctx context.Context, tx *sql.Tx, projectID int64, tags []Tag
 
 	nowMs := time.Now().UTC().UnixMilli()
 
-	// Get or create tags with user_id
-	for _, tagExport := range tags {
-		// Normalize tag name
-		normalized, err := normalizeTags([]string{tagExport.Name})
-		if err != nil {
-			return nil, fmt.Errorf("normalize tag %q: %w", tagExport.Name, err)
+	// Dedupe legacy backups that contain multiple entries for the same import key
+	// (older exports emitted one row per backing tag and could repeat a name with
+	// conflicting colors). First occurrence wins for identity; the first non-empty
+	// valid color among duplicates wins (deterministic, not last-write).
+	//
+	// Names use the same CanonicalizeTag rules as todo create/update ("make space"
+	// → "make-space"). Uncanonicalizable names fail the whole import.
+	dedupedIdx := make(map[string]int)
+	deduped := make([]TagExport, 0, len(tags))
+	for _, te := range tags {
+		key := CanonicalizeTag(te.Name)
+		if key == "" {
+			return nil, fmt.Errorf("%w: invalid tag name %q", ErrValidation, te.Name)
 		}
-		if len(normalized) == 0 {
-			continue // Skip invalid tags
+		var validColor *string
+		if te.Color != nil {
+			trimmed := strings.TrimSpace(*te.Color)
+			if colorHexRe.MatchString(trimmed) {
+				c := trimmed
+				validColor = &c
+			}
 		}
-		tagName := normalized[0]
+		if idx, ok := dedupedIdx[key]; ok {
+			if deduped[idx].Color == nil && validColor != nil {
+				deduped[idx].Color = validColor
+			}
+			continue
+		}
+		dedupedIdx[key] = len(deduped)
+		deduped = append(deduped, TagExport{Name: key, Color: validColor})
+	}
 
-		// Get or create tag with user_id
+	// Get or create tags with user_id (names already canonical from the dedupe pass).
+	for _, tagExport := range deduped {
+		tagName := tagExport.Name
+
 		tagID, err := GetOrCreateTag(ctx, tx, userID, tagName)
 		if err != nil {
 			return nil, fmt.Errorf("get or create tag %q: %w", tagName, err)
@@ -536,7 +559,7 @@ func bulkLinkTodoTags(ctx context.Context, tx *sql.Tx, todoTagMap map[int64][]st
 	const chunkSize = 100
 
 	for todoID, tagNames := range todoTagMap {
-		// Normalize tags
+		// Normalize tags (same CanonicalizeTag rules as todo create/update)
 		normalized, err := normalizeTags(tagNames)
 		if err != nil {
 			return fmt.Errorf("normalize tags for todo %d: %w", todoID, err)

@@ -79,6 +79,22 @@ func TestWriteStoreErrAddsClassifiedValidationReason(t *testing.T) {
 	}
 }
 
+func TestWriteStoreErrMapsForbidden(t *testing.T) {
+	rr := httptest.NewRecorder()
+	writeStoreErr(rr, store.ErrForbidden, true)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
+	}
+	body := decodeAPIErrorTestBody(t, rr)
+	if body.Error.Code != "FORBIDDEN" {
+		t.Fatalf("code = %q", body.Error.Code)
+	}
+	if body.Error.Message != "forbidden" {
+		t.Fatalf("message = %q", body.Error.Message)
+	}
+}
+
 func TestWriteStoreErrLeavesUnknownValidationDetailsNull(t *testing.T) {
 	rr := httptest.NewRecorder()
 	err := fmt.Errorf("%w: dynamic imported project detail", store.ErrValidation)

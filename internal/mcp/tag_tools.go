@@ -19,9 +19,14 @@ type deleteMineTagInput struct {
 	TagID int64 `json:"tagId"`
 }
 
+// updateProjectTagColorInput is the input for tags_updateProjectColor. TagID and
+// TagName are pointers so a supplied-but-invalid value (0, negative, empty string) is
+// distinguishable from an absent one and cannot be silently ignored when the other
+// field is also present.
 type updateProjectTagColorInput struct {
 	ProjectSlug string  `json:"projectSlug"`
-	TagID       int64   `json:"tagId"`
+	TagID       *int64  `json:"tagId"`
+	TagName     *string `json:"tagName"`
 	Color       *string `json:"color"`
 }
 
@@ -66,18 +71,26 @@ func (a *Adapter) handleTagsListProject(ctx context.Context, input any) (any, ma
 
 	items := make([]projectTagItem, 0, len(tags))
 	for _, tag := range tags {
-		items = append(items, projectTagItem{
-			TagID:     tag.TagID,
-			Name:      tag.Name,
-			Count:     tag.Count,
-			Color:     tag.Color,
-			CanDelete: tag.CanDelete,
-		})
+		items = append(items, toProjectTagItem(tag))
 	}
 
 	return map[string]any{
 		"items": items,
 	}, map[string]any{}, nil
+}
+
+// toProjectTagItem projects a grouped store.TagCount into the MCP wire item.
+func toProjectTagItem(tc store.TagCount) projectTagItem {
+	return projectTagItem{
+		TagID:            tc.TagID,
+		Name:             tc.Name,
+		Count:            tc.Count,
+		Color:            tc.Color,
+		DeleteScope:      tc.DeleteScope(),
+		CanDeleteMine:    tc.CanDeleteMine,
+		CanDeleteProject: tc.CanDeleteProject,
+		CanUpdateColor:   tc.CanUpdateColor,
+	}
 }
 
 func (a *Adapter) handleTagsListMine(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -258,8 +271,20 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 	if in.ProjectSlug == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
-	if in.TagID <= 0 {
+	// Exactly-one is decided on what the caller *supplied*, not on what happens to be
+	// valid: sending both a malformed tagId and a tagName must fail loudly rather than
+	// quietly falling through to the personal-color path. Presence is therefore taken
+	// from the pointer, and the value is validated only afterwards.
+	suppliedID := in.TagID != nil
+	suppliedName := in.TagName != nil
+	if suppliedID == suppliedName {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "provide exactly one of tagId or tagName", map[string]any{"field": "tagId"})
+	}
+	if suppliedID && *in.TagID <= 0 {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tagId", map[string]any{"field": "tagId"})
+	}
+	if suppliedName && strings.TrimSpace(*in.TagName) == "" {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tagName", map[string]any{"field": "tagName"})
 	}
 	if in.Color != nil && strings.TrimSpace(*in.Color) == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "color cannot be empty; use null to clear", map[string]any{"field": "color"})
@@ -273,33 +298,56 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 	if !ok {
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+
+	// tagName targets a grouped personal label and changes only the caller's own
+	// display preference, so any authenticated project member may do it. tagId targets
+	// a board-scoped tag whose color is shared with everyone, so it stays maintainer+.
+	if suppliedName {
+		if err := a.store.SetViewerTagColorByName(ctx, pc.Project.ID, userID, *in.TagName, in.Color); err != nil {
+			return nil, nil, mapStoreError(err)
+		}
+		projectTags, listErr := a.store.ListTagCounts(ctx, &pc)
+		if listErr != nil {
+			return nil, nil, mapStoreError(listErr)
+		}
+		// The listing labels a group by its grouping key, which is the canonical name
+		// when one exists and the raw stored name otherwise; TagGroupKey mirrors that.
+		if tc, found := findProjectTagCountByName(projectTags, store.TagGroupKey(*in.TagName)); found {
+			return map[string]any{"tag": toProjectTagItem(tc)}, map[string]any{}, nil
+		}
+		return nil, nil, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": "updated project tag not found in post-read"})
 	}
 
-	// GetProjectScopedTagByID only matches board-scoped tags (project_id set, user_id NULL),
-	// which per migration 019 are created exclusively for anonymous temporary boards. On a
-	// durable/authenticated project every tag is user-owned and merely linked via project_tags,
-	// so that lookup always 404s here even though tags.listProject reports the tag as part of
-	// the project. Use the same project-tag set listProject exposes as the existence check
-	// instead, covering both board-scoped and user-owned-but-project-linked tags.
+	tagID := *in.TagID
+
+	// On durable projects, grouped listProject exposes a real tagId only for
+	// board-scoped tags (personal groups report tagId 0), so a tagId lookup here
+	// naturally restricts this path to board-scoped tags; personal color updates must
+	// use tagName. Temporary boards keep the row-level projection, so every listed row
+	// remains addressable by tagId exactly as before.
 	projectTags, listErr := a.store.ListTagCounts(ctx, &pc)
 	if listErr != nil {
 		return nil, nil, mapStoreError(listErr)
 	}
-	if _, found := findProjectTagCount(projectTags, in.TagID); !found {
+	if _, found := findProjectTagCount(projectTags, tagID); !found {
 		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
 	}
 
-	// UpdateTagColor dispatches on the tag row's own scope: board-scoped tags get their shared
-	// tags.color updated directly, while user-owned tags (the normal case on durable projects)
-	// get this viewer's per-viewer color preference updated — the same store call the HTTP board
-	// API uses for durable projects (see UpdateTagColorForProject in routing_board.go).
-	updateErr := a.store.UpdateTagColor(ctx, &userID, in.TagID, in.Color)
+	var updateErr error
+	if pc.Project.ExpiresAt != nil {
+		// Temporary boards are link-shareable: buildProjectContext leaves pc.Role empty
+		// on purpose, and REST uses UpdateTagColorForTemporaryBoard with no Maintainer
+		// gate. Match that for authenticated Full-mode MCP callers (anonymous MCP mode
+		// remains unavailable; pastebin visitors use REST).
+		updateErr = a.store.UpdateTagColorForTemporaryBoard(ctx, pc.Project.ID, &userID, tagID, in.Color)
+	} else {
+		// Durable board-scoped tagId: shared tags.color requires Maintainer+.
+		if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
+			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+		}
+		updateErr = a.store.UpdateTagColorForDurableProjectByID(ctx, pc.Project.ID, userID, tagID, in.Color)
+	}
 	if updateErr != nil {
-		// Clearing a color that was never set on a user-owned tag returns ErrNotFound from
-		// UpdateTagColor; tags.updateMineColor already treats that as a harmless no-op, so
-		// mirror that here rather than surfacing a confusing 404 on a successful clear.
 		if !(isColorClear(in.Color) && errors.Is(updateErr, store.ErrNotFound)) {
 			return nil, nil, mapStoreError(updateErr)
 		}
@@ -309,16 +357,8 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 	if listErr != nil {
 		return nil, nil, mapStoreError(listErr)
 	}
-	if tc, found := findProjectTagCount(projectTags, in.TagID); found {
-		return map[string]any{
-			"tag": projectTagItem{
-				TagID:     tc.TagID,
-				Name:      tc.Name,
-				Count:     tc.Count,
-				Color:     tc.Color,
-				CanDelete: tc.CanDelete,
-			},
-		}, map[string]any{}, nil
+	if tc, found := findProjectTagCount(projectTags, tagID); found {
+		return map[string]any{"tag": toProjectTagItem(tc)}, map[string]any{}, nil
 	}
 
 	// Tag existence in project scope was already verified above; if it disappears
@@ -401,6 +441,15 @@ func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, 
 func findProjectTagCount(tags []store.TagCount, tagID int64) (store.TagCount, bool) {
 	for _, tag := range tags {
 		if tag.TagID == tagID {
+			return tag, true
+		}
+	}
+	return store.TagCount{}, false
+}
+
+func findProjectTagCountByName(tags []store.TagCount, canonicalName string) (store.TagCount, bool) {
+	for _, tag := range tags {
+		if tag.Name == canonicalName {
 			return tag, true
 		}
 	}

@@ -1,8 +1,9 @@
-name: Trivy Test Scan
+name: Trivy Scan
 on:
   push:
     branches:
-      - 'security/trivy' # Triggers exclusively on your test branch
+      - main
+      - 'security/trivy' # Manual test branch
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
           scan-ref: '.'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          exit-code: '0' # Keeps the build green during testing
+          exit-code: '0' # Advisory only: findings do not fail the job
 
       # Pinned to the immutable commit for v4.37.1
       - name: Upload results to GitHub Security

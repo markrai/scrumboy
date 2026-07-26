@@ -210,6 +210,7 @@ type storeAPI interface {
 	CreateProject(ctx context.Context, name string) (store.Project, error)
 	CreateProjectWithWorkflow(ctx context.Context, name string, workflow []store.WorkflowColumn) (store.Project, error)
 	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
+	CheckCanManageProject(ctx context.Context, projectID int64, userID int64) error
 	UpdateProjectImage(ctx context.Context, projectID int64, userID int64, image *string, dominantColor string) error
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
@@ -243,8 +244,14 @@ type storeAPI interface {
 	GetBoardScopedTagIDByName(ctx context.Context, projectID int64, tagName string) (int64, error)
 	ResolveTagForColorUpdate(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, linkTemporaryBoard bool) (int64, error)
 	UpdateTagColor(ctx context.Context, viewerUserID *int64, tagID int64, color *string) error
+	UpdateMyTagColor(ctx context.Context, userID, tagID int64, color *string) error
+	UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error
 	UpdateTagColorForTemporaryBoard(ctx context.Context, projectID int64, viewerUserID *int64, tagID int64, color *string) error
 	UpdateTagColorForProject(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, color *string, linkTemporaryBoard bool) error
+	SetViewerTagColorByName(ctx context.Context, projectID int64, viewerUserID int64, name string, color *string) error
+	DeleteMyTagByName(ctx context.Context, projectID int64, userID int64, name string) ([]int64, error)
+	DeleteMyTagByID(ctx context.Context, userID, tagID int64) ([]int64, error)
+	DeleteTagForDurableProjectByID(ctx context.Context, projectID, userID, tagID int64) ([]int64, error)
 	GetTagColor(ctx context.Context, userID int64, tagID int64) (*string, error)
 	DeleteTag(ctx context.Context, userID int64, tagID int64, isAnonymousBoard bool) error
 
@@ -289,6 +296,9 @@ type storeAPI interface {
 	GetEmailNotifyOrgDefault(ctx context.Context) (store.EmailNotifyPref, bool, error)
 	SetEmailNotifyOrgDefault(ctx context.Context, requesterID int64, raw string) error
 	ClearEmailNotifyOrgDefault(ctx context.Context, requesterID int64) error
+	GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, customized bool, err error)
+	SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64) error
+	ClearDefaultBoardOrgSetting(ctx context.Context, requesterID int64) error
 
 	// 2FA
 	CreateLogin2FAPending(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)

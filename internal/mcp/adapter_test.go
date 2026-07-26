@@ -473,8 +473,25 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		t.Fatalf("expected authenticatedToolsUsable false, got %#v", auth["authenticatedToolsUsable"])
 	}
 	tools := data["implementedTools"].([]any)
-	if len(tools) != 28 || tools[0] != "system_getCapabilities" || tools[1] != "projects_list" || tools[2] != "todos_create" || tools[3] != "todos_get" || tools[4] != "todos_search" || tools[5] != "todos_update" || tools[6] != "todos_delete" || tools[7] != "todos_move" || tools[8] != "sprints_list" || tools[9] != "sprints_get" || tools[10] != "sprints_getActive" || tools[11] != "sprints_create" || tools[12] != "sprints_activate" || tools[13] != "sprints_close" || tools[14] != "sprints_update" || tools[15] != "sprints_delete" || tools[16] != "tags_listProject" || tools[17] != "tags_listMine" || tools[18] != "tags_updateMineColor" || tools[19] != "tags_deleteMine" || tools[20] != "tags_updateProjectColor" || tools[21] != "tags_deleteProject" || tools[22] != "members_list" || tools[23] != "members_listAvailable" || tools[24] != "members_add" || tools[25] != "members_updateRole" || tools[26] != "members_remove" || tools[27] != "board_get" {
+	wantTools := []any{
+		"system_getCapabilities", "projects_list", "projects_create", "projects_update", "projects_delete",
+		"todos_create", "todos_get", "todos_search", "todos_update", "todos_delete", "todos_move", "todos_linksList", "todos_linkAdd", "todos_linkRemove",
+		"sprints_list", "sprints_get", "sprints_getActive", "sprints_create", "sprints_activate", "sprints_close", "sprints_update", "sprints_delete",
+		"tags_listProject", "tags_listMine", "tags_updateMineColor", "tags_deleteMine", "tags_updateProjectColor", "tags_deleteProject",
+		"members_list", "members_listAvailable", "members_add", "members_updateRole", "members_remove",
+		"board_get",
+		"workflow_list", "workflow_create", "workflow_update", "workflow_delete",
+		"dashboard_getSummary", "dashboard_listTodos",
+		"metrics_getBurndown", "metrics_getBacklogSize",
+		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",
+	}
+	if len(tools) != len(wantTools) {
 		t.Fatalf("unexpected implementedTools: %#v", tools)
+	}
+	for i := range wantTools {
+		if tools[i] != wantTools[i] {
+			t.Fatalf("unexpected implementedTools: %#v", tools)
+		}
 	}
 	if _, ok := data["plannedTools"]; ok {
 		t.Fatalf("expected plannedTools omitted once board_get is implemented, got %#v", data["plannedTools"])
@@ -2848,8 +2865,19 @@ func TestMCPTagsListProjectSuccess(t *testing.T) {
 		t.Fatalf("expected project tags, got %#v", items)
 	}
 	tag := items[0].(map[string]any)
-	if tag["tagId"] == nil || tag["name"] != "mcp" {
+	// Durable-project tag is user-owned, so it surfaces as a grouped personal label:
+	// no representative tagId, deleteScope "mine".
+	if tag["name"] != "mcp" {
 		t.Fatalf("unexpected project tag shape: %#v", tag)
+	}
+	if tag["tagId"] != nil {
+		t.Fatalf("expected no tagId for grouped personal label, got %#v", tag["tagId"])
+	}
+	if tag["deleteScope"] != "mine" {
+		t.Fatalf("expected deleteScope mine, got %#v", tag["deleteScope"])
+	}
+	if tag["canDeleteMine"] != true {
+		t.Fatalf("expected canDeleteMine true, got %#v", tag["canDeleteMine"])
 	}
 	if tag["count"] != float64(1) {
 		t.Fatalf("expected count 1, got %#v", tag["count"])
@@ -3110,8 +3138,8 @@ func TestMCPTagsDeleteMineValidationUnknownField(t *testing.T) {
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
 		"tool": "tags_deleteMine",
 		"input": map[string]any{
-			"tagId":         float64(1),
-			"projectSlug":   "nope",
+			"tagId":       float64(1),
+			"projectSlug": "nope",
 		},
 	})
 	if resp2.StatusCode != http.StatusBadRequest {
@@ -3508,6 +3536,80 @@ func TestMCPTagsUpdateProjectColorSuccess(t *testing.T) {
 	}
 }
 
+// TestMCPTagsUpdateProjectColorTemporaryBoardSucceeds pins that authenticated Full-mode
+// MCP callers can update tag colors on temporary boards. buildProjectContext leaves
+// pc.Role empty for ExpiresAt != nil, so a Maintainer gate would always 403; the path
+// must skip that gate and use UpdateTagColorForTemporaryBoard (matching REST).
+func TestMCPTagsUpdateProjectColorTemporaryBoardSucceeds(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Temp Board Tag Color",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+	slug := projectSlugByName(t, sqlDB, "Temp Board Tag Color")
+	projectID := projectIDBySlug(t, sqlDB, slug)
+	expires := time.Now().UTC().Add(24 * time.Hour).UnixMilli()
+	if _, err := sqlDB.Exec(`UPDATE projects SET expires_at = ? WHERE id = ?`, expires, projectID); err != nil {
+		t.Fatalf("make project temporary: %v", err)
+	}
+	tagID := insertProjectScopedTag(t, sqlDB, projectID, "shared", nil)
+
+	listResp, listOut := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "tags_listProject",
+		"input": map[string]any{
+			"projectSlug": slug,
+		},
+	})
+	if listResp.StatusCode != http.StatusOK {
+		t.Fatalf("tags_listProject status=%d", listResp.StatusCode)
+	}
+	var listed bool
+	for _, it := range listOut["data"].(map[string]any)["items"].([]any) {
+		m := it.(map[string]any)
+		if int64(m["tagId"].(float64)) != tagID {
+			continue
+		}
+		listed = true
+		if m["canUpdateColor"] != true {
+			t.Fatalf("temporary-board listing must report canUpdateColor true, got %#v", m)
+		}
+	}
+	if !listed {
+		t.Fatalf("expected tag %d in temporary board listProject", tagID)
+	}
+
+	wantColor := "#123456"
+	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "tags_updateProjectColor",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"tagId":       tagID,
+			"color":       wantColor,
+		},
+	})
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 on temporary board tagId color, got %d body=%#v", resp2.StatusCode, out)
+	}
+	tag := out["data"].(map[string]any)["tag"].(map[string]any)
+	if tag["color"] != wantColor {
+		t.Fatalf("expected color %q in response, got %#v", wantColor, tag["color"])
+	}
+
+	var stored sql.NullString
+	if err := sqlDB.QueryRow(`SELECT color FROM tags WHERE id = ?`, tagID).Scan(&stored); err != nil {
+		t.Fatalf("read tags.color: %v", err)
+	}
+	if !stored.Valid || stored.String != wantColor {
+		t.Fatalf("expected shared tags.color %q, got %#v", wantColor, stored)
+	}
+}
+
 // TestMCPTagsUpdateProjectColorVisibleToOtherMemberViaListProject checks that a project-scoped
 // color change is stored on the shared tag row (tags.color), not as a per-viewer preference:
 // a different project member sees the same color via tags_listProject / ListTagCounts.
@@ -3662,13 +3764,10 @@ func TestMCPTagsUpdateProjectColorWrongProjectNotFound(t *testing.T) {
 	}
 }
 
-// TestMCPTagsUpdateProjectColorUserOwnedTagSuccess covers the real-world case that was broken:
-// on a durable/authenticated project, every tag reachable via todos_create's tags param is
-// user-owned (project_id NULL, user_id set) and merely linked via project_tags — board-scoped
-// rows (project_id set, user_id NULL) only ever exist on anonymous temporary boards (migration
-// 019). Before the fix, GetProjectScopedTagByID's `user_id IS NULL` filter meant this always
-// 404'd for every durable project, making tags_updateProjectColor unusable outside tests that
-// used the insertProjectScopedTag helper to fabricate a row no production code path creates.
+// TestMCPTagsUpdateProjectColorUserOwnedTagSuccess covers the personal-label path: on a
+// durable/authenticated project, tags reached via todos_create are user-owned and surface as
+// grouped personal labels with no representative tagId. Their per-viewer color is set by
+// tagName, which any authenticated member may do.
 func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()
@@ -3692,16 +3791,11 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 		},
 	})
 
-	var userTagID int64
-	if err := sqlDB.QueryRow(`SELECT id FROM tags WHERE name = 'userownedtag' AND user_id IS NOT NULL`).Scan(&userTagID); err != nil {
-		t.Fatalf("query user-owned tag: %v", err)
-	}
-
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
 		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
-			"tagId":       userTagID,
+			"tagName":     "userownedtag",
 			"color":       "#7c3aed",
 		},
 	})
@@ -3709,8 +3803,11 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %#v", resp2.StatusCode, out)
 	}
 	tag := out["data"].(map[string]any)["tag"].(map[string]any)
-	if tag["tagId"] != float64(userTagID) || tag["name"] != "userownedtag" {
+	if tag["name"] != "userownedtag" {
 		t.Fatalf("unexpected tag response: %#v", tag)
+	}
+	if tag["tagId"] != nil {
+		t.Fatalf("expected no tagId for grouped personal label, got %#v", tag["tagId"])
 	}
 	if tag["color"] != "#7c3aed" {
 		t.Fatalf("expected updated color, got %#v", tag["color"])
@@ -3729,7 +3826,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 	found := false
 	for _, item := range items {
 		m := item.(map[string]any)
-		if m["tagId"] == float64(userTagID) {
+		if m["name"] == "userownedtag" {
 			found = true
 			if m["color"] != "#7c3aed" {
 				t.Fatalf("expected color to persist via listProject, got %#v", m["color"])
@@ -3737,15 +3834,173 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagSuccess(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("expected tag %d in listProject items, got %#v", userTagID, items)
+		t.Fatalf("expected tag userownedtag in listProject items, got %#v", items)
 	}
 }
 
-// TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess covers the edge case @markrai
-// flagged on review: clearing a color (color: null) for a user-owned tag that never had a
-// custom color set. UpdateTagColor returns ErrNotFound from the user_tag_colors DELETE
-// affecting zero rows; tags_updateMineColor already normalizes that into a successful no-op,
-// and handleTagsUpdateProjectColor now mirrors that instead of surfacing a confusing 404.
+// TestMCPTagsUpdateProjectColorExactlyOneValidation verifies the tagId/tagName
+// selector is judged on what the caller supplied rather than on what is valid, so a
+// malformed tagId sent alongside tagName cannot be silently ignored.
+func TestMCPTagsUpdateProjectColorExactlyOneValidation(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Exactly One Project",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+	slug := projectSlugByName(t, sqlDB, "Exactly One Project")
+
+	doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "todos_create",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"title":       "t",
+			"tags":        []string{"bug"},
+		},
+	})
+
+	cases := []struct {
+		name  string
+		input map[string]any
+		field string
+	}{
+		{
+			name:  "neither supplied",
+			input: map[string]any{"projectSlug": slug, "color": "#abcdef"},
+			field: "tagId",
+		},
+		{
+			name:  "both supplied",
+			input: map[string]any{"projectSlug": slug, "tagId": 12, "tagName": "bug", "color": "#abcdef"},
+			field: "tagId",
+		},
+		{
+			// The regression: a zero tagId used to read as "absent" and quietly fall
+			// through to the personal-color path instead of failing.
+			name:  "invalid tagId supplied alongside tagName",
+			input: map[string]any{"projectSlug": slug, "tagId": 0, "tagName": "bug", "color": "#abcdef"},
+			field: "tagId",
+		},
+		{
+			name:  "negative tagId supplied alongside tagName",
+			input: map[string]any{"projectSlug": slug, "tagId": -5, "tagName": "bug", "color": "#abcdef"},
+			field: "tagId",
+		},
+		{
+			name:  "invalid tagId alone",
+			input: map[string]any{"projectSlug": slug, "tagId": 0, "color": "#abcdef"},
+			field: "tagId",
+		},
+		{
+			name:  "blank tagName alone",
+			input: map[string]any{"projectSlug": slug, "tagName": "   ", "color": "#abcdef"},
+			field: "tagName",
+		},
+		{
+			// The mirror of the tagId regression: an explicitly empty tagName is
+			// still a supplied tagName, so pairing it with a tagId is ambiguous
+			// rather than an id-only call.
+			name:  "empty tagName supplied alongside tagId",
+			input: map[string]any{"projectSlug": slug, "tagId": 12, "tagName": "", "color": "#abcdef"},
+			field: "tagId",
+		},
+		{
+			name:  "empty tagName alone",
+			input: map[string]any{"projectSlug": slug, "tagName": "", "color": "#abcdef"},
+			field: "tagName",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+				"tool":  "tags_updateProjectColor",
+				"input": tc.input,
+			})
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected 400, got %d: %#v", resp.StatusCode, out)
+			}
+			errObj, _ := out["error"].(map[string]any)
+			details, _ := errObj["details"].(map[string]any)
+			if details["field"] != tc.field {
+				t.Fatalf("expected details.field %q, got %#v", tc.field, details["field"])
+			}
+		})
+	}
+
+	// None of the rejected calls may have written a color.
+	var prefs int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM user_tag_colors`).Scan(&prefs); err != nil {
+		t.Fatalf("count prefs: %v", err)
+	}
+	if prefs != 0 {
+		t.Errorf("rejected requests must not write a color preference, found %d", prefs)
+	}
+}
+
+// TestMCPTagsUpdateProjectColorByNameAllowsNonMaintainerMember verifies that setting a
+// personal label's color by tagName is allowed for any authenticated project member
+// (not just maintainers), since it only changes the caller's own display color.
+func TestMCPTagsUpdateProjectColorByNameAllowsNonMaintainerMember(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	ownerClient := newCookieClient(t, ts)
+	bootstrapUser(t, ownerClient, ts.URL)
+	ownerID := firstUserID(t, sqlDB)
+	resp := doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Name Color Member Project",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+	slug := projectSlugByName(t, sqlDB, "Name Color Member Project")
+	projectID := projectIDBySlug(t, sqlDB, slug)
+
+	doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
+		"tool": "todos_create",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"title":       "t",
+			"tags":        []string{"bug"},
+		},
+	})
+
+	st := store.New(sqlDB, nil)
+	viewer, err := st.CreateUser(context.Background(), "viewer-name@example.com", "password123", "ViewerName")
+	if err != nil {
+		t.Fatalf("create viewer: %v", err)
+	}
+	if err := st.AddProjectMember(context.Background(), ownerID, projectID, viewer.ID, store.RoleViewer); err != nil {
+		t.Fatalf("add viewer membership: %v", err)
+	}
+	viewerClient := newSessionClientForUser(t, ts, st, viewer.ID)
+
+	resp2, out := doMCP(t, viewerClient, ts.URL+"/mcp", map[string]any{
+		"tool": "tags_updateProjectColor",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"tagName":     "bug",
+			"color":       "#abcdef",
+		},
+	})
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for non-maintainer name-based color, got %d: %#v", resp2.StatusCode, out)
+	}
+	tag := out["data"].(map[string]any)["tag"].(map[string]any)
+	if tag["color"] != "#abcdef" {
+		t.Fatalf("expected viewer color #abcdef, got %#v", tag["color"])
+	}
+}
+
+// TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess covers clearing a color
+// (color: null) by tagName for a personal label that never had a custom color set.
+// SetViewerTagColorByName treats the clear as an idempotent no-op success rather than 404.
 func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()
@@ -3769,16 +4024,11 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
 		},
 	})
 
-	var userTagID int64
-	if err := sqlDB.QueryRow(`SELECT id FROM tags WHERE name = 'neverhadacolor' AND user_id IS NOT NULL`).Scan(&userTagID); err != nil {
-		t.Fatalf("query user-owned tag: %v", err)
-	}
-
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
 		"tool": "tags_updateProjectColor",
 		"input": map[string]any{
 			"projectSlug": slug,
-			"tagId":       userTagID,
+			"tagName":     "neverhadacolor",
 			"color":       nil,
 		},
 	})
@@ -3786,7 +4036,7 @@ func TestMCPTagsUpdateProjectColorUserOwnedTagClearNoOpSuccess(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %#v", resp2.StatusCode, out)
 	}
 	tag := out["data"].(map[string]any)["tag"].(map[string]any)
-	if tag["tagId"] != float64(userTagID) {
+	if tag["name"] != "neverhadacolor" {
 		t.Fatalf("unexpected tag response: %#v", tag)
 	}
 	if tag["color"] != nil {
@@ -5105,21 +5355,21 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	// Align with store TestUpdateProjectMemberRole_LastMaintainerCannotDemoteToViewer setup.
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {
 		t.Fatalf("mcp promote m2: %d", r1.StatusCode)
 	}
 	r2, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "contributor"},
 	})
 	if r2.StatusCode != http.StatusOK {
 		t.Fatalf("mcp demote m2: %d", r2.StatusCode)
 	}
 	r3, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r3.StatusCode != http.StatusOK {
@@ -5127,7 +5377,7 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	m2Client := newSessionClientForUser(t, ts, st, m2.ID)
 	r4, _ := doMCP(t, m2Client, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": ownerID, "role": "contributor"},
 	})
 	if r4.StatusCode != http.StatusOK {
@@ -5458,7 +5708,7 @@ func TestMCPMembersRemoveSelfSuccessWhenNotLastMaintainer(t *testing.T) {
 		t.Fatalf("add m2: %v", err)
 	}
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {

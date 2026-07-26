@@ -84,6 +84,7 @@ import {
   bindTagTabInteractions,
   invalidateTagsCache as invalidateTagSettingsCache,
   loadTagSettingsContent,
+  type TagSettingsScope,
 } from './settings-tags.js';
 import { bindSprintsTabInteractions, refreshSprintDateLabels, renderSprintsTabContent } from './settings-sprints.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
@@ -1268,21 +1269,26 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   const canSeePushConfigurationDetails = currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin";
   
   // In board view we have a slug and can use capability routes.
-  // In projects listing view (full mode), show all tags from all projects the user has access to.
+  // In projects listing view (full mode), show the user's cross-project personal library.
+  // Tag mutation scope is explicit (mine/board) and must not be inferred from
+  // settingsProjectId, which is also used for unrelated chart data.
   let tagsURL: string | null = null;
+  let tagSettingsScope: TagSettingsScope | null = null;
   let realBurndownURL: string | null = null;
   let hasProjectAccess = false;
   
   if (getSlug()) {
     // Board view: show tags from this specific board
     tagsURL = `/api/board/${getSlug()}/tags`;
+    tagSettingsScope = 'board';
     realBurndownURL = `/api/board/${getSlug()}/burndown`;
     setSettingsProjectId(null);
     hasProjectAccess = true;
   } else {
-    // Projects listing view: show all tags from all projects the user has access to
+    // Projects listing view: show all tags from the personal library
     if (getUser()) {
       tagsURL = `/api/tags/mine`;
+      tagSettingsScope = 'mine';
       hasProjectAccess = true;
     }
     // For charts, still need a project ID (use first available project)
@@ -1366,9 +1372,9 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   let tagsHTML = "";
   let realBurndownData: any[] = [];
   
-  if (hasProjectAccess) {
+  if (hasProjectAccess && tagSettingsScope) {
     try {
-      tagsHTML = await loadTagSettingsContent(tagsURL!);
+      tagsHTML = await loadTagSettingsContent(tagsURL!, tagSettingsScope);
 
       // Lazy-load chart data and sprints only when Charts tab is active
       const activeTab = getSettingsActiveTab();
@@ -2068,6 +2074,49 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         showPasswordResetDialog(userId);
       }, { signal });
     });
+
+    // Default board: enable toggle. Turning it on just reveals the picker; a
+    // project is only saved once one is selected. Turning it off clears the
+    // org setting via DELETE (only when something was actually saved).
+    const defaultBoardToggle = document.getElementById("defaultBoardEnabledToggle") as HTMLInputElement | null;
+    if (defaultBoardToggle) {
+      defaultBoardToggle.addEventListener("change", async () => {
+        const selectRow = document.getElementById("defaultBoardSelectRow");
+        if (defaultBoardToggle.checked) {
+          if (selectRow) selectRow.hidden = false;
+          return;
+        }
+        if (selectRow) selectRow.hidden = true;
+        const wasCustomized = defaultBoardToggle.getAttribute("data-customized") === "true";
+        if (!wasCustomized) return;
+        try {
+          await apiFetch("/api/admin/settings/default-board", { method: "DELETE" });
+          showToast(t("settings.users.defaultBoard.toast.cleared"));
+        } catch (err: any) {
+          showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.defaultBoard.toast.saveFailed" }));
+        }
+        await renderSettingsModal();
+      }, { signal });
+    }
+
+    // Default board: project picker. Saving a selection enables the org setting.
+    const defaultBoardSelect = document.getElementById("defaultBoardProjectSelect") as HTMLSelectElement | null;
+    if (defaultBoardSelect) {
+      defaultBoardSelect.addEventListener("change", async () => {
+        const projectId = Number(defaultBoardSelect.value);
+        if (!defaultBoardSelect.value || !Number.isFinite(projectId) || projectId <= 0) return;
+        try {
+          await apiFetch("/api/admin/settings/default-board", {
+            method: "PUT",
+            body: JSON.stringify({ projectId }),
+          });
+          showToast(t("settings.users.defaultBoard.toast.saved"));
+        } catch (err: any) {
+          showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.defaultBoard.toast.saveFailed" }));
+        }
+        await renderSettingsModal();
+      }, { signal });
+    }
   }
 
   // Setup sprints tab (create, activate, close)
@@ -2351,12 +2400,71 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     });
   }
 
-  // Setup event listeners for color pickers (only if we have project access)
+  // Setup event listeners for color pickers (scope selects mine vs board/project routes)
   bindTagTabInteractions({
     signal,
-    hasProjectAccess,
+    scope: tagSettingsScope,
     rerender: () => renderSettingsModal(),
   });
+}
+
+// Renders the org-wide "default board for new users" admin control shown at the
+// top of the Users tab. The enable toggle maps onto the existing admin API:
+// disabled == unset (`customized:false`), enabled == a saved `projectId`.
+// Turning the toggle off clears via DELETE; picking a project saves via PUT.
+// This never enrolls existing users -- it only seeds users created afterward.
+function renderDefaultBoardSection(setting: any, projects: any[]): string {
+  const loadFailed = !setting;
+  const customized = !!(setting && setting.customized);
+  const configuredId = customized && typeof setting.projectId === "number" ? setting.projectId : null;
+
+  // Only durable projects the requester maintains are valid write targets
+  // (mirrors the store-side rule); temporary/anonymous boards are excluded.
+  const durable = Array.isArray(projects) ? projects.filter((p: any) => !p.expiresAt) : [];
+  const eligible = durable.filter((p: any) => (p.role || "").toLowerCase() === "maintainer");
+
+  // If the configured board is no longer maintainer-eligible (e.g. access was
+  // lost), still surface it as the current selection so the admin can see and
+  // clear it, even though re-saving that id would be rejected by the backend.
+  let extraOptionHTML = "";
+  if (configuredId != null && !eligible.some((p: any) => p.id === configuredId)) {
+    const current = durable.find((p: any) => p.id === configuredId);
+    const label = current ? current.name : `#${configuredId}`;
+    extraOptionHTML = `<option value="${configuredId}" selected>${escapeHTML(label)}</option>`;
+  }
+
+  const optionsHTML = eligible.map((p: any) =>
+    `<option value="${p.id}" ${p.id === configuredId ? "selected" : ""}>${escapeHTML(p.name)}</option>`
+  ).join("");
+
+  const hasEligible = eligible.length > 0 || extraOptionHTML !== "";
+
+  const controlsHTML = loadFailed
+    ? `<p class="muted" style="margin:8px 0;font-size:13px;" data-i18n-text="settings.users.defaultBoard.loadFailed">Could not load the default board setting. Reload the page to try again.</p>`
+    : `
+        <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="defaultBoardEnabledToggle" data-customized="${customized ? "true" : "false"}" ${customized ? "checked" : ""} />
+          <span data-i18n-text="settings.users.defaultBoard.enableLabel">Enroll new users on a default board</span>
+        </label>
+        <div id="defaultBoardSelectRow" style="margin-top:10px;"${customized ? "" : " hidden"}>
+          ${hasEligible ? `
+          <label class="field" style="display:block;">
+            <span class="muted" data-i18n-text="settings.users.defaultBoard.selectLabel">Default board</span>
+            <select id="defaultBoardProjectSelect" class="input" style="display:block;margin-top:4px;">
+              <option value="" data-i18n-text="settings.users.defaultBoard.placeholder" ${configuredId == null ? "selected" : ""}>Select a project…</option>
+              ${extraOptionHTML}
+              ${optionsHTML}
+            </select>
+          </label>` : `<p class="muted" style="margin:0;font-size:13px;" data-i18n-text="settings.users.defaultBoard.noEligibleProjects">You have no durable boards you maintain to use as a default.</p>`}
+        </div>`;
+
+  return `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.users.defaultBoard.title">Default board for new users</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.users.defaultBoard.description">New users are auto-enrolled as viewers on this board when their account is created. Changing or turning this off never affects existing users.</div>
+        ${controlsHTML}
+      </div>
+  `;
 }
 
 async function renderUsersTabContent(): Promise<string> {
@@ -2365,10 +2473,16 @@ async function renderUsersTabContent(): Promise<string> {
   const isAdmin = currentUser?.systemRole === "admin";
 
   try {
-    const users: any[] = await apiFetch("/api/admin/users");
-    
+    const [users, defaultBoardSetting, projects] = await Promise.all([
+      apiFetch("/api/admin/users") as Promise<any[]>,
+      apiFetch("/api/admin/settings/default-board").catch(() => null),
+      apiFetch("/api/projects").catch(() => []) as Promise<any[]>,
+    ]);
+
+    const defaultBoardHTML = renderDefaultBoardSection(defaultBoardSetting, projects);
+
     if (users.length === 0) {
-      return `<div class="settings-section"><div class="muted" data-i18n-text="settings.users.empty">No users found.</div></div>`;
+      return `${defaultBoardHTML}<div class="settings-section"><div class="muted" data-i18n-text="settings.users.empty">No users found.</div></div>`;
     }
 
     const rows = users.map((user: any) => {
@@ -2434,6 +2548,7 @@ async function renderUsersTabContent(): Promise<string> {
     }).join("");
 
     return `
+      ${defaultBoardHTML}
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.users.management.title">User Management</div>
         <div class="settings-section__description muted" data-i18n-text="settings.users.management.description">Manage system users and roles.</div>

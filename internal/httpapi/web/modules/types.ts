@@ -27,6 +27,13 @@ export interface Tag {
   name: string;
   color?: string;
   count: number;
+  // tagId is present only for board-scoped tags; grouped personal labels omit it.
+  tagId?: number;
+  // deleteScope is "mine", "project", or "none"; canDelete is a compatibility alias.
+  deleteScope?: 'mine' | 'project' | 'none';
+  canDelete?: boolean;
+  // false for durable board-scoped tags when the viewer cannot change shared tags.color.
+  canUpdateColor?: boolean;
 }
 
 export interface Project {
