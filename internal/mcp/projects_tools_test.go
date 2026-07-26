@@ -76,3 +76,14 @@ func TestParseProjectUpdatePatch_invalidType(t *testing.T) {
 		t.Fatalf("expected validation error code, got %q", aerr.Code)
 	}
 }
+
+func TestParseProjectUpdatePatch_invalidWeeksValue(t *testing.T) {
+	t.Parallel()
+	_, aerr := parseProjectUpdatePatch(json.RawMessage(`{"defaultSprintWeeks":3}`))
+	if aerr == nil {
+		t.Fatal("expected adapter error for invalid defaultSprintWeeks value")
+	}
+	if aerr.Code != CodeValidationError {
+		t.Fatalf("expected validation error code, got %q", aerr.Code)
+	}
+}

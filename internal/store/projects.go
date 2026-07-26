@@ -1029,6 +1029,83 @@ func (s *Store) UpdateProjectImage(ctx context.Context, projectID int64, userID 
 	return nil
 }
 
+// UpdateProjectPatch applies one or more project field changes atomically.
+// Used by MCP projects_update; REST keeps separate name and sprint-weeks routes.
+type UpdateProjectPatch struct {
+	Name               *string
+	DefaultSprintWeeks *int
+}
+
+func (s *Store) UpdateProjectPatch(ctx context.Context, projectID int64, userID int64, patch UpdateProjectPatch) error {
+	if patch.Name == nil && patch.DefaultSprintWeeks == nil {
+		return fmt.Errorf("%w: empty patch", ErrValidation)
+	}
+
+	var trimmedName string
+	if patch.Name != nil {
+		trimmedName = strings.TrimSpace(*patch.Name)
+		if trimmedName == "" || len(trimmedName) > 200 {
+			return fmt.Errorf("%w: invalid project name", ErrValidation)
+		}
+	}
+	if patch.DefaultSprintWeeks != nil {
+		weeks := *patch.DefaultSprintWeeks
+		if weeks != 1 && weeks != 2 {
+			return fmt.Errorf("%w: defaultSprintWeeks must be 1 or 2", ErrValidation)
+		}
+	}
+
+	if err := s.CheckProjectRole(ctx, projectID, userID, RoleMaintainer); err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin update project patch: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		fromName  string
+		fromWeeks int
+	)
+	if err := tx.QueryRowContext(ctx, `SELECT name, default_sprint_weeks FROM projects WHERE id = ?`, projectID).Scan(&fromName, &fromWeeks); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get project patch fields: %w", err)
+	}
+
+	nowMs := time.Now().UTC().UnixMilli()
+	actorUserID := &userID
+
+	if patch.Name != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE projects SET name = ?, updated_at = ? WHERE id = ?`, trimmedName, nowMs, projectID); err != nil {
+			return fmt.Errorf("update project name: %w", err)
+		}
+		meta := map[string]any{"from_name": fromName, "to_name": trimmedName}
+		if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_renamed", "project", &projectID, meta); err != nil {
+			return fmt.Errorf("audit project_renamed: %w", err)
+		}
+	}
+
+	if patch.DefaultSprintWeeks != nil {
+		weeks := *patch.DefaultSprintWeeks
+		if _, err := tx.ExecContext(ctx, `UPDATE projects SET default_sprint_weeks = ?, updated_at = ? WHERE id = ?`, weeks, nowMs, projectID); err != nil {
+			return fmt.Errorf("update project default sprint weeks: %w", err)
+		}
+		meta := map[string]any{"from_weeks": fromWeeks, "to_weeks": weeks}
+		if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_default_sprint_weeks_updated", "project", &projectID, meta); err != nil {
+			return fmt.Errorf("audit project_default_sprint_weeks_updated: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update project patch: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error {
 	if err := s.CheckProjectRole(ctx, projectID, userID, RoleMaintainer); err != nil {
 		return err

@@ -78,6 +78,9 @@ func parseProjectUpdatePatch(patchRaw json.RawMessage) (projectUpdatePatch, *ada
 		if err := json.Unmarshal(v, &weeks); err != nil {
 			return projectUpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid defaultSprintWeeks", map[string]any{"field": "defaultSprintWeeks"})
 		}
+		if weeks != 1 && weeks != 2 {
+			return projectUpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "defaultSprintWeeks must be 1 or 2", map[string]any{"field": "defaultSprintWeeks"})
+		}
 		out.DefaultSprintWeeks = &weeks
 	}
 
@@ -163,9 +166,9 @@ func (a *Adapter) handleProjectsUpdate(ctx context.Context, input any) (any, map
 		return nil, nil, patchErr
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, env.ProjectSlug, a.storeMode())
+	pc, pcErr := a.requireMaintainerProjectContext(ctx, env.ProjectSlug)
 	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+		return nil, nil, pcErr
 	}
 
 	requesterID, ok := store.UserIDFromContext(ctx)
@@ -173,15 +176,12 @@ func (a *Adapter) handleProjectsUpdate(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
 
-	if patch.Name != nil {
-		if updErr := a.store.UpdateProjectName(ctx, pc.Project.ID, requesterID, *patch.Name); updErr != nil {
-			return nil, nil, mapStoreError(updErr)
-		}
+	storePatch := store.UpdateProjectPatch{
+		Name:               patch.Name,
+		DefaultSprintWeeks: patch.DefaultSprintWeeks,
 	}
-	if patch.DefaultSprintWeeks != nil {
-		if updErr := a.store.UpdateProjectDefaultSprintWeeks(ctx, pc.Project.ID, requesterID, *patch.DefaultSprintWeeks); updErr != nil {
-			return nil, nil, mapStoreError(updErr)
-		}
+	if updErr := a.store.UpdateProjectPatch(ctx, pc.Project.ID, requesterID, storePatch); updErr != nil {
+		return nil, nil, mapStoreError(updErr)
 	}
 
 	updated, getErr := a.store.GetProject(ctx, pc.Project.ID)
@@ -190,7 +190,7 @@ func (a *Adapter) handleProjectsUpdate(ctx context.Context, input any) (any, map
 	}
 
 	return map[string]any{
-		"project": projectToItem(env.ProjectSlug, updated, pc.Role),
+		"project": projectToItem(updated.Slug, updated, pc.Role),
 	}, map[string]any{}, nil
 }
 
@@ -217,9 +217,9 @@ func (a *Adapter) handleProjectsDelete(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
+	pc, pcErr := a.requireMaintainerProjectContext(ctx, in.ProjectSlug)
 	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+		return nil, nil, pcErr
 	}
 
 	requesterID, ok := store.UserIDFromContext(ctx)
@@ -234,7 +234,7 @@ func (a *Adapter) handleProjectsDelete(ctx context.Context, input any) (any, map
 
 	return map[string]any{
 		"status":      "deleted",
-		"projectSlug": in.ProjectSlug,
+		"projectSlug": pc.Project.Slug,
 		"projectId":   deleted.ProjectID,
 	}, map[string]any{}, nil
 }
