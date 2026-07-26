@@ -11,6 +11,7 @@ var (
 	ErrConflict                   = errs.ErrConflict
 	ErrValidation                 = errs.ErrValidation
 	ErrUnauthorized               = errs.ErrUnauthorized
+	ErrForbidden                  = errs.ErrForbidden
 	ErrTooManyAttempts            = errs.ErrTooManyAttempts
 	Err2FAEncryptionNotConfigured = errs.Err2FAEncryptionNotConfigured
 )

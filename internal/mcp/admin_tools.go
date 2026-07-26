@@ -44,6 +44,37 @@ func parseAdminUpdatableSystemRole(role string) (store.SystemRole, *adapterError
 	return parsed, nil
 }
 
+func requesterHasAnySystemRole(u store.User, allowed ...store.SystemRole) bool {
+	for _, role := range allowed {
+		if u.SystemRole == role {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Adapter) requireRequesterAdminOrOwner(ctx context.Context, requesterID int64) *adapterError {
+	u, err := a.store.GetUser(ctx, requesterID)
+	if err != nil {
+		return mapStoreError(err)
+	}
+	if !requesterHasAnySystemRole(u, store.SystemRoleOwner, store.SystemRoleAdmin) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return nil
+}
+
+func (a *Adapter) requireRequesterOwner(ctx context.Context, requesterID int64) *adapterError {
+	u, err := a.store.GetUser(ctx, requesterID)
+	if err != nil {
+		return mapStoreError(err)
+	}
+	if u.SystemRole != store.SystemRoleOwner {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return nil
+}
+
 func (a *Adapter) handleAdminListUsers(ctx context.Context, input any) (any, map[string]any, *adapterError) {
 	auth, bootstrapAvailable, err := a.authState(ctx)
 	if err != nil {
@@ -64,9 +95,13 @@ func (a *Adapter) handleAdminListUsers(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
 
+	if roleErr := a.requireRequesterAdminOrOwner(ctx, requesterID); roleErr != nil {
+		return nil, nil, roleErr
+	}
+
 	users, listErr := a.store.ListUsers(ctx, requesterID)
 	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
+		return nil, nil, mapPrivilegedStoreError(listErr)
 	}
 
 	items := make([]adminUserItem, 0, len(users))
@@ -112,8 +147,12 @@ func (a *Adapter) handleAdminUpdateUserRole(ctx context.Context, input any) (any
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
 
+	if roleErr := a.requireRequesterOwner(ctx, requesterID); roleErr != nil {
+		return nil, nil, roleErr
+	}
+
 	if updErr := a.store.UpdateUserRole(ctx, requesterID, in.UserId, newRole); updErr != nil {
-		return nil, nil, mapStoreError(updErr)
+		return nil, nil, mapPrivilegedStoreError(updErr)
 	}
 
 	updated, getErr := a.store.GetUser(ctx, in.UserId)
@@ -154,8 +193,12 @@ func (a *Adapter) handleAdminDeleteUser(ctx context.Context, input any) (any, ma
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
 
+	if roleErr := a.requireRequesterOwner(ctx, requesterID); roleErr != nil {
+		return nil, nil, roleErr
+	}
+
 	if delErr := a.store.DeleteUser(ctx, requesterID, in.UserId); delErr != nil {
-		return nil, nil, mapStoreError(delErr)
+		return nil, nil, mapPrivilegedStoreError(delErr)
 	}
 
 	return map[string]any{

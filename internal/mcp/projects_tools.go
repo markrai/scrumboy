@@ -102,6 +102,31 @@ func projectToItem(slug string, p store.Project, role store.ProjectRole) project
 	}
 }
 
+// requireProjectManageContext resolves a project slug and verifies the caller may
+// update or delete it. Durable projects require Maintainer+; Temporary Boards require
+// Temporary Board owner; Anonymous Boards return not found.
+func (a *Adapter) requireProjectManageContext(ctx context.Context, projectSlug string) (store.ProjectContext, *adapterError) {
+	pc, pcErr := a.store.GetProjectContextBySlug(ctx, projectSlug, a.storeMode())
+	if pcErr != nil {
+		return store.ProjectContext{}, mapStoreError(pcErr)
+	}
+
+	requesterID, ok := store.UserIDFromContext(ctx)
+	if !ok {
+		return store.ProjectContext{}, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+
+	if err := a.store.CheckCanManageProject(ctx, pc.Project.ID, requesterID); err != nil {
+		return store.ProjectContext{}, mapStoreError(err)
+	}
+
+	if pc.Project.ExpiresAt != nil && pc.Project.CreatorUserID != nil && *pc.Project.CreatorUserID == requesterID {
+		pc.Role = store.RoleMaintainer
+	}
+
+	return pc, nil
+}
+
 func (a *Adapter) handleProjectsCreate(ctx context.Context, input any) (any, map[string]any, *adapterError) {
 	auth, bootstrapAvailable, err := a.authState(ctx)
 	if err != nil {
@@ -166,7 +191,7 @@ func (a *Adapter) handleProjectsUpdate(ctx context.Context, input any) (any, map
 		return nil, nil, patchErr
 	}
 
-	pc, pcErr := a.requireMaintainerProjectContext(ctx, env.ProjectSlug)
+	pc, pcErr := a.requireProjectManageContext(ctx, env.ProjectSlug)
 	if pcErr != nil {
 		return nil, nil, pcErr
 	}
@@ -217,7 +242,7 @@ func (a *Adapter) handleProjectsDelete(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
-	pc, pcErr := a.requireMaintainerProjectContext(ctx, in.ProjectSlug)
+	pc, pcErr := a.requireProjectManageContext(ctx, in.ProjectSlug)
 	if pcErr != nil {
 		return nil, nil, pcErr
 	}

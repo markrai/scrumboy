@@ -122,9 +122,8 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 			return true
 		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		if err := s.store.CheckCanManageProject(ctx, project.ID, userID); err != nil {
+			writeStoreErr(w, err, true)
 			return true
 		}
 

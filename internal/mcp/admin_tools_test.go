@@ -51,3 +51,20 @@ func TestParseAdminUpdatableSystemRole_unknownRejected(t *testing.T) {
 		t.Fatalf("expected validation error code, got %q", aerr.Code)
 	}
 }
+
+func TestRequesterHasAnySystemRole(t *testing.T) {
+	t.Parallel()
+	owner := store.User{SystemRole: store.SystemRoleOwner}
+	admin := store.User{SystemRole: store.SystemRoleAdmin}
+	user := store.User{SystemRole: store.SystemRoleUser}
+
+	if !requesterHasAnySystemRole(owner, store.SystemRoleOwner, store.SystemRoleAdmin) {
+		t.Fatal("expected owner to satisfy admin-or-owner gate")
+	}
+	if !requesterHasAnySystemRole(admin, store.SystemRoleOwner, store.SystemRoleAdmin) {
+		t.Fatal("expected admin to satisfy admin-or-owner gate")
+	}
+	if requesterHasAnySystemRole(user, store.SystemRoleOwner, store.SystemRoleAdmin) {
+		t.Fatal("expected regular user to fail admin-or-owner gate")
+	}
+}
