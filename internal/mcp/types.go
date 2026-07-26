@@ -89,6 +89,12 @@ type todoSearchItem struct {
 	Title       string `json:"title"`
 }
 
+type todoLinkItem struct {
+	LocalID  int64  `json:"localId"`
+	Title    string `json:"title"`
+	LinkType string `json:"linkType"`
+}
+
 type sprintItem struct {
 	ProjectSlug    string `json:"projectSlug"`
 	SprintID       int64  `json:"sprintId"`
@@ -121,6 +127,15 @@ type boardProjectItem struct {
 	ProjectSlug string `json:"projectSlug"`
 	Name        string `json:"name"`
 	Role        string `json:"role,omitempty"`
+}
+
+type workflowColumnItem struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Color    string `json:"color"`
+	Position int    `json:"position"`
+	IsDone   bool   `json:"isDone"`
+	System   bool   `json:"system"`
 }
 
 type boardColumnItem struct {

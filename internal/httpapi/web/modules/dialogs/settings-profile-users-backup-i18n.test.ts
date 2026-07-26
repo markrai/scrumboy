@@ -434,7 +434,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
     const { i18n } = await setupSettingsView({ activeTab: 'users', user: owner });
 
     const tabContent = document.getElementById('settingsTabContent');
-    expect(tabContent?.querySelector('.settings-section__title')?.textContent).toBe('User Management');
+    expect(tabContent?.querySelector('[data-i18n-text="settings.users.management.title"]')?.textContent).toBe('User Management');
     expect(tabContent?.querySelector('[data-action="promote"]')?.textContent).toBe('Promote');
     expect(tabContent?.textContent).toContain('Bob Member');
     expect(tabContent?.textContent).toContain('bob@example.com');
@@ -446,7 +446,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
     await i18n.setLocale('de');
     await flushPromises();
 
-    expect(tabContent?.querySelector('.settings-section__title')?.textContent).toBe('Benutzerverwaltung');
+    expect(tabContent?.querySelector('[data-i18n-text="settings.users.management.title"]')?.textContent).toBe('Benutzerverwaltung');
     expect(tabContent?.querySelector('[data-action="promote"]')?.textContent).toBe('Hochstufen');
     expect(tabContent?.querySelector('[data-action="delete"]')?.textContent).toBe('Löschen');
     // Raw names/emails/role values unchanged.
@@ -567,6 +567,126 @@ describe('settings i18n (profile / users / backup / customization)', () => {
     // Successful create closes and removes the dialog too.
     expect(document.querySelectorAll('#createUserForm')).toHaveLength(0);
     expect(dialog.isConnected).toBe(false);
+  });
+
+  // ---- Users: default board --------------------------------------------
+
+  it('renders the default board control disabled by default with the picker hidden', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') return [{ id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' }];
+      if (url === '/api/admin/settings/default-board') return { customized: false, projectId: null };
+      if (url === '/api/projects') return [{ id: 10, name: 'Alpha', role: 'maintainer' }];
+      return undefined;
+    });
+    await setupSettingsView({ activeTab: 'users', user: owner });
+
+    const toggle = document.getElementById('defaultBoardEnabledToggle') as HTMLInputElement | null;
+    expect(toggle).not.toBeNull();
+    expect(toggle?.checked).toBe(false);
+    expect(document.getElementById('defaultBoardSelectRow')?.hasAttribute('hidden')).toBe(true);
+    expect(document.querySelector('[data-i18n-text="settings.users.defaultBoard.title"]')?.textContent)
+      .toBe('Default board for new users');
+  });
+
+  it('saves a selected project via PUT after enabling the default board', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') return [{ id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' }];
+      if (url === '/api/admin/settings/default-board') return { customized: false, projectId: null };
+      if (url === '/api/projects') return [
+        { id: 10, name: 'Alpha', role: 'maintainer' },
+        { id: 11, name: 'Beta', role: 'viewer' },
+      ];
+      return undefined;
+    });
+    await setupSettingsView({ activeTab: 'users', user: owner });
+
+    const toggle = document.getElementById('defaultBoardEnabledToggle') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    await flushPromises();
+    expect(document.getElementById('defaultBoardSelectRow')?.hasAttribute('hidden')).toBe(false);
+
+    const select = document.getElementById('defaultBoardProjectSelect') as HTMLSelectElement;
+    apiFetchMock.mockClear();
+    select.value = '10';
+    select.dispatchEvent(new Event('change'));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/admin/settings/default-board', {
+      method: 'PUT',
+      body: JSON.stringify({ projectId: 10 }),
+    });
+    expect(showToastMock).toHaveBeenCalledWith('Default board saved');
+  });
+
+  it('clears the default board via DELETE when the toggle is turned off', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') return [{ id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' }];
+      if (url === '/api/admin/settings/default-board') return { customized: true, projectId: 10 };
+      if (url === '/api/projects') return [{ id: 10, name: 'Alpha', role: 'maintainer' }];
+      return undefined;
+    });
+    await setupSettingsView({ activeTab: 'users', user: owner });
+
+    const toggle = document.getElementById('defaultBoardEnabledToggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    expect(document.getElementById('defaultBoardSelectRow')?.hasAttribute('hidden')).toBe(false);
+
+    apiFetchMock.mockClear();
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change'));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/admin/settings/default-board', { method: 'DELETE' });
+    expect(showToastMock).toHaveBeenCalledWith('Default board turned off');
+  });
+
+  it('lists only durable projects the admin maintains in the default board picker', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') return [{ id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' }];
+      if (url === '/api/admin/settings/default-board') return { customized: true, projectId: 10 };
+      if (url === '/api/projects') return [
+        { id: 10, name: 'Alpha', role: 'maintainer' },
+        { id: 11, name: 'Beta', role: 'viewer' },
+        { id: 12, name: 'Temp', role: 'maintainer', expiresAt: '2999-01-01T00:00:00Z' },
+      ];
+      return undefined;
+    });
+    await setupSettingsView({ activeTab: 'users', user: owner });
+
+    const select = document.getElementById('defaultBoardProjectSelect') as HTMLSelectElement;
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    const optionLabels = Array.from(select.options).map((o) => o.textContent);
+    expect(optionValues).toContain('10');
+    expect(optionValues).not.toContain('11');
+    expect(optionValues).not.toContain('12');
+    expect(optionLabels).toContain('Alpha');
+    expect(optionLabels).not.toContain('Beta');
+    expect(optionLabels).not.toContain('Temp');
+  });
+
+  it('relocalizes the default board section on locale change', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') return [{ id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' }];
+      if (url === '/api/admin/settings/default-board') return { customized: false, projectId: null };
+      if (url === '/api/projects') return [{ id: 10, name: 'Alpha', role: 'maintainer' }];
+      return undefined;
+    });
+    const { i18n } = await setupSettingsView({ activeTab: 'users', user: owner });
+
+    expect(document.querySelector('[data-i18n-text="settings.users.defaultBoard.title"]')?.textContent)
+      .toBe('Default board for new users');
+
+    await i18n.setLocale('de');
+    await flushPromises();
+
+    expect(document.querySelector('[data-i18n-text="settings.users.defaultBoard.title"]')?.textContent)
+      .toBe('Standard-Board für neue Benutzer');
   });
 
   // ---- Backup / Trello --------------------------------------------------

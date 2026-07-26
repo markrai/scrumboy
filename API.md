@@ -339,7 +339,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 **todos**
 
-- `todos_create`, `todos_get`, `todos_search`, `todos_update`, `todos_delete`, `todos_move`
+- `todos_create`, `todos_get`, `todos_search`, `todos_update`, `todos_delete`, `todos_move`, `todos_linksList`, `todos_linkAdd`, `todos_linkRemove`
 
 **sprints**
 
@@ -352,6 +352,10 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **members**
 
 - `members_list`, `members_listAvailable`, `members_add`, `members_updateRole`, `members_remove`
+
+**workflow**
+
+- `workflow_list`, `workflow_create`, `workflow_update`, `workflow_delete` - manage a project's workflow columns (board lanes).
 
 **Planned tools:** none exposed in capabilities today (`plannedTools` omitted when empty).
 
@@ -405,8 +409,29 @@ Conventions:
 | `todos_update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
 | `todos_delete` | `projectSlug`, `localId` | `data` with `status: "deleted"`, `projectSlug`, `localId` |
 | `todos_move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
+| `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType}`) |
+| `todos_linkAdd` | `projectSlug`, `localId`, `targetLocalId`, optional `linkType` (default `relates_to`; also `blocks`, `duplicates`, `parent`) | `data.outbound`, `data.inbound` (refreshed) |
+| `todos_linkRemove` | `projectSlug`, `localId`, `targetLocalId` | `data.outbound`, `data.inbound` (refreshed) |
 
 Column keys accept common aliases (normalized internally). Todo payloads use **`localId`** and **`projectSlug`**; they do not expose the internal global todo id.
+
+**Linked stories:** this is the same "Linked Stories" relation shown on the todo detail page in the
+web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]`). `todos_linkAdd`
+self-links (`targetLocalId == localId`) and links to a nonexistent todo both fail validation/not-found
+the same way the REST endpoint does.
+
+Links are **directed** from `localId` to `targetLocalId`, and the `linkType` describes `localId` as the
+subject of the relation:
+
+- `relates_to` (default) - `localId` is related to `targetLocalId` (directed related-to edge).
+- `blocks` - `localId` blocks `targetLocalId`.
+- `duplicates` - `localId` duplicates `targetLocalId`.
+- `parent` - `localId` is the parent of `targetLocalId`.
+
+`todos_linksList` reports `outbound` (edges where the todo is the source) separately from `inbound`
+(edges where the todo is the target). `todos_linkRemove` deletes only the directed `localId ->
+targetLocalId` edge with the same orientation used to add it; a reverse edge, if one exists, is left
+intact.
 
 ### Sprints
 
@@ -450,6 +475,23 @@ Member list payloads normalize legacy role strings where the adapter applies map
 
 `members_updateRole`: self-demotion and last-maintainer demotion → `CONFLICT`.  
 `members_remove`: last maintainer removal → `VALIDATION_ERROR` (store mapping).
+
+### Workflow
+
+Manage a project's workflow columns (board lanes). These call the same store methods (`GetProjectWorkflow`, `AddWorkflowColumn`, `UpdateWorkflowColumn`, `DeleteWorkflowColumn`) as the cookie-only REST endpoints (`GET/POST/PATCH/DELETE /api/board/{slug}/workflow`), exposing them to `sb_` Bearer API tokens.
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `workflow_list` | `projectSlug` | `data.items` (columns in position order; each `key`, `name`, `color`, `position`, `isDone`, `system`) |
+| `workflow_create` | `projectSlug`, `name` - **maintainer+** | `data.column` - new non-done column inserted before the done column |
+| `workflow_update` | `projectSlug`, `columnKey`, `name`, `color` (`#RRGGBB`) - **maintainer+** | `data.column` - updated column |
+| `workflow_delete` | `projectSlug`, `columnKey` - **maintainer+** | `data.deleted` `{ projectSlug, columnKey }` |
+
+`workflow_update` requires **both** `name` and `color`; it is not a partial update. `color` must be a valid `#RRGGBB` hex value or the call returns `VALIDATION_ERROR`.
+
+`workflow_delete` constraints (store-enforced): the **done** column cannot be deleted (`VALIDATION_ERROR`); a **non-empty** column cannot be deleted (`CONFLICT`); a project must keep **at least 2 columns** (`VALIDATION_ERROR`). System columns are not specially protected from deletion when empty.
+
+Like other MCP mutations, workflow changes call the store directly and do not emit `board.refresh_needed`, so open web clients stay stale until another refresh.
 
 ### Dashboard
 
@@ -535,5 +577,5 @@ Some handlers return **`FORBIDDEN`** with a clear message where **`mapStoreError
 1. **Public identifiers first:** Mutations and reads are keyed by **`projectSlug`**, **`localId`**, and similar fields - not internal numeric ids for todos or projects in MCP command shapes (except `projectId` on list output as noted).
 2. **Capabilities match implementation:** `implementedTools` is the authoritative list of POST tool names.
 3. **Narrower than REST:** Some MCP tools intentionally pre-check scope (e.g. mine-tag delete via library membership) or map errors deterministically; behavior may differ from every REST edge case.
-4. **Anonymous MCP:** Tag, member, board, todo, and sprint tools are **not** offered in anonymous server mode through MCP (`CAPABILITY_UNAVAILABLE`), even if anonymous boards exist elsewhere in the product.
+4. **Anonymous MCP:** Tag, member, board, todo, sprint, and workflow tools are **not** offered in anonymous server mode through MCP (`CAPABILITY_UNAVAILABLE`), even if anonymous boards exist elsewhere in the product.
 

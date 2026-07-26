@@ -23,6 +23,10 @@ type storeAPI interface {
 	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
 	SearchTodosForLinkPicker(ctx context.Context, projectID int64, q string, limit int, excludeLocalIDs []int64, mode store.Mode) ([]store.TodoLinkTarget, error)
+	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
+	RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, mode store.Mode) error
+	ListLinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
+	ListBacklinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
 	UpdateTodoByLocalID(ctx context.Context, projectID, localID int64, in store.UpdateTodoInput, mode store.Mode) (store.Todo, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	MoveTodoByLocalID(ctx context.Context, projectID, localID int64, toColumnKey string, afterLocalID, beforeLocalID *int64, mode store.Mode) (store.Todo, error)
@@ -48,6 +52,9 @@ type storeAPI interface {
 	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error
 	GetProjectWorkflow(ctx context.Context, projectID int64) ([]store.WorkflowColumn, error)
+	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
+	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
+	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 	CreateProject(ctx context.Context, name string) (store.Project, error)
@@ -241,6 +248,9 @@ func (a *Adapter) implementedTools() []string {
 		"todos_update",
 		"todos_delete",
 		"todos_move",
+		"todos_linksList",
+		"todos_linkAdd",
+		"todos_linkRemove",
 		"sprints_list",
 		"sprints_get",
 		"sprints_getActive",
@@ -261,6 +271,10 @@ func (a *Adapter) implementedTools() []string {
 		"members_updateRole",
 		"members_remove",
 		"board_get",
+		"workflow_list",
+		"workflow_create",
+		"workflow_update",
+		"workflow_delete",
 		"dashboard_getSummary",
 		"dashboard_listTodos",
 		"metrics_getBurndown",

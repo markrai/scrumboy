@@ -475,11 +475,12 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 	tools := data["implementedTools"].([]any)
 	wantTools := []any{
 		"system_getCapabilities", "projects_list", "projects_create", "projects_update", "projects_delete",
-		"todos_create", "todos_get", "todos_search", "todos_update", "todos_delete", "todos_move",
+		"todos_create", "todos_get", "todos_search", "todos_update", "todos_delete", "todos_move", "todos_linksList", "todos_linkAdd", "todos_linkRemove",
 		"sprints_list", "sprints_get", "sprints_getActive", "sprints_create", "sprints_activate", "sprints_close", "sprints_update", "sprints_delete",
 		"tags_listProject", "tags_listMine", "tags_updateMineColor", "tags_deleteMine", "tags_updateProjectColor", "tags_deleteProject",
 		"members_list", "members_listAvailable", "members_add", "members_updateRole", "members_remove",
 		"board_get",
+		"workflow_list", "workflow_create", "workflow_update", "workflow_delete",
 		"dashboard_getSummary", "dashboard_listTodos",
 		"metrics_getBurndown", "metrics_getBacklogSize",
 		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",
@@ -3126,8 +3127,8 @@ func TestMCPTagsDeleteMineValidationUnknownField(t *testing.T) {
 	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
 		"tool": "tags_deleteMine",
 		"input": map[string]any{
-			"tagId":         float64(1),
-			"projectSlug":   "nope",
+			"tagId":       float64(1),
+			"projectSlug": "nope",
 		},
 	})
 	if resp2.StatusCode != http.StatusBadRequest {
@@ -5121,21 +5122,21 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	// Align with store TestUpdateProjectMemberRole_LastMaintainerCannotDemoteToViewer setup.
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {
 		t.Fatalf("mcp promote m2: %d", r1.StatusCode)
 	}
 	r2, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "contributor"},
 	})
 	if r2.StatusCode != http.StatusOK {
 		t.Fatalf("mcp demote m2: %d", r2.StatusCode)
 	}
 	r3, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r3.StatusCode != http.StatusOK {
@@ -5143,7 +5144,7 @@ func TestMCPMembersUpdateRoleLastMaintainerDemotionConflict(t *testing.T) {
 	}
 	m2Client := newSessionClientForUser(t, ts, st, m2.ID)
 	r4, _ := doMCP(t, m2Client, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": ownerID, "role": "contributor"},
 	})
 	if r4.StatusCode != http.StatusOK {
@@ -5474,7 +5475,7 @@ func TestMCPMembersRemoveSelfSuccessWhenNotLastMaintainer(t *testing.T) {
 		t.Fatalf("add m2: %v", err)
 	}
 	r1, _ := doMCP(t, ownerClient, ts.URL+"/mcp", map[string]any{
-		"tool": "members_updateRole",
+		"tool":  "members_updateRole",
 		"input": map[string]any{"projectSlug": slug, "userId": m2.ID, "role": "maintainer"},
 	})
 	if r1.StatusCode != http.StatusOK {

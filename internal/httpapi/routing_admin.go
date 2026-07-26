@@ -71,6 +71,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	if rest[0] == "settings" && len(rest) == 2 && rest[1] == "default-board" {
+		// GET/PUT/DELETE /api/admin/settings/default-board
+		s.handleAdminDefaultBoard(w, r, userID)
+		return
+	}
+
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 }
 
@@ -317,6 +323,64 @@ func (s *Server) handleAdminEmailNotifyDefault(w http.ResponseWriter, r *http.Re
 		// DELETE /api/admin/settings/email-notify-default - reset to unconfigured.
 		// Existing users' preferences are untouched; subsequent users get no seeded row.
 		if err := s.store.ClearEmailNotifyOrgDefault(ctx, requesterID); err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
+}
+
+// handleAdminDefaultBoard gets/sets/clears the org-wide default board project
+// new users are auto-enrolled into (as a viewer) at creation time. It never
+// touches existing users' memberships -- see seedDefaultBoardMembershipTx in
+// internal/store.
+func (s *Server) handleAdminDefaultBoard(w http.ResponseWriter, r *http.Request, requesterID int64) {
+	ctx := s.requestContext(r)
+
+	switch r.Method {
+	case http.MethodGet:
+		// GET /api/admin/settings/default-board
+		projectID, customized, err := s.store.GetDefaultBoardOrgSetting(ctx)
+		if err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		resp := map[string]any{"customized": customized}
+		if customized {
+			resp["projectId"] = projectID
+		} else {
+			resp["projectId"] = nil
+		}
+		writeJSON(w, http.StatusOK, resp)
+		return
+
+	case http.MethodPut:
+		// PUT /api/admin/settings/default-board - Body: { projectId: number }
+		var in struct {
+			ProjectID int64 `json:"projectId"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return
+		}
+		if err := s.store.SetDefaultBoardOrgSetting(ctx, requesterID, in.ProjectID); err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"projectId":  in.ProjectID,
+			"customized": true,
+		})
+		return
+
+	case http.MethodDelete:
+		// DELETE /api/admin/settings/default-board - reset to unconfigured.
+		// Existing users' memberships are untouched; subsequent users get no
+		// seeded project_members row.
+		if err := s.store.ClearDefaultBoardOrgSetting(ctx, requesterID); err != nil {
 			writeStoreErr(w, err, false)
 			return
 		}

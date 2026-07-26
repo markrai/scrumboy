@@ -13,6 +13,29 @@
   - **Admin user management** - `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser` expose system-level (owner/admin) user management, distinct from the project-scoped `members_*` tools. `admin_updateUserRole` deliberately does not expose promotion to `owner`, matching the REST admin API.
   - See [API.md](API.md) for full input/output shapes.
 
+## [3.25.0] - 2026-07-24
+
+### Added
+
+- **Configurable default board for newly created users** (#175) - Admins/owners can configure a single org-wide default board project; newly created users (`CreateUser`/`CreateUserOIDC`) are auto-enrolled as Viewer on it, in the same transaction as user creation. `GET`/`PUT`/`DELETE /api/admin/settings/default-board` (`PUT` body: `{ "projectId": <number> }`), following the same `org_settings` shape as #169/#171's email-notification default. Seeding happens at creation time only and never rewrites existing users' memberships; the bootstrap owner is never auto-enrolled (it already has implicit access via its system role); a project deleted after the setting was configured causes seeding to be silently skipped rather than failing account creation. `DELETE` resets to the unconfigured state (`204`, idempotent). See [docs/roles-and-permissions.md](docs/roles-and-permissions.md#org-wide-default-board-for-new-users).
+
+## [3.24.2] - 2026-07-24
+
+### Added
+
+- **MCP tools for workflow columns** - `workflow_list`, `workflow_create`, `workflow_update`, and `workflow_delete` expose a project's workflow columns (board lanes) over MCP, calling the same store methods as the cookie-only `GET/POST/PATCH/DELETE /api/board/{slug}/workflow` REST endpoints so `sb_` Bearer API tokens can reach them. Create/update/delete require maintainer role or higher; `workflow_update` sets both name and color; `workflow_delete` removes an empty non-done column. See [API.md](API.md#workflow).
+
+## [3.24.1] - 2026-07-24
+
+### Added
+
+- **MCP tools for Linked Stories** - `todos_linksList`, `todos_linkAdd`, and `todos_linkRemove` expose the todo detail page's "Linked Stories" relation (`relates_to`, `blocks`, `duplicates`, `parent`) over MCP, matching the existing `GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]` REST endpoints. Links are directed from `localId` to `targetLocalId` with `localId` as the subject of the type. Previously this relation had no MCP surface at all — the only related tool, `todos_search`, just searches link *targets* for the picker UI and never applied a link. See [API.md](API.md#todos).
+
+### Limitations
+
+- **MCP mutations do not refresh open web clients (or fan out card-activity email)** - Unlike REST, MCP tools call the store directly and do not emit `board.refresh_needed` (e.g. `todo_links_updated`). An agent can change links (or other board data) while a browser stays stale until another refresh.
+
+
 ## [3.24.0] - 2026-07-24
 
 ### Changed
