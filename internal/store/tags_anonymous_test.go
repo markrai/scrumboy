@@ -235,8 +235,9 @@ SELECT id FROM tags WHERE project_id = ? AND name = 'bug' AND user_id IS NULL`, 
 	}
 
 	// Verify color appears in listTagCounts
-	// Note: listTagCounts now returns all board-scoped tags (including default tags)
-	tags, err := st.listTagCounts(ctx, project.ID, nil, nil)
+	// Note: listTagCounts now returns all board-scoped tags (including default tags).
+	// Anonymous boards are temporary, so they keep the row-level projection.
+	tags, err := st.listTagCounts(ctx, project.ID, nil, nil, false)
 	if err != nil {
 		t.Fatalf("list tag counts: %v", err)
 	}
@@ -262,9 +263,9 @@ SELECT id FROM tags WHERE project_id = ? AND name = 'bug' AND user_id IS NULL`, 
 	if bugTag.TagID == 0 {
 		t.Error("expected bug tag to have non-zero TagID")
 	}
-	// Anonymous viewer: no canDelete for project-scoped (no auth)
-	if bugTag.CanDelete {
-		t.Error("expected CanDelete false when viewer is nil for project-scoped tag")
+	// Anonymous viewer: no project delete for board-scoped tag (no auth)
+	if bugTag.CanDeleteProject {
+		t.Error("expected CanDeleteProject false when viewer is nil for board-scoped tag")
 	}
 }
 
@@ -595,7 +596,7 @@ SELECT id FROM tags WHERE project_id = ? AND name = 'anon-tag' AND user_id IS NU
 
 	// Verify board-scoped tag color in listTagCounts
 	// Note: Anonymous boards now have 20 default tags + any user-created tags
-	anonTags, err := st.listTagCounts(ctx, anonProject.ID, nil, nil)
+	anonTags, err := st.listTagCounts(ctx, anonProject.ID, nil, nil, false)
 	if err != nil {
 		t.Fatalf("list anon tags: %v", err)
 	}
@@ -646,7 +647,7 @@ SELECT id FROM tags WHERE user_id = ? AND name = 'user-tag'`, user.ID).Scan(&use
 	}
 
 	// Verify user-owned tag color in listTagCounts
-	durableTags, err := st.listTagCounts(ctx, durableProject.ID, &user.ID, nil)
+	durableTags, err := st.listTagCounts(ctx, durableProject.ID, &user.ID, nil, true)
 	if err != nil {
 		t.Fatalf("list durable tags: %v", err)
 	}

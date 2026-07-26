@@ -52,13 +52,10 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid limit", map[string]any{"field": "limit"})
 	}
 
+	// Pass the trimmed tag through unchanged. The store normalizes scope-aware:
+	// durable projects group via TagGroupKey; temporary boards exact-match the raw
+	// displayed name (so a "make space" chip is not rewritten to "make-space").
 	tag := strings.TrimSpace(in.Tag)
-	if tag != "" {
-		tag = store.CanonicalizeTag(tag)
-		if tag == "" {
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tag", map[string]any{"field": "tag"})
-		}
-	}
 	search := strings.TrimSpace(in.Search)
 
 	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())

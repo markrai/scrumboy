@@ -252,11 +252,39 @@ type TodoLinkTarget struct {
 }
 
 type TagCount struct {
-	TagID     int64 // One row per tag_id; authority and mutations are tag_id-based
-	Name      string
-	Count     int
-	Color     *string // Hex color code (e.g., "#FF5733"), nil if no custom color
-	CanDelete bool    // Computed from tag.project_id/user_id and requester role/ownership; never from name groups
+	// TagID is the backing row id for a board-scoped group. It is 0 for a grouped
+	// personal label, which has no single representative row (it may be backed by
+	// multiple user-owned rows sharing the same canonical name).
+	TagID int64
+	Name  string
+	Count int
+	Color *string // Hex color code (e.g., "#FF5733"), nil if no custom color
+	// CanDeleteMine is true when the viewer owns at least one backing personal row.
+	// The action is "delete my personal tag", which is global to that user.
+	CanDeleteMine bool
+	// CanDeleteProject is true for a board-scoped group when the viewer is
+	// maintainer or above. The action deletes the board's tag for everyone.
+	CanDeleteProject bool
+	// CanUpdateColor is true when the viewer may change this entry's color through
+	// the surfaces that address it. On durable projects a board-scoped entry
+	// (real TagID) requires Maintainer+ for the shared tags.color update; a
+	// grouped personal label is always updatable as a per-viewer preference.
+	// Temporary boards keep the previous row-level behavior (always true).
+	CanUpdateColor bool
+}
+
+// DeleteScope returns the wire value describing which delete operation, if any,
+// the viewer may perform on this grouped tag: "mine", "project", or "none".
+// A personal-label group is never "project" (see tags_deleteProject), so callers
+// must not infer project deletion from a personal group.
+func (tc TagCount) DeleteScope() string {
+	if tc.CanDeleteProject {
+		return "project"
+	}
+	if tc.CanDeleteMine {
+		return "mine"
+	}
+	return "none"
 }
 
 // LaneMeta holds pagination info for a board lane. NextCursor is "rank:id" (DB id); empty when !HasMore.

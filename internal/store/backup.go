@@ -309,7 +309,10 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 		if userID, ok := UserIDFromContext(ctx); ok {
 			viewerUserID = &userID
 		}
-		tagCounts, err := s.listTagCounts(ctx, p.ID, viewerUserID, nil)
+		// Grouping is unconditional here, unlike the display projection: TagExport is
+		// keyed by {name, color} and import recreates tags by name, so emitting one
+		// entry per backing row would only produce duplicate names with conflicting colors.
+		tagCounts, err := s.listTagCounts(ctx, p.ID, viewerUserID, nil, true)
 		if err != nil {
 			return nil, fmt.Errorf("export tags for project %d: %w", p.ID, err)
 		}
@@ -344,10 +347,17 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			})
 		}
 
+		// Import uses normal CanonicalizeTag validation and todo create/update do too.
+		// Refuse to emit a backup whose grouped tag labels cannot be re-imported into a
+		// state the application can edit (e.g. a stored "wont-canonicalize!" row).
 		tagExports := make([]TagExport, 0, len(tagCounts))
 		for _, tc := range tagCounts {
+			canonical := CanonicalizeTag(tc.Name)
+			if canonical == "" {
+				return nil, fmt.Errorf("%w: cannot export tag %q: name is not a valid canonical tag", ErrValidation, tc.Name)
+			}
 			tagExports = append(tagExports, TagExport{
-				Name:  tc.Name,
+				Name:  canonical,
 				Color: tc.Color,
 			})
 		}
@@ -1967,7 +1977,8 @@ func (s *Store) importTodoTags(ctx context.Context, tx *sql.Tx, projectID, todoI
 		userIDPtr = &userID
 	}
 
-	// Normalize tags
+	// Normalize tags through the same CanonicalizeTag rules as todo create/update
+	// (e.g. "make space" → "make-space"). Uncanonicalizable names fail import.
 	tags, err := normalizeTags(tagNames)
 	if err != nil {
 		return err
@@ -2016,7 +2027,7 @@ func (s *Store) importTag(ctx context.Context, tx *sql.Tx, projectID int64, tagN
 		userIDPtr = &userID
 	}
 
-	// Normalize tag name
+	// Normalize tag name through the same CanonicalizeTag rules as todo create/update.
 	tags, err := normalizeTags([]string{tagName})
 	if err != nil {
 		return err

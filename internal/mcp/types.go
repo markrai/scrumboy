@@ -109,11 +109,20 @@ type sprintItem struct {
 }
 
 type projectTagItem struct {
-	TagID     int64   `json:"tagId"`
-	Name      string  `json:"name"`
-	Count     int     `json:"count"`
-	Color     *string `json:"color"`
-	CanDelete bool    `json:"canDelete"`
+	// TagID is omitted for grouped personal labels (no representative row).
+	TagID int64   `json:"tagId,omitempty"`
+	Name  string  `json:"name"`
+	Count int     `json:"count"`
+	Color *string `json:"color"`
+	// DeleteScope is one of "mine", "project", "none". A personal-label group is
+	// never "project", so clients must not infer tags_deleteProject eligibility from it.
+	DeleteScope      string `json:"deleteScope"`
+	CanDeleteMine    bool   `json:"canDeleteMine"`
+	CanDeleteProject bool   `json:"canDeleteProject"`
+	// CanUpdateColor is false for durable board-scoped tags when the caller is
+	// below Maintainer. Personal labels and temporary-board rows report true when
+	// the caller may change the color.
+	CanUpdateColor bool `json:"canUpdateColor"`
 }
 
 type mineTagItem struct {
