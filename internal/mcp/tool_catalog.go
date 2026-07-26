@@ -20,6 +20,31 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 			Description: "List all projects visible to the authenticated user, with their role in each project.",
 			InputSchema: jsonSchema("object", map[string]any{}, nil),
 		},
+		"projects_create": {
+			Name:        "projects_create",
+			Description: "Create a new project. The creating user becomes maintainer. Custom workflow columns are not set here; use the workflow_* tools afterward.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"name": jsonProp("string", "Project name"),
+			}, []string{"name"}),
+		},
+		"projects_update": {
+			Name:        "projects_update",
+			Description: "Update a project. Only the fields present in the patch object are changed. Requires maintainer or higher.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"patch": jsonObjectProp("Fields to update. Only included fields are changed.", map[string]any{
+					"name":               jsonProp("string", "New project name"),
+					"defaultSprintWeeks": jsonProp("integer", "Default sprint length in weeks (1 or 2)"),
+				}, nil),
+			}, []string{"projectSlug", "patch"}),
+		},
+		"projects_delete": {
+			Name:        "projects_delete",
+			Description: "Delete a project. Requires maintainer or higher. Anonymous temporary boards cannot be deleted this way.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+			}, []string{"projectSlug"}),
+		},
 		"todos_create": {
 			Name:        "todos_create",
 			Description: "Create a new todo item in a project.",
@@ -261,6 +286,57 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 					"additionalProperties": map[string]any{"type": "string"},
 				},
 			}, []string{"projectSlug"}),
+		},
+		"dashboard_getSummary": {
+			Name:        "dashboard_getSummary",
+			Description: "Get the signed-in user's cross-project dashboard summary: assigned work, completion metrics, WIP, and weekly throughput.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"timezone": jsonProp("string", "IANA timezone name used for calendar-week boundaries (for example America/New_York); defaults to UTC"),
+			}, nil),
+		},
+		"dashboard_listTodos": {
+			Name:        "dashboard_listTodos",
+			Description: "List todos assigned to the signed-in user across all projects, paginated.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"limit":  jsonPropWithNull("integer", "Maximum results to return (default 20, max 100)"),
+				"cursor": jsonPropWithNull("string", "Pagination cursor from a previous call"),
+				"sort":   jsonProp("string", "Sort order: activity (default) or board"),
+			}, nil),
+		},
+		"metrics_getBurndown": {
+			Name:        "metrics_getBurndown",
+			Description: "Get real burndown data (fixed scope from window start) for a project, or for a single sprint when sprintId is given.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"sprintId":    jsonPropWithNull("integer", "Sprint ID to scope the burndown to"),
+			}, []string{"projectSlug"}),
+		},
+		"metrics_getBacklogSize": {
+			Name:        "metrics_getBacklogSize",
+			Description: "Get backlog size data for a project (incomplete count and total scope over time).",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+			}, []string{"projectSlug"}),
+		},
+		"admin_listUsers": {
+			Name:        "admin_listUsers",
+			Description: "List all users on the system. Requires the owner or admin system role.",
+			InputSchema: jsonSchema("object", map[string]any{}, nil),
+		},
+		"admin_updateUserRole": {
+			Name:        "admin_updateUserRole",
+			Description: "Change a user's system role to admin or user. Requires the owner system role. Promotion to owner is not supported through this tool, and the last owner cannot be demoted.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"userId": jsonProp("integer", "User ID"),
+				"role":   jsonProp("string", "New system role: admin or user"),
+			}, []string{"userId", "role"}),
+		},
+		"admin_deleteUser": {
+			Name:        "admin_deleteUser",
+			Description: "Delete a user from the system. Requires the owner system role. A user cannot delete themselves, and the last owner cannot be deleted.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"userId": jsonProp("integer", "User ID"),
+			}, []string{"userId"}),
 		},
 	}
 }

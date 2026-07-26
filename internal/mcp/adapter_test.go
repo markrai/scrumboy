@@ -473,8 +473,24 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		t.Fatalf("expected authenticatedToolsUsable false, got %#v", auth["authenticatedToolsUsable"])
 	}
 	tools := data["implementedTools"].([]any)
-	if len(tools) != 28 || tools[0] != "system_getCapabilities" || tools[1] != "projects_list" || tools[2] != "todos_create" || tools[3] != "todos_get" || tools[4] != "todos_search" || tools[5] != "todos_update" || tools[6] != "todos_delete" || tools[7] != "todos_move" || tools[8] != "sprints_list" || tools[9] != "sprints_get" || tools[10] != "sprints_getActive" || tools[11] != "sprints_create" || tools[12] != "sprints_activate" || tools[13] != "sprints_close" || tools[14] != "sprints_update" || tools[15] != "sprints_delete" || tools[16] != "tags_listProject" || tools[17] != "tags_listMine" || tools[18] != "tags_updateMineColor" || tools[19] != "tags_deleteMine" || tools[20] != "tags_updateProjectColor" || tools[21] != "tags_deleteProject" || tools[22] != "members_list" || tools[23] != "members_listAvailable" || tools[24] != "members_add" || tools[25] != "members_updateRole" || tools[26] != "members_remove" || tools[27] != "board_get" {
+	wantTools := []any{
+		"system_getCapabilities", "projects_list", "projects_create", "projects_update", "projects_delete",
+		"todos_create", "todos_get", "todos_search", "todos_update", "todos_delete", "todos_move",
+		"sprints_list", "sprints_get", "sprints_getActive", "sprints_create", "sprints_activate", "sprints_close", "sprints_update", "sprints_delete",
+		"tags_listProject", "tags_listMine", "tags_updateMineColor", "tags_deleteMine", "tags_updateProjectColor", "tags_deleteProject",
+		"members_list", "members_listAvailable", "members_add", "members_updateRole", "members_remove",
+		"board_get",
+		"dashboard_getSummary", "dashboard_listTodos",
+		"metrics_getBurndown", "metrics_getBacklogSize",
+		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",
+	}
+	if len(tools) != len(wantTools) {
 		t.Fatalf("unexpected implementedTools: %#v", tools)
+	}
+	for i := range wantTools {
+		if tools[i] != wantTools[i] {
+			t.Fatalf("unexpected implementedTools: %#v", tools)
+		}
 	}
 	if _, ok := data["plannedTools"]; ok {
 		t.Fatalf("expected plannedTools omitted once board_get is implemented, got %#v", data["plannedTools"])

@@ -1,6 +1,17 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.25.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
+
+## [3.25.0] - 2026-07-26
+
+### Added
+
+- **MCP capability audit follow-up: project CRUD, dashboard, metrics, and admin tools** - Closes four gaps identified in an audit of the MCP tool surface against existing backend capabilities:
+  - **Project CRUD** - `projects_create`, `projects_update`, `projects_delete` (maintainer+ for update/delete). Previously only `projects_list` existed.
+  - **Dashboard** - `dashboard_getSummary`, `dashboard_listTodos` expose the cross-project "my work" summary and paginated assigned-todo list already used by the web app's dashboard, now available to MCP clients.
+  - **Burndown / backlog-size metrics** - `metrics_getBurndown` (optionally sprint-scoped via `sprintId`) and `metrics_getBacklogSize` wrap the same store queries behind the existing REST burndown/backlog-size endpoints.
+  - **Admin user management** - `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser` expose system-level (owner/admin) user management, distinct from the project-scoped `members_*` tools. `admin_updateUserRole` deliberately does not expose promotion to `owner`, matching the REST admin API.
+  - See [API.md](API.md) for full input/output shapes.
 
 ## [3.24.0] - 2026-07-24
 
