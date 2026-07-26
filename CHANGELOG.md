@@ -1,8 +1,8 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
 
-## [Unreleased]
+## [3.26.0] - 2026-07-25
 
 ### Changed
 
@@ -20,6 +20,8 @@
 - **Per-viewer tag colors set by name refresh only the current project** - A personal color preference is stored on backing tag rows that the viewer also uses in their other projects, so the change can affect what they see elsewhere. Only the targeted project emits `board.refresh_needed`; the viewer's other boards show the new color on their next load. Deletion is not affected — `DELETE .../tags/{name}` refreshes every affected project. This asymmetry is intentional: a color change is invisible to every other member, so broadcasting refreshes to their boards would be pure noise.
 
 ### Breaking
+
+If you only use the web UI, you do not need to change anything for this release: sign-in, boards, and Settings still work the same way. You may notice fewer duplicate tag chips on durable projects, and tag filters that match those chips more reliably. The break is for **MCP / automation clients** that parse project tag lists or update project tag colors: response fields and how you address personal vs board-scoped tags changed (details below). Temporary boards and the browser HTTP `canDelete` field are unaffected in the ways noted under each bullet.
 
 - **MCP `tags_listProject` replaces `canDelete` with `deleteScope`** - Items now expose `deleteScope` (`"mine"` / `"project"` / `"none"`) plus `canDeleteMine` / `canDeleteProject`, and omit `tagId` for grouped personal labels on durable projects. A personal group never reports `"project"`, so it no longer advertises a deletion that `tags_deleteProject` refuses. HTTP tag payloads keep `canDelete` as a compatibility alias for `deleteScope != "none"`.
 - **MCP `tags_updateProjectColor` accepts `tagName`** - Provide exactly one of `tagId` or `tagName`, judged by what was **supplied**: a malformed `tagId` sent alongside `tagName`, or an explicitly empty `tagName` sent alongside a `tagId`, is rejected rather than silently ignored. `tagName` sets only the caller's own per-viewer color for a personal label on a durable project and is allowed for any authenticated project member; `tagId` targets a board-scoped tag's shared color and still requires maintainer or above.
