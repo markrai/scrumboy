@@ -216,14 +216,17 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"tags_updateProjectColor": {
 			Name: "tags_updateProjectColor",
-			Description: "Set or clear color for a tag in a project (maintainer+). " +
-				"Tag must appear in that project's tags_listProject set. " +
-				"Board-scoped tags update shared tags.color; user-owned tags update this viewer's per-viewer color preference.",
+			Description: "Set or clear color for a tag in a project. Provide exactly one of tagId or tagName. " +
+				"tagName targets a grouped personal label on a durable project and sets only the caller's own " +
+				"display color (any authenticated project member); it is rejected on temporary boards, which " +
+				"list every tag row with a real tagId. tagId targets a board-scoped tag and updates the " +
+				"shared color for everyone (maintainer+). The tag must appear in that project's tags_listProject set.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
-				"tagId":       jsonProp("integer", "Tag ID"),
+				"tagId":       jsonProp("integer", "Board-scoped tag ID (mutually exclusive with tagName)"),
+				"tagName":     jsonProp("string", "Canonical tag name for a personal label on a durable project (mutually exclusive with tagId)"),
 				"color":       jsonPropWithNull("string", "Color value; null clears the color"),
-			}, []string{"projectSlug", "tagId"}),
+			}, []string{"projectSlug"}),
 		},
 		"tags_deleteProject": {
 			Name:        "tags_deleteProject",

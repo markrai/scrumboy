@@ -1111,21 +1111,26 @@ export async function renderSettingsModal(options) {
     const showUsersTab = showProfileTab && (currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin");
     const canSeePushConfigurationDetails = currentUser?.systemRole === "owner" || currentUser?.systemRole === "admin";
     // In board view we have a slug and can use capability routes.
-    // In projects listing view (full mode), show all tags from all projects the user has access to.
+    // In projects listing view (full mode), show the user's cross-project personal library.
+    // Tag mutation scope is explicit (mine/board) and must not be inferred from
+    // settingsProjectId, which is also used for unrelated chart data.
     let tagsURL = null;
+    let tagSettingsScope = null;
     let realBurndownURL = null;
     let hasProjectAccess = false;
     if (getSlug()) {
         // Board view: show tags from this specific board
         tagsURL = `/api/board/${getSlug()}/tags`;
+        tagSettingsScope = 'board';
         realBurndownURL = `/api/board/${getSlug()}/burndown`;
         setSettingsProjectId(null);
         hasProjectAccess = true;
     }
     else {
-        // Projects listing view: show all tags from all projects the user has access to
+        // Projects listing view: show all tags from the personal library
         if (getUser()) {
             tagsURL = `/api/tags/mine`;
+            tagSettingsScope = 'mine';
             hasProjectAccess = true;
         }
         // For charts, still need a project ID (use first available project)
@@ -1211,9 +1216,9 @@ export async function renderSettingsModal(options) {
     // Fetch tags and chart data only if we have project access
     let tagsHTML = "";
     let realBurndownData = [];
-    if (hasProjectAccess) {
+    if (hasProjectAccess && tagSettingsScope) {
         try {
-            tagsHTML = await loadTagSettingsContent(tagsURL);
+            tagsHTML = await loadTagSettingsContent(tagsURL, tagSettingsScope);
             // Lazy-load chart data and sprints only when Charts tab is active
             const activeTab = getSettingsActiveTab();
             if (activeTab === "charts") {
@@ -2194,10 +2199,10 @@ export async function renderSettingsModal(options) {
             }, { signal });
         });
     }
-    // Setup event listeners for color pickers (only if we have project access)
+    // Setup event listeners for color pickers (scope selects mine vs board/project routes)
     bindTagTabInteractions({
         signal,
-        hasProjectAccess,
+        scope: tagSettingsScope,
         rerender: () => renderSettingsModal(),
     });
 }

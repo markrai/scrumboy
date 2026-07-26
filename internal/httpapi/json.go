@@ -10,7 +10,39 @@ import (
 func tagsToJSON(tags []store.TagWithColor) []tagWithColorJSON {
 	out := make([]tagWithColorJSON, 0, len(tags))
 	for _, t := range tags {
-		out = append(out, tagWithColorJSON{TagID: t.TagID, Name: t.Name, Color: t.Color, CanDelete: t.CanDelete})
+		scope := "none"
+		if t.CanDelete {
+			scope = "mine"
+		}
+		// Personal-library rows (GET /api/tags/mine and board autocomplete) are always
+		// color-editable by their owner; CanUpdateColor must be set explicitly because
+		// the field is a non-omitempty bool (zero value would disable every picker).
+		out = append(out, tagWithColorJSON{
+			TagID:          t.TagID,
+			Name:           t.Name,
+			Color:          t.Color,
+			DeleteScope:    scope,
+			CanDelete:      t.CanDelete,
+			CanUpdateColor: true,
+		})
+	}
+	return out
+}
+
+// tagCountsToJSON projects grouped project tags (name-based) for the tag-list
+// endpoints. deleteScope is authoritative; canDelete is a compatibility alias.
+func tagCountsToJSON(tags []store.TagCount) []tagWithColorJSON {
+	out := make([]tagWithColorJSON, 0, len(tags))
+	for _, tc := range tags {
+		scope := tc.DeleteScope()
+		out = append(out, tagWithColorJSON{
+			TagID:          tc.TagID,
+			Name:           tc.Name,
+			Color:          tc.Color,
+			DeleteScope:    scope,
+			CanDelete:      scope != "none",
+			CanUpdateColor: tc.CanUpdateColor,
+		})
 	}
 	return out
 }
@@ -486,18 +518,32 @@ func dashboardTodosToJSON(items []store.DashboardTodo, nextCursor *string) dashb
 }
 
 type tagCountJSON struct {
-	TagID     int64   `json:"tagId"`
-	Name      string  `json:"name"`
-	Count     int     `json:"count"`
-	Color     *string `json:"color,omitempty"`
-	CanDelete bool    `json:"canDelete"`
+	// TagID is omitted for grouped personal labels (no representative row).
+	TagID int64   `json:"tagId,omitempty"`
+	Name  string  `json:"name"`
+	Count int     `json:"count"`
+	Color *string `json:"color,omitempty"`
+	// DeleteScope is one of "mine", "project", "none". canDelete is a
+	// compatibility alias equal to deleteScope != "none".
+	DeleteScope string `json:"deleteScope"`
+	CanDelete   bool   `json:"canDelete"`
+	// CanUpdateColor is false for durable board-scoped tags when the viewer is
+	// below Maintainer (shared tags.color). Personal labels and temporary-board
+	// rows report true when the viewer may change the color.
+	CanUpdateColor bool `json:"canUpdateColor"`
 }
 
 type tagWithColorJSON struct {
-	TagID     int64   `json:"tagId"`
-	Name      string  `json:"name"`
-	Color     *string `json:"color,omitempty"`
-	CanDelete bool    `json:"canDelete"`
+	// TagID is omitted for grouped personal labels (no representative row).
+	TagID int64   `json:"tagId,omitempty"`
+	Name  string  `json:"name"`
+	Color *string `json:"color,omitempty"`
+	// DeleteScope is one of "mine", "project", "none". canDelete is a
+	// compatibility alias equal to deleteScope != "none".
+	DeleteScope string `json:"deleteScope"`
+	CanDelete   bool   `json:"canDelete"`
+	// CanUpdateColor gates the Settings → Tag Colors picker for this entry.
+	CanUpdateColor bool `json:"canUpdateColor"`
 }
 
 type columnMetaJSON struct {
@@ -564,7 +610,16 @@ func boardToJSONWithMeta(p store.Project, workflow []store.WorkflowColumn, tags 
 		})
 	}
 	for _, tc := range tags {
-		out.Tags = append(out.Tags, tagCountJSON{TagID: tc.TagID, Name: tc.Name, Count: tc.Count, Color: tc.Color, CanDelete: tc.CanDelete})
+		scope := tc.DeleteScope()
+		out.Tags = append(out.Tags, tagCountJSON{
+			TagID:          tc.TagID,
+			Name:           tc.Name,
+			Count:          tc.Count,
+			Color:          tc.Color,
+			DeleteScope:    scope,
+			CanDelete:      scope != "none",
+			CanUpdateColor: tc.CanUpdateColor,
+		})
 	}
 	for key, todos := range cols {
 		outTodos := make([]todoJSON, 0, len(todos))

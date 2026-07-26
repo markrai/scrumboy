@@ -1005,17 +1005,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		// Convert TagCount to TagWithColor (tag_id and canDelete from store)
-		tagList := make([]store.TagWithColor, len(tags))
-		for i, tc := range tags {
-			tagList[i] = store.TagWithColor{
-				TagID:     tc.TagID,
-				Name:      tc.Name,
-				Color:     tc.Color,
-				CanDelete: tc.CanDelete,
-			}
-		}
-		writeJSON(w, http.StatusOK, tagsToJSON(tagList))
+		writeJSON(w, http.StatusOK, tagCountsToJSON(tags))
 		return true
 	}
 
@@ -1050,15 +1040,20 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		var viewerUserID *int64
-		if userID, ok := store.UserIDFromContext(ctx); ok {
-			viewerUserID = &userID
-		}
 		var patchColorErr error
 		if project.ExpiresAt != nil {
+			var viewerUserID *int64
+			if userID, ok := store.UserIDFromContext(ctx); ok {
+				viewerUserID = &userID
+			}
 			patchColorErr = s.store.UpdateTagColorForTemporaryBoard(ctx, project.ID, viewerUserID, tagID, in.Color)
 		} else {
-			patchColorErr = s.store.UpdateTagColor(ctx, viewerUserID, tagID, in.Color)
+			userID, ok := store.UserIDFromContext(ctx)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+				return true
+			}
+			patchColorErr = s.store.UpdateTagColorForDurableProjectByID(ctx, project.ID, userID, tagID, in.Color)
 		}
 		if patchColorErr != nil {
 			writeStoreErr(w, patchColorErr, true)
@@ -1069,14 +1064,10 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 		return true
 	}
 
-	// PATCH /api/board/{slug}/tags/{tagName}/color - update tag color by name (temporary boards only).
-	// Durable projects must use /tags/id/{tagId}/color.
+	// PATCH /api/board/{slug}/tags/{tagName}/color - update tag color by name.
+	// Temporary/anonymous boards resolve board-scoped or link-holder tags; durable
+	// projects set the authenticated viewer's personal color for the grouped label.
 	if len(rest) == 4 && rest[1] == "tags" && rest[3] == "color" && r.Method == http.MethodPatch {
-		if project.ExpiresAt == nil {
-			writeValidationError(w, "name-based color update not allowed for durable projects; use /tags/id/{tagId}/color", "name_based_tag_route_not_allowed", nil)
-			return true
-		}
-		linkTemporaryBoard := true
 		ctx := s.requestContext(r)
 		tagName := rest[2]
 		var in struct {
@@ -1086,6 +1077,26 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			return true
 		}
 
+		if project.ExpiresAt == nil {
+			// Durable project: name-based personal color for any authenticated member.
+			// SetViewerTagColorByName enforces membership. Same known limitation as the
+			// /api/projects route: only this project is refreshed, and the viewer's other
+			// boards sharing the backing rows pick the color up on next load.
+			userID, ok := store.UserIDFromContext(ctx)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+				return true
+			}
+			if err := s.store.SetViewerTagColorByName(ctx, project.ID, userID, tagName, in.Color); err != nil {
+				writeStoreErr(w, err, true)
+				return true
+			}
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated")
+			w.WriteHeader(http.StatusNoContent)
+			return true
+		}
+
+		linkTemporaryBoard := true
 		var viewerUserID *int64
 		if userID, ok := store.UserIDFromContext(ctx); ok {
 			viewerUserID = &userID
@@ -1109,19 +1120,53 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeValidationError(w, "invalid tagId", "invalid_tag_id", map[string]any{"field": "tagId"})
 			return true
 		}
-		userID, _ := store.UserIDFromContext(ctx)
-		if err := s.store.DeleteTag(ctx, userID, tagID, isAnonymousBoard); err != nil {
+		if project.ExpiresAt != nil {
+			// Temporary/anonymous boards keep the previous DeleteTag path.
+			userID, _ := store.UserIDFromContext(ctx)
+			if err := s.store.DeleteTag(ctx, userID, tagID, isAnonymousBoard); err != nil {
+				writeStoreErr(w, err, true)
+				return true
+			}
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
+			w.WriteHeader(http.StatusNoContent)
+			return true
+		}
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return true
+		}
+		affected, err := s.store.DeleteTagForDurableProjectByID(ctx, project.ID, userID, tagID)
+		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
+		s.emitTagDeletedRefresh(s.requestContext(r), project.ID, affected)
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
 
-	// DELETE /api/board/{slug}/tags/{tagName} - delete by name (anonymous-only).
-	// Name-based mutation routes are anonymous-only. Durable projects must use tag_id.
+	// DELETE /api/board/{slug}/tags/{tagName} - delete by name.
+	// Durable projects delete only the caller's own personal tag rows for the name
+	// (grouped label persists if other members still use it). Anonymous/temporary
+	// boards keep the board-scoped resolution below.
 	if len(rest) == 3 && rest[1] == "tags" && r.Method == http.MethodDelete {
+		if !isAnonymousBoard && project.ExpiresAt == nil {
+			ctx := s.requestContext(r)
+			userID, ok := store.UserIDFromContext(ctx)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+				return true
+			}
+			affected, err := s.store.DeleteMyTagByName(ctx, project.ID, userID, rest[2])
+			if err != nil {
+				writeStoreErr(w, err, true)
+				return true
+			}
+			s.emitTagDeletedRefresh(s.requestContext(r), project.ID, affected)
+			w.WriteHeader(http.StatusNoContent)
+			return true
+		}
 		if !isAnonymousBoard {
 			writeValidationError(w, "name-based delete not allowed for durable projects; use /tags/id/{tagId}", "name_based_tag_route_not_allowed", nil)
 			return true

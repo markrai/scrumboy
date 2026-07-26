@@ -43,6 +43,23 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 	})
 }
 
+// emitTagDeletedRefresh emits a "tag_deleted" refresh for the current project plus
+// every other project affected by a cross-project personal-tag deletion. Deleting a
+// personal tag row removes it from every project that reused it, so all their boards
+// must refresh, not only the one the request targeted.
+func (s *Server) emitTagDeletedRefresh(ctx context.Context, projectID int64, affectedProjectIDs []int64) {
+	emitted := make(map[int64]struct{}, len(affectedProjectIDs)+1)
+	s.emitRefreshNeeded(ctx, projectID, "tag_deleted")
+	emitted[projectID] = struct{}{}
+	for _, pid := range affectedProjectIDs {
+		if _, ok := emitted[pid]; ok {
+			continue
+		}
+		emitted[pid] = struct{}{}
+		s.emitRefreshNeeded(ctx, pid, "tag_deleted")
+	}
+}
+
 func (s *Server) emitProjectDeleted(ctx context.Context, deleted store.DeletedProjectSnapshot) {
 	var actorUserID int64
 	if uid, ok := store.UserIDFromContext(ctx); ok {

@@ -298,7 +298,8 @@ Tools use these **public** identifiers as primary keys in inputs and outputs:
 - **Todo:** `projectSlug` + `localId` (no global todo id in MCP todo/board shapes)
 - **Sprint:** `projectSlug` + `sprintId` - `sprintId` is the **stored sprint row id** (see sprint list/get); sprint payloads also include `number` for display ordering
 - **Mine-scope tag:** `tagId` (current user’s tag library)
-- **Project-scope tag:** `projectSlug` + `tagId` (tag row scoped to that project; not user-owned)
+- **Project-scope tag (durable projects):** grouped by **canonical name**. `tags_listProject` returns one logical entry per canonical name (names are compared after canonicalization, so legacy `make space` and `make-space` rows collapse into one `make-space` entry); a `tagId` is present **only** for board-scoped tags (not user-owned). Grouped personal labels omit `tagId` and are addressed by `projectSlug` + `tagName`. A legacy row whose stored name cannot be canonicalized keeps its raw stored name as the label, and that label is what `tagName` and the board `tag` filter accept for it.
+- **Project-scope tag (temporary boards):** **not grouped.** Boards with an expiry keep the row-level projection — one entry per tag row, each with a real `tagId` — because their colors and deletions are still addressed by `tagId`.
 - **Project member / membership target:** `projectSlug` + `userId`
 - **Available user (invite list):** `userId` (from `members_listAvailable`)
 
@@ -375,6 +376,7 @@ Conventions:
 
 - **Purpose:** Board snapshot with optional tag/search/sprint filters and **per-column** pagination.
 - **Input:** `projectSlug` (required); optional `tag`, `search`, `sprintId` (sprint row id; must belong to the project when set); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` applies no sprint-based filter on the board query (internal mode `none`).
+- **Tag filter:** on durable projects, `tag` is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
 - **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.columns` (each: `key`, `name`, `isDone`, `items` as todo-shaped objects).
 - **Meta:** `nextCursorByColumn`, `hasMoreByColumn`, `totalCountByColumn` (per column key). See **Board pagination** below.
 - **Note:** Not available in anonymous mode or before bootstrap; requires sign-in.
@@ -434,12 +436,12 @@ Activate/close enforce sprint state (e.g. planned vs active); violations return 
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `tags_listProject` | `projectSlug` | `data.items` (`tagId`, `name`, `count`, `color`, `canDelete`) |
+| `tags_listProject` | `projectSlug` | `data.items` (`name`, `count`, `color`, `deleteScope`, `canDeleteMine`, `canDeleteProject`, `canUpdateColor`). On **durable** projects items are grouped by canonical name and `tagId` is present only for board-scoped tags; on **temporary boards** items stay row-level and every item has a real `tagId`. `deleteScope` is `"mine"`, `"project"`, or `"none"`. `canUpdateColor` is false for durable board-scoped tags when the caller is below Maintainer. **Breaking:** the old `canDelete` boolean is replaced by `deleteScope` — a personal group never reports `"project"`, so it never advertises a deletion that `tags_deleteProject` refuses |
 | `tags_listMine` | `{}` | `data.items` (mine tags; no `count`) |
 | `tags_updateMineColor` | `tagId`, `color` (hex or `null` to clear) | `data.tag` |
 | `tags_deleteMine` | `tagId` | `data.deleted` `{ tagId }` - only if tag is in the viewer’s mine list, then store delete |
-| `tags_updateProjectColor` | `projectSlug`, `tagId`, `color` | `data.tag` - **maintainer+**; tag must appear in that project's `tags_listProject` set. Color semantics follow tag scope: **board-scoped** tags update shared `tags.color` (visible to all members); **user-owned** tags update this viewer's per-viewer preference in `user_tag_colors` (same as durable HTTP board color updates / `tags_updateMineColor`) |
-| `tags_deleteProject` | `projectSlug`, `tagId` | `data.deleted` `{ projectSlug, tagId }` - **maintainer+**; tag must exist as a **project-scoped** tag in that project |
+| `tags_updateProjectColor` | `projectSlug`, **exactly one of** `tagId` / `tagName`, `color` | `data.tag`. Exactly-one is judged on what was **supplied**: a malformed `tagId` sent alongside `tagName` is rejected, never silently ignored. `tagName` sets **only the caller's own** per-viewer color for a personal label on a **durable** project and is allowed for **any authenticated project member** (non-members rejected; temporary boards rejected). `tagId` targets a **board-scoped** tag and updates the shared `tags.color` for everyone (**maintainer+**). The tag must appear in that project's `tags_listProject` set |
+| `tags_deleteProject` | `projectSlug`, `tagId` | `data.deleted` `{ projectSlug, tagId }` - **maintainer+**; tag must exist as a **board-scoped** tag in that project (user-owned tags are never deleted here; use `tags_deleteMine` or the name-based HTTP delete) |
 
 ### Members
 

@@ -44,6 +44,8 @@ type storeAPI interface {
 	ListTagCounts(ctx context.Context, pc *store.ProjectContext) ([]store.TagCount, error)
 	ListUserTags(ctx context.Context, userID int64) ([]store.TagWithColor, error)
 	UpdateTagColor(ctx context.Context, viewerUserID *int64, tagID int64, color *string) error
+	UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error
+	SetViewerTagColorByName(ctx context.Context, projectID int64, viewerUserID int64, name string, color *string) error
 	DeleteTag(ctx context.Context, userID int64, tagID int64, isAnonymousBoard bool) error
 	GetProjectScopedTagByID(ctx context.Context, projectID, tagID int64) (store.TagWithColor, error)
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)

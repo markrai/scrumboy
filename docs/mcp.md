@@ -286,6 +286,37 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 - `tags_updateProjectColor`
 - `tags_deleteProject`
 
+> **Durable-project tags are grouped by canonical name.** On durable projects,
+> `tags_listProject` returns one logical entry per canonical name — names are compared
+> after canonicalization, so legacy rows such as `make space` and `make-space` collapse
+> into a single `make-space` entry. Each entry carries `deleteScope` (`"mine"`,
+> `"project"`, or `"none"`) plus `canDeleteMine` / `canDeleteProject` / `canUpdateColor`; a `tagId` appears
+> only for board-scoped tags (personal groups omit it). The legacy `canDelete` boolean
+> is gone — a personal group is never `"project"`, so it never advertises a deletion
+> that `tags_deleteProject` refuses.
+>
+> **Temporary boards are not grouped.** Any project with an expiry keeps the previous
+> row-level projection: one entry per tag row, each with a real `tagId`. Their colors
+> and deletions are still addressed by `tagId`, so grouping would strand those writes.
+>
+> A grouped entry is labelled by its canonical name. A legacy row whose stored name
+> cannot be canonicalized at all keeps its raw stored name as the label, and that label
+> is what `tagName` and the board `tag` filter accept for it.
+>
+> `tags_updateProjectColor` takes **exactly one** of `tagId` or `tagName`, decided by
+> what was supplied rather than by what is valid: sending a malformed `tagId` or an
+> empty `tagName` alongside the other field is rejected instead of silently falling
+> through to one path. An explicitly empty `tagName` counts as supplied. `tagName`
+> sets only the caller's own per-viewer color for a personal label on a durable project
+> and is allowed for any authenticated project member (non-members are rejected);
+> `tagId` updates a board-scoped tag's shared color and still requires maintainer or
+> above.
+>
+> **Known limitation:** a per-viewer color set by `tagName` lands on backing tag rows
+> the caller also uses in their other projects. Only the targeted project emits a
+> refresh event; the caller's other boards show the new color on their next load. The
+> change is invisible to other members, so no refresh is broadcast to them.
+
 **Members**
 
 - `members_list`

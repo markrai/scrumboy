@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,17 +34,18 @@ func flushLane(key string, page []Todo, laneTotal, limitPerLane int, cols map[st
 }
 
 // getBoardPagedPerLane is the fallback when totalTodos exceeds boardTodoSoftCap.
-func (s *Store) getBoardPagedPerLane(ctx context.Context, pc *ProjectContext, projectID int64, workflow []WorkflowColumn, tagFilter, searchFilter string, sprintFilter SprintFilter, limitPerLane int, tags []TagCount) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, map[string]LaneMeta, error) {
+// tagFilter must already be resolved for this request (no per-lane re-scan).
+func (s *Store) getBoardPagedPerLane(ctx context.Context, pc *ProjectContext, projectID int64, workflow []WorkflowColumn, tagFilter boardTagFilter, searchFilter string, sprintFilter SprintFilter, limitPerLane int, tags []TagCount) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, map[string]LaneMeta, error) {
 	cols := make(map[string][]Todo, len(workflow))
 	meta := make(map[string]LaneMeta, len(workflow))
 	for _, col := range workflow {
 		cols[col.Key] = []Todo{}
 		meta[col.Key] = LaneMeta{}
-		items, nextCursor, hasMore, err := s.ListTodosForBoardLane(ctx, projectID, col.Key, limitPerLane, math.MinInt64, 0, tagFilter, searchFilter, sprintFilter)
+		items, nextCursor, hasMore, err := s.listTodosForBoardLaneResolved(ctx, projectID, col.Key, limitPerLane, math.MinInt64, 0, tagFilter, searchFilter, sprintFilter)
 		if err != nil {
 			return Project{}, nil, nil, nil, nil, err
 		}
-		total, err := s.CountTodosForBoardLane(ctx, projectID, col.Key, tagFilter, searchFilter, sprintFilter)
+		total, err := s.countTodosForBoardLaneResolved(ctx, projectID, col.Key, tagFilter, searchFilter, sprintFilter)
 		if err != nil {
 			return Project{}, nil, nil, nil, nil, err
 		}
@@ -97,7 +97,8 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 		viewerUserID = &userID
 	}
 
-	tags, err := s.listTagCounts(ctx, projectID, viewerUserID, &pc.Role)
+	durable := pc.Project.ExpiresAt == nil
+	tags, err := s.listTagCounts(ctx, projectID, viewerUserID, &pc.Role, durable)
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
 	}
@@ -106,20 +107,25 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 		return Project{}, nil, nil, nil, nil, err
 	}
 
-	tagFilter = normalizeTagFilter(tagFilter)
+	// Resolve the tag filter once for this request and reuse it for the soft-cap
+	// count, window query, and (if needed) every per-lane list/count.
+	resolvedFilter, err := s.resolveBoardTagFilter(ctx, projectID, durable, tagFilter)
+	if err != nil {
+		return Project{}, nil, nil, nil, nil, err
+	}
 
 	// Soft cap: if filtered count exceeds threshold, fall back to per-lane queries (bounded memory)
 	const boardTodoSoftCap = 2000
-	totalTodos, err := s.countTodosForBoard(ctx, projectID, tagFilter, searchFilter, sprintFilter)
+	totalTodos, err := s.countTodosForBoard(ctx, projectID, resolvedFilter, searchFilter, sprintFilter)
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
 	}
 	if totalTodos > boardTodoSoftCap {
-		return s.getBoardPagedPerLane(ctx, pc, projectID, workflow, tagFilter, searchFilter, sprintFilter, limitPerLane, tags)
+		return s.getBoardPagedPerLane(ctx, pc, projectID, workflow, resolvedFilter, searchFilter, sprintFilter, limitPerLane, tags)
 	}
 
 	// Fast path: single window-function query returns rows + lane totals
-	allTodos, err := s.listAllTodosForBoardWithCounts(ctx, projectID, tagFilter, searchFilter, sprintFilter)
+	allTodos, err := s.listAllTodosForBoardWithCounts(ctx, projectID, resolvedFilter, searchFilter, sprintFilter)
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
 	}
@@ -168,7 +174,8 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 		viewerUserID = &userID
 	}
 
-	tags, err := s.listTagCounts(ctx, projectID, viewerUserID, &pc.Role)
+	durable := pc.Project.ExpiresAt == nil
+	tags, err := s.listTagCounts(ctx, projectID, viewerUserID, &pc.Role, durable)
 	if err != nil {
 		return Project{}, nil, nil, nil, err
 	}
@@ -177,7 +184,10 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 		return Project{}, nil, nil, nil, err
 	}
 
-	tagFilter = normalizeTagFilter(tagFilter)
+	resolvedFilter, err := s.resolveBoardTagFilter(ctx, projectID, durable, tagFilter)
+	if err != nil {
+		return Project{}, nil, nil, nil, err
+	}
 
 	cols := make(map[string][]Todo, len(workflow))
 	for _, col := range workflow {
@@ -186,7 +196,7 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 
 	// OPTIMIZED: Fetch all todos in a single query instead of 5 separate queries (one per status)
 	// This reduces query overhead and is more efficient on low-power hardware
-	todos, err := s.listAllTodosForBoard(ctx, projectID, tagFilter, searchFilter, sprintFilter)
+	todos, err := s.listAllTodosForBoard(ctx, projectID, resolvedFilter, searchFilter, sprintFilter)
 	if err != nil {
 		return Project{}, nil, nil, nil, err
 	}
@@ -208,16 +218,16 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 
 // listAllTodosForBoard fetches all todos for a board in a single query
 // OPTIMIZED: Single query instead of 5 separate queries (one per status)
-func (s *Store) listAllTodosForBoard(ctx context.Context, projectID int64, tagFilter string, searchFilter string, sprintFilter SprintFilter) ([]Todo, error) {
+func (s *Store) listAllTodosForBoard(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, sprintFilter SprintFilter) ([]Todo, error) {
 	// Show ALL tags on todos (no user filter - collaboration-friendly)
-	// Tag filter matches by name across all owners
+	// Tag filter matches by resolved backing tag IDs
 
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 
 	var rows *sql.Rows
 	var err error
 
-	if tagFilter == "" {
+	if tagFilter.NoFilter {
 		// No tag filter - simple query without CTE
 		args := []any{projectID}
 		args = append(args, sprintArgs...)
@@ -235,17 +245,21 @@ ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
 			args...,
 		)
 	} else {
-		// Tag filter active - use CTE to pre-filter (avoids correlated subquery)
-		// Placeholder order: CTE g.name=? (1), main project_id=? (2), sprintCond (0–1), search ?,?,? (3).
-		args := []any{tagFilter, projectID}
+		if len(tagFilter.TagIDs) == 0 {
+			return nil, nil
+		}
+		idPH, idArgs := tagFilterPlaceholders(tagFilter.TagIDs)
+		// Placeholder order: CTE tag_id IN (…) (N), main project_id=? (1), sprintCond (0–1), search ?,?,? (3).
+		args := make([]any, 0, len(idArgs)+5)
+		args = append(args, idArgs...)
+		args = append(args, projectID)
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		rows, err = s.db.QueryContext(ctx, `
 WITH tagged_todos AS (
   SELECT DISTINCT tt.todo_id
   FROM todo_tags tt
-  JOIN tags g ON g.id = tt.tag_id
-  WHERE g.name = ?
+  WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
   t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.created_at, t.updated_at, t.done_at
@@ -321,10 +335,10 @@ ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
 
 // countTodosForBoard returns the count of todos matching board filters (tag, search, sprint).
 // Used for soft cap check; must mirror filters used by listAllTodosForBoardWithCounts.
-func (s *Store) countTodosForBoard(ctx context.Context, projectID int64, tagFilter, searchFilter string, sprintFilter SprintFilter) (int, error) {
+func (s *Store) countTodosForBoard(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, sprintFilter SprintFilter) (int, error) {
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 	var count int
-	if tagFilter == "" {
+	if tagFilter.NoFilter {
 		args := []any{projectID}
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
@@ -338,15 +352,20 @@ AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE 
 			return 0, fmt.Errorf("count todos: %w", err)
 		}
 	} else {
-		args := []any{tagFilter, projectID}
+		if len(tagFilter.TagIDs) == 0 {
+			return 0, nil
+		}
+		idPH, idArgs := tagFilterPlaceholders(tagFilter.TagIDs)
+		args := make([]any, 0, len(idArgs)+5)
+		args = append(args, idArgs...)
+		args = append(args, projectID)
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		err := s.db.QueryRowContext(ctx, `
 WITH tagged_todos AS (
   SELECT DISTINCT tt.todo_id
   FROM todo_tags tt
-  JOIN tags g ON g.id = tt.tag_id
-  WHERE g.name = ?
+  WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT COUNT(*) FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
@@ -363,13 +382,13 @@ AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE 
 
 // listAllTodosForBoardWithCounts fetches all todos with per-lane totals via window function.
 // Each row carries lane_total; no separate count query needed.
-func (s *Store) listAllTodosForBoardWithCounts(ctx context.Context, projectID int64, tagFilter, searchFilter string, sprintFilter SprintFilter) ([]todoWithLaneTotal, error) {
+func (s *Store) listAllTodosForBoardWithCounts(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, sprintFilter SprintFilter) ([]todoWithLaneTotal, error) {
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 
 	var rows *sql.Rows
 	var err error
 
-	if tagFilter == "" {
+	if tagFilter.NoFilter {
 		args := []any{projectID}
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
@@ -385,15 +404,20 @@ WHERE
 ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
 `, args...)
 	} else {
-		args := []any{tagFilter, projectID}
+		if len(tagFilter.TagIDs) == 0 {
+			return nil, nil
+		}
+		idPH, idArgs := tagFilterPlaceholders(tagFilter.TagIDs)
+		args := make([]any, 0, len(idArgs)+5)
+		args = append(args, idArgs...)
+		args = append(args, projectID)
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		rows, err = s.db.QueryContext(ctx, `
 WITH tagged_todos AS (
   SELECT DISTINCT tt.todo_id
   FROM todo_tags tt
-  JOIN tags g ON g.id = tt.tag_id
-  WHERE g.name = ?
+  WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
   t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.created_at, t.updated_at, t.done_at,
@@ -475,6 +499,22 @@ ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
 // MUST match that order; the predicate "(t.rank, t.id) > (?, ?)" continues after the last
 // returned row. If ORDER BY changes, pagination tests and cursor semantics must be updated together.
 func (s *Store) ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, sprintFilter SprintFilter) ([]Todo, string, bool, error) {
+	// Exported entry point (lane pagination, MCP board tools): resolve once so the
+	// filter agrees with GetBoard for the same project scope.
+	p, err := s.getProject(ctx, projectID)
+	if err != nil {
+		return nil, "", false, err
+	}
+	resolved, err := s.resolveBoardTagFilter(ctx, projectID, p.ExpiresAt == nil, tagFilter)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return s.listTodosForBoardLaneResolved(ctx, projectID, columnKey, limit, afterRank, afterID, resolved, searchFilter, sprintFilter)
+}
+
+// listTodosForBoardLaneResolved is the lane list helper that consumes a pre-resolved
+// tag filter (no project lookup, no tag-row scan).
+func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter boardTagFilter, searchFilter string, sprintFilter SprintFilter) ([]Todo, string, bool, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -485,7 +525,7 @@ func (s *Store) ListTodosForBoardLane(ctx context.Context, projectID int64, colu
 	var rows *sql.Rows
 	var err error
 
-	if tagFilter == "" {
+	if tagFilter.NoFilter {
 		args := []any{projectID, columnKey}
 		args = append(args, sprintArgs...)
 		args = append(args, afterRank, afterID, searchFilter, searchFilter, searchFilter, fetchLimit)
@@ -504,16 +544,21 @@ LIMIT ?
 			args...,
 		)
 	} else {
-		// Placeholder order: CTE g.name=? (1), main project_id=? (2), status=? (3), sprintCond (0–1), (rank,id) (4,5), search ?,?,? (6), LIMIT ? (7).
-		args := []any{tagFilter, projectID, columnKey}
+		if len(tagFilter.TagIDs) == 0 {
+			return nil, "", false, nil
+		}
+		idPH, idArgs := tagFilterPlaceholders(tagFilter.TagIDs)
+		// Placeholder order: CTE tag_id IN (…) (N), main project_id=? (1), status=? (2), sprintCond (0–1), (rank,id) (3,4), search ?,?,? (5), LIMIT ? (6).
+		args := make([]any, 0, len(idArgs)+9)
+		args = append(args, idArgs...)
+		args = append(args, projectID, columnKey)
 		args = append(args, sprintArgs...)
 		args = append(args, afterRank, afterID, searchFilter, searchFilter, searchFilter, fetchLimit)
 		rows, err = s.db.QueryContext(ctx, `
 WITH tagged_todos AS (
   SELECT DISTINCT tt.todo_id
   FROM todo_tags tt
-  JOIN tags g ON g.id = tt.tag_id
-  WHERE g.name = ?
+  WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
   t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.created_at, t.updated_at, t.done_at
@@ -600,10 +645,24 @@ LIMIT ?
 
 // CountTodosForBoardLane returns the total number of todos in the lane (same tag/search filters as ListTodosForBoardLane).
 func (s *Store) CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, sprintFilter SprintFilter) (int, error) {
+	p, err := s.getProject(ctx, projectID)
+	if err != nil {
+		return 0, err
+	}
+	resolved, err := s.resolveBoardTagFilter(ctx, projectID, p.ExpiresAt == nil, tagFilter)
+	if err != nil {
+		return 0, err
+	}
+	return s.countTodosForBoardLaneResolved(ctx, projectID, columnKey, resolved, searchFilter, sprintFilter)
+}
+
+// countTodosForBoardLaneResolved is the lane count helper that consumes a pre-resolved
+// tag filter (no project lookup, no tag-row scan).
+func (s *Store) countTodosForBoardLaneResolved(ctx context.Context, projectID int64, columnKey string, tagFilter boardTagFilter, searchFilter string, sprintFilter SprintFilter) (int, error) {
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 
 	var count int
-	if tagFilter == "" {
+	if tagFilter.NoFilter {
 		args := []any{projectID, columnKey}
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
@@ -619,16 +678,21 @@ AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE 
 			return 0, fmt.Errorf("count todos lane: %w", err)
 		}
 	} else {
-		// Placeholder order: CTE g.name=? (1), main project_id=? (2), status=? (3), sprintCond (0–1), search ?,?,? (4).
-		args := []any{tagFilter, projectID, columnKey}
+		if len(tagFilter.TagIDs) == 0 {
+			return 0, nil
+		}
+		idPH, idArgs := tagFilterPlaceholders(tagFilter.TagIDs)
+		// Placeholder order: CTE tag_id IN (…) (N), main project_id=? (1), status=? (2), sprintCond (0–1), search ?,?,? (3).
+		args := make([]any, 0, len(idArgs)+6)
+		args = append(args, idArgs...)
+		args = append(args, projectID, columnKey)
 		args = append(args, sprintArgs...)
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		err := s.db.QueryRowContext(ctx, `
 WITH tagged_todos AS (
   SELECT DISTINCT tt.todo_id
   FROM todo_tags tt
-  JOIN tags g ON g.id = tt.tag_id
-  WHERE g.name = ?
+  WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT COUNT(*) FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
@@ -688,91 +752,4 @@ func ParseLaneCursor(cursor string) (rank, id int64) {
 		return 0, 0
 	}
 	return r, i
-}
-
-// listTodosByStatus is deprecated but kept for backward compatibility if needed elsewhere
-// Use listAllTodosForBoard instead for better performance
-func (s *Store) listTodosByColumnKey(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string) ([]Todo, error) {
-	// Show ALL tags on todos (no user filter - collaboration-friendly)
-	// Tag filter matches by name across all owners
-	// OPTIMIZED: Pre-filter tagged todos with CTE instead of correlated EXISTS subquery
-	// This turns N subquery executions into ONE scan of todo_tags + tags
-	rows, err := s.db.QueryContext(ctx, `
-WITH tagged_todos AS (
-  SELECT DISTINCT tt.todo_id
-  FROM todo_tags tt
-  JOIN tags g ON g.id = tt.tag_id
-  WHERE g.name = ?
-)
-SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.created_at, t.updated_at, t.done_at,
-  COALESCE(GROUP_CONCAT(DISTINCT g.name, ','), '') AS tags_csv
-FROM todos t
-LEFT JOIN todo_tags tt ON tt.todo_id = t.id
-LEFT JOIN tags g ON g.id = tt.tag_id
-LEFT JOIN tagged_todos ft ON ft.todo_id = t.id
-WHERE
-  t.project_id = ? AND t.column_key = ?
-  AND (? = '' OR ft.todo_id IS NOT NULL)
-  AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-GROUP BY t.id
-ORDER BY t.rank ASC, t.id ASC
-`,
-		tagFilter, projectID, columnKey, tagFilter, searchFilter, searchFilter, searchFilter,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list todos: %w", err)
-	}
-	defer rows.Close()
-
-	var out []Todo
-	for rows.Next() {
-		var t Todo
-		var rowColumnKey string
-		var createdAtMs, updatedAtMs int64
-		var localID sql.NullInt64
-		var estimationPoints sql.NullInt64
-		var assigneeUserID sql.NullInt64
-		var sprintID sql.NullInt64
-		var doneAtMs sql.NullInt64
-		var tagsCSV string
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &rowColumnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &createdAtMs, &updatedAtMs, &doneAtMs, &tagsCSV); err != nil {
-			return nil, fmt.Errorf("scan todo: %w", err)
-		}
-		if !localID.Valid {
-			return nil, fmt.Errorf("%w: todos.local_id is NULL (migration incomplete)", ErrConflict)
-		}
-		t.LocalID = localID.Int64
-		t.ColumnKey = rowColumnKey
-		if estimationPoints.Valid {
-			v := estimationPoints.Int64
-			t.EstimationPoints = &v
-		}
-		if assigneeUserID.Valid {
-			v := assigneeUserID.Int64
-			t.AssigneeUserID = &v
-		}
-		if sprintID.Valid {
-			v := sprintID.Int64
-			t.SprintID = &v
-		}
-		t.CreatedAt = time.UnixMilli(createdAtMs).UTC()
-		t.UpdatedAt = time.UnixMilli(updatedAtMs).UTC()
-		if doneAtMs.Valid {
-			dt := time.UnixMilli(doneAtMs.Int64).UTC()
-			t.DoneAt = &dt
-		}
-
-		if tagsCSV != "" {
-			// Tags are already distinct (GROUP_CONCAT with DISTINCT) and sorted by SQLite
-			// No need for deduplication in Go
-			t.Tags = strings.Split(tagsCSV, ",")
-			sort.Strings(t.Tags) // Still sort for consistency
-		}
-		out = append(out, t)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows todos: %w", err)
-	}
-	return out, nil
 }

@@ -14,15 +14,19 @@ import { setTagColors } from '../state/mutations.js';
 import { escapeHTML, sanitizeHexColor, showConfirmDialog, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
 
+/** Which Settings → Tag Colors list is showing; do not infer from settingsProjectId. */
+export type TagSettingsScope = 'mine' | 'project' | 'board';
+
 type BindTagTabInteractionsOptions = {
   signal: AbortSignal;
-  hasProjectAccess: boolean;
+  scope: TagSettingsScope | null;
   rerender: () => Promise<void>;
 };
 
 let cachedTags: any[] | null = null;
 let cachedTagsHTML: string | null = null;
 let cachedTagsURL: string | null = null;
+let activeTagSettingsScope: TagSettingsScope | null = null;
 
 export function invalidateTagsCache(): void {
   cachedTags = null;
@@ -70,55 +74,80 @@ async function applyTagColorSuccess(tagName: string, color: string | null): Prom
   }
 }
 
+function colorMutationURL(
+  scope: TagSettingsScope,
+  tagName: string,
+  tagId: number | null | undefined
+): string | null {
+  if (scope === 'mine') {
+    if (tagId == null || tagId <= 0) return null;
+    return `/api/tags/mine/${tagId}/color`;
+  }
+  if (scope === 'board') {
+    const slug = getSlug();
+    if (!slug) return null;
+    if (tagId != null && tagId > 0) {
+      return `/api/board/${slug}/tags/id/${tagId}/color`;
+    }
+    return `/api/board/${slug}/tags/${encodeURIComponent(tagName)}/color`;
+  }
+  // project: durable project-scoped list (grouped name or board-scoped id).
+  const projectId = getSettingsProjectId();
+  if (!projectId) return null;
+  if (tagId != null && tagId > 0) {
+    return `/api/projects/${projectId}/tags/id/${tagId}/color`;
+  }
+  return `/api/projects/${projectId}/tags/${encodeURIComponent(tagName)}/color`;
+}
+
+function deleteMutationURL(
+  scope: TagSettingsScope,
+  tagName: string,
+  tagId: number | undefined
+): string | null {
+  if (scope === 'mine') {
+    if (tagId == null || tagId <= 0) return null;
+    return `/api/tags/mine/${tagId}`;
+  }
+  if (scope === 'board') {
+    const slug = getSlug();
+    if (!slug) return null;
+    return tagId != null
+      ? `/api/board/${slug}/tags/id/${tagId}`
+      : `/api/board/${slug}/tags/${encodeURIComponent(tagName)}`;
+  }
+  const projectId = getSettingsProjectId();
+  if (!projectId) return null;
+  return tagId != null
+    ? `/api/projects/${projectId}/tags/id/${tagId}`
+    : `/api/projects/${projectId}/tags/${encodeURIComponent(tagName)}`;
+}
+
 async function updateTagColor(
   tagName: string,
   tagId: number | null | undefined,
   color: string | null
 ): Promise<void> {
-  const projectId = getSettingsProjectId();
-  const slug = getSlug();
-  const isDurable = !!projectId;
-
-  if (isDurable) {
-    if (tagId == null || tagId <= 0) {
-      showToast(t('settings.tagColors.toast.cannotUpdateMissingId'));
-      return;
-    }
-    const url = `/api/projects/${projectId}/tags/id/${tagId}/color`;
-    try {
-      recordLocalMutation();
-      await apiFetch(url, {
-        method: 'PATCH',
-        body: JSON.stringify({ color }),
-      });
-      await applyTagColorSuccess(tagName, color);
-    } catch (err: any) {
-      showToast(apiErrorMessageOrRaw(err));
-    }
+  const scope = activeTagSettingsScope;
+  if (!scope) {
+    showToast(t('settings.tagColors.toast.noProject'));
     return;
   }
-
-  if (slug) {
-    let url: string;
-    if (tagId != null && tagId > 0) {
-      url = `/api/board/${slug}/tags/id/${tagId}/color`;
-    } else {
-      url = `/api/board/${slug}/tags/${encodeURIComponent(tagName)}/color`;
-    }
-    try {
-      recordLocalMutation();
-      await apiFetch(url, {
-        method: 'PATCH',
-        body: JSON.stringify({ color }),
-      });
-      await applyTagColorSuccess(tagName, color);
-    } catch (err: any) {
-      showToast(apiErrorMessageOrRaw(err));
-    }
+  const url = colorMutationURL(scope, tagName, tagId);
+  if (!url) {
+    showToast(t('settings.tagColors.toast.noProject'));
     return;
   }
-
-  showToast(t('settings.tagColors.toast.noProject'));
+  try {
+    recordLocalMutation();
+    await apiFetch(url, {
+      method: 'PATCH',
+      body: JSON.stringify({ color }),
+    });
+    await applyTagColorSuccess(tagName, color);
+  } catch (err: any) {
+    showToast(apiErrorMessageOrRaw(err));
+  }
 }
 
 async function deleteTag(
@@ -126,21 +155,13 @@ async function deleteTag(
   tagId: number | undefined,
   rerender: () => Promise<void>
 ): Promise<void> {
-  let url: string | null = null;
-  const isDurableMode = !!getSettingsProjectId();
-
-  if (getSlug()) {
-    url =
-      tagId != null
-        ? `/api/board/${getSlug()}/tags/id/${tagId}`
-        : `/api/board/${getSlug()}/tags/${encodeURIComponent(tagName)}`;
-  } else if (isDurableMode) {
-    if (tagId == null) {
-      showToast(t('settings.tagColors.toast.cannotDeleteMissingId'));
-      return;
-    }
-    url = `/api/projects/${getSettingsProjectId()}/tags/id/${tagId}`;
-  } else {
+  const scope = activeTagSettingsScope;
+  if (!scope) {
+    showToast(t('settings.tagColors.toast.noProject'));
+    return;
+  }
+  const url = deleteMutationURL(scope, tagName, tagId);
+  if (!url) {
     showToast(t('settings.tagColors.toast.noProject'));
     return;
   }
@@ -177,7 +198,11 @@ async function deleteTag(
   }
 }
 
-export async function loadTagSettingsContent(tagsURL: string): Promise<string> {
+export async function loadTagSettingsContent(
+  tagsURL: string,
+  scope: TagSettingsScope
+): Promise<string> {
+  activeTagSettingsScope = scope;
   if (cachedTagsURL === tagsURL && cachedTags !== null && cachedTagsHTML !== null) {
     return cachedTagsHTML;
   }
@@ -194,17 +219,21 @@ export async function loadTagSettingsContent(tagsURL: string): Promise<string> {
     });
     setTagColors(tagColors);
 
-    const isDurableProject = !!getSettingsProjectId();
     const tagsHTML =
       tags.length === 0
         ? "<div class='muted' data-i18n-text=\"settings.tagColors.empty\">No tags yet. Create todos with tags to see them here.</div>"
         : tags
             .map((tag: any) => {
               const colorValue = sanitizeHexColor(tag.color, '#9CA3AF') || '#9CA3AF';
-              const showDelete = tag.canDelete === true && tag.tagId != null;
+              // Grouped personal labels have no tagId and use name-based routes, so the
+              // color picker is always usable; delete is driven by deleteScope.
+              // Durable board-scoped entries (real tagId) require canUpdateColor so a
+              // Viewer is not offered an enabled shared-color picker.
+              const canDelete = tag.deleteScope ? tag.deleteScope !== 'none' : tag.canDelete === true;
               const hasTagId = tag.tagId != null && tag.tagId > 0;
-              const colorDisabled = isDurableProject && !hasTagId;
+              const canUpdateColor = tag.canUpdateColor !== false;
               const tagIdAttr = hasTagId ? ` data-tag-id="${String(tag.tagId)}"` : '';
+              const colorDisabledAttr = canUpdateColor ? '' : ' disabled';
               return `
                 <div class="settings-tag-item">
                   <span class="settings-tag-name" title="${escapeHTML(tag.name)}">${escapeHTML(tag.name)}</span>
@@ -214,9 +243,8 @@ export async function loadTagSettingsContent(tagsURL: string): Promise<string> {
                       class="settings-color-picker"
                       data-tag="${escapeHTML(tag.name)}"${tagIdAttr}
                       value="${colorValue}"
-                      title="${colorDisabled ? 'Tag ID missing; cannot update color' : 'Tag color'}"
-                      data-i18n-title="${colorDisabled ? 'settings.tagColors.colorDisabledTitle' : 'settings.tagColors.colorTitle'}"
-                      ${colorDisabled ? 'disabled' : ''}
+                      title="Tag color"
+                      data-i18n-title="settings.tagColors.colorTitle"${colorDisabledAttr}
                     />
                     <button
                       class="btn btn--ghost btn--small settings-color-clear"
@@ -224,15 +252,14 @@ export async function loadTagSettingsContent(tagsURL: string): Promise<string> {
                       title="Clear color"
                       data-i18n-title="settings.tagColors.clearTitle"
                       data-i18n-text="settings.tagColors.clear"
-                      ${!tag.color ? 'style="display: none;"' : ''}
-                      ${colorDisabled ? 'disabled' : ''}
+                      ${!tag.color || !canUpdateColor ? 'style="display: none;"' : ''}${colorDisabledAttr}
                     >Clear</button>
                     ${
-                      showDelete
+                      canDelete
                         ? `<button
                       class="btn btn--danger btn--small settings-tag-delete"
-                      data-tag="${escapeHTML(tag.name)}"
-                      data-tag-id="${String(tag.tagId)}"
+                      data-tag="${escapeHTML(tag.name)}"${tagIdAttr}
+                      data-delete-scope="${tag.deleteScope === 'project' ? 'project' : 'mine'}"
                       title="Delete tag"
                       aria-label="Delete tag"
                       data-i18n-title="settings.tagColors.deleteTitle"
@@ -257,7 +284,8 @@ export async function loadTagSettingsContent(tagsURL: string): Promise<string> {
 }
 
 export function bindTagTabInteractions(options: BindTagTabInteractionsOptions): void {
-  if (!options.hasProjectAccess) return;
+  if (!options.scope) return;
+  activeTagSettingsScope = options.scope;
 
   document.querySelectorAll('.settings-color-picker').forEach((picker) => {
     picker.addEventListener(
@@ -300,9 +328,14 @@ export function bindTagTabInteractions(options: BindTagTabInteractionsOptions): 
         const tagName = el.getAttribute('data-tag');
         const tagIdAttr = el.getAttribute('data-tag-id');
         const tagId = tagIdAttr ? parseInt(tagIdAttr, 10) : undefined;
+        const deleteScope = el.getAttribute('data-delete-scope');
         if (tagName) {
+          const messageKey =
+            deleteScope === 'project'
+              ? 'settings.tagColors.deleteConfirm.messageProject'
+              : 'settings.tagColors.deleteConfirm.message';
           const confirmed = await showConfirmDialog(
-            t('settings.tagColors.deleteConfirm.message', { name: tagName }),
+            t(messageKey, { name: tagName }),
             t('settings.tagColors.deleteConfirm.title')
           );
           if (!confirmed) return;
