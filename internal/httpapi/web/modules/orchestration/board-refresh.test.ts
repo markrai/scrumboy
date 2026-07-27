@@ -71,4 +71,39 @@ describe('board-refresh orchestration', () => {
     expect(refreshSprints).toHaveBeenCalledWith('alpha');
     expect(refreshBoard).not.toHaveBeenCalled();
   });
+
+  it('keeps an elevated lane floor for the same board after a filtered drag', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(45);
+  });
+
+  it('does not apply an elevated lane floor to a different board', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+
+    expect(mod.getBoardLimitPerLaneFloor('beta')).toBe(20);
+  });
+
+  it('resets the lane floor after a successful board response', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+    mod.resetBoardLimitPerLaneFloor();
+
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(20);
+  });
+
+  it('replacing the floor slug clears a prior board elevation', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+    mod.setBoardLimitPerLaneFloor(25, 'beta');
+
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(20);
+    expect(mod.getBoardLimitPerLaneFloor('beta')).toBe(25);
+  });
 });

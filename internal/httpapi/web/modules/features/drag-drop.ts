@@ -106,8 +106,10 @@ function getLaneItems(status: string): Element[] {
 }
 
 function preserveVisibleLaneCount(status: string, includePendingItem: boolean): void {
+  const slug = getSlug();
+  if (!slug) return;
   const visibleCount = getLaneItems(status).length + (includePendingItem ? 1 : 0);
-  setBoardLimitPerLaneFloor(visibleCount);
+  setBoardLimitPerLaneFloor(visibleCount, slug);
 }
 
 async function getHiddenLaneBoundaryLocalId(status: string): Promise<number | null> {

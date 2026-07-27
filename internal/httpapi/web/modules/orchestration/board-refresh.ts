@@ -1,6 +1,8 @@
 let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: string | null) => Promise<void>) | null = null;
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
 let boardLimitPerLaneFloor = 20;
+/** Board that raised the floor; cross-board loads must ignore a stale elevated floor. */
+let boardLimitPerLaneFloorSlug: string | null = null;
 
 /** Coalesce rapid invalidates (e.g. resume resync + SSE-driven refresh) to reduce duplicate fetches. */
 const INVALIDATE_COALESCE_MS = 700;
@@ -37,18 +39,25 @@ export async function invalidateBoard(slug: string, tag?: string, search?: strin
   await refreshBoard(slug, tag, search, sprintId);
 }
 
-export function setBoardLimitPerLaneFloor(limit: number) {
+export function setBoardLimitPerLaneFloor(limit: number, slug: string) {
+  if (!slug) return;
+  if (boardLimitPerLaneFloorSlug !== slug) {
+    boardLimitPerLaneFloor = 20;
+    boardLimitPerLaneFloorSlug = slug;
+  }
   if (Number.isFinite(limit) && limit > boardLimitPerLaneFloor) {
     boardLimitPerLaneFloor = Math.max(20, Math.floor(limit));
   }
 }
 
-export function getBoardLimitPerLaneFloor(): number {
+export function getBoardLimitPerLaneFloor(forSlug: string): number {
+  if (!boardLimitPerLaneFloorSlug || boardLimitPerLaneFloorSlug !== forSlug) return 20;
   return boardLimitPerLaneFloor;
 }
 
 export function resetBoardLimitPerLaneFloor() {
   boardLimitPerLaneFloor = 20;
+  boardLimitPerLaneFloorSlug = null;
 }
 
 /**

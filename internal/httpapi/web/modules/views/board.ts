@@ -1658,7 +1658,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   resetBoardFilterUiState();
   lastUpdateBoardContentBoard = null;
   const params = new URLSearchParams();
-  params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(), getBoardLimitPerLaneFloor())));
+  params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(), getBoardLimitPerLaneFloor(slug))));
   if (tag) params.set("tag", tag);
   if (search) params.set("search", search);
   if (requestSprintId) params.set("sprintId", requestSprintId);
