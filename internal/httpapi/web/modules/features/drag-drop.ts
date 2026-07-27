@@ -17,6 +17,11 @@ let activeSortables: any[] = [];
 let boardColumns: Array<{ key: string; title: string; color?: string }> = columnsSpec();
 let mobileTabIntroGlowTimer: ReturnType<typeof setTimeout> | null = null;
 
+function isChronologicalSortActive(): boolean {
+  const sort = getSortFromUrl();
+  return sort === "newest" || sort === "oldest";
+}
+
 /**
  * Fallback column list when the board API omits `columnOrder` (should be rare).
  * Keys MUST match store/API workflow keys (`internal/store` DefaultColumn*).
@@ -127,10 +132,12 @@ async function getHiddenLaneBoundaryLocalId(status: string): Promise<number | nu
   const search = getSearch();
   const sprintId = getSprintIdFromUrl();
   const assignee = getAssigneeFromUrl();
+  const sort = getSortFromUrl();
   if (tag) params.set("tag", tag);
   if (search) params.set("search", search);
   if (sprintId) params.set("sprintId", sprintId);
   if (assignee) params.set("assignee", assignee);
+  if (sort) params.set("sort", sort);
 
   const res = await apiFetch<LanePageResponse>(`/api/board/${slug}/lanes/${status}?${params.toString()}`);
   return res?.items?.[0]?.localId ?? null;
@@ -153,6 +160,10 @@ export function initDnD(): void {
   }
   activeSortables = [];
 
+  // Chronological DOM neighbors are not valid manual-rank anchors. Keep DnD
+  // completely disabled until the board returns to its default rank order.
+  if (isChronologicalSortActive()) return;
+
   const group = "board";
 
   const handleEnd = async (evt: any) => {
@@ -161,6 +172,11 @@ export function initDnD(): void {
     setTimeout(() => { dragJustEnded = false; }, 250);
     clearMobileTabIntroGlow();
     setMobileDragging(false);
+
+    // A sort can change while a stale Sortable callback is winding down.
+    // Never let that callback derive manual-rank anchors from chronological DOM.
+    if (isChronologicalSortActive()) return;
+
     recordBoardInteraction();
 
     if (moveInFlight) return;

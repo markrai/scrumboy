@@ -34,6 +34,7 @@ export type RenderTodoCardOpts = {
   tagColors?: Record<string, string>;
   showPointsMode?: boolean;
   selectedIds?: Set<number>;
+  reorderEnabled?: boolean;
 };
 
 type BuildTopbarHtmlArgs = {
@@ -196,6 +197,20 @@ export function renderTodoCard(
     : "";
   const footerContent = pointsHTML + avatarHTML;
   const selectedClass = opts?.selectedIds?.has(todo.id) ? " card--selected" : "";
+  const dragHandleHTML = opts?.reorderEnabled === false
+    ? ""
+    : `
+      <div class="card__drag-handle" aria-label="${escapeHTML(t("board.todo.dragToReorder"))}" data-i18n-aria-label="board.todo.dragToReorder">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="4" cy="3" r="1.5"/>
+          <circle cx="4" cy="8" r="1.5"/>
+          <circle cx="4" cy="13" r="1.5"/>
+          <circle cx="12" cy="3" r="1.5"/>
+          <circle cx="12" cy="8" r="1.5"/>
+          <circle cx="12" cy="13" r="1.5"/>
+        </svg>
+      </div>
+    `;
   return `
     <button class="card card--${todo.status.toLowerCase()}${selectedClass}"${borderStyle} data-todo-id="${todo.id}" data-todo-local-id="${todo.localId}"${todo.assigneeUserId != null ? ` data-assignee-user-id="${todo.assigneeUserId}"` : ""} id="todo_${todo.id}" type="button">
       <div class="card__content">
@@ -214,16 +229,7 @@ export function renderTodoCard(
   </div>
 ` : ""}
       </div>
-      <div class="card__drag-handle" aria-label="${escapeHTML(t("board.todo.dragToReorder"))}" data-i18n-aria-label="board.todo.dragToReorder">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <circle cx="4" cy="3" r="1.5"/>
-          <circle cx="4" cy="8" r="1.5"/>
-          <circle cx="4" cy="13" r="1.5"/>
-          <circle cx="12" cy="3" r="1.5"/>
-          <circle cx="12" cy="8" r="1.5"/>
-          <circle cx="12" cy="13" r="1.5"/>
-        </svg>
-      </div>
+      ${dragHandleHTML}
     </button>
   `;
 }

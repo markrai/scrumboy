@@ -575,7 +575,12 @@ async function handleLoadMore(status: TodoStatus): Promise<void> {
       const membersByUserId = getMembersByUserId();
       const tagColors = getTagColors();
       const showPointsMode = isModifiedFibonacciModeEnabled();
-      const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+      const cardOpts: RenderTodoCardOpts = {
+        tagColors,
+        showPointsMode,
+        selectedIds: getSelectedTodoIds(),
+        reorderEnabled: sort !== "newest" && sort !== "oldest",
+      };
       items.forEach((t) => {
         const card = document.createElement("div");
         card.innerHTML = renderTodoCard(t, columnColor, membersByUserId, cardOpts);
@@ -887,7 +892,12 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
 
     const boardCols = getBoardColumns(board);
     setDnDColumns(boardCols.map((c) => ({ key: c.key, title: c.title, color: c.color })));
-    const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+    const cardOpts: RenderTodoCardOpts = {
+      tagColors,
+      showPointsMode,
+      selectedIds: getSelectedTodoIds(),
+      reorderEnabled: sort !== "newest" && sort !== "oldest",
+    };
     boardEl.innerHTML = buildBoardColumnsHtml({
       boardCols,
       board,
@@ -1011,7 +1021,12 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   });
   const membersByUserId = getMembersByUserId();
   const showPointsMode = isModifiedFibonacciModeEnabled();
-  const cardOpts: RenderTodoCardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+  const cardOpts: RenderTodoCardOpts = {
+    tagColors,
+    showPointsMode,
+    selectedIds: getSelectedTodoIds(),
+    reorderEnabled: sort !== "newest" && sort !== "oldest",
+  };
 
   app.innerHTML = `
     <div class="page">

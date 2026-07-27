@@ -73,7 +73,6 @@ async function loadModules() {
 }
 
 async function setupState(url: string, opts?: { tag?: string; search?: string; assignee?: string | null; sort?: string | null; user?: any }) {
-  vi.resetModules();
   toastMock.mockClear();
   window.history.replaceState({}, '', url);
   renderFilterShell(opts?.assignee ?? null, opts?.sort ?? null, opts?.user);
@@ -192,6 +191,44 @@ describe('board filter panel (assignee + sort)', () => {
 
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
       expect(panel.hidden).toBe(true);
+    });
+
+    it('keeps one delegated listener set across full panel replacements', async () => {
+      const { boardFilters } = await setupState('/alpha');
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+      const oldToggle = document.getElementById('searchFilterToggle') as HTMLButtonElement;
+      const oldPanel = document.getElementById('searchFilterPanel') as HTMLElement;
+      oldToggle.click();
+      expect(oldPanel.hidden).toBe(false);
+
+      renderFilterShell(null, null);
+      boardFilters.resetBoardFilterUiState();
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+      const currentToggle = document.getElementById('searchFilterToggle') as HTMLButtonElement;
+      const currentPanel = document.getElementById('searchFilterPanel') as HTMLElement;
+      const oldFocus = vi.spyOn(oldToggle, 'focus');
+      const currentFocus = vi.spyOn(currentToggle, 'focus');
+      const oldRect = vi.spyOn(oldToggle, 'getBoundingClientRect');
+      const currentRect = vi.spyOn(currentToggle, 'getBoundingClientRect');
+
+      currentToggle.click();
+      oldRect.mockClear();
+      currentRect.mockClear();
+      window.dispatchEvent(new Event('resize'));
+      expect(oldRect).not.toHaveBeenCalled();
+      expect(currentRect).toHaveBeenCalledTimes(1);
+
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(oldFocus).not.toHaveBeenCalled();
+      expect(currentFocus).toHaveBeenCalledTimes(1);
+      expect(currentPanel.hidden).toBe(true);
+
+      (currentPanel.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
+      expect(reloadBoard).toHaveBeenCalledTimes(1);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, null, 'newest');
     });
   });
 
