@@ -2,6 +2,12 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.27.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
 
+## [3.27.1] - 2026-07-27
+
+### Fixed
+
+- **Board "Load more" collapse on realtime refresh (PR #191)** - Unfiltered board reloads always requested `limitPerLane=20`, so a realtime refresh after expanding a column via "Load more" collapsed the lane back to the first page. Same-board refreshes now preserve the on-screen lane size (filtered or not). Cross-board navigation and initial loads still default to 20. The filtered-drag lane floor is also scoped to the board that raised it, so an elevated floor cannot leak into the next board's first request.
+
 ## [3.27.0] - 2026-07-26
 
 ### Added
