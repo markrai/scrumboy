@@ -210,6 +210,7 @@ type storeAPI interface {
 	CreateProject(ctx context.Context, name string) (store.Project, error)
 	CreateProjectWithWorkflow(ctx context.Context, name string, workflow []store.WorkflowColumn) (store.Project, error)
 	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
+	CheckCanManageProject(ctx context.Context, projectID int64, userID int64) error
 	UpdateProjectImage(ctx context.Context, projectID int64, userID int64, image *string, dominantColor string) error
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
@@ -225,10 +226,10 @@ type storeAPI interface {
 	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
 
-	GetBoard(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, sprintFilter store.SprintFilter) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, error)
-	GetBoardPaged(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, sprintFilter store.SprintFilter, limitPerLane int) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, map[string]store.LaneMeta, error)
+	GetBoard(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, error)
+	GetBoardPaged(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder, limitPerLane int) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, map[string]store.LaneMeta, error)
 	ListTagCounts(ctx context.Context, pc *store.ProjectContext) ([]store.TagCount, error)
-	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, sprintFilter store.SprintFilter) ([]store.Todo, string, bool, error)
+	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterA, afterB int64, tagFilter, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) ([]store.Todo, string, bool, error)
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
 	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]store.DashboardTodo, *string, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)

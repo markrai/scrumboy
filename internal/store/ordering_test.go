@@ -58,7 +58,7 @@ func mustFilteredLanePage(t *testing.T, st *Store, projectID int64, status, sear
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	_, _, _, cols, meta, err := st.GetBoardPaged(ctx, &pc, "", search, SprintFilter{Mode: "none"}, limit)
+	_, _, _, cols, meta, err := st.GetBoardPaged(ctx, &pc, "", search, AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, limit)
 	if err != nil {
 		t.Fatalf("GetBoardPaged: %v", err)
 	}
@@ -69,7 +69,7 @@ func mustFirstHiddenLaneTodo(t *testing.T, st *Store, projectID int64, status, s
 	t.Helper()
 
 	afterRank, afterID := ParseLaneCursor(meta.NextCursor)
-	items, _, _, err := st.ListTodosForBoardLane(context.Background(), projectID, status, 1, afterRank, afterID, "", search, SprintFilter{Mode: "none"})
+	items, _, _, err := st.ListTodosForBoardLane(context.Background(), projectID, status, 1, afterRank, afterID, "", search, AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestMoveTodo_ReorderWithinColumn(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestMoveTodo_MoveAcrossColumns(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestMoveTodo_RebalanceWhenGapTooSmall(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestMoveTodo_MoveToTopRepeatedly_NoNegativeRank(t *testing.T) {
 
 	// Verify all 3 items are returned by GetBoardPaged (the API path that was broken)
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, meta, err := st.GetBoardPaged(ctx, &pc, "", "", SprintFilter{Mode: "none"}, 20)
+	_, _, _, cols, meta, err := st.GetBoardPaged(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
 	if err != nil {
 		t.Fatalf("GetBoardPaged: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestMoveTodo_MoveToTopRepeatedly_NoNegativeRank(t *testing.T) {
 	}
 
 	// Also verify via ListTodosForBoardLane with the initial cursor (math.MinInt64, 0)
-	items, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnDoing, 20, math.MinInt64, 0, "", "", SprintFilter{Mode: "none"})
+	items, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnDoing, 20, math.MinInt64, 0, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}
@@ -335,7 +335,7 @@ func TestMoveTodo_MoveToTopProducesPositiveRank(t *testing.T) {
 		}
 	}
 
-	items, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 20, math.MinInt64, 0, "", "", SprintFilter{Mode: "none"})
+	items, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 20, math.MinInt64, 0, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}

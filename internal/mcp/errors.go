@@ -42,6 +42,8 @@ func mapStoreError(err error) *adapterError {
 	switch {
 	case errors.Is(err, store.ErrUnauthorized):
 		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, store.ErrForbidden):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
 	case errors.Is(err, store.ErrNotFound):
 		return newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
 	case errors.Is(err, store.ErrValidation):
@@ -51,4 +53,13 @@ func mapStoreError(err error) *adapterError {
 	default:
 		return newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": err.Error()})
 	}
+}
+
+// mapPrivilegedStoreError maps store errors for authenticated callers of privileged tools.
+// Insufficient privilege after successful authentication returns 403 FORBIDDEN, not 401.
+func mapPrivilegedStoreError(err error) *adapterError {
+	if errors.Is(err, store.ErrUnauthorized) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return mapStoreError(err)
 }

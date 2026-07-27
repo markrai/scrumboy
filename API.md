@@ -320,10 +320,23 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **projects**
 
 - `projects_list` - Projects visible to the user (with role).
+- `projects_create`, `projects_update`, `projects_delete` - Project CRUD (maintainer+ for update/delete; the creator becomes maintainer).
 
 **board**
 
 - `board_get` - Paged board view per workflow column (special pagination; see below).
+
+**dashboard**
+
+- `dashboard_getSummary`, `dashboard_listTodos` - Cross-project "my work" summary and paginated assigned-todo list for the signed-in user.
+
+**metrics**
+
+- `metrics_getBurndown`, `metrics_getBacklogSize` - Project (or sprint-scoped) burndown and backlog-size time series.
+
+**admin**
+
+- `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser` - System-level user management (owner/admin system role, not project role).
 
 **todos**
 
@@ -372,11 +385,19 @@ Conventions:
 - **Input:** `{}`
 - **Output:** `data.items` - array of projects (`projectSlug`, `projectId`, `name`, `image`, `dominantColor`, `defaultSprintWeeks`, `expiresAt`, `createdAt`, `updatedAt`, `role`).
 
+### `projects_create`, `projects_update`, `projects_delete`
+
+- **Purpose:** Project CRUD. Not available in anonymous mode or before bootstrap; requires sign-in.
+- **`projects_create`:** `name` (required). Custom workflow columns are not set through this tool; use the `workflow_*` tools afterward. The creating user becomes **maintainer**. Output: `data.project` (same shape as a `projects_list` item).
+- **`projects_update`:** `projectSlug`, `patch` (object). Only fields present in `patch` are changed: `name` (string), `defaultSprintWeeks` (integer, `1` or `2`). Neither field accepts `null`. **Maintainer+** required. Output: `data.project`.
+- **`projects_delete`:** `projectSlug`. **Maintainer+** required. Anonymous temporary boards cannot be deleted this way (`NOT_FOUND`, matching the store's existence-hiding behavior). Output: `data` with `status: "deleted"`, `projectSlug`, `projectId`.
+
 ### `board_get`
 
-- **Purpose:** Board snapshot with optional tag/search/sprint filters and **per-column** pagination.
-- **Input:** `projectSlug` (required); optional `tag`, `search`, `sprintId` (sprint row id; must belong to the project when set); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` applies no sprint-based filter on the board query (internal mode `none`).
+- **Purpose:** Board snapshot with optional tag/search/sprint/assignee filters and **per-column** pagination.
+- **Input:** `projectSlug` (required); optional `tag`, `search`, `assignee`, `sprintId` (sprint row id; must belong to the project when set); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` applies no sprint-based filter on the board query (internal mode `none`).
 - **Tag filter:** on durable projects, `tag` is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
+- **Assignee filter:** `assignee` is a **string**. Use `"me"` for the authenticated caller, `"unassigned"` for todos with no assignee, or a positive user ID encoded as a string such as `"42"`. Sentinels are case-sensitive after surrounding whitespace is trimmed. Unknown/non-member positive IDs return an empty board; malformed values return `VALIDATION_ERROR` with `field: "assignee"`. A JSON number such as `42` is invalid.
 - **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.columns` (each: `key`, `name`, `isDone`, `items` as todo-shaped objects).
 - **Meta:** `nextCursorByColumn`, `hasMoreByColumn`, `totalCountByColumn` (per column key). See **Board pagination** below.
 - **Note:** Not available in anonymous mode or before bootstrap; requires sign-in.
@@ -475,6 +496,36 @@ Manage a project's workflow columns (board lanes). These call the same store met
 
 Like other MCP mutations, workflow changes call the store directly and do not emit `board.refresh_needed`, so open web clients stay stale until another refresh.
 
+### Dashboard
+
+Cross-project "my work" tools for the signed-in user. Not available in anonymous mode or before bootstrap; requires sign-in.
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `dashboard_getSummary` | optional `timezone` (IANA name; defaults to UTC for calendar-week boundaries) | `data.summary` - assigned counts/points, per-project sections with `activeSprint` (nullable) and `sprintSections`, completion/WIP/throughput analytics |
+| `dashboard_listTodos` | optional `limit` (default 20, max 100), `cursor`, `sort` (`activity` default, or `board`) | `data.items` (todos assigned to the caller across all projects) |
+
+**Meta (`dashboard_listTodos`):** `nextCursor` (opaque, `null` when there is no next page), `hasMore`. Cursor shape depends on `sort` (see the REST dashboard-todos section below for the underlying encoding); a cursor from one `sort` is not valid for the other.
+
+### Metrics
+
+Project-level (or sprint-scoped) analytics. Not available in anonymous mode or before bootstrap; requires sign-in.
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `metrics_getBurndown` | `projectSlug`, optional `sprintId` (scopes to that sprint instead of the whole project) | `data.points` - real burndown series (`date`, `remainingWork`, `initialScope`, optional points-mode fields) |
+| `metrics_getBacklogSize` | `projectSlug` | `data.points` - backlog-size series (`date`, `incompleteCount`, `totalScope`, `newTodosCount`, optional points-mode fields) |
+
+### Admin
+
+System-level user management, gated by **system role** (owner/admin), not project role - separate from the `members_*` tools above. Not available in anonymous mode or before bootstrap; requires sign-in.
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `admin_listUsers` | `{}` | `data.items` - all users (`userId`, `email`, `name`, `systemRole`, `isBootstrap`, `createdAt`); requires **owner or admin** |
+| `admin_updateUserRole` | `userId`, `role` (`admin` \| `user` only) | `data.user` (updated); requires **owner**. Promotion to `owner` is not exposed through this tool, matching the REST admin API. Demoting the last owner → `VALIDATION_ERROR` |
+| `admin_deleteUser` | `userId` | `data` with `status: "deleted"`, `userId`; requires **owner**. Self-deletion and deleting the last owner → `VALIDATION_ERROR` |
+
 ---
 
 ## Board pagination (`board_get`)
@@ -488,6 +539,20 @@ This is **not** a single cursor for the whole board.
 - **`meta.totalCountByColumn`:** Total matching todos in that column (independent of the current page).
 
 Invalid column keys in `cursorByColumn` or malformed cursors → `VALIDATION_ERROR` with field hints.
+
+---
+
+## REST: Board filters
+
+The browser REST API accepts the same assignee grammar on:
+
+- `GET /api/board/{slug}`
+- `GET /api/board/{slug}/lanes/{status}`
+- `GET /api/projects/{id}/board` (legacy full-board route)
+
+Use the `assignee` query parameter with `me`, `unassigned`, or a positive user ID string. Surrounding whitespace is trimmed; sentinels are otherwise case-sensitive. Invalid values return HTTP **400** with code `VALIDATION_ERROR`, `details.reason: "invalid_assignee"`, and `details.field: "assignee"`—they never disable the filter or return an unfiltered board. `me` also returns that validation error when the REST request has no authenticated actor. A valid unknown/non-member user ID returns an empty board without revealing membership.
+
+Assignee filtering is API/MCP-only in this release. The SPA router and board filter controls do not yet preserve or apply `?assignee=...` from browser URLs.
 
 ---
 

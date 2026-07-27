@@ -333,6 +333,22 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 
 - `board_get`
 
+`board_get` accepts an optional string `assignee` filter: `"me"` for the
+authenticated caller, `"unassigned"` for todos without an assignee, or a
+positive user ID encoded as a string. For example:
+
+```json
+{
+  "projectSlug": "example",
+  "assignee": "me"
+}
+```
+
+Use `"42"`, not JSON number `42`, for a concrete user ID. Invalid values,
+including non-string JSON values, return `VALIDATION_ERROR` with
+`details.field: "assignee"` instead of silently returning an unfiltered board.
+A valid unknown or non-member user ID returns an empty board.
+
 **Workflow**
 
 - `workflow_list`
@@ -353,6 +369,9 @@ One tool name per line (same order as `implementedTools()` in code):
 ```
 system_getCapabilities
 projects_list
+projects_create
+projects_update
+projects_delete
 todos_create
 todos_get
 todos_search
@@ -386,6 +405,13 @@ workflow_list
 workflow_create
 workflow_update
 workflow_delete
+dashboard_getSummary
+dashboard_listTodos
+metrics_getBurndown
+metrics_getBacklogSize
+admin_listUsers
+admin_updateUserRole
+admin_deleteUser
 ```
 
 ## Tool Schemas (Representative)

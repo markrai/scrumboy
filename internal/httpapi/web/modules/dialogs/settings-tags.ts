@@ -2,6 +2,8 @@ import { apiFetch } from '../api.js';
 import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import {
+  getAssigneeFromUrl,
+  getSortFromUrl,
   getSearch,
   getSettingsProjectId,
   getSlug,
@@ -65,7 +67,7 @@ async function applyTagColorSuccess(tagName: string, color: string | null): Prom
     invalidateTagsCache();
 
     if (getSlug()) {
-      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl());
+      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
     }
 
     showToast(t('settings.tagColors.toast.colorUpdated'));
@@ -189,7 +191,7 @@ async function deleteTag(
     await rerender();
 
     if (getSlug()) {
-      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl());
+      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
     }
 
     showToast(t('settings.tagColors.toast.deleted', { name: tagName }));

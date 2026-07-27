@@ -1,6 +1,6 @@
 import { apiFetch } from '../api.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
-import { getSlug, getTag, getSearch, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
+import { getAssigneeFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
 import { showToast } from '../utils.js';
 import { invalidateBoard, setBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { recordBoardInteraction, recordLocalMutation } from '../realtime/guard.js';
@@ -16,6 +16,11 @@ let moveInFlight = false;
 let activeSortables: any[] = [];
 let boardColumns: Array<{ key: string; title: string; color?: string }> = columnsSpec();
 let mobileTabIntroGlowTimer: ReturnType<typeof setTimeout> | null = null;
+
+function isChronologicalSortActive(): boolean {
+  const sort = getSortFromUrl();
+  return sort === "newest" || sort === "oldest";
+}
 
 /**
  * Fallback column list when the board API omits `columnOrder` (should be rare).
@@ -92,10 +97,12 @@ function parseLocalId(el: Element | null): number | null {
 
 function hasActiveBoardSubsetFilter(): boolean {
   const sprintId = getSprintIdFromUrl();
+  const assignee = getAssigneeFromUrl();
   return !!(
     (getTag() && getTag().trim() !== "")
     || (getSearch() && getSearch().trim() !== "")
     || (sprintId && sprintId.trim() !== "")
+    || (assignee && assignee.trim() !== "")
   );
 }
 
@@ -106,8 +113,10 @@ function getLaneItems(status: string): Element[] {
 }
 
 function preserveVisibleLaneCount(status: string, includePendingItem: boolean): void {
+  const slug = getSlug();
+  if (!slug) return;
   const visibleCount = getLaneItems(status).length + (includePendingItem ? 1 : 0);
-  setBoardLimitPerLaneFloor(visibleCount);
+  setBoardLimitPerLaneFloor(visibleCount, slug);
 }
 
 async function getHiddenLaneBoundaryLocalId(status: string): Promise<number | null> {
@@ -122,9 +131,13 @@ async function getHiddenLaneBoundaryLocalId(status: string): Promise<number | nu
   const tag = getTag();
   const search = getSearch();
   const sprintId = getSprintIdFromUrl();
+  const assignee = getAssigneeFromUrl();
+  const sort = getSortFromUrl();
   if (tag) params.set("tag", tag);
   if (search) params.set("search", search);
   if (sprintId) params.set("sprintId", sprintId);
+  if (assignee) params.set("assignee", assignee);
+  if (sort) params.set("sort", sort);
 
   const res = await apiFetch<LanePageResponse>(`/api/board/${slug}/lanes/${status}?${params.toString()}`);
   return res?.items?.[0]?.localId ?? null;
@@ -147,6 +160,10 @@ export function initDnD(): void {
   }
   activeSortables = [];
 
+  // Chronological DOM neighbors are not valid manual-rank anchors. Keep DnD
+  // completely disabled until the board returns to its default rank order.
+  if (isChronologicalSortActive()) return;
+
   const group = "board";
 
   const handleEnd = async (evt: any) => {
@@ -155,6 +172,11 @@ export function initDnD(): void {
     setTimeout(() => { dragJustEnded = false; }, 250);
     clearMobileTabIntroGlow();
     setMobileDragging(false);
+
+    // A sort can change while a stale Sortable callback is winding down.
+    // Never let that callback derive manual-rank anchors from chronological DOM.
+    if (isChronologicalSortActive()) return;
+
     recordBoardInteraction();
 
     if (moveInFlight) return;
@@ -216,7 +238,7 @@ export function initDnD(): void {
       // Rely on SSE todo_moved event (debounced ~400ms) to refresh board; avoid double fetch.
     } catch (err: any) {
       showToast(apiErrorMessage(err, { fallbackKey: "board.todo.moveFailed" }));
-      invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl())
+      invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl())
         .catch((e: any) => showToast(apiErrorMessage(e, { fallbackKey: "board.refreshFailed" })));
     } finally {
       moveInFlight = false;

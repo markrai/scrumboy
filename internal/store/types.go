@@ -11,6 +11,7 @@ var (
 	ErrConflict                   = errs.ErrConflict
 	ErrValidation                 = errs.ErrValidation
 	ErrUnauthorized               = errs.ErrUnauthorized
+	ErrForbidden                  = errs.ErrForbidden
 	ErrTooManyAttempts            = errs.ErrTooManyAttempts
 	Err2FAEncryptionNotConfigured = errs.Err2FAEncryptionNotConfigured
 )
@@ -111,6 +112,37 @@ type SprintFilter struct {
 	SprintID     int64  // only when Mode == "sprint"
 	SprintNumber int64  // only when Mode == "sprint_number"
 }
+
+type assigneeFilterMode uint8
+
+const (
+	assigneeFilterNone assigneeFilterMode = iota
+	assigneeFilterUnassigned
+	assigneeFilterUser
+)
+
+// AssigneeFilter represents a validated board assignee filter.
+//
+// Its zero value applies no assignee filter. The internal fields deliberately
+// remain opaque so callers must use ParseAssigneeFilter and cannot construct an
+// invalid mode or non-positive user filter.
+type AssigneeFilter struct {
+	mode   assigneeFilterMode
+	userID int64
+}
+
+// SortOrder represents the board todo ordering within each lane.
+//
+// The zero value (SortOrderDefault) preserves today's manual drag-rank order
+// ("t.rank ASC, t.id ASC"). SortOrderNewest/SortOrderOldest order by
+// created_at instead; ties break on id to keep pagination stable.
+type SortOrder string
+
+const (
+	SortOrderDefault SortOrder = ""
+	SortOrderNewest  SortOrder = "newest"
+	SortOrderOldest  SortOrder = "oldest"
+)
 
 // ProjectContext bundles project, role, and auth state computed once per request.
 // Pass to GetBoard, GetBoardPaged, listTagCounts to avoid redundant project/auth queries.

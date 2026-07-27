@@ -9,6 +9,9 @@ type toolRegistry map[string]toolHandler
 func (a *Adapter) registerTools() {
 	a.tools["system_getCapabilities"] = a.handleSystemGetCapabilities
 	a.tools["projects_list"] = a.handleProjectsList
+	a.tools["projects_create"] = a.handleProjectsCreate
+	a.tools["projects_update"] = a.handleProjectsUpdate
+	a.tools["projects_delete"] = a.handleProjectsDelete
 	a.tools["todos_create"] = a.handleTodosCreate
 	a.tools["todos_get"] = a.handleTodosGet
 	a.tools["todos_search"] = a.handleTodosSearch
@@ -42,6 +45,13 @@ func (a *Adapter) registerTools() {
 	a.tools["workflow_create"] = a.handleWorkflowCreate
 	a.tools["workflow_update"] = a.handleWorkflowUpdate
 	a.tools["workflow_delete"] = a.handleWorkflowDelete
+	a.tools["dashboard_getSummary"] = a.handleDashboardGetSummary
+	a.tools["dashboard_listTodos"] = a.handleDashboardListTodos
+	a.tools["metrics_getBurndown"] = a.handleMetricsGetBurndown
+	a.tools["metrics_getBacklogSize"] = a.handleMetricsGetBacklogSize
+	a.tools["admin_listUsers"] = a.handleAdminListUsers
+	a.tools["admin_updateUserRole"] = a.handleAdminUpdateUserRole
+	a.tools["admin_deleteUser"] = a.handleAdminDeleteUser
 
 	a.registerLegacyToolAliases()
 }

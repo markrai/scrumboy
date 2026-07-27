@@ -169,6 +169,204 @@ func TestProjectLabels_LegacyConflictingViewerColorsResolveDeterministically(t *
 	}
 }
 
+// TestProjectLabels_ViewerColorSurvivesBackingRowRotation is the regression test for a
+// silently-dropped color preference (issue #173, review comment 2): a viewer's color is
+// written onto whichever backing row(s) exist for a canonical name at write time. If
+// that row later falls out of the project's "used by a todo" read-inclusion set (e.g.
+// the tag is removed from every todo carrying it) while a different member's row for the
+// same canonical name becomes the sole backing row, the viewer's preference must still
+// resolve for that name - not silently revert to no color just because the specific row
+// it was recorded against is no longer part of the listing.
+func TestProjectLabels_ViewerColorSurvivesBackingRowRotation(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	u1, _ := st.BootstrapUser(ctx, "u1@example.com", "password", "U1")
+	u2, _ := st.CreateUser(ctx, "u2@example.com", "password", "U2")
+	ctx1 := WithUserID(ctx, u1.ID)
+	p, _ := st.CreateProject(ctx1, "P")
+	plAddMember(t, st, p.ID, u2.ID, RoleMaintainer)
+
+	// u1 tags a todo with "bug", creating u1's personal backing row, and sets a color.
+	plNewTodo(t, st, ctx1, p.ID, "a", "bug")
+	bug1 := plTagRowID(t, st, "bug", u1.ID)
+	color := "#654321"
+	if err := st.SetViewerTagColorByName(ctx, p.ID, u1.ID, "bug", &color); err != nil {
+		t.Fatalf("SetViewerTagColorByName: %v", err)
+	}
+	tags, _ := st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tags, "bug"); bug == nil || bug.Color == nil || *bug.Color != color {
+		t.Fatalf("expected initial color %s, got %#v", color, bug)
+	}
+
+	// u1's row stops being used in the project (untagged from its only todo), so it
+	// drops out of the grouped listing's read-inclusion set entirely.
+	if _, err := st.db.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, bug1); err != nil {
+		t.Fatalf("untag bug1: %v", err)
+	}
+	if tags, _ := st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true); plFindTag(tags, "bug") != nil {
+		t.Fatalf("expected 'bug' to disappear once its only backing row is unused, got %#v", tags)
+	}
+
+	// A different member creates a brand-new backing row for the same canonical name.
+	ctx2 := WithUserID(ctx, u2.ID)
+	plNewTodo(t, st, ctx2, p.ID, "b", "bug")
+	bug2 := plTagRowID(t, st, "bug", u2.ID)
+
+	// u1's color preference must still resolve for "bug", even though it lives on a tag_id
+	// (bug1) that is no longer part of the listing's backing-row set.
+	tags, _ = st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true)
+	bug := plFindTag(tags, "bug")
+	if bug == nil {
+		t.Fatalf("expected 'bug' to reappear via u2's new row, got %#v", tags)
+	}
+	if bug.Color == nil || *bug.Color != color {
+		t.Errorf("expected u1's color preference %s to survive backing-row rotation, got %#v", color, bug.Color)
+	}
+
+	// A preference on the current row outranks the viewer-owned historical row.
+	currentColor := "#123456"
+	if _, err := st.db.ExecContext(ctx, `
+INSERT INTO user_tag_colors(user_id, tag_id, color) VALUES(?,?,?)`, u1.ID, bug2, currentColor); err != nil {
+		t.Fatalf("insert current-row color: %v", err)
+	}
+	tags, _ = st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tags, "bug"); bug == nil || bug.Color == nil || *bug.Color != currentColor {
+		t.Fatalf("expected current-row color %s to outrank historical color, got %#v", currentColor, bug)
+	}
+
+	// A later name-based write converges both the current and historical rows.
+	updatedColor := "#abcdef"
+	if err := st.SetViewerTagColorByName(ctx, p.ID, u1.ID, "bug", &updatedColor); err != nil {
+		t.Fatalf("update after backing-row rotation: %v", err)
+	}
+	tags, _ = st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tags, "bug"); bug == nil || bug.Color == nil || *bug.Color != updatedColor {
+		t.Fatalf("expected updated color %s after rotation, got %#v", updatedColor, bug)
+	}
+	var convergedRows int
+	if err := st.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM user_tag_colors
+WHERE user_id = ? AND tag_id IN (?, ?) AND color = ?`,
+		u1.ID, bug1, bug2, updatedColor).Scan(&convergedRows); err != nil {
+		t.Fatalf("count converged color rows: %v", err)
+	}
+	if convergedRows != 2 {
+		t.Fatalf("expected both current and historical rows to converge, got %d", convergedRows)
+	}
+
+	// Clearing by name also reaches both rows, so the historical preference cannot
+	// immediately resurface.
+	if err := st.SetViewerTagColorByName(ctx, p.ID, u1.ID, "bug", nil); err != nil {
+		t.Fatalf("clear after backing-row rotation: %v", err)
+	}
+	tags, _ = st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tags, "bug"); bug == nil || bug.Color != nil {
+		t.Fatalf("expected no viewer color after clear, got %#v", bug)
+	}
+	var remainingRows int
+	if err := st.db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM user_tag_colors
+WHERE user_id = ? AND tag_id IN (?, ?)`, u1.ID, bug1, bug2).Scan(&remainingRows); err != nil {
+		t.Fatalf("count remaining color rows: %v", err)
+	}
+	if remainingRows != 0 {
+		t.Fatalf("expected clear to remove current and historical preferences, got %d", remainingRows)
+	}
+}
+
+func TestProjectLabels_ViewerColorIgnoresUnrelatedProjectRows(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	u1, _ := st.BootstrapUser(ctx, "u1@example.com", "password", "U1")
+	u2, _ := st.CreateUser(ctx, "u2@example.com", "password", "U2")
+	ctx1 := WithUserID(ctx, u1.ID)
+	ctx2 := WithUserID(ctx, u2.ID)
+	projectA, _ := st.CreateProject(ctx1, "A")
+	projectB, _ := st.CreateProject(ctx1, "B")
+	plAddMember(t, st, projectB.ID, u2.ID, RoleMaintainer)
+
+	// u1's viewer-owned "bug" row is associated only with Project A.
+	plNewTodo(t, st, ctx1, projectA.ID, "a", "bug")
+	bugA := plTagRowID(t, st, "bug", u1.ID)
+	colorA := "#aa0000"
+	if err := st.SetViewerTagColorByName(ctx, projectA.ID, u1.ID, "bug", &colorA); err != nil {
+		t.Fatalf("set Project A color: %v", err)
+	}
+
+	// Project B is backed only by u2's separate personal row.
+	plNewTodo(t, st, ctx2, projectB.ID, "b", "bug")
+	bugB := plTagRowID(t, st, "bug", u2.ID)
+	tagsB, _ := st.listTagCounts(ctx1, projectB.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tagsB, "bug"); bug == nil || bug.Color != nil {
+		t.Fatalf("unrelated Project A preference must not color Project B, got %#v", bug)
+	}
+
+	colorB := "#0000bb"
+	if err := st.SetViewerTagColorByName(ctx, projectB.ID, u1.ID, "bug", &colorB); err != nil {
+		t.Fatalf("set Project B color: %v", err)
+	}
+	tagsB, _ = st.listTagCounts(ctx1, projectB.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tagsB, "bug"); bug == nil || bug.Color == nil || *bug.Color != colorB {
+		t.Fatalf("expected Project B color %s, got %#v", colorB, bug)
+	}
+	tagsA, _ := st.listTagCounts(ctx1, projectA.ID, &u1.ID, nil, true)
+	if bug := plFindTag(tagsA, "bug"); bug == nil || bug.Color == nil || *bug.Color != colorA {
+		t.Fatalf("Project B write must not change Project A color %s, got %#v", colorA, bug)
+	}
+
+	var storedA, storedB string
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT color FROM user_tag_colors WHERE user_id = ? AND tag_id = ?`,
+		u1.ID, bugA).Scan(&storedA); err != nil {
+		t.Fatalf("read Project A stored color: %v", err)
+	}
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT color FROM user_tag_colors WHERE user_id = ? AND tag_id = ?`,
+		u1.ID, bugB).Scan(&storedB); err != nil {
+		t.Fatalf("read Project B stored color: %v", err)
+	}
+	if storedA != colorA || storedB != colorB {
+		t.Fatalf("expected isolated stored colors A=%s B=%s, got A=%s B=%s", colorA, colorB, storedA, storedB)
+	}
+}
+
+func TestProjectLabels_HistoricalPersonalColorDoesNotOverridePureBoardGroup(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	u1, _ := st.BootstrapUser(ctx, "u1@example.com", "password", "U1")
+	ctx1 := WithUserID(ctx, u1.ID)
+	p, _ := st.CreateProject(ctx1, "P")
+
+	// Leave a personal preference in the project's history, but remove its row from
+	// the current personal backing set.
+	plNewTodo(t, st, ctx1, p.ID, "a", "bug")
+	personalBug := plTagRowID(t, st, "bug", u1.ID)
+	personalColor := "#aa0000"
+	if err := st.SetViewerTagColorByName(ctx, p.ID, u1.ID, "bug", &personalColor); err != nil {
+		t.Fatalf("set personal color: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, personalBug); err != nil {
+		t.Fatalf("untag personal bug: %v", err)
+	}
+
+	// Once the visible group is pure board-scoped, its shared color is authoritative.
+	boardColor := "#00bb00"
+	boardBug := plInsertBoardScopedTag(t, st, p.ID, "bug", &boardColor)
+	tags, _ := st.listTagCounts(ctx1, p.ID, &u1.ID, nil, true)
+	bug := plFindTag(tags, "bug")
+	if bug == nil || bug.TagID != boardBug || bug.Color == nil || *bug.Color != boardColor {
+		t.Fatalf("expected pure board-scoped color %s, got %#v", boardColor, bug)
+	}
+}
+
 func TestProjectLabels_NonOwnerCanSetColorByNameWithoutAffectingOthers(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()
@@ -669,7 +867,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 	// Filtering by the label the chip renders, and by the legacy spelling a stale
 	// client may still send, must both resolve to the same two todos.
 	for _, filter := range []string{"make-space", "make space"} {
-		_, _, _, cols, err := st.GetBoard(ctx1, &pc, filter, "", SprintFilter{Mode: "none"})
+		_, _, _, cols, err := st.GetBoard(ctx1, &pc, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard(%q): %v", filter, err)
 		}
@@ -677,7 +875,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 			t.Errorf("GetBoard(%q) returned %v, want %v", filter, got, want)
 		}
 
-		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, filter, "", SprintFilter{Mode: "none"}, 10)
+		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
 		if err != nil {
 			t.Fatalf("GetBoardPaged(%q): %v", filter, err)
 		}
@@ -690,7 +888,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 
 		// Lane pagination path, used directly by the lane endpoint and by the
 		// per-lane fallback above the board soft cap.
-		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, filter, "", SprintFilter{Mode: "none"})
+		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("ListTodosForBoardLane(%q): %v", filter, err)
 		}
@@ -698,7 +896,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 			t.Errorf("ListTodosForBoardLane(%q) returned %v, want %v", filter, got, want)
 		}
 
-		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, filter, "", SprintFilter{Mode: "none"})
+		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"})
 		if err != nil {
 			t.Fatalf("CountTodosForBoardLane(%q): %v", filter, err)
 		}
@@ -708,7 +906,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 	}
 
 	// Paging through the filtered lane must still see both spellings.
-	page1, cursor, hasMore, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, math.MinInt64, 0, "make-space", "", SprintFilter{Mode: "none"})
+	page1, cursor, hasMore, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, math.MinInt64, 0, "make-space", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane page 1: %v", err)
 	}
@@ -716,7 +914,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 		t.Fatalf("expected a first page of 1 with more to come, got %d items hasMore=%v", len(page1), hasMore)
 	}
 	afterRank, afterID := ParseLaneCursor(cursor)
-	page2, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "make-space", "", SprintFilter{Mode: "none"})
+	page2, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "make-space", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane page 2: %v", err)
 	}
@@ -726,14 +924,14 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 
 	// A filter matching no backing row must return an empty board, never fall back
 	// to the unfiltered query.
-	_, _, _, emptyCols, err := st.GetBoard(ctx1, &pc, "no-such-tag", "", SprintFilter{Mode: "none"})
+	_, _, _, emptyCols, err := st.GetBoard(ctx1, &pc, "no-such-tag", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard(no-such-tag): %v", err)
 	}
 	if got := plBoardTitles(emptyCols); len(got) != 0 {
 		t.Errorf("unmatched filter must return no todos, got %v", got)
 	}
-	emptyCount, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, "no-such-tag", "", SprintFilter{Mode: "none"})
+	emptyCount, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, "no-such-tag", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
 	if err != nil {
 		t.Fatalf("CountTodosForBoardLane(no-such-tag): %v", err)
 	}
@@ -781,7 +979,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 		{filter: "make space", want: []string{"legacy"}},
 	}
 	for _, tc := range cases {
-		_, _, _, cols, err := st.GetBoard(ctx1, &pc, tc.filter, "", SprintFilter{Mode: "none"})
+		_, _, _, cols, err := st.GetBoard(ctx1, &pc, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard(%q): %v", tc.filter, err)
 		}
@@ -789,7 +987,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 			t.Errorf("GetBoard(%q) returned %v, want %v", tc.filter, got, tc.want)
 		}
 
-		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, tc.filter, "", SprintFilter{Mode: "none"}, 10)
+		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
 		if err != nil {
 			t.Fatalf("GetBoardPaged(%q): %v", tc.filter, err)
 		}
@@ -800,7 +998,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 			t.Errorf("GetBoardPaged(%q) lane total = %d, want 1", tc.filter, total)
 		}
 
-		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, tc.filter, "", SprintFilter{Mode: "none"})
+		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("ListTodosForBoardLane(%q): %v", tc.filter, err)
 		}
@@ -808,7 +1006,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 			t.Errorf("ListTodosForBoardLane(%q) returned %v, want %v", tc.filter, got, tc.want)
 		}
 
-		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, tc.filter, "", SprintFilter{Mode: "none"})
+		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"})
 		if err != nil {
 			t.Fatalf("CountTodosForBoardLane(%q): %v", tc.filter, err)
 		}
@@ -858,7 +1056,7 @@ func TestProjectLabels_UncanonicalizableRowStaysAddressable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	_, _, _, cols, err := st.GetBoard(ctx1, &pc, legacyName, "", SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx1, &pc, legacyName, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard(%q): %v", legacyName, err)
 	}

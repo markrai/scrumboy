@@ -28,6 +28,8 @@ type ParsedRoute = {
   tag?: string;
   search?: string;
   sprintId?: string | null;
+  assignee?: string | null;
+  sort?: string | null;
   openTodoId?: string;
   openTodoSegment?: string;
   token?: string;
@@ -35,7 +37,7 @@ type ParsedRoute = {
 
 let isRouting = false;
 let rerouteRequested = false;
-let lastHandledBoardRoute: { slug: string; tag: string; search: string; sprintId: string | null; openTodoSegment: string | null } | null = null;
+let lastHandledBoardRoute: { slug: string; tag: string; search: string; sprintId: string | null; assignee: string | null; sort: string | null; openTodoSegment: string | null } | null = null;
 
 function navigate(path: string, options?: { state?: object }): void {
   console.log("navigate called with path:", path);
@@ -52,16 +54,20 @@ function parseRoute(): ParsedRoute {
   const search = url.searchParams.get("search") || "";
   const sprintIdRaw = url.searchParams.get("sprintId");
   const sprintId = sprintIdRaw === "" ? null : (sprintIdRaw || null);
+  const assigneeRaw = url.searchParams.get("assignee");
+  const assignee = assigneeRaw === "" ? null : (assigneeRaw || null);
+  const sortRaw = url.searchParams.get("sort");
+  const sort = sortRaw === "" ? null : (sortRaw || null);
   const openTodoId = url.searchParams.get("openTodoId") || undefined;
 
   if (path === "/") return { name: "projects" };
   if (path === "/dashboard") return { name: "dashboard" };
   if (path === "/auth/reset-password") return { name: "reset-password", token: url.searchParams.get("token") || undefined };
   const tm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/t\/(\d+)\/?$/);
-  if (tm && !tm[1].includes("--")) return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, openTodoSegment: tm[2] };
+  if (tm && !tm[1].includes("--")) return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, assignee, sort, openTodoSegment: tm[2] };
   // Canonical: /{slug} only (lowercase, digits, hyphens; max 32; no leading/trailing hyphen; no consecutive hyphens).
   const sm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/?$/);
-  if (sm && !sm[1].includes("--")) return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, openTodoId };
+  if (sm && !sm[1].includes("--")) return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, assignee, sort, openTodoId };
   return { name: "notfound" };
 }
 
@@ -74,11 +80,15 @@ function shouldDoLightweightBoardUpdate(r: ParsedRoute): boolean {
   if (!lastHandledBoardRoute) return false;
   const openSeg = r.openTodoSegment || null;
   const rSprintId = r.sprintId ?? null;
+  const rAssignee = r.assignee ?? null;
+  const rSort = r.sort ?? null;
   return (
     lastHandledBoardRoute.slug === r.slug &&
     normalize(lastHandledBoardRoute.tag) === normalize(r.tag) &&
     normalize(lastHandledBoardRoute.search) === normalize(r.search) &&
     (lastHandledBoardRoute.sprintId ?? null) === rSprintId &&
+    (lastHandledBoardRoute.assignee ?? null) === rAssignee &&
+    (lastHandledBoardRoute.sort ?? null) === rSort &&
     lastHandledBoardRoute.openTodoSegment !== openSeg
   );
 }
@@ -282,14 +292,14 @@ async function routeOnce(): Promise<void> {
   }
   if (r.name === "boardBySlug") {
     // Default: no sprint filter. URL stays e.g. /scrumboy without ?sprintId=scheduled.
-    console.log("Router: rendering board, slug:", r.slug, "tag:", r.tag, "search:", r.search, "sprintId:", r.sprintId);
+    console.log("Router: rendering board, slug:", r.slug, "tag:", r.tag, "search:", r.search, "sprintId:", r.sprintId, "assignee:", r.assignee);
     const prefetchedBoard = (history.state as { boardData?: Board } | null)?.boardData;
     const isLightweight = shouldDoLightweightBoardUpdate(r);
     try {
       if (isLightweight) {
-        await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
+        await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
       } else {
-        await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.openTodoId || null, r.openTodoSegment || null, {
+        await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.openTodoId || null, r.openTodoSegment || null, {
           skipLoad: false,
           prefetchedBoard: prefetchedBoard?.project && prefetchedBoard?.columns ? (prefetchedBoard as Board) : undefined,
         });
@@ -299,6 +309,8 @@ async function routeOnce(): Promise<void> {
         tag: normalize(r.tag),
         search: normalize(r.search),
         sprintId: r.sprintId ?? null,
+        assignee: r.assignee ?? null,
+        sort: r.sort ?? null,
         openTodoSegment: r.openTodoSegment || null,
       };
       console.log("Router: board rendered successfully");

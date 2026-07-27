@@ -76,6 +76,8 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 			// Return 401 for entry points (so SPA can show login)
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 		}
+	case errors.Is(err, store.ErrForbidden):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
 	case errors.Is(err, store.ErrValidation):
 		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), nil)
 	case errors.Is(err, store.ErrConflict):

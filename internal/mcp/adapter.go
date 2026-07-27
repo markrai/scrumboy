@@ -30,7 +30,7 @@ type storeAPI interface {
 	UpdateTodoByLocalID(ctx context.Context, projectID, localID int64, in store.UpdateTodoInput, mode store.Mode) (store.Todo, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	MoveTodoByLocalID(ctx context.Context, projectID, localID int64, toColumnKey string, afterLocalID, beforeLocalID *int64, mode store.Mode) (store.Todo, error)
-	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, sprintFilter store.SprintFilter) ([]store.Todo, string, bool, error)
+	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterA, afterB int64, tagFilter, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) ([]store.Todo, string, bool, error)
 	ListSprintsWithTodoCount(ctx context.Context, projectID int64) ([]store.SprintWithTodoCount, error)
 	CountUnscheduledTodos(ctx context.Context, projectID int64) (int64, error)
 	GetSprintByID(ctx context.Context, sprintID int64) (store.Sprint, error)
@@ -58,8 +58,24 @@ type storeAPI interface {
 	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
 	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
 	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
-	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, sprintFilter store.SprintFilter) (int, error)
+	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
+	CreateProject(ctx context.Context, name string) (store.Project, error)
+	GetProject(ctx context.Context, projectID int64) (store.Project, error)
+	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
+	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
+	UpdateProjectPatch(ctx context.Context, projectID int64, userID int64, patch store.UpdateProjectPatch) error
+	CheckCanManageProject(ctx context.Context, projectID int64, userID int64) error
+	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
+	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
+	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]store.DashboardTodo, *string, error)
+	GetRealBurndown(ctx context.Context, projectID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
+	GetRealBurndownForSprint(ctx context.Context, projectID, sprintID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
+	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
+	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
+	GetUser(ctx context.Context, userID int64) (store.User, error)
+	UpdateUserRole(ctx context.Context, requesterID, targetUserID int64, newRole store.SystemRole) error
+	DeleteUser(ctx context.Context, requesterID, targetUserID int64) error
 }
 
 type Options struct {
@@ -228,6 +244,9 @@ func (a *Adapter) implementedTools() []string {
 	return []string{
 		"system_getCapabilities",
 		"projects_list",
+		"projects_create",
+		"projects_update",
+		"projects_delete",
 		"todos_create",
 		"todos_get",
 		"todos_search",
@@ -261,6 +280,13 @@ func (a *Adapter) implementedTools() []string {
 		"workflow_create",
 		"workflow_update",
 		"workflow_delete",
+		"dashboard_getSummary",
+		"dashboard_listTodos",
+		"metrics_getBurndown",
+		"metrics_getBacklogSize",
+		"admin_listUsers",
+		"admin_updateUserRole",
+		"admin_deleteUser",
 	}
 }
 
