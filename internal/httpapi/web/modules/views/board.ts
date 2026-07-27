@@ -250,9 +250,15 @@ function resolveMobileTabKeyFromStorage(saved: string | null, cols: Array<{ key:
   return null;
 }
 
-function getRequestedBoardLimitPerLane(): number {
+export function getRequestedBoardLimitPerLane(): number {
   // Preserve the current on-screen lane size (e.g. cards revealed via "Load more")
-  // across any full-board refresh, filtered or not.
+  // across a same-board refresh, filtered or not. getSlug() is updated by the router
+  // before the new board's data is requested, while getBoard() still holds the
+  // previously loaded board until the response arrives — comparing them tells us
+  // whether this request is a refresh of the currently displayed board or a
+  // navigation to a different one (which should fall back to the default).
+  const currentBoard = getBoard();
+  if (!currentBoard || currentBoard.project?.slug !== getSlug()) return 20;
   const counts = Array.from(document.querySelectorAll<HTMLElement>(".col__list"))
     .map((el) => el.querySelectorAll("[data-todo-local-id]").length);
   return counts.length > 0 ? Math.max(20, ...counts) : 20;
