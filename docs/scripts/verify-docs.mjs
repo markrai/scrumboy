@@ -71,7 +71,7 @@ function extractMcpToolsFromDocs(md) {
   return fence[1]
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("#") && /^[a-z]+\.[a-zA-Z]+$/.test(l));
+    .filter((l) => l && !l.startsWith("#") && /^[a-zA-Z0-9_-]{1,64}$/.test(l));
 }
 
 function extractMcpToolsFromAdapter(goSrc) {

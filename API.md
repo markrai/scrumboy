@@ -394,9 +394,10 @@ Conventions:
 
 ### `board_get`
 
-- **Purpose:** Board snapshot with optional tag/search/sprint filters and **per-column** pagination.
-- **Input:** `projectSlug` (required); optional `tag`, `search`, `sprintId` (sprint row id; must belong to the project when set); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` applies no sprint-based filter on the board query (internal mode `none`).
+- **Purpose:** Board snapshot with optional tag/search/sprint/assignee filters and **per-column** pagination.
+- **Input:** `projectSlug` (required); optional `tag`, `search`, `assignee`, `sprintId` (sprint row id; must belong to the project when set); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` applies no sprint-based filter on the board query (internal mode `none`).
 - **Tag filter:** on durable projects, `tag` is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
+- **Assignee filter:** `assignee` is a **string**. Use `"me"` for the authenticated caller, `"unassigned"` for todos with no assignee, or a positive user ID encoded as a string such as `"42"`. Sentinels are case-sensitive after surrounding whitespace is trimmed. Unknown/non-member positive IDs return an empty board; malformed values return `VALIDATION_ERROR` with `field: "assignee"`. A JSON number such as `42` is invalid.
 - **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.columns` (each: `key`, `name`, `isDone`, `items` as todo-shaped objects).
 - **Meta:** `nextCursorByColumn`, `hasMoreByColumn`, `totalCountByColumn` (per column key). See **Board pagination** below.
 - **Note:** Not available in anonymous mode or before bootstrap; requires sign-in.
@@ -538,6 +539,20 @@ This is **not** a single cursor for the whole board.
 - **`meta.totalCountByColumn`:** Total matching todos in that column (independent of the current page).
 
 Invalid column keys in `cursorByColumn` or malformed cursors → `VALIDATION_ERROR` with field hints.
+
+---
+
+## REST: Board filters
+
+The browser REST API accepts the same assignee grammar on:
+
+- `GET /api/board/{slug}`
+- `GET /api/board/{slug}/lanes/{status}`
+- `GET /api/projects/{id}/board` (legacy full-board route)
+
+Use the `assignee` query parameter with `me`, `unassigned`, or a positive user ID string. Surrounding whitespace is trimmed; sentinels are otherwise case-sensitive. Invalid values return HTTP **400** with code `VALIDATION_ERROR`, `details.reason: "invalid_assignee"`, and `details.field: "assignee"`—they never disable the filter or return an unfiltered board. `me` also returns that validation error when the REST request has no authenticated actor. A valid unknown/non-member user ID returns an empty board without revealing membership.
+
+Assignee filtering is API/MCP-only in this release. The SPA router and board filter controls do not yet preserve or apply `?assignee=...` from browser URLs.
 
 ---
 

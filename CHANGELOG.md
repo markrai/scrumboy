@@ -1,6 +1,12 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.26.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.27.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+
+## [3.27.0] - 2026-07-26
+
+### Added
+
+- **Board assignee filtering for API and MCP (PR #189)** - Board reads now accept `assignee=me`, `assignee=unassigned`, or a positive user ID encoded as a string across `GET /api/board/{slug}`, lane pagination, the legacy project-board route, and MCP `board_get`. Invalid values return validation errors and can never silently widen the result to the full board; unknown/non-member positive IDs return an empty board. This release does not add an assignee filter control or bookmarkable `?assignee=` handling to the web UI.
 
 ## [3.26.3] - 2026-07-26
 

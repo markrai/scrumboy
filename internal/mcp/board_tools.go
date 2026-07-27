@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -16,9 +17,29 @@ type boardGetInput struct {
 	ProjectSlug    string            `json:"projectSlug"`
 	Tag            string            `json:"tag"`
 	Search         string            `json:"search"`
+	Assignee       string            `json:"assignee"`
 	SprintId       *int64            `json:"sprintId"`
 	Limit          int               `json:"limit"`
 	CursorByColumn map[string]string `json:"cursorByColumn"`
+}
+
+func boardGetAssigneeHasInvalidType(input any) bool {
+	b, err := json.Marshal(input)
+	if err != nil {
+		return false
+	}
+	var raw struct {
+		Assignee json.RawMessage `json:"assignee"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil || len(raw.Assignee) == 0 {
+		return false
+	}
+	var value any
+	if err := json.Unmarshal(raw.Assignee, &value); err != nil {
+		return false
+	}
+	_, ok := value.(string)
+	return !ok
 }
 
 func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -34,6 +55,10 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "board_get is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+
+	if boardGetAssigneeHasInvalidType(input) {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assignee", map[string]any{"field": "assignee"})
 	}
 
 	var in boardGetInput
@@ -57,6 +82,14 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 	// displayed name (so a "make space" chip is not rewritten to "make-space").
 	tag := strings.TrimSpace(in.Tag)
 	search := strings.TrimSpace(in.Search)
+	actorUserID, ok := store.UserIDFromContext(ctx)
+	if !ok {
+		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+	assigneeFilter, assigneeErr := store.ParseAssigneeFilter(in.Assignee, &actorUserID)
+	if assigneeErr != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assignee", map[string]any{"field": "assignee"})
+	}
 
 	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
 	if pcErr != nil {
@@ -104,11 +137,11 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 			afterID = id
 		}
 
-		todos, _, hasMore, listErr := a.store.ListTodosForBoardLane(ctx, pc.Project.ID, col.Key, limit, afterRank, afterID, tag, search, sprintFilter)
+		todos, _, hasMore, listErr := a.store.ListTodosForBoardLane(ctx, pc.Project.ID, col.Key, limit, afterRank, afterID, tag, search, assigneeFilter, sprintFilter)
 		if listErr != nil {
 			return nil, nil, mapStoreError(listErr)
 		}
-		totalCount, countErr := a.store.CountTodosForBoardLane(ctx, pc.Project.ID, col.Key, tag, search, sprintFilter)
+		totalCount, countErr := a.store.CountTodosForBoardLane(ctx, pc.Project.ID, col.Key, tag, search, assigneeFilter, sprintFilter)
 		if countErr != nil {
 			return nil, nil, mapStoreError(countErr)
 		}

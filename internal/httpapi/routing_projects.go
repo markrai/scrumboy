@@ -219,7 +219,8 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Request, rest []string, projectID int64) bool {
 	if len(rest) == 2 && rest[1] == "board" && r.Method == http.MethodGet {
-		pc, err := s.store.GetProjectContextForRead(s.requestContext(r), projectID, s.storeMode())
+		ctx := s.requestContext(r)
+		pc, err := s.store.GetProjectContextForRead(ctx, projectID, s.storeMode())
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -229,12 +230,17 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 		if search == "" {
 			search = ""
 		}
+		assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
+		if err != nil {
+			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
+			return true
+		}
 		sprintFilter, err := s.parseSprintFilterFromQuery(r, projectID)
 		if err != nil {
 			writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
 			return true
 		}
-		project, tags, workflow, cols, err := s.store.GetBoard(s.requestContext(r), &pc, tag, search, sprintFilter)
+		project, tags, workflow, cols, err := s.store.GetBoard(ctx, &pc, tag, search, assigneeFilter, sprintFilter)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true

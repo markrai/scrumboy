@@ -113,6 +113,24 @@ type SprintFilter struct {
 	SprintNumber int64  // only when Mode == "sprint_number"
 }
 
+type assigneeFilterMode uint8
+
+const (
+	assigneeFilterNone assigneeFilterMode = iota
+	assigneeFilterUnassigned
+	assigneeFilterUser
+)
+
+// AssigneeFilter represents a validated board assignee filter.
+//
+// Its zero value applies no assignee filter. The internal fields deliberately
+// remain opaque so callers must use ParseAssigneeFilter and cannot construct an
+// invalid mode or non-positive user filter.
+type AssigneeFilter struct {
+	mode   assigneeFilterMode
+	userID int64
+}
+
 // ProjectContext bundles project, role, and auth state computed once per request.
 // Pass to GetBoard, GetBoardPaged, listTagCounts to avoid redundant project/auth queries.
 type ProjectContext struct {

@@ -84,7 +84,13 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 		if search == "" {
 			search = ""
 		}
-		hasSprints, err := s.store.HasSprints(s.requestContext(r), project.ID)
+		ctx := s.requestContext(r)
+		assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
+		if err != nil {
+			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
+			return true
+		}
+		hasSprints, err := s.store.HasSprints(ctx, project.ID)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -105,7 +111,7 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 				limitPerLane = n
 			}
 		}
-		project2, tags, workflow, cols, meta, err := s.store.GetBoardPaged(s.requestContext(r), pc, tag, search, sprintFilter, limitPerLane)
+		project2, tags, workflow, cols, meta, err := s.store.GetBoardPaged(ctx, pc, tag, search, assigneeFilter, sprintFilter, limitPerLane)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -329,6 +335,12 @@ func (s *Server) handleBoardLaneRoutes(w http.ResponseWriter, r *http.Request, r
 	columnKey := normalizeLaneKey(rest[2])
 	tag := r.URL.Query().Get("tag")
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	ctx := s.requestContext(r)
+	assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
+	if err != nil {
+		writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
+		return true
+	}
 	sprintFilter, err := s.parseSprintFilterFromQuery(r, project.ID)
 	if err != nil {
 		writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
@@ -343,7 +355,7 @@ func (s *Server) handleBoardLaneRoutes(w http.ResponseWriter, r *http.Request, r
 	afterCursor := r.URL.Query().Get("afterCursor")
 	afterRank, afterID := store.ParseLaneCursor(afterCursor)
 
-	items, nextCursor, hasMore, err := s.store.ListTodosForBoardLane(s.requestContext(r), project.ID, columnKey, limit, afterRank, afterID, tag, search, sprintFilter)
+	items, nextCursor, hasMore, err := s.store.ListTodosForBoardLane(ctx, project.ID, columnKey, limit, afterRank, afterID, tag, search, assigneeFilter, sprintFilter)
 	if err != nil {
 		writeStoreErr(w, err, true)
 		return true
