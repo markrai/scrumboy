@@ -224,6 +224,7 @@ async function renderPrefetchedBoard(
     null,
     null,
     null,
+    null,
     { prefetchedBoard: board() },
   );
   await flushPromises();

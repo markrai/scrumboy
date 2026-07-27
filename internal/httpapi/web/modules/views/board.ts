@@ -13,6 +13,7 @@ import {
   getSlug,
   getTag,
   getSearch,
+  getSortFromUrl,
   getSprintIdFromUrl,
   getEditingTodo,
   getProjectId,
@@ -189,7 +190,7 @@ function bindVoiceCommandButton(): void {
         refreshBoard: async () => {
           const context = getVoiceCommandContext();
           if (!context || context.projectId !== initialProjectId || context.projectSlug !== initialProjectSlug) return;
-          await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl());
+          await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
         },
         openTodo: async (localId) => {
           const context = getVoiceCommandContext();
@@ -291,6 +292,7 @@ let lastUpdateBoardContentTag = "";
 let lastUpdateBoardContentSearch = "";
 let lastUpdateBoardContentSprintId: string | null = null;
 let lastUpdateBoardContentAssignee: string | null = null;
+let lastUpdateBoardContentSort: string | null = null;
 
 type BoardRenderOptions = {
   backLabel?: string;
@@ -335,7 +337,7 @@ function rerenderBoardForLocaleChange(): void {
 
   resetBoardFilterUiState();
   lastUpdateBoardContentBoard = null;
-  renderBoardFromData(board, projectId, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), {
+  renderBoardFromData(board, projectId, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), {
     ...lastBoardRenderOptions,
     forceFullRender: true,
   });
@@ -542,6 +544,7 @@ async function handleLoadMore(status: TodoStatus): Promise<void> {
   const search = getSearch();
   const sprintId = getSprintIdFromUrl();
   const assignee = getAssigneeFromUrl();
+  const sort = getSortFromUrl();
   if (!slug) return;
   const meta = getBoardLaneMeta()[status];
   if (!meta?.hasMore || meta.loading) return;
@@ -555,6 +558,7 @@ async function handleLoadMore(status: TodoStatus): Promise<void> {
     if (search) params.set("search", search);
     if (sprintId) params.set("sprintId", sprintId);
     if (assignee) params.set("assignee", assignee);
+    if (sort) params.set("sort", sort);
     const qs = params.toString();
     const res = await apiFetch<LanePageResponse>(`/api/board/${slug}/lanes/${status}${qs ? `?${qs}` : ""}`);
     const items = res?.items ?? [];
@@ -792,7 +796,7 @@ async function handleProjectImageUpload(projectId: number): Promise<void> {
       });
       syncTopbarFromBoard({ project: { image: finalDataUrl } });
       if (getSlug()) {
-        await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl());
+        await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
       } else {
         const renderProjects = await getRenderProjects();
         await renderProjects();
@@ -829,14 +833,15 @@ function syncTopbarFromBoard(board: { project: { image?: string } }): void {
 
 // Full board + filters update. Use for SSE refresh, filter change, search.
 // For chips-only updates (e.g. deferred sprints load), use updateChipsOnly instead.
-function updateBoardContent(board: Board, tag: string, search: string, sprintId: string | null, assignee: string | null): void {
-  // Skip full rebuild when render signature matches (board + tag + search + sprintId + assignee)
+function updateBoardContent(board: Board, tag: string, search: string, sprintId: string | null, assignee: string | null, sort: string | null): void {
+  // Skip full rebuild when render signature matches (board + tag + search + sprintId + assignee + sort)
   if (
     board === lastUpdateBoardContentBoard &&
     tag === lastUpdateBoardContentTag &&
     search === lastUpdateBoardContentSearch &&
     sprintId === lastUpdateBoardContentSprintId &&
-    assignee === lastUpdateBoardContentAssignee
+    assignee === lastUpdateBoardContentAssignee &&
+    sort === lastUpdateBoardContentSort
   ) {
     return;
   }
@@ -918,9 +923,10 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
   lastUpdateBoardContentSearch = search;
   lastUpdateBoardContentSprintId = sprintId;
   lastUpdateBoardContentAssignee = assignee;
+  lastUpdateBoardContentSort = sort;
 }
 
-function renderBoardFromData(board: Board, projectId: number, tag: string, search: string, sprintId: string | null, assignee: string | null, opts: BoardRenderOptions = {}): void {
+function renderBoardFromData(board: Board, projectId: number, tag: string, search: string, sprintId: string | null, assignee: string | null, sort: string | null, opts: BoardRenderOptions = {}): void {
   lastBoardRenderProjectId = projectId;
   lastBoardRenderOptions = {
     backLabel: opts.backLabel,
@@ -966,7 +972,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   // We check for the board container, not just the topbar, because projects page also has a topbar
   const existingBoardContainer = document.querySelector(".board");
   if (existingBoardContainer && !opts.forceFullRender) {
-    updateBoardContent(board, tag, search, sprintId, assignee);
+    updateBoardContent(board, tag, search, sprintId, assignee, sort);
     syncTopbarFromBoard(board);
     return;
   }
@@ -1001,6 +1007,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     backLabelKey,
     wallEnabled: getWallEnabled(),
     assignee,
+    sort,
     boardMembers: getBoardMembers(),
   });
   const membersByUserId = getMembersByUserId();
@@ -1653,7 +1660,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
 }
 
 // Load board by slug
-export async function loadBoardBySlug(slug: string | null, tag: string | null, search: string | null, sprintId: string | null = null, assignee: string | null = null): Promise<void> {
+export async function loadBoardBySlug(slug: string | null, tag: string | null, search: string | null, sprintId: string | null = null, assignee: string | null = null, sort: string | null = null): Promise<void> {
   ensureBoardI18nBinding();
   if (!slug) {
     throw new Error("Slug is required");
@@ -1666,6 +1673,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   const requestSearch = search || "";
   const requestSprintId = sprintId ?? null;
   const requestAssignee = assignee ?? null;
+  const requestSort = sort ?? null;
   // Clear stale members from prior board immediately; prevents stale data if fetch fails early.
   setBoardMembers([]);
   resetBoardFilterUiState();
@@ -1676,6 +1684,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   if (search) params.set("search", search);
   if (requestSprintId) params.set("sprintId", requestSprintId);
   if (requestAssignee) params.set("assignee", requestAssignee);
+  if (requestSort) params.set("sort", requestSort);
   const qs = params.toString() ? `?${params.toString()}` : "";
   let board: Board;
   try {
@@ -1686,7 +1695,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
       url.searchParams.delete("sprintId");
       const newUrl = url.pathname + (url.search ? url.search : "");
       history.replaceState({}, "", newUrl);
-      await loadBoardBySlug(slug, tag, search, null, assignee);
+      await loadBoardBySlug(slug, tag, search, null, assignee, sort);
       return;
     }
     throw err;
@@ -1699,7 +1708,8 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   const currentSearch = currentUrl.searchParams.get("search") || "";
   const currentSprintId = currentUrl.searchParams.get("sprintId") || null;
   const currentAssignee = currentUrl.searchParams.get("assignee") || null;
-  if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null)) return;
+  const currentSort = currentUrl.searchParams.get("sort") || null;
+  if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null) || (currentSort || null) !== (requestSort || null)) return;
   resetBoardLimitPerLaneFloor();
   // Defer sprints — render board first, then load in background
   clearSprintChipDataIfSlugChanged(slug);
@@ -1717,7 +1727,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
       lastFetchedProjectId = projectId;
     },
     renderLoadedBoard: (renderOpts) => {
-      renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", effectiveSprintId, requestAssignee, renderOpts);
+      renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", effectiveSprintId, requestAssignee, requestSort, renderOpts);
     },
     markLoadSuccess: (loadedSlug) => {
       markBoardLoadSucceeded(loadedSlug);
@@ -1748,8 +1758,8 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
 }
 
 // Register board refresher with orchestration layer
-registerBoardRefresher(async (slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null) => {
-  await loadBoardBySlug(slug, tag || null, search || null, sprintId ?? null, assignee ?? null);
+registerBoardRefresher(async (slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null) => {
+  await loadBoardBySlug(slug, tag || null, search || null, sprintId ?? null, assignee ?? null, sort ?? null);
 });
 
 // Register sprints-only refresher (chips update without full board reload)
@@ -1840,6 +1850,7 @@ export async function renderBoard(
   search: string,
   sprintId: string | null,
   assignee: string | null = null,
+  sort: string | null = null,
   openTodoId: string | null = null,
   openTodoSegment: string | null = null,
   opts: { skipLoad?: boolean; prefetchedBoard?: Board } = {}
@@ -1870,7 +1881,7 @@ export async function renderBoard(
         lastFetchedProjectId = projectId;
       },
       renderLoadedBoard: (renderOpts) => {
-        renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", sprintId, assignee, renderOpts);
+        renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", sprintId, assignee, sort, renderOpts);
       },
       markLoadSuccess: (loadedSlug) => {
         markBoardLoadSucceeded(loadedSlug);
@@ -1900,7 +1911,7 @@ export async function renderBoard(
   } else if (!opts.skipLoad) {
     setInitialBoardLoadInFlight(slug);
     try {
-      await loadBoardBySlug(slug, tag, search || null, sprintId, assignee);
+      await loadBoardBySlug(slug, tag, search || null, sprintId, assignee, sort);
     } finally {
       setInitialBoardLoadInFlight(null);
       if (getSlug() === slug) connectBoardEvents(slug);

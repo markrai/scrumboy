@@ -5,15 +5,17 @@ import {
   getBoard,
   getSearch,
   getSlug,
+  getSortFromUrl,
   getSprintIdFromUrl,
   getTag,
   getTagColors,
 } from '../state/selectors.js';
 import { Board } from '../types.js';
-import { isAnonymousBoard } from '../utils.js';
+import { isAnonymousBoard, showToast } from '../utils.js';
 import {
   buildChipsHTML,
   getCombinedChipData,
+  isBoardFilterActive,
   type ChipData,
   type SprintChipData,
 } from './board-rendering.js';
@@ -31,7 +33,7 @@ const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
 
-type ReloadBoardFn = (slug: string | null, tag: string | null, search: string | null, sprintId: string | null, assignee: string | null) => Promise<void>;
+type ReloadBoardFn = (slug: string | null, tag: string | null, search: string | null, sprintId: string | null, assignee: string | null, sort: string | null) => Promise<void>;
 
 let reloadBoardFn: ReloadBoardFn | null = null;
 let showErrorFn: ((message: string) => void) | null = null;
@@ -64,6 +66,13 @@ function setAssigneeParam(assignee: string | null): void {
   history.replaceState({}, "", url.pathname + url.search);
 }
 
+function setSortParam(sort: string | null): void {
+  const url = new URL(window.location.href);
+  if (sort) url.searchParams.set("sort", sort);
+  else url.searchParams.delete("sort");
+  history.replaceState({}, "", url.pathname + url.search);
+}
+
 function reloadBoardWithCurrentFilters(): void {
   if (!reloadBoardFn) return;
   reloadBoardFn(
@@ -72,6 +81,7 @@ function reloadBoardWithCurrentFilters(): void {
     getSearch(),
     getSprintIdFromUrl(),
     getAssigneeFromUrl(),
+    getSortFromUrl(),
   ).catch((err: any) => {
     showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
   });
@@ -124,7 +134,7 @@ function bindSearchInput(): void {
     searchInput.value = "";
     setSearchParam("");
     if (!reloadBoardFn) return;
-    reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err: any) => {
+    reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err: any) => {
       showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });
     updateClearButton();
@@ -161,7 +171,7 @@ function bindSearchInput(): void {
       const trimmedValue = value.trim();
       setSearchParam(trimmedValue);
       if (!reloadBoardFn) return;
-      reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err: any) => {
+      reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err: any) => {
         showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
       });
     }, 300);
@@ -176,20 +186,93 @@ function bindSearchInput(): void {
   (searchInput as any)[FILTER_BOUND_FLAG] = true;
 }
 
-function bindAssigneeSelect(): void {
-  const assigneeSelect = document.getElementById("assigneeSelect") as HTMLSelectElement | null;
-  if (!assigneeSelect || (assigneeSelect as any)[FILTER_BOUND_FLAG]) return;
+function closeFilterPanel(panel: HTMLElement, toggle: HTMLElement): void {
+  panel.hidden = true;
+  toggle.setAttribute("aria-expanded", "false");
+}
 
-  assigneeSelect.addEventListener("change", () => {
-    const value = assigneeSelect.value || null;
-    setAssigneeParam(value);
+function openFilterPanel(panel: HTMLElement, toggle: HTMLElement): void {
+  panel.hidden = false;
+  toggle.setAttribute("aria-expanded", "true");
+}
+
+// updateFilterToggleActiveState toggles the CSS class that drives the slow
+// pulse/glow @keyframes animation on the chevron whenever a non-default
+// assignee filter or sort order is currently applied (from the URL).
+function updateFilterToggleActiveState(toggle: HTMLElement): void {
+  const active = isBoardFilterActive(getAssigneeFromUrl(), getSortFromUrl());
+  toggle.classList.toggle("search-filter-toggle--active", active);
+}
+
+// bindFilterPanel wires the search input's expandable filter popover: opening
+// on toggle click, closing on outside click/Escape, and a delegated click
+// handler for the assignee/sort option buttons that updates the URL, reloads
+// the board, and shows a brief "Filtering: X" / "Sorted: X" toast (only when
+// picking a real filter/sort, not when clearing back to the neutral option).
+function bindFilterPanel(): void {
+  const toggle = document.getElementById("searchFilterToggle") as HTMLButtonElement | null;
+  const panel = document.getElementById("searchFilterPanel") as HTMLElement | null;
+  if (!toggle || !panel || (toggle as any)[FILTER_BOUND_FLAG]) return;
+
+  updateFilterToggleActiveState(toggle);
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (panel.hidden) {
+      openFilterPanel(panel, toggle);
+    } else {
+      closeFilterPanel(panel, toggle);
+    }
+  });
+
+  document.addEventListener("click", (e) => {
+    if (panel.hidden) return;
+    const target = e.target as Node;
+    if (panel.contains(target) || toggle.contains(target)) return;
+    closeFilterPanel(panel, toggle);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !panel.hidden) {
+      closeFilterPanel(panel, toggle);
+      toggle.focus();
+    }
+  });
+
+  panel.addEventListener("click", (e) => {
+    const optionEl = (e.target as HTMLElement).closest(
+      "[data-assignee-option], [data-sort-option]",
+    ) as HTMLElement | null;
+    if (!optionEl) return;
+
+    const isAssignee = optionEl.hasAttribute("data-assignee-option");
+    const attr = isAssignee ? "data-assignee-option" : "data-sort-option";
+    const value = optionEl.getAttribute(attr) || null;
+    const label = optionEl.textContent?.trim() || "";
+
+    if (isAssignee) {
+      setAssigneeParam(value);
+      panel.querySelectorAll("[data-assignee-option]").forEach((el) => el.classList.remove("is-active"));
+    } else {
+      setSortParam(value);
+      panel.querySelectorAll("[data-sort-option]").forEach((el) => el.classList.remove("is-active"));
+    }
+    optionEl.classList.add("is-active");
+
+    if (value) {
+      showToast(t(isAssignee ? "board.filters.filteringOn" : "board.filters.sortedBy", { value: label }));
+    }
+
+    updateFilterToggleActiveState(toggle);
+    closeFilterPanel(panel, toggle);
+
     if (!reloadBoardFn) return;
-    reloadBoardFn(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), value).catch((err: any) => {
+    reloadBoardFn(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err: any) => {
       showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });
   });
 
-  (assigneeSelect as any)[FILTER_BOUND_FLAG] = true;
+  (toggle as any)[FILTER_BOUND_FLAG] = true;
 }
 
 function initMobileTagPagination(): void {
@@ -324,7 +407,7 @@ export function bindBoardFilterUi(args: {
   attachChipsDelegatedHandler();
   initMobileTagPagination();
   bindSearchInput();
-  bindAssigneeSelect();
+  bindFilterPanel();
 }
 
 export function resetBoardFilterUiState(): void {

@@ -51,6 +51,7 @@ type BuildTopbarHtmlArgs = {
   backLabelKey?: string | null;
   wallEnabled?: boolean;
   assignee?: string | null;
+  sort?: string | null;
   boardMembers?: BoardMember[];
 };
 
@@ -286,9 +287,10 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     backLabelKey,
     wallEnabled,
     assignee,
+    sort,
     boardMembers,
   } = args;
-  const assigneeSelectHTML = buildAssigneeSelectHtml(assignee ?? null, boardMembers ?? [], user);
+  const filterPanelHTML = buildFilterPanelHtml(assignee ?? null, sort ?? null, boardMembers ?? [], user);
   const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
   const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
   // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
@@ -336,8 +338,8 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
             ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
           />
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
+          ${filterPanelHTML}
         </div>
-        ${assigneeSelectHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="${manageMembersLabel}" data-i18n-title="board.actions.manageMembers" data-i18n-text="board.actions.manageMembers">${manageMembersLabel}</button>` : ''}
@@ -373,8 +375,8 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
             ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
           />
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
+          ${filterPanelHTML}
         </div>
-        ${assigneeSelectHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn" title="${deleteProjectLabel}" aria-label="${deleteProjectLabel}" data-i18n-title="board.actions.deleteProject" data-i18n-aria-label="board.actions.deleteProject"><img src="/trash.svg" alt="" width="20" height="20" /></button>` : ''}
@@ -392,36 +394,83 @@ function memberDisplayName(member: BoardMember): string {
   return member.name || member.email || '';
 }
 
-export function buildAssigneeSelectHtml(assignee: string | null, boardMembers: BoardMember[], user: any): string {
+function assigneeFilterOptionsHtml(assignee: string | null, boardMembers: BoardMember[], user: any): string {
   const current = assignee || "";
-  const assigneeLabel = escapeHTML(t("board.filters.assignee"));
   const allAssigneesLabel = escapeHTML(t("board.filters.allAssignees"));
   const unassignedLabel = escapeHTML(t("board.filters.unassigned"));
   const assignedToMeLabel = escapeHTML(t("board.filters.assignedToMe"));
-  const selected = (value: string) => (current === value ? " selected" : "");
+  const optionClass = (value: string) => `search-filter-option${current === value ? " is-active" : ""}`;
   const meOption = user
-    ? `<option value="me"${selected("me")} data-i18n-text="board.filters.assignedToMe">${assignedToMeLabel}</option>`
+    ? `<button type="button" class="${optionClass("me")}" data-assignee-option="me" data-i18n-text="board.filters.assignedToMe">${assignedToMeLabel}</button>`
     : "";
   const memberOptions = boardMembers
     .map((m) => {
       const value = String(m.userId);
-      return `<option value="${escapeHTML(value)}"${selected(value)}>${escapeHTML(memberDisplayName(m))}</option>`;
+      return `<button type="button" class="${optionClass(value)}" data-assignee-option="${escapeHTML(value)}">${escapeHTML(memberDisplayName(m))}</button>`;
     })
     .join("");
   return `
-    <select
-      id="assigneeSelect"
-      class="assignee-select"
-      aria-label="${assigneeLabel}"
-      title="${assigneeLabel}"
-      data-i18n-aria-label="board.filters.assignee"
-      data-i18n-title="board.filters.assignee"
-    >
-      <option value=""${selected("")} data-i18n-text="board.filters.allAssignees">${allAssigneesLabel}</option>
-      <option value="unassigned"${selected("unassigned")} data-i18n-text="board.filters.unassigned">${unassignedLabel}</option>
+      <button type="button" class="${optionClass("")}" data-assignee-option="" data-i18n-text="board.filters.allAssignees">${allAssigneesLabel}</button>
+      <button type="button" class="${optionClass("unassigned")}" data-assignee-option="unassigned" data-i18n-text="board.filters.unassigned">${unassignedLabel}</button>
       ${meOption}
       ${memberOptions}
-    </select>
+  `;
+}
+
+function sortFilterOptionsHtml(sort: string | null): string {
+  const current = sort || "";
+  const optionClass = (value: string) => `search-filter-option${current === value ? " is-active" : ""}`;
+  const defaultLabel = escapeHTML(t("board.filters.defaultOrder"));
+  const newestLabel = escapeHTML(t("board.filters.newestFirst"));
+  const oldestLabel = escapeHTML(t("board.filters.oldestFirst"));
+  return `
+      <button type="button" class="${optionClass("")}" data-sort-option="" data-i18n-text="board.filters.defaultOrder">${defaultLabel}</button>
+      <button type="button" class="${optionClass("newest")}" data-sort-option="newest" data-i18n-text="board.filters.newestFirst">${newestLabel}</button>
+      <button type="button" class="${optionClass("oldest")}" data-sort-option="oldest" data-i18n-text="board.filters.oldestFirst">${oldestLabel}</button>
+  `;
+}
+
+// isBoardFilterActive is true whenever a non-default assignee filter or a
+// non-default (manual) sort order is applied. Used to drive the toggle's
+// pulse animation, both on initial render and after the user picks an option.
+export function isBoardFilterActive(assignee: string | null, sort: string | null): boolean {
+  return !!assignee || !!sort;
+}
+
+// buildFilterPanelHtml is the single source of truth for the assignee/sort
+// option lists (labels + i18n + active-state) rendered inside the expandable
+// search-filter popover. It replaces the old standalone <select> (assignee
+// only) with a button-list panel that also carries the new sort option,
+// dual-purposing the search input instead of adding another topbar control.
+export function buildFilterPanelHtml(assignee: string | null, sort: string | null, boardMembers: BoardMember[], user: any): string {
+  const filtersLabel = escapeHTML(t("board.filters.openFilters"));
+  const toggleActiveClass = isBoardFilterActive(assignee, sort) ? " search-filter-toggle--active" : "";
+  return `
+    <button
+      type="button"
+      class="search-filter-toggle${toggleActiveClass}"
+      id="searchFilterToggle"
+      aria-expanded="false"
+      aria-haspopup="true"
+      aria-label="${filtersLabel}"
+      title="${filtersLabel}"
+      data-i18n-aria-label="board.filters.openFilters"
+      data-i18n-title="board.filters.openFilters"
+    >
+      <svg width="10" height="6" viewBox="0 0 10 6" fill="none" aria-hidden="true" focusable="false">
+        <path d="M1 1L5 5L9 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+    <div class="search-filter-panel" id="searchFilterPanel" hidden>
+      <div class="search-filter-panel__section">
+        <div class="search-filter-panel__label" data-i18n-text="board.filters.assignee">${escapeHTML(t("board.filters.assignee"))}</div>
+        ${assigneeFilterOptionsHtml(assignee, boardMembers, user)}
+      </div>
+      <div class="search-filter-panel__section">
+        <div class="search-filter-panel__label" data-i18n-text="board.filters.sort">${escapeHTML(t("board.filters.sort"))}</div>
+        ${sortFilterOptionsHtml(sort)}
+      </div>
+    </div>
   `;
 }
 

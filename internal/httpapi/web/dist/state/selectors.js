@@ -27,6 +27,11 @@ export function getAssigneeFromUrl() {
     const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("assignee") : null;
     return v === "" ? null : (v || null);
 }
+/** Sort order from URL: null = default manual drag-rank order (omit param), "newest", or "oldest". */
+export function getSortFromUrl() {
+    const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("sort") : null;
+    return v === "" ? null : (v || null);
+}
 export function getOpenTodoSegment() {
     return current.openTodoSegment;
 }

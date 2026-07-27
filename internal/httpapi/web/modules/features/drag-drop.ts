@@ -1,6 +1,6 @@
 import { apiFetch } from '../api.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
-import { getAssigneeFromUrl, getSlug, getTag, getSearch, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
+import { getAssigneeFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
 import { showToast } from '../utils.js';
 import { invalidateBoard, setBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { recordBoardInteraction, recordLocalMutation } from '../realtime/guard.js';
@@ -220,7 +220,7 @@ export function initDnD(): void {
       // Rely on SSE todo_moved event (debounced ~400ms) to refresh board; avoid double fetch.
     } catch (err: any) {
       showToast(apiErrorMessage(err, { fallbackKey: "board.todo.moveFailed" }));
-      invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl())
+      invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl())
         .catch((e: any) => showToast(apiErrorMessage(e, { fallbackKey: "board.refreshFailed" })));
     } finally {
       moveInFlight = false;

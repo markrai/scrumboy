@@ -5,6 +5,7 @@ import { applyFieldTooltips, BULK_EDIT_TOOLTIPS } from "../field-tooltips.js";
 import { hasI18nKey, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
 import {
   getAssigneeFromUrl,
+  getSortFromUrl,
   getBoard,
   getSlug,
   getTag,
@@ -373,7 +374,7 @@ async function runBulkApply(todoIds: number[]): Promise<void> {
     invalidateTagsCache();
   }
 
-  await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl());
+  await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {

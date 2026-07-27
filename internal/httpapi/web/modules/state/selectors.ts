@@ -38,6 +38,12 @@ export function getAssigneeFromUrl(): string | null {
   return v === "" ? null : (v || null);
 }
 
+/** Sort order from URL: null = default manual drag-rank order (omit param), "newest", or "oldest". */
+export function getSortFromUrl(): string | null {
+  const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("sort") : null;
+  return v === "" ? null : (v || null);
+}
+
 export function getOpenTodoSegment(): string | null {
   return current.openTodoSegment;
 }
