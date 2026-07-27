@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { state } = vi.hoisted(() => ({
+const { state, apiFetchMock, floorBySlug } = vi.hoisted(() => ({
   state: { board: null as any, slug: null as string | null },
+  apiFetchMock: vi.fn(),
+  floorBySlug: { value: {} as Record<string, number> },
 }));
 
 vi.mock("../state/selectors.js", () => ({
@@ -44,7 +46,7 @@ vi.mock("../dom/elements.js", () => ({
   app: document.createElement("div"),
   settingsDialog: document.createElement("dialog"),
 }));
-vi.mock("../api.js", () => ({ apiFetch: vi.fn() }));
+vi.mock("../api.js", () => ({ apiFetch: apiFetchMock }));
 vi.mock("../core/notifications.js", () => ({ ingestProjectsFromApp: vi.fn() }));
 vi.mock("../members-cache.js", () => ({
   fetchProjectMembers: vi.fn(),
@@ -89,7 +91,7 @@ vi.mock("../orchestration/board-refresh.js", () => ({
   registerBoardRefresher: vi.fn(),
   registerSprintsRefresher: vi.fn(),
   invalidateBoard: vi.fn(),
-  getBoardLimitPerLaneFloor: vi.fn(() => 0),
+  getBoardLimitPerLaneFloor: vi.fn((forSlug: string) => floorBySlug.value[forSlug] ?? 20),
   resetBoardLimitPerLaneFloor: vi.fn(),
 }));
 vi.mock("../sprints.js", () => ({ normalizeSprints: vi.fn((r: any) => r) }));
@@ -147,11 +149,18 @@ function addLane(count: number): void {
   document.body.appendChild(list);
 }
 
+function limitPerLaneFromFetchUrl(url: string): number {
+  const qs = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
+  return Number(new URLSearchParams(qs).get("limitPerLane"));
+}
+
 describe("getRequestedBoardLimitPerLane", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     state.board = null;
     state.slug = null;
+    floorBySlug.value = {};
+    apiFetchMock.mockReset();
   });
 
   afterEach(() => {
@@ -195,5 +204,71 @@ describe("getRequestedBoardLimitPerLane", () => {
     state.slug = "alpha";
 
     expect(board.getRequestedBoardLimitPerLane()).toBe(20);
+  });
+
+  it("ignores DOM size when forSlug does not match the currently loaded board", async () => {
+    const board = await import("./board.js");
+    // Stale invalidate for "alpha" while the UI has already moved to "beta".
+    state.slug = "beta";
+    state.board = { project: { slug: "beta" }, tags: [], columns: {} };
+    addLane(45);
+
+    expect(board.getRequestedBoardLimitPerLane("alpha")).toBe(20);
+    expect(board.getRequestedBoardLimitPerLane("beta")).toBe(45);
+  });
+});
+
+describe("loadBoardBySlug limitPerLane query", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    state.board = null;
+    state.slug = null;
+    floorBySlug.value = {};
+    apiFetchMock.mockReset();
+    // Resolve with a minimal board; pathname mismatch below aborts before bootstrap.
+    apiFetchMock.mockResolvedValue({ project: { id: 1, slug: "unused" }, tags: [], columns: {} });
+  });
+
+  afterEach(() => {
+    vi.resetModules();
+  });
+
+  it("requests the DOM-derived limit on a same-board refresh", async () => {
+    const board = await import("./board.js");
+    state.slug = "alpha";
+    state.board = { project: { slug: "alpha" }, tags: [], columns: {} };
+    addLane(45);
+    window.history.replaceState({}, "", "/other");
+
+    await board.loadBoardBySlug("alpha", null, null, null);
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(45);
+  });
+
+  it("requests max(DOM, floor) when the filtered-drag floor is elevated", async () => {
+    const board = await import("./board.js");
+    state.slug = "alpha";
+    state.board = { project: { slug: "alpha" }, tags: [], columns: {} };
+    addLane(45);
+    floorBySlug.value = { alpha: 60 };
+    window.history.replaceState({}, "", "/other");
+
+    await board.loadBoardBySlug("alpha", null, null, null);
+
+    expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(60);
+  });
+
+  it("requests the default when navigating to a different board even if a prior floor is elevated", async () => {
+    const board = await import("./board.js");
+    state.board = { project: { slug: "alpha" }, tags: [], columns: {} };
+    state.slug = "beta";
+    addLane(45);
+    floorBySlug.value = { alpha: 60 };
+    window.history.replaceState({}, "", "/other");
+
+    await board.loadBoardBySlug("beta", null, null, null);
+
+    expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(20);
   });
 });
