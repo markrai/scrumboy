@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderAvatarContent, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
+import { escapeHTML, showToast, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import {
@@ -482,42 +482,6 @@ function attachBoardDelegationHandlers(): void {
         el.classList.toggle("card--selected", selectedIds.has(id));
       });
     },
-  });
-}
-
-/**
- * Patch assignee avatars into cards that were rendered without members.
- * Avoids full board rebuild when members arrive after first paint.
- * Call after setBoardMembers(members) so getMembersByUserId() returns the new lookup.
- */
-function hydrateAvatarsOnCards(members: BoardMember[]): void {
-  const boardEl = document.querySelector(".board");
-  if (!boardEl) return;
-  const cards = Array.from(boardEl.querySelectorAll<HTMLElement>("[data-assignee-user-id]"));
-  const toHydrate = cards.filter((c) => c.dataset.avatarHydrated !== "1");
-  if (toHydrate.length === 0) return;
-  const membersByUserId = getMembersByUserId();
-  toHydrate.forEach((card) => {
-    const assigneeUserId = parseInt(card.getAttribute("data-assignee-user-id") ?? "", 10);
-    if (!Number.isFinite(assigneeUserId)) return;
-    const assignee = membersByUserId[assigneeUserId];
-    if (!assignee) return;
-    const avatarHTML = `<div class="todo-avatar" title="${escapeHTML(assignee.name || assignee.email || '')}">${renderAvatarContent({ name: assignee.name, email: assignee.email, image: assignee.image })}</div>`;
-    const badges = card.querySelector(".card__badges");
-    if (badges) {
-      badges.insertAdjacentHTML("beforeend", avatarHTML);
-    } else {
-      const footer = card.querySelector(".card__footer");
-      if (footer) {
-        footer.insertAdjacentHTML("beforeend", avatarHTML);
-      } else {
-        const dragHandle = card.querySelector(".card__drag-handle");
-        if (dragHandle) {
-          dragHandle.insertAdjacentHTML("afterend", `<div class="card__footer">${avatarHTML}</div>`);
-        }
-      }
-    }
-    card.dataset.avatarHydrated = "1";
   });
 }
 
@@ -1750,9 +1714,6 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   if (!rendered) return;
   debugLog("loadBoardBySlug end (success)", slug);
 
-  // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
-  // No need to call hydrateAvatarsOnCards() here.
-
   if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
     setSprintChipDataForSlug(slug, null);
     apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`)
@@ -1903,8 +1864,6 @@ export async function renderBoard(
     });
     if (!rendered) return;
     if (getSlug() === slug) connectBoardEvents(slug);
-    // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
-    // No need to call hydrateAvatarsOnCards() here.
     if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
       setSprintChipDataForSlug(slug, null);
       apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`)

@@ -1,6 +1,17 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.27.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.28.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+
+## [3.28.0] - 2026-07-27
+
+### Added
+
+- **Board assignee + sort filters in the web UI (PR #192)** - Follow-up to #189's API/MCP assignee filter. The board search field gains an expandable filter panel (chevron) with assignee (All / Unassigned / Assigned to me / each board member) and sort (Default order / Newest first / Oldest first). Choices are bookmarkable via `?assignee=` and `?sort=` and round-trip through board load, lane pagination, refresh, and router parsing. An active non-default filter/sort pulses the chevron and shows a short toast on pick.
+- **Board sort order across API, store, and MCP** - `sort=newest` / `sort=oldest` order lane todos by `created_at` (with id tie-break) instead of manual rank, including cursor-based "Load more" pagination. MCP `board_get` accepts the same `sort` input. Manual drag-rank remains the default.
+
+### Changed
+
+- **Chronological sort disables manual reorder** - When newest/oldest is active, card drag handles are hidden and Sortable manual-order callbacks cannot rewrite ranks from chronological DOM.
 
 ## [3.27.1] - 2026-07-27
 
