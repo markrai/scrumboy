@@ -1,6 +1,6 @@
 import { on } from '../events.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
-import { getBoard, getSearch, getSlug, getSprintIdFromUrl, getTag, getTagColors, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getBoard, getSearch, getSlug, getSprintIdFromUrl, getTag, getTagColors, } from '../state/selectors.js';
 import { isAnonymousBoard } from '../utils.js';
 import { buildChipsHTML, getCombinedChipData, } from './board-rendering.js';
 let lastDisplayChipData = [];
@@ -40,10 +40,18 @@ function setSearchParam(search) {
         url.searchParams.delete("search");
     history.replaceState({}, "", url.pathname + url.search);
 }
+function setAssigneeParam(assignee) {
+    const url = new URL(window.location.href);
+    if (assignee)
+        url.searchParams.set("assignee", assignee);
+    else
+        url.searchParams.delete("assignee");
+    history.replaceState({}, "", url.pathname + url.search);
+}
 function reloadBoardWithCurrentFilters() {
     if (!reloadBoardFn)
         return;
-    reloadBoardFn(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl()).catch((err) => {
+    reloadBoardFn(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err) => {
         showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });
 }
@@ -100,7 +108,7 @@ function bindSearchInput() {
         setSearchParam("");
         if (!reloadBoardFn)
             return;
-        reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl()).catch((err) => {
+        reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err) => {
             showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
         });
         updateClearButton();
@@ -138,7 +146,7 @@ function bindSearchInput() {
             setSearchParam(trimmedValue);
             if (!reloadBoardFn)
                 return;
-            reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl()).catch((err) => {
+            reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err) => {
                 showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
             });
         }, 300);
@@ -149,6 +157,21 @@ function bindSearchInput() {
     }
     updateClearButton();
     searchInput[FILTER_BOUND_FLAG] = true;
+}
+function bindAssigneeSelect() {
+    const assigneeSelect = document.getElementById("assigneeSelect");
+    if (!assigneeSelect || assigneeSelect[FILTER_BOUND_FLAG])
+        return;
+    assigneeSelect.addEventListener("change", () => {
+        const value = assigneeSelect.value || null;
+        setAssigneeParam(value);
+        if (!reloadBoardFn)
+            return;
+        reloadBoardFn(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), value).catch((err) => {
+            showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
+        });
+    });
+    assigneeSelect[FILTER_BOUND_FLAG] = true;
 }
 function initMobileTagPagination() {
     const tagChipsEl = document.getElementById("tagChips");
@@ -273,6 +296,7 @@ export function bindBoardFilterUi(args) {
     attachChipsDelegatedHandler();
     initMobileTagPagination();
     bindSearchInput();
+    bindAssigneeSelect();
 }
 export function resetBoardFilterUiState() {
     lastDisplayChipData = [];

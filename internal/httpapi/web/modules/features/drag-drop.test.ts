@@ -10,6 +10,7 @@ const selectorState = vi.hoisted(() => ({
   tag: "bug",
   search: "login",
   sprintId: "7",
+  assignee: null as string | null,
   laneMeta: {
     backlog: { hasMore: false, nextCursor: null, loading: false },
     not_started: { hasMore: false, nextCursor: null, loading: false },
@@ -24,6 +25,7 @@ vi.mock("../api.js", () => ({
 }));
 
 vi.mock("../state/selectors.js", () => ({
+  getAssigneeFromUrl: () => selectorState.assignee,
   getSlug: () => selectorState.slug,
   getTag: () => selectorState.tag,
   getSearch: () => selectorState.search,
@@ -112,6 +114,6 @@ describe("drag-drop i18n errors", () => {
     });
 
     expect(showToastMock).toHaveBeenCalledWith("[!! Failed to move todo !!]");
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7");
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null);
   });
 });

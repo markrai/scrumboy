@@ -1,6 +1,7 @@
 import { on } from '../events.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
 import {
+  getAssigneeFromUrl,
   getBoard,
   getSearch,
   getSlug,
@@ -30,7 +31,7 @@ const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
 
-type ReloadBoardFn = (slug: string | null, tag: string | null, search: string | null, sprintId: string | null) => Promise<void>;
+type ReloadBoardFn = (slug: string | null, tag: string | null, search: string | null, sprintId: string | null, assignee: string | null) => Promise<void>;
 
 let reloadBoardFn: ReloadBoardFn | null = null;
 let showErrorFn: ((message: string) => void) | null = null;
@@ -56,6 +57,13 @@ function setSearchParam(search: string): void {
   history.replaceState({}, "", url.pathname + url.search);
 }
 
+function setAssigneeParam(assignee: string | null): void {
+  const url = new URL(window.location.href);
+  if (assignee) url.searchParams.set("assignee", assignee);
+  else url.searchParams.delete("assignee");
+  history.replaceState({}, "", url.pathname + url.search);
+}
+
 function reloadBoardWithCurrentFilters(): void {
   if (!reloadBoardFn) return;
   reloadBoardFn(
@@ -63,6 +71,7 @@ function reloadBoardWithCurrentFilters(): void {
     new URL(window.location.href).searchParams.get("tag") ?? "",
     getSearch(),
     getSprintIdFromUrl(),
+    getAssigneeFromUrl(),
   ).catch((err: any) => {
     showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
   });
@@ -115,7 +124,7 @@ function bindSearchInput(): void {
     searchInput.value = "";
     setSearchParam("");
     if (!reloadBoardFn) return;
-    reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl()).catch((err: any) => {
+    reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err: any) => {
       showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });
     updateClearButton();
@@ -152,7 +161,7 @@ function bindSearchInput(): void {
       const trimmedValue = value.trim();
       setSearchParam(trimmedValue);
       if (!reloadBoardFn) return;
-      reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl()).catch((err: any) => {
+      reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl()).catch((err: any) => {
         showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
       });
     }, 300);
@@ -165,6 +174,22 @@ function bindSearchInput(): void {
 
   updateClearButton();
   (searchInput as any)[FILTER_BOUND_FLAG] = true;
+}
+
+function bindAssigneeSelect(): void {
+  const assigneeSelect = document.getElementById("assigneeSelect") as HTMLSelectElement | null;
+  if (!assigneeSelect || (assigneeSelect as any)[FILTER_BOUND_FLAG]) return;
+
+  assigneeSelect.addEventListener("change", () => {
+    const value = assigneeSelect.value || null;
+    setAssigneeParam(value);
+    if (!reloadBoardFn) return;
+    reloadBoardFn(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), value).catch((err: any) => {
+      showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
+    });
+  });
+
+  (assigneeSelect as any)[FILTER_BOUND_FLAG] = true;
 }
 
 function initMobileTagPagination(): void {
@@ -299,6 +324,7 @@ export function bindBoardFilterUi(args: {
   attachChipsDelegatedHandler();
   initMobileTagPagination();
   bindSearchInput();
+  bindAssigneeSelect();
 }
 
 export function resetBoardFilterUiState(): void {

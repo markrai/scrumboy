@@ -22,6 +22,11 @@ export function getSprintIdFromUrl() {
     const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("sprintId") : null;
     return v === "" ? null : (v || null);
 }
+/** Assignee filter from URL: null = "All" (omit param), "unassigned", "me", or a numeric user ID string. */
+export function getAssigneeFromUrl() {
+    const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("assignee") : null;
+    return v === "" ? null : (v || null);
+}
 export function getOpenTodoSegment() {
     return current.openTodoSegment;
 }

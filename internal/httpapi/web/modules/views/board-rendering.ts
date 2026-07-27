@@ -50,6 +50,8 @@ type BuildTopbarHtmlArgs = {
   backLabel: string;
   backLabelKey?: string | null;
   wallEnabled?: boolean;
+  assignee?: string | null;
+  boardMembers?: BoardMember[];
 };
 
 type BuildBoardColumnsHtmlArgs = {
@@ -283,7 +285,10 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     backLabel,
     backLabelKey,
     wallEnabled,
+    assignee,
+    boardMembers,
   } = args;
+  const assigneeSelectHTML = buildAssigneeSelectHtml(assignee ?? null, boardMembers ?? [], user);
   const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
   const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
   // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
@@ -332,6 +337,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
           />
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
         </div>
+        ${assigneeSelectHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="${manageMembersLabel}" data-i18n-title="board.actions.manageMembers" data-i18n-text="board.actions.manageMembers">${manageMembersLabel}</button>` : ''}
@@ -368,6 +374,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
           />
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
         </div>
+        ${assigneeSelectHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn" title="${deleteProjectLabel}" aria-label="${deleteProjectLabel}" data-i18n-title="board.actions.deleteProject" data-i18n-aria-label="board.actions.deleteProject"><img src="/trash.svg" alt="" width="20" height="20" /></button>` : ''}
@@ -379,6 +386,43 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
         ${renderUserAvatar(user)}
       </div>
     `;
+}
+
+function memberDisplayName(member: BoardMember): string {
+  return member.name || member.email || '';
+}
+
+export function buildAssigneeSelectHtml(assignee: string | null, boardMembers: BoardMember[], user: any): string {
+  const current = assignee || "";
+  const assigneeLabel = escapeHTML(t("board.filters.assignee"));
+  const allAssigneesLabel = escapeHTML(t("board.filters.allAssignees"));
+  const unassignedLabel = escapeHTML(t("board.filters.unassigned"));
+  const assignedToMeLabel = escapeHTML(t("board.filters.assignedToMe"));
+  const selected = (value: string) => (current === value ? " selected" : "");
+  const meOption = user
+    ? `<option value="me"${selected("me")} data-i18n-text="board.filters.assignedToMe">${assignedToMeLabel}</option>`
+    : "";
+  const memberOptions = boardMembers
+    .map((m) => {
+      const value = String(m.userId);
+      return `<option value="${escapeHTML(value)}"${selected(value)}>${escapeHTML(memberDisplayName(m))}</option>`;
+    })
+    .join("");
+  return `
+    <select
+      id="assigneeSelect"
+      class="assignee-select"
+      aria-label="${assigneeLabel}"
+      title="${assigneeLabel}"
+      data-i18n-aria-label="board.filters.assignee"
+      data-i18n-title="board.filters.assignee"
+    >
+      <option value=""${selected("")} data-i18n-text="board.filters.allAssignees">${allAssigneesLabel}</option>
+      <option value="unassigned"${selected("unassigned")} data-i18n-text="board.filters.unassigned">${unassignedLabel}</option>
+      ${meOption}
+      ${memberOptions}
+    </select>
+  `;
 }
 
 export function buildNoResultsHtml(search: string): string {

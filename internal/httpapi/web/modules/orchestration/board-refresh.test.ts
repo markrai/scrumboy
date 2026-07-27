@@ -18,10 +18,10 @@ describe('board-refresh orchestration', () => {
 
     mod.registerBoardRefresher(refreshBoard);
 
-    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', '7');
 
     expect(refreshBoard).toHaveBeenCalledTimes(1);
-    expect(refreshBoard).toHaveBeenCalledWith('alpha', 'tag-a', 'query', '42');
+    expect(refreshBoard).toHaveBeenCalledWith('alpha', 'tag-a', 'query', '42', '7');
   });
 
   it('coalesces identical invalidates within 700ms', async () => {
@@ -52,9 +52,23 @@ describe('board-refresh orchestration', () => {
     await mod.invalidateBoard('alpha', 'tag-a', 'other-query', '43');
 
     expect(refreshBoard).toHaveBeenCalledTimes(3);
-    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42');
-    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'other-query', '42');
-    expect(refreshBoard).toHaveBeenNthCalledWith(3, 'alpha', 'tag-a', 'other-query', '43');
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'other-query', '42', undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(3, 'alpha', 'tag-a', 'other-query', '43', undefined);
+  });
+
+  it('does not coalesce when only the assignee filter changes', async () => {
+    const mod = await import('./board-refresh.js');
+    const refreshBoard = vi.fn().mockResolvedValue(undefined);
+
+    mod.registerBoardRefresher(refreshBoard);
+
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', 'unassigned');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', 'me');
+
+    expect(refreshBoard).toHaveBeenCalledTimes(2);
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', 'unassigned');
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', 'me');
   });
 
   it('refreshSprintsAndChips calls only the sprint refresher', async () => {
