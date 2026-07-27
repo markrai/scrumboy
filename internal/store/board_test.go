@@ -30,7 +30,7 @@ func TestGetBoard_SearchMatchesTitle(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "login", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "login", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestGetBoard_SearchMatchesBody(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "authentication", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "authentication", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestGetBoard_SearchCaseInsensitive(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "LOGIN", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "LOGIN", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestGetBoard_SearchSubstringOnly(t *testing.T) {
 
 	// "log" should match "Login" (substring)
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "log", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "log", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestGetBoard_SearchSubstringOnly(t *testing.T) {
 	}
 
 	// "log in" should NOT match "Login" (no tokenization)
-	_, _, _, cols, err = st.GetBoard(ctx, &pc, "", "log in", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err = st.GetBoard(ctx, &pc, "", "log in", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestGetBoard_TagAndSearchAND(t *testing.T) {
 
 	// Search for "login" with tag "bug" - should only match todo1
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "bug", "login", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "bug", "login", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestListTodosForBoardLane_Pagination(t *testing.T) {
 	}
 
 	// First page: limit 2
-	items, nextCursor, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 2, 0, 0, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items, nextCursor, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 2, 0, 0, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestListTodosForBoardLane_Pagination(t *testing.T) {
 
 	// Parse cursor and fetch next page
 	afterRank, afterID := ParseLaneCursor(nextCursor)
-	items2, nextCursor2, hasMore2, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 2, afterRank, afterID, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items2, nextCursor2, hasMore2, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 2, afterRank, afterID, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane page 2: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestListTodosForBoardLane_Pagination(t *testing.T) {
 
 	// Third page
 	afterRank2, afterID2 := ParseLaneCursor(nextCursor2)
-	items3, _, hasMore3, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 2, afterRank2, afterID2, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items3, _, hasMore3, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 2, afterRank2, afterID2, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane page 3: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestListTodosForBoardLane_PaginationBoundaryContract(t *testing.T) {
 	}
 
 	const pageSize = 2
-	items1, cursor1, hasMore1, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, 0, 0, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items1, cursor1, hasMore1, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, 0, 0, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("page1: %v", err)
 	}
@@ -315,7 +315,7 @@ func TestListTodosForBoardLane_PaginationBoundaryContract(t *testing.T) {
 	A := items1[len(items1)-1]
 
 	afterRank, afterID := ParseLaneCursor(cursor1)
-	items2, cursor2, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank, afterID, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items2, cursor2, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank, afterID, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("page2: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestListTodosForBoardLane_PaginationBoundaryContract(t *testing.T) {
 	}
 
 	// Drag/drop invariant: limit=1 with afterCursor == page1's nextCursor returns exactly page2[0].
-	probe, probeCursor, probeHasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	probe, probeCursor, probeHasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("probe limit=1: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestListTodosForBoardLane_PaginationBoundaryContract(t *testing.T) {
 	all = append(all, items1...)
 	all = append(all, items2...)
 	afterRank2, afterID2 := ParseLaneCursor(cursor2)
-	items3, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank2, afterID2, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items3, _, _, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank2, afterID2, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("page3: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestListTodosForBoardLane_TagFilterPaginationInvariants(t *testing.T) {
 	afterRank, afterID := int64(0), int64(0)
 	var prevLast *Todo
 	for page := 0; page < 5; page++ {
-		items, nextCur, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank, afterID, tag, "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+		items, nextCur, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, pageSize, afterRank, afterID, tag, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
@@ -461,7 +461,7 @@ func TestListTodosForBoardLane_TagFilter(t *testing.T) {
 		t.Fatalf("CreateTodo: %v", err)
 	}
 
-	items, _, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 10, 0, 0, "bug", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	items, _, hasMore, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 10, 0, 0, "bug", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestGetBoardPaged_ReturnsColumnsMeta(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, meta, err := st.GetBoardPaged(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, 10)
+	_, _, _, cols, meta, err := st.GetBoardPaged(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
 	if err != nil {
 		t.Fatalf("GetBoardPaged: %v", err)
 	}

@@ -20,14 +20,14 @@ type todoWithLaneTotal struct {
 const boardTodoSoftCap = 2000
 
 // flushLane writes the first limitPerLane items to cols[key], and meta for hasMore/cursor/totalCount.
-func flushLane(key string, page []Todo, laneTotal, limitPerLane int, cols map[string][]Todo, meta map[string]LaneMeta) {
+func flushLane(key string, page []Todo, laneTotal, limitPerLane int, cols map[string][]Todo, meta map[string]LaneMeta, sortOrder SortOrder) {
 	hasMore := len(page) > limitPerLane
 	var items []Todo
 	var nextCursor string
 	if hasMore {
 		items = page[:limitPerLane]
 		last := items[len(items)-1]
-		nextCursor = fmt.Sprintf("%d:%d", last.Rank, last.ID)
+		nextCursor = laneCursor(last, sortOrder)
 	} else {
 		items = page
 	}
@@ -35,15 +35,68 @@ func flushLane(key string, page []Todo, laneTotal, limitPerLane int, cols map[st
 	meta[key] = LaneMeta{HasMore: hasMore, NextCursor: nextCursor, TotalCount: laneTotal}
 }
 
+// laneCursor encodes the pagination cursor for the last row of a page, using
+// whichever fields the active sortOrder actually orders by so that
+// ParseLaneCursor's generic "a:b" split lines up with the ORDER BY/predicate
+// pair chosen by laneOrderBy/laneCursorPredicate below.
+func laneCursor(t Todo, sortOrder SortOrder) string {
+	switch sortOrder {
+	case SortOrderNewest, SortOrderOldest:
+		return fmt.Sprintf("%d:%d", t.CreatedAt.UnixMilli(), t.ID)
+	default:
+		return fmt.Sprintf("%d:%d", t.Rank, t.ID)
+	}
+}
+
+// laneOrderBy returns the ORDER BY fragment (no leading "ORDER BY") for a
+// single lane's todos under the given sortOrder. Default preserves the
+// existing manual drag-rank order; newest/oldest order by created_at with id
+// as a stable tiebreaker.
+func laneOrderBy(sortOrder SortOrder) string {
+	switch sortOrder {
+	case SortOrderNewest:
+		return "t.created_at DESC, t.id DESC"
+	case SortOrderOldest:
+		return "t.created_at ASC, t.id ASC"
+	default:
+		return "t.rank ASC, t.id ASC"
+	}
+}
+
+// laneCursorPredicate returns the "AND (...) OP (?, ?)" fragment that
+// continues pagination after the cursor's two values, matching laneOrderBy's
+// ordering direction for the same sortOrder.
+func laneCursorPredicate(sortOrder SortOrder) string {
+	switch sortOrder {
+	case SortOrderNewest:
+		return " AND (t.created_at, t.id) < (?, ?)"
+	case SortOrderOldest:
+		return " AND (t.created_at, t.id) > (?, ?)"
+	default:
+		return " AND (t.rank, t.id) > (?, ?)"
+	}
+}
+
+// laneCursorSentinel returns the (a, b) starting bound used when fetching a
+// lane's first page (no real cursor yet), chosen so laneCursorPredicate's
+// comparison is true for every row regardless of sortOrder's direction.
+func laneCursorSentinel(sortOrder SortOrder) (a, b int64) {
+	if sortOrder == SortOrderNewest {
+		return math.MaxInt64, math.MaxInt64
+	}
+	return math.MinInt64, 0
+}
+
 // getBoardPagedPerLane is the fallback when totalTodos exceeds boardTodoSoftCap.
 // tagFilter must already be resolved for this request (no per-lane re-scan).
-func (s *Store) getBoardPagedPerLane(ctx context.Context, pc *ProjectContext, projectID int64, workflow []WorkflowColumn, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, limitPerLane int, tags []TagCount) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, map[string]LaneMeta, error) {
+func (s *Store) getBoardPagedPerLane(ctx context.Context, pc *ProjectContext, projectID int64, workflow []WorkflowColumn, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder, limitPerLane int, tags []TagCount) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, map[string]LaneMeta, error) {
 	cols := make(map[string][]Todo, len(workflow))
 	meta := make(map[string]LaneMeta, len(workflow))
 	for _, col := range workflow {
 		cols[col.Key] = []Todo{}
 		meta[col.Key] = LaneMeta{}
-		items, nextCursor, hasMore, err := s.listTodosForBoardLaneResolved(ctx, projectID, col.Key, limitPerLane, math.MinInt64, 0, tagFilter, searchFilter, assigneeFilter, sprintFilter)
+		startA, startB := laneCursorSentinel(sortOrder)
+		items, nextCursor, hasMore, err := s.listTodosForBoardLaneResolved(ctx, projectID, col.Key, limitPerLane, startA, startB, tagFilter, searchFilter, assigneeFilter, sprintFilter, sortOrder)
 		if err != nil {
 			return Project{}, nil, nil, nil, nil, err
 		}
@@ -106,9 +159,9 @@ func assigneeFilterArgs(af AssigneeFilter) (cond string, args []any) {
 // GetBoardPaged returns board with optional per-lane pagination. When limitPerLane > 0,
 // runs 5 lane queries and returns columnsMeta for each status. Otherwise same as GetBoard.
 // pc must be non-nil; use GetProjectContextBySlug or GetProjectContextForRead to obtain it.
-func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter string, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, limitPerLane int) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, map[string]LaneMeta, error) {
+func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter string, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder, limitPerLane int) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, map[string]LaneMeta, error) {
 	if limitPerLane <= 0 {
-		project, tags, workflow, cols, err := s.GetBoard(ctx, pc, tagFilter, searchFilter, assigneeFilter, sprintFilter)
+		project, tags, workflow, cols, err := s.GetBoard(ctx, pc, tagFilter, searchFilter, assigneeFilter, sprintFilter, sortOrder)
 		return project, tags, workflow, cols, nil, err
 	}
 
@@ -141,11 +194,11 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 		return Project{}, nil, nil, nil, nil, err
 	}
 	if totalTodos > boardTodoSoftCap {
-		return s.getBoardPagedPerLane(ctx, pc, projectID, workflow, resolvedFilter, searchFilter, assigneeFilter, sprintFilter, limitPerLane, tags)
+		return s.getBoardPagedPerLane(ctx, pc, projectID, workflow, resolvedFilter, searchFilter, assigneeFilter, sprintFilter, sortOrder, limitPerLane, tags)
 	}
 
 	// Fast path: single window-function query returns rows + lane totals
-	allTodos, err := s.listAllTodosForBoardWithCounts(ctx, projectID, resolvedFilter, searchFilter, assigneeFilter, sprintFilter)
+	allTodos, err := s.listAllTodosForBoardWithCounts(ctx, projectID, resolvedFilter, searchFilter, assigneeFilter, sprintFilter, sortOrder)
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
 	}
@@ -164,7 +217,7 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 	for _, tw := range allTodos {
 		if tw.Todo.ColumnKey != currentKey {
 			if currentKey != "" {
-				flushLane(currentKey, page, laneTotal, limitPerLane, cols, meta)
+				flushLane(currentKey, page, laneTotal, limitPerLane, cols, meta, sortOrder)
 			}
 			currentKey = tw.Todo.ColumnKey
 			page = nil
@@ -173,7 +226,7 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 		page = append(page, tw.Todo)
 	}
 	if currentKey != "" {
-		flushLane(currentKey, page, laneTotal, limitPerLane, cols, meta)
+		flushLane(currentKey, page, laneTotal, limitPerLane, cols, meta, sortOrder)
 	}
 
 	if pc.Project.ExpiresAt != nil {
@@ -187,7 +240,7 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 
 // GetBoard returns full board (all todos, no pagination).
 // pc must be non-nil; use GetProjectContextBySlug or GetProjectContextForRead to obtain it.
-func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter string, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, error) {
+func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter string, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder) (Project, []TagCount, []WorkflowColumn, map[string][]Todo, error) {
 	projectID := pc.Project.ID
 	var viewerUserID *int64
 	if userID, ok := UserIDFromContext(ctx); ok {
@@ -216,7 +269,7 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 
 	// OPTIMIZED: Fetch all todos in a single query instead of 5 separate queries (one per status)
 	// This reduces query overhead and is more efficient on low-power hardware
-	todos, err := s.listAllTodosForBoard(ctx, projectID, resolvedFilter, searchFilter, assigneeFilter, sprintFilter)
+	todos, err := s.listAllTodosForBoard(ctx, projectID, resolvedFilter, searchFilter, assigneeFilter, sprintFilter, sortOrder)
 	if err != nil {
 		return Project{}, nil, nil, nil, err
 	}
@@ -238,12 +291,13 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 
 // listAllTodosForBoard fetches all todos for a board in a single query
 // OPTIMIZED: Single query instead of 5 separate queries (one per status)
-func (s *Store) listAllTodosForBoard(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter) ([]Todo, error) {
+func (s *Store) listAllTodosForBoard(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder) ([]Todo, error) {
 	// Show ALL tags on todos (no user filter - collaboration-friendly)
 	// Tag filter matches by resolved backing tag IDs
 
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 	assigneeCond, assigneeArgs := assigneeFilterArgs(assigneeFilter)
+	orderBy := "t.column_key ASC, " + laneOrderBy(sortOrder)
 
 	var rows *sql.Rows
 	var err error
@@ -262,7 +316,7 @@ WHERE
   t.project_id = ?
   `+sprintCond+assigneeCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
+ORDER BY `+orderBy+`
 `,
 			args...,
 		)
@@ -292,7 +346,7 @@ WHERE
   t.project_id = ?
   `+sprintCond+assigneeCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
+ORDER BY `+orderBy+`
 `,
 			args...,
 		)
@@ -408,9 +462,10 @@ AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE 
 
 // listAllTodosForBoardWithCounts fetches all todos with per-lane totals via window function.
 // Each row carries lane_total; no separate count query needed.
-func (s *Store) listAllTodosForBoardWithCounts(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter) ([]todoWithLaneTotal, error) {
+func (s *Store) listAllTodosForBoardWithCounts(ctx context.Context, projectID int64, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder) ([]todoWithLaneTotal, error) {
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 	assigneeCond, assigneeArgs := assigneeFilterArgs(assigneeFilter)
+	orderBy := "t.column_key ASC, " + laneOrderBy(sortOrder)
 
 	var rows *sql.Rows
 	var err error
@@ -429,7 +484,7 @@ WHERE
   t.project_id = ?
 `+sprintCond+assigneeCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
+ORDER BY `+orderBy+`
 `, args...)
 	} else {
 		if len(tagFilter.TagIDs) == 0 {
@@ -457,7 +512,7 @@ WHERE
   t.project_id = ?
 `+sprintCond+assigneeCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
+ORDER BY `+orderBy+`
 `, args...)
 	}
 	if err != nil {
@@ -521,13 +576,16 @@ ORDER BY t.column_key ASC, t.rank ASC, t.id ASC
 }
 
 // ListTodosForBoardLane returns todos for one status with cursor-based pagination.
-// Cursor format "rank:id" uses DB id (not localId). Returns (items, nextCursor, hasMore).
-// nextCursor is empty when hasMore is false.
+// Cursor format is "a:b" where (a, b) depends on sortOrder: for the default manual
+// order it's "rank:id" (DB id, not localId); for sortOrder=newest/oldest it's
+// "createdAtMs:id". Returns (items, nextCursor, hasMore). nextCursor is empty when
+// hasMore is false.
 //
-// Ordering contract: queries use "ORDER BY t.rank ASC, t.id ASC". The cursor tuple (rank, id)
-// MUST match that order; the predicate "(t.rank, t.id) > (?, ?)" continues after the last
-// returned row. If ORDER BY changes, pagination tests and cursor semantics must be updated together.
-func (s *Store) ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter) ([]Todo, string, bool, error) {
+// Ordering contract: the query's ORDER BY and cursor predicate are chosen together by
+// laneOrderBy/laneCursorPredicate for the given sortOrder, and laneCursor encodes the
+// matching two fields for the "last row" cursor. If either helper changes independently,
+// pagination tests and cursor semantics must be updated together.
+func (s *Store) ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterA, afterB int64, tagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder) ([]Todo, string, bool, error) {
 	// Exported entry point (lane pagination, MCP board tools): resolve once so the
 	// filter agrees with GetBoard for the same project scope.
 	p, err := s.getProject(ctx, projectID)
@@ -538,12 +596,12 @@ func (s *Store) ListTodosForBoardLane(ctx context.Context, projectID int64, colu
 	if err != nil {
 		return nil, "", false, err
 	}
-	return s.listTodosForBoardLaneResolved(ctx, projectID, columnKey, limit, afterRank, afterID, resolved, searchFilter, assigneeFilter, sprintFilter)
+	return s.listTodosForBoardLaneResolved(ctx, projectID, columnKey, limit, afterA, afterB, resolved, searchFilter, assigneeFilter, sprintFilter, sortOrder)
 }
 
 // listTodosForBoardLaneResolved is the lane list helper that consumes a pre-resolved
 // tag filter (no project lookup, no tag-row scan).
-func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter) ([]Todo, string, bool, error) {
+func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int64, columnKey string, limit int, afterA, afterB int64, tagFilter boardTagFilter, searchFilter string, assigneeFilter AssigneeFilter, sprintFilter SprintFilter, sortOrder SortOrder) ([]Todo, string, bool, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -551,6 +609,8 @@ func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int
 
 	sprintCond, sprintArgs := sprintFilterArgs(sprintFilter)
 	assigneeCond, assigneeArgs := assigneeFilterArgs(assigneeFilter)
+	orderBy := laneOrderBy(sortOrder)
+	cursorPredicate := laneCursorPredicate(sortOrder)
 
 	var rows *sql.Rows
 	var err error
@@ -559,7 +619,7 @@ func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int
 		args := []any{projectID, columnKey}
 		args = append(args, sprintArgs...)
 		args = append(args, assigneeArgs...)
-		args = append(args, afterRank, afterID, searchFilter, searchFilter, searchFilter, fetchLimit)
+		args = append(args, afterA, afterB, searchFilter, searchFilter, searchFilter, fetchLimit)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
   t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.created_at, t.updated_at, t.done_at
@@ -567,9 +627,9 @@ FROM todos t
 WHERE
   t.project_id = ? AND t.column_key = ?
   `+sprintCond+assigneeCond+`
-  AND (t.rank, t.id) > (?, ?)
+  `+cursorPredicate+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-ORDER BY t.rank ASC, t.id ASC
+ORDER BY `+orderBy+`
 LIMIT ?
 `,
 			args...,
@@ -579,13 +639,13 @@ LIMIT ?
 			return nil, "", false, nil
 		}
 		idPH, idArgs := tagFilterPlaceholders(tagFilter.TagIDs)
-		// Placeholder order: CTE tag_id IN (…) (N), main project_id=? (1), status=? (2), sprintCond (0–1), assigneeCond (0–1), (rank,id) (3,4), search ?,?,? (5), LIMIT ? (6).
+		// Placeholder order: CTE tag_id IN (…) (N), main project_id=? (1), status=? (2), sprintCond (0–1), assigneeCond (0–1), cursor (3,4), search ?,?,? (5), LIMIT ? (6).
 		args := make([]any, 0, len(idArgs)+10)
 		args = append(args, idArgs...)
 		args = append(args, projectID, columnKey)
 		args = append(args, sprintArgs...)
 		args = append(args, assigneeArgs...)
-		args = append(args, afterRank, afterID, searchFilter, searchFilter, searchFilter, fetchLimit)
+		args = append(args, afterA, afterB, searchFilter, searchFilter, searchFilter, fetchLimit)
 		rows, err = s.db.QueryContext(ctx, `
 WITH tagged_todos AS (
   SELECT DISTINCT tt.todo_id
@@ -599,9 +659,9 @@ INNER JOIN tagged_todos ft ON ft.todo_id = t.id
 WHERE
   t.project_id = ? AND t.column_key = ?
   `+sprintCond+assigneeCond+`
-  AND (t.rank, t.id) > (?, ?)
+  `+cursorPredicate+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
-ORDER BY t.rank ASC, t.id ASC
+ORDER BY `+orderBy+`
 LIMIT ?
 `,
 			args...,
@@ -670,7 +730,7 @@ LIMIT ?
 	}
 	if hasMore {
 		last := out[len(out)-1]
-		return out, fmt.Sprintf("%d:%d", last.Rank, last.ID), true, nil
+		return out, laneCursor(last, sortOrder), true, nil
 	}
 	return out, "", false, nil
 }

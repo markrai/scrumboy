@@ -131,6 +131,19 @@ type AssigneeFilter struct {
 	userID int64
 }
 
+// SortOrder represents the board todo ordering within each lane.
+//
+// The zero value (SortOrderDefault) preserves today's manual drag-rank order
+// ("t.rank ASC, t.id ASC"). SortOrderNewest/SortOrderOldest order by
+// created_at instead; ties break on id to keep pagination stable.
+type SortOrder string
+
+const (
+	SortOrderDefault SortOrder = ""
+	SortOrderNewest  SortOrder = "newest"
+	SortOrderOldest  SortOrder = "oldest"
+)
+
 // ProjectContext bundles project, role, and auth state computed once per request.
 // Pass to GetBoard, GetBoardPaged, listTagCounts to avoid redundant project/auth queries.
 type ProjectContext struct {

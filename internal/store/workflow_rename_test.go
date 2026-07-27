@@ -55,7 +55,7 @@ func TestRenameLane_UpdatesNamePreservesKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}

@@ -39,7 +39,7 @@ func TestGetBoard_NoHang(t *testing.T) {
 	go func() {
 		defer close(done)
 		pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-		_, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+		_, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		boardErr = err
 	}()
 

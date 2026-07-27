@@ -240,7 +240,12 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
 			return true
 		}
-		project, tags, workflow, cols, err := s.store.GetBoard(ctx, &pc, tag, search, assigneeFilter, sprintFilter)
+		sortOrder, err := s.parseSortOrderFromQuery(r)
+		if err != nil {
+			writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
+			return true
+		}
+		project, tags, workflow, cols, err := s.store.GetBoard(ctx, &pc, tag, search, assigneeFilter, sprintFilter, sortOrder)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true

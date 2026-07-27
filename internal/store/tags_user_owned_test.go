@@ -290,7 +290,7 @@ VALUES (?, ?, ?, ?)
 
 	// View board as user1 - should see ALL tags (both "bug" and "feature")
 	pc, _ := st.GetProjectContextForRead(ctx1, p.ID, ModeFull)
-	_, tags, _, _, err := st.GetBoard(ctx1, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, tags, _, _, err := st.GetBoard(ctx1, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -725,7 +725,7 @@ VALUES (?, ?, ?, ?)
 
 	// Filter by "bug" - should match both todos (filtering by name, not owner)
 	pc, _ := st.GetProjectContextForRead(ctx1, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx1, &pc, "bug", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx1, &pc, "bug", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -850,7 +850,7 @@ func TestUserOwnedTags_CannotDeleteOtherUsersTags(t *testing.T) {
 	// User1 can delete their own tag (if no references)
 	// First delete the todo
 	pc, _ := st.GetProjectContextForRead(ctx1, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx1, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx1, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}

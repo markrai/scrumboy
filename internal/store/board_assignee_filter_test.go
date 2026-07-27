@@ -123,7 +123,7 @@ func TestGetBoard_AssigneeFilter(t *testing.T) {
 
 	t.Run("filters by specific assignee", func(t *testing.T) {
 		filter := mustAssigneeFilter(t, strconv.FormatInt(u1.ID, 10), nil)
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"})
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -135,7 +135,7 @@ func TestGetBoard_AssigneeFilter(t *testing.T) {
 
 	t.Run("filters unassigned", func(t *testing.T) {
 		filter := mustAssigneeFilter(t, "unassigned", nil)
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"})
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -146,7 +146,7 @@ func TestGetBoard_AssigneeFilter(t *testing.T) {
 	})
 
 	t.Run("no filter returns all", func(t *testing.T) {
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -157,7 +157,7 @@ func TestGetBoard_AssigneeFilter(t *testing.T) {
 
 	t.Run("paged path combines assignee tag and search", func(t *testing.T) {
 		filter := mustAssigneeFilter(t, strconv.FormatInt(u1.ID, 10), nil)
-		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "focus", "u1", filter, SprintFilter{Mode: "none"}, 1)
+		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "focus", "u1", filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
 		}
@@ -173,7 +173,7 @@ func TestGetBoard_AssigneeFilter(t *testing.T) {
 
 	t.Run("paged path filters unassigned", func(t *testing.T) {
 		filter := mustAssigneeFilter(t, "unassigned", nil)
-		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, 1)
+		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
 		}
@@ -188,7 +188,7 @@ func TestGetBoard_AssigneeFilter(t *testing.T) {
 
 	t.Run("unknown positive user id returns empty board", func(t *testing.T) {
 		filter := mustAssigneeFilter(t, strconv.FormatInt(math.MaxInt64, 10), nil)
-		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, 1)
+		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
 		}
@@ -232,7 +232,7 @@ func TestListTodosForBoardLane_AssigneeFilter(t *testing.T) {
 	}
 
 	filter := mustAssigneeFilter(t, strconv.FormatInt(u1.ID, 10), nil)
-	items, cursor, hasMore, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, math.MinInt64, 0, "", "", filter, SprintFilter{Mode: "none"})
+	items, cursor, hasMore, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, math.MinInt64, 0, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestListTodosForBoardLane_AssigneeFilter(t *testing.T) {
 	}
 
 	afterRank, afterID := ParseLaneCursor(cursor)
-	items, _, hasMore, err = st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, afterRank, afterID, "", "", filter, SprintFilter{Mode: "none"})
+	items, _, hasMore, err = st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, afterRank, afterID, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane second page: %v", err)
 	}
@@ -337,7 +337,7 @@ VALUES (?, ?, ?, '', ?, ?, NULL, ?, NULL, ?, ?, NULL)`)
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
 	filter := mustAssigneeFilter(t, strconv.FormatInt(matchingUser.ID, 10), nil)
-	_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, 2)
+	_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault, 2)
 	if err != nil {
 		t.Fatalf("GetBoardPaged: %v", err)
 	}
@@ -359,7 +359,7 @@ VALUES (?, ?, ?, '', ?, ?, NULL, ?, NULL, ?, ?, NULL)`)
 	}
 
 	afterRank, afterID := ParseLaneCursor(laneMeta.NextCursor)
-	nextItems, _, _, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 3, afterRank, afterID, "", "", filter, SprintFilter{Mode: "none"})
+	nextItems, _, _, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 3, afterRank, afterID, "", "", filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane next page: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestGetBoardPaged_AssigneeSprintTagSearchComposition(t *testing.T) {
 	}
 	filter := mustAssigneeFilter(t, strconv.FormatInt(matchingUser.ID, 10), nil)
 	sprintFilter := SprintFilter{Mode: "sprint", SprintID: targetSprint.ID}
-	_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "focus", "needle", filter, sprintFilter, 10)
+	_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "focus", "needle", filter, sprintFilter, SortOrderDefault, 10)
 	if err != nil {
 		t.Fatalf("GetBoardPaged: %v", err)
 	}

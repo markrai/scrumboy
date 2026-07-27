@@ -34,6 +34,11 @@ func (s *Server) parseAssigneeFilterFromQuery(ctx context.Context, r *http.Reque
 	return store.ParseAssigneeFilter(r.URL.Query().Get("assignee"), actorUserID)
 }
 
+// parseSortOrderFromQuery validates the board "sort" query value.
+func (s *Server) parseSortOrderFromQuery(r *http.Request) (store.SortOrder, error) {
+	return store.ParseSortOrder(r.URL.Query().Get("sort"))
+}
+
 // parseSprintFilterFromQuery parses sprintId from the request query and returns a SprintFilter.
 // Absence of sprintId -> Mode "none" (no sprint filter).
 // sprintId=scheduled -> Mode "scheduled" (sprint_id IS NOT NULL, i.e. "Scheduled" view). "assigned" is accepted for backward compatibility.

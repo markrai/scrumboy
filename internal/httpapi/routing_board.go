@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -90,6 +91,11 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
 			return true
 		}
+		sortOrder, err := s.parseSortOrderFromQuery(r)
+		if err != nil {
+			writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
+			return true
+		}
 		hasSprints, err := s.store.HasSprints(ctx, project.ID)
 		if err != nil {
 			writeStoreErr(w, err, true)
@@ -111,7 +117,7 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 				limitPerLane = n
 			}
 		}
-		project2, tags, workflow, cols, meta, err := s.store.GetBoardPaged(ctx, pc, tag, search, assigneeFilter, sprintFilter, limitPerLane)
+		project2, tags, workflow, cols, meta, err := s.store.GetBoardPaged(ctx, pc, tag, search, assigneeFilter, sprintFilter, sortOrder, limitPerLane)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -346,6 +352,11 @@ func (s *Server) handleBoardLaneRoutes(w http.ResponseWriter, r *http.Request, r
 		writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
 		return true
 	}
+	sortOrder, err := s.parseSortOrderFromQuery(r)
+	if err != nil {
+		writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
+		return true
+	}
 	limit := 20
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
@@ -353,9 +364,20 @@ func (s *Server) handleBoardLaneRoutes(w http.ResponseWriter, r *http.Request, r
 		}
 	}
 	afterCursor := r.URL.Query().Get("afterCursor")
-	afterRank, afterID := store.ParseLaneCursor(afterCursor)
+	var afterA, afterB int64
+	if strings.TrimSpace(afterCursor) == "" {
+		// No cursor yet (first page): use a bound that matches every row for the
+		// active sortOrder's comparison direction. For the default/oldest
+		// ascending order this is (0, 0), same as today's behavior. For
+		// newest (descending), a low bound would incorrectly exclude every row.
+		if sortOrder == store.SortOrderNewest {
+			afterA, afterB = math.MaxInt64, math.MaxInt64
+		}
+	} else {
+		afterA, afterB = store.ParseLaneCursor(afterCursor)
+	}
 
-	items, nextCursor, hasMore, err := s.store.ListTodosForBoardLane(ctx, project.ID, columnKey, limit, afterRank, afterID, tag, search, assigneeFilter, sprintFilter)
+	items, nextCursor, hasMore, err := s.store.ListTodosForBoardLane(ctx, project.ID, columnKey, limit, afterA, afterB, tag, search, assigneeFilter, sprintFilter, sortOrder)
 	if err != nil {
 		writeStoreErr(w, err, true)
 		return true
