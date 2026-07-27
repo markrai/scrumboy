@@ -3658,8 +3658,6 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 
   .search-filter-panel {
-    left: auto;
-    right: 0;
     max-width: calc(100vw - 20px);
   }
 
@@ -4655,10 +4653,14 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   }
 }
 
+/* `position: fixed` (not `absolute`) is required here: `.topbar` sets
+   `overflow-y: hidden` for its mobile chip-wrapping layout, which would clip
+   an absolutely positioned descendant to the topbar's own box. `top`/`left`
+   are set inline by positionFilterPanel() in board-filters.ts, computed from
+   the toggle button's viewport position, since fixed positioning can't rely
+   on a `right: 0` offset from an ancestor. */
 .search-filter-panel {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
+  position: fixed;
   z-index: 20;
   min-width: 200px;
   max-width: calc(100vw - 20px);

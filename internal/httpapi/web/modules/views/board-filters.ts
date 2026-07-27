@@ -191,9 +191,25 @@ function closeFilterPanel(panel: HTMLElement, toggle: HTMLElement): void {
   toggle.setAttribute("aria-expanded", "false");
 }
 
+// The panel is `position: fixed` and positioned here (rather than via CSS
+// `top/right` relative to `.search-input-wrapper`) because `.topbar` sets
+// `overflow-y: hidden` for its mobile chip-wrapping layout; an absolutely
+// positioned descendant would be clipped to the topbar's own box.
+function positionFilterPanel(panel: HTMLElement, toggle: HTMLElement): void {
+  const toggleRect = toggle.getBoundingClientRect();
+  const margin = 8;
+  panel.style.top = `${toggleRect.bottom + 6}px`;
+  // Measure after making it visible (but off-thread of layout) so panel.offsetWidth is accurate.
+  const panelWidth = panel.offsetWidth || 200;
+  let left = toggleRect.right - panelWidth;
+  left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
+  panel.style.left = `${left}px`;
+}
+
 function openFilterPanel(panel: HTMLElement, toggle: HTMLElement): void {
   panel.hidden = false;
   toggle.setAttribute("aria-expanded", "true");
+  positionFilterPanel(panel, toggle);
 }
 
 // updateFilterToggleActiveState toggles the CSS class that drives the slow
@@ -237,6 +253,10 @@ function bindFilterPanel(): void {
       closeFilterPanel(panel, toggle);
       toggle.focus();
     }
+  });
+
+  window.addEventListener("resize", () => {
+    if (!panel.hidden) positionFilterPanel(panel, toggle);
   });
 
   panel.addEventListener("click", (e) => {
