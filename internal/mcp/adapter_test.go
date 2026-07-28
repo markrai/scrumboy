@@ -473,8 +473,25 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		t.Fatalf("expected authenticatedToolsUsable false, got %#v", auth["authenticatedToolsUsable"])
 	}
 	tools := data["implementedTools"].([]any)
-	if len(tools) != 35 || tools[0] != "system_getCapabilities" || tools[1] != "projects_list" || tools[2] != "todos_create" || tools[3] != "todos_get" || tools[4] != "todos_search" || tools[5] != "todos_update" || tools[6] != "todos_delete" || tools[7] != "todos_move" || tools[8] != "todos_linksList" || tools[9] != "todos_linkAdd" || tools[10] != "todos_linkRemove" || tools[11] != "sprints_list" || tools[12] != "sprints_get" || tools[13] != "sprints_getActive" || tools[14] != "sprints_create" || tools[15] != "sprints_activate" || tools[16] != "sprints_close" || tools[17] != "sprints_update" || tools[18] != "sprints_delete" || tools[19] != "tags_listProject" || tools[20] != "tags_listMine" || tools[21] != "tags_updateMineColor" || tools[22] != "tags_deleteMine" || tools[23] != "tags_updateProjectColor" || tools[24] != "tags_deleteProject" || tools[25] != "members_list" || tools[26] != "members_listAvailable" || tools[27] != "members_add" || tools[28] != "members_updateRole" || tools[29] != "members_remove" || tools[30] != "board_get" || tools[31] != "workflow_list" || tools[32] != "workflow_create" || tools[33] != "workflow_update" || tools[34] != "workflow_delete" {
+	wantTools := []any{
+		"system_getCapabilities", "projects_list", "projects_create", "projects_update", "projects_delete",
+		"todos_create", "todos_get", "todos_search", "todos_update", "todos_delete", "todos_move", "todos_linksList", "todos_linkAdd", "todos_linkRemove",
+		"sprints_list", "sprints_get", "sprints_getActive", "sprints_create", "sprints_activate", "sprints_close", "sprints_update", "sprints_delete",
+		"tags_listProject", "tags_listMine", "tags_updateMineColor", "tags_deleteMine", "tags_updateProjectColor", "tags_deleteProject",
+		"members_list", "members_listAvailable", "members_add", "members_updateRole", "members_remove",
+		"board_get",
+		"workflow_list", "workflow_create", "workflow_update", "workflow_delete",
+		"dashboard_getSummary", "dashboard_listTodos",
+		"metrics_getBurndown", "metrics_getBacklogSize",
+		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",
+	}
+	if len(tools) != len(wantTools) {
 		t.Fatalf("unexpected implementedTools: %#v", tools)
+	}
+	for i := range wantTools {
+		if tools[i] != wantTools[i] {
+			t.Fatalf("unexpected implementedTools: %#v", tools)
+		}
 	}
 	if _, ok := data["plannedTools"]; ok {
 		t.Fatalf("expected plannedTools omitted once board_get is implemented, got %#v", data["plannedTools"])

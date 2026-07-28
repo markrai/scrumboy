@@ -608,7 +608,7 @@ func (a *Adapter) validateMoveAnchors(ctx context.Context, projectID int64, colu
 	// there are additional todos on the far side, so MCP only accepts anchors that
 	// are already at the boundary of the target column.
 	if afterTodo != nil {
-		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, afterTodo.Rank, afterTodo.ID, "", "", store.SprintFilter{})
+		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, afterTodo.Rank, afterTodo.ID, "", "", store.AssigneeFilter{}, store.SprintFilter{}, store.SortOrderDefault)
 		if err != nil {
 			return mapStoreError(err)
 		}
@@ -619,7 +619,7 @@ func (a *Adapter) validateMoveAnchors(ctx context.Context, projectID int64, colu
 
 	if beforeTodo != nil {
 		const laneStartRank int64 = -1 << 63
-		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, laneStartRank, 0, "", "", store.SprintFilter{})
+		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, laneStartRank, 0, "", "", store.AssigneeFilter{}, store.SprintFilter{}, store.SortOrderDefault)
 		if err != nil {
 			return mapStoreError(err)
 		}

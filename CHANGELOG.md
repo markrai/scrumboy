@@ -1,6 +1,58 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.28.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+
+## [3.28.2] - 2026-07-27
+
+### Changed
+
+- **Activity email copy is reason-specific** - Opt-in board activity emails no longer use a generic "activity update" subject/body. Each mapped `board.refresh_needed` reason gets its own subject phrase (e.g. `card moved`, `sprint closed`) and body copy that names the actor when known (`Alex moved a card in …`), with a passive fallback when no display name is available. Actor names prefer the membership list join and fall back to `GetUser` for signed-in temporary-board link visitors who are not project members. Unauthenticated anonymous visitors still produce no activity email (`actorUserId` unset).
+
+## [3.28.1] - 2026-07-27
+
+### Fixed
+
+- **Cross-lane drag disabled under chronological sort (PR #196)** - 3.28.0's "Chronological sort disables manual reorder" went further than intended: it hid the card drag handle entirely and skipped creating any Sortable instances, so cards couldn't be dragged to a *different* lane either, not just reordered within one. Manual-rank anchors derived from chronological DOM neighbors are still invalid, so same-lane reordering stays disabled (`Sortable`'s `sort: false`), but the drag handle is always rendered and cross-lane drops now go through, appending the card to the end of the target lane's rank order (`afterId`/`beforeId` both omitted) rather than trying to anchor off chronological neighbors. Stale Sortable callbacks after a reinit or sort-mode change are ignored so they cannot rewrite ranks from the wrong ordering.
+
+## [3.28.0] - 2026-07-27
+
+### Added
+
+- **Board assignee + sort filters in the web UI (PR #192)** - Follow-up to #189's API/MCP assignee filter. The board search field gains an expandable filter panel (chevron) with assignee (All / Unassigned / Assigned to me / each board member) and sort (Default order / Newest first / Oldest first). Choices are bookmarkable via `?assignee=` and `?sort=` and round-trip through board load, lane pagination, refresh, and router parsing. An active non-default filter/sort pulses the chevron and shows a short toast on pick.
+- **Board sort order across API, store, and MCP** - `sort=newest` / `sort=oldest` order lane todos by `created_at` (with id tie-break) instead of manual rank, including cursor-based "Load more" pagination. MCP `board_get` accepts the same `sort` input. Manual drag-rank remains the default.
+
+### Changed
+
+- **Chronological sort disables manual reorder** - When newest/oldest is active, card drag handles are hidden and Sortable manual-order callbacks cannot rewrite ranks from chronological DOM.
+
+## [3.27.1] - 2026-07-27
+
+### Fixed
+
+- **Board "Load more" collapse on realtime refresh (PR #191)** - Unfiltered board reloads always requested `limitPerLane=20`, so a realtime refresh after expanding a column via "Load more" collapsed the lane back to the first page. Same-board refreshes now preserve the on-screen lane size (filtered or not). Cross-board navigation and initial loads still default to 20. The filtered-drag lane floor is also scoped to the board that raised it, so an elevated floor cannot leak into the next board's first request.
+
+## [3.27.0] - 2026-07-26
+
+### Added
+
+- **Board assignee filtering for API and MCP (PR #189)** - Board reads now accept `assignee=me`, `assignee=unassigned`, or a positive user ID encoded as a string across `GET /api/board/{slug}`, lane pagination, the legacy project-board route, and MCP `board_get`. Invalid values return validation errors and can never silently widen the result to the full board; unknown/non-member positive IDs return an empty board. This release does not add an assignee filter control or bookmarkable `?assignee=` handling to the web UI.
+
+## [3.26.3] - 2026-07-26
+
+### Fixed
+
+- **Grouped-tag viewer colors could silently revert (PR #186)** - If every personal row backing a canonical name stopped being used while another member's same-named row became the current backing row, the viewer's stored color could become unreachable. Durable project listings now fall back to historical personal rows linked to that same project, without allowing unrelated projects or pure board-scoped groups to override the current project. Later set and clear operations converge all same-project linked personal rows so stale preferences cannot resurface.
+
+## [3.26.2] - 2026-07-26
+
+### Added
+
+- **MCP capability audit follow-up: project CRUD, dashboard, metrics, and admin tools** - Closes four gaps identified in an audit of the MCP tool surface against existing backend capabilities:
+  - **Project CRUD** - `projects_create`, `projects_update`, `projects_delete` (maintainer+ for update/delete). Previously only `projects_list` existed. `projects_update` applies the entire patch atomically in one store transaction.
+  - **Dashboard** - `dashboard_getSummary`, `dashboard_listTodos` expose the cross-project "my work" summary and paginated assigned-todo list already used by the web app's dashboard.
+  - **Burndown / backlog-size metrics** - `metrics_getBurndown` (optionally sprint-scoped via `sprintId`) and `metrics_getBacklogSize` wrap the same store queries behind the existing REST burndown/backlog-size endpoints.
+  - **Admin user management** - `admin_listUsers` (owner/admin), `admin_updateUserRole`, `admin_deleteUser` (owner only). `admin_updateUserRole` deliberately does not expose promotion to `owner`, matching the REST admin API.
+  - See [API.md](API.md) for full input/output shapes.
 
 ## [3.26.1] - 2026-07-26
 
@@ -2079,5 +2131,4 @@ See [`docs/oauth.md`](docs/oauth.md), [`docs/mcp.md`](docs/mcp.md), and [`docs/m
 | **Import / export**   | Reliable backup and migration                              |
 | **MCP**               | Automation via agents and external tools                   |
 | **Roles & audit**     | Strong permission model with audit trail                   |
-
 

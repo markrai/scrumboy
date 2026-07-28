@@ -107,4 +107,20 @@ describe('board topbar rendering', () => {
     expect(html).not.toContain('A--&gt;B');
     expect(html).not.toContain('todo-mermaid');
   });
+
+  it('always renders a drag handle, even under chronological sort where only cross-lane drag is allowed', () => {
+    const todo = {
+      id: 7,
+      localId: 12,
+      title: 'Reorder me',
+      body: '',
+      status: 'BACKLOG',
+      tags: [],
+    };
+
+    const html = renderTodoCard(todo);
+    expect(html).toContain('card__drag-handle');
+    expect(html).toContain('aria-label="Drag card"');
+    expect(html).toContain('data-i18n-aria-label="board.todo.dragCard"');
+  });
 });

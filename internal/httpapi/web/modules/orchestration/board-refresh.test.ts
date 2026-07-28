@@ -18,10 +18,10 @@ describe('board-refresh orchestration', () => {
 
     mod.registerBoardRefresher(refreshBoard);
 
-    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', '7');
 
     expect(refreshBoard).toHaveBeenCalledTimes(1);
-    expect(refreshBoard).toHaveBeenCalledWith('alpha', 'tag-a', 'query', '42');
+    expect(refreshBoard).toHaveBeenCalledWith('alpha', 'tag-a', 'query', '42', '7', undefined);
   });
 
   it('coalesces identical invalidates within 700ms', async () => {
@@ -52,9 +52,37 @@ describe('board-refresh orchestration', () => {
     await mod.invalidateBoard('alpha', 'tag-a', 'other-query', '43');
 
     expect(refreshBoard).toHaveBeenCalledTimes(3);
-    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42');
-    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'other-query', '42');
-    expect(refreshBoard).toHaveBeenNthCalledWith(3, 'alpha', 'tag-a', 'other-query', '43');
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', undefined, undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'other-query', '42', undefined, undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(3, 'alpha', 'tag-a', 'other-query', '43', undefined, undefined);
+  });
+
+  it('does not coalesce when only the assignee filter changes', async () => {
+    const mod = await import('./board-refresh.js');
+    const refreshBoard = vi.fn().mockResolvedValue(undefined);
+
+    mod.registerBoardRefresher(refreshBoard);
+
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', 'unassigned');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', 'me');
+
+    expect(refreshBoard).toHaveBeenCalledTimes(2);
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', 'unassigned', undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', 'me', undefined);
+  });
+
+  it('does not coalesce when only the sort order changes', async () => {
+    const mod = await import('./board-refresh.js');
+    const refreshBoard = vi.fn().mockResolvedValue(undefined);
+
+    mod.registerBoardRefresher(refreshBoard);
+
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, 'newest');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, 'oldest');
+
+    expect(refreshBoard).toHaveBeenCalledTimes(2);
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', null, 'newest');
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, 'oldest');
   });
 
   it('refreshSprintsAndChips calls only the sprint refresher', async () => {
@@ -70,5 +98,40 @@ describe('board-refresh orchestration', () => {
     expect(refreshSprints).toHaveBeenCalledTimes(1);
     expect(refreshSprints).toHaveBeenCalledWith('alpha');
     expect(refreshBoard).not.toHaveBeenCalled();
+  });
+
+  it('keeps an elevated lane floor for the same board after a filtered drag', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(45);
+  });
+
+  it('does not apply an elevated lane floor to a different board', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+
+    expect(mod.getBoardLimitPerLaneFloor('beta')).toBe(20);
+  });
+
+  it('resets the lane floor after a successful board response', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+    mod.resetBoardLimitPerLaneFloor();
+
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(20);
+  });
+
+  it('replacing the floor slug clears a prior board elevation', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(45, 'alpha');
+    mod.setBoardLimitPerLaneFloor(25, 'beta');
+
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(20);
+    expect(mod.getBoardLimitPerLaneFloor('beta')).toBe(25);
   });
 });

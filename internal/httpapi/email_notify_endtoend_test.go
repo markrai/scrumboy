@@ -130,7 +130,7 @@ func TestEmailNotify_EndToEnd_TodoAssignedOverRealSMTP(t *testing.T) {
 	if !strings.Contains(first["assignee-e2e@example.com"], "Assigned to you") {
 		t.Fatalf("expected assignment delivery to assignee, got %+v", msgs)
 	}
-	if !strings.Contains(first["member-e2e@example.com"], "activity update") {
+	if !strings.Contains(first["member-e2e@example.com"], "card created") {
 		t.Fatalf("expected card activity delivery to other member, got %+v", msgs)
 	}
 	localID := int64(todo["localId"].(float64))
@@ -149,7 +149,7 @@ func TestEmailNotify_EndToEnd_TodoAssignedOverRealSMTP(t *testing.T) {
 		if strings.Contains(message.Subject, "Assigned to you") {
 			assignmentByRecipient[message.To]++
 		}
-		if strings.Contains(message.Subject, "activity update") {
+		if strings.Contains(message.Subject, "card created") || strings.Contains(message.Subject, "card updated") {
 			activityByRecipient[message.To]++
 		}
 		if message.To == "owner-e2e@example.com" {

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -94,6 +95,34 @@ func TestToolCatalog_NamesUniqueAndClaudeCompatible(t *testing.T) {
 
 		if !claudeToolNamePattern.MatchString(def.Name) {
 			t.Errorf("tool name %q does not match Claude's tool-name pattern %s", def.Name, claudeToolNamePattern.String())
+		}
+	}
+}
+
+func TestToolCatalog_BoardGetAssigneeIsDocumentedStringUnion(t *testing.T) {
+	def, ok := toolCatalogDefinitions()["board_get"]
+	if !ok {
+		t.Fatal("board_get missing from tool catalog")
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("board_get input schema has unexpected type %T", def.InputSchema)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get schema properties have unexpected shape: %#v", schema)
+	}
+	assignee, ok := properties["assignee"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get assignee schema has unexpected shape: %#v", properties["assignee"])
+	}
+	if assignee["type"] != "string" {
+		t.Fatalf("board_get assignee type = %#v, want string", assignee["type"])
+	}
+	description, _ := assignee["description"].(string)
+	for _, requiredText := range []string{`"me"`, `"unassigned"`, "encoded as a string"} {
+		if !strings.Contains(description, requiredText) {
+			t.Fatalf("board_get assignee description %q missing %q", description, requiredText)
 		}
 	}
 }

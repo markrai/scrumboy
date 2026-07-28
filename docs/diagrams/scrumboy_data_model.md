@@ -17,6 +17,8 @@ flowchart TB
     AuthDom[users sessions api tokens oidc]
     OAuthDom[oauth_clients codes access refresh]
     FirstPwd[first_password_grants]
+    Prefs[user_preferences]
+    OrgSet[org_settings]
     WallDom[wall notes edges]
     Audit[audit trail]
     WHook[webhook subscriptions]
@@ -29,7 +31,9 @@ flowchart TB
   HTTP --> SQL
 ```
 
-Wallpaper preference (`user_preferences` key `wallpaper`) records mode/color/revision in SQLite; the normalized JPEG for image mode lives only on disk at `DATA_DIR/user-wallpapers/<user-id>.jpg`.
+Wallpaper preference (`user_preferences` key `wallpaper`) records mode/color/revision in SQLite; the normalized JPEG for image mode lives only on disk at `DATA_DIR/user-wallpapers/<user-id>.jpg`. Preference rows carry a `provenance` column (`legacy` / `org_default` / user-written) so future org bulk-apply can skip customized values.
+
+`org_settings` holds org-wide admin defaults (e.g. seeded `emailNotifications`, default board for new users). Seeds apply at user-creation time only and never rewrite existing preference or membership rows.
 
 OAuth authorization codes and access/refresh tokens (after migration 057) require a non-empty `resource` (canonical MCP audience `<origin>/mcp/rpc`). `oauth_clients` has no resource column. `first_password_grants` references `users(id)` and `sessions(token_hash)`. Expired OAuth artifacts are cleaned by hourly `store.DeleteExpiredOAuthArtifacts`.
 
@@ -50,6 +54,6 @@ sequenceDiagram
   Main->>Main: store.New with optional 2FA encryption key
 ```
 
-As of this tree the highest embedded file is `057_bind_oauth_tokens_to_mcp_resource.sql` (OAuth AS in 055, first-password grants in 056, resource binding in 057). New files under `internal/migrate/migrations/` are applied automatically; do not document a frozen upper bound.
+As of this tree the highest embedded file is `059_add_user_preferences_provenance.sql` (`org_settings` in 058, preference provenance in 059; OAuth AS in 055, first-password grants in 056, resource binding in 057). New files under `internal/migrate/migrations/` are applied automatically; do not document a frozen upper bound.
 
 Authorization checks live in store methods (`CheckProjectRole`, system roles), not only in HTTP handlers.

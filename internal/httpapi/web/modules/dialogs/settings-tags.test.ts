@@ -56,6 +56,8 @@ vi.mock('../realtime/guard.js', () => ({
 }));
 
 vi.mock('../state/selectors.js', () => ({
+  getAssigneeFromUrl: () => new URL(window.location.href).searchParams.get('assignee'),
+  getSortFromUrl: () => new URL(window.location.href).searchParams.get('sort'),
   getSearch: () => selectorState.search,
   getSettingsProjectId: () => selectorState.projectId,
   getSlug: () => selectorState.slug,
@@ -203,7 +205,7 @@ describe('settings-tags', () => {
       body: JSON.stringify({ color: '#123456' }),
     });
     expect(selectorState.tagColors).toEqual({ bug: '#123456' });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42');
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null);
     expect(rerender).not.toHaveBeenCalled();
   });
 
@@ -231,7 +233,7 @@ describe('settings-tags', () => {
       body: JSON.stringify({ color: null }),
     });
     expect(selectorState.tagColors).toEqual({ keep: '#00ff00' });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42');
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null);
     expect(rerender).not.toHaveBeenCalled();
   });
 

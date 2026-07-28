@@ -4,8 +4,8 @@ let boardLimitPerLaneFloor = 20;
 /** Coalesce rapid invalidates (e.g. resume resync + SSE-driven refresh) to reduce duplicate fetches. */
 const INVALIDATE_COALESCE_MS = 700;
 let lastInvalidate = null;
-function invalidateCoalesceKey(slug, tag, search, sprintId) {
-    return `${slug}\t${tag ?? ''}\t${search ?? ''}\t${sprintId ?? ''}`;
+function invalidateCoalesceKey(slug, tag, search, sprintId, assignee, sort) {
+    return `${slug}\t${tag ?? ''}\t${search ?? ''}\t${sprintId ?? ''}\t${assignee ?? ''}\t${sort ?? ''}`;
 }
 export function registerBoardRefresher(fn) {
     refreshBoard = fn;
@@ -16,19 +16,19 @@ export function registerSprintsRefresher(fn) {
 /**
  * Maintained full-board reload entrypoint used by realtime, resume resync, and
  * explicit UI follow-up refreshes after board-affecting mutations. Exact
- * duplicate slug/tag/search/sprintId invalidates are coalesced within
+ * duplicate slug/tag/search/sprintId/assignee/sort invalidates are coalesced within
  * INVALIDATE_COALESCE_MS.
  */
-export async function invalidateBoard(slug, tag, search, sprintId) {
+export async function invalidateBoard(slug, tag, search, sprintId, assignee, sort) {
     if (!refreshBoard)
         return;
     const now = Date.now();
-    const key = invalidateCoalesceKey(slug, tag, search, sprintId);
+    const key = invalidateCoalesceKey(slug, tag, search, sprintId, assignee, sort);
     if (lastInvalidate && lastInvalidate.key === key && now - lastInvalidate.at < INVALIDATE_COALESCE_MS) {
         return;
     }
     lastInvalidate = { key, at: now };
-    await refreshBoard(slug, tag, search, sprintId);
+    await refreshBoard(slug, tag, search, sprintId, assignee, sort);
 }
 export function setBoardLimitPerLaneFloor(limit) {
     if (Number.isFinite(limit) && limit > boardLimitPerLaneFloor) {
