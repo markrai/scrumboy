@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { state, apiFetchMock, floorBySlug } = vi.hoisted(() => ({
+const { state, apiFetchMock, floorBySlug, defaultCardsPerLane } = vi.hoisted(() => ({
   state: { board: null as any, slug: null as string | null },
   apiFetchMock: vi.fn(),
   floorBySlug: { value: {} as Record<string, number> },
+  defaultCardsPerLane: { value: 20 },
 }));
 
 vi.mock("../state/selectors.js", () => ({
@@ -91,8 +92,10 @@ vi.mock("../orchestration/board-refresh.js", () => ({
   registerBoardRefresher: vi.fn(),
   registerSprintsRefresher: vi.fn(),
   invalidateBoard: vi.fn(),
-  getBoardLimitPerLaneFloor: vi.fn((forSlug: string) => floorBySlug.value[forSlug] ?? 20),
+  getDefaultCardsPerLane: () => defaultCardsPerLane.value,
+  getBoardLimitPerLaneFloor: vi.fn((forSlug: string) => floorBySlug.value[forSlug] ?? defaultCardsPerLane.value),
   resetBoardLimitPerLaneFloor: vi.fn(),
+  consumeForcePreferenceLimit: () => false,
 }));
 vi.mock("../sprints.js", () => ({ normalizeSprints: vi.fn((r: any) => r) }));
 vi.mock("../events.js", () => ({ on: vi.fn(), off: vi.fn() }));
@@ -160,6 +163,7 @@ describe("getRequestedBoardLimitPerLane", () => {
     state.board = null;
     state.slug = null;
     floorBySlug.value = {};
+    defaultCardsPerLane.value = 20;
     apiFetchMock.mockReset();
   });
 
@@ -187,23 +191,23 @@ describe("getRequestedBoardLimitPerLane", () => {
     expect(board.getRequestedBoardLimitPerLane()).toBe(60);
   });
 
-  it("resets to the default when navigating to a different board", async () => {
+  it("uses the user preference baseline when navigating to a different board", async () => {
+    defaultCardsPerLane.value = 50;
     const board = await import("./board.js");
-    // getSlug() is updated by the router ahead of the request; getBoard() still
-    // holds the previously loaded board until the new board's response arrives.
     state.board = { project: { slug: "alpha" }, tags: [], columns: {} };
     state.slug = "beta";
     addLane(45);
 
-    expect(board.getRequestedBoardLimitPerLane()).toBe(20);
+    expect(board.getRequestedBoardLimitPerLane()).toBe(50);
   });
 
-  it("defaults to 20 on initial load with no existing board or DOM", async () => {
+  it("defaults to the user preference on initial load with no existing board or DOM", async () => {
+    defaultCardsPerLane.value = 50;
     const board = await import("./board.js");
     state.board = null;
     state.slug = "alpha";
 
-    expect(board.getRequestedBoardLimitPerLane()).toBe(20);
+    expect(board.getRequestedBoardLimitPerLane()).toBe(50);
   });
 
   it("ignores DOM size when forSlug does not match the currently loaded board", async () => {
@@ -224,6 +228,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     state.board = null;
     state.slug = null;
     floorBySlug.value = {};
+    defaultCardsPerLane.value = 20;
     apiFetchMock.mockReset();
     // Resolve with a minimal board; pathname mismatch below aborts before bootstrap.
     apiFetchMock.mockResolvedValue({ project: { id: 1, slug: "unused" }, tags: [], columns: {} });
@@ -259,7 +264,8 @@ describe("loadBoardBySlug limitPerLane query", () => {
     expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(60);
   });
 
-  it("requests the default when navigating to a different board even if a prior floor is elevated", async () => {
+  it("requests the user preference when navigating to a different board even if a prior floor is elevated", async () => {
+    defaultCardsPerLane.value = 50;
     const board = await import("./board.js");
     state.board = { project: { slug: "alpha" }, tags: [], columns: {} };
     state.slug = "beta";
@@ -269,6 +275,6 @@ describe("loadBoardBySlug limitPerLane query", () => {
 
     await board.loadBoardBySlug("beta", null, null, null);
 
-    expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(20);
+    expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(50);
   });
 });

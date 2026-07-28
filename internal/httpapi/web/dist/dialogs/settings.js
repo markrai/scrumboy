@@ -4,8 +4,10 @@ import { fetchProjectMembers } from '../members-cache.js';
 import { escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent } from '../utils.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
+import { CARDS_PER_LANE_ALLOWED, CARDS_PER_LANE_PREFERENCE_KEY, getDefaultCardsPerLane, setDefaultCardsPerLane, invalidateBoard, usePreferenceLimitOnNextBoardRequest, } from '../orchestration/board-refresh.js';
+import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
-import { getSlug, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers } from '../state/selectors.js';
+import { getSlug, getTag, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers } from '../state/selectors.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
 import { emit } from '../events.js';
@@ -1438,6 +1440,18 @@ export async function renderSettingsModal(options) {
       </div>
     `
         : "";
+    const cardsPerLaneSectionHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.customization.cardsPerLane.title">Cards per lane</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.cardsPerLane.description">Number of cards shown by default in each lane before "Load more" is needed.</div>
+        <label class="row" style="align-items:center;gap:10px;margin-top:10px;">
+          <select id="cardsPerLaneSelect" style="width:80px;" ${getUser() ? "" : "disabled"}>
+            ${CARDS_PER_LANE_ALLOWED.map((n) => `<option value="${n}"${getDefaultCardsPerLane() === n ? " selected" : ""}>${n}</option>`).join("")}
+          </select>
+        </label>
+        ${!getUser() ? `<p class="muted" style="margin-top:10px;font-size:13px;" data-i18n-text="settings.customization.cardsPerLane.signInHint">Sign in to save this preference.</p>` : ""}
+      </div>
+    `;
     let pushPwaDisabledNoticeKey = "";
     let pushPwaDisabledNoticeText = "";
     if (!pushVapidServerReady) {
@@ -1540,6 +1554,7 @@ export async function renderSettingsModal(options) {
         </div>
       </div>
       ${wallpaperSectionHTML}
+      ${cardsPerLaneSectionHTML}
       ${getAuthStatusAvailable() ? renderVoiceFlowCustomizationHTML() : ""}
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.customization.notifications.title">Desktop notifications</div>
@@ -1961,6 +1976,54 @@ export async function renderSettingsModal(options) {
             handleThemeChange(e.target.value);
         }, { signal });
     });
+    // Setup cards-per-lane default
+    const cardsPerLaneSelect = document.getElementById("cardsPerLaneSelect");
+    if (cardsPerLaneSelect && getUser()) {
+        let cardsPerLaneSaving = false;
+        cardsPerLaneSelect.addEventListener("change", async () => {
+            if (cardsPerLaneSaving)
+                return;
+            const previous = getDefaultCardsPerLane();
+            const parsed = parseInt(cardsPerLaneSelect.value, 10);
+            const next = Number.isFinite(parsed) ? parsed : previous;
+            if (next === previous) {
+                cardsPerLaneSelect.value = String(previous);
+                return;
+            }
+            cardsPerLaneSaving = true;
+            cardsPerLaneSelect.disabled = true;
+            let saved = false;
+            try {
+                await apiFetch("/api/user/preferences", {
+                    method: "PUT",
+                    body: JSON.stringify({ key: CARDS_PER_LANE_PREFERENCE_KEY, value: String(next) }),
+                });
+                setDefaultCardsPerLane(next);
+                saved = true;
+                clearBoardPrefetchCache();
+                // Drop stale projects-list prefetch from history so F5 cannot resurrect a
+                // board payload fetched under the previous limitPerLane.
+                if (history.state?.boardData) {
+                    history.replaceState({}, "", window.location.pathname + window.location.search + window.location.hash);
+                }
+                // Apply immediately on the open board (and on next F5 via preference hydration).
+                const slug = getSlug();
+                if (slug) {
+                    usePreferenceLimitOnNextBoardRequest();
+                    void invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+                }
+                showToast(t("settings.customization.cardsPerLane.toast.updated"));
+            }
+            catch (err) {
+                showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.customization.cardsPerLane.toast.updateFailed" }));
+            }
+            finally {
+                cardsPerLaneSaving = false;
+                cardsPerLaneSelect.disabled = false;
+                cardsPerLaneSelect.value = String(saved ? getDefaultCardsPerLane() : previous);
+            }
+        }, { signal });
+    }
     function syncWallpaperRadiosFromState() {
         const st = getStoredWallpaperState();
         const rOff = document.querySelector('input[name="wallpaperMode"][value="off"]');
