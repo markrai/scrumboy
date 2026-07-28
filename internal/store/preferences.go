@@ -20,18 +20,22 @@ const (
 	preferenceProvenanceOrgDefault = "org_default"
 )
 
-// Bounds for the "cardsPerLane" preference: the default number of cards shown
-// per board lane before "Load more" is needed.
-const (
-	MinCardsPerLane = 5
-	MaxCardsPerLane = 100
-)
+// Allowed values for the "cardsPerLane" preference: the default number of cards
+// shown per board lane before "Load more" is needed.
+var allowedCardsPerLane = map[int]struct{}{
+	20:  {},
+	50:  {},
+	100: {},
+}
 
-// validateCardsPerLaneValue returns ErrValidation if value isn't an integer within bounds.
+// validateCardsPerLaneValue returns ErrValidation if value isn't an allowed preset.
 func validateCardsPerLaneValue(value string) error {
 	n, err := strconv.Atoi(strings.TrimSpace(value))
-	if err != nil || n < MinCardsPerLane || n > MaxCardsPerLane {
-		return fmt.Errorf("%w: cardsPerLane must be an integer between %d and %d", ErrValidation, MinCardsPerLane, MaxCardsPerLane)
+	if err != nil {
+		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, or 100", ErrValidation)
+	}
+	if _, ok := allowedCardsPerLane[n]; !ok {
+		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, or 100", ErrValidation)
 	}
 	return nil
 }

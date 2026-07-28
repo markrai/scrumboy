@@ -9,6 +9,7 @@ import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
+import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
 let isRouting = false;
@@ -178,6 +179,15 @@ async function routeOnce() {
                 const confirmationResp = await apiFetch(`/api/user/preferences?key=${VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY}`);
                 if (confirmationResp?.value)
                     hydrateVoiceFlowHandsFreeConfirmationFromServer(confirmationResp.value);
+            }
+            catch (err) {
+                // Ignore errors
+            }
+            try {
+                const cardsPerLaneResp = await apiFetch(`/api/user/preferences?key=${CARDS_PER_LANE_PREFERENCE_KEY}`);
+                const n = cardsPerLaneResp?.value ? parseInt(cardsPerLaneResp.value, 10) : NaN;
+                if (Number.isFinite(n))
+                    setDefaultCardsPerLane(n);
             }
             catch (err) {
                 // Ignore errors

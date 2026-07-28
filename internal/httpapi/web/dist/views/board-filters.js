@@ -11,6 +11,7 @@ let mobileTagPage = 0;
 let mobileTagPageBoundaries = [];
 let mobileTagPaginationResizeBound = false;
 let sprintEventSubscribed = false;
+let filterPanelDelegationBound = false;
 const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
@@ -196,48 +197,30 @@ function updateFilterToggleActiveState(toggle) {
     const active = isBoardFilterActive(getAssigneeFromUrl(), getSortFromUrl());
     toggle.classList.toggle("search-filter-toggle--active", active);
 }
-// bindFilterPanel wires the search input's expandable filter popover: opening
-// on toggle click, closing on outside click/Escape, and a delegated click
-// handler for the assignee/sort option buttons that updates the URL, reloads
-// the board, and shows a brief "Filtering: X" / "Sorted: X" toast (only when
-// picking a real filter/sort, not when clearing back to the neutral option).
-function bindFilterPanel() {
+function getFilterPanelElements() {
     const toggle = document.getElementById("searchFilterToggle");
     const panel = document.getElementById("searchFilterPanel");
-    if (!toggle || !panel || toggle[FILTER_BOUND_FLAG])
+    return toggle && panel ? { toggle, panel } : null;
+}
+function handleFilterPanelDocumentClick(e) {
+    const elements = getFilterPanelElements();
+    const target = e.target;
+    if (!elements || !(target instanceof Node))
         return;
-    updateFilterToggleActiveState(toggle);
-    toggle.addEventListener("click", (e) => {
-        e.stopPropagation();
+    const { toggle, panel } = elements;
+    if (toggle.contains(target)) {
         if (panel.hidden) {
             openFilterPanel(panel, toggle);
         }
         else {
             closeFilterPanel(panel, toggle);
         }
-    });
-    document.addEventListener("click", (e) => {
-        if (panel.hidden)
-            return;
-        const target = e.target;
-        if (panel.contains(target) || toggle.contains(target))
-            return;
-        closeFilterPanel(panel, toggle);
-    });
-    document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && !panel.hidden) {
-            closeFilterPanel(panel, toggle);
-            toggle.focus();
-        }
-    });
-    window.addEventListener("resize", () => {
-        if (!panel.hidden)
-            positionFilterPanel(panel, toggle);
-    });
-    panel.addEventListener("click", (e) => {
-        const optionEl = e.target.closest("[data-assignee-option], [data-sort-option]");
-        if (!optionEl)
-            return;
+        return;
+    }
+    const optionEl = target instanceof Element
+        ? target.closest("[data-assignee-option], [data-sort-option]")
+        : null;
+    if (optionEl && panel.contains(optionEl)) {
         const isAssignee = optionEl.hasAttribute("data-assignee-option");
         const attr = isAssignee ? "data-assignee-option" : "data-sort-option";
         const value = optionEl.getAttribute(attr) || null;
@@ -256,13 +239,53 @@ function bindFilterPanel() {
         }
         updateFilterToggleActiveState(toggle);
         closeFilterPanel(panel, toggle);
-        if (!reloadBoardFn)
-            return;
-        reloadBoardFn(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err) => {
+        reloadBoardFn?.(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err) => {
             showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
         });
-    });
-    toggle[FILTER_BOUND_FLAG] = true;
+        return;
+    }
+    if (!panel.hidden && !panel.contains(target)) {
+        closeFilterPanel(panel, toggle);
+    }
+}
+function handleFilterPanelDocumentKeydown(e) {
+    const elements = getFilterPanelElements();
+    if (!elements)
+        return;
+    const { toggle, panel } = elements;
+    if (e.key === "Escape" && !panel.hidden) {
+        closeFilterPanel(panel, toggle);
+        toggle.focus();
+    }
+}
+function handleFilterPanelWindowResize() {
+    const elements = getFilterPanelElements();
+    if (!elements)
+        return;
+    const { toggle, panel } = elements;
+    if (!panel.hidden)
+        positionFilterPanel(panel, toggle);
+}
+function ensureFilterPanelDelegation() {
+    if (filterPanelDelegationBound)
+        return;
+    filterPanelDelegationBound = true;
+    document.addEventListener("click", handleFilterPanelDocumentClick);
+    document.addEventListener("keydown", handleFilterPanelDocumentKeydown);
+    window.addEventListener("resize", handleFilterPanelWindowResize);
+}
+// bindFilterPanel wires the search input's expandable filter popover: opening
+// on toggle click, closing on outside click/Escape, and a delegated click
+// handler for the assignee/sort option buttons that updates the URL, reloads
+// the board, and shows a brief "Filtering: X" / "Sorted: X" toast (only when
+// picking a real filter/sort, not when clearing back to the neutral option).
+function bindFilterPanel() {
+    const elements = getFilterPanelElements();
+    if (!elements)
+        return;
+    const { toggle } = elements;
+    updateFilterToggleActiveState(toggle);
+    ensureFilterPanelDelegation();
 }
 function initMobileTagPagination() {
     const tagChipsEl = document.getElementById("tagChips");

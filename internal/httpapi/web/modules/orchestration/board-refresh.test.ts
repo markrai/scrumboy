@@ -102,26 +102,35 @@ describe('board-refresh orchestration', () => {
     expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(50);
   });
 
-  it('setDefaultCardsPerLane clamps to [CARDS_PER_LANE_MIN, CARDS_PER_LANE_MAX] and ignores non-finite input', async () => {
+  it('setDefaultCardsPerLane accepts allowlisted presets and falls back invalid values to 20', async () => {
     const mod = await import('./board-refresh.js');
 
-    mod.setDefaultCardsPerLane(1);
-    expect(mod.getDefaultCardsPerLane()).toBe(mod.CARDS_PER_LANE_MIN);
+    mod.setDefaultCardsPerLane(50);
+    expect(mod.getDefaultCardsPerLane()).toBe(50);
 
-    mod.setDefaultCardsPerLane(1000);
-    expect(mod.getDefaultCardsPerLane()).toBe(mod.CARDS_PER_LANE_MAX);
+    mod.setDefaultCardsPerLane(100);
+    expect(mod.getDefaultCardsPerLane()).toBe(100);
+
+    mod.setDefaultCardsPerLane(5);
+    expect(mod.getDefaultCardsPerLane()).toBe(20);
 
     mod.setDefaultCardsPerLane(42);
+    expect(mod.getDefaultCardsPerLane()).toBe(20);
+
+    mod.setDefaultCardsPerLane(200);
+    expect(mod.getDefaultCardsPerLane()).toBe(20);
+
+    mod.setDefaultCardsPerLane(50);
     mod.setDefaultCardsPerLane(NaN);
-    expect(mod.getDefaultCardsPerLane()).toBe(42);
+    expect(mod.getDefaultCardsPerLane()).toBe(50);
   });
 
   it('setBoardLimitPerLaneFloor only raises the floor, never lowers below the default', async () => {
     const mod = await import('./board-refresh.js');
 
-    mod.setDefaultCardsPerLane(30);
+    mod.setDefaultCardsPerLane(50);
     mod.setBoardLimitPerLaneFloor(10, 'alpha');
-    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(30);
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(50);
 
     mod.setBoardLimitPerLaneFloor(60, 'alpha');
     expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(60);

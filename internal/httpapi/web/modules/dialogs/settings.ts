@@ -5,12 +5,12 @@ import { escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete,
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import {
-  CARDS_PER_LANE_MIN,
-  CARDS_PER_LANE_MAX,
+  CARDS_PER_LANE_ALLOWED,
   CARDS_PER_LANE_PREFERENCE_KEY,
   getDefaultCardsPerLane,
   setDefaultCardsPerLane,
 } from '../orchestration/board-refresh.js';
+import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
 import { 
   getSlug, 
@@ -1611,7 +1611,9 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         <div class="settings-section__title" data-i18n-text="settings.customization.cardsPerLane.title">Cards per lane</div>
         <div class="settings-section__description muted" data-i18n-text="settings.customization.cardsPerLane.description">Number of cards shown by default in each lane before "Load more" is needed.</div>
         <label class="row" style="align-items:center;gap:10px;margin-top:10px;">
-          <input type="number" id="cardsPerLaneInput" min="${CARDS_PER_LANE_MIN}" max="${CARDS_PER_LANE_MAX}" step="1" value="${getDefaultCardsPerLane()}" style="width:80px;" ${getUser() ? "" : "disabled"} />
+          <select id="cardsPerLaneSelect" style="width:80px;" ${getUser() ? "" : "disabled"}>
+            ${CARDS_PER_LANE_ALLOWED.map((n) => `<option value="${n}"${getDefaultCardsPerLane() === n ? " selected" : ""}>${n}</option>`).join("")}
+          </select>
         </label>
         ${!getUser() ? `<p class="muted" style="margin-top:10px;font-size:13px;" data-i18n-text="settings.customization.cardsPerLane.signInHint">Sign in to save this preference.</p>` : ""}
       </div>
@@ -2155,24 +2157,37 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   });
 
   // Setup cards-per-lane default
-  const cardsPerLaneInput = document.getElementById("cardsPerLaneInput") as HTMLInputElement | null;
-  if (cardsPerLaneInput && getUser()) {
-    cardsPerLaneInput.addEventListener("change", async (e) => {
-      const raw = (e.target as HTMLInputElement).value;
-      const parsed = parseInt(raw, 10);
-      const clamped = Number.isFinite(parsed)
-        ? Math.min(CARDS_PER_LANE_MAX, Math.max(CARDS_PER_LANE_MIN, Math.floor(parsed)))
-        : getDefaultCardsPerLane();
-      cardsPerLaneInput.value = String(clamped);
-      setDefaultCardsPerLane(clamped);
+  const cardsPerLaneSelect = document.getElementById("cardsPerLaneSelect") as HTMLSelectElement | null;
+  if (cardsPerLaneSelect && getUser()) {
+    let cardsPerLaneSaving = false;
+    cardsPerLaneSelect.addEventListener("change", async () => {
+      if (cardsPerLaneSaving) return;
+      const previous = getDefaultCardsPerLane();
+      const parsed = parseInt(cardsPerLaneSelect.value, 10);
+      const next = Number.isFinite(parsed) ? parsed : previous;
+      if (next === previous) {
+        cardsPerLaneSelect.value = String(previous);
+        return;
+      }
+
+      cardsPerLaneSaving = true;
+      cardsPerLaneSelect.disabled = true;
+      let saved = false;
       try {
         await apiFetch("/api/user/preferences", {
           method: "PUT",
-          body: JSON.stringify({ key: CARDS_PER_LANE_PREFERENCE_KEY, value: String(clamped) }),
+          body: JSON.stringify({ key: CARDS_PER_LANE_PREFERENCE_KEY, value: String(next) }),
         });
+        setDefaultCardsPerLane(next);
+        saved = true;
+        clearBoardPrefetchCache();
         showToast(t("settings.customization.cardsPerLane.toast.updated"));
       } catch (err: any) {
         showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.customization.cardsPerLane.toast.updateFailed" }));
+      } finally {
+        cardsPerLaneSaving = false;
+        cardsPerLaneSelect.disabled = false;
+        cardsPerLaneSelect.value = String(saved ? getDefaultCardsPerLane() : previous);
       }
     }, { signal });
   }

@@ -2,12 +2,15 @@ let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: stri
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
 
 export const CARDS_PER_LANE_PREFERENCE_KEY = 'cardsPerLane';
-export const CARDS_PER_LANE_MIN = 5;
-export const CARDS_PER_LANE_MAX = 100;
+export const CARDS_PER_LANE_ALLOWED = [20, 50, 100] as const;
 export const CARDS_PER_LANE_DEFAULT = 20;
 
-export function clampCardsPerLane(n: number): number {
-  return Math.min(CARDS_PER_LANE_MAX, Math.max(CARDS_PER_LANE_MIN, Math.floor(n)));
+export function normalizeCardsPerLane(n: number): number {
+  if (!Number.isFinite(n)) return CARDS_PER_LANE_DEFAULT;
+  const floored = Math.floor(n);
+  return (CARDS_PER_LANE_ALLOWED as readonly number[]).includes(floored)
+    ? floored
+    : CARDS_PER_LANE_DEFAULT;
 }
 
 // User's preferred default lane page size (from the "cardsPerLane" preference).
@@ -74,10 +77,10 @@ export function resetBoardLimitPerLaneFloor() {
   boardLimitPerLaneFloorSlug = null;
 }
 
-/** Set the user's preferred default lane page size (clamped to [CARDS_PER_LANE_MIN, CARDS_PER_LANE_MAX]). */
+/** Set the user's preferred default lane page size (must be one of CARDS_PER_LANE_ALLOWED). */
 export function setDefaultCardsPerLane(n: number): void {
   if (!Number.isFinite(n)) return;
-  defaultCardsPerLane = clampCardsPerLane(n);
+  defaultCardsPerLane = normalizeCardsPerLane(n);
   boardLimitPerLaneFloor = defaultCardsPerLane;
 }
 

@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.28.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
 
+## [3.28.3] - 2026-07-28
+
+### Added
+
+- **Per-user cards-per-lane preference (PR #198)** - Settings → Customization gains a Cards per lane control (`20` / `50` / `100`, default `20`) so each signed-in user can choose how many cards load per column before "Load more". The preference is validated server-side, hydrated at boot, and applied to the initial board fetch, Projects hover-prefetch, and the load-more floor reset. Paged loading and "Load more" stay in place.
+
+### Fixed
+
+- **Cards-per-lane client consistency** - Board request baselines use the saved preference instead of a hard-coded `20`. Preference saves apply only after a successful PUT (revert on failure; disable while saving). Changing the preference clears Projects board prefetch caches so a later open does not reuse a stale smaller payload.
+
 ## [3.28.2] - 2026-07-27
 
 ### Changed
