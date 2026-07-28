@@ -2185,6 +2185,11 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         setDefaultCardsPerLane(next);
         saved = true;
         clearBoardPrefetchCache();
+        // Drop stale projects-list prefetch from history so F5 cannot resurrect a
+        // board payload fetched under the previous limitPerLane.
+        if ((history.state as { boardData?: unknown } | null)?.boardData) {
+          history.replaceState({}, "", window.location.pathname + window.location.search + window.location.hash);
+        }
         // Apply immediately on the open board (and on next F5 via preference hydration).
         const slug = getSlug();
         if (slug) {

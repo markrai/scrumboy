@@ -39,6 +39,8 @@ type ParsedRoute = {
 let isRouting = false;
 let rerouteRequested = false;
 let lastHandledBoardRoute: { slug: string; tag: string; search: string; sprintId: string | null; assignee: string | null; sort: string | null; openTodoSegment: string | null } | null = null;
+/** True until the first routeOnce after a full document load (F5 / cold open). */
+let isDocumentColdStart = true;
 
 function navigate(path: string, options?: { state?: object }): void {
   console.log("navigate called with path:", path);
@@ -95,6 +97,15 @@ function shouldDoLightweightBoardUpdate(r: ParsedRoute): boolean {
 }
 
 async function routeOnce(): Promise<void> {
+  try {
+    await routeOnceBody();
+  } finally {
+    // Prefetch boardData in history is only valid for same-session SPA handoffs.
+    isDocumentColdStart = false;
+  }
+}
+
+async function routeOnceBody(): Promise<void> {
   // Determine auth/bootstrap state deterministically via /api/auth/status.
   // In anonymous mode, returns 200 with user: null, bootstrapAvailable: false (no console errors, clear contract).
   // In full mode, returns 200 with user info and bootstrapAvailable flag.
@@ -302,7 +313,15 @@ async function routeOnce(): Promise<void> {
   if (r.name === "boardBySlug") {
     // Default: no sprint filter. URL stays e.g. /scrumboy without ?sprintId=scheduled.
     console.log("Router: rendering board, slug:", r.slug, "tag:", r.tag, "search:", r.search, "sprintId:", r.sprintId, "assignee:", r.assignee);
-    const prefetchedBoard = (history.state as { boardData?: Board } | null)?.boardData;
+    // history.state.boardData is a same-session handoff from projects hover-prefetch.
+    // Browsers keep that state across F5, so on a cold document load it can be a stale
+    // limitPerLane payload that bypasses preference-aware loadBoardBySlug — ignore it.
+    const coldStart = isDocumentColdStart;
+    let prefetchedBoard = (history.state as { boardData?: Board } | null)?.boardData;
+    if (coldStart && prefetchedBoard) {
+      prefetchedBoard = undefined;
+      history.replaceState({}, "", window.location.pathname + window.location.search + window.location.hash);
+    }
     const isLightweight = shouldDoLightweightBoardUpdate(r);
     try {
       if (isLightweight) {

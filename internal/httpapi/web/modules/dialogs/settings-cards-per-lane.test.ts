@@ -189,6 +189,7 @@ describe('settings cards per lane', () => {
   });
 
   it('persists a successful change and clears board prefetch cache', async () => {
+    window.history.replaceState({ boardData: { project: { id: 1 }, columns: {} } }, '', '/alpha');
     apiFetchMock.mockResolvedValue({ ok: true });
     await renderCustomizationSettings();
     const select = document.getElementById('cardsPerLaneSelect') as HTMLSelectElement;
@@ -205,6 +206,7 @@ describe('settings cards per lane', () => {
     ]);
     expect(setDefaultCardsPerLaneMock).toHaveBeenCalledWith(50);
     expect(clearBoardPrefetchCacheMock).toHaveBeenCalledTimes(1);
+    expect((window.history.state as { boardData?: unknown } | null)?.boardData).toBeUndefined();
     expect(invalidateBoardMock).not.toHaveBeenCalled();
     expect(select.value).toBe('50');
     expect(select.disabled).toBe(false);
