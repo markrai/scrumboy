@@ -36,6 +36,18 @@ export function hydrateWrapLanesFromServer(value: unknown): void {
   setWrapLanesPreference(normalizeWrapLanes(value), { skipRemote: true });
 }
 
+export async function loadWrapLanesPreferenceFromServer(
+  fetchPreference: () => Promise<{ value?: string } | null | undefined>,
+): Promise<void> {
+  hydrateWrapLanesFromServer(false);
+  try {
+    const response = await fetchPreference();
+    hydrateWrapLanesFromServer(response?.value ?? false);
+  } catch {
+    // Keep default false when signed-in hydration fails.
+  }
+}
+
 export function shouldWrapBoardLanes(laneCount: number): boolean {
   return getWrapLanesPreference() && laneCount > 5;
 }

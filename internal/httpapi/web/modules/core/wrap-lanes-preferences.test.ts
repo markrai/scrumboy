@@ -5,6 +5,7 @@ import {
   applyWrapLanesClass,
   getWrapLanesPreference,
   hydrateWrapLanesFromServer,
+  loadWrapLanesPreferenceFromServer,
   normalizeWrapLanes,
   setWrapLanesPreference,
   shouldWrapBoardLanes,
@@ -43,6 +44,26 @@ describe('wrap lanes preferences', () => {
   it('hydrates invalid server values back to off', () => {
     hydrateWrapLanesFromServer('unexpected');
     expect(getWrapLanesPreference()).toBe(false);
+  });
+
+  it('loadWrapLanesPreferenceFromServer resets stale local true when server preference is missing', async () => {
+    setWrapLanesPreference(true, { skipRemote: true });
+    await loadWrapLanesPreferenceFromServer(async () => ({ value: '' }));
+    expect(getWrapLanesPreference()).toBe(false);
+  });
+
+  it('loadWrapLanesPreferenceFromServer keeps false when fetch fails after reset', async () => {
+    setWrapLanesPreference(true, { skipRemote: true });
+    await loadWrapLanesPreferenceFromServer(async () => {
+      throw new Error('network');
+    });
+    expect(getWrapLanesPreference()).toBe(false);
+  });
+
+  it('loadWrapLanesPreferenceFromServer applies server true after reset', async () => {
+    setWrapLanesPreference(false, { skipRemote: true });
+    await loadWrapLanesPreferenceFromServer(async () => ({ value: 'true' }));
+    expect(getWrapLanesPreference()).toBe(true);
   });
 
   it('saves the wrap lanes preference through the existing user preference endpoint when signed in', () => {

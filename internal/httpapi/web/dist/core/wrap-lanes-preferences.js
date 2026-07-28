@@ -33,6 +33,16 @@ export function setWrapLanesPreference(enabled, opts) {
 export function hydrateWrapLanesFromServer(value) {
     setWrapLanesPreference(normalizeWrapLanes(value), { skipRemote: true });
 }
+export async function loadWrapLanesPreferenceFromServer(fetchPreference) {
+    hydrateWrapLanesFromServer(false);
+    try {
+        const response = await fetchPreference();
+        hydrateWrapLanesFromServer(response?.value ?? false);
+    }
+    catch {
+        // Keep default false when signed-in hydration fails.
+    }
+}
 export function shouldWrapBoardLanes(laneCount) {
     return getWrapLanesPreference() && laneCount > 5;
 }

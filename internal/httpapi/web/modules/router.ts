@@ -20,7 +20,7 @@ import {
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
 import {
-  hydrateWrapLanesFromServer,
+  loadWrapLanesPreferenceFromServer,
   WRAP_LANES_PREFERENCE_KEY,
 } from './core/wrap-lanes-preferences.js';
 
@@ -234,12 +234,9 @@ async function routeOnceBody(): Promise<void> {
         // Ignore errors
       }
 
-      try {
-        const wrapLanesResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`);
-        if (wrapLanesResp?.value) hydrateWrapLanesFromServer(wrapLanesResp.value);
-      } catch (err) {
-        // Ignore errors
-      }
+      await loadWrapLanesPreferenceFromServer(() =>
+        apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`),
+      );
 
       // Load email notification preferences
       await loadUserEmailNotifyPref();
