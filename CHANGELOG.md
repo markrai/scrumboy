@@ -6,11 +6,7 @@
 
 ### Added
 
-- **Per-user cards-per-lane preference (PR #198)** - Settings → Customization gains a Cards per lane control (`20` / `50` / `100`, default `20`) so each signed-in user can choose how many cards load per column before "Load more". The preference is validated server-side, hydrated at boot, and applied to the initial board fetch, Projects hover-prefetch, and the load-more floor reset. Paged loading and "Load more" stay in place.
-
-### Fixed
-
-- **Cards-per-lane client consistency** - Board request baselines use the saved preference instead of a hard-coded `20`. Preference saves apply only after a successful PUT (revert on failure; disable while saving), clear Projects board prefetch caches (ignoring late in-flight completions), and reload the open board so the new default is visible without a manual refresh.
+- **Per-user cards-per-lane preference (PR #198)** - Settings → Customization gains a Cards per lane control (`20` / `50` / `75` / `100`, default `20`) so each signed-in user can choose how many cards load per column before "Load more". The preference is validated server-side, hydrated at boot, and applied to the initial board fetch, Projects hover-prefetch, and the load-more floor reset. Paged loading and "Load more" stay in place.
 
 ## [3.28.2] - 2026-07-27
 
