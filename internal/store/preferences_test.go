@@ -51,7 +51,7 @@ func TestSetUserPreference_CardsPerLane_AllowlistOnly(t *testing.T) {
 		t.Fatalf("bootstrap user: %v", err)
 	}
 
-	for _, allowed := range []string{"20", "50", "100"} {
+	for _, allowed := range []string{"20", "50", "75", "100"} {
 		if err := st.SetUserPreference(ctx, user.ID, "cardsPerLane", allowed); err != nil {
 			t.Fatalf("set valid cardsPerLane %q: %v", allowed, err)
 		}

@@ -1,7 +1,7 @@
 let refreshBoard = null;
 let refreshSprintsOnly = null;
 export const CARDS_PER_LANE_PREFERENCE_KEY = 'cardsPerLane';
-export const CARDS_PER_LANE_ALLOWED = [20, 50, 100];
+export const CARDS_PER_LANE_ALLOWED = [20, 50, 75, 100];
 export const CARDS_PER_LANE_DEFAULT = 20;
 export function normalizeCardsPerLane(n) {
     if (!Number.isFinite(n))

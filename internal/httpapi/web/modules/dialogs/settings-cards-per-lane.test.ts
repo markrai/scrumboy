@@ -106,7 +106,7 @@ vi.mock('./settings-sprints.js', () => ({
 vi.mock('../orchestration/board-refresh.js', () => ({
   invalidateBoard: invalidateBoardMock,
   refreshSprintsAndChips: vi.fn(),
-  CARDS_PER_LANE_ALLOWED: [20, 50, 100],
+  CARDS_PER_LANE_ALLOWED: [20, 50, 75, 100],
   CARDS_PER_LANE_PREFERENCE_KEY: 'cardsPerLane',
   getDefaultCardsPerLane: () => defaultCardsPerLane.value,
   setDefaultCardsPerLane: setDefaultCardsPerLaneMock,
@@ -185,7 +185,7 @@ describe('settings cards per lane', () => {
     const select = document.getElementById('cardsPerLaneSelect');
     expect(select).toBeInstanceOf(HTMLSelectElement);
     const options = Array.from((select as HTMLSelectElement).options).map((o) => o.value);
-    expect(options).toEqual(['20', '50', '100']);
+    expect(options).toEqual(['20', '50', '75', '100']);
   });
 
   it('persists a successful change and clears board prefetch cache', async () => {

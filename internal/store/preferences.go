@@ -25,6 +25,7 @@ const (
 var allowedCardsPerLane = map[int]struct{}{
 	20:  {},
 	50:  {},
+	75:  {},
 	100: {},
 }
 
@@ -32,10 +33,10 @@ var allowedCardsPerLane = map[int]struct{}{
 func validateCardsPerLaneValue(value string) error {
 	n, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil {
-		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, or 100", ErrValidation)
+		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, 75, or 100", ErrValidation)
 	}
 	if _, ok := allowedCardsPerLane[n]; !ok {
-		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, or 100", ErrValidation)
+		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, 75, or 100", ErrValidation)
 	}
 	return nil
 }

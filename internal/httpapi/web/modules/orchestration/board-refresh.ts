@@ -2,7 +2,7 @@ let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: stri
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
 
 export const CARDS_PER_LANE_PREFERENCE_KEY = 'cardsPerLane';
-export const CARDS_PER_LANE_ALLOWED = [20, 50, 100] as const;
+export const CARDS_PER_LANE_ALLOWED = [20, 50, 75, 100] as const;
 export const CARDS_PER_LANE_DEFAULT = 20;
 
 export function normalizeCardsPerLane(n: number): number {

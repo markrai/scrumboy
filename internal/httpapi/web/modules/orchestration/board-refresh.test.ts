@@ -102,6 +102,9 @@ describe('board-refresh orchestration', () => {
     mod.setDefaultCardsPerLane(50);
     expect(mod.getDefaultCardsPerLane()).toBe(50);
 
+    mod.setDefaultCardsPerLane(75);
+    expect(mod.getDefaultCardsPerLane()).toBe(75);
+
     mod.setDefaultCardsPerLane(100);
     expect(mod.getDefaultCardsPerLane()).toBe(100);
 
