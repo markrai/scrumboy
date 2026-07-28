@@ -92,6 +92,11 @@ vi.mock('../charts/burndown.js', () => ({
 vi.mock('../orchestration/board-refresh.js', () => ({
   invalidateBoard: invalidateBoardMock,
   refreshSprintsAndChips: refreshSprintsAndChipsMock,
+  CARDS_PER_LANE_MIN: 5,
+  CARDS_PER_LANE_MAX: 100,
+  CARDS_PER_LANE_PREFERENCE_KEY: 'cardsPerLane',
+  getDefaultCardsPerLane: () => 20,
+  setDefaultCardsPerLane: vi.fn(),
 }));
 
 vi.mock('../realtime/guard.js', () => ({ recordLocalMutation: recordLocalMutationMock }));
