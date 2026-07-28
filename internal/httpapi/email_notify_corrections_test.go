@@ -23,6 +23,7 @@ type emailNotifyFakeStore struct {
 	prefErrs     map[int64]error
 	projectCalls int
 	memberCalls  int
+	userCalls    int
 }
 
 func (s *emailNotifyFakeStore) GetEmailNotifyPref(_ context.Context, userID int64) (store.EmailNotifyPref, error) {
@@ -47,6 +48,7 @@ func (s *emailNotifyFakeStore) GetProject(_ context.Context, _ int64) (store.Pro
 func (s *emailNotifyFakeStore) GetUser(_ context.Context, userID int64) (store.User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.userCalls++
 	u, ok := s.users[userID]
 	if !ok {
 		return store.User{}, store.ErrNotFound
@@ -129,7 +131,7 @@ func TestEmailNotifier_AssignmentAndActivityAreIndependent(t *testing.T) {
 	if !strings.Contains(byRecipient["assignee@example.com"].Subject, "Assigned to you") {
 		t.Fatalf("expected assignment category for assignee, got %+v", got)
 	}
-	if !strings.Contains(byRecipient["member@example.com"].Subject, "activity update") {
+	if !strings.Contains(byRecipient["member@example.com"].Subject, "card created") {
 		t.Fatalf("expected card activity for other member, got %+v", got)
 	}
 	if _, ok := byRecipient["actor@example.com"]; ok {
@@ -146,7 +148,7 @@ func TestEmailNotifier_UnassignmentStillProcessesActivity(t *testing.T) {
 	n.handle(context.Background(), assignedEvent(t, 1, nil, "todo_updated"))
 
 	got := q.Drain()
-	if len(got) != 1 || got[0].To != "assignee@example.com" || !strings.Contains(got[0].Subject, "activity update") {
+	if len(got) != 1 || got[0].To != "assignee@example.com" || !strings.Contains(got[0].Subject, "card updated") {
 		t.Fatalf("expected one card-activity delivery after unassignment, got %+v", got)
 	}
 }
@@ -273,5 +275,82 @@ func TestEmailNotifier_ProjectDeletionUsesSnapshotOnly(t *testing.T) {
 	}
 	if st.projectCalls != 0 || st.memberCalls != 0 {
 		t.Fatalf("post-delete notifier queried deleted project state: project=%d members=%d", st.projectCalls, st.memberCalls)
+	}
+}
+
+func TestEmailNotifier_ActivityActorNameFromMembersSkipsGetUser(t *testing.T) {
+	st := newEmailNotifyFake()
+	st.members[0].Name = "Alex"
+	st.users[1] = store.User{ID: 1, Email: "actor@example.com", Name: "ShouldNotBeUsed"}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://scrumboy.example.com", true, discardLogger())
+
+	n.handle(context.Background(), refreshEvent(t, 1, "todo_moved"))
+
+	got := q.Drain()
+	if len(got) != 2 {
+		t.Fatalf("expected emails to non-actor members, got %+v", got)
+	}
+	for _, m := range got {
+		if !strings.Contains(m.Body, "Alex moved a card in Roadmap.") {
+			t.Fatalf("expected member-sourced actor name, got %q", m.Body)
+		}
+	}
+	if st.userCalls != 0 {
+		t.Fatalf("expected no GetUser when actor is in members, got %d calls", st.userCalls)
+	}
+}
+
+func TestEmailNotifier_ActivityActorNameFallsBackToGetUser(t *testing.T) {
+	st := newEmailNotifyFake()
+	// Actor can authorize ListProjectMembers on Temporary Boards without a membership row.
+	st.members = []store.ProjectMember{
+		{UserID: 2, Email: "assignee@example.com", Name: "Assignee"},
+		{UserID: 3, Email: "member@example.com", Name: "Member"},
+	}
+	st.users[1] = store.User{ID: 1, Email: "visitor@example.com", Name: "Visitor"}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://scrumboy.example.com", true, discardLogger())
+
+	n.handle(context.Background(), refreshEvent(t, 1, "todo_moved"))
+
+	got := q.Drain()
+	if len(got) != 2 {
+		t.Fatalf("expected emails to members, got %+v", got)
+	}
+	for _, m := range got {
+		if !strings.Contains(m.Body, "Visitor moved a card in Roadmap.") {
+			t.Fatalf("expected GetUser-sourced actor name, got %q", m.Body)
+		}
+	}
+	if st.userCalls != 1 {
+		t.Fatalf("expected one GetUser fallback for non-member actor, got %d calls", st.userCalls)
+	}
+}
+
+func TestEmailNotifier_ActivityPassiveCopyWhenActorNameUnavailable(t *testing.T) {
+	st := newEmailNotifyFake()
+	// Valid actor ID and membership, but no usable display name.
+	st.members[0].Name = ""
+	st.users[1] = store.User{ID: 1, Email: "actor@example.com", Name: ""}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://scrumboy.example.com", true, discardLogger())
+
+	n.handle(context.Background(), refreshEvent(t, 1, "sprint_closed"))
+
+	got := q.Drain()
+	if len(got) != 2 {
+		t.Fatalf("expected emails to still send without an actor name, got %+v", got)
+	}
+	for _, m := range got {
+		if m.Subject != "Roadmap: sprint closed" {
+			t.Fatalf("unexpected subject: %q", m.Subject)
+		}
+		if !strings.Contains(m.Body, "A sprint was closed in Roadmap.") {
+			t.Fatalf("expected passive body, got %q", m.Body)
+		}
+		if strings.Contains(m.Body, "closed a sprint") {
+			t.Fatalf("expected no actor-led phrasing, got %q", m.Body)
+		}
 	}
 }

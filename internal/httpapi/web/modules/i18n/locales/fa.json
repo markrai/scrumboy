@@ -199,7 +199,7 @@
   "board.selection.multiple": "ویرایش {count} مورد انتخاب‌شده",
   "board.selection.single": "ویرایش ۱ مورد انتخاب‌شده",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "برای مرتب‌سازی بکشید",
+  "board.todo.dragCard": "کارت را بکشید",
   "board.todo.moveFailed": "جابه‌جایی Todo ناموفق بود",
   "board.todo.movedTo": "Todo به {lane} منتقل شد",
   "board.voice.boardChanged": "برد قبل از باز شدن دستورات تغییر کرد",

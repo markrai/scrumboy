@@ -199,7 +199,7 @@
   "board.selection.multiple": "Hariri {count} zilizochaguliwa",
   "board.selection.single": "Hariri 1 iliyochaguliwa",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Buruta ili kupanga upya",
+  "board.todo.dragCard": "Buruta kadi",
   "board.todo.moveFailed": "Imeshindwa kuhamisha Todo",
   "board.todo.movedTo": "Todo imehamishwa kwenda {lane}",
   "board.voice.boardChanged": "Bodi ilibadilika kabla ya commands kufunguliwa",

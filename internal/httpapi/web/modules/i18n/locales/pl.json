@@ -199,7 +199,7 @@
   "board.selection.multiple": "Edytuj {count} zaznaczonych",
   "board.selection.single": "Edytuj zaznaczony element",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Przeciągnij, aby zmienić kolejność",
+  "board.todo.dragCard": "Przeciągnij kartę",
   "board.todo.moveFailed": "Nie udało się przenieść Todo",
   "board.todo.movedTo": "Todo przeniesiono do {lane}",
   "board.voice.boardChanged": "Tablica zmieniła się, zanim otwarto polecenia",

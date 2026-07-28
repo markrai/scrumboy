@@ -199,7 +199,7 @@
   "board.selection.multiple": "Seçilen {count} todo'yu düzenle",
   "board.selection.single": "Seçilen 1 todo'yu düzenle",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Yeniden sıralamak için sürükleyin",
+  "board.todo.dragCard": "Kartı sürükleyin",
   "board.todo.moveFailed": "Todo taşınamadı",
   "board.todo.movedTo": "Todo {lane} sütununa taşındı",
   "board.voice.boardChanged": "Komutlar açılmadan önce pano değişti",

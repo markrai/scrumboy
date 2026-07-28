@@ -207,7 +207,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "board.selection.multiple": "Edit {count} selected",
   "board.selection.single": "Edit 1 selected",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Drag to reorder",
+  "board.todo.dragCard": "Drag card",
   "board.todo.moveFailed": "Failed to move todo",
   "board.todo.movedTo": "Todo moved to {lane}",
   "board.voice.boardChanged": "The board changed before commands opened",

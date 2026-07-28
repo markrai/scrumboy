@@ -199,7 +199,7 @@
   "board.selection.multiple": "Редактировать выбранные ({count})",
   "board.selection.single": "Редактировать 1 выбранную задачу",
   "board.status.backlog": "Бэклог",
-  "board.todo.dragToReorder": "Перетащите для изменения порядка",
+  "board.todo.dragCard": "Перетащите карточку",
   "board.todo.moveFailed": "Не удалось переместить задачу",
   "board.todo.movedTo": "Задача перемещена в {lane}",
   "board.voice.boardChanged": "Доска изменилась до открытия команд",

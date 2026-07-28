@@ -199,7 +199,7 @@
   "board.selection.multiple": "Modifica {count} selezionati",
   "board.selection.single": "Modifica 1 elemento selezionato",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Trascina per riordinare",
+  "board.todo.dragCard": "Trascina la scheda",
   "board.todo.moveFailed": "Impossibile spostare il Todo",
   "board.todo.movedTo": "Todo spostato in {lane}",
   "board.voice.boardChanged": "La board è cambiata prima dell'apertura dei comandi",

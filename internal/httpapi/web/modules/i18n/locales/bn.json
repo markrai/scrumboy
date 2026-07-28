@@ -199,7 +199,7 @@
   "board.selection.multiple": "{count}টি নির্বাচিত সম্পাদনা",
   "board.selection.single": "১টি নির্বাচিত সম্পাদনা",
   "board.status.backlog": "ব্যাকলগ",
-  "board.todo.dragToReorder": "ক্রম বদলাতে টেনে আনুন",
+  "board.todo.dragCard": "কার্ড টেনে আনুন",
   "board.todo.moveFailed": "Todo সরাতে ব্যর্থ",
   "board.todo.movedTo": "Todo {lane}-এ সরানো",
   "board.voice.boardChanged": "কমান্ড খোলার আগে বোর্ড বদলেছে",

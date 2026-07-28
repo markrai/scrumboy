@@ -199,7 +199,7 @@
   "board.selection.multiple": "Edit {count} yang dipilih",
   "board.selection.single": "Edit 1 yang dipilih",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Seret untuk mengurutkan ulang",
+  "board.todo.dragCard": "Seret kad",
   "board.todo.moveFailed": "Gagal memindahkan Todo",
   "board.todo.movedTo": "Todo dipindahkan ke {lane}",
   "board.voice.boardChanged": "Papan berubah sebelum perintah dibuka",

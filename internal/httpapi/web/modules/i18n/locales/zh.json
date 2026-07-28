@@ -199,7 +199,7 @@
   "board.selection.multiple": "编辑已选 {count} 项",
   "board.selection.single": "编辑已选 1 项",
   "board.status.backlog": "待办池",
-  "board.todo.dragToReorder": "拖动以调整顺序",
+  "board.todo.dragCard": "拖动卡片",
   "board.todo.moveFailed": "移动 Todo 失败",
   "board.todo.movedTo": "Todo 已移至 {lane}",
   "board.voice.boardChanged": "打开命令前看板已发生变化",

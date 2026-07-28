@@ -108,7 +108,7 @@ describe('board topbar rendering', () => {
     expect(html).not.toContain('todo-mermaid');
   });
 
-  it('renders drag handles only when manual reordering is enabled', () => {
+  it('always renders a drag handle, even under chronological sort where only cross-lane drag is allowed', () => {
     const todo = {
       id: 7,
       localId: 12,
@@ -118,8 +118,9 @@ describe('board topbar rendering', () => {
       tags: [],
     };
 
-    expect(renderTodoCard(todo)).toContain('card__drag-handle');
-    expect(renderTodoCard(todo, undefined, undefined, { reorderEnabled: true })).toContain('card__drag-handle');
-    expect(renderTodoCard(todo, undefined, undefined, { reorderEnabled: false })).not.toContain('card__drag-handle');
+    const html = renderTodoCard(todo);
+    expect(html).toContain('card__drag-handle');
+    expect(html).toContain('aria-label="Drag card"');
+    expect(html).toContain('data-i18n-aria-label="board.todo.dragCard"');
   });
 });

@@ -199,7 +199,7 @@
   "board.selection.multiple": "Sửa {count} đã chọn",
   "board.selection.single": "Sửa 1 đã chọn",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Kéo để sắp xếp lại",
+  "board.todo.dragCard": "Kéo thẻ",
   "board.todo.moveFailed": "Không di chuyển được todo",
   "board.todo.movedTo": "Đã chuyển todo sang {lane}",
   "board.voice.boardChanged": "Bảng đã thay đổi trước khi mở lệnh",

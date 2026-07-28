@@ -199,7 +199,7 @@
   "board.selection.multiple": "Редагувати {count} вибраних",
   "board.selection.single": "Редагувати вибране",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Перетягни, щоб змінити порядок",
+  "board.todo.dragCard": "Перетягніть картку",
   "board.todo.moveFailed": "Не вдалося перемістити Todo",
   "board.todo.movedTo": "Todo переміщено в {lane}",
   "board.voice.boardChanged": "Дошка змінилася до відкриття команд",

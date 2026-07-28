@@ -199,7 +199,7 @@
   "board.selection.multiple": "Editar {count} seleccionados",
   "board.selection.single": "Editar 1 elemento seleccionado",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Arrastra para reordenar",
+  "board.todo.dragCard": "Arrastra la tarjeta",
   "board.todo.moveFailed": "Error al mover todo",
   "board.todo.movedTo": "Todo movido a {lane}",
   "board.voice.boardChanged": "El tablero cambió antes de que se abrieran los comandos",

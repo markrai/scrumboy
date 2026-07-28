@@ -199,7 +199,7 @@
   "board.selection.multiple": "選択中 {count} 件を編集",
   "board.selection.single": "選択中 1 件を編集",
   "board.status.backlog": "バックログ",
-  "board.todo.dragToReorder": "ドラッグして並べ替え",
+  "board.todo.dragCard": "カードをドラッグ",
   "board.todo.moveFailed": "Todo の移動に失敗しました",
   "board.todo.movedTo": "Todo を {lane} に移動しました",
   "board.voice.boardChanged": "コマンドを開く前にボードが変更されました",

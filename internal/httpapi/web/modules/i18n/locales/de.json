@@ -199,7 +199,7 @@
   "board.selection.multiple": "{count} ausgewählte Todos bearbeiten",
   "board.selection.single": "1 ausgewähltes Todo bearbeiten",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Zum Neuordnen ziehen",
+  "board.todo.dragCard": "Karte ziehen",
   "board.todo.moveFailed": "Todo konnte nicht verschoben werden",
   "board.todo.movedTo": "Todo nach {lane} verschoben",
   "board.voice.boardChanged": "Das Board hat sich geändert, bevor die Befehle geöffnet wurden",

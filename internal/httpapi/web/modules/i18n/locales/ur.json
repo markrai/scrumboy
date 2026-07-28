@@ -199,7 +199,7 @@
   "board.selection.multiple": "{count} منتخب میں ترمیم",
   "board.selection.single": "منتخب Todo 1 میں ترمیم",
   "board.status.backlog": "بیک لاگ",
-  "board.todo.dragToReorder": "ترتیب بدلنے کے لیے کھینچیں",
+  "board.todo.dragCard": "کارڈ کھینچیں",
   "board.todo.moveFailed": "Todo منتقل ناکام",
   "board.todo.movedTo": "Todo {lane} میں منتقل ہوا",
   "board.voice.boardChanged": "کمانڈز کھلنے سے پہلے بورڈ بدل گیا",

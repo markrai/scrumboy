@@ -199,7 +199,7 @@
   "board.selection.multiple": "แก้ไข {count} รายการที่เลือก",
   "board.selection.single": "แก้ไข Todo ที่เลือก 1 รายการ",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "ลากเพื่อจัดลำดับใหม่",
+  "board.todo.dragCard": "ลากการ์ด",
   "board.todo.moveFailed": "ย้าย Todo ไม่สำเร็จ",
   "board.todo.movedTo": "ย้าย Todo ไป {lane} แล้ว",
   "board.voice.boardChanged": "บอร์ดเปลี่ยนก่อนเปิดคำสั่ง",

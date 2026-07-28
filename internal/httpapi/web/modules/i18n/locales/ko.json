@@ -199,7 +199,7 @@
   "board.selection.multiple": "선택한 {count}개 편집",
   "board.selection.single": "선택한 Todo 1개 편집",
   "board.status.backlog": "백로그",
-  "board.todo.dragToReorder": "드래그하여 순서 변경",
+  "board.todo.dragCard": "카드 드래그",
   "board.todo.moveFailed": "Todo 이동에 실패했습니다",
   "board.todo.movedTo": "Todo가 {lane}(으)로 이동되었습니다",
   "board.voice.boardChanged": "명령을 열기 전에 보드가 변경되었습니다",

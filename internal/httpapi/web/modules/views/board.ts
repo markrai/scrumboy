@@ -543,7 +543,6 @@ async function handleLoadMore(status: TodoStatus): Promise<void> {
         tagColors,
         showPointsMode,
         selectedIds: getSelectedTodoIds(),
-        reorderEnabled: sort !== "newest" && sort !== "oldest",
       };
       items.forEach((t) => {
         const card = document.createElement("div");
@@ -860,7 +859,6 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
       tagColors,
       showPointsMode,
       selectedIds: getSelectedTodoIds(),
-      reorderEnabled: sort !== "newest" && sort !== "oldest",
     };
     boardEl.innerHTML = buildBoardColumnsHtml({
       boardCols,
@@ -989,7 +987,6 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     tagColors,
     showPointsMode,
     selectedIds: getSelectedTodoIds(),
-    reorderEnabled: sort !== "newest" && sort !== "oldest",
   };
 
   app.innerHTML = `

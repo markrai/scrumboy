@@ -199,7 +199,7 @@
   "board.selection.multiple": "تحرير العناصر المحددة ({count})",
   "board.selection.single": "تحرير عنصر محدد واحد",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "اسحب لإعادة الترتيب",
+  "board.todo.dragCard": "اسحب البطاقة",
   "board.todo.moveFailed": "فشل نقل المهمة",
   "board.todo.movedTo": "نُقلت المهمة إلى {lane}",
   "board.voice.boardChanged": "تغيّرت اللوحة قبل فتح الأوامر",
