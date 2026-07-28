@@ -26,7 +26,7 @@ export { notifySprintStateChanged } from './board-filters.js';
 import { attachBoardInteractionListeners, clearPendingRealtimeRefresh, connectBoardEvents, debugLog, disconnectBoardEvents, markBoardLoadSucceeded, runWhileTodoDialogOpening, setInitialBoardLoadInFlight, } from './board-realtime.js';
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
-import { applyWrapLanesClass, shouldWrapBoardLanes } from '../core/wrap-lanes-preferences.js';
+import { applyWrapLanesClass } from '../core/wrap-lanes-preferences.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -907,7 +907,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
             </div>
           </div>
 
-          <div class="board${shouldWrapBoardLanes(boardCols.length) ? " board--wrapped" : ""}">
+          <div class="board">
           ${buildBoardColumnsHtml({
         boardCols,
         board,
@@ -922,6 +922,9 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
       </div>
     </div>
   `;
+    const boardRoot = document.querySelector(".board");
+    if (boardRoot)
+        applyWrapLanesClass(boardRoot, boardCols.length);
     // Only attach event listeners for elements that exist (anonymous mode omits some)
     const brandLink = document.getElementById("brandLink");
     if (brandLink && !brandLink[BOUND_FLAG]) {

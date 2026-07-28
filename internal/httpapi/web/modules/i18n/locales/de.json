@@ -464,7 +464,7 @@
   "settings.customization.cardsPerLane.toast.updated": "Karten pro Spalte aktualisiert",
   "settings.customization.cardsPerLane.toast.updateFailed": "Karten pro Spalte konnten nicht aktualisiert werden",
   "settings.customization.wrapLanes.title": "Spalten in Zeilen umbrechen",
-  "settings.customization.wrapLanes.description": "Auf breiten Bildschirmen zeigen Boards mit mehr als fünf Spalten bis zu drei Spalten pro Zeile.",
+  "settings.customization.wrapLanes.description": "Auf breiten Bildschirmen teilen sich Boards mit mehr als fünf Spalten in zwei gleich große Zeilen; eine übrig gebliebene ungerade Spalte steht allein in der nächsten Zeile.",
   "settings.customization.wrapLanes.toggleLabel": "Spalten in Zeilen umbrechen",
   "settings.customization.notifications.title": "Desktop-Benachrichtigungen",
   "settings.customization.notifications.description": "Systemweite Hinweise, wenn dir jemand ein Todo zuweist (funktioniert, wenn dieser Tab im Hintergrund ist).",

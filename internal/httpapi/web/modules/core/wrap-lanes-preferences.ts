@@ -52,8 +52,20 @@ export function shouldWrapBoardLanes(laneCount: number): boolean {
   return getWrapLanesPreference() && laneCount > 5;
 }
 
+/** Columns per wrapped row: half the lanes (floor), so even counts form two equal rows. */
+export function wrapLanesColumnsPerRow(laneCount: number): number {
+  return Math.floor(laneCount / 2);
+}
+
 export function applyWrapLanesClass(boardEl: Element, laneCount: number): void {
-  boardEl.classList.toggle('board--wrapped', shouldWrapBoardLanes(laneCount));
+  const wrap = shouldWrapBoardLanes(laneCount);
+  boardEl.classList.toggle('board--wrapped', wrap);
+  if (!(boardEl instanceof HTMLElement)) return;
+  if (wrap) {
+    boardEl.style.setProperty('--board-wrap-cols', String(wrapLanesColumnsPerRow(laneCount)));
+  } else {
+    boardEl.style.removeProperty('--board-wrap-cols');
+  }
 }
 
 export function syncOpenBoardWrapLanesClass(): void {

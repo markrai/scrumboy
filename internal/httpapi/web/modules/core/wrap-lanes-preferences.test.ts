@@ -9,6 +9,7 @@ import {
   normalizeWrapLanes,
   setWrapLanesPreference,
   shouldWrapBoardLanes,
+  wrapLanesColumnsPerRow,
   WRAP_LANES_STORAGE_KEY,
 } from './wrap-lanes-preferences.js';
 
@@ -121,20 +122,38 @@ describe('shouldWrapBoardLanes', () => {
   });
 });
 
+describe('wrapLanesColumnsPerRow', () => {
+  it('uses half the lane count so even boards form two equal rows', () => {
+    expect(wrapLanesColumnsPerRow(6)).toBe(3);
+    expect(wrapLanesColumnsPerRow(8)).toBe(4);
+    expect(wrapLanesColumnsPerRow(10)).toBe(5);
+    expect(wrapLanesColumnsPerRow(12)).toBe(6);
+  });
+
+  it('floors odd counts so the leftover lane sits alone on the next row', () => {
+    expect(wrapLanesColumnsPerRow(7)).toBe(3);
+    expect(wrapLanesColumnsPerRow(9)).toBe(4);
+    expect(wrapLanesColumnsPerRow(11)).toBe(5);
+  });
+});
+
 describe('applyWrapLanesClass', () => {
-  it('adds board--wrapped when wrapping should apply', () => {
+  it('adds board--wrapped and sets columns-per-row when wrapping should apply', () => {
     setWrapLanesPreference(true, { skipRemote: true });
     const boardEl = document.createElement('div');
     boardEl.className = 'board';
-    applyWrapLanesClass(boardEl, 6);
+    applyWrapLanesClass(boardEl, 8);
     expect(boardEl.classList.contains('board--wrapped')).toBe(true);
+    expect(boardEl.style.getPropertyValue('--board-wrap-cols')).toBe('4');
   });
 
-  it('removes board--wrapped when wrapping should not apply', () => {
+  it('removes board--wrapped and the columns variable when wrapping should not apply', () => {
     setWrapLanesPreference(true, { skipRemote: true });
     const boardEl = document.createElement('div');
     boardEl.className = 'board board--wrapped';
+    boardEl.style.setProperty('--board-wrap-cols', '4');
     applyWrapLanesClass(boardEl, 4);
     expect(boardEl.classList.contains('board--wrapped')).toBe(false);
+    expect(boardEl.style.getPropertyValue('--board-wrap-cols')).toBe('');
   });
 });

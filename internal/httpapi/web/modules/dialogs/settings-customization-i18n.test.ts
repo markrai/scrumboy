@@ -225,7 +225,7 @@ const enCatalog = {
   'settings.customization.cardsPerLane.toast.updated': 'Cards per lane updated',
   'settings.customization.cardsPerLane.toast.updateFailed': 'Failed to update cards per lane',
   'settings.customization.wrapLanes.title': 'Wrap lanes into rows',
-  'settings.customization.wrapLanes.description': 'On wide screens, boards with more than five lanes use up to three lanes per row.',
+  'settings.customization.wrapLanes.description': 'On wide screens, boards with more than five lanes split into two equal rows; a leftover odd lane sits alone on the next row.',
   'settings.customization.wrapLanes.toggleLabel': 'Wrap lanes into rows',
   'settings.customization.notifications.title': 'Desktop notifications',
   'settings.customization.notifications.description': 'OS-level alerts when someone assigns you a todo (works when this tab is in the background).',

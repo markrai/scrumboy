@@ -271,6 +271,7 @@ describe('board wrap lanes rendering', () => {
     await renderPrefetchedBoard(mod, boardWithLaneCount(6));
 
     expect(boardEl()?.classList.contains('board--wrapped')).toBe(true);
+    expect((boardEl() as HTMLElement).style.getPropertyValue('--board-wrap-cols')).toBe('3');
   });
 
   it('does not add board--wrapped on full render when lane count is five or fewer', async () => {
@@ -289,8 +290,9 @@ describe('board wrap lanes rendering', () => {
     await renderPrefetchedBoard(mod, boardWithLaneCount(5));
     expect(boardEl()?.classList.contains('board--wrapped')).toBe(false);
 
-    await renderPrefetchedBoard(mod, boardWithLaneCount(6));
+    await renderPrefetchedBoard(mod, boardWithLaneCount(8));
     expect(boardEl()?.classList.contains('board--wrapped')).toBe(true);
+    expect((boardEl() as HTMLElement).style.getPropertyValue('--board-wrap-cols')).toBe('4');
   });
 
   it('removes board--wrapped during incremental render when workflow shrinks to five lanes', async () => {
@@ -302,6 +304,17 @@ describe('board wrap lanes rendering', () => {
 
     await renderPrefetchedBoard(mod, boardWithLaneCount(5));
     expect(boardEl()?.classList.contains('board--wrapped')).toBe(false);
+    expect((boardEl() as HTMLElement).style.getPropertyValue('--board-wrap-cols')).toBe('');
+  });
+
+  it('uses half-width rows for ten lanes (5+5)', async () => {
+    setWrapLanesPreference(true, { skipRemote: true });
+    const mod = await import('./board.js');
+
+    await renderPrefetchedBoard(mod, boardWithLaneCount(10));
+
+    expect(boardEl()?.classList.contains('board--wrapped')).toBe(true);
+    expect((boardEl() as HTMLElement).style.getPropertyValue('--board-wrap-cols')).toBe('5');
   });
 });
 

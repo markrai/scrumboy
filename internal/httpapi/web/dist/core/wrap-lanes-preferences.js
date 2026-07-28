@@ -46,8 +46,21 @@ export async function loadWrapLanesPreferenceFromServer(fetchPreference) {
 export function shouldWrapBoardLanes(laneCount) {
     return getWrapLanesPreference() && laneCount > 5;
 }
+/** Columns per wrapped row: half the lanes (floor), so even counts form two equal rows. */
+export function wrapLanesColumnsPerRow(laneCount) {
+    return Math.floor(laneCount / 2);
+}
 export function applyWrapLanesClass(boardEl, laneCount) {
-    boardEl.classList.toggle('board--wrapped', shouldWrapBoardLanes(laneCount));
+    const wrap = shouldWrapBoardLanes(laneCount);
+    boardEl.classList.toggle('board--wrapped', wrap);
+    if (!(boardEl instanceof HTMLElement))
+        return;
+    if (wrap) {
+        boardEl.style.setProperty('--board-wrap-cols', String(wrapLanesColumnsPerRow(laneCount)));
+    }
+    else {
+        boardEl.style.removeProperty('--board-wrap-cols');
+    }
 }
 export function syncOpenBoardWrapLanesClass() {
     const board = getBoard();

@@ -204,12 +204,7 @@ async function routeOnceBody() {
             catch (err) {
                 // Ignore errors
             }
-            try {
-                await loadWrapLanesPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`));
-            }
-            catch (err) {
-                // Ignore errors
-            }
+            await loadWrapLanesPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`));
             // Load email notification preferences
             await loadUserEmailNotifyPref();
         }

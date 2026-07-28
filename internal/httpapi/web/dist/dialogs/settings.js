@@ -1456,7 +1456,7 @@ export async function renderSettingsModal(options) {
     const wrapLanesSectionHTML = `
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.customization.wrapLanes.title">Wrap lanes into rows</div>
-        <div class="settings-section__description muted" data-i18n-text="settings.customization.wrapLanes.description">On wide screens, boards with more than five lanes use up to three lanes per row.</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.wrapLanes.description">On wide screens, boards with more than five lanes split into two equal rows; a leftover odd lane sits alone on the next row.</div>
         <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
           <input type="checkbox" id="wrapLanesToggle" ${getWrapLanesPreference() ? "checked" : ""} />
           <span data-i18n-text="settings.customization.wrapLanes.toggleLabel">Wrap lanes into rows</span>
