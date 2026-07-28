@@ -26,6 +26,7 @@ export { notifySprintStateChanged } from './board-filters.js';
 import { attachBoardInteractionListeners, clearPendingRealtimeRefresh, connectBoardEvents, debugLog, disconnectBoardEvents, markBoardLoadSucceeded, runWhileTodoDialogOpening, setInitialBoardLoadInFlight, } from './board-realtime.js';
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { applyWrapLanesClass, shouldWrapBoardLanes } from '../core/wrap-lanes-preferences.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -772,6 +773,7 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort) {
             membersByUserId,
             cardOpts,
         });
+        applyWrapLanesClass(boardEl, boardCols.length);
         // Add "No results" state if search is active and no todos match
         if (search && search.trim() !== "") {
             const totalTodos = Object.values(board.columns).reduce((sum, todos) => sum + todos.length, 0);
@@ -905,7 +907,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
             </div>
           </div>
 
-          <div class="board">
+          <div class="board${shouldWrapBoardLanes(boardCols.length) ? " board--wrapped" : ""}">
           ${buildBoardColumnsHtml({
         boardCols,
         board,

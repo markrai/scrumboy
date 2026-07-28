@@ -19,6 +19,10 @@ import {
 } from './core/voiceflow-preferences.js';
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
+import {
+  hydrateWrapLanesFromServer,
+  WRAP_LANES_PREFERENCE_KEY,
+} from './core/wrap-lanes-preferences.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -226,6 +230,13 @@ async function routeOnceBody(): Promise<void> {
         const cardsPerLaneResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${CARDS_PER_LANE_PREFERENCE_KEY}`);
         const n = cardsPerLaneResp?.value ? parseInt(cardsPerLaneResp.value, 10) : NaN;
         if (Number.isFinite(n)) setDefaultCardsPerLane(n);
+      } catch (err) {
+        // Ignore errors
+      }
+
+      try {
+        const wrapLanesResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`);
+        if (wrapLanesResp?.value) hydrateWrapLanesFromServer(wrapLanesResp.value);
       } catch (err) {
         // Ignore errors
       }

@@ -3313,6 +3313,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   gap: var(--s-12);
 }
 
+@media (min-width: 1301px) {
+  .board.board--wrapped {
+    grid-template-columns: repeat(3, minmax(200px, 1fr));
+  }
+}
+
 .col {
   background: var(--bg);
   border: 1px solid var(--border);

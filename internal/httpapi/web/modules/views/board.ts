@@ -98,6 +98,7 @@ import {
 } from './board-realtime.js';
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { applyWrapLanesClass, shouldWrapBoardLanes } from '../core/wrap-lanes-preferences.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
@@ -871,6 +872,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
       membersByUserId,
       cardOpts,
     });
+    applyWrapLanesClass(boardEl, boardCols.length);
 
     // Add "No results" state if search is active and no todos match
     if (search && search.trim() !== "") {
@@ -1016,7 +1018,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
             </div>
           </div>
 
-          <div class="board">
+          <div class="board${shouldWrapBoardLanes(boardCols.length) ? " board--wrapped" : ""}">
           ${buildBoardColumnsHtml({
             boardCols,
             board,
