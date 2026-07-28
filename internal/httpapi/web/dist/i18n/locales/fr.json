@@ -199,7 +199,7 @@
   "board.selection.multiple": "Modifier {count} todos sélectionnés",
   "board.selection.single": "Modifier 1 todo sélectionné",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Glisser pour réordonner",
+  "board.todo.dragCard": "Faire glisser la carte",
   "board.todo.moveFailed": "Impossible de déplacer le todo",
   "board.todo.movedTo": "Todo déplacé vers {lane}",
   "board.voice.boardChanged": "Le tableau a changé avant l'ouverture des commandes",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Impossible de connecter le SSO.",
   "settings.profile.authentication.linked": "SSO connecté.",
   "settings.users.table.authentication": "Authentification",
-  "settings.profile.authentication.warning.localDisabledOwner": "Ce propriétaire dépend du SSO alors que l’authentification locale est désactivée. Si le SSO devient indisponible, un opérateur doit accéder à l’hôte Scrumboy, exécuter recover-owner et réactiver l’authentification locale."
+  "settings.profile.authentication.warning.localDisabledOwner": "Ce propriétaire dépend du SSO alors que l’authentification locale est désactivée. Si le SSO devient indisponible, un opérateur doit accéder à l’hôte Scrumboy, exécuter recover-owner et réactiver l’authentification locale.",
+  "settings.sprints.enableToggle": "Activer les sprints pour ce tableau",
+  "settings.sprints.disabledHint": "Les sprints sont désactivés pour ce tableau. Activez-les ci-dessus pour créer et gérer des sprints.",
+  "settings.sprints.toast.enabled": "Sprints activés",
+  "settings.sprints.toast.disabled": "Sprints désactivés",
+  "settings.sprints.toast.toggleFailed": "Échec de la mise à jour du paramètre des sprints"
 }

@@ -199,7 +199,7 @@
   "board.selection.multiple": "Редактировать выбранные ({count})",
   "board.selection.single": "Редактировать 1 выбранную задачу",
   "board.status.backlog": "Бэклог",
-  "board.todo.dragToReorder": "Перетащите для изменения порядка",
+  "board.todo.dragCard": "Перетащите карточку",
   "board.todo.moveFailed": "Не удалось переместить задачу",
   "board.todo.movedTo": "Задача перемещена в {lane}",
   "board.voice.boardChanged": "Доска изменилась до открытия команд",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Не удалось подключить SSO.",
   "settings.profile.authentication.linked": "SSO подключён.",
   "settings.users.table.authentication": "Аутентификация",
-  "settings.profile.authentication.warning.localDisabledOwner": "Этот владелец зависит от SSO, пока локальная аутентификация отключена. Если SSO станет недоступен, оператору потребуется доступ к хосту Scrumboy, запуск recover-owner и повторное включение локальной аутентификации."
+  "settings.profile.authentication.warning.localDisabledOwner": "Этот владелец зависит от SSO, пока локальная аутентификация отключена. Если SSO станет недоступен, оператору потребуется доступ к хосту Scrumboy, запуск recover-owner и повторное включение локальной аутентификации.",
+  "settings.sprints.enableToggle": "Включить спринты для этой доски",
+  "settings.sprints.disabledHint": "Спринты отключены для этой доски. Включите их выше, чтобы создавать спринты и управлять ими.",
+  "settings.sprints.toast.enabled": "Спринты включены",
+  "settings.sprints.toast.disabled": "Спринты отключены",
+  "settings.sprints.toast.toggleFailed": "Не удалось обновить настройку спринтов"
 }

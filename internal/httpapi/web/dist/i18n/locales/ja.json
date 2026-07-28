@@ -199,7 +199,7 @@
   "board.selection.multiple": "選択中 {count} 件を編集",
   "board.selection.single": "選択中 1 件を編集",
   "board.status.backlog": "バックログ",
-  "board.todo.dragToReorder": "ドラッグして並べ替え",
+  "board.todo.dragCard": "カードをドラッグ",
   "board.todo.moveFailed": "Todo の移動に失敗しました",
   "board.todo.movedTo": "Todo を {lane} に移動しました",
   "board.voice.boardChanged": "コマンドを開く前にボードが変更されました",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "SSO を接続できませんでした。",
   "settings.profile.authentication.linked": "SSO を接続しました。",
   "settings.users.table.authentication": "認証",
-  "settings.profile.authentication.warning.localDisabledOwner": "ローカル認証が無効なため、この所有者は SSO に依存しています。SSO が利用できなくなった場合、オペレーターが Scrumboy ホストにアクセスし、recover-owner を実行してローカル認証を再有効化する必要があります。"
+  "settings.profile.authentication.warning.localDisabledOwner": "ローカル認証が無効なため、この所有者は SSO に依存しています。SSO が利用できなくなった場合、オペレーターが Scrumboy ホストにアクセスし、recover-owner を実行してローカル認証を再有効化する必要があります。",
+  "settings.sprints.enableToggle": "このボードでスプリントを有効にする",
+  "settings.sprints.disabledHint": "このボードではスプリントが無効になっています。スプリントを作成・管理するには上で有効にしてください。",
+  "settings.sprints.toast.enabled": "スプリントを有効にしました",
+  "settings.sprints.toast.disabled": "スプリントを無効にしました",
+  "settings.sprints.toast.toggleFailed": "スプリント設定の更新に失敗しました"
 }

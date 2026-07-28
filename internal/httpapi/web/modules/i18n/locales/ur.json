@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "SSO منسلک نہیں ہو سکا۔",
   "settings.profile.authentication.linked": "SSO منسلک ہو گیا۔",
   "settings.users.table.authentication": "توثیق",
-  "settings.profile.authentication.warning.localDisabledOwner": "مقامی توثیق بند ہونے کے دوران یہ مالک SSO پر منحصر ہے۔ اگر SSO دستیاب نہ رہے تو آپریٹر کو Scrumboy ہوسٹ تک رسائی حاصل کر کے recover-owner چلانا اور مقامی توثیق دوبارہ فعال کرنی ہوگی۔"
+  "settings.profile.authentication.warning.localDisabledOwner": "مقامی توثیق بند ہونے کے دوران یہ مالک SSO پر منحصر ہے۔ اگر SSO دستیاب نہ رہے تو آپریٹر کو Scrumboy ہوسٹ تک رسائی حاصل کر کے recover-owner چلانا اور مقامی توثیق دوبارہ فعال کرنی ہوگی۔",
+  "settings.sprints.enableToggle": "اس بورڈ کے لیے سپرنٹس فعال کریں",
+  "settings.sprints.disabledHint": "اس بورڈ کے لیے سپرنٹس غیر فعال ہیں۔ سپرنٹس بنانے اور منظم کرنے کے لیے اوپر فعال کریں۔",
+  "settings.sprints.toast.enabled": "سپرنٹس فعال کر دیے گئے",
+  "settings.sprints.toast.disabled": "سپرنٹس غیر فعال کر دیے گئے",
+  "settings.sprints.toast.toggleFailed": "سپرنٹ کی ترتیب اپ ڈیٹ کرنے میں ناکامی"
 }

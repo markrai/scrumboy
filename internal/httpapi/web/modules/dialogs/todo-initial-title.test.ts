@@ -95,7 +95,7 @@ describe("openTodoDialog initialTitle seeding", () => {
       isAnonymousBoard: () => true,
       showToast: vi.fn(),
     }));
-    vi.doMock("../sprints.js", () => ({ normalizeSprints: () => [] }));
+    vi.doMock("../sprints.js", () => ({ normalizeSprints: () => [], boardSprintsEnabled: () => true }));
     vi.doMock("./todo-links.js", () => ({
       bindShareTodoButton: vi.fn(),
       bindTodoDialogLinkLifecycle: vi.fn(),
@@ -157,7 +157,7 @@ describe("openTodoDialog initialTitle seeding", () => {
       isAnonymousBoard: () => true,
       showToast: vi.fn(),
     }));
-    vi.doMock("../sprints.js", () => ({ normalizeSprints: () => [] }));
+    vi.doMock("../sprints.js", () => ({ normalizeSprints: () => [], boardSprintsEnabled: () => true }));
     vi.doMock("./todo-links.js", () => ({
       bindShareTodoButton: vi.fn(),
       bindTodoDialogLinkLifecycle: vi.fn(),
@@ -225,7 +225,7 @@ describe("openTodoDialog initialTitle seeding", () => {
       showConfirmDialog: vi.fn(),
       showToast: vi.fn(),
     }));
-    vi.doMock("../sprints.js", () => ({ normalizeSprints: (res: { sprints?: unknown[] } | null) => res?.sprints ?? [] }));
+    vi.doMock("../sprints.js", () => ({ normalizeSprints: (res: { sprints?: unknown[] } | null) => res?.sprints ?? [], boardSprintsEnabled: () => true }));
     vi.doMock("./todo-links.js", () => ({
       bindShareTodoButton: vi.fn(),
       bindTodoDialogLinkLifecycle: vi.fn(),

@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Não foi possível conectar o SSO.",
   "settings.profile.authentication.linked": "SSO conectado.",
   "settings.users.table.authentication": "Autenticação",
-  "settings.profile.authentication.warning.localDisabledOwner": "Este proprietário depende do SSO enquanto a autenticação local está desativada. Se o SSO ficar indisponível, um operador deve acessar o host do Scrumboy, executar recover-owner e reativar a autenticação local."
+  "settings.profile.authentication.warning.localDisabledOwner": "Este proprietário depende do SSO enquanto a autenticação local está desativada. Se o SSO ficar indisponível, um operador deve acessar o host do Scrumboy, executar recover-owner e reativar a autenticação local.",
+  "settings.sprints.enableToggle": "Ativar sprints para este quadro",
+  "settings.sprints.disabledHint": "Os sprints estão desativados para este quadro. Ative-os acima para criar e gerenciar sprints.",
+  "settings.sprints.toast.enabled": "Sprints ativados",
+  "settings.sprints.toast.disabled": "Sprints desativados",
+  "settings.sprints.toast.toggleFailed": "Falha ao atualizar a configuração de sprints"
 }

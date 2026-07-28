@@ -73,6 +73,8 @@ vi.mock('../realtime/guard.js', () => ({
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: (value: { sprints?: any[] } | null | undefined) => value?.sprints ?? [],
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 vi.mock('./settings.js', () => ({

@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "SSO tidak dapat dihubungkan.",
   "settings.profile.authentication.linked": "SSO terhubung.",
   "settings.users.table.authentication": "Autentikasi",
-  "settings.profile.authentication.warning.localDisabledOwner": "Pemilik ini bergantung pada SSO saat autentikasi lokal dinonaktifkan. Jika SSO tidak tersedia, operator harus mengakses host Scrumboy, menjalankan recover-owner, dan mengaktifkan kembali autentikasi lokal."
+  "settings.profile.authentication.warning.localDisabledOwner": "Pemilik ini bergantung pada SSO saat autentikasi lokal dinonaktifkan. Jika SSO tidak tersedia, operator harus mengakses host Scrumboy, menjalankan recover-owner, dan mengaktifkan kembali autentikasi lokal.",
+  "settings.sprints.enableToggle": "Aktifkan sprint untuk board ini",
+  "settings.sprints.disabledHint": "Sprint dinonaktifkan untuk board ini. Aktifkan di atas untuk membuat dan mengelola sprint.",
+  "settings.sprints.toast.enabled": "Sprint diaktifkan",
+  "settings.sprints.toast.disabled": "Sprint dinonaktifkan",
+  "settings.sprints.toast.toggleFailed": "Gagal memperbarui pengaturan sprint"
 }

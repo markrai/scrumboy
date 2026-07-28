@@ -214,6 +214,7 @@ type storeAPI interface {
 	UpdateProjectImage(ctx context.Context, projectID int64, userID int64, image *string, dominantColor string) error
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
+	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
 	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
 	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
 	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error

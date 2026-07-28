@@ -199,7 +199,7 @@
   "board.selection.multiple": "{count} ausgewählte Todos bearbeiten",
   "board.selection.single": "1 ausgewähltes Todo bearbeiten",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Zum Neuordnen ziehen",
+  "board.todo.dragCard": "Karte ziehen",
   "board.todo.moveFailed": "Todo konnte nicht verschoben werden",
   "board.todo.movedTo": "Todo nach {lane} verschoben",
   "board.voice.boardChanged": "Das Board hat sich geändert, bevor die Befehle geöffnet wurden",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "SSO konnte nicht verbunden werden.",
   "settings.profile.authentication.linked": "SSO wurde verbunden.",
   "settings.users.table.authentication": "Authentifizierung",
-  "settings.profile.authentication.warning.localDisabledOwner": "Dieser Eigentümer ist auf SSO angewiesen, während die lokale Authentifizierung deaktiviert ist. Wenn SSO nicht verfügbar ist, muss ein Betreiber auf den Scrumboy-Host zugreifen, recover-owner ausführen und die lokale Authentifizierung wieder aktivieren."
+  "settings.profile.authentication.warning.localDisabledOwner": "Dieser Eigentümer ist auf SSO angewiesen, während die lokale Authentifizierung deaktiviert ist. Wenn SSO nicht verfügbar ist, muss ein Betreiber auf den Scrumboy-Host zugreifen, recover-owner ausführen und die lokale Authentifizierung wieder aktivieren.",
+  "settings.sprints.enableToggle": "Sprints für dieses Board aktivieren",
+  "settings.sprints.disabledHint": "Sprints sind für dieses Board deaktiviert. Aktivieren Sie sie oben, um Sprints zu erstellen und zu verwalten.",
+  "settings.sprints.toast.enabled": "Sprints aktiviert",
+  "settings.sprints.toast.disabled": "Sprints deaktiviert",
+  "settings.sprints.toast.toggleFailed": "Sprint-Einstellung konnte nicht aktualisiert werden"
 }

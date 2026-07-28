@@ -199,7 +199,7 @@
   "board.selection.multiple": "แก้ไข {count} รายการที่เลือก",
   "board.selection.single": "แก้ไข Todo ที่เลือก 1 รายการ",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "ลากเพื่อจัดลำดับใหม่",
+  "board.todo.dragCard": "ลากการ์ด",
   "board.todo.moveFailed": "ย้าย Todo ไม่สำเร็จ",
   "board.todo.movedTo": "ย้าย Todo ไป {lane} แล้ว",
   "board.voice.boardChanged": "บอร์ดเปลี่ยนก่อนเปิดคำสั่ง",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "ไม่สามารถเชื่อมต่อ SSO ได้",
   "settings.profile.authentication.linked": "เชื่อมต่อ SSO แล้ว",
   "settings.users.table.authentication": "การยืนยันตัวตน",
-  "settings.profile.authentication.warning.localDisabledOwner": "เจ้าของรายนี้พึ่งพา SSO ขณะที่ปิดการยืนยันตัวตนภายใน หาก SSO ไม่พร้อมใช้งาน ผู้ดูแลต้องเข้าถึงโฮสต์ที่รัน Scrumboy รัน recover-owner และเปิดการยืนยันตัวตนภายในอีกครั้ง"
+  "settings.profile.authentication.warning.localDisabledOwner": "เจ้าของรายนี้พึ่งพา SSO ขณะที่ปิดการยืนยันตัวตนภายใน หาก SSO ไม่พร้อมใช้งาน ผู้ดูแลต้องเข้าถึงโฮสต์ที่รัน Scrumboy รัน recover-owner และเปิดการยืนยันตัวตนภายในอีกครั้ง",
+  "settings.sprints.enableToggle": "เปิดใช้งานสปรินต์สำหรับบอร์ดนี้",
+  "settings.sprints.disabledHint": "สปรินต์ถูกปิดใช้งานสำหรับบอร์ดนี้ เปิดใช้งานด้านบนเพื่อสร้างและจัดการสปรินต์",
+  "settings.sprints.toast.enabled": "เปิดใช้งานสปรินต์แล้ว",
+  "settings.sprints.toast.disabled": "ปิดใช้งานสปรินต์แล้ว",
+  "settings.sprints.toast.toggleFailed": "อัปเดตการตั้งค่าสปรินต์ไม่สำเร็จ"
 }

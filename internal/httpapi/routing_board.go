@@ -140,30 +140,42 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 		}
 
 		var in struct {
-			DefaultSprintWeeks *int `json:"defaultSprintWeeks"`
+			DefaultSprintWeeks *int  `json:"defaultSprintWeeks"`
+			SprintsEnabled     *bool `json:"sprintsEnabled"`
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		if in.DefaultSprintWeeks == nil {
+		if in.DefaultSprintWeeks == nil && in.SprintsEnabled == nil {
 			writeValidationError(w, "defaultSprintWeeks required", "default_sprint_weeks_required", map[string]any{"field": "defaultSprintWeeks"})
 			return true
 		}
-		if *in.DefaultSprintWeeks != 1 && *in.DefaultSprintWeeks != 2 {
+		if in.DefaultSprintWeeks != nil && *in.DefaultSprintWeeks != 1 && *in.DefaultSprintWeeks != 2 {
 			writeValidationError(w, "defaultSprintWeeks must be 1 or 2", "invalid_default_sprint_weeks", map[string]any{"field": "defaultSprintWeeks"})
 			return true
 		}
-		if project.DefaultSprintWeeks == *in.DefaultSprintWeeks {
-			writeJSON(w, http.StatusOK, map[string]any{"defaultSprintWeeks": *in.DefaultSprintWeeks})
-			return true
-		}
 
-		if err := s.store.UpdateProjectDefaultSprintWeeks(ctx, project.ID, userID, *in.DefaultSprintWeeks); err != nil {
-			writeStoreErr(w, err, true)
-			return true
+		resp := map[string]any{}
+		if in.DefaultSprintWeeks != nil {
+			if project.DefaultSprintWeeks != *in.DefaultSprintWeeks {
+				if err := s.store.UpdateProjectDefaultSprintWeeks(ctx, project.ID, userID, *in.DefaultSprintWeeks); err != nil {
+					writeStoreErr(w, err, true)
+					return true
+				}
+			}
+			resp["defaultSprintWeeks"] = *in.DefaultSprintWeeks
+		}
+		if in.SprintsEnabled != nil {
+			if project.SprintsEnabled != *in.SprintsEnabled {
+				if err := s.store.UpdateProjectSprintsEnabled(ctx, project.ID, userID, *in.SprintsEnabled); err != nil {
+					writeStoreErr(w, err, true)
+					return true
+				}
+			}
+			resp["sprintsEnabled"] = *in.SprintsEnabled
 		}
 		s.emitRefreshNeeded(s.requestContext(r), project.ID, "project_settings_updated")
-		writeJSON(w, http.StatusOK, map[string]any{"defaultSprintWeeks": *in.DefaultSprintWeeks})
+		writeJSON(w, http.StatusOK, resp)
 		return true
 	}
 
@@ -830,6 +842,10 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
 		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
 			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+			return true
+		}
+		if !project.SprintsEnabled {
+			writeValidationError(w, "sprints are disabled for this board", "sprints_disabled", nil)
 			return true
 		}
 		var in struct {

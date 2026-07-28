@@ -51,7 +51,7 @@ import {
   mobileLaneTabStyleAttrForHtml,
 } from './mobile-lane-tabs.js';
 import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
-import { normalizeSprints } from '../sprints.js';
+import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import {
   recordLocalMutation,
@@ -1711,7 +1711,7 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   if (!rendered) return;
   debugLog("loadBoardBySlug end (success)", slug);
 
-  if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
+  if (!isAnonymousBoard(board) && boardSprintsEnabled(board) && !hasSprintChipDataForSlug(slug)) {
     setSprintChipDataForSlug(slug, null);
     apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`)
       .then((sprintsResp) => {
@@ -1737,6 +1737,7 @@ registerBoardRefresher(async (slug: string, tag?: string, search?: string, sprin
 // Register sprints-only refresher (chips update without full board reload)
 registerSprintsRefresher(async (slug: string) => {
   if (getSlug() !== slug) return;
+  if (!boardSprintsEnabled(getBoard())) return;
   try {
     const sprintsResp = await apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`);
     const sprints = normalizeSprints(sprintsResp);
@@ -1861,7 +1862,7 @@ export async function renderBoard(
     });
     if (!rendered) return;
     if (getSlug() === slug) connectBoardEvents(slug);
-    if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
+    if (!isAnonymousBoard(board) && boardSprintsEnabled(board) && !hasSprintChipDataForSlug(slug)) {
       setSprintChipDataForSlug(slug, null);
       apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`)
         .then((sprintsResp) => {

@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "تعذّر ربط SSO.",
   "settings.profile.authentication.linked": "تم ربط SSO.",
   "settings.users.table.authentication": "المصادقة",
-  "settings.profile.authentication.warning.localDisabledOwner": "يعتمد هذا المالك على SSO بينما المصادقة المحلية معطلة. إذا أصبح SSO غير متاح، يجب على المشغّل الوصول إلى المضيف الذي يشغّل Scrumboy، وتشغيل recover-owner، وإعادة تفعيل المصادقة المحلية."
+  "settings.profile.authentication.warning.localDisabledOwner": "يعتمد هذا المالك على SSO بينما المصادقة المحلية معطلة. إذا أصبح SSO غير متاح، يجب على المشغّل الوصول إلى المضيف الذي يشغّل Scrumboy، وتشغيل recover-owner، وإعادة تفعيل المصادقة المحلية.",
+  "settings.sprints.enableToggle": "تفعيل السبرنتات لهذه اللوحة",
+  "settings.sprints.disabledHint": "السبرنتات معطلة لهذه اللوحة. قم بتفعيلها أعلاه لإنشاء السبرنتات وإدارتها.",
+  "settings.sprints.toast.enabled": "تم تفعيل السبرنتات",
+  "settings.sprints.toast.disabled": "تم تعطيل السبرنتات",
+  "settings.sprints.toast.toggleFailed": "فشل تحديث إعداد السبرنتات"
 }

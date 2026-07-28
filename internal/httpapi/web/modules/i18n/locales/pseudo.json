@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "[!! Could not connect SSO. !!]",
   "settings.profile.authentication.linked": "[!! SSO connected. !!]",
   "settings.users.table.authentication": "[!! Authentication !!]",
-  "settings.profile.authentication.warning.localDisabledOwner": "[!! This owner relies on SSO while local authentication is disabled. If SSO becomes unavailable, recovery requires host access, recover-owner, and re-enabling local authentication. !!]"
+  "settings.profile.authentication.warning.localDisabledOwner": "[!! This owner relies on SSO while local authentication is disabled. If SSO becomes unavailable, recovery requires host access, recover-owner, and re-enabling local authentication. !!]",
+  "settings.sprints.enableToggle": "[!! Enable sprints for this board !!]",
+  "settings.sprints.disabledHint": "[!! Sprints are disabled for this board. Enable them above to create and manage sprints. !!]",
+  "settings.sprints.toast.enabled": "[!! Sprints enabled !!]",
+  "settings.sprints.toast.disabled": "[!! Sprints disabled !!]",
+  "settings.sprints.toast.toggleFailed": "[!! Failed to update sprints setting !!]"
 }

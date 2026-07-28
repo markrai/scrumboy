@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Nie udało się połączyć SSO.",
   "settings.profile.authentication.linked": "Połączono SSO.",
   "settings.users.table.authentication": "Uwierzytelnianie",
-  "settings.profile.authentication.warning.localDisabledOwner": "Ten właściciel zależy od SSO, gdy uwierzytelnianie lokalne jest wyłączone. Jeśli SSO stanie się niedostępne, operator musi uzyskać dostęp do hosta Scrumboy, uruchomić recover-owner i ponownie włączyć uwierzytelnianie lokalne."
+  "settings.profile.authentication.warning.localDisabledOwner": "Ten właściciel zależy od SSO, gdy uwierzytelnianie lokalne jest wyłączone. Jeśli SSO stanie się niedostępne, operator musi uzyskać dostęp do hosta Scrumboy, uruchomić recover-owner i ponownie włączyć uwierzytelnianie lokalne.",
+  "settings.sprints.enableToggle": "Włącz sprinty dla tej tablicy",
+  "settings.sprints.disabledHint": "Sprinty są wyłączone dla tej tablicy. Włącz je powyżej, aby tworzyć i zarządzać sprintami.",
+  "settings.sprints.toast.enabled": "Sprinty włączone",
+  "settings.sprints.toast.disabled": "Sprinty wyłączone",
+  "settings.sprints.toast.toggleFailed": "Nie udało się zaktualizować ustawienia sprintów"
 }

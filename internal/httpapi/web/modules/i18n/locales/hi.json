@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "SSO कनेक्ट नहीं किया जा सका।",
   "settings.profile.authentication.linked": "SSO कनेक्ट हो गया।",
   "settings.users.table.authentication": "प्रमाणीकरण",
-  "settings.profile.authentication.warning.localDisabledOwner": "स्थानीय प्रमाणीकरण बंद होने पर यह स्वामी SSO पर निर्भर है। यदि SSO अनुपलब्ध हो जाए, तो ऑपरेटर को Scrumboy होस्ट पर पहुँचकर recover-owner चलाना और स्थानीय प्रमाणीकरण फिर से चालू करना होगा।"
+  "settings.profile.authentication.warning.localDisabledOwner": "स्थानीय प्रमाणीकरण बंद होने पर यह स्वामी SSO पर निर्भर है। यदि SSO अनुपलब्ध हो जाए, तो ऑपरेटर को Scrumboy होस्ट पर पहुँचकर recover-owner चलाना और स्थानीय प्रमाणीकरण फिर से चालू करना होगा।",
+  "settings.sprints.enableToggle": "इस बोर्ड के लिए स्प्रिंट सक्षम करें",
+  "settings.sprints.disabledHint": "इस बोर्ड के लिए स्प्रिंट अक्षम हैं। स्प्रिंट बनाने और प्रबंधित करने के लिए ऊपर सक्षम करें।",
+  "settings.sprints.toast.enabled": "स्प्रिंट सक्षम किए गए",
+  "settings.sprints.toast.disabled": "स्प्रिंट अक्षम किए गए",
+  "settings.sprints.toast.toggleFailed": "स्प्रिंट सेटिंग अपडेट करने में विफल"
 }

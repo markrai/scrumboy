@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Не вдалося підключити SSO.",
   "settings.profile.authentication.linked": "SSO підключено.",
   "settings.users.table.authentication": "Автентифікація",
-  "settings.profile.authentication.warning.localDisabledOwner": "Цей власник залежить від SSO, поки локальну автентифікацію вимкнено. Якщо SSO стане недоступним, оператор повинен отримати доступ до хоста Scrumboy, запустити recover-owner і знову ввімкнути локальну автентифікацію."
+  "settings.profile.authentication.warning.localDisabledOwner": "Цей власник залежить від SSO, поки локальну автентифікацію вимкнено. Якщо SSO стане недоступним, оператор повинен отримати доступ до хоста Scrumboy, запустити recover-owner і знову ввімкнути локальну автентифікацію.",
+  "settings.sprints.enableToggle": "Увімкнути спринти для цієї дошки",
+  "settings.sprints.disabledHint": "Спринти вимкнено для цієї дошки. Увімкніть їх вище, щоб створювати спринти та керувати ними.",
+  "settings.sprints.toast.enabled": "Спринти увімкнено",
+  "settings.sprints.toast.disabled": "Спринти вимкнено",
+  "settings.sprints.toast.toggleFailed": "Не вдалося оновити налаштування спринтів"
 }

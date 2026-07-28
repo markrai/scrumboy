@@ -199,7 +199,7 @@
   "board.selection.multiple": "Modifica {count} selezionati",
   "board.selection.single": "Modifica 1 elemento selezionato",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Trascina per riordinare",
+  "board.todo.dragCard": "Trascina la scheda",
   "board.todo.moveFailed": "Impossibile spostare il Todo",
   "board.todo.movedTo": "Todo spostato in {lane}",
   "board.voice.boardChanged": "La board è cambiata prima dell'apertura dei comandi",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Impossibile collegare SSO.",
   "settings.profile.authentication.linked": "SSO collegato.",
   "settings.users.table.authentication": "Autenticazione",
-  "settings.profile.authentication.warning.localDisabledOwner": "Questo proprietario dipende da SSO mentre l’autenticazione locale è disabilitata. Se SSO non è disponibile, un operatore deve accedere all’host Scrumboy, eseguire recover-owner e riattivare l’autenticazione locale."
+  "settings.profile.authentication.warning.localDisabledOwner": "Questo proprietario dipende da SSO mentre l’autenticazione locale è disabilitata. Se SSO non è disponibile, un operatore deve accedere all’host Scrumboy, eseguire recover-owner e riattivare l’autenticazione locale.",
+  "settings.sprints.enableToggle": "Abilita gli sprint per questa bacheca",
+  "settings.sprints.disabledHint": "Gli sprint sono disabilitati per questa bacheca. Abilitali sopra per creare e gestire gli sprint.",
+  "settings.sprints.toast.enabled": "Sprint abilitati",
+  "settings.sprints.toast.disabled": "Sprint disabilitati",
+  "settings.sprints.toast.toggleFailed": "Impossibile aggiornare l'impostazione degli sprint"
 }

@@ -199,7 +199,7 @@
   "board.selection.multiple": "Hariri {count} zilizochaguliwa",
   "board.selection.single": "Hariri 1 iliyochaguliwa",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Buruta ili kupanga upya",
+  "board.todo.dragCard": "Buruta kadi",
   "board.todo.moveFailed": "Imeshindwa kuhamisha Todo",
   "board.todo.movedTo": "Todo imehamishwa kwenda {lane}",
   "board.voice.boardChanged": "Bodi ilibadilika kabla ya commands kufunguliwa",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Imeshindikana kuunganisha SSO.",
   "settings.profile.authentication.linked": "SSO imeunganishwa.",
   "settings.users.table.authentication": "Uthibitishaji",
-  "settings.profile.authentication.warning.localDisabledOwner": "Mmiliki huyu anategemea SSO wakati uthibitishaji wa ndani umezimwa. Ikiwa SSO haitapatikana, mwendeshaji lazima afikie seva inayoendesha Scrumboy, aendeshe recover-owner, na awashe tena uthibitishaji wa ndani."
+  "settings.profile.authentication.warning.localDisabledOwner": "Mmiliki huyu anategemea SSO wakati uthibitishaji wa ndani umezimwa. Ikiwa SSO haitapatikana, mwendeshaji lazima afikie seva inayoendesha Scrumboy, aendeshe recover-owner, na awashe tena uthibitishaji wa ndani.",
+  "settings.sprints.enableToggle": "Washa spirinti kwa bodi hii",
+  "settings.sprints.disabledHint": "Spirinti zimezimwa kwa bodi hii. Ziwashe hapo juu ili kuunda na kudhibiti spirinti.",
+  "settings.sprints.toast.enabled": "Spirinti zimewashwa",
+  "settings.sprints.toast.disabled": "Spirinti zimezimwa",
+  "settings.sprints.toast.toggleFailed": "Imeshindwa kusasisha mpangilio wa spirinti"
 }

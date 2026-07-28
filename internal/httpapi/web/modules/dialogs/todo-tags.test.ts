@@ -86,6 +86,8 @@ vi.mock('../state/mutations.js', () => ({
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: (res: { sprints?: any[] } | null | undefined) => res?.sprints ?? [],
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 vi.mock('../utils.js', () => ({

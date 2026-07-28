@@ -199,7 +199,7 @@
   "board.selection.multiple": "Sửa {count} đã chọn",
   "board.selection.single": "Sửa 1 đã chọn",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Kéo để sắp xếp lại",
+  "board.todo.dragCard": "Kéo thẻ",
   "board.todo.moveFailed": "Không di chuyển được todo",
   "board.todo.movedTo": "Đã chuyển todo sang {lane}",
   "board.voice.boardChanged": "Bảng đã thay đổi trước khi mở lệnh",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Không thể kết nối SSO.",
   "settings.profile.authentication.linked": "Đã kết nối SSO.",
   "settings.users.table.authentication": "Xác thực",
-  "settings.profile.authentication.warning.localDisabledOwner": "Chủ sở hữu này phụ thuộc vào SSO khi xác thực cục bộ bị tắt. Nếu SSO không khả dụng, quản trị viên phải truy cập máy chủ Scrumboy, chạy recover-owner và bật lại xác thực cục bộ."
+  "settings.profile.authentication.warning.localDisabledOwner": "Chủ sở hữu này phụ thuộc vào SSO khi xác thực cục bộ bị tắt. Nếu SSO không khả dụng, quản trị viên phải truy cập máy chủ Scrumboy, chạy recover-owner và bật lại xác thực cục bộ.",
+  "settings.sprints.enableToggle": "Bật sprint cho bảng này",
+  "settings.sprints.disabledHint": "Sprint đã bị tắt cho bảng này. Bật ở trên để tạo và quản lý sprint.",
+  "settings.sprints.toast.enabled": "Đã bật sprint",
+  "settings.sprints.toast.disabled": "Đã tắt sprint",
+  "settings.sprints.toast.toggleFailed": "Cập nhật cài đặt sprint không thành công"
 }

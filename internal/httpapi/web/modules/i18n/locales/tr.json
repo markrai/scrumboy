@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "SSO bağlanamadı.",
   "settings.profile.authentication.linked": "SSO bağlandı.",
   "settings.users.table.authentication": "Kimlik doğrulama",
-  "settings.profile.authentication.warning.localDisabledOwner": "Yerel kimlik doğrulama devre dışıyken bu sahip SSO’ya bağlıdır. SSO kullanılamaz hale gelirse, bir operatör Scrumboy ana makinesine erişmeli, recover-owner çalıştırmalı ve yerel kimlik doğrulamayı yeniden etkinleştirmelidir."
+  "settings.profile.authentication.warning.localDisabledOwner": "Yerel kimlik doğrulama devre dışıyken bu sahip SSO’ya bağlıdır. SSO kullanılamaz hale gelirse, bir operatör Scrumboy ana makinesine erişmeli, recover-owner çalıştırmalı ve yerel kimlik doğrulamayı yeniden etkinleştirmelidir.",
+  "settings.sprints.enableToggle": "Bu pano için sprintleri etkinleştir",
+  "settings.sprints.disabledHint": "Bu pano için sprintler devre dışı. Sprint oluşturmak ve yönetmek için yukarıdan etkinleştirin.",
+  "settings.sprints.toast.enabled": "Sprintler etkinleştirildi",
+  "settings.sprints.toast.disabled": "Sprintler devre dışı bırakıldı",
+  "settings.sprints.toast.toggleFailed": "Sprint ayarı güncellenemedi"
 }

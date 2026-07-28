@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "اتصال SSO ممکن نشد.",
   "settings.profile.authentication.linked": "SSO متصل شد.",
   "settings.users.table.authentication": "احراز هویت",
-  "settings.profile.authentication.warning.localDisabledOwner": "این مالک در حالی به SSO وابسته است که احراز هویت محلی غیرفعال است. اگر SSO در دسترس نباشد، اپراتور باید به میزبان Scrumboy دسترسی پیدا کند، recover-owner را اجرا کند و احراز هویت محلی را دوباره فعال کند."
+  "settings.profile.authentication.warning.localDisabledOwner": "این مالک در حالی به SSO وابسته است که احراز هویت محلی غیرفعال است. اگر SSO در دسترس نباشد، اپراتور باید به میزبان Scrumboy دسترسی پیدا کند، recover-owner را اجرا کند و احراز هویت محلی را دوباره فعال کند.",
+  "settings.sprints.enableToggle": "فعال‌سازی اسپرینت‌ها برای این تخته",
+  "settings.sprints.disabledHint": "اسپرینت‌ها برای این تخته غیرفعال هستند. برای ایجاد و مدیریت اسپرینت‌ها، آن‌ها را در بالا فعال کنید.",
+  "settings.sprints.toast.enabled": "اسپرینت‌ها فعال شدند",
+  "settings.sprints.toast.disabled": "اسپرینت‌ها غیرفعال شدند",
+  "settings.sprints.toast.toggleFailed": "به‌روزرسانی تنظیمات اسپرینت‌ها ناموفق بود"
 }

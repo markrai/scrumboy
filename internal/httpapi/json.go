@@ -139,6 +139,7 @@ type projectJSON struct {
 	Image              *string    `json:"image,omitempty"`
 	DominantColor      string     `json:"dominantColor"`
 	DefaultSprintWeeks int        `json:"defaultSprintWeeks"`
+	SprintsEnabled     bool       `json:"sprintsEnabled"`
 	ExpiresAt          *time.Time `json:"expiresAt"`
 	CreatorUserID      *int64     `json:"creatorUserId,omitempty"`
 	Slug               string     `json:"slug"`
@@ -251,6 +252,7 @@ func projectToJSON(p store.Project) projectJSON {
 		Image:              p.Image,
 		DominantColor:      p.DominantColor,
 		DefaultSprintWeeks: p.DefaultSprintWeeks,
+		SprintsEnabled:     p.SprintsEnabled,
 		ExpiresAt:          p.ExpiresAt,
 		CreatorUserID:      p.CreatorUserID,
 		Slug:               p.Slug,

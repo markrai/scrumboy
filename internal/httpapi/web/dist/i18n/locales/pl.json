@@ -199,7 +199,7 @@
   "board.selection.multiple": "Edytuj {count} zaznaczonych",
   "board.selection.single": "Edytuj zaznaczony element",
   "board.status.backlog": "Backlog",
-  "board.todo.dragToReorder": "Przeciągnij, aby zmienić kolejność",
+  "board.todo.dragCard": "Przeciągnij kartę",
   "board.todo.moveFailed": "Nie udało się przenieść Todo",
   "board.todo.movedTo": "Todo przeniesiono do {lane}",
   "board.voice.boardChanged": "Tablica zmieniła się, zanim otwarto polecenia",
@@ -1044,5 +1044,10 @@
   "settings.profile.authentication.linkFailed": "Nie udało się połączyć SSO.",
   "settings.profile.authentication.linked": "Połączono SSO.",
   "settings.users.table.authentication": "Uwierzytelnianie",
-  "settings.profile.authentication.warning.localDisabledOwner": "Ten właściciel zależy od SSO, gdy uwierzytelnianie lokalne jest wyłączone. Jeśli SSO stanie się niedostępne, operator musi uzyskać dostęp do hosta Scrumboy, uruchomić recover-owner i ponownie włączyć uwierzytelnianie lokalne."
+  "settings.profile.authentication.warning.localDisabledOwner": "Ten właściciel zależy od SSO, gdy uwierzytelnianie lokalne jest wyłączone. Jeśli SSO stanie się niedostępne, operator musi uzyskać dostęp do hosta Scrumboy, uruchomić recover-owner i ponownie włączyć uwierzytelnianie lokalne.",
+  "settings.sprints.enableToggle": "Włącz sprinty dla tej tablicy",
+  "settings.sprints.disabledHint": "Sprinty są wyłączone dla tej tablicy. Włącz je powyżej, aby tworzyć i zarządzać sprintami.",
+  "settings.sprints.toast.enabled": "Sprinty włączone",
+  "settings.sprints.toast.disabled": "Sprinty wyłączone",
+  "settings.sprints.toast.toggleFailed": "Nie udało się zaktualizować ustawienia sprintów"
 }
