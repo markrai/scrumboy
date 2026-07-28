@@ -1,6 +1,20 @@
 let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null) => Promise<void>) | null = null;
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
-let boardLimitPerLaneFloor = 20;
+
+export const CARDS_PER_LANE_PREFERENCE_KEY = 'cardsPerLane';
+export const CARDS_PER_LANE_MIN = 5;
+export const CARDS_PER_LANE_MAX = 100;
+export const CARDS_PER_LANE_DEFAULT = 20;
+
+export function clampCardsPerLane(n: number): number {
+  return Math.min(CARDS_PER_LANE_MAX, Math.max(CARDS_PER_LANE_MIN, Math.floor(n)));
+}
+
+// User's preferred default lane page size (from the "cardsPerLane" preference).
+// Falls back to CARDS_PER_LANE_DEFAULT until the preference has loaded (or for
+// anonymous/logged-out sessions, which never load one).
+let defaultCardsPerLane = CARDS_PER_LANE_DEFAULT;
+let boardLimitPerLaneFloor = defaultCardsPerLane;
 /** Board that raised the floor; cross-board loads must ignore a stale elevated floor. */
 let boardLimitPerLaneFloorSlug: string | null = null;
 
@@ -42,22 +56,33 @@ export async function invalidateBoard(slug: string, tag?: string, search?: strin
 export function setBoardLimitPerLaneFloor(limit: number, slug: string) {
   if (!slug) return;
   if (boardLimitPerLaneFloorSlug !== slug) {
-    boardLimitPerLaneFloor = 20;
+    boardLimitPerLaneFloor = defaultCardsPerLane;
     boardLimitPerLaneFloorSlug = slug;
   }
   if (Number.isFinite(limit) && limit > boardLimitPerLaneFloor) {
-    boardLimitPerLaneFloor = Math.max(20, Math.floor(limit));
+    boardLimitPerLaneFloor = Math.max(defaultCardsPerLane, Math.floor(limit));
   }
 }
 
 export function getBoardLimitPerLaneFloor(forSlug: string): number {
-  if (!boardLimitPerLaneFloorSlug || boardLimitPerLaneFloorSlug !== forSlug) return 20;
+  if (!boardLimitPerLaneFloorSlug || boardLimitPerLaneFloorSlug !== forSlug) return defaultCardsPerLane;
   return boardLimitPerLaneFloor;
 }
 
 export function resetBoardLimitPerLaneFloor() {
-  boardLimitPerLaneFloor = 20;
+  boardLimitPerLaneFloor = defaultCardsPerLane;
   boardLimitPerLaneFloorSlug = null;
+}
+
+/** Set the user's preferred default lane page size (clamped to [CARDS_PER_LANE_MIN, CARDS_PER_LANE_MAX]). */
+export function setDefaultCardsPerLane(n: number): void {
+  if (!Number.isFinite(n)) return;
+  defaultCardsPerLane = clampCardsPerLane(n);
+  boardLimitPerLaneFloor = defaultCardsPerLane;
+}
+
+export function getDefaultCardsPerLane(): number {
+  return defaultCardsPerLane;
 }
 
 /**

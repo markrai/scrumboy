@@ -23,6 +23,7 @@ import {
   setSettingsActiveTab,
 } from '../state/mutations.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
+import { getBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { CreateProjectPayload, Project, WorkflowLaneDraft } from '../types.js';
 
 // Symbol for idempotent listener attachment
@@ -550,7 +551,7 @@ function renderProjectsContent(projects: Project[]): void {
         hoverTimeoutId = setTimeout(() => {
           hoverTimeoutId = null;
           if (!boardPrefetchPromises.has(slug)) {
-            const p = apiFetch<Board>(`/api/board/${slug}?limitPerLane=20`);
+            const p = apiFetch<Board>(`/api/board/${slug}?limitPerLane=${getBoardLimitPerLaneFloor(slug)}`);
             boardPrefetchPromises.set(slug, p);
             p.then((board) => resolvedBoardBySlug.set(slug, board)).catch(() => {});
           }
