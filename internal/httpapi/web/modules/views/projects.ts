@@ -23,15 +23,14 @@ import {
   setSettingsActiveTab,
 } from '../state/mutations.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
+import { getBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
+import { beginBoardPrefetch, takeResolvedPrefetchedBoard } from './board-prefetch-cache.js';
 import { CreateProjectPayload, Project, WorkflowLaneDraft } from '../types.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 declare const Sortable: any;
 
-// Board prefetch cache for Projects → Board navigation (hover to prefetch, click to use)
-const boardPrefetchPromises = new Map<string, Promise<Board>>();
-const resolvedBoardBySlug = new Map<string, Board>();
 const PREFETCH_DELAY_MS = 250;
 let projectsI18nBound = false;
 
@@ -549,11 +548,9 @@ function renderProjectsContent(projects: Project[]): void {
         hoverSlug = slug;
         hoverTimeoutId = setTimeout(() => {
           hoverTimeoutId = null;
-          if (!boardPrefetchPromises.has(slug)) {
-            const p = apiFetch<Board>(`/api/board/${slug}?limitPerLane=20`);
-            boardPrefetchPromises.set(slug, p);
-            p.then((board) => resolvedBoardBySlug.set(slug, board)).catch(() => {});
-          }
+          beginBoardPrefetch(slug, () =>
+            apiFetch<Board>(`/api/board/${slug}?limitPerLane=${getBoardLimitPerLaneFloor(slug)}`)
+          );
         }, PREFETCH_DELAY_MS);
       });
       el.addEventListener("mouseleave", () => {
@@ -569,9 +566,8 @@ function renderProjectsContent(projects: Project[]): void {
         const slug = el.getAttribute("data-open");
         console.log("Project clicked, slug:", slug);
         if (slug) {
-          const board = resolvedBoardBySlug.get(slug);
+          const board = takeResolvedPrefetchedBoard(slug);
           if (board) {
-            resolvedBoardBySlug.delete(slug);
             navigate(`/${slug}`, { state: { boardData: board } });
           } else {
             navigate(`/${slug}`);

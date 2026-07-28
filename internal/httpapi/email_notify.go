@@ -65,31 +65,38 @@ const (
 	emailCategoryAddedToProject  emailCategory = "addedToProject"
 )
 
-// refreshReasonCategory maps board.refresh_needed's `reason` string to a
-// notification category. Reasons absent from this map (e.g. purely-cosmetic
-// or wall-note reasons) never generate email.
-var refreshReasonCategory = map[string]emailCategory{
-	"todo_created":       emailCategoryCardActivity,
-	"todo_updated":       emailCategoryCardActivity,
-	"todo_moved":         emailCategoryCardActivity,
-	"todo_deleted":       emailCategoryCardActivity,
-	"todo_links_updated": emailCategoryCardActivity,
+// reasonInfo maps board.refresh_needed's `reason` string to a notification
+// category plus the copy used to describe it. Reasons absent from this map
+// (e.g. purely-cosmetic or wall-note reasons) never generate email.
+type reasonInfo struct {
+	category emailCategory
+	subject  string // short phrase for the subject line, e.g. "card moved"
+	actorLed string // phrase following the actor's name, e.g. "moved a card"
+	passive  string // fallback phrase when no actor name is available, e.g. "A card was moved"
+}
 
-	"sprint_created":   emailCategorySprintActivity,
-	"sprint_updated":   emailCategorySprintActivity,
-	"sprint_deleted":   emailCategorySprintActivity,
-	"sprint_activated": emailCategorySprintActivity,
-	"sprint_closed":    emailCategorySprintActivity,
+var refreshReasonInfo = map[string]reasonInfo{
+	"todo_created":       {emailCategoryCardActivity, "card created", "created a card", "A card was created"},
+	"todo_updated":       {emailCategoryCardActivity, "card updated", "updated a card", "A card was updated"},
+	"todo_moved":         {emailCategoryCardActivity, "card moved", "moved a card", "A card was moved"},
+	"todo_deleted":       {emailCategoryCardActivity, "card deleted", "deleted a card", "A card was deleted"},
+	"todo_links_updated": {emailCategoryCardActivity, "card links updated", "updated a card's links", "A card's links were updated"},
 
-	"project_updated":          emailCategoryProjectActivity,
-	"project_deleted":          emailCategoryProjectActivity,
-	"project_settings_updated": emailCategoryProjectActivity,
-	"board_claimed":            emailCategoryProjectActivity,
-	"workflow_column_added":    emailCategoryProjectActivity,
-	"workflow_column_updated":  emailCategoryProjectActivity,
-	"workflow_column_deleted":  emailCategoryProjectActivity,
-	"tag_color_updated":        emailCategoryProjectActivity,
-	"tag_deleted":              emailCategoryProjectActivity,
+	"sprint_created":   {emailCategorySprintActivity, "sprint created", "created a sprint", "A sprint was created"},
+	"sprint_updated":   {emailCategorySprintActivity, "sprint updated", "updated a sprint", "A sprint was updated"},
+	"sprint_deleted":   {emailCategorySprintActivity, "sprint deleted", "deleted a sprint", "A sprint was deleted"},
+	"sprint_activated": {emailCategorySprintActivity, "sprint activated", "activated a sprint", "A sprint was activated"},
+	"sprint_closed":    {emailCategorySprintActivity, "sprint closed", "closed a sprint", "A sprint was closed"},
+
+	"project_updated":          {emailCategoryProjectActivity, "project updated", "updated the project", "The project was updated"},
+	"project_deleted":          {emailCategoryProjectActivity, "project deleted", "deleted the project", "The project was deleted"},
+	"project_settings_updated": {emailCategoryProjectActivity, "project settings updated", "updated the project settings", "The project settings were updated"},
+	"board_claimed":            {emailCategoryProjectActivity, "board claimed", "claimed the board", "The board was claimed"},
+	"workflow_column_added":    {emailCategoryProjectActivity, "workflow column added", "added a workflow column", "A workflow column was added"},
+	"workflow_column_updated":  {emailCategoryProjectActivity, "workflow column updated", "updated a workflow column", "A workflow column was updated"},
+	"workflow_column_deleted":  {emailCategoryProjectActivity, "workflow column deleted", "deleted a workflow column", "A workflow column was deleted"},
+	"tag_color_updated":        {emailCategoryProjectActivity, "tag color updated", "updated a tag color", "A tag color was updated"},
+	"tag_deleted":              {emailCategoryProjectActivity, "tag deleted", "deleted a tag", "A tag was deleted"},
 }
 
 func (n *emailNotifier) OnEvent(_ context.Context, e eventbus.Event) {
@@ -177,10 +184,11 @@ func (n *emailNotifier) handleRefreshNeeded(ctx context.Context, e eventbus.Even
 }
 
 func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, reason string, actorUserID int64, excluded map[int64]bool) {
-	category, ok := refreshReasonCategory[reason]
+	info, ok := refreshReasonInfo[reason]
 	if !ok {
 		return
 	}
+	category := info.category
 	if actorUserID == 0 {
 		return // no known actor to authorize the ListProjectMembers lookup as
 	}
@@ -194,7 +202,33 @@ func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, rea
 		return
 	}
 
-	subject := fmt.Sprintf("%s: activity update", proj.Name)
+	// Prefer the actor name already joined into ListProjectMembers. Fall back to
+	// GetUser only when the actor is absent from members (Temporary Boards bypass
+	// role checks, so a signed-in link visitor can act without a membership row).
+	action := info.passive
+	actorName := ""
+	actorInMembers := false
+	for _, m := range members {
+		if m.UserID == actorUserID {
+			actorInMembers = true
+			actorName = m.Name
+			break
+		}
+	}
+	if !actorInMembers {
+		if actor, err := n.store.GetUser(ctx, actorUserID); err == nil {
+			actorName = actor.Name
+		}
+	}
+	if actorName != "" {
+		action = actorName + " " + info.actorLed
+	}
+
+	subject := fmt.Sprintf("%s: %s", proj.Name, info.subject)
+	body := fmt.Sprintf(
+		"%s in %s.\n\nView the board:\n%s\n",
+		action, proj.Name, n.projectURL(proj.Slug),
+	)
 	for _, m := range members {
 		if m.UserID == actorUserID || excluded[m.UserID] {
 			continue // skip the person who made the change
@@ -203,10 +237,6 @@ func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, rea
 		if err != nil || !pref.Enabled || !categoryEnabled(pref, category) || m.Email == "" {
 			continue
 		}
-		body := fmt.Sprintf(
-			"There was activity in %s.\n\nView the board:\n%s\n",
-			proj.Name, n.projectURL(proj.Slug),
-		)
 		n.enqueueActivity(projectID, category, m.UserID, mailDelivery{
 			To: m.Email, Subject: subject, Body: body,
 			LogRef: fmt.Sprintf("email-notify category=%s user=%d", category, m.UserID),

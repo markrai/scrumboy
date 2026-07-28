@@ -32,6 +32,18 @@ export function getSprintIdFromUrl(): string | null {
   return v === "" ? null : (v || null);
 }
 
+/** Assignee filter from URL: null = "All" (omit param), "unassigned", "me", or a numeric user ID string. */
+export function getAssigneeFromUrl(): string | null {
+  const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("assignee") : null;
+  return v === "" ? null : (v || null);
+}
+
+/** Sort order from URL: null = default manual drag-rank order (omit param), "newest", or "oldest". */
+export function getSortFromUrl(): string | null {
+  const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("sort") : null;
+  return v === "" ? null : (v || null);
+}
+
 export function getOpenTodoSegment(): string | null {
   return current.openTodoSegment;
 }

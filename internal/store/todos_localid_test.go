@@ -56,7 +56,7 @@ func TestTodoLocalID_ConcurrentCreatesAreUniqueAndContiguous(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", SprintFilter{Mode: "none"})
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}

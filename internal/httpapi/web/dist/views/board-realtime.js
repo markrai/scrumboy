@@ -1,5 +1,5 @@
 import { showToast } from '../utils.js';
-import { getAuthStatusAvailable, getProjectId, getSlug, getTag, getSearch, getSprintIdFromUrl, getUser, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getSortFromUrl, getAuthStatusAvailable, getProjectId, getSlug, getTag, getSearch, getSprintIdFromUrl, getUser, } from '../state/selectors.js';
 import { invalidateMembersCache } from '../members-cache.js';
 import { on, off, emit } from '../events.js';
 import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, isBulkUpdating, } from '../realtime/guard.js';
@@ -181,7 +181,7 @@ function flushPendingRealtimeRefresh(force = false) {
     }
     clearPendingRealtimeRefresh();
     debugLog(force ? "flushPendingRealtimeRefresh forcing invalidateBoard" : "flushPendingRealtimeRefresh running invalidateBoard", slug);
-    invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl()).catch((err) => {
+    invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err) => {
         console.warn("Realtime board refresh failed:", err?.message || err);
     });
 }

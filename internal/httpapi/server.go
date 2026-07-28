@@ -210,6 +210,7 @@ type storeAPI interface {
 	CreateProject(ctx context.Context, name string) (store.Project, error)
 	CreateProjectWithWorkflow(ctx context.Context, name string, workflow []store.WorkflowColumn) (store.Project, error)
 	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
+	CheckCanManageProject(ctx context.Context, projectID int64, userID int64) error
 	UpdateProjectImage(ctx context.Context, projectID int64, userID int64, image *string, dominantColor string) error
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
@@ -225,10 +226,10 @@ type storeAPI interface {
 	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
 
-	GetBoard(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, sprintFilter store.SprintFilter) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, error)
-	GetBoardPaged(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, sprintFilter store.SprintFilter, limitPerLane int) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, map[string]store.LaneMeta, error)
+	GetBoard(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, error)
+	GetBoardPaged(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder, limitPerLane int) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, map[string]store.LaneMeta, error)
 	ListTagCounts(ctx context.Context, pc *store.ProjectContext) ([]store.TagCount, error)
-	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterRank, afterID int64, tagFilter, searchFilter string, sprintFilter store.SprintFilter) ([]store.Todo, string, bool, error)
+	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterA, afterB int64, tagFilter, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) ([]store.Todo, string, bool, error)
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
 	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]store.DashboardTodo, *string, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
@@ -243,8 +244,14 @@ type storeAPI interface {
 	GetBoardScopedTagIDByName(ctx context.Context, projectID int64, tagName string) (int64, error)
 	ResolveTagForColorUpdate(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, linkTemporaryBoard bool) (int64, error)
 	UpdateTagColor(ctx context.Context, viewerUserID *int64, tagID int64, color *string) error
+	UpdateMyTagColor(ctx context.Context, userID, tagID int64, color *string) error
+	UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error
 	UpdateTagColorForTemporaryBoard(ctx context.Context, projectID int64, viewerUserID *int64, tagID int64, color *string) error
 	UpdateTagColorForProject(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, color *string, linkTemporaryBoard bool) error
+	SetViewerTagColorByName(ctx context.Context, projectID int64, viewerUserID int64, name string, color *string) error
+	DeleteMyTagByName(ctx context.Context, projectID int64, userID int64, name string) ([]int64, error)
+	DeleteMyTagByID(ctx context.Context, userID, tagID int64) ([]int64, error)
+	DeleteTagForDurableProjectByID(ctx context.Context, projectID, userID, tagID int64) ([]int64, error)
 	GetTagColor(ctx context.Context, userID int64, tagID int64) (*string, error)
 	DeleteTag(ctx context.Context, userID int64, tagID int64, isAnonymousBoard bool) error
 
@@ -289,6 +296,9 @@ type storeAPI interface {
 	GetEmailNotifyOrgDefault(ctx context.Context) (store.EmailNotifyPref, bool, error)
 	SetEmailNotifyOrgDefault(ctx context.Context, requesterID int64, raw string) error
 	ClearEmailNotifyOrgDefault(ctx context.Context, requesterID int64) error
+	GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, customized bool, err error)
+	SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64) error
+	ClearDefaultBoardOrgSetting(ctx context.Context, requesterID int64) error
 
 	// 2FA
 	CreateLogin2FAPending(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)

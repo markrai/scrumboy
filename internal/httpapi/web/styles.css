@@ -3639,15 +3639,26 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     max-width: none !important;
     font-size: calc(0.85rem * var(--ui-scale));
     padding: calc(0.4rem * var(--ui-scale)) calc(0.6rem * var(--ui-scale));
-    padding-right: 1.75rem;
+    padding-right: 2.75rem;
   }
 
   .search-clear {
-    right: 0.5rem;
+    right: 1.5rem;
     font-size: calc(0.9rem * var(--ui-scale));
     width: 18px;
     height: calc(18px * var(--ui-scale));
     padding: 0;
+  }
+
+  .search-filter-toggle {
+    right: 0.3rem;
+    width: 18px;
+    height: calc(18px * var(--ui-scale));
+    padding: 0;
+  }
+
+  .search-filter-panel {
+    max-width: calc(100vw - 20px);
   }
 
   .topbar .btn {
@@ -4538,7 +4549,8 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .search-input {
   padding: calc(0.5rem * var(--ui-scale)) calc(0.75rem * var(--ui-scale));
-  padding-right: 2rem;
+  /* Room for both the clear (✕) button and the filter-toggle chevron on the right edge. */
+  padding-right: 3.25rem;
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: calc(0.9rem * var(--ui-scale));
@@ -4565,7 +4577,8 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .search-clear {
   position: absolute;
-  right: 0.5rem;
+  /* Sits to the left of the always-present filter-toggle chevron so the two never overlap. */
+  right: 1.75rem;
   top: 50%;
   transform: translateY(-50%);
   background: none;
@@ -4586,6 +4599,125 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 .search-clear:hover {
   background: var(--border);
   color: var(--text);
+}
+
+/* Filter toggle: small chevron affix on the search input that expands the
+   assignee/sort popover. Dual-purposes the search box instead of adding a
+   separate control to the topbar (which already wraps on narrow/PWA widths). */
+.search-filter-toggle {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: calc(0.25rem * var(--ui-scale));
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 2px;
+}
+
+.search-filter-toggle:hover,
+.search-filter-toggle[aria-expanded="true"] {
+  background: var(--border);
+  color: var(--text);
+}
+
+/* Slow pulse/glow: the only visual indicator (besides the one-shot toast) that
+   an assignee filter or non-default sort is currently narrowing the board. */
+@keyframes filter-toggle-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 10px 4px rgba(96, 165, 250, 0.55);
+  }
+}
+
+.search-filter-toggle--active {
+  color: var(--accent);
+  animation: filter-toggle-pulse 2.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-filter-toggle--active {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.55);
+  }
+}
+
+/* `position: fixed` (not `absolute`) is required here: `.topbar` sets
+   `overflow-y: hidden` for its mobile chip-wrapping layout, which would clip
+   an absolutely positioned descendant to the topbar's own box. `top`/`left`
+   are set inline by positionFilterPanel() in board-filters.ts, computed from
+   the toggle button's viewport position, since fixed positioning can't rely
+   on a `right: 0` offset from an ancestor. */
+.search-filter-panel {
+  position: fixed;
+  z-index: 20;
+  min-width: 200px;
+  max-width: calc(100vw - 20px);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-8);
+}
+
+.search-filter-panel[hidden] {
+  display: none;
+}
+
+.search-filter-panel__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.search-filter-panel__section + .search-filter-panel__section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--s-8);
+}
+
+.search-filter-panel__label {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--muted);
+  padding: 2px var(--s-6);
+}
+
+.search-filter-option {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--fs-13);
+  text-align: left;
+  padding: var(--s-6) var(--s-8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-filter-option:hover {
+  background: var(--border);
+}
+
+.search-filter-option.is-active {
+  border-color: rgba(96, 165, 250, 0.8);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .no-results {

@@ -1,6 +1,117 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.24.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.28.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+
+## [3.28.3] - 2026-07-28
+
+### Added
+
+- **Per-user cards-per-lane preference (PR #198)** - Settings → Customization gains a Cards per lane control (`20` / `50` / `75` / `100`, default `20`) so each signed-in user can choose how many cards load per column before "Load more". The preference is validated server-side, hydrated at boot, and applied to the initial board fetch, Projects hover-prefetch, and the load-more floor reset. Paged loading and "Load more" stay in place.
+
+## [3.28.2] - 2026-07-27
+
+### Changed
+
+- **Activity email copy is reason-specific** - Opt-in board activity emails no longer use a generic "activity update" subject/body. Each mapped `board.refresh_needed` reason gets its own subject phrase (e.g. `card moved`, `sprint closed`) and body copy that names the actor when known (`Alex moved a card in …`), with a passive fallback when no display name is available. Actor names prefer the membership list join and fall back to `GetUser` for signed-in temporary-board link visitors who are not project members. Unauthenticated anonymous visitors still produce no activity email (`actorUserId` unset).
+
+## [3.28.1] - 2026-07-27
+
+### Fixed
+
+- **Cross-lane drag disabled under chronological sort (PR #196)** - 3.28.0's "Chronological sort disables manual reorder" went further than intended: it hid the card drag handle entirely and skipped creating any Sortable instances, so cards couldn't be dragged to a *different* lane either, not just reordered within one. Manual-rank anchors derived from chronological DOM neighbors are still invalid, so same-lane reordering stays disabled (`Sortable`'s `sort: false`), but the drag handle is always rendered and cross-lane drops now go through, appending the card to the end of the target lane's rank order (`afterId`/`beforeId` both omitted) rather than trying to anchor off chronological neighbors. Stale Sortable callbacks after a reinit or sort-mode change are ignored so they cannot rewrite ranks from the wrong ordering.
+
+## [3.28.0] - 2026-07-27
+
+### Added
+
+- **Board assignee + sort filters in the web UI (PR #192)** - Follow-up to #189's API/MCP assignee filter. The board search field gains an expandable filter panel (chevron) with assignee (All / Unassigned / Assigned to me / each board member) and sort (Default order / Newest first / Oldest first). Choices are bookmarkable via `?assignee=` and `?sort=` and round-trip through board load, lane pagination, refresh, and router parsing. An active non-default filter/sort pulses the chevron and shows a short toast on pick.
+- **Board sort order across API, store, and MCP** - `sort=newest` / `sort=oldest` order lane todos by `created_at` (with id tie-break) instead of manual rank, including cursor-based "Load more" pagination. MCP `board_get` accepts the same `sort` input. Manual drag-rank remains the default.
+
+### Changed
+
+- **Chronological sort disables manual reorder** - When newest/oldest is active, card drag handles are hidden and Sortable manual-order callbacks cannot rewrite ranks from chronological DOM.
+
+## [3.27.1] - 2026-07-27
+
+### Fixed
+
+- **Board "Load more" collapse on realtime refresh (PR #191)** - Unfiltered board reloads always requested `limitPerLane=20`, so a realtime refresh after expanding a column via "Load more" collapsed the lane back to the first page. Same-board refreshes now preserve the on-screen lane size (filtered or not). Cross-board navigation and initial loads still default to 20. The filtered-drag lane floor is also scoped to the board that raised it, so an elevated floor cannot leak into the next board's first request.
+
+## [3.27.0] - 2026-07-26
+
+### Added
+
+- **Board assignee filtering for API and MCP (PR #189)** - Board reads now accept `assignee=me`, `assignee=unassigned`, or a positive user ID encoded as a string across `GET /api/board/{slug}`, lane pagination, the legacy project-board route, and MCP `board_get`. Invalid values return validation errors and can never silently widen the result to the full board; unknown/non-member positive IDs return an empty board. This release does not add an assignee filter control or bookmarkable `?assignee=` handling to the web UI.
+
+## [3.26.3] - 2026-07-26
+
+### Fixed
+
+- **Grouped-tag viewer colors could silently revert (PR #186)** - If every personal row backing a canonical name stopped being used while another member's same-named row became the current backing row, the viewer's stored color could become unreachable. Durable project listings now fall back to historical personal rows linked to that same project, without allowing unrelated projects or pure board-scoped groups to override the current project. Later set and clear operations converge all same-project linked personal rows so stale preferences cannot resurface.
+
+## [3.26.2] - 2026-07-26
+
+### Added
+
+- **MCP capability audit follow-up: project CRUD, dashboard, metrics, and admin tools** - Closes four gaps identified in an audit of the MCP tool surface against existing backend capabilities:
+  - **Project CRUD** - `projects_create`, `projects_update`, `projects_delete` (maintainer+ for update/delete). Previously only `projects_list` existed. `projects_update` applies the entire patch atomically in one store transaction.
+  - **Dashboard** - `dashboard_getSummary`, `dashboard_listTodos` expose the cross-project "my work" summary and paginated assigned-todo list already used by the web app's dashboard.
+  - **Burndown / backlog-size metrics** - `metrics_getBurndown` (optionally sprint-scoped via `sprintId`) and `metrics_getBacklogSize` wrap the same store queries behind the existing REST burndown/backlog-size endpoints.
+  - **Admin user management** - `admin_listUsers` (owner/admin), `admin_updateUserRole`, `admin_deleteUser` (owner only). `admin_updateUserRole` deliberately does not expose promotion to `owner`, matching the REST admin API.
+  - See [API.md](API.md) for full input/output shapes.
+
+## [3.26.1] - 2026-07-26
+
+### Fixed
+
+- **MCP `tags_updateProjectColor` on temporary boards** - The `tagId` path no longer requires Maintainer (which could never pass because temporary-board `ProjectContext` leaves `Role` empty) and now calls `UpdateTagColorForTemporaryBoard`, matching REST link-holder semantics for authenticated Full-mode callers. Anonymous MCP mode remains unavailable.
+
+## [3.26.0] - 2026-07-25
+
+### Changed
+
+- **Durable-project tag views are grouped by canonical name** (#173) - Board filter chips, Settings → Tag Colors, `GET /api/board/{slug}/tags`, `GET /api/projects/{id}/tags`, MCP `tags_listProject`, and backup export now return **one logical entry per canonical tag name** instead of one row per underlying tag. Two members' personal `bug` tags no longer surface as two duplicate project tags, and grouping compares names *after* canonicalization, so legacy rows such as `make space` and `make-space` collapse into a single `make-space` entry. Ownership is unchanged: personal tags stay user-owned and cross-project; only the projection was fixed. Per-viewer colors resolve deterministically (viewer-owned row, then lowest backing id, then board-scoped fallback). New name-based routes `PATCH /api/projects/{id}/tags/{name}/color`, `DELETE /api/projects/{id}/tags/{name}`, and the durable branches of the equivalent `/api/board/{slug}` routes let any project **member** set their own color or delete only their own personal tag (non-members are rejected); `/tags/id/{tagId}/...` routes are unchanged. Deleting a personal tag is global to that user and now refreshes every affected project's board.
+  - **Temporary boards are deliberately excluded.** Any project with an expiry keeps the previous row-level projection (one entry per tag row, each with a real `tagId`), because its colors and deletions are still addressed by `tagId` and the board-scoped name resolver. The name-based routes and MCP `tagName` reject temporary boards.
+  - **Board tag filtering follows the same grouping on durable projects.** The `tag` filter on board reads (`GET /api/board/{slug}`, the lane pagination endpoint, MCP `board_get`) now resolves to every backing tag row behind the label instead of matching `tags.name` literally, so filtering by `make-space` returns todos carrying a legacy `make space` row too. Previously a chip could report a count of 2 and then render a board with one card. Filtered lane totals and the board soft-cap count use the same resolution, and a filter matching no row returns an empty board rather than an unfiltered one. Temporary boards keep exact stored-name matching (no `TagGroupKey` rewrite), so a row-level chip such as `make space` selects only that row. Filter backing IDs are resolved once per board request and reused across lane list/count helpers.
+  - **Legacy rows that cannot be canonicalized stay addressable.** A stored name that fails the canonical name rule entirely is displayed under its raw stored name, and that same label now works for the name-based color and delete routes, MCP `tagName`, and the board `tag` filter. Previously such an entry advertised controls that every write path rejected.
+  - **Durable ID-based color routes are project-aware.** `PATCH /api/projects/{id}/tags/id/{tagId}/color` and the durable branch of `PATCH /api/board/{slug}/tags/id/{tagId}/color` now require an authenticated project member, verify the tag belongs to that project (404 otherwise), require Maintainer+ before changing a board-scoped shared `tags.color`, and let any member update only their own `user_tag_colors` preference for a user-owned compatibility ID. Temporary boards keep `UpdateTagColorForTemporaryBoard`. Tag listings expose `canUpdateColor` so Settings → Tag Colors disables the shared-color picker for Viewers on durable board-scoped tags.
+  - **Durable ID-based DELETE routes are project-aware.** `DELETE /api/projects/{id}/tags/id/{tagId}` and the durable branch of `DELETE /api/board/{slug}/tags/id/{tagId}` now use `DeleteTagForDurableProjectByID`: membership and project association are required (404 otherwise), board-scoped deletes need Maintainer+, and personal compatibility IDs are owner-only (no maintainer override of another member's cross-project tag). Personal deletion returns every affected project and emits `tag_deleted` refreshes for each. Temporary/anonymous boards keep `DeleteTag`.
+  - **Global Settings → Tag Colors uses an explicit mine scope.** The Projects-screen tag list (`GET /api/tags/mine`) reports `canUpdateColor: true`, and mutations go through `PATCH /api/tags/mine/{tagId}/color` / `DELETE /api/tags/mine/{tagId}` instead of an arbitrary `settingsProjectId` project route (that ID remains chart-only). Mine delete is owner-only and refreshes every project that referenced the personal tag.
+- **Backup export deduplicates tags by name** - Exports emit one tag per canonical name with the deterministic viewer color, and import (`bulkUpsertTags`) resolves legacy duplicate-name backups deterministically (first valid color wins) instead of last-write-wins. Canonicalizable legacy forms such as `make space` still import as `make-space` through normal `CanonicalizeTag` validation. Export fails with a validation error if a grouped tag name cannot be canonicalized (e.g. a stored `wont-canonicalize!` row), rather than producing a backup that restores todos the normal create/update path cannot edit. Deduplication does not weaken import validation: an unimportable tag name still fails the whole import instead of being silently dropped.
+
+### Limitations
+
+- **Per-viewer tag colors set by name refresh only the current project** - A personal color preference is stored on backing tag rows that the viewer also uses in their other projects, so the change can affect what they see elsewhere. Only the targeted project emits `board.refresh_needed`; the viewer's other boards show the new color on their next load. Deletion is not affected — `DELETE .../tags/{name}` refreshes every affected project. This asymmetry is intentional: a color change is invisible to every other member, so broadcasting refreshes to their boards would be pure noise.
+
+### Breaking
+
+If you only use the web UI, you do not need to change anything for this release: sign-in, boards, and Settings still work the same way. You may notice fewer duplicate tag chips on durable projects, and tag filters that match those chips more reliably. The break is for **MCP / automation clients** that parse project tag lists or update project tag colors: response fields and how you address personal vs board-scoped tags changed (details below). Temporary boards and the browser HTTP `canDelete` field are unaffected in the ways noted under each bullet.
+
+- **MCP `tags_listProject` replaces `canDelete` with `deleteScope`** - Items now expose `deleteScope` (`"mine"` / `"project"` / `"none"`) plus `canDeleteMine` / `canDeleteProject`, and omit `tagId` for grouped personal labels on durable projects. A personal group never reports `"project"`, so it no longer advertises a deletion that `tags_deleteProject` refuses. HTTP tag payloads keep `canDelete` as a compatibility alias for `deleteScope != "none"`.
+- **MCP `tags_updateProjectColor` accepts `tagName`** - Provide exactly one of `tagId` or `tagName`, judged by what was **supplied**: a malformed `tagId` sent alongside `tagName`, or an explicitly empty `tagName` sent alongside a `tagId`, is rejected rather than silently ignored. `tagName` sets only the caller's own per-viewer color for a personal label on a durable project and is allowed for any authenticated project member; `tagId` targets a board-scoped tag's shared color and still requires maintainer or above.
+
+## [3.25.0] - 2026-07-24
+
+### Added
+
+- **Configurable default board for newly created users** (#175) - Admins/owners can configure a single org-wide default board project; newly created users (`CreateUser`/`CreateUserOIDC`) are auto-enrolled as Viewer on it, in the same transaction as user creation. `GET`/`PUT`/`DELETE /api/admin/settings/default-board` (`PUT` body: `{ "projectId": <number> }`), following the same `org_settings` shape as #169/#171's email-notification default. Seeding happens at creation time only and never rewrites existing users' memberships; the bootstrap owner is never auto-enrolled (it already has implicit access via its system role); a project deleted after the setting was configured causes seeding to be silently skipped rather than failing account creation. `DELETE` resets to the unconfigured state (`204`, idempotent). See [docs/roles-and-permissions.md](docs/roles-and-permissions.md#org-wide-default-board-for-new-users).
+
+## [3.24.2] - 2026-07-24
+
+### Added
+
+- **MCP tools for workflow columns** - `workflow_list`, `workflow_create`, `workflow_update`, and `workflow_delete` expose a project's workflow columns (board lanes) over MCP, calling the same store methods as the cookie-only `GET/POST/PATCH/DELETE /api/board/{slug}/workflow` REST endpoints so `sb_` Bearer API tokens can reach them. Create/update/delete require maintainer role or higher; `workflow_update` sets both name and color; `workflow_delete` removes an empty non-done column. See [API.md](API.md#workflow).
+
+## [3.24.1] - 2026-07-24
+
+### Added
+
+- **MCP tools for Linked Stories** - `todos_linksList`, `todos_linkAdd`, and `todos_linkRemove` expose the todo detail page's "Linked Stories" relation (`relates_to`, `blocks`, `duplicates`, `parent`) over MCP, matching the existing `GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]` REST endpoints. Links are directed from `localId` to `targetLocalId` with `localId` as the subject of the type. Previously this relation had no MCP surface at all — the only related tool, `todos_search`, just searches link *targets* for the picker UI and never applied a link. See [API.md](API.md#todos).
+
+### Limitations
+
+- **MCP mutations do not refresh open web clients (or fan out card-activity email)** - Unlike REST, MCP tools call the store directly and do not emit `board.refresh_needed` (e.g. `todo_links_updated`). An agent can change links (or other board data) while a browser stays stale until another refresh.
+
 
 ## [3.24.0] - 2026-07-24
 
@@ -2026,5 +2137,4 @@ See [`docs/oauth.md`](docs/oauth.md), [`docs/mcp.md`](docs/mcp.md), and [`docs/m
 | **Import / export**   | Reliable backup and migration                              |
 | **MCP**               | Automation via agents and external tools                   |
 | **Roles & audit**     | Strong permission model with audit trail                   |
-
 

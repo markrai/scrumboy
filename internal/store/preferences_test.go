@@ -41,6 +41,40 @@ func TestSetUserPreference_TagColors_RejectsInvalid(t *testing.T) {
 	}
 }
 
+func TestSetUserPreference_CardsPerLane_AllowlistOnly(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	user, err := st.BootstrapUser(ctx, "cards-per-lane@example.com", "password123", "Test")
+	if err != nil {
+		t.Fatalf("bootstrap user: %v", err)
+	}
+
+	for _, allowed := range []string{"20", "50", "75", "100"} {
+		if err := st.SetUserPreference(ctx, user.ID, "cardsPerLane", allowed); err != nil {
+			t.Fatalf("set valid cardsPerLane %q: %v", allowed, err)
+		}
+		value, err := st.GetUserPreference(ctx, user.ID, "cardsPerLane")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value != allowed {
+			t.Fatalf("expected round-tripped value %q, got %q", allowed, value)
+		}
+	}
+
+	for _, bad := range []string{"5", "10", "42", "200", "not-a-number", ""} {
+		err := st.SetUserPreference(ctx, user.ID, "cardsPerLane", bad)
+		if err == nil {
+			t.Fatalf("expected error for cardsPerLane=%q, got nil", bad)
+		}
+		if !errors.Is(err, ErrValidation) {
+			t.Errorf("expected ErrValidation for %q, got: %v", bad, err)
+		}
+	}
+}
+
 func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()

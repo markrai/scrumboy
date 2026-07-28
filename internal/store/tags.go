@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -61,8 +62,47 @@ var defaultTagsForAnonymousBoards = map[string]string{
 	"cleanup":             "#D3D3D3", // light gray
 }
 
-func normalizeTagFilter(tag string) string {
-	return CanonicalizeTag(tag)
+// normalizeTagFilter maps a caller-supplied board filter onto the label the chip list
+// displays for the given project scope.
+//
+// Durable projects compare through TagGroupKey so "make space" and "make-space" are the
+// same filter. Temporary boards keep the raw trimmed stored name: their chips are still
+// one entry per tag row, so rewriting "make space" to "make-space" before the exact-name
+// resolver would select the wrong backing row (or none).
+//
+// A blank filter means "no filter".
+func normalizeTagFilter(tag string, durable bool) string {
+	trimmed := strings.TrimSpace(tag)
+	if trimmed == "" {
+		return ""
+	}
+	if durable {
+		return TagGroupKey(trimmed)
+	}
+	return trimmed
+}
+
+// boardTagFilter is a tag filter resolved once for a board request.
+// NoFilter means show every todo; otherwise TagIDs are the matching backing rows
+// (empty means the filter matches nothing — callers must not fall back to unfiltered).
+type boardTagFilter struct {
+	NoFilter bool
+	TagIDs   []int64
+}
+
+// resolveBoardTagFilter normalizes and resolves a raw tag filter for one board request.
+// The result is safe to reuse across the full-board, soft-cap count, window, and every
+// paged lane list/count for that request.
+func (s *Store) resolveBoardTagFilter(ctx context.Context, projectID int64, durable bool, rawFilter string) (boardTagFilter, error) {
+	key := normalizeTagFilter(rawFilter, durable)
+	if key == "" {
+		return boardTagFilter{NoFilter: true}, nil
+	}
+	ids, err := s.resolveTagFilterRowIDs(ctx, projectID, key, durable)
+	if err != nil {
+		return boardTagFilter{}, err
+	}
+	return boardTagFilter{TagIDs: ids}, nil
 }
 
 func normalizeTags(in []string) ([]string, error) {
@@ -181,18 +221,78 @@ func (s *Store) ListTagCounts(ctx context.Context, pc *ProjectContext) ([]TagCou
 	if userID, ok := UserIDFromContext(ctx); ok {
 		viewerUserID = &userID
 	}
-	return s.listTagCounts(ctx, pc.Project.ID, viewerUserID, &pc.Role)
+	return s.listTagCounts(ctx, pc.Project.ID, viewerUserID, &pc.Role, pc.Project.ExpiresAt == nil)
 }
 
-// listTagCounts returns all tags used in the project, one row per tag_id.
+// TagGroupKey is the canonical grouping key for a stored tag name. Legacy rows can
+// hold non-canonical names (e.g. one owner's "make space" alongside another's
+// "make-space"), and those must collapse into a single logical label. A name that
+// cannot be canonicalized falls back to its raw stored value so no row is silently
+// dropped from the listing.
+//
+// This is the single key function for tag identity. Reads (grouping, counting),
+// writes (name-based color/delete) and board filtering all route through it, so a row
+// the listing can display is a row those paths can also address.
+func TagGroupKey(name string) string {
+	if canonical := CanonicalizeTag(name); canonical != "" {
+		return canonical
+	}
+	return name
+}
+
+// tagWriteKey maps a caller-supplied label to the key TagGroupKey derives from stored
+// names. Canonicalization is not required: the listing falls back to the raw stored
+// name for a row that cannot be canonicalized, and rejecting that label here would
+// display a grouped entry with working color and delete controls that every write
+// refuses. Only genuinely blank input is invalid.
+func tagWriteKey(name string) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("%w: invalid tag name", ErrValidation)
+	}
+	return TagGroupKey(name), nil
+}
+
+// tagRowMeta is one backing row for a canonical-name group, used to build the
+// grouped projection returned by listTagCounts.
+type tagRowMeta struct {
+	tagID       int64
+	name        string
+	userID      sql.NullInt64
+	projectID   sql.NullInt64
+	boardColor  sql.NullString // tags.color (shared board-scoped color)
+	viewerColor sql.NullString // user_tag_colors.color for the current viewer
+}
+
+// listTagCounts returns the project's tags for display.
+//
+// groupByName selects the projection and must be true only for durable projects:
+//
+//   - true: one entry per canonical name. Two members' personal "bug" rows collapse
+//     into a single logical entry that carries no representative TagID, because the
+//     durable name-based color/delete routes address it by name.
+//   - false: one entry per tag row, each with a real TagID. Temporary boards
+//     (ExpiresAt != nil) still resolve colors and deletes through tag_id and the
+//     board-scoped name resolver, so collapsing their rows would strand those writes.
+//
+// Read inclusion is identical in both projections: board-scoped rows are listed even
+// when unused, while personal rows are listed only when a todo in the project uses them.
+//
 // When viewerRole is non-nil, it is used (avoids GetProjectRole query); otherwise role is fetched.
-// All permission checks and delete actions are tag_id-based; tag names are display-only.
-func (s *Store) listTagCounts(ctx context.Context, projectID int64, viewerUserID *int64, viewerRole *ProjectRole) ([]TagCount, error) {
+func (s *Store) listTagCounts(ctx context.Context, projectID int64, viewerUserID *int64, viewerRole *ProjectRole, groupByName bool) ([]TagCount, error) {
 	if viewerRole == nil && viewerUserID != nil {
 		role, _ := s.GetProjectRole(ctx, projectID, *viewerUserID)
 		viewerRole = &role
 	}
+	if !groupByName {
+		return s.listTagCountsRowLevel(ctx, projectID, viewerUserID, viewerRole)
+	}
+	return s.listTagCountsGrouped(ctx, projectID, viewerUserID, viewerRole)
+}
 
+// listTagCountsRowLevel returns one TagCount per tag row, always with a real TagID.
+// This is the projection temporary boards keep: their mutation surface is tag_id-based
+// (plus board-scoped name resolution), so every listed entry must carry an addressable row.
+func (s *Store) listTagCountsRowLevel(ctx context.Context, projectID int64, viewerUserID *int64, viewerRole *ProjectRole) ([]TagCount, error) {
 	// This query MUST use UNION ALL instead of OR.
 	// OR over LEFT JOINs with GROUP BY can cause SQLite to hang indefinitely.
 	// Do not refactor into a single SELECT.
@@ -287,27 +387,271 @@ ORDER BY name`, projectID, projectID, projectID)
 				c := boardColor.String
 				tc.Color = &c
 			}
-			// Project-scoped: canDelete = requester is project maintainer/admin
-			if viewerRole != nil && viewerRole.HasMinimumRole(RoleMaintainer) {
-				tc.CanDelete = true
-			}
+			// Board-scoped row: deleting it removes the board's tag for everyone.
+			tc.CanDeleteProject = viewerRole != nil && viewerRole.HasMinimumRole(RoleMaintainer)
 		} else if tagUserID.Valid {
-			// User-owned: canDelete = requester is tag owner
-			if viewerUserID != nil && *viewerUserID == tagUserID.Int64 {
-				tc.CanDelete = true
-			}
+			// User-owned row: only the owner may delete it, and the delete is global to them.
+			tc.CanDeleteMine = viewerUserID != nil && *viewerUserID == tagUserID.Int64
 			// Color comes from the query's LEFT JOIN user_tag_colors (no nested query)
 			if boardColor.Valid && boardColor.String != "" {
 				c := boardColor.String
 				tc.Color = &c
 			}
 		}
+		// Temporary boards keep the previous row-level color UX: any holder of the
+		// board link may update colors through UpdateTagColorForTemporaryBoard.
+		tc.CanUpdateColor = true
 		out = append(out, tc)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows tag counts: %w", err)
 	}
 	return out, nil
+}
+
+// listTagCountsGrouped returns durable-project tags collapsed to one entry per
+// canonical name. Two members' personal rows named "bug" become a single logical
+// entry; pure board-scoped groups keep their real tag_id.
+func (s *Store) listTagCountsGrouped(ctx context.Context, projectID int64, viewerUserID *int64, viewerRole *ProjectRole) ([]TagCount, error) {
+	// Queries A, B, and C run sequentially, never with another query's Rows open.
+	// CRITICAL: with SetMaxOpenConns(1), executing a query while a Rows is open
+	// self-deadlocks (the open Rows holds the only connection). We also avoid OR
+	// over LEFT JOINs with GROUP BY, which can hang SQLite indefinitely.
+
+	// Query A: the (stored name, todo) pairs used in this project. Counting is done in
+	// Go rather than with GROUP BY because the grouping key is CanonicalizeTag(name),
+	// which SQLite cannot compute. Aggregating raw names and summing would also
+	// double-count a todo carrying both "make space" and "make-space".
+	todosByKey := make(map[string]map[int64]struct{})
+	countRows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.name, tt.todo_id
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id
+WHERE t.project_id = ?`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list tag counts: %w", err)
+	}
+	for countRows.Next() {
+		var name string
+		var todoID int64
+		if err := countRows.Scan(&name, &todoID); err != nil {
+			countRows.Close()
+			return nil, fmt.Errorf("scan tag count: %w", err)
+		}
+		key := TagGroupKey(name)
+		if todosByKey[key] == nil {
+			todosByKey[key] = make(map[int64]struct{})
+		}
+		todosByKey[key][todoID] = struct{}{}
+	}
+	countRows.Close()
+	if err := countRows.Err(); err != nil {
+		return nil, fmt.Errorf("rows tag counts: %w", err)
+	}
+
+	// Query B: one row per current backing tag row that satisfies the read inclusion
+	// rule. Board-scoped rows are listed even when unused; personal rows only when
+	// used by a todo in the project. Current viewer preferences are resolved in-query.
+	var metaRows *sql.Rows
+	if viewerUserID != nil {
+		metaRows, err = s.db.QueryContext(ctx, `
+SELECT g.id, g.name, g.user_id, g.project_id, g.color, NULL AS viewer_color
+FROM tags g
+WHERE g.project_id = ? AND g.user_id IS NULL
+
+UNION ALL
+
+SELECT DISTINCT g.id, g.name, g.user_id, g.project_id, g.color, utc.color AS viewer_color
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+LEFT JOIN user_tag_colors utc ON utc.tag_id = g.id AND utc.user_id = ?
+WHERE g.user_id IS NOT NULL
+
+ORDER BY id`, projectID, projectID, *viewerUserID)
+	} else {
+		metaRows, err = s.db.QueryContext(ctx, `
+SELECT g.id, g.name, g.user_id, g.project_id, g.color, NULL AS viewer_color
+FROM tags g
+WHERE g.project_id = ? AND g.user_id IS NULL
+
+UNION ALL
+
+SELECT DISTINCT g.id, g.name, g.user_id, g.project_id, g.color, NULL AS viewer_color
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+WHERE g.user_id IS NOT NULL
+
+ORDER BY id`, projectID, projectID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list tag rows: %w", err)
+	}
+
+	// Bucket by canonical key, preserving first-seen (lowest tag_id, due to ORDER BY id)
+	// order so color precedence over the lowest backing row is stable.
+	grouped := make(map[string][]tagRowMeta)
+	var keyOrder []string
+	for metaRows.Next() {
+		var m tagRowMeta
+		if err := metaRows.Scan(&m.tagID, &m.name, &m.userID, &m.projectID, &m.boardColor, &m.viewerColor); err != nil {
+			metaRows.Close()
+			return nil, fmt.Errorf("scan tag row: %w", err)
+		}
+		key := TagGroupKey(m.name)
+		if _, ok := grouped[key]; !ok {
+			keyOrder = append(keyOrder, key)
+		}
+		grouped[key] = append(grouped[key], m)
+	}
+	metaRows.Close()
+	if err := metaRows.Err(); err != nil {
+		return nil, fmt.Errorf("rows tag rows: %w", err)
+	}
+
+	// Query C: project-linked viewer preferences are historical fallback only. Current
+	// rows remain authoritative, and callers apply this map only to groups that still
+	// contain a personal row so pure board-scoped groups keep their shared color.
+	var projectLinkedViewerPrefs map[string]string
+	if viewerUserID != nil {
+		projectLinkedViewerPrefs, err = s.viewerProjectLinkedTagColorPrefs(ctx, projectID, *viewerUserID)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	isMaintainer := viewerRole != nil && viewerRole.HasMinimumRole(RoleMaintainer)
+
+	out := make([]TagCount, 0, len(keyOrder))
+	for _, key := range keyOrder {
+		rowsForName := grouped[key]
+		// Rows arrive ordered by tag_id (ORDER BY id) so lowest-id color precedence is stable.
+		personal := false
+		for _, r := range rowsForName {
+			if r.userID.Valid {
+				personal = true
+				break
+			}
+		}
+
+		historicalViewerPref := ""
+		if personal {
+			historicalViewerPref = projectLinkedViewerPrefs[key]
+		}
+		tc := TagCount{
+			// The canonical key is the displayed label, so legacy non-canonical rows
+			// surface under the same name the write routes resolve.
+			Name:  key,
+			Count: len(todosByKey[key]),
+			Color: pickGroupedTagColor(rowsForName, viewerUserID, historicalViewerPref),
+		}
+		if personal {
+			// Personal-label group (includes mixed board+personal): no representative tag_id.
+			if viewerUserID != nil {
+				for _, r := range rowsForName {
+					if r.userID.Valid && r.userID.Int64 == *viewerUserID {
+						tc.CanDeleteMine = true
+						break
+					}
+				}
+				// Any authenticated member may set their own per-viewer color via the
+				// name route (or a compatibility id preference write).
+				tc.CanUpdateColor = true
+			}
+		} else {
+			// Pure board-scoped group: real tag_id, shared color/delete for maintainers.
+			tc.TagID = rowsForName[0].tagID
+			tc.CanDeleteProject = isMaintainer
+			tc.CanUpdateColor = isMaintainer
+		}
+		out = append(out, tc)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// pickGroupedTagColor resolves the color for a grouped tag using deterministic,
+// viewer-scoped precedence: (1) a current preference on a row the viewer owns,
+// (2) a current preference on the lowest backing tag_id, (3) a same-project
+// historical preference, (4) the board-scoped shared color, (5) nil. rows must
+// be ordered by tag_id. The caller supplies historicalViewerPref only for groups
+// that currently contain a personal row.
+func pickGroupedTagColor(rows []tagRowMeta, viewerUserID *int64, historicalViewerPref string) *string {
+	if viewerUserID != nil {
+		for _, r := range rows {
+			if r.userID.Valid && r.userID.Int64 == *viewerUserID && r.viewerColor.Valid && r.viewerColor.String != "" {
+				c := r.viewerColor.String
+				return &c
+			}
+		}
+	}
+	for _, r := range rows {
+		if r.viewerColor.Valid && r.viewerColor.String != "" {
+			c := r.viewerColor.String
+			return &c
+		}
+	}
+	if historicalViewerPref != "" {
+		c := historicalViewerPref
+		return &c
+	}
+	for _, r := range rows {
+		if !r.userID.Valid && r.boardColor.Valid && r.boardColor.String != "" {
+			c := r.boardColor.String
+			return &c
+		}
+	}
+	return nil
+}
+
+// viewerProjectLinkedTagColorPrefs returns the viewer's preferences on personal tag
+// rows historically associated with projectID through project_tags, keyed by
+// TagGroupKey. It is a fallback for a currently displayed personal group when none of
+// that group's current backing rows carries a preference.
+//
+// Ties prefer a row the viewer owns, then the lowest tag_id. Rows must be scanned in
+// tag_id order for that precedence to hold.
+func (s *Store) viewerProjectLinkedTagColorPrefs(ctx context.Context, projectID, viewerUserID int64) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT g.id, g.name, g.user_id, utc.color
+FROM project_tags pt
+JOIN tags g ON g.id = pt.tag_id
+JOIN user_tag_colors utc ON utc.tag_id = g.id AND utc.user_id = ?
+WHERE pt.project_id = ? AND g.user_id IS NOT NULL
+  AND utc.color IS NOT NULL AND utc.color != ''
+ORDER BY g.id`, viewerUserID, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list project-linked viewer tag color prefs: %w", err)
+	}
+	defer rows.Close()
+
+	prefs := make(map[string]string)
+	owned := make(map[string]bool)
+	for rows.Next() {
+		var tagID, ownerID int64
+		var name, color string
+		if err := rows.Scan(&tagID, &name, &ownerID, &color); err != nil {
+			return nil, fmt.Errorf("scan project-linked viewer tag color pref: %w", err)
+		}
+		key := TagGroupKey(name)
+		if ownerID == viewerUserID {
+			if !owned[key] {
+				prefs[key] = color
+				owned[key] = true
+			}
+			continue
+		}
+		if owned[key] {
+			continue
+		}
+		if _, exists := prefs[key]; !exists {
+			prefs[key] = color
+		}
+	}
+	return prefs, rows.Err()
 }
 
 type TagWithColor struct {
@@ -502,6 +846,152 @@ func (s *Store) ResolveTagForColorUpdate(ctx context.Context, projectID int64, v
 	return userTagID, nil
 }
 
+// normalizeTagColor trims and validates a hex tag color. A nil, empty, or
+// whitespace-only color is treated as a "clear" request and returns ("", nil).
+// Invalid hex returns ErrValidation.
+func normalizeTagColor(color *string) (string, error) {
+	if color == nil {
+		return "", nil
+	}
+	c := strings.TrimSpace(*color)
+	if c == "" {
+		return "", nil
+	}
+	if !colorHexRe.MatchString(c) {
+		return "", fmt.Errorf("%w: invalid tag color %q", ErrValidation, *color)
+	}
+	return c, nil
+}
+
+// UpdateTagColorForDurableProjectByID updates a tag color addressed by tag_id on a
+// durable project. Unlike UpdateTagColor it is project-aware:
+//
+//   - caller must be an authenticated project member (non-members → ErrNotFound);
+//   - the tag must belong to the requested project (board-scoped project_id match, or
+//     a user-owned row used by a todo in the project); otherwise ErrNotFound;
+//   - board-scoped tags require Maintainer+ and update the shared tags.color;
+//   - user-owned compatibility IDs let any member change only their own
+//     user_tag_colors preference.
+//
+// Temporary boards must keep using UpdateTagColorForTemporaryBoard.
+func (s *Store) UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error {
+	if err := s.requireGroupedTagAccess(ctx, projectID, viewerUserID); err != nil {
+		return err
+	}
+
+	var tagUserID sql.NullInt64
+	var tagProjectID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+SELECT user_id, project_id FROM tags WHERE id = ?`, tagID).Scan(&tagUserID, &tagProjectID)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("get tag: %w", err)
+	}
+
+	if tagProjectID.Valid && !tagUserID.Valid {
+		if tagProjectID.Int64 != projectID {
+			return fmt.Errorf("%w: tag not found", ErrNotFound)
+		}
+		role, err := s.GetProjectRole(ctx, projectID, viewerUserID)
+		if err != nil {
+			return err
+		}
+		if !role.HasMinimumRole(RoleMaintainer) {
+			return fmt.Errorf("%w: project maintainer required", ErrUnauthorized)
+		}
+		return s.UpdateTagColor(ctx, &viewerUserID, tagID, color)
+	}
+
+	if tagUserID.Valid {
+		var n int
+		err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM todo_tags tt
+INNER JOIN todos t ON t.id = tt.todo_id
+WHERE tt.tag_id = ? AND t.project_id = ?`, tagID, projectID).Scan(&n)
+		if err != nil {
+			return fmt.Errorf("check tag on project: %w", err)
+		}
+		if n == 0 {
+			return fmt.Errorf("%w: tag not found", ErrNotFound)
+		}
+		// Preference write for this viewer only; UpdateTagColor never mutates another
+		// user's user_tag_colors and does not touch tags.color for user-owned rows.
+		return s.UpdateTagColor(ctx, &viewerUserID, tagID, color)
+	}
+
+	return fmt.Errorf("%w: tag has neither user_id nor project_id", ErrConflict)
+}
+
+// DeleteTagForDurableProjectByID deletes a tag addressed by tag_id on a durable project.
+// Unlike DeleteTag it is project-aware:
+//
+//   - caller must be an authenticated project member (non-members → ErrNotFound);
+//   - the tag must belong to the requested project (board-scoped project_id match, or
+//     a user-owned row used by a todo in the project); otherwise ErrNotFound;
+//   - board-scoped tags require Maintainer+ and are deleted for that project only;
+//   - user-owned compatibility IDs require ownership by the caller (no maintainer
+//     override on another member's personal tag) and return every project that
+//     referenced the row so callers can refresh those boards.
+//
+// Temporary/anonymous boards must keep using DeleteTag.
+func (s *Store) DeleteTagForDurableProjectByID(ctx context.Context, projectID, userID, tagID int64) ([]int64, error) {
+	if err := s.requireGroupedTagAccess(ctx, projectID, userID); err != nil {
+		return nil, err
+	}
+
+	var tagUserID sql.NullInt64
+	var tagProjectID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+SELECT user_id, project_id FROM tags WHERE id = ?`, tagID).Scan(&tagUserID, &tagProjectID)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tag: %w", err)
+	}
+
+	if tagProjectID.Valid && !tagUserID.Valid {
+		if tagProjectID.Int64 != projectID {
+			return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+		}
+		role, err := s.GetProjectRole(ctx, projectID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if !role.HasMinimumRole(RoleMaintainer) {
+			return nil, fmt.Errorf("%w: project maintainer required", ErrUnauthorized)
+		}
+		if err := s.DeleteTag(ctx, userID, tagID, false); err != nil {
+			return nil, err
+		}
+		return []int64{projectID}, nil
+	}
+
+	if tagUserID.Valid {
+		if tagUserID.Int64 != userID {
+			// Compatibility ID delete is owner-only; do not allow a maintainer to
+			// remove another member's cross-project personal tag via this route.
+			return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+		}
+		var n int
+		err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM todo_tags tt
+INNER JOIN todos t ON t.id = tt.todo_id
+WHERE tt.tag_id = ? AND t.project_id = ?`, tagID, projectID).Scan(&n)
+		if err != nil {
+			return nil, fmt.Errorf("check tag on project: %w", err)
+		}
+		if n == 0 {
+			return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+		}
+		return s.DeleteMyTagByID(ctx, userID, tagID)
+	}
+
+	return nil, fmt.Errorf("%w: tag has neither user_id nor project_id", ErrConflict)
+}
+
 // UpdateTagColor updates tag color
 // For user-owned tags: updates user_tag_colors (per-viewer preference)
 // For board-scoped tags: updates tags.color directly (board-wide color)
@@ -672,6 +1162,386 @@ WHERE user_id = ? AND tag_id = ?`, userID, tagID).Scan(&color)
 		return &color.String, nil
 	}
 	return nil, nil
+}
+
+// personalTagRowsForName returns the user-owned tag row ids whose grouping key is
+// groupKey and that are used by a todo in the project. This matches the read
+// inclusion rule of the grouped listing, so name-based writes resolve exactly the rows
+// behind the entry the viewer sees. Rows of any owner are returned (the viewer may hold
+// a color preference on another member's backing row); ordered by id for determinism.
+//
+// The name comparison happens in Go, not in SQL: legacy rows can store non-canonical
+// names, and a row named "make space" must resolve alongside "make-space" exactly as
+// the grouped listing collapses them.
+func (s *Store) personalTagRowsForName(ctx context.Context, projectID int64, groupKey string) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.id, g.name
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+WHERE g.user_id IS NOT NULL
+ORDER BY g.id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve personal tag rows: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan tag id: %w", err)
+		}
+		if TagGroupKey(name) == groupKey {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
+// projectLinkedPersonalTagRowsForName returns every personal tag row whose
+// project_tags history associates it with projectID and whose name matches groupKey.
+// This includes current rows and rows that are no longer attached to a todo. The
+// comparison stays in Go so legacy names group exactly as they do in project listings.
+func (s *Store) projectLinkedPersonalTagRowsForName(ctx context.Context, projectID int64, groupKey string) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT g.id, g.name
+FROM project_tags pt
+JOIN tags g ON g.id = pt.tag_id
+WHERE pt.project_id = ? AND g.user_id IS NOT NULL
+ORDER BY g.id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve project-linked personal tag rows: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan project-linked tag id: %w", err)
+		}
+		if TagGroupKey(name) == groupKey {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
+// resolveTagFilterRowIDs returns the ids of every tag row used by a todo in the project
+// that the board tag filter should select (filterKey already normalized by normalizeTagFilter).
+//
+// Durable projects resolve by TagGroupKey so the filter agrees with the grouped chip:
+// clicking a "make-space" chip whose count spans a legacy "make space" row must return
+// both todos. Temporary boards match the raw stored name exactly, because their chips
+// are still one entry per tag row and normalizeTagFilter preserved that displayed label.
+//
+// The candidate set is restricted to rows actually used in the project, which is also
+// what keeps the resulting IN list small. An empty result means the filter matches no
+// row: callers must return an empty page rather than falling back to an unfiltered query.
+func (s *Store) resolveTagFilterRowIDs(ctx context.Context, projectID int64, filterKey string, durable bool) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.id, g.name
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+ORDER BY g.id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tag filter: %w", err)
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan tag filter row: %w", err)
+		}
+		match := name == filterKey
+		if durable {
+			match = TagGroupKey(name) == filterKey
+		}
+		if match {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows tag filter: %w", err)
+	}
+	return ids, nil
+}
+
+// tagFilterPlaceholders renders the placeholder list and bind args for a resolved
+// tag-id filter. Callers must have checked for a non-empty id list.
+func tagFilterPlaceholders(tagIDs []int64) (string, []any) {
+	ph := make([]string, len(tagIDs))
+	args := make([]any, len(tagIDs))
+	for i, id := range tagIDs {
+		ph[i] = "?"
+		args[i] = id
+	}
+	return strings.Join(ph, ","), args
+}
+
+// requireGroupedTagAccess authorizes a name-based grouped tag write.
+//
+// Grouping is a durable-project projection, so temporary boards are rejected outright:
+// they still list one entry per tag row and mutate through tag_id. On durable projects
+// the caller must hold at least viewer access; non-members get ErrNotFound so project
+// existence is not disclosed. Authentication alone is not sufficient, because resolving
+// a grouped label reaches other members' backing rows.
+func (s *Store) requireGroupedTagAccess(ctx context.Context, projectID int64, userID int64) error {
+	p, err := s.getProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	if p.ExpiresAt != nil {
+		return fmt.Errorf("%w: name-based tag operations require a durable project", ErrValidation)
+	}
+	enabled, err := s.authEnabled(ctx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+	role, err := s.GetProjectRole(ctx, projectID, userID)
+	if err != nil {
+		return err
+	}
+	if !role.HasMinimumRole(RoleViewer) {
+		return fmt.Errorf("%w: project not found", ErrNotFound)
+	}
+	return nil
+}
+
+// SetViewerTagColorByName sets or clears the current viewer's color preference for a
+// grouped personal label. A current personal backing row must exist so historical-only
+// groups remain unaddressable, but the write converges both current rows and personal
+// rows historically linked to the project. This keeps later set/clear operations aligned
+// with the grouped listing's same-project historical fallback. It never writes
+// tags.color. Clearing when no preference exists is an idempotent success.
+//
+// Requires durable-project membership: see requireGroupedTagAccess.
+func (s *Store) SetViewerTagColorByName(ctx context.Context, projectID int64, viewerUserID int64, name string, color *string) error {
+	groupKey, err := tagWriteKey(name)
+	if err != nil {
+		return err
+	}
+	normColor, err := normalizeTagColor(color)
+	if err != nil {
+		return err
+	}
+	if err := s.requireGroupedTagAccess(ctx, projectID, viewerUserID); err != nil {
+		return err
+	}
+
+	currentTagIDs, err := s.personalTagRowsForName(ctx, projectID, groupKey)
+	if err != nil {
+		return err
+	}
+	if len(currentTagIDs) == 0 {
+		return fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+
+	projectLinkedTagIDs, err := s.projectLinkedPersonalTagRowsForName(ctx, projectID, groupKey)
+	if err != nil {
+		return err
+	}
+	seenTagIDs := make(map[int64]struct{}, len(currentTagIDs)+len(projectLinkedTagIDs))
+	tagIDs := make([]int64, 0, len(currentTagIDs)+len(projectLinkedTagIDs))
+	for _, tagID := range append(currentTagIDs, projectLinkedTagIDs...) {
+		if _, seen := seenTagIDs[tagID]; seen {
+			continue
+		}
+		seenTagIDs[tagID] = struct{}{}
+		tagIDs = append(tagIDs, tagID)
+	}
+	sort.Slice(tagIDs, func(i, j int) bool { return tagIDs[i] < tagIDs[j] })
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, tagID := range tagIDs {
+		if normColor == "" {
+			if _, err := tx.ExecContext(ctx, `
+DELETE FROM user_tag_colors WHERE user_id = ? AND tag_id = ?`, viewerUserID, tagID); err != nil {
+				return fmt.Errorf("clear tag color: %w", err)
+			}
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO user_tag_colors(user_id, tag_id, color)
+VALUES (?, ?, ?)
+ON CONFLICT(user_id, tag_id) DO UPDATE SET color = excluded.color`, viewerUserID, tagID, normColor); err != nil {
+			return fmt.Errorf("set tag color: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// UpdateMyTagColor sets or clears the caller's color preference for a tag they own
+// in their cross-project personal library. Ownership is required (404 otherwise).
+// Clearing when no preference exists is an idempotent success.
+func (s *Store) UpdateMyTagColor(ctx context.Context, userID, tagID int64, color *string) error {
+	var ownerID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM tags WHERE id = ?`, tagID).Scan(&ownerID)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+	if err != nil {
+		return fmt.Errorf("get tag: %w", err)
+	}
+	if !ownerID.Valid || ownerID.Int64 != userID {
+		return fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+	err = s.UpdateTagColor(ctx, &userID, tagID, color)
+	if err != nil && isColorClear(color) && errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func isColorClear(color *string) bool {
+	return color == nil || strings.TrimSpace(*color) == ""
+}
+
+// DeleteMyTagByID deletes a personal tag the caller owns and returns every project
+// that referenced it (collected before deletion) so callers can refresh those boards.
+// Strictly owner-only: unlike DeleteTag it never allows a maintainer override on
+// someone else's row. Returns ErrNotFound when the tag is missing or not owned by
+// the caller.
+func (s *Store) DeleteMyTagByID(ctx context.Context, userID, tagID int64) ([]int64, error) {
+	var ownerID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT user_id FROM tags WHERE id = ?`, tagID).Scan(&ownerID)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get tag: %w", err)
+	}
+	if !ownerID.Valid || ownerID.Int64 != userID {
+		return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+
+	affected, err := s.projectsWhereTagIsUsed(ctx, tagID)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, tagID); err != nil {
+		return nil, fmt.Errorf("delete todo_tags: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM tags WHERE id = ? AND user_id = ?`, tagID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("delete tag: %w", err)
+	}
+	affectedRows, _ := result.RowsAffected()
+	if affectedRows == 0 {
+		return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit delete: %w", err)
+	}
+
+	sort.Slice(affected, func(i, j int) bool { return affected[i] < affected[j] })
+	return affected, nil
+}
+
+// DeleteMyTagByName deletes the caller's own personal tag row(s) for a canonical name
+// used in the project. It never touches another member's row, so the grouped label
+// may remain visible while other members still use the name. Because a personal row
+// is shared across the caller's projects, the delete is global to that user; the
+// returned project IDs are every project that referenced a deleted row (collected
+// before deletion) so callers can refresh those boards. Returns ErrNotFound when the
+// caller owns no matching backing row used in the project.
+//
+// Requires durable-project membership: see requireGroupedTagAccess.
+func (s *Store) DeleteMyTagByName(ctx context.Context, projectID int64, userID int64, name string) ([]int64, error) {
+	groupKey, err := tagWriteKey(name)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireGroupedTagAccess(ctx, projectID, userID); err != nil {
+		return nil, err
+	}
+
+	// Name matching happens in Go so a legacy non-canonical row ("make space") is
+	// deleted by the same canonical label the grouped listing displays.
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.id, g.name
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+WHERE g.user_id = ?
+ORDER BY g.id`, projectID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve my tag rows: %w", err)
+	}
+	var tagIDs []int64
+	for rows.Next() {
+		var id int64
+		var rowName string
+		if err := rows.Scan(&id, &rowName); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan tag id: %w", err)
+		}
+		if TagGroupKey(rowName) == groupKey {
+			tagIDs = append(tagIDs, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows my tag ids: %w", err)
+	}
+	if len(tagIDs) == 0 {
+		return nil, fmt.Errorf("%w: tag not found", ErrNotFound)
+	}
+
+	// Collect affected project IDs BEFORE deleting so boards can be refreshed.
+	affected := make(map[int64]struct{})
+	for _, tagID := range tagIDs {
+		pids, err := s.projectsWhereTagIsUsed(ctx, tagID)
+		if err != nil {
+			return nil, err
+		}
+		for _, pid := range pids {
+			affected[pid] = struct{}{}
+		}
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	for _, tagID := range tagIDs {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM todo_tags WHERE tag_id = ?`, tagID); err != nil {
+			return nil, fmt.Errorf("delete todo_tags: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tags WHERE id = ? AND user_id = ?`, tagID, userID); err != nil {
+			return nil, fmt.Errorf("delete tag: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit delete: %w", err)
+	}
+
+	ids := make([]int64, 0, len(affected))
+	for pid := range affected {
+		ids = append(ids, pid)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids, nil
 }
 
 // projectsWhereTagIsUsed returns the distinct project IDs where the tag is used
@@ -886,14 +1756,19 @@ func GetOrCreateTag(ctx context.Context, tx *sql.Tx, userID int64, name string) 
 	if normalizedName == "" {
 		return 0, fmt.Errorf("%w: invalid tag name", ErrValidation)
 	}
+	return getOrCreateTagExact(ctx, tx, userID, normalizedName)
+}
 
+// getOrCreateTagExact gets or creates a user-owned tag under the exact given name.
+// Callers must pass a name that has already been validated (e.g. via CanonicalizeTag).
+func getOrCreateTagExact(ctx context.Context, tx *sql.Tx, userID int64, name string) (int64, error) {
 	var tagID int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE user_id = ? AND name = ?`, userID, normalizedName).Scan(&tagID)
+	err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE user_id = ? AND name = ?`, userID, name).Scan(&tagID)
 	if err == sql.ErrNoRows {
 		nowMs := time.Now().UTC().UnixMilli()
 		res, err := tx.ExecContext(ctx, `
 INSERT INTO tags(user_id, name, created_at)
-VALUES (?, ?, ?)`, userID, normalizedName, nowMs)
+VALUES (?, ?, ?)`, userID, name, nowMs)
 		if err != nil {
 			return 0, fmt.Errorf("create tag: %w", err)
 		}

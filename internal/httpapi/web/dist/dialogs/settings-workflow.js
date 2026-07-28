@@ -1,7 +1,7 @@
 import { apiFetch } from '../api.js';
 import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
-import { getBoard, getSearch, getSettingsActiveTab, getSlug, getSprintIdFromUrl, getTag, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getSortFromUrl, getBoard, getSearch, getSettingsActiveTab, getSlug, getSprintIdFromUrl, getTag, } from '../state/selectors.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
@@ -214,7 +214,7 @@ async function addWorkflowLane(name, rerender) {
             body: JSON.stringify({ name: trimmed }),
         });
         invalidateWorkflowLaneCountsCache();
-        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
+        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
         syncWorkflowDraftFromBoardAfterMutation();
         await rerender();
         showToast(t('settings.workflow.toast.laneAdded'));
@@ -251,7 +251,7 @@ async function saveWorkflowDraftChanges(rerender) {
                 body: JSON.stringify({ name, color }),
             });
         }
-        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
+        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
         syncWorkflowDraftFromBoardAfterMutation();
         await rerender();
         showToast(t('settings.workflow.toast.updated'));
@@ -284,7 +284,7 @@ async function deleteWorkflowLane(key, rerender) {
             method: 'DELETE',
         });
         invalidateWorkflowLaneCountsCache();
-        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl());
+        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
         syncWorkflowDraftFromBoardAfterMutation();
         await rerender();
         showToast(t('settings.workflow.toast.laneDeleted'));

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,6 +19,27 @@ const (
 	preferenceProvenanceUser       = "user"
 	preferenceProvenanceOrgDefault = "org_default"
 )
+
+// Allowed values for the "cardsPerLane" preference: the default number of cards
+// shown per board lane before "Load more" is needed.
+var allowedCardsPerLane = map[int]struct{}{
+	20:  {},
+	50:  {},
+	75:  {},
+	100: {},
+}
+
+// validateCardsPerLaneValue returns ErrValidation if value isn't an allowed preset.
+func validateCardsPerLaneValue(value string) error {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, 75, or 100", ErrValidation)
+	}
+	if _, ok := allowedCardsPerLane[n]; !ok {
+		return fmt.Errorf("%w: cardsPerLane must be one of 20, 50, 75, or 100", ErrValidation)
+	}
+	return nil
+}
 
 // validateTagColorsJSON returns ErrValidation if any color in the tagColors JSON is invalid.
 func validateTagColorsJSON(value string) error {
@@ -58,6 +80,11 @@ func (s *Store) SetUserPreference(ctx context.Context, userID int64, key, value 
 	}
 	if key == "wallpaper" {
 		if err := ValidateWallpaperPrefJSON(value); err != nil {
+			return err
+		}
+	}
+	if key == "cardsPerLane" {
+		if err := validateCardsPerLaneValue(value); err != nil {
 			return err
 		}
 	}

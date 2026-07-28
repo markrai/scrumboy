@@ -24,6 +24,21 @@ func (s *Server) requireProjectMaintainerOrHigher(ctx context.Context, projectID
 	return s.requireProjectRole(ctx, projectID, store.RoleMaintainer)
 }
 
+// parseAssigneeFilterFromQuery validates the assignee query value and resolves
+// the "me" sentinel from the authenticated request actor when one is available.
+func (s *Server) parseAssigneeFilterFromQuery(ctx context.Context, r *http.Request) (store.AssigneeFilter, error) {
+	var actorUserID *int64
+	if userID, ok := store.UserIDFromContext(ctx); ok {
+		actorUserID = &userID
+	}
+	return store.ParseAssigneeFilter(r.URL.Query().Get("assignee"), actorUserID)
+}
+
+// parseSortOrderFromQuery validates the board "sort" query value.
+func (s *Server) parseSortOrderFromQuery(r *http.Request) (store.SortOrder, error) {
+	return store.ParseSortOrder(r.URL.Query().Get("sort"))
+}
+
 // parseSprintFilterFromQuery parses sprintId from the request query and returns a SprintFilter.
 // Absence of sprintId -> Mode "none" (no sprint filter).
 // sprintId=scheduled -> Mode "scheduled" (sprint_id IS NOT NULL, i.e. "Scheduled" view). "assigned" is accepted for backward compatibility.

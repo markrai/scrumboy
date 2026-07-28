@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -269,6 +270,54 @@ func TestEmailNotifier_RefreshNeeded_DebouncesBurstsPerProjectCategory(t *testin
 	got := drainAfterAsync(mq)
 	if len(got) != 1 {
 		t.Fatalf("expected exactly 1 email from a debounced burst, got %d: %+v", len(got), got)
+	}
+}
+
+func TestEmailNotifier_RefreshNeeded_CopyReflectsReasonAndActor(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	n, mq := newTestEmailNotifier(t, st, true)
+
+	owner, err := st.BootstrapUser(ctx, "owner-copy@example.com", "pass1234A!", "Alex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := st.CreateUser(ctx, "member-copy@example.com", "pass1234A!", "Member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := store.WithUserID(ctx, owner.ID)
+	proj, err := st.CreateProject(ownerCtx, "Copy Project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(ownerCtx, owner.ID, proj.ID, member.ID, store.RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+
+	pref := store.DefaultEmailNotifyPref()
+	pref.Enabled = true
+	pref.SprintActivity = true
+	prefJSON, _ := json.Marshal(pref)
+	if err := st.SetUserPreference(ctx, member.ID, "emailNotifications", string(prefJSON)); err != nil {
+		t.Fatal(err)
+	}
+
+	payload, _ := json.Marshal(struct {
+		Reason      string `json:"reason"`
+		ActorUserID int64  `json:"actorUserId"`
+	}{Reason: "sprint_closed", ActorUserID: owner.ID})
+	n.OnEvent(ctx, eventbus.Event{Type: "board.refresh_needed", ProjectID: proj.ID, Payload: payload})
+
+	got := drainAfterAsync(mq)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 email, got %+v", got)
+	}
+	if got[0].Subject != "Copy Project: sprint closed" {
+		t.Fatalf("unexpected subject: %q", got[0].Subject)
+	}
+	if !strings.Contains(got[0].Body, "Alex closed a sprint in Copy Project.") {
+		t.Fatalf("expected actor-led body, got %q", got[0].Body)
 	}
 }
 

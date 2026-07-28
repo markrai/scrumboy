@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -16,9 +17,30 @@ type boardGetInput struct {
 	ProjectSlug    string            `json:"projectSlug"`
 	Tag            string            `json:"tag"`
 	Search         string            `json:"search"`
+	Assignee       string            `json:"assignee"`
+	Sort           string            `json:"sort"`
 	SprintId       *int64            `json:"sprintId"`
 	Limit          int               `json:"limit"`
 	CursorByColumn map[string]string `json:"cursorByColumn"`
+}
+
+func boardGetAssigneeHasInvalidType(input any) bool {
+	b, err := json.Marshal(input)
+	if err != nil {
+		return false
+	}
+	var raw struct {
+		Assignee json.RawMessage `json:"assignee"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil || len(raw.Assignee) == 0 {
+		return false
+	}
+	var value any
+	if err := json.Unmarshal(raw.Assignee, &value); err != nil {
+		return false
+	}
+	_, ok := value.(string)
+	return !ok
 }
 
 func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -34,6 +56,10 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusForbidden, CodeCapabilityUnavailable, "board_get is unavailable before bootstrap", nil)
 	case !auth.Authenticated:
 		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+
+	if boardGetAssigneeHasInvalidType(input) {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assignee", map[string]any{"field": "assignee"})
 	}
 
 	var in boardGetInput
@@ -52,14 +78,23 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid limit", map[string]any{"field": "limit"})
 	}
 
+	// Pass the trimmed tag through unchanged. The store normalizes scope-aware:
+	// durable projects group via TagGroupKey; temporary boards exact-match the raw
+	// displayed name (so a "make space" chip is not rewritten to "make-space").
 	tag := strings.TrimSpace(in.Tag)
-	if tag != "" {
-		tag = store.CanonicalizeTag(tag)
-		if tag == "" {
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tag", map[string]any{"field": "tag"})
-		}
-	}
 	search := strings.TrimSpace(in.Search)
+	actorUserID, ok := store.UserIDFromContext(ctx)
+	if !ok {
+		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	}
+	assigneeFilter, assigneeErr := store.ParseAssigneeFilter(in.Assignee, &actorUserID)
+	if assigneeErr != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assignee", map[string]any{"field": "assignee"})
+	}
+	sortOrder, sortErr := store.ParseSortOrder(in.Sort)
+	if sortErr != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sort", map[string]any{"field": "sort"})
+	}
 
 	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
 	if pcErr != nil {
@@ -92,26 +127,25 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 	totalCountByColumn := make(map[string]int, len(workflow))
 
 	for _, col := range workflow {
-		afterRank := int64(math.MinInt64)
-		afterID := int64(0)
+		afterA, afterB := boardCursorSentinel(sortOrder)
 		if token, ok := in.CursorByColumn[col.Key]; ok && strings.TrimSpace(token) != "" {
 			rawCursor, decodeErr := decodeBoardCursor(token)
 			if decodeErr != nil {
 				return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid board cursor", map[string]any{"field": "cursorByColumn", "columnKey": col.Key})
 			}
-			rank, id := store.ParseLaneCursor(rawCursor)
-			if rank == 0 && id == 0 {
+			a2, b2 := store.ParseLaneCursor(rawCursor)
+			if a2 == 0 && b2 == 0 {
 				return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid board cursor", map[string]any{"field": "cursorByColumn", "columnKey": col.Key})
 			}
-			afterRank = rank
-			afterID = id
+			afterA = a2
+			afterB = b2
 		}
 
-		todos, _, hasMore, listErr := a.store.ListTodosForBoardLane(ctx, pc.Project.ID, col.Key, limit, afterRank, afterID, tag, search, sprintFilter)
+		todos, _, hasMore, listErr := a.store.ListTodosForBoardLane(ctx, pc.Project.ID, col.Key, limit, afterA, afterB, tag, search, assigneeFilter, sprintFilter, sortOrder)
 		if listErr != nil {
 			return nil, nil, mapStoreError(listErr)
 		}
-		totalCount, countErr := a.store.CountTodosForBoardLane(ctx, pc.Project.ID, col.Key, tag, search, sprintFilter)
+		totalCount, countErr := a.store.CountTodosForBoardLane(ctx, pc.Project.ID, col.Key, tag, search, assigneeFilter, sprintFilter)
 		if countErr != nil {
 			return nil, nil, mapStoreError(countErr)
 		}
@@ -128,7 +162,7 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		})
 
 		if hasMore && len(todos) > 0 {
-			nextCursorByColumn[col.Key] = encodeBoardCursor(fmt.Sprintf("%d:%d", todos[len(todos)-1].Rank, todos[len(todos)-1].ID))
+			nextCursorByColumn[col.Key] = encodeBoardCursor(boardLaneCursor(todos[len(todos)-1], sortOrder))
 		} else {
 			nextCursorByColumn[col.Key] = nil
 		}
@@ -175,6 +209,29 @@ func (a *Adapter) resolveBoardSprintFilter(ctx context.Context, projectID int64,
 		return store.SprintFilter{}, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
 	}
 	return store.SprintFilter{Mode: "sprint", SprintID: *sprintID}, nil
+}
+
+// boardCursorSentinel returns the "before the first item" cursor bound for a
+// lane fetch with no cursor supplied yet, matching store.laneCursorPredicate's
+// comparison direction for the given sortOrder (ascending default/oldest vs.
+// descending newest).
+func boardCursorSentinel(sortOrder store.SortOrder) (a, b int64) {
+	if sortOrder == store.SortOrderNewest {
+		return math.MaxInt64, math.MaxInt64
+	}
+	return math.MinInt64, 0
+}
+
+// boardLaneCursor encodes the cursor fields for the last row of a page,
+// mirroring store's internal laneCursor helper (rank:id for default order,
+// createdAtMs:id for newest/oldest).
+func boardLaneCursor(t store.Todo, sortOrder store.SortOrder) string {
+	switch sortOrder {
+	case store.SortOrderNewest, store.SortOrderOldest:
+		return fmt.Sprintf("%d:%d", t.CreatedAt.UnixMilli(), t.ID)
+	default:
+		return fmt.Sprintf("%d:%d", t.Rank, t.ID)
+	}
 }
 
 func encodeBoardCursor(raw string) string {

@@ -165,16 +165,27 @@ const enCatalog = {
   "board.actions.settings": "Settings",
   "board.backToProjects": "\u2190 Projects",
   "board.filters.all": "All",
+  "board.filters.allAssignees": "All assignees",
+  "board.filters.assignee": "Assignee",
+  "board.filters.assignedToMe": "Assigned to me",
+  "board.filters.defaultOrder": "Default order",
+  "board.filters.filteringOn": "Filtering: {value}",
   "board.filters.label": "Tags:",
+  "board.filters.newestFirst": "Newest first",
   "board.filters.next": "Next tags",
+  "board.filters.oldestFirst": "Oldest first",
+  "board.filters.openFilters": "Filters",
   "board.filters.previous": "Previous tags",
   "board.filters.scheduled": "Scheduled",
+  "board.filters.sort": "Sort",
+  "board.filters.sortedBy": "Sorted: {value}",
+  "board.filters.unassigned": "Unassigned",
   "board.filters.unscheduled": "Unscheduled",
   "board.loadMore": "Load more",
   "board.noResults": "No todos found matching \"{search}\"",
   "board.search.placeholder.desktop": "Search todos...",
   "board.search.placeholder.mobile": "Search",
-  "board.todo.dragToReorder": "Drag to reorder",
+  "board.todo.dragCard": "Drag card",
 };
 
 const pseudoCatalog = Object.fromEntries(
@@ -210,13 +221,15 @@ async function flushPromises(count = 6): Promise<void> {
 
 async function renderPrefetchedBoard(
   mod: typeof import("./board.js"),
-  opts: { tag?: string; search?: string } = {},
+  opts: { tag?: string; search?: string; sort?: string | null } = {},
 ): Promise<void> {
   await mod.renderBoard(
     "alpha",
     opts.tag ?? "",
     opts.search ?? "needle",
     null,
+    null,
+    opts.sort ?? null,
     null,
     null,
     { prefetchedBoard: board() },
@@ -260,9 +273,45 @@ describe("board i18n locale switching", () => {
     customBootstrapBackLabel.value = null;
     const i18n = await import("../i18n/index.js");
     i18n.resetI18nForTests();
+    const mutations = await import("../state/mutations.js");
+    mutations.setUser(null);
+    mutations.setAuthStatusAvailable(false);
     document.body.innerHTML = "";
     localStorage.clear();
     vi.restoreAllMocks();
+  });
+
+  it("does not initialize usable card dragging for viewers in chronological mode", async () => {
+    const i18n = await import("../i18n/index.js");
+    await i18n.initI18n({
+      locale: "en",
+      loadLocale: vi.fn(async () => enCatalog),
+    });
+    const membersCache = await import("../members-cache.js");
+    const mutations = await import("../state/mutations.js");
+    mutations.setAuthStatusAvailable(true);
+    mutations.setUser({ id: 1, name: "Alex", email: "alex@example.com" } as any);
+    vi.mocked(membersCache.fetchProjectMembers).mockResolvedValueOnce([
+      { userId: 1, name: "Alex", email: "alex@example.com", role: "viewer" },
+    ] as any);
+    const viewerBoard = board();
+    viewerBoard.columns.backlog = [{
+      id: 7,
+      localId: 12,
+      title: "Read only",
+      body: "",
+      status: "BACKLOG",
+      tags: [],
+    }] as any;
+    const mod = await import("./board.js");
+
+    await mod.renderBoard("alpha", "", "needle", null, null, "newest", null, null, {
+      prefetchedBoard: viewerBoard,
+    });
+    await flushPromises();
+
+    expect(document.querySelector(".card__drag-handle")).not.toBeNull();
+    expect(initDnDMock).not.toHaveBeenCalled();
   });
 
   it("updates the default back label after locale change without refetching", async () => {

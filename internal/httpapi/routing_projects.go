@@ -219,7 +219,8 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Request, rest []string, projectID int64) bool {
 	if len(rest) == 2 && rest[1] == "board" && r.Method == http.MethodGet {
-		pc, err := s.store.GetProjectContextForRead(s.requestContext(r), projectID, s.storeMode())
+		ctx := s.requestContext(r)
+		pc, err := s.store.GetProjectContextForRead(ctx, projectID, s.storeMode())
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -229,12 +230,22 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 		if search == "" {
 			search = ""
 		}
+		assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
+		if err != nil {
+			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
+			return true
+		}
 		sprintFilter, err := s.parseSprintFilterFromQuery(r, projectID)
 		if err != nil {
 			writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
 			return true
 		}
-		project, tags, workflow, cols, err := s.store.GetBoard(s.requestContext(r), &pc, tag, search, sprintFilter)
+		sortOrder, err := s.parseSortOrderFromQuery(r)
+		if err != nil {
+			writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
+			return true
+		}
+		project, tags, workflow, cols, err := s.store.GetBoard(ctx, &pc, tag, search, assigneeFilter, sprintFilter, sortOrder)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -437,21 +448,17 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		tagList := make([]store.TagWithColor, len(tags))
-		for i, tc := range tags {
-			tagList[i] = store.TagWithColor{
-				TagID:     tc.TagID,
-				Name:      tc.Name,
-				Color:     tc.Color,
-				CanDelete: tc.CanDelete,
-			}
-		}
-		writeJSON(w, http.StatusOK, tagsToJSON(tagList))
+		writeJSON(w, http.StatusOK, tagCountsToJSON(tags))
 		return true
 	}
 
 	if len(rest) == 5 && rest[1] == "tags" && rest[2] == "id" && rest[4] == "color" && r.Method == http.MethodPatch {
 		ctx := s.requestContext(r)
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return true
+		}
 		var tagID int64
 		if _, err := fmt.Sscanf(rest[3], "%d", &tagID); err != nil || tagID <= 0 {
 			writeValidationError(w, "invalid tagId", "invalid_tag_id", map[string]any{"field": "tagId"})
@@ -463,11 +470,8 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		var viewerUserID *int64
-		if userID, ok := store.UserIDFromContext(ctx); ok {
-			viewerUserID = &userID
-		}
-		if err := s.store.UpdateTagColor(ctx, viewerUserID, tagID, in.Color); err != nil {
+		// Durable numeric project route: project-aware membership + role checks.
+		if err := s.store.UpdateTagColorForDurableProjectByID(ctx, projectID, userID, tagID, in.Color); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
@@ -476,8 +480,36 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 		return true
 	}
 
+	// PATCH /api/projects/{id}/tags/{name}/color - set the viewer's personal color for a
+	// grouped personal label. Any authenticated member may set their own display color;
+	// SetViewerTagColorByName rejects non-members and temporary boards.
+	//
+	// KNOWN LIMITATION: a personal color preference is stored per backing tag row, and
+	// those rows are shared across the viewer's other projects, so this write can change
+	// what the viewer sees elsewhere. Only the current project gets a refresh event; the
+	// viewer's other boards pick the new color up on their next load. This is deliberate:
+	// the change is invisible to every other member, so broadcasting refreshes to their
+	// boards would be pure noise.
 	if len(rest) == 4 && rest[1] == "tags" && rest[3] == "color" && r.Method == http.MethodPatch {
-		writeValidationError(w, "name-based color update not allowed for durable projects; use /tags/id/{tagId}/color", "name_based_tag_route_not_allowed", nil)
+		ctx := s.requestContext(r)
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return true
+		}
+		tagName := rest[2]
+		var in struct {
+			Color *string `json:"color"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return true
+		}
+		if err := s.store.SetViewerTagColorByName(ctx, projectID, userID, tagName, in.Color); err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated")
+		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
 
@@ -493,17 +525,35 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid tagId", "invalid_tag_id", map[string]any{"field": "tagId"})
 			return true
 		}
-		if err := s.store.DeleteTag(ctx, userID, tagID, false); err != nil {
+		affected, err := s.store.DeleteTagForDurableProjectByID(ctx, projectID, userID, tagID)
+		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_deleted")
+		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected)
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
 
+	// DELETE /api/projects/{id}/tags/{name} - delete only the caller's own personal
+	// tag rows for this canonical name. The grouped label may remain if other members
+	// still use the name. Refreshes every project affected by the (cross-project) delete.
+	// DeleteMyTagByName rejects non-members and temporary boards.
 	if len(rest) == 3 && rest[1] == "tags" && r.Method == http.MethodDelete {
-		writeValidationError(w, "name-based delete not allowed for durable projects; use /tags/id/{tagId}", "name_based_tag_route_not_allowed", nil)
+		ctx := s.requestContext(r)
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return true
+		}
+		tagName := rest[2]
+		affected, err := s.store.DeleteMyTagByName(ctx, projectID, userID, tagName)
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected)
+		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
 

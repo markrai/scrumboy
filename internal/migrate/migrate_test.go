@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -243,6 +244,7 @@ func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 		"idx_projects_slug_production",
 		"idx_todos_project_local_id",
 		"idx_todos_project_column_key_rank_id",
+		"idx_todos_project_column_key_created_at",
 	} {
 		if !indexExists(t, sqlDB, index) {
 			t.Fatalf("expected index %s to exist", index)
@@ -256,6 +258,81 @@ func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 		if !triggerExists(t, sqlDB, trigger) {
 			t.Fatalf("expected trigger %s to exist", trigger)
 		}
+	}
+}
+
+func TestChronologicalTodoIndexSupportsLaneOrder(t *testing.T) {
+	sqlDB := openMigratedDB(t)
+
+	rows, err := sqlDB.Query(`PRAGMA index_info(idx_todos_project_column_key_created_at)`)
+	if err != nil {
+		t.Fatalf("PRAGMA index_info: %v", err)
+	}
+	var columns []string
+	for rows.Next() {
+		var seqNo, columnID int
+		var name string
+		if err := rows.Scan(&seqNo, &columnID, &name); err != nil {
+			_ = rows.Close()
+			t.Fatalf("scan index_info: %v", err)
+		}
+		columns = append(columns, name)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("close index_info rows: %v", err)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("index_info rows: %v", err)
+	}
+	wantColumns := []string{"project_id", "column_key", "created_at"}
+	if !reflect.DeepEqual(columns, wantColumns) {
+		t.Fatalf("index columns = %v, want %v", columns, wantColumns)
+	}
+
+	for _, tc := range []struct {
+		name  string
+		order string
+		op    string
+	}{
+		{name: "oldest", order: "ASC", op: ">"},
+		{name: "newest", order: "DESC", op: "<"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := `
+EXPLAIN QUERY PLAN
+SELECT t.id
+FROM todos t
+WHERE t.project_id = ? AND t.column_key = ?
+  AND (t.created_at, t.id) ` + tc.op + ` (?, ?)
+ORDER BY t.created_at ` + tc.order + `, t.id ` + tc.order + `
+LIMIT ?`
+			planRows, err := sqlDB.Query(query, 1, "backlog", 0, 0, 21)
+			if err != nil {
+				t.Fatalf("EXPLAIN QUERY PLAN: %v", err)
+			}
+			defer planRows.Close()
+
+			usedChronologicalIndex := false
+			for planRows.Next() {
+				var id, parent, notUsed int
+				var detail string
+				if err := planRows.Scan(&id, &parent, &notUsed, &detail); err != nil {
+					t.Fatalf("scan query plan: %v", err)
+				}
+				if strings.Contains(detail, "idx_todos_project_column_key_created_at") {
+					usedChronologicalIndex = true
+				}
+				if strings.Contains(detail, "USE TEMP B-TREE FOR ORDER BY") {
+					t.Fatalf("chronological lane query requires temporary ORDER BY sort: %s", detail)
+				}
+			}
+			if err := planRows.Err(); err != nil {
+				t.Fatalf("query plan rows: %v", err)
+			}
+			if !usedChronologicalIndex {
+				t.Fatal("chronological lane query did not use idx_todos_project_column_key_created_at")
+			}
+		})
 	}
 }
 
