@@ -3303,7 +3303,7 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(5, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -3311,6 +3311,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   user-select: none;
   touch-action: manipulation;
   gap: var(--s-12);
+}
+
+@media (min-width: 1301px) {
+  .board.board--wrapped {
+    grid-template-columns: repeat(var(--board-wrap-cols), minmax(200px, 1fr));
+  }
 }
 
 .col {

@@ -383,3 +383,90 @@ describe('router cold-start boardData handoff', () => {
     expect(opts?.prefetchedBoard).toEqual(staleBoard);
   });
 });
+
+describe('router wrap lanes hydration', () => {
+  function userBob() {
+    return {
+      id: 8,
+      email: 'bob@example.com',
+      name: 'Bob',
+      isBootstrap: false,
+      systemRole: 'user',
+      twoFactorEnabled: false,
+    };
+  }
+
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, wrapLanesValue: string): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=wrapLanes')) {
+        return { value: wrapLanesValue };
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('resets stale local true when signed-in server preference is missing', async () => {
+    const prefs = await import('./core/wrap-lanes-preferences.js');
+    localStorage.setItem(prefs.WRAP_LANES_STORAGE_KEY, 'true');
+    installSignedInAuth(userBob(), '');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(prefs.getWrapLanesPreference()).toBe(false);
+  });
+
+  it('does not carry wrap lanes from user A to user B on login', async () => {
+    const prefs = await import('./core/wrap-lanes-preferences.js');
+    localStorage.setItem(prefs.WRAP_LANES_STORAGE_KEY, 'true');
+    installSignedInAuth(userStatus(), 'true');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getWrapLanesPreference()).toBe(true);
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userBob(), '');
+    await mod.router();
+
+    expect(prefs.getWrapLanesPreference()).toBe(false);
+  });
+});

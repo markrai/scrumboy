@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.28.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
 
+## [3.28.4] - 2026-07-28
+
+### Added
+
+- **Wrap lanes into rows** - Settings → Customization gains an opt-in Wrap lanes into rows toggle (off by default). On wide screens (≥1301px), boards with more than five lanes split into two equal rows of `⌊n / 2⌋` columns (for example 8 → 4+4, 10 → 5+5); an odd leftover lane sits alone on a third row at normal width. Signed-in users sync via `/api/user/preferences`; hydration resets to off before applying the server value so a previous browser user's local preference cannot leak across accounts. Anonymous users keep the choice in localStorage only. Tablet/mobile board layout is unchanged.
+
+### Fixed
+
+- **Board columns fill width when fewer than five lanes (PR #201)** - `.board` used a hardcoded five-column grid, so workflows with fewer lanes left empty tracks on the right. Switched to `auto-fit` so existing columns stretch to fill the row.
+
 ## [3.28.3] - 2026-07-28
 
 ### Added

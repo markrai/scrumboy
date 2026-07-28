@@ -10,6 +10,7 @@ import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js'
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
+import { loadWrapLanesPreferenceFromServer, WRAP_LANES_PREFERENCE_KEY, } from './core/wrap-lanes-preferences.js';
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
 let isRouting = false;
@@ -203,6 +204,7 @@ async function routeOnceBody() {
             catch (err) {
                 // Ignore errors
             }
+            await loadWrapLanesPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`));
             // Load email notification preferences
             await loadUserEmailNotifyPref();
         }

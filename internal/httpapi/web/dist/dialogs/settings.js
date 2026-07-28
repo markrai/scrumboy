@@ -16,6 +16,7 @@ import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getReso
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, getDesktopNotificationStatusKind, } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { getWrapLanesPreference, setWrapLanesPreference, syncOpenBoardWrapLanesClass, } from '../core/wrap-lanes-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref } from '../core/email-notify-preferences.js';
 import { bindWorkflowTabInteractions, clearWorkflowDraftState, invalidateWorkflowLaneCountsCache, isWorkflowDraftDirty, loadWorkflowTabContent, resetWorkflowDraftToBaseline, } from './settings-workflow.js';
 import { bindTagTabInteractions, invalidateTagsCache as invalidateTagSettingsCache, loadTagSettingsContent, } from './settings-tags.js';
@@ -1452,6 +1453,16 @@ export async function renderSettingsModal(options) {
         ${!getUser() ? `<p class="muted" style="margin-top:10px;font-size:13px;" data-i18n-text="settings.customization.cardsPerLane.signInHint">Sign in to save this preference.</p>` : ""}
       </div>
     `;
+    const wrapLanesSectionHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.customization.wrapLanes.title">Wrap lanes into rows</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.wrapLanes.description">On wide screens, boards with more than five lanes split into two equal rows; a leftover odd lane sits alone on the next row.</div>
+        <label class="row" style="align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="wrapLanesToggle" ${getWrapLanesPreference() ? "checked" : ""} />
+          <span data-i18n-text="settings.customization.wrapLanes.toggleLabel">Wrap lanes into rows</span>
+        </label>
+      </div>
+    `;
     let pushPwaDisabledNoticeKey = "";
     let pushPwaDisabledNoticeText = "";
     if (!pushVapidServerReady) {
@@ -1555,6 +1566,7 @@ export async function renderSettingsModal(options) {
       </div>
       ${wallpaperSectionHTML}
       ${cardsPerLaneSectionHTML}
+      ${wrapLanesSectionHTML}
       ${getAuthStatusAvailable() ? renderVoiceFlowCustomizationHTML() : ""}
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.customization.notifications.title">Desktop notifications</div>
@@ -2118,6 +2130,13 @@ export async function renderSettingsModal(options) {
             voiceFlowEnabledToggle.addEventListener("change", () => {
                 setVoiceFlowEnabledPreference(voiceFlowEnabledToggle.checked);
                 emit("voiceflow:enabled-changed", voiceFlowEnabledToggle.checked);
+            }, { signal });
+        }
+        const wrapLanesToggle = document.getElementById("wrapLanesToggle");
+        if (wrapLanesToggle) {
+            wrapLanesToggle.addEventListener("change", () => {
+                setWrapLanesPreference(wrapLanesToggle.checked);
+                syncOpenBoardWrapLanesClass();
             }, { signal });
         }
         const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
