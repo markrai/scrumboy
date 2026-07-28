@@ -85,20 +85,14 @@ describe('board-refresh orchestration', () => {
     expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, 'oldest');
   });
 
-  it('defaults the lane limit floor to 20 and lets setDefaultCardsPerLane change it', async () => {
+  it('setDefaultCardsPerLane clears any elevated floor slug so the new default applies immediately', async () => {
     const mod = await import('./board-refresh.js');
 
-    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(20);
-    expect(mod.getDefaultCardsPerLane()).toBe(20);
+    mod.setBoardLimitPerLaneFloor(90, 'alpha');
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(90);
 
     mod.setDefaultCardsPerLane(50);
     expect(mod.getDefaultCardsPerLane()).toBe(50);
-    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(50);
-
-    // resetBoardLimitPerLaneFloor should return to the user's default, not the hardcoded 20.
-    mod.setBoardLimitPerLaneFloor(90, 'alpha');
-    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(90);
-    mod.resetBoardLimitPerLaneFloor();
     expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(50);
   });
 

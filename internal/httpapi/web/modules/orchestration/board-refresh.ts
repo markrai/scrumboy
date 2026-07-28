@@ -20,6 +20,8 @@ let defaultCardsPerLane = CARDS_PER_LANE_DEFAULT;
 let boardLimitPerLaneFloor = defaultCardsPerLane;
 /** Board that raised the floor; cross-board loads must ignore a stale elevated floor. */
 let boardLimitPerLaneFloorSlug: string | null = null;
+/** When true, the next board fetch uses the preference baseline (ignores on-screen DOM size). */
+let forcePreferenceLimitOnce = false;
 
 /** Coalesce rapid invalidates (e.g. resume resync + SSE-driven refresh) to reduce duplicate fetches. */
 const INVALIDATE_COALESCE_MS = 700;
@@ -81,7 +83,26 @@ export function resetBoardLimitPerLaneFloor() {
 export function setDefaultCardsPerLane(n: number): void {
   if (!Number.isFinite(n)) return;
   defaultCardsPerLane = normalizeCardsPerLane(n);
+  // Reset floor to the new default so subsequent loads/prefetches use it immediately
+  // (do not keep a prior board's elevated floor after the preference changes).
   boardLimitPerLaneFloor = defaultCardsPerLane;
+  boardLimitPerLaneFloorSlug = null;
+}
+
+/**
+ * Make the next board request use {@link getDefaultCardsPerLane} as the limit,
+ * ignoring on-screen "Load more" DOM size. Used after the cards-per-lane preference
+ * changes so decreasing the default can shrink the visible page again.
+ */
+export function usePreferenceLimitOnNextBoardRequest(): void {
+  forcePreferenceLimitOnce = true;
+}
+
+/** Consume and return whether the next board fetch should force the preference baseline. */
+export function consumeForcePreferenceLimit(): boolean {
+  if (!forcePreferenceLimitOnce) return false;
+  forcePreferenceLimitOnce = false;
+  return true;
 }
 
 export function getDefaultCardsPerLane(): number {

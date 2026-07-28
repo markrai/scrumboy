@@ -50,7 +50,7 @@ import {
   buildMobileTabsInnerHtml,
   mobileLaneTabStyleAttrForHtml,
 } from './mobile-lane-tabs.js';
-import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane } from '../orchestration/board-refresh.js';
+import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
 import { normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import {
@@ -262,6 +262,7 @@ export function getRequestedBoardLimitPerLane(forSlug?: string | null): number {
   // When forSlug is provided (loadBoardBySlug), also require it to match so a
   // stale invalidate for another board cannot reuse the current board's DOM size.
   const baseline = getDefaultCardsPerLane();
+  if (consumeForcePreferenceLimit()) return baseline;
   const currentBoard = getBoard();
   if (!currentBoard || currentBoard.project?.slug !== getSlug()) return baseline;
   if (forSlug != null && forSlug !== "" && currentBoard.project?.slug !== forSlug) return baseline;

@@ -9,6 +9,8 @@ import {
   CARDS_PER_LANE_PREFERENCE_KEY,
   getDefaultCardsPerLane,
   setDefaultCardsPerLane,
+  invalidateBoard,
+  usePreferenceLimitOnNextBoardRequest,
 } from '../orchestration/board-refresh.js';
 import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
@@ -17,6 +19,8 @@ import {
   getTag, 
   getSearch,
   getSprintIdFromUrl,
+  getAssigneeFromUrl,
+  getSortFromUrl,
   getBoard,
   getProjectId, 
   getProjects, 
@@ -2181,6 +2185,19 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         setDefaultCardsPerLane(next);
         saved = true;
         clearBoardPrefetchCache();
+        // Apply immediately on the open board (and on next F5 via preference hydration).
+        const slug = getSlug();
+        if (slug) {
+          usePreferenceLimitOnNextBoardRequest();
+          void invalidateBoard(
+            slug,
+            getTag(),
+            getSearch(),
+            getSprintIdFromUrl(),
+            getAssigneeFromUrl(),
+            getSortFromUrl(),
+          );
+        }
         showToast(t("settings.customization.cardsPerLane.toast.updated"));
       } catch (err: any) {
         showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.customization.cardsPerLane.toast.updateFailed" }));

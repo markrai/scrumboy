@@ -7,6 +7,7 @@ const {
   loadTagSettingsContentMock,
   setDefaultCardsPerLaneMock,
   clearBoardPrefetchCacheMock,
+  invalidateBoardMock,
   defaultCardsPerLane,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
@@ -14,6 +15,7 @@ const {
   loadTagSettingsContentMock: vi.fn().mockResolvedValue(''),
   setDefaultCardsPerLaneMock: vi.fn(),
   clearBoardPrefetchCacheMock: vi.fn(),
+  invalidateBoardMock: vi.fn(),
   defaultCardsPerLane: { value: 20 },
 }));
 
@@ -102,12 +104,13 @@ vi.mock('./settings-sprints.js', () => ({
   renderSprintsTabContent: vi.fn().mockResolvedValue(''),
 }));
 vi.mock('../orchestration/board-refresh.js', () => ({
-  invalidateBoard: vi.fn(),
+  invalidateBoard: invalidateBoardMock,
   refreshSprintsAndChips: vi.fn(),
   CARDS_PER_LANE_ALLOWED: [20, 50, 100],
   CARDS_PER_LANE_PREFERENCE_KEY: 'cardsPerLane',
   getDefaultCardsPerLane: () => defaultCardsPerLane.value,
   setDefaultCardsPerLane: setDefaultCardsPerLaneMock,
+  usePreferenceLimitOnNextBoardRequest: vi.fn(),
 }));
 vi.mock('../views/board-prefetch-cache.js', () => ({
   clearBoardPrefetchCache: clearBoardPrefetchCacheMock,
@@ -134,7 +137,7 @@ function cardsPerLanePutCalls(): unknown[][] {
   );
 }
 
-async function renderCustomizationSettings() {
+async function renderCustomizationSettings(opts?: { slug?: string | null }) {
   const settings = await import('./settings.js');
   const state = await import('../state/mutations.js');
   state.setAuthStatusAvailable(true);
@@ -146,8 +149,8 @@ async function renderCustomizationSettings() {
     name: 'User',
     systemRole: 'user',
   } as any);
-  state.setSlug(null);
-  state.setBoard(null);
+  state.setSlug(opts?.slug ?? null);
+  state.setBoard(opts?.slug ? { project: { slug: opts.slug } } as any : null);
   state.setProjects(null);
   state.setProjectId(null);
   state.setSettingsProjectId(null);
@@ -169,6 +172,7 @@ describe('settings cards per lane', () => {
       defaultCardsPerLane.value = n;
     });
     clearBoardPrefetchCacheMock.mockReset();
+    invalidateBoardMock.mockReset();
   });
 
   afterEach(() => {
@@ -201,8 +205,20 @@ describe('settings cards per lane', () => {
     ]);
     expect(setDefaultCardsPerLaneMock).toHaveBeenCalledWith(50);
     expect(clearBoardPrefetchCacheMock).toHaveBeenCalledTimes(1);
+    expect(invalidateBoardMock).not.toHaveBeenCalled();
     expect(select.value).toBe('50');
     expect(select.disabled).toBe(false);
+  });
+
+  it('reloads the open board after a successful preference change', async () => {
+    apiFetchMock.mockResolvedValue({ ok: true });
+    await renderCustomizationSettings({ slug: 'alpha' });
+    const select = document.getElementById('cardsPerLaneSelect') as HTMLSelectElement;
+    select.value = '50';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.waitFor(() => expect(invalidateBoardMock).toHaveBeenCalled());
+
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', '', '', null, null, null);
   });
 
   it('restores the previous value when save fails', async () => {

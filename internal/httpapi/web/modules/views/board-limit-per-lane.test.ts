@@ -95,6 +95,7 @@ vi.mock("../orchestration/board-refresh.js", () => ({
   getDefaultCardsPerLane: () => defaultCardsPerLane.value,
   getBoardLimitPerLaneFloor: vi.fn((forSlug: string) => floorBySlug.value[forSlug] ?? defaultCardsPerLane.value),
   resetBoardLimitPerLaneFloor: vi.fn(),
+  consumeForcePreferenceLimit: () => false,
 }));
 vi.mock("../sprints.js", () => ({ normalizeSprints: vi.fn((r: any) => r) }));
 vi.mock("../events.js", () => ({ on: vi.fn(), off: vi.fn() }));

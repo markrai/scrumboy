@@ -10,7 +10,7 @@
 
 ### Fixed
 
-- **Cards-per-lane client consistency** - Board request baselines use the saved preference instead of a hard-coded `20`. Preference saves apply only after a successful PUT (revert on failure; disable while saving). Changing the preference clears Projects board prefetch caches so a later open does not reuse a stale smaller payload.
+- **Cards-per-lane client consistency** - Board request baselines use the saved preference instead of a hard-coded `20`. Preference saves apply only after a successful PUT (revert on failure; disable while saving), clear Projects board prefetch caches (ignoring late in-flight completions), and reload the open board so the new default is visible without a manual refresh.
 
 ## [3.28.2] - 2026-07-27
 

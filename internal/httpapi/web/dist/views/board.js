@@ -14,7 +14,7 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
 import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
 import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, mobileLaneTabStyleAttrForHtml, } from './mobile-lane-tabs.js';
-import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane } from '../orchestration/board-refresh.js';
+import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
 import { normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
@@ -178,6 +178,8 @@ export function getRequestedBoardLimitPerLane(forSlug) {
     // When forSlug is provided (loadBoardBySlug), also require it to match so a
     // stale invalidate for another board cannot reuse the current board's DOM size.
     const baseline = getDefaultCardsPerLane();
+    if (consumeForcePreferenceLimit())
+        return baseline;
     const currentBoard = getBoard();
     if (!currentBoard || currentBoard.project?.slug !== getSlug())
         return baseline;
