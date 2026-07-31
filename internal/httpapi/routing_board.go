@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/store"
 )
 
@@ -673,8 +674,19 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "missing toColumnKey", "missing_to_column_key", map[string]any{"field": "toColumnKey"})
 			return true
 		}
-		// Interpret afterId/beforeId as localIds for this project.
-		todo, err := s.store.MoveTodoByLocalID(s.requestContext(r), project.ID, localID, toColumnKey, in.AfterID, in.BeforeID, s.storeMode())
+		// Interpret afterId/beforeId as localIds for this project. The shared
+		// board router already resolved access, so prepare from that value instead
+		// of repeating the slug lookup.
+		prepared := s.todoMoves.Prepare(s.requestContext(r), todoapp.ResolvedMoveTarget{
+			ProjectContext: *pc,
+			Mode:           s.storeMode(),
+		})
+		result, err := prepared.Move(todoapp.MoveCommand{
+			LocalID:       localID,
+			ToColumnKey:   toColumnKey,
+			AfterLocalID:  in.AfterID,
+			BeforeLocalID: in.BeforeID,
+		})
 		if err != nil {
 			if errors.Is(err, store.ErrUnauthorized) {
 				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
@@ -683,8 +695,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_moved")
-		writeJSON(w, http.StatusOK, todoToJSON(todo))
+		writeJSON(w, http.StatusOK, todoToJSON(result.Todo))
 		return true
 	}
 

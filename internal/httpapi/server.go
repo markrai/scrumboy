@@ -12,6 +12,7 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
@@ -94,6 +95,7 @@ type Options struct {
 type Server struct {
 	store      storeAPI
 	boardReads *boardapp.ReadService
+	todoMoves  *todoapp.MoveService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -277,7 +279,7 @@ type storeAPI interface {
 	UpdateTodoByLocalID(ctx context.Context, projectID, localID int64, in store.UpdateTodoInput, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
-	MoveTodoByLocalID(ctx context.Context, projectID, localID int64, toColumnKey string, afterLocalID, beforeLocalID *int64, mode store.Mode) (store.Todo, error)
+	todoapp.MoveStore
 	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
 	RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, mode store.Mode) error
 	ListLinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
@@ -509,7 +511,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		publicOrigin = publicorigin.New(publicBaseURL, opts.TrustProxy)
 	}
 
-	return &Server{
+	server := &Server{
 		store: st,
 		boardReads: boardapp.NewReadService(boardapp.ReadServiceDependencies{
 			Initial:      st,
@@ -574,6 +576,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
+	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
+		Move: st,
+		Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+			server.emitRefreshNeeded(ctx, projectID, reason)
+		}),
+	})
+	return server
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

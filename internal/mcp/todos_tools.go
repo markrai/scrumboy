@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/store"
 )
 
@@ -370,50 +371,64 @@ func (a *Adapter) handleTodosMove(ctx context.Context, input any) (any, map[stri
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "beforeLocalId cannot equal localId", map[string]any{"field": "beforeLocalId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoMoves.Prepare(ctx, todoapp.SlugMoveTarget{
+		Slug: in.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
-
-	movingTodo, getErr := a.store.GetTodoByLocalID(ctx, pc.Project.ID, in.LocalID, a.storeMode())
-	if getErr != nil {
-		if errors.Is(getErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(getErr)
-	}
-
 	toColumnKey := normalizeColumnKey(in.ToColumnKey)
-	if toColumnKey == "" {
-		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing toColumnKey", map[string]any{"field": "toColumnKey"})
-	}
-
-	afterTodo, err := a.resolveLocalTodoForColumn(ctx, pc.Project.ID, in.AfterLocalId, "afterLocalId", a.storeMode(), toColumnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	beforeTodo, err := a.resolveLocalTodoForColumn(ctx, pc.Project.ID, in.BeforeLocalId, "beforeLocalId", a.storeMode(), toColumnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := a.validateMoveAnchors(ctx, pc.Project.ID, toColumnKey, afterTodo, beforeTodo, a.storeMode()); err != nil {
-		return nil, nil, err
-	}
-
-	todo, moveErr := a.store.MoveTodoByLocalID(ctx, pc.Project.ID, movingTodo.LocalID, toColumnKey, in.AfterLocalId, in.BeforeLocalId, a.storeMode())
+	result, moveErr := prepared.Move(todoapp.MoveCommand{
+		LocalID:       in.LocalID,
+		ToColumnKey:   toColumnKey,
+		AfterLocalID:  in.AfterLocalId,
+		BeforeLocalID: in.BeforeLocalId,
+	})
 	if moveErr != nil {
-		if errors.Is(moveErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		if errors.Is(moveErr, store.ErrNotFound) && (in.AfterLocalId != nil || in.BeforeLocalId != nil) {
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid neighbor reference", map[string]any{})
-		}
-		return nil, nil, mapStoreError(moveErr)
+		return nil, nil, mapMCPMoveError(moveErr)
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, todo),
+		"todo": todoToItem(in.ProjectSlug, result.Todo),
 	}, map[string]any{}, nil
+}
+
+func mapMCPMoveError(err error) *adapterError {
+	var anchorReadErr *todoapp.MCPMoveAnchorReadError
+	if errors.As(err, &anchorReadErr) {
+		return mapStoreError(anchorReadErr.Err)
+	}
+
+	var validationErr *todoapp.MCPMoveValidationError
+	if errors.As(err, &validationErr) {
+		details := map[string]any{}
+		if validationErr.Field != "" {
+			details["field"] = validationErr.Field
+		}
+		if validationErr.HasLocalID {
+			details["localId"] = validationErr.LocalID
+		}
+
+		switch validationErr.Kind {
+		case todoapp.MCPMoveMissingColumn:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "missing toColumnKey", details)
+		case todoapp.MCPMoveInvalidLocalReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", details)
+		case todoapp.MCPMoveReferenceInWrongColumn:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", details)
+		case todoapp.MCPMoveAmbiguousAfterReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "afterLocalId is ambiguous unless it is already the last item in the target column", details)
+		case todoapp.MCPMoveAmbiguousBeforeReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "beforeLocalId is ambiguous unless it is already the first item in the target column", details)
+		case todoapp.MCPMoveInvalidNeighbor:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid neighbor reference", details)
+		}
+	}
+	if errors.Is(err, store.ErrUnauthorized) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return mapStoreError(err)
 }
 
 func buildUpdateTodoInput(existing store.Todo, patchRaw json.RawMessage) (store.UpdateTodoInput, bool, *adapterError) {
@@ -600,35 +615,6 @@ func (a *Adapter) resolveLocalTodoForColumn(ctx context.Context, projectID int64
 		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", map[string]any{"field": field, "localId": *localID})
 	}
 	return &todo, nil
-}
-
-func (a *Adapter) validateMoveAnchors(ctx context.Context, projectID int64, columnKey string, afterTodo, beforeTodo *store.Todo, mode store.Mode) *adapterError {
-	// One-sided anchors are intentionally stricter than the raw store API here.
-	// The backend rank logic can place "after X" or "before Y" non-adjacently when
-	// there are additional todos on the far side, so MCP only accepts anchors that
-	// are already at the boundary of the target column.
-	if afterTodo != nil {
-		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, afterTodo.Rank, afterTodo.ID, "", "", store.AssigneeFilter{}, store.SprintFilter{}, store.SortOrderDefault)
-		if err != nil {
-			return mapStoreError(err)
-		}
-		if len(items) > 0 {
-			return newAdapterError(http.StatusBadRequest, CodeValidationError, "afterLocalId is ambiguous unless it is already the last item in the target column", map[string]any{"field": "afterLocalId", "localId": afterTodo.LocalID})
-		}
-	}
-
-	if beforeTodo != nil {
-		const laneStartRank int64 = -1 << 63
-		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, laneStartRank, 0, "", "", store.AssigneeFilter{}, store.SprintFilter{}, store.SortOrderDefault)
-		if err != nil {
-			return mapStoreError(err)
-		}
-		if len(items) > 0 && items[0].LocalID != beforeTodo.LocalID {
-			return newAdapterError(http.StatusBadRequest, CodeValidationError, "beforeLocalId is ambiguous unless it is already the first item in the target column", map[string]any{"field": "beforeLocalId", "localId": beforeTodo.LocalID})
-		}
-	}
-
-	return nil
 }
 
 func todoToItem(projectSlug string, todo store.Todo) todoItem {
