@@ -7,6 +7,34 @@ import (
 	"scrumboy/internal/store"
 )
 
+func TestBuildUpdateTodoInput_patchSprintId_omittedDoesNotRequestSprintMutation(t *testing.T) {
+	t.Parallel()
+	previousSprintID := int64(99)
+	existing := store.Todo{
+		Title:    "before",
+		Body:     "body",
+		Tags:     []string{},
+		SprintID: &previousSprintID,
+	}
+
+	in, changed, aerr := buildUpdateTodoInput(existing, json.RawMessage(`{"title":"after"}`))
+	if aerr != nil {
+		t.Fatalf("buildUpdateTodoInput: %v", aerr)
+	}
+	if !changed {
+		t.Fatal("expected changed=true")
+	}
+	if in.Title != "after" {
+		t.Fatalf("expected title update, got %q", in.Title)
+	}
+	if in.SprintID != nil {
+		t.Fatalf("omitted sprintId must not request a sprint update, got %#v", in.SprintID)
+	}
+	if in.ClearSprint {
+		t.Fatal("omitted sprintId must not request a sprint clear")
+	}
+}
+
 func TestBuildUpdateTodoInput_patchSprintId_assigns(t *testing.T) {
 	t.Parallel()
 	existing := store.Todo{

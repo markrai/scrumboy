@@ -708,7 +708,7 @@ func TestTodoUpdateMCPRoleAndModeContracts(t *testing.T) {
 	})
 }
 
-func TestTodoUpdateMCPTemporaryBoardSprintOmissionContract(t *testing.T) {
+func TestTodoUpdateMCPTemporaryBoardSprintOmissionPreservesSprint(t *testing.T) {
 	ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
 	defer cleanup()
 	ownerClient := newCookieClient(t, ts)
@@ -733,26 +733,31 @@ func TestTodoUpdateMCPTemporaryBoardSprintOmissionContract(t *testing.T) {
 	if _, err := db.Exec(`UPDATE todos SET updated_at = 1 WHERE id = ?`, todo.ID); err != nil {
 		t.Fatalf("set updated_at sentinel: %v", err)
 	}
+	stream := subscribeTodoUpdateMCPEvents(t, outsiderClient, ts.URL+"/api/board/"+project.Slug+"/events")
+	defer stream.close()
+	staleActivity := time.Now().UTC().Add(-6 * time.Minute).UnixMilli()
+	nearExpiry := time.Now().UTC().Add(24 * time.Hour).UnixMilli()
+	if _, err := db.Exec(`UPDATE projects SET last_activity_at = ?, expires_at = ? WHERE id = ?`, staleActivity, nearExpiry, project.ID); err != nil {
+		t.Fatalf("set deterministic activity baseline: %v", err)
+	}
 	var activityBefore, expiresBefore int64
 	if err := db.QueryRow(`SELECT last_activity_at, expires_at FROM projects WHERE id = ?`, project.ID).Scan(&activityBefore, &expiresBefore); err != nil {
 		t.Fatalf("read Temporary Board activity: %v", err)
 	}
 	auditsBefore := todoUpdateMCPAuditCount(t, db, todo.ID)
 	assignmentsBefore := todoUpdateMCPAssignmentCount(t, db, todo.ID)
-	stream := subscribeTodoUpdateMCPEvents(t, outsiderClient, ts.URL+"/api/board/"+project.Slug+"/events")
-	defer stream.close()
 
 	resp, out := callTodoUpdateMCP(t, outsiderClient, ts.URL, "legacy", "todos_update", map[string]any{
 		"projectSlug": project.Slug,
 		"localId":     todo.LocalID,
 		"patch":       map[string]any{"title": "scheduled after"},
 	})
-	if resp.StatusCode != http.StatusForbidden || out["ok"] != false {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("legacy /mcp status=%d response=%+v", resp.StatusCode, out)
 	}
-	errorBody := out["error"].(map[string]any)
-	if errorBody["code"] != "FORBIDDEN" || errorBody["message"] != "forbidden" {
-		t.Fatalf("sprint omission error=%+v", errorBody)
+	returned := assertTodoUpdateMCPSuccess(t, "legacy", out, project.Slug, todo.LocalID)
+	if returned["title"] != "scheduled after" || int64(returned["sprintId"].(float64)) != sprint.ID {
+		t.Fatalf("sprint omission response=%+v", returned)
 	}
 	var title string
 	var sprintID sql.NullInt64
@@ -763,14 +768,14 @@ func TestTodoUpdateMCPTemporaryBoardSprintOmissionContract(t *testing.T) {
 	if err := db.QueryRow(`SELECT last_activity_at, expires_at FROM projects WHERE id = ?`, project.ID).Scan(&activityAfter, &expiresAfter); err != nil {
 		t.Fatalf("read Temporary Board activity after update: %v", err)
 	}
-	if title != todo.Title || !sprintID.Valid || sprintID.Int64 != sprint.ID || updatedAt != 1 {
-		t.Fatalf("failed update committed: title=%q sprint=%+v updatedAt=%d", title, sprintID, updatedAt)
+	if title != "scheduled after" || !sprintID.Valid || sprintID.Int64 != sprint.ID || updatedAt <= 1 {
+		t.Fatalf("sparse update result: title=%q sprint=%+v updatedAt=%d", title, sprintID, updatedAt)
 	}
-	if todoUpdateMCPAuditCount(t, db, todo.ID) != auditsBefore || todoUpdateMCPAssignmentCount(t, db, todo.ID) != assignmentsBefore {
-		t.Fatalf("failed update changed domain rows: audits %d->%d assignments %d->%d", auditsBefore, todoUpdateMCPAuditCount(t, db, todo.ID), assignmentsBefore, todoUpdateMCPAssignmentCount(t, db, todo.ID))
+	if todoUpdateMCPAuditCount(t, db, todo.ID) != auditsBefore+1 || todoUpdateMCPAssignmentCount(t, db, todo.ID) != assignmentsBefore {
+		t.Fatalf("sparse update domain rows: audits %d->%d assignments %d->%d", auditsBefore, todoUpdateMCPAuditCount(t, db, todo.ID), assignmentsBefore, todoUpdateMCPAssignmentCount(t, db, todo.ID))
 	}
-	if activityAfter != activityBefore || expiresAfter != expiresBefore {
-		t.Fatalf("failed update changed activity: last_activity %d->%d expires %d->%d", activityBefore, activityAfter, expiresBefore, expiresAfter)
+	if activityAfter <= activityBefore || expiresAfter <= expiresBefore {
+		t.Fatalf("successful update did not refresh activity: last_activity %d->%d expires %d->%d", activityBefore, activityAfter, expiresBefore, expiresAfter)
 	}
 	assertNoTodoUpdateMCPEvents(t, collectTodoUpdateMCPEvents(t, stream))
 }

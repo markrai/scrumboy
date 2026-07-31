@@ -460,7 +460,6 @@ func buildUpdateTodoInput(existing store.Todo, patchRaw json.RawMessage) (store.
 		Tags:             cloneStrings(existing.Tags),
 		EstimationPoints: cloneInt64(existing.EstimationPoints),
 		AssigneeUserID:   cloneInt64(existing.AssigneeUserID),
-		SprintID:         cloneInt64(existing.SprintID),
 	}
 	changed := false
 
