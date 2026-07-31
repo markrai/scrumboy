@@ -184,7 +184,6 @@ func subscribeBoardEvents(t *testing.T, client *http.Client, eventsURL string) (
 			}
 
 			eventsCh <- event
-			return
 		}
 	}()
 
@@ -4641,6 +4640,7 @@ func TestBoardEvents_TodoMutationRefreshReasons(t *testing.T) {
 		name           string
 		trigger        func(t *testing.T, client *http.Client, baseURL, slug string, localID int64)
 		expectedReason string
+		assertSingle   bool
 	}{
 		{
 			name: "move",
@@ -4654,6 +4654,7 @@ func TestBoardEvents_TodoMutationRefreshReasons(t *testing.T) {
 				}
 			},
 			expectedReason: "todo_moved",
+			assertSingle:   true,
 		},
 		{
 			name: "delete",
@@ -4720,6 +4721,20 @@ func TestBoardEvents_TodoMutationRefreshReasons(t *testing.T) {
 				t.Fatalf("error reading sse event: %v", err)
 			case <-time.After(5 * time.Second):
 				t.Fatalf("timed out waiting for %s refresh event", tc.name)
+			}
+
+			if tc.assertSingle {
+				// The completed move response is the publication barrier: all
+				// synchronous refresh publishers have returned. Keep reading the
+				// live SSE stream briefly so duplicate route + application
+				// publication cannot hide behind the first expected event.
+				select {
+				case event := <-eventsCh:
+					t.Fatalf("expected exactly one non-ping move event, got an additional event: %+v", event)
+				case err := <-errCh:
+					t.Fatalf("board event stream ended while checking move cardinality: %v", err)
+				case <-time.After(250 * time.Millisecond):
+				}
 			}
 		})
 	}
