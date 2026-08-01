@@ -95,6 +95,7 @@ type Options struct {
 type Server struct {
 	store       storeAPI
 	boardReads  *boardapp.ReadService
+	todoCreates *todoapp.CreateService
 	todoMoves   *todoapp.MoveService
 	todoUpdates *todoapp.UpdateService
 
@@ -260,7 +261,6 @@ type storeAPI interface {
 	GetTagColor(ctx context.Context, userID int64, tagID int64) (*string, error)
 	DeleteTag(ctx context.Context, userID int64, tagID int64, isAnonymousBoard bool) error
 
-	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
 	CreateSprint(ctx context.Context, projectID int64, name string, plannedStartAt, plannedEndAt time.Time) (store.Sprint, error)
 	ListSprints(ctx context.Context, projectID int64) ([]store.Sprint, error)
 	HasSprints(ctx context.Context, projectID int64) (bool, error)
@@ -279,6 +279,7 @@ type storeAPI interface {
 	MoveTodo(ctx context.Context, todoID int64, toColumnKey string, afterID, beforeID *int64, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
+	todoapp.CreateStore
 	todoapp.UpdateStore
 	todoapp.MoveStore
 	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
@@ -579,6 +580,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	}
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
 		server.emitRefreshNeeded(ctx, projectID, reason)
+	})
+	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
+		Create:  st,
+		Refresh: boardRefreshPublisher,
 	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
 		Move:    st,

@@ -344,23 +344,28 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			columnKey = store.DefaultColumnBacklog
 		}
 
-		var afterID, beforeID *int64
+		position := todoapp.ResolvedCreatePosition{}
 		if in.Position != nil {
-			afterID = in.Position.AfterID
-			beforeID = in.Position.BeforeID
+			position.AfterTodoID = in.Position.AfterID
+			position.BeforeTodoID = in.Position.BeforeID
 		}
 
-		todo, err := s.store.CreateTodo(s.requestContext(r), project.ID, store.CreateTodoInput{
-			Title:            in.Title,
-			Body:             in.Body,
-			Tags:             in.Tags,
-			ColumnKey:        columnKey,
-			EstimationPoints: in.EstimationPoints,
-			SprintID:         in.SprintID,
-			AssigneeUserID:   in.AssigneeUserID,
-			AfterID:          afterID,
-			BeforeID:         beforeID,
-		}, s.storeMode())
+		prepared := s.todoCreates.Prepare(s.requestContext(r), todoapp.ResolvedCreateTarget{
+			ProjectContext: *pc,
+			Mode:           s.storeMode(),
+		})
+		result, err := prepared.Create(todoapp.CreateCommand{
+			Values: todoapp.CreateValues{
+				Title:            in.Title,
+				Body:             in.Body,
+				Tags:             in.Tags,
+				ColumnKey:        columnKey,
+				EstimationPoints: in.EstimationPoints,
+				AssigneeUserID:   in.AssigneeUserID,
+				SprintID:         in.SprintID,
+			},
+			Position: position,
+		})
 		if err != nil {
 			if errors.Is(err, store.ErrUnauthorized) {
 				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
@@ -369,10 +374,7 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			writeStoreErr(w, err, true)
 			return true
 		}
-		if !todo.AssignmentChanged {
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_created")
-		}
-		writeJSON(w, http.StatusCreated, todoToJSON(todo))
+		writeJSON(w, http.StatusCreated, todoToJSON(result.Todo))
 		return true
 	}
 
