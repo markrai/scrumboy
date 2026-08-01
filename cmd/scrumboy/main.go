@@ -122,7 +122,7 @@ func main() {
 		maxB = 1 << 20
 	}
 	publicOrigin := publicorigin.New(cfg.PublicBaseURL, cfg.TrustProxy)
-	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin})
+	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger})
 	srv := httpapi.NewServer(st, httpapi.Options{
 		Logger:               logger,
 		MaxRequestBody:       cfg.MaxRequestBodyBytes,

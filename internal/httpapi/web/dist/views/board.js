@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, renderAvatarContent, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
+import { escapeHTML, showToast, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { getAssigneeFromUrl, getBoard, getMobileTab, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
@@ -14,7 +14,7 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
 import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
 import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, mobileLaneTabStyleAttrForHtml, } from './mobile-lane-tabs.js';
-import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
+import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
 import { normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
@@ -26,6 +26,7 @@ export { notifySprintStateChanged } from './board-filters.js';
 import { attachBoardInteractionListeners, clearPendingRealtimeRefresh, connectBoardEvents, debugLog, disconnectBoardEvents, markBoardLoadSucceeded, runWhileTodoDialogOpening, setInitialBoardLoadInFlight, } from './board-realtime.js';
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { applyWrapLanesClass } from '../core/wrap-lanes-preferences.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -168,19 +169,26 @@ function resolveMobileTabKeyFromStorage(saved, cols) {
         return mapped;
     return null;
 }
-function hasActiveBoardSubsetFilter(tag, search, sprintId, assignee) {
-    return !!((tag && tag.trim() !== "")
-        || (search && search.trim() !== "")
-        || (sprintId && sprintId.trim() !== "")
-        || (assignee && assignee.trim() !== ""));
-}
-function getRequestedBoardLimitPerLane(tag, search, sprintId, assignee) {
-    if (!hasActiveBoardSubsetFilter(tag, search, sprintId, assignee))
-        return 20;
-    // Preserve the current filtered subset size across a drag-triggered refresh.
+export function getRequestedBoardLimitPerLane(forSlug) {
+    // Preserve the current on-screen lane size (e.g. cards revealed via "Load more")
+    // across a same-board refresh, filtered or not. getSlug() is updated by the router
+    // before the new board's data is requested, while getBoard() still holds the
+    // previously loaded board until the response arrives — comparing them tells us
+    // whether this request is a refresh of the currently displayed board or a
+    // navigation to a different one (which should fall back to the default).
+    // When forSlug is provided (loadBoardBySlug), also require it to match so a
+    // stale invalidate for another board cannot reuse the current board's DOM size.
+    const baseline = getDefaultCardsPerLane();
+    if (consumeForcePreferenceLimit())
+        return baseline;
+    const currentBoard = getBoard();
+    if (!currentBoard || currentBoard.project?.slug !== getSlug())
+        return baseline;
+    if (forSlug != null && forSlug !== "" && currentBoard.project?.slug !== forSlug)
+        return baseline;
     const counts = Array.from(document.querySelectorAll(".col__list"))
         .map((el) => el.querySelectorAll("[data-todo-local-id]").length);
-    return counts.length > 0 ? Math.max(20, ...counts) : 20;
+    return counts.length > 0 ? Math.max(baseline, ...counts) : baseline;
 }
 /** Cached members lookup; rebuilt when members change. Avoids repeated Object.fromEntries during render. */
 let membersByUserIdCache = {};
@@ -383,47 +391,6 @@ function attachBoardDelegationHandlers() {
         },
     });
 }
-/**
- * Patch assignee avatars into cards that were rendered without members.
- * Avoids full board rebuild when members arrive after first paint.
- * Call after setBoardMembers(members) so getMembersByUserId() returns the new lookup.
- */
-function hydrateAvatarsOnCards(members) {
-    const boardEl = document.querySelector(".board");
-    if (!boardEl)
-        return;
-    const cards = Array.from(boardEl.querySelectorAll("[data-assignee-user-id]"));
-    const toHydrate = cards.filter((c) => c.dataset.avatarHydrated !== "1");
-    if (toHydrate.length === 0)
-        return;
-    const membersByUserId = getMembersByUserId();
-    toHydrate.forEach((card) => {
-        const assigneeUserId = parseInt(card.getAttribute("data-assignee-user-id") ?? "", 10);
-        if (!Number.isFinite(assigneeUserId))
-            return;
-        const assignee = membersByUserId[assigneeUserId];
-        if (!assignee)
-            return;
-        const avatarHTML = `<div class="todo-avatar" title="${escapeHTML(assignee.name || assignee.email || '')}">${renderAvatarContent({ name: assignee.name, email: assignee.email, image: assignee.image })}</div>`;
-        const badges = card.querySelector(".card__badges");
-        if (badges) {
-            badges.insertAdjacentHTML("beforeend", avatarHTML);
-        }
-        else {
-            const footer = card.querySelector(".card__footer");
-            if (footer) {
-                footer.insertAdjacentHTML("beforeend", avatarHTML);
-            }
-            else {
-                const dragHandle = card.querySelector(".card__drag-handle");
-                if (dragHandle) {
-                    dragHandle.insertAdjacentHTML("afterend", `<div class="card__footer">${avatarHTML}</div>`);
-                }
-            }
-        }
-        card.dataset.avatarHydrated = "1";
-    });
-}
 function openTodoFromCard(todo) {
     void runWhileTodoDialogOpening(() => openTodoDialog({ mode: "edit", todo, onNavigateToLinkedTodo: navigate, role: currentUserProjectRole })).catch((err) => {
         console.warn("Failed to open todo dialog:", err?.message || err);
@@ -482,7 +449,11 @@ async function handleLoadMore(status) {
             const membersByUserId = getMembersByUserId();
             const tagColors = getTagColors();
             const showPointsMode = isModifiedFibonacciModeEnabled();
-            const cardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+            const cardOpts = {
+                tagColors,
+                showPointsMode,
+                selectedIds: getSelectedTodoIds(),
+            };
             items.forEach((t) => {
                 const card = document.createElement("div");
                 card.innerHTML = renderTodoCard(t, columnColor, membersByUserId, cardOpts);
@@ -788,7 +759,11 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort) {
         }
         const boardCols = getBoardColumns(board);
         setDnDColumns(boardCols.map((c) => ({ key: c.key, title: c.title, color: c.color })));
-        const cardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+        const cardOpts = {
+            tagColors,
+            showPointsMode,
+            selectedIds: getSelectedTodoIds(),
+        };
         boardEl.innerHTML = buildBoardColumnsHtml({
             boardCols,
             board,
@@ -798,6 +773,7 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort) {
             membersByUserId,
             cardOpts,
         });
+        applyWrapLanesClass(boardEl, boardCols.length);
         // Add "No results" state if search is active and no todos match
         if (search && search.trim() !== "") {
             const totalTodos = Object.values(board.columns).reduce((sum, todos) => sum + todos.length, 0);
@@ -901,7 +877,11 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     });
     const membersByUserId = getMembersByUserId();
     const showPointsMode = isModifiedFibonacciModeEnabled();
-    const cardOpts = { tagColors, showPointsMode, selectedIds: getSelectedTodoIds() };
+    const cardOpts = {
+        tagColors,
+        showPointsMode,
+        selectedIds: getSelectedTodoIds(),
+    };
     app.innerHTML = `
     <div class="page">
       ${topbarHTML}
@@ -942,6 +922,9 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
       </div>
     </div>
   `;
+    const boardRoot = document.querySelector(".board");
+    if (boardRoot)
+        applyWrapLanesClass(boardRoot, boardCols.length);
     // Only attach event listeners for elements that exist (anonymous mode omits some)
     const brandLink = document.getElementById("brandLink");
     if (brandLink && !brandLink[BOUND_FLAG]) {
@@ -1540,7 +1523,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     resetBoardFilterUiState();
     lastUpdateBoardContentBoard = null;
     const params = new URLSearchParams();
-    params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(requestTag, requestSearch, requestSprintId, requestAssignee), getBoardLimitPerLaneFloor())));
+    params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(slug), getBoardLimitPerLaneFloor(slug))));
     if (tag)
         params.set("tag", tag);
     if (search)
@@ -1605,8 +1588,6 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     if (!rendered)
         return;
     debugLog("loadBoardBySlug end (success)", slug);
-    // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
-    // No need to call hydrateAvatarsOnCards() here.
     if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
         setSprintChipDataForSlug(slug, null);
         apiFetch(`/api/board/${slug}/sprints`)
@@ -1749,8 +1730,6 @@ export async function renderBoard(slug, tag, search, sprintId, assignee = null, 
             return;
         if (getSlug() === slug)
             connectBoardEvents(slug);
-        // Note: Avatars are already rendered in renderTodoCard() since members were fetched before rendering.
-        // No need to call hydrateAvatarsOnCards() here.
         if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
             setSprintChipDataForSlug(slug, null);
             apiFetch(`/api/board/${slug}/sprints`)

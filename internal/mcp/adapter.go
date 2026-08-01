@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
+	boardapp "scrumboy/internal/application/board"
 	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
 )
@@ -81,13 +84,16 @@ type storeAPI interface {
 type Options struct {
 	Mode         string
 	PublicOrigin *publicorigin.Resolver
+	Logger       *log.Logger
 }
 
 type Adapter struct {
 	store        storeAPI
+	boardReads   *boardapp.MCPBoardReadService
 	mode         string
 	tools        toolRegistry
 	publicOrigin *publicorigin.Resolver
+	logger       *log.Logger
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -99,15 +105,41 @@ func New(st storeAPI, opts Options) *Adapter {
 	if resolver == nil {
 		resolver = publicorigin.New("", false)
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = log.New(io.Discard, "", 0)
+	}
 
 	a := &Adapter{
-		store:        st,
+		store: st,
+		boardReads: boardapp.NewMCPBoardReadService(boardapp.MCPBoardReadServiceDependencies{
+			Access:   st,
+			Sprints:  st,
+			Workflow: st,
+			Lanes:    st,
+			Activity: st,
+			ReportActivityRefreshFailure: func(_ context.Context, projectID int64, err error) {
+				logger.Printf("mcp: board activity refresh failed project_id=%d: %v", projectID, err)
+			},
+		}),
 		mode:         mode,
 		tools:        make(toolRegistry),
 		publicOrigin: resolver,
+		logger:       logger,
 	}
 	a.registerTools()
 	return a
+}
+
+func (a *Adapter) logAdapterError(transport, tool string, err *adapterError) {
+	if err == nil || err.Code != CodeInternal {
+		return
+	}
+	if err.Cause != nil {
+		a.logger.Printf("mcp: internal error transport=%s tool=%s: %v", transport, tool, err.Cause)
+		return
+	}
+	a.logger.Printf("mcp: internal error transport=%s tool=%s: %s", transport, tool, err.Message)
 }
 
 // parseBearerAuthorization parses Authorization: Bearer. The credential is the segment after the first

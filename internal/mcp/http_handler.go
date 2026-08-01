@@ -13,7 +13,9 @@ import (
 func (a *Adapter) resolveAndValidateAuth(w http.ResponseWriter, r *http.Request) (ctx context.Context, ok bool) {
 	authRes := a.resolveRequestAuth(r, false)
 	if authRes.Err != nil {
-		writeError(w, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": authRes.Err.Error()}))
+		err := newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": authRes.Err.Error()})
+		a.logAdapterError("legacy", "authentication", err)
+		writeError(w, err)
 		return nil, false
 	}
 	if authRes.BearerAuthFailed {
@@ -47,6 +49,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		data, meta, err := a.handleSystemGetCapabilities(ctx, nil)
 		if err != nil {
+			a.logAdapterError("legacy", "system_getCapabilities", err)
 			writeError(w, err)
 			return
 		}
@@ -81,6 +84,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	data, meta, toolErr := handler(ctx, req.Input)
 	if toolErr != nil {
+		a.logAdapterError("legacy", req.Tool, toolErr)
 		writeError(w, toolErr)
 		return
 	}
@@ -119,12 +123,8 @@ func writeError(w http.ResponseWriter, err *adapterError) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(err.Status)
 	_ = json.NewEncoder(w).Encode(errorResponse{
-		OK: false,
-		Error: errorResponseBody{
-			Code:    err.Code,
-			Message: err.Message,
-			Details: normalizeDetails(err.Details),
-		},
+		OK:    false,
+		Error: clientErrorResponseBody(err),
 	})
 }
 

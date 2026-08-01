@@ -404,7 +404,7 @@ describe("board i18n locale switching", () => {
     const activeTagChip = document.querySelector("[data-tag='bug']");
     expect(searchInput?.value).toBe("needle");
     expect(activeTagChip?.classList.contains("chip--active")).toBe(true);
-    expect(document.querySelector(".no-results")?.textContent).toBe('No todos found matching "needle"');
+    expect(document.querySelector(".board > .no-results")?.textContent).toBe('No todos found matching "needle"');
 
     await i18n.setLocale("pseudo");
     await flushPromises();
@@ -412,7 +412,7 @@ describe("board i18n locale switching", () => {
     expect((document.getElementById("searchInput") as HTMLInputElement | null)?.value).toBe("needle");
     expect(document.querySelector("[data-tag='bug']")?.classList.contains("chip--active")).toBe(true);
     expect(document.querySelector(".filters__label")?.textContent).toBe("[!! Tags: !!]");
-    expect(document.querySelector(".no-results")?.textContent).toBe('[!! No todos found matching "needle" !!]');
+    expect(document.querySelector(".board > .no-results")?.textContent).toBe('[!! No todos found matching "needle" !!]');
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
 

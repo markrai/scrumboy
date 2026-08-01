@@ -1,8 +1,27 @@
 let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null) => Promise<void>) | null = null;
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
-let boardLimitPerLaneFloor = 20;
+
+export const CARDS_PER_LANE_PREFERENCE_KEY = 'cardsPerLane';
+export const CARDS_PER_LANE_ALLOWED = [20, 50, 75, 100] as const;
+export const CARDS_PER_LANE_DEFAULT = 20;
+
+export function normalizeCardsPerLane(n: number): number {
+  if (!Number.isFinite(n)) return CARDS_PER_LANE_DEFAULT;
+  const floored = Math.floor(n);
+  return (CARDS_PER_LANE_ALLOWED as readonly number[]).includes(floored)
+    ? floored
+    : CARDS_PER_LANE_DEFAULT;
+}
+
+// User's preferred default lane page size (from the "cardsPerLane" preference).
+// Falls back to CARDS_PER_LANE_DEFAULT until the preference has loaded (or for
+// anonymous/logged-out sessions, which never load one).
+let defaultCardsPerLane = CARDS_PER_LANE_DEFAULT;
+let boardLimitPerLaneFloor = defaultCardsPerLane;
 /** Board that raised the floor; cross-board loads must ignore a stale elevated floor. */
 let boardLimitPerLaneFloorSlug: string | null = null;
+/** When true, the next board fetch uses the preference baseline (ignores on-screen DOM size). */
+let forcePreferenceLimitOnce = false;
 
 /** Coalesce rapid invalidates (e.g. resume resync + SSE-driven refresh) to reduce duplicate fetches. */
 const INVALIDATE_COALESCE_MS = 700;
@@ -42,22 +61,52 @@ export async function invalidateBoard(slug: string, tag?: string, search?: strin
 export function setBoardLimitPerLaneFloor(limit: number, slug: string) {
   if (!slug) return;
   if (boardLimitPerLaneFloorSlug !== slug) {
-    boardLimitPerLaneFloor = 20;
+    boardLimitPerLaneFloor = defaultCardsPerLane;
     boardLimitPerLaneFloorSlug = slug;
   }
   if (Number.isFinite(limit) && limit > boardLimitPerLaneFloor) {
-    boardLimitPerLaneFloor = Math.max(20, Math.floor(limit));
+    boardLimitPerLaneFloor = Math.max(defaultCardsPerLane, Math.floor(limit));
   }
 }
 
 export function getBoardLimitPerLaneFloor(forSlug: string): number {
-  if (!boardLimitPerLaneFloorSlug || boardLimitPerLaneFloorSlug !== forSlug) return 20;
+  if (!boardLimitPerLaneFloorSlug || boardLimitPerLaneFloorSlug !== forSlug) return defaultCardsPerLane;
   return boardLimitPerLaneFloor;
 }
 
 export function resetBoardLimitPerLaneFloor() {
-  boardLimitPerLaneFloor = 20;
+  boardLimitPerLaneFloor = defaultCardsPerLane;
   boardLimitPerLaneFloorSlug = null;
+}
+
+/** Set the user's preferred default lane page size (must be one of CARDS_PER_LANE_ALLOWED). */
+export function setDefaultCardsPerLane(n: number): void {
+  if (!Number.isFinite(n)) return;
+  defaultCardsPerLane = normalizeCardsPerLane(n);
+  // Reset floor to the new default so subsequent loads/prefetches use it immediately
+  // (do not keep a prior board's elevated floor after the preference changes).
+  boardLimitPerLaneFloor = defaultCardsPerLane;
+  boardLimitPerLaneFloorSlug = null;
+}
+
+/**
+ * Make the next board request use {@link getDefaultCardsPerLane} as the limit,
+ * ignoring on-screen "Load more" DOM size. Used after the cards-per-lane preference
+ * changes so decreasing the default can shrink the visible page again.
+ */
+export function usePreferenceLimitOnNextBoardRequest(): void {
+  forcePreferenceLimitOnce = true;
+}
+
+/** Consume and return whether the next board fetch should force the preference baseline. */
+export function consumeForcePreferenceLimit(): boolean {
+  if (!forcePreferenceLimitOnce) return false;
+  forcePreferenceLimitOnce = false;
+  return true;
+}
+
+export function getDefaultCardsPerLane(): number {
+  return defaultCardsPerLane;
 }
 
 /**

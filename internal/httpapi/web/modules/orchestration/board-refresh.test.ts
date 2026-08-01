@@ -85,6 +85,54 @@ describe('board-refresh orchestration', () => {
     expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, 'oldest');
   });
 
+  it('setDefaultCardsPerLane clears any elevated floor slug so the new default applies immediately', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setBoardLimitPerLaneFloor(90, 'alpha');
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(90);
+
+    mod.setDefaultCardsPerLane(50);
+    expect(mod.getDefaultCardsPerLane()).toBe(50);
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(50);
+  });
+
+  it('setDefaultCardsPerLane accepts allowlisted presets and falls back invalid values to 20', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setDefaultCardsPerLane(50);
+    expect(mod.getDefaultCardsPerLane()).toBe(50);
+
+    mod.setDefaultCardsPerLane(75);
+    expect(mod.getDefaultCardsPerLane()).toBe(75);
+
+    mod.setDefaultCardsPerLane(100);
+    expect(mod.getDefaultCardsPerLane()).toBe(100);
+
+    mod.setDefaultCardsPerLane(5);
+    expect(mod.getDefaultCardsPerLane()).toBe(20);
+
+    mod.setDefaultCardsPerLane(42);
+    expect(mod.getDefaultCardsPerLane()).toBe(20);
+
+    mod.setDefaultCardsPerLane(200);
+    expect(mod.getDefaultCardsPerLane()).toBe(20);
+
+    mod.setDefaultCardsPerLane(50);
+    mod.setDefaultCardsPerLane(NaN);
+    expect(mod.getDefaultCardsPerLane()).toBe(50);
+  });
+
+  it('setBoardLimitPerLaneFloor only raises the floor, never lowers below the default', async () => {
+    const mod = await import('./board-refresh.js');
+
+    mod.setDefaultCardsPerLane(50);
+    mod.setBoardLimitPerLaneFloor(10, 'alpha');
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(50);
+
+    mod.setBoardLimitPerLaneFloor(60, 'alpha');
+    expect(mod.getBoardLimitPerLaneFloor('alpha')).toBe(60);
+  });
+
   it('refreshSprintsAndChips calls only the sprint refresher', async () => {
     const mod = await import('./board-refresh.js');
     const refreshBoard = vi.fn().mockResolvedValue(undefined);

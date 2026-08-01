@@ -127,6 +127,82 @@ func TestToolCatalog_BoardGetAssigneeIsDocumentedStringUnion(t *testing.T) {
 	}
 }
 
+func TestToolCatalog_BoardGetSprintIDAdvertisesStoredIdentity(t *testing.T) {
+	def, ok := toolCatalogDefinitions()["board_get"]
+	if !ok {
+		t.Fatal("board_get missing from tool catalog")
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("board_get input schema has unexpected type %T", def.InputSchema)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get schema properties have unexpected shape: %#v", schema)
+	}
+	sprintID, ok := properties["sprintId"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get sprintId schema has unexpected shape: %#v", properties["sprintId"])
+	}
+	description, _ := sprintID["description"].(string)
+	for _, requiredText := range []string{"stored sprint row ID", "sprints_list", "project-local sprint number"} {
+		if !strings.Contains(description, requiredText) {
+			t.Fatalf("board_get sprintId description %q missing %q", description, requiredText)
+		}
+	}
+	for _, required := range requiredFieldNamesFromSchema(schema) {
+		if required == "sprintId" {
+			t.Fatal("board_get sprintId must remain optional")
+		}
+	}
+}
+
+func TestToolCatalog_BoardGetSortAdvertisesRuntimeContract(t *testing.T) {
+	def, ok := toolCatalogDefinitions()["board_get"]
+	if !ok {
+		t.Fatal("board_get missing from tool catalog")
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("board_get input schema has unexpected type %T", def.InputSchema)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get schema properties have unexpected shape: %#v", schema)
+	}
+	sortProperty, ok := properties["sort"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get sort schema has unexpected shape: %#v", properties["sort"])
+	}
+	if sortProperty["type"] != "string" {
+		t.Fatalf("board_get sort type = %#v, want string", sortProperty["type"])
+	}
+	enum, ok := sortProperty["enum"].([]string)
+	if !ok {
+		t.Fatalf("board_get sort enum has unexpected shape: %#v", sortProperty["enum"])
+	}
+	wantEnum := []string{"newest", "oldest"}
+	if len(enum) != len(wantEnum) {
+		t.Fatalf("board_get sort enum = %#v, want %#v", enum, wantEnum)
+	}
+	for i := range wantEnum {
+		if enum[i] != wantEnum[i] {
+			t.Fatalf("board_get sort enum = %#v, want %#v", enum, wantEnum)
+		}
+	}
+	description, _ := sortProperty["description"].(string)
+	for _, requiredText := range []string{"newest", "oldest", "omit", "manual drag-rank"} {
+		if !strings.Contains(description, requiredText) {
+			t.Fatalf("board_get sort description %q missing %q", description, requiredText)
+		}
+	}
+	for _, required := range requiredFieldNamesFromSchema(schema) {
+		if required == "sort" {
+			t.Fatal("board_get sort must remain optional")
+		}
+	}
+}
+
 // TestLegacyToolAliases_AreDottedAndDisjointFromCatalog verifies the
 // dispatch-only compatibility shim (registerLegacyToolAliases) stays
 // dispatch-only: every alias key is a legacy dotted name distinct from any

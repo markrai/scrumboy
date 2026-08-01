@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -1000,6 +1001,12 @@ func TestJSONRPC_ToolsCall_UnknownTool(t *testing.T) {
 	if item["text"] != "tool not found" {
 		t.Fatalf("expected tool not found message, got %v", item["text"])
 	}
+	structured := result["structuredContent"].(map[string]any)
+	if structured["code"] != "NOT_FOUND" ||
+		structured["message"] != "tool not found" ||
+		!reflect.DeepEqual(structured["details"], map[string]any{"tool": "nonexistent.tool"}) {
+		t.Fatalf("unexpected structured tool error: %#v", structured)
+	}
 }
 
 func TestJSONRPC_ToolsCall_MissingName(t *testing.T) {
@@ -1073,6 +1080,12 @@ func TestJSONRPC_ToolsCall_MissingRequiredArguments(t *testing.T) {
 	item := content[0].(map[string]any)
 	if item["text"] != "missing required field: title" {
 		t.Fatalf("expected missing required field error, got %v", item["text"])
+	}
+	structured := result["structuredContent"].(map[string]any)
+	if structured["code"] != "VALIDATION_ERROR" ||
+		structured["message"] != "missing required field: title" ||
+		!reflect.DeepEqual(structured["details"], map[string]any{"field": "title"}) {
+		t.Fatalf("unexpected structured required-field error: %#v", structured)
 	}
 }
 
@@ -1167,6 +1180,12 @@ func TestJSONRPC_ToolsCall_ErrorMapping_CapabilityUnavailable(t *testing.T) {
 	item := content[0].(map[string]any)
 	if item["text"] != "projects_list is unavailable in anonymous mode" {
 		t.Fatalf("expected capability error message, got %v", item["text"])
+	}
+	structured := result["structuredContent"].(map[string]any)
+	if structured["code"] != "CAPABILITY_UNAVAILABLE" ||
+		structured["message"] != "projects_list is unavailable in anonymous mode" ||
+		!reflect.DeepEqual(structured["details"], map[string]any{}) {
+		t.Fatalf("unexpected structured capability error: %#v", structured)
 	}
 	if out["ok"] != nil {
 		t.Fatal("JSON-RPC response must not contain legacy ok field")

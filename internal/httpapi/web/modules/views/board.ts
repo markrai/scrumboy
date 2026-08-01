@@ -50,7 +50,7 @@ import {
   buildMobileTabsInnerHtml,
   mobileLaneTabStyleAttrForHtml,
 } from './mobile-lane-tabs.js';
-import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
+import { registerBoardRefresher, registerSprintsRefresher, invalidateBoard, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
 import { normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import {
@@ -98,6 +98,7 @@ import {
 } from './board-realtime.js';
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { applyWrapLanesClass } from '../core/wrap-lanes-preferences.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
@@ -261,12 +262,14 @@ export function getRequestedBoardLimitPerLane(forSlug?: string | null): number {
   // navigation to a different one (which should fall back to the default).
   // When forSlug is provided (loadBoardBySlug), also require it to match so a
   // stale invalidate for another board cannot reuse the current board's DOM size.
+  const baseline = getDefaultCardsPerLane();
+  if (consumeForcePreferenceLimit()) return baseline;
   const currentBoard = getBoard();
-  if (!currentBoard || currentBoard.project?.slug !== getSlug()) return 20;
-  if (forSlug != null && forSlug !== "" && currentBoard.project?.slug !== forSlug) return 20;
+  if (!currentBoard || currentBoard.project?.slug !== getSlug()) return baseline;
+  if (forSlug != null && forSlug !== "" && currentBoard.project?.slug !== forSlug) return baseline;
   const counts = Array.from(document.querySelectorAll<HTMLElement>(".col__list"))
     .map((el) => el.querySelectorAll("[data-todo-local-id]").length);
-  return counts.length > 0 ? Math.max(20, ...counts) : 20;
+  return counts.length > 0 ? Math.max(baseline, ...counts) : baseline;
 }
 
 /** Cached members lookup; rebuilt when members change. Avoids repeated Object.fromEntries during render. */
@@ -869,6 +872,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
       membersByUserId,
       cardOpts,
     });
+    applyWrapLanesClass(boardEl, boardCols.length);
 
     // Add "No results" state if search is active and no todos match
     if (search && search.trim() !== "") {
@@ -1029,6 +1033,9 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
       </div>
     </div>
   `;
+
+  const boardRoot = document.querySelector(".board");
+  if (boardRoot) applyWrapLanesClass(boardRoot, boardCols.length);
 
   // Only attach event listeners for elements that exist (anonymous mode omits some)
   const brandLink = document.getElementById("brandLink");

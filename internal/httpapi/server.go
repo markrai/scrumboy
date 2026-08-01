@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	boardapp "scrumboy/internal/application/board"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
@@ -91,7 +92,8 @@ type Options struct {
 }
 
 type Server struct {
-	store storeAPI
+	store      storeAPI
+	boardReads *boardapp.ReadService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -226,10 +228,10 @@ type storeAPI interface {
 	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
 
-	GetBoard(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, error)
-	GetBoardPaged(ctx context.Context, pc *store.ProjectContext, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder, limitPerLane int) (store.Project, []store.TagCount, []store.WorkflowColumn, map[string][]store.Todo, map[string]store.LaneMeta, error)
+	boardapp.ReadStore
+	boardapp.LaneReadStore
+	boardapp.LegacyReadStore
 	ListTagCounts(ctx context.Context, pc *store.ProjectContext) ([]store.TagCount, error)
-	ListTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, limit int, afterA, afterB int64, tagFilter, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter, sortOrder store.SortOrder) ([]store.Todo, string, bool, error)
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
 	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]store.DashboardTodo, *string, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
@@ -508,7 +510,15 @@ func NewServer(st storeAPI, opts Options) *Server {
 	}
 
 	return &Server{
-		store:                       st,
+		store: st,
+		boardReads: boardapp.NewReadService(boardapp.ReadServiceDependencies{
+			Initial:      st,
+			Lane:         st,
+			LegacyAccess: st,
+			Legacy:       st,
+			SlugAccess:   st,
+			SlugSprints:  st,
+		}),
 		logger:                      logger,
 		maxBody:                     maxBody,
 		maxTrelloImportBody:         maxTrelloImportBody,

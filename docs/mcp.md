@@ -154,6 +154,10 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
 **JSON-RPC:**
 
 - After authentication and `initialize`, call **`tools/list`** to receive the catalog (`name`, `description`, `inputSchema` per tool), implemented in `internal/mcp/jsonrpc_handler.go` / `internal/mcp/tool_catalog.go`.
+- Calling **`system_getCapabilities`** through `tools/call` returns the same
+  capability fields plus top-level **`adapterVersion`** in
+  `structuredContent` and its JSON text block. Legacy `/mcp` keeps
+  `adapterVersion` under `meta`.
 
 **Example `data` object** (structure from `internal/mcp/types.go` `capabilitiesData`; values below match a **full-mode, pre-bootstrap** instance as asserted in tests — your `serverMode`, `bootstrapAvailable`, and `implementedTools` may differ):
 
@@ -348,6 +352,48 @@ Use `"42"`, not JSON number `42`, for a concrete user ID. Invalid values,
 including non-string JSON values, return `VALIDATION_ERROR` with
 `details.field: "assignee"` instead of silently returning an unfiltered board.
 A valid unknown or non-member user ID returns an empty board.
+
+`board_get` also accepts an optional string `sort`: `"newest"` or `"oldest"`
+orders items within each lane by creation time with a stable ID tie-break.
+Omit `sort` to preserve manual drag-rank order.
+
+The optional `sprintId` filter is the stored sprint row ID returned as
+`sprintId` by `sprints_list`. It is not the project-local `number` in the same
+sprint item. Omit it (or send `null`) for no sprint filter. A supplied value
+must be positive and must identify a sprint in `projectSlug`; missing and
+cross-project IDs both return `NOT_FOUND`. This stored-ID convention is shared
+by MCP sprint mutations, todo sprint assignment, and sprint-scoped metrics.
+REST board URLs intentionally use the project-local sprint number instead.
+
+`board_get` uses explicit validation tiers. Authentication/capability checks,
+input shape, required `projectSlug`, `limit`, assignee type/grammar, and `sort`
+are checked before project access because they are target-independent. Project
+access then precedes sprint resolution and workflow/cursor validation. As a
+result, a bad pre-access field still returns its exact `VALIDATION_ERROR` when
+the slug is denied, missing, or expired, while bad `sprintId` and
+`cursorByColumn` values are masked by `NOT_FOUND` for those targets. Cursor
+values are decoded in workflow order, so a malformed cursor for a later lane
+can follow successful reads of earlier lanes. The permanent `board.get` alias
+and both MCP transports use this same ordering.
+
+REST slug board reads intentionally differ: they resolve access before query
+validation, so an inaccessible REST target masks all later query errors. This
+is a first-error ordering difference, not a difference in permissions or
+validation grammar.
+
+`projectSlug` is a lookup identifier, not a request-echo field. Lookup accepts
+normalization-equivalent values such as uppercase or surrounding whitespace.
+On success, `project.projectSlug` and every returned todo's `projectSlug` use
+the persisted canonical slug over legacy and JSON-RPC transports, including
+calls made through the permanent `board.get` alias.
+
+For an expiring Temporary Board, `board_get` performs its throttled activity
+refresh only after the workflow and every requested lane/count have loaded.
+That refresh is best-effort maintenance: a failure is logged by the server,
+while both legacy and JSON-RPC clients still receive the completed board
+without a warning field. A successful read does not guarantee that this
+particular request persisted a new expiry. Durable boards skip the refresh;
+expired or inaccessible boards still fail during access.
 
 **Workflow**
 
@@ -689,7 +735,27 @@ Example success **`result`** for **`projects_list`** (empty list):
 }
 ```
 
-On tool failure, **`result.isError`** is **`true`**, **`content`** carries a plain-text message, and **`structuredContent`** is omitted (`internal/mcp/jsonrpc_handler.go`).
+On tool failure, **`result.isError`** is **`true`**, **`content`** carries the
+existing plain-text message, and **`structuredContent`** carries sanitized
+machine-readable `code`, `message`, and `details` fields
+(`internal/mcp/jsonrpc_handler.go`). The JSON-RPC representation never copies
+the legacy HTTP status.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "content": [{"type": "text", "text": "invalid sort"}],
+    "structuredContent": {
+      "code": "VALIDATION_ERROR",
+      "message": "invalid sort",
+      "details": {"field": "sort"}
+    },
+    "isError": true
+  }
+}
+```
 
 ## Error Handling
 
@@ -710,7 +776,13 @@ Errors use HTTP status on the wire and a JSON body **`{"ok":false,"error":{...}}
 
 Same **`code`** for a rejected **Bearer** token, with **`message`: `Authentication required`** (before any tool runs).
 
-`details` is always present (empty object when nil). Non-exhaustive **`code`** values from `internal/mcp/errors.go`: `AUTH_REQUIRED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`, `CAPABILITY_UNAVAILABLE`, `INTERNAL`, `METHOD_NOT_ALLOWED`.
+`details` is always present (empty object when nil). Detail keys are
+allowlisted at serialization. `INTERNAL` always returns message
+`internal error` with empty client details; database, infrastructure, and
+invariant causes are available only in the server log.
+Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
+`AUTH_REQUIRED`, `FORBIDDEN`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`,
+`CAPABILITY_UNAVAILABLE`, `INTERNAL`, `METHOD_NOT_ALLOWED`.
 
 ### JSON-RPC `POST /mcp/rpc`
 
@@ -718,8 +790,27 @@ Same **`code`** for a rejected **Bearer** token, with **`message`: `Authenticati
 - **Invalid Origin:** empty HTTP **403** without an OAuth challenge. Requests with no `Origin` remain valid for non-browser clients; a supplied Origin must match the trusted public origin.
 - **Method/media/transport failures:** authenticated GET and unsupported methods return empty **405** with `Allow: POST`; restrictive `Accept` values that do not allow both JSON and SSE return **406**; unsupported JSON content types return **415**; accepted notifications return empty **202**. Structurally rejected notifications and known request-only methods (`initialize`, `ping`, `tools/list`, and `tools/call`) sent without an `id` return **400** and do not run a handler.
 - **Protocol errors** (bad JSON, unknown method, etc.): response is JSON-RPC **`error`** with integer **`code`** (e.g. `-32700` parse error, `-32601` method not found). Valid requests with an `id` keep the normal **200** protocol-error response. Rejected no-`id` messages use **400**, with `id: null` when an error body is emitted.
-- **Tool execution failure** (`tools/call`): HTTP **200** with a **`result`** object containing **`isError: true`**, **`content`** (text), and no successful `structuredContent` in the error path (`writeJSONRPCToolErrorResult` in `internal/mcp/jsonrpc_handler.go`).
-- **Tool success**: **`result`** includes **`content`** (JSON text of payload) and **`structuredContent`** (parsed tool `data`).
+- **Tool execution failure** (`tools/call`): HTTP **200** with a **`result`**
+  object containing **`isError: true`**, **`content`** (the existing plain-text
+  message), and sanitized **`structuredContent`** with `code`, `message`, and
+  `details` (`writeJSONRPCToolErrorResult` in
+  `internal/mcp/jsonrpc_handler.go`). `INTERNAL` uses message `internal error`
+  with `{}` details, and the legacy HTTP status is not copied into the tool
+  result.
+- **Tool success**: **`result`** includes **`content`** (JSON text of payload)
+  and **`structuredContent`** (parsed tool output). Most tools return their
+  legacy `data` unchanged. A narrow allowlist adds already-public legacy
+  metadata beside existing JSON-RPC data fields: `system_getCapabilities`
+  adds `adapterVersion`; `sprints_list` adds `unscheduledCount`; and
+  `dashboard_listTodos` adds `nextCursor` and `hasMore`. The JSON text and
+  structured object are equivalent. Unapproved metadata is omitted, and
+  existing data wins any top-level collision. Legacy `/mcp` keeps its
+  `{data,meta}` separation.
+- **`board_get` success**: `structuredContent` keeps `project` and `columns` at
+  their existing locations and also includes `nextCursorByColumn`,
+  `hasMoreByColumn`, and `totalCountByColumn`. The text content serializes the
+  same enriched object. Legacy `/mcp` continues to return those maps under its
+  separate top-level `meta`.
 
 ## Notes / Limitations
 
@@ -728,7 +819,7 @@ Same **`code`** for a rejected **Bearer** token, with **`message`: `Authenticati
 - **Stateless JSON-only transport:** Scrumboy does not issue MCP session IDs, offer an SSE GET stream, resumability, or server-initiated requests. An authenticated GET returns 405.
 - **Protocol versions:** Streamable HTTP supports `2025-03-26`, `2025-06-18`, and `2025-11-25`. Unsupported initialize versions negotiate to `2025-11-25`. A missing post-initialize header defaults to `2025-03-26`; malformed or unsupported headers return 400.
 - **Anonymous mode:** Effectively no authenticated tools; capabilities still describe the server.
-- **Pagination:** Global defaults in capabilities mention `limit` / `cursor` / `nextCursor` / `hasMore`; **`board_get`** uses **`cursorByColumn`** (per column key) — see `tool_catalog.go` and `pagination.futureSpecialCases` in capabilities.
+- **Pagination:** Global defaults in capabilities mention `limit` / `cursor` / `nextCursor` / `hasMore`; **`board_get`** uses **`cursorByColumn`** (per column key) and returns `nextCursorByColumn`, `hasMoreByColumn`, and `totalCountByColumn` in JSON-RPC structured/text content (or legacy `meta`) — see `tool_catalog.go` and `pagination.futureSpecialCases` in capabilities.
 - **`sprints_update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints_create`).
 - **JSON-RPC `serverInfo.version`:** The value returned by `initialize` is the string **`1.0.0`** in code (`internal/mcp/jsonrpc_handler.go`), not necessarily the Scrumboy app version from `internal/version`.
 - **`plannedTools`:** Currently always empty / omitted; there is no separate catalog of unimplemented tools in responses.

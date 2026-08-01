@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	boardapp "scrumboy/internal/application/board"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
 )
@@ -219,8 +220,15 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Request, rest []string, projectID int64) bool {
 	if len(rest) == 2 && rest[1] == "board" && r.Method == http.MethodGet {
+		// This is a supported compatibility endpoint. Its unpaged response is
+		// intentionally distinct from the preferred paged slug routes. Do not
+		// add deprecation or sunset signals without an approved API lifecycle
+		// policy and migration window.
 		ctx := s.requestContext(r)
-		pc, err := s.store.GetProjectContextForRead(ctx, projectID, s.storeMode())
+		prepared, err := s.boardReads.PrepareLegacy(ctx, boardapp.LegacyReadTarget{
+			ProjectID: projectID,
+			Mode:      s.storeMode(),
+		})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -235,7 +243,7 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
 			return true
 		}
-		sprintFilter, err := s.parseSprintFilterFromQuery(r, projectID)
+		sprintFilter, err := s.parseSprintFilterFromQuery(r)
 		if err != nil {
 			writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
 			return true
@@ -245,12 +253,23 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
 			return true
 		}
-		project, tags, workflow, cols, err := s.store.GetBoard(ctx, &pc, tag, search, assigneeFilter, sprintFilter, sortOrder)
+		result, err := prepared.Read(boardapp.LegacyQuery{
+			TagFilter:      tag,
+			SearchFilter:   search,
+			AssigneeFilter: assigneeFilter,
+			SprintFilter:   sprintFilter,
+			SortOrder:      sortOrder,
+		})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		writeJSON(w, http.StatusOK, boardToJSON(project, workflow, tags, cols))
+		writeJSON(w, http.StatusOK, boardToJSON(
+			result.Project,
+			result.Workflow,
+			result.Tags,
+			result.Columns,
+		))
 		return true
 	}
 

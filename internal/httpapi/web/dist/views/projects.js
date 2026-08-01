@@ -9,11 +9,10 @@ import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { getProjectsTab, getProjectView, getProjects, getUser, getOidcEnabled, getLocalAuthEnabled, getSelfServicePasswordResetEnabled, } from '../state/selectors.js';
 import { setProjects, setProjectsTab, setProjectView, setSettingsActiveTab, } from '../state/mutations.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
+import { getBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
+import { beginBoardPrefetch, takeResolvedPrefetchedBoard } from './board-prefetch-cache.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
-// Board prefetch cache for Projects → Board navigation (hover to prefetch, click to use)
-const boardPrefetchPromises = new Map();
-const resolvedBoardBySlug = new Map();
 const PREFETCH_DELAY_MS = 250;
 let projectsI18nBound = false;
 const DEFAULT_WORKFLOW_LANES = [
@@ -505,11 +504,7 @@ function renderProjectsContent(projects) {
                 hoverSlug = slug;
                 hoverTimeoutId = setTimeout(() => {
                     hoverTimeoutId = null;
-                    if (!boardPrefetchPromises.has(slug)) {
-                        const p = apiFetch(`/api/board/${slug}?limitPerLane=20`);
-                        boardPrefetchPromises.set(slug, p);
-                        p.then((board) => resolvedBoardBySlug.set(slug, board)).catch(() => { });
-                    }
+                    beginBoardPrefetch(slug, () => apiFetch(`/api/board/${slug}?limitPerLane=${getBoardLimitPerLaneFloor(slug)}`));
                 }, PREFETCH_DELAY_MS);
             });
             el.addEventListener("mouseleave", () => {
@@ -525,9 +520,8 @@ function renderProjectsContent(projects) {
                 const slug = el.getAttribute("data-open");
                 console.log("Project clicked, slug:", slug);
                 if (slug) {
-                    const board = resolvedBoardBySlug.get(slug);
+                    const board = takeResolvedPrefetchedBoard(slug);
                     if (board) {
-                        resolvedBoardBySlug.delete(slug);
                         navigate(`/${slug}`, { state: { boardData: board } });
                     }
                     else {

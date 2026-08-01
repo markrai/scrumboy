@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -25,6 +24,10 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	if s.handleSlugBoardRead(w, r, rest, slug) {
+		return
+	}
+
 	pc, err := s.store.GetProjectContextBySlug(s.requestContext(r), slug, s.storeMode())
 	if err != nil {
 		writeStoreErr(w, err, true)
@@ -35,9 +38,6 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 	if s.handleBoardWorkflowRoutes(w, r, rest, &pc) {
-		return
-	}
-	if s.handleBoardLaneRoutes(w, r, rest, &pc) {
 		return
 	}
 	if s.handleBoardClaimRoute(w, r, rest, &pc) {
@@ -74,55 +74,6 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 	// GET /api/board/{slug}/events
 	if len(rest) == 2 && rest[1] == "events" && r.Method == http.MethodGet {
 		s.handleBoardEvents(w, r, project.ID)
-		return true
-	}
-
-	// GET /api/board/{slug}
-	// Always use paged response (default limitPerLane=20) so mobile and cached clients get columnsMeta and limited items.
-	if len(rest) == 1 && r.Method == http.MethodGet {
-		tag := r.URL.Query().Get("tag")
-		search := strings.TrimSpace(r.URL.Query().Get("search"))
-		if search == "" {
-			search = ""
-		}
-		ctx := s.requestContext(r)
-		assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
-		if err != nil {
-			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
-			return true
-		}
-		sortOrder, err := s.parseSortOrderFromQuery(r)
-		if err != nil {
-			writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
-			return true
-		}
-		hasSprints, err := s.store.HasSprints(ctx, project.ID)
-		if err != nil {
-			writeStoreErr(w, err, true)
-			return true
-		}
-		var sprintFilter store.SprintFilter
-		if !hasSprints {
-			sprintFilter = store.SprintFilter{Mode: "none"}
-		} else {
-			sprintFilter, err = s.parseSprintFilterFromQuery(r, project.ID)
-			if err != nil {
-				writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
-				return true
-			}
-		}
-		limitPerLane := 20
-		if v := r.URL.Query().Get("limitPerLane"); v != "" {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				limitPerLane = n
-			}
-		}
-		project2, tags, workflow, cols, meta, err := s.store.GetBoardPaged(ctx, pc, tag, search, assigneeFilter, sprintFilter, sortOrder, limitPerLane)
-		if err != nil {
-			writeStoreErr(w, err, true)
-			return true
-		}
-		writeJSON(w, http.StatusOK, boardToJSONWithMeta(project2, workflow, tags, cols, meta))
 		return true
 	}
 
@@ -328,62 +279,6 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	}
 
 	return false
-}
-
-func (s *Server) handleBoardLaneRoutes(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
-	project := pc.Project
-
-	// GET /api/board/{slug}/lanes/{status}
-	if len(rest) != 3 || rest[1] != "lanes" || r.Method != http.MethodGet {
-		return false
-	}
-
-	columnKey := normalizeLaneKey(rest[2])
-	tag := r.URL.Query().Get("tag")
-	search := strings.TrimSpace(r.URL.Query().Get("search"))
-	ctx := s.requestContext(r)
-	assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
-	if err != nil {
-		writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
-		return true
-	}
-	sprintFilter, err := s.parseSprintFilterFromQuery(r, project.ID)
-	if err != nil {
-		writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
-		return true
-	}
-	sortOrder, err := s.parseSortOrderFromQuery(r)
-	if err != nil {
-		writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
-		return true
-	}
-	limit := 20
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 100 {
-			limit = n
-		}
-	}
-	afterCursor := r.URL.Query().Get("afterCursor")
-	var afterA, afterB int64
-	if strings.TrimSpace(afterCursor) == "" {
-		// No cursor yet (first page): use a bound that matches every row for the
-		// active sortOrder's comparison direction. For the default/oldest
-		// ascending order this is (0, 0), same as today's behavior. For
-		// newest (descending), a low bound would incorrectly exclude every row.
-		if sortOrder == store.SortOrderNewest {
-			afterA, afterB = math.MaxInt64, math.MaxInt64
-		}
-	} else {
-		afterA, afterB = store.ParseLaneCursor(afterCursor)
-	}
-
-	items, nextCursor, hasMore, err := s.store.ListTodosForBoardLane(ctx, project.ID, columnKey, limit, afterA, afterB, tag, search, assigneeFilter, sprintFilter, sortOrder)
-	if err != nil {
-		writeStoreErr(w, err, true)
-		return true
-	}
-	writeJSON(w, http.StatusOK, lanePageToJSON(items, nextCursor, hasMore))
-	return true
 }
 
 func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {

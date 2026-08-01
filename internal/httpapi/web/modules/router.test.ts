@@ -289,3 +289,184 @@ describe('router push autosubscribe gate', () => {
 	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
 	});
 });
+
+describe('router cold-start boardData handoff', () => {
+  const staleBoard = {
+    project: { id: 1, slug: 'alpha', name: 'Alpha' },
+    columns: { backlog: [] },
+    columnsMeta: {},
+    tags: [],
+    workflow: [],
+  };
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderAuthMock.mockReset();
+    renderResetPasswordMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderDashboardMock.mockReset();
+    renderBoardMock.mockReset();
+    renderBoardMock.mockResolvedValue(undefined);
+    renderNotFoundMock.mockReset();
+    stopBoardEventsMock.mockReset();
+    startGlobalRealtimeMock.mockReset();
+    stopGlobalRealtimeMock.mockReset();
+    initForegroundLifecycleMock.mockReset();
+    hydrateNotificationsForUserMock.mockReset();
+    initNotificationBadgeMock.mockReset();
+    unsubscribeFromPushMock.mockReset();
+    unsubscribeFromPushMock.mockResolvedValue(undefined);
+    maybeAutoSubscribePushAfterLoginMock.mockClear();
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+    hydrateVoiceFlowEnabledFromServerMock.mockClear();
+    hydrateVoiceFlowHandsFreeConfirmationFromServerMock.mockClear();
+    hydrateVoiceFlowModeFromServerMock.mockClear();
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: userStatus(),
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return userStatus();
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return {};
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('ignores stale history.state.boardData on cold document load (F5)', async () => {
+    window.history.replaceState({ boardData: staleBoard }, '', '/alpha');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    const opts = renderBoardMock.mock.calls[0][8];
+    expect(opts?.prefetchedBoard).toBeUndefined();
+    expect((window.history.state as { boardData?: unknown } | null)?.boardData).toBeUndefined();
+  });
+
+  it('still uses history.state.boardData for same-session navigations after cold start', async () => {
+    window.history.replaceState({}, '', '/');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+
+    window.history.pushState({ boardData: staleBoard }, '', '/alpha');
+    await mod.router();
+
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    const opts = renderBoardMock.mock.calls[0][8];
+    expect(opts?.prefetchedBoard).toEqual(staleBoard);
+  });
+});
+
+describe('router wrap lanes hydration', () => {
+  function userBob() {
+    return {
+      id: 8,
+      email: 'bob@example.com',
+      name: 'Bob',
+      isBootstrap: false,
+      systemRole: 'user',
+      twoFactorEnabled: false,
+    };
+  }
+
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, wrapLanesValue: string): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=wrapLanes')) {
+        return { value: wrapLanesValue };
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('resets stale local true when signed-in server preference is missing', async () => {
+    const prefs = await import('./core/wrap-lanes-preferences.js');
+    localStorage.setItem(prefs.WRAP_LANES_STORAGE_KEY, 'true');
+    installSignedInAuth(userBob(), '');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(prefs.getWrapLanesPreference()).toBe(false);
+  });
+
+  it('does not carry wrap lanes from user A to user B on login', async () => {
+    const prefs = await import('./core/wrap-lanes-preferences.js');
+    localStorage.setItem(prefs.WRAP_LANES_STORAGE_KEY, 'true');
+    installSignedInAuth(userStatus(), 'true');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getWrapLanesPreference()).toBe(true);
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userBob(), '');
+    await mod.router();
+
+    expect(prefs.getWrapLanesPreference()).toBe(false);
+  });
+});
