@@ -39,7 +39,7 @@ var allowedProjectUpdatePatchFields = map[string]struct{}{
 
 // parseProjectUpdatePatch validates and decodes a projects_update patch
 // object. It is a pure function (no store access) so it can be unit tested
-// directly, matching the buildUpdateTodoInput pattern in todos_tools.go.
+// directly, matching the buildUpdatePatch pattern in todos_tools.go.
 func parseProjectUpdatePatch(patchRaw json.RawMessage) (projectUpdatePatch, *adapterError) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(patchRaw, &raw); err != nil {

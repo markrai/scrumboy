@@ -254,12 +254,15 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing patch", map[string]any{"field": "patch"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, env.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoUpdates.Prepare(ctx, todoapp.SlugUpdateTarget{
+		Slug: env.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
 
-	existing, getErr := a.store.GetTodoByLocalID(ctx, pc.Project.ID, env.LocalID, a.storeMode())
+	preparedTodo, getErr := prepared.PrepareTodo(env.LocalID)
 	if getErr != nil {
 		if errors.Is(getErr, store.ErrUnauthorized) {
 			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
@@ -267,17 +270,12 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 		return nil, nil, mapStoreError(getErr)
 	}
 
-	updateIn, changed, patchErr := buildUpdateTodoInput(existing, env.Patch)
+	patch, patchErr := buildUpdatePatch(env.Patch)
 	if patchErr != nil {
 		return nil, nil, patchErr
 	}
-	if !changed {
-		return map[string]any{
-			"todo": todoToItem(env.ProjectSlug, existing),
-		}, map[string]any{}, nil
-	}
 
-	todo, updateErr := a.store.UpdateTodoByLocalID(ctx, pc.Project.ID, env.LocalID, updateIn, a.storeMode())
+	result, updateErr := preparedTodo.Update(patch)
 	if updateErr != nil {
 		if errors.Is(updateErr, store.ErrUnauthorized) {
 			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
@@ -286,7 +284,7 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 	}
 
 	return map[string]any{
-		"todo": todoToItem(env.ProjectSlug, todo),
+		"todo": todoToItem(env.ProjectSlug, result.Todo),
 	}, map[string]any{}, nil
 }
 
@@ -431,13 +429,13 @@ func mapMCPMoveError(err error) *adapterError {
 	return mapStoreError(err)
 }
 
-func buildUpdateTodoInput(existing store.Todo, patchRaw json.RawMessage) (store.UpdateTodoInput, bool, *adapterError) {
+func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterError) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(patchRaw, &raw); err != nil {
-		return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"detail": err.Error()})
+		return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"detail": err.Error()})
 	}
 	if raw == nil {
-		return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"field": "patch"})
+		return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"field": "patch"})
 	}
 
 	allowed := map[string]struct{}{
@@ -450,118 +448,86 @@ func buildUpdateTodoInput(existing store.Todo, patchRaw json.RawMessage) (store.
 	}
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported patch field", map[string]any{"field": key})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported patch field", map[string]any{"field": key})
 		}
 	}
 
-	in := store.UpdateTodoInput{
-		Title:            existing.Title,
-		Body:             existing.Body,
-		Tags:             cloneStrings(existing.Tags),
-		EstimationPoints: cloneInt64(existing.EstimationPoints),
-		AssigneeUserID:   cloneInt64(existing.AssigneeUserID),
-	}
-	changed := false
+	var patch todoapp.UpdatePatch
 
 	if v, ok := raw["title"]; ok {
 		if isNullJSON(v) {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "title cannot be null", map[string]any{"field": "title"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "title cannot be null", map[string]any{"field": "title"})
 		}
 		var title string
 		if err := json.Unmarshal(v, &title); err != nil {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid title", map[string]any{"field": "title"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid title", map[string]any{"field": "title"})
 		}
-		in.Title = title
-		changed = true
+		patch.Title = todoapp.Field[string]{Present: true, Value: title}
 	}
 
 	if v, ok := raw["body"]; ok {
 		if isNullJSON(v) {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "body cannot be null", map[string]any{"field": "body"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "body cannot be null", map[string]any{"field": "body"})
 		}
 		var body string
 		if err := json.Unmarshal(v, &body); err != nil {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid body", map[string]any{"field": "body"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid body", map[string]any{"field": "body"})
 		}
-		in.Body = body
-		changed = true
+		patch.Body = todoapp.Field[string]{Present: true, Value: body}
 	}
 
 	if v, ok := raw["tags"]; ok {
 		if isNullJSON(v) {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "tags cannot be null", map[string]any{"field": "tags"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "tags cannot be null", map[string]any{"field": "tags"})
 		}
 		var tags []string
 		if err := json.Unmarshal(v, &tags); err != nil {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tags", map[string]any{"field": "tags"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tags", map[string]any{"field": "tags"})
 		}
-		in.Tags = tags
-		changed = true
+		patch.Tags = todoapp.Field[[]string]{Present: true, Value: tags}
 	}
 
 	if v, ok := raw["estimationPoints"]; ok {
 		if isNullJSON(v) {
-			in.EstimationPoints = nil
+			patch.EstimationPoints = todoapp.Field[*int64]{Present: true}
 		} else {
 			var points int64
 			if err := json.Unmarshal(v, &points); err != nil {
-				return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid estimationPoints", map[string]any{"field": "estimationPoints"})
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid estimationPoints", map[string]any{"field": "estimationPoints"})
 			}
-			in.EstimationPoints = &points
+			patch.EstimationPoints = todoapp.Field[*int64]{Present: true, Value: &points}
 		}
-		changed = true
 	}
 
 	if v, ok := raw["assigneeUserId"]; ok {
 		if isNullJSON(v) {
-			in.AssigneeUserID = nil
+			patch.AssigneeUserID = todoapp.Field[*int64]{Present: true}
 		} else {
 			var assignee int64
 			if err := json.Unmarshal(v, &assignee); err != nil {
-				return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assigneeUserId", map[string]any{"field": "assigneeUserId"})
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assigneeUserId", map[string]any{"field": "assigneeUserId"})
 			}
-			in.AssigneeUserID = &assignee
+			patch.AssigneeUserID = todoapp.Field[*int64]{Present: true, Value: &assignee}
 		}
-		changed = true
 	}
 
 	if v, ok := raw["sprintId"]; ok {
 		if isNullJSON(v) {
-			in.SprintID = nil
-			in.ClearSprint = true
+			patch.SprintID = todoapp.Field[*int64]{Present: true}
 		} else {
 			var sprintID int64
 			if err := json.Unmarshal(v, &sprintID); err != nil {
-				return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sprintId", map[string]any{"field": "sprintId"})
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sprintId", map[string]any{"field": "sprintId"})
 			}
-			in.SprintID = &sprintID
-			in.ClearSprint = false
+			patch.SprintID = todoapp.Field[*int64]{Present: true, Value: &sprintID}
 		}
-		changed = true
 	}
 
-	return in, changed, nil
+	return patch, nil
 }
 
 func isNullJSON(v json.RawMessage) bool {
 	return strings.TrimSpace(string(v)) == "null"
-}
-
-func cloneStrings(v []string) []string {
-	if v == nil {
-		return nil
-	}
-	out := make([]string, len(v))
-	copy(out, v)
-	return out
-}
-
-func cloneInt64(v *int64) *int64 {
-	if v == nil {
-		return nil
-	}
-	c := *v
-	return &c
 }
 
 func (a *Adapter) resolvePositionIDs(ctx context.Context, projectID int64, position *struct {
