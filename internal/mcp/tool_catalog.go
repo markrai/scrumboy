@@ -303,13 +303,14 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"board_get": {
 			Name:        "board_get",
-			Description: "Get board columns and paginated todo items for a project board view.",
+			Description: "Get board columns and paginated todo items for a project board view. Returned projectSlug fields use the stored canonical slug.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"tag":         jsonProp("string", "Filter by tag"),
 				"search":      jsonProp("string", "Filter by search text"),
 				"assignee":    jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
-				"sprintId":    jsonPropWithNull("integer", "Filter to a sprint"),
+				"sort":        jsonStringEnumProp("Sort items within each lane by creation time: newest or oldest; omit for manual drag-rank order", []string{"newest", "oldest"}),
+				"sprintId":    jsonPropWithNull("integer", "Filter by the stored sprint row ID returned as sprintId by sprints_list; this is not the project-local sprint number returned as number"),
 				"limit":       jsonProp("integer", "Maximum items per column"),
 				"cursorByColumn": map[string]any{
 					"type":                 "object",

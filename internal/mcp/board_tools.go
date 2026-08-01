@@ -2,14 +2,12 @@ package mcp
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"math"
 	"net/http"
 	"strings"
 
+	boardapp "scrumboy/internal/application/board"
 	"scrumboy/internal/store"
 )
 
@@ -70,6 +68,9 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
+	// Keep target-independent input validation before project access. Sprint
+	// membership and workflow/cursor validation remain in the prepared read
+	// below because those checks depend on the authorized project.
 	limit := in.Limit
 	if limit == 0 {
 		limit = 20
@@ -96,91 +97,62 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sort", map[string]any{"field": "sort"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	// This is the target-dependent validation boundary: denied, missing, and
+	// expired projects mask later sprint and cursor errors as not found.
+	prepared, prepareErr := a.boardReads.Prepare(ctx, boardapp.MCPBoardReadTarget{
+		Slug: in.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
 
-	sprintFilter, filterErr := a.resolveBoardSprintFilter(ctx, pc.Project.ID, in.SprintId)
-	if filterErr != nil {
-		return nil, nil, filterErr
+	result, readErr := prepared.Read(boardapp.MCPBoardReadQuery{
+		TagFilter:      tag,
+		SearchFilter:   search,
+		AssigneeFilter: assigneeFilter,
+		SprintID:       in.SprintId,
+		Limit:          limit,
+		CursorByColumn: in.CursorByColumn,
+		SortOrder:      sortOrder,
+	})
+	if readErr != nil {
+		return nil, nil, mapMCPBoardReadError(readErr)
 	}
 
-	workflow, workflowErr := a.store.GetProjectWorkflow(ctx, pc.Project.ID)
-	if workflowErr != nil {
-		return nil, nil, mapStoreError(workflowErr)
-	}
-
-	knownColumns := make(map[string]struct{}, len(workflow))
-	for _, col := range workflow {
-		knownColumns[col.Key] = struct{}{}
-	}
-	for key := range in.CursorByColumn {
-		if _, ok := knownColumns[key]; !ok {
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid column cursor", map[string]any{"field": "cursorByColumn", "columnKey": key})
-		}
-	}
-
-	columns := make([]boardColumnItem, 0, len(workflow))
-	nextCursorByColumn := make(map[string]any, len(workflow))
-	hasMoreByColumn := make(map[string]bool, len(workflow))
-	totalCountByColumn := make(map[string]int, len(workflow))
-
-	for _, col := range workflow {
-		afterA, afterB := boardCursorSentinel(sortOrder)
-		if token, ok := in.CursorByColumn[col.Key]; ok && strings.TrimSpace(token) != "" {
-			rawCursor, decodeErr := decodeBoardCursor(token)
-			if decodeErr != nil {
-				return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid board cursor", map[string]any{"field": "cursorByColumn", "columnKey": col.Key})
-			}
-			a2, b2 := store.ParseLaneCursor(rawCursor)
-			if a2 == 0 && b2 == 0 {
-				return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid board cursor", map[string]any{"field": "cursorByColumn", "columnKey": col.Key})
-			}
-			afterA = a2
-			afterB = b2
-		}
-
-		todos, _, hasMore, listErr := a.store.ListTodosForBoardLane(ctx, pc.Project.ID, col.Key, limit, afterA, afterB, tag, search, assigneeFilter, sprintFilter, sortOrder)
-		if listErr != nil {
-			return nil, nil, mapStoreError(listErr)
-		}
-		totalCount, countErr := a.store.CountTodosForBoardLane(ctx, pc.Project.ID, col.Key, tag, search, assigneeFilter, sprintFilter)
-		if countErr != nil {
-			return nil, nil, mapStoreError(countErr)
-		}
-
-		items := make([]todoItem, 0, len(todos))
-		for _, todo := range todos {
-			items = append(items, todoToItem(in.ProjectSlug, todo))
+	// Lookup accepts normalization-equivalent input, but successful output uses
+	// the persisted identity consistently for the project and every todo.
+	projectSlug := result.Project.Slug
+	columns := make([]boardColumnItem, 0, len(result.Columns))
+	nextCursorByColumn := make(map[string]any, len(result.Columns))
+	hasMoreByColumn := make(map[string]bool, len(result.Columns))
+	totalCountByColumn := make(map[string]int, len(result.Columns))
+	for _, lane := range result.Columns {
+		items := make([]todoItem, 0, len(lane.Todos))
+		for _, todo := range lane.Todos {
+			items = append(items, todoToItem(projectSlug, todo))
 		}
 		columns = append(columns, boardColumnItem{
-			Key:    col.Key,
-			Name:   col.Name,
-			IsDone: col.IsDone,
+			Key:    lane.Workflow.Key,
+			Name:   lane.Workflow.Name,
+			IsDone: lane.Workflow.IsDone,
 			Items:  items,
 		})
 
-		if hasMore && len(todos) > 0 {
-			nextCursorByColumn[col.Key] = encodeBoardCursor(boardLaneCursor(todos[len(todos)-1], sortOrder))
+		if lane.NextCursor != nil {
+			nextCursorByColumn[lane.Workflow.Key] = *lane.NextCursor
 		} else {
-			nextCursorByColumn[col.Key] = nil
+			nextCursorByColumn[lane.Workflow.Key] = nil
 		}
-		hasMoreByColumn[col.Key] = hasMore
-		totalCountByColumn[col.Key] = totalCount
-	}
-
-	if pc.Project.ExpiresAt != nil {
-		if err := a.store.UpdateBoardActivity(ctx, pc.Project.ID); err != nil {
-			return nil, nil, mapStoreError(err)
-		}
+		hasMoreByColumn[lane.Workflow.Key] = lane.HasMore
+		totalCountByColumn[lane.Workflow.Key] = lane.TotalCount
 	}
 
 	return map[string]any{
 			"project": boardProjectItem{
-				ProjectSlug: in.ProjectSlug,
-				Name:        pc.Project.Name,
-				Role:        pc.Role.String(),
+				ProjectSlug: projectSlug,
+				Name:        result.Project.Name,
+				Role:        result.Role.String(),
 			},
 			"columns": columns,
 		}, map[string]any{
@@ -190,58 +162,32 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		}, nil
 }
 
-func (a *Adapter) resolveBoardSprintFilter(ctx context.Context, projectID int64, sprintID *int64) (store.SprintFilter, *adapterError) {
-	if sprintID == nil {
-		return store.SprintFilter{Mode: "none"}, nil
-	}
-	if *sprintID <= 0 {
-		return store.SprintFilter{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sprintId", map[string]any{"field": "sprintId"})
+func mapMCPBoardReadError(err error) *adapterError {
+	if errors.Is(err, boardapp.ErrInvalidMCPBoardSprintID) {
+		return newAdapterError(
+			http.StatusBadRequest,
+			CodeValidationError,
+			"invalid sprintId",
+			map[string]any{"field": "sprintId"},
+		)
 	}
 
-	sp, err := a.store.GetSprintByID(ctx, *sprintID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return store.SprintFilter{}, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	var cursorErr *boardapp.MCPBoardCursorError
+	if errors.As(err, &cursorErr) {
+		message := "invalid board cursor"
+		if cursorErr.Kind == boardapp.MCPBoardCursorUnknownColumn {
+			message = "invalid column cursor"
 		}
-		return store.SprintFilter{}, mapStoreError(err)
+		return newAdapterError(
+			http.StatusBadRequest,
+			CodeValidationError,
+			message,
+			map[string]any{
+				"field":     "cursorByColumn",
+				"columnKey": cursorErr.ColumnKey,
+			},
+		)
 	}
-	if sp.ProjectID != projectID {
-		return store.SprintFilter{}, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-	}
-	return store.SprintFilter{Mode: "sprint", SprintID: *sprintID}, nil
-}
 
-// boardCursorSentinel returns the "before the first item" cursor bound for a
-// lane fetch with no cursor supplied yet, matching store.laneCursorPredicate's
-// comparison direction for the given sortOrder (ascending default/oldest vs.
-// descending newest).
-func boardCursorSentinel(sortOrder store.SortOrder) (a, b int64) {
-	if sortOrder == store.SortOrderNewest {
-		return math.MaxInt64, math.MaxInt64
-	}
-	return math.MinInt64, 0
-}
-
-// boardLaneCursor encodes the cursor fields for the last row of a page,
-// mirroring store's internal laneCursor helper (rank:id for default order,
-// createdAtMs:id for newest/oldest).
-func boardLaneCursor(t store.Todo, sortOrder store.SortOrder) string {
-	switch sortOrder {
-	case store.SortOrderNewest, store.SortOrderOldest:
-		return fmt.Sprintf("%d:%d", t.CreatedAt.UnixMilli(), t.ID)
-	default:
-		return fmt.Sprintf("%d:%d", t.Rank, t.ID)
-	}
-}
-
-func encodeBoardCursor(raw string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(raw))
-}
-
-func decodeBoardCursor(token string) (string, error) {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
+	return mapStoreError(err)
 }

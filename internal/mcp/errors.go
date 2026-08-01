@@ -23,6 +23,7 @@ type adapterError struct {
 	Code    string
 	Message string
 	Details any
+	Cause   error `json:"-"`
 }
 
 func (e *adapterError) Error() string {
@@ -30,12 +31,20 @@ func (e *adapterError) Error() string {
 }
 
 func newAdapterError(status int, code, message string, details any) *adapterError {
-	return &adapterError{
+	err := &adapterError{
 		Status:  status,
 		Code:    code,
 		Message: message,
 		Details: details,
 	}
+	if code == CodeInternal {
+		if detailMap, ok := details.(map[string]any); ok {
+			if detail, ok := detailMap["detail"].(string); ok && detail != "" {
+				err.Cause = errors.New(detail)
+			}
+		}
+	}
+	return err
 }
 
 func mapStoreError(err error) *adapterError {
@@ -62,4 +71,46 @@ func mapPrivilegedStoreError(err error) *adapterError {
 		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
 	}
 	return mapStoreError(err)
+}
+
+var clientErrorDetailKeys = map[string]struct{}{
+	"columnKey": {},
+	"detail":    {},
+	"field":     {},
+	"fields":    {},
+	"localId":   {},
+	"tool":      {},
+}
+
+// clientErrorDetails is the only adapter-error detail projection used on the
+// wire. Internal failures never expose details. Other error classes retain
+// only the explicitly reviewed keys above, so a newly added internal value
+// cannot become public merely by being attached to adapterError.Details.
+func clientErrorDetails(err *adapterError) map[string]any {
+	details := map[string]any{}
+	if err == nil || err.Code == CodeInternal {
+		return details
+	}
+	raw, ok := err.Details.(map[string]any)
+	if !ok {
+		return details
+	}
+	for key, value := range raw {
+		if _, allowed := clientErrorDetailKeys[key]; allowed {
+			details[key] = value
+		}
+	}
+	return details
+}
+
+func clientErrorResponseBody(err *adapterError) errorResponseBody {
+	message := err.Message
+	if err.Code == CodeInternal {
+		message = "internal error"
+	}
+	return errorResponseBody{
+		Code:    err.Code,
+		Message: message,
+		Details: clientErrorDetails(err),
+	}
 }

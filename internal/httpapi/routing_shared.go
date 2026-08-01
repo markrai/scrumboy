@@ -45,7 +45,7 @@ func (s *Server) parseSortOrderFromQuery(r *http.Request) (store.SortOrder, erro
 // sprintId=unscheduled -> Mode "unscheduled" (sprint_id IS NULL).
 // sprintId=<number> -> project-local sprint number (resolved inline by board queries).
 // Returns error for invalid values (caller should respond 400).
-func (s *Server) parseSprintFilterFromQuery(r *http.Request, projectID int64) (store.SprintFilter, error) {
+func (s *Server) parseSprintFilterFromQuery(r *http.Request) (store.SprintFilter, error) {
 	v := r.URL.Query().Get("sprintId")
 	if v == "" {
 		return store.SprintFilter{Mode: "none"}, nil

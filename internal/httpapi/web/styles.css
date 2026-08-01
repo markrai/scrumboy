@@ -4733,6 +4733,26 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   font-style: italic;
 }
 
+/* Desktop/tablet: keep .no-results out of the auto-fit grid so empty-search
+   messaging cannot steal a lane track or compress columns. Mobile (≤620px)
+   keeps .no-results as a normal flex sibling of .board. */
+@media (min-width: 621px) {
+  .board {
+    position: relative;
+  }
+
+  .board > .no-results {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    pointer-events: none;
+  }
+}
+
 /* ============================================
    BURNDOWN CHART
    ============================================ */

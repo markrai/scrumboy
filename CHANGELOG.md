@@ -1,6 +1,84 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.28.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
+
+## [3.29.1] - 2026-07-31
+
+### Fixed
+
+- **Empty-search "no results" no longer appears as an extra desktop lane** - After the auto-fit board grid change, the "No todos found matching …" message was a grid sibling of the columns and stole a lane track (or compressed columns when spanning). On desktop/tablet (`min-width: 621px`) it is absolutely positioned over the board so lane layout is unchanged. Mobile flex layout is unchanged.
+
+## [3.29.0] - 2026-07-31
+
+### Changed
+
+- **Board reads move behind an application service** - REST initial board,
+  lane pagination, legacy numeric-ID board, and slug access resolution now
+  share an `internal/application/board` seam. MCP `board_get` orchestration
+  (legacy `/mcp`, JSON-RPC, and the permanent `board.get` alias) uses the same
+  application layer. HTTP and MCP adapters stay thin transport wrappers;
+  runtime permissions, filters, pagination, and response shapes are preserved.
+  Contract tests lock the migrated paths.
+
+- **Numeric REST board compatibility is explicit** -
+  `GET /api/projects/{id}/board` remains a supported, unpaged compatibility
+  endpoint with no deprecation or scheduled removal. New clients should prefer
+  the paged slug board routes; the API documentation now describes slug
+  discovery and exact lane-page aggregation for clients that choose to
+  migrate. Runtime route behavior is unchanged.
+
+- **MCP `board_get` validation/access precedence is explicit** - Existing
+  behavior is now documented and protected as a tiered contract. Input shape,
+  required slug, per-column limit, assignee grammar/type, and sort validation
+  precede project access; sprint and workflow/cursor validation follow access,
+  preserving `NOT_FOUND` masking for denied, missing, and expired targets.
+  Legacy MCP, JSON-RPC, `board_get`, and `board.get` remain equivalent. REST
+  slug board reads intentionally remain access-first.
+
+- **MCP `board_get.sprintId` identity is explicit** - Tool discovery and public
+  documentation now state that `board_get.sprintId` is the stored sprint row
+  ID returned by `sprints_list`, not the project-local `number` used by REST
+  board filtering. Existing runtime behavior, missing/cross-project masking,
+  and the permanent `board.get` alias remain unchanged.
+
+- **MCP `board_get` returns canonical slug identity** - Successful
+  `project.projectSlug` and todo `projectSlug` fields now use the persisted
+  canonical slug over legacy and JSON-RPC transports and the permanent
+  `board.get` alias. Lookup still accepts uppercase or whitespace-padded
+  equivalents, but the response no longer echoes that noncanonical spelling.
+  Clients that compared the submitted value byte-for-byte should use the
+  returned canonical identifier instead.
+
+- **MCP JSON-RPC tool errors carry sanitized structured content** - On
+  `tools/call` failure, HTTP 200 + `isError: true` responses now include
+  `structuredContent` with allowlisted `code`, `message`, and `details`
+  matching the legacy adapter envelope. `INTERNAL` always returns message
+  `internal error` with `{}` details; database, infrastructure, and invariant
+  text stay in the server log. The legacy HTTP status is not copied into the
+  JSON-RPC tool result. Plain-text `content` messages are unchanged.
+
+- **MCP JSON-RPC exposes approved legacy metadata beside tool data** -
+  Successful `tools/call` results keep existing data fields and add an
+  allowlist of already-public legacy `meta` values into `structuredContent`
+  and the JSON text block: `system_getCapabilities` → `adapterVersion`;
+  `sprints_list` → `unscheduledCount`; `dashboard_listTodos` → `nextCursor` /
+  `hasMore`; `board_get` → `nextCursorByColumn` / `hasMoreByColumn` /
+  `totalCountByColumn`. Unapproved metadata is omitted; colliding data fields
+  win. Legacy `/mcp` keeps its `{data,meta}` separation.
+
+### Fixed
+
+- **MCP Temporary Board reads no longer fail on activity maintenance** -
+  `board_get` now treats its final throttled `UpdateBoardActivity` call as
+  best-effort, matching REST board reads. If the board snapshot loaded
+  successfully but the lifetime refresh fails, legacy and JSON-RPC clients
+  receive the complete board while the server logs the project and internal
+  cause. Durable, expired, and earlier read-failure behavior is unchanged.
+
+- **MCP `board_get` discovery and pagination stay aligned** - JSON-RPC
+  `board_get` success payloads and tool catalog/`tools/list` descriptions
+  consistently surface the per-column pagination maps, matching legacy `meta`
+  and capability docs.
 
 ## [3.28.4] - 2026-07-28
 

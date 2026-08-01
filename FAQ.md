@@ -115,7 +115,16 @@ Scrumboy has three kinds of board, distinguished by two columns (`expires_at` an
 **When it expires**
 
 - New expiring boards (Temporary and Anonymous Boards) start with **`expires_at` about 90 days ahead** (`TemporaryBoardLifetimeDays` in the server code).
-- **Yes, activity resets the expiry window** - but not as a separate “inactivity counter.” When the board is used, the server runs **`UpdateBoardActivity`**, which sets **`expires_at` to about 90 days from that moment** (rolling lifetime). Qualifying activity includes loading the board (for example a full board read) and todo changes (create, update, move, delete). Updates are **throttled to at most once every 5 minutes** per board so rapid refreshes do not hammer the database.
+- **Yes, activity can reset the expiry window** - but not as a separate
+  “inactivity counter.” When the board is used, the server runs
+  **`UpdateBoardActivity`**, which sets **`expires_at` to about 90 days from
+  that moment** (rolling lifetime). Qualifying activity includes loading the
+  board (for example a full board read) and todo changes (create, update, move,
+  delete). Updates are **throttled to at most once every 5 minutes** per board
+  so rapid refreshes do not hammer the database. Read-triggered refresh is
+  best-effort: if that maintenance write fails, the server logs it and still
+  returns a board that was otherwise loaded successfully. A successful read
+  therefore does not guarantee that its refresh was persisted.
 - After **`expires_at` has passed**, the board URL returns **404** for reads and edits until the server removes the expired row. There is no “grace period” in the API after expiry.
 
 **Compared to a Durable Project**
