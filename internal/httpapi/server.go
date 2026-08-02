@@ -13,6 +13,7 @@ import (
 
 	boardapp "scrumboy/internal/application/board"
 	todoapp "scrumboy/internal/application/todo"
+	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
@@ -93,11 +94,12 @@ type Options struct {
 }
 
 type Server struct {
-	store       storeAPI
-	boardReads  *boardapp.ReadService
-	todoCreates *todoapp.CreateService
-	todoMoves   *todoapp.MoveService
-	todoUpdates *todoapp.UpdateService
+	store             storeAPI
+	boardReads        *boardapp.ReadService
+	todoCreates       *todoapp.CreateService
+	todoMoves         *todoapp.MoveService
+	todoUpdates       *todoapp.UpdateService
+	workflowMutations *workflowapp.RESTMutationService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -220,9 +222,7 @@ type storeAPI interface {
 	UpdateProjectImage(ctx context.Context, projectID int64, userID int64, image *string, dominantColor string) error
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
-	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
-	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
-	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
+	workflowapp.MutationStore
 	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
@@ -592,6 +592,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
 		Update:  st,
 		Refresh: boardRefreshPublisher,
+	})
+	server.workflowMutations = workflowapp.NewRESTMutationService(workflowapp.RESTMutationServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+			server.emitRefreshNeeded(ctx, projectID, reason)
+		}),
 	})
 	return server
 }

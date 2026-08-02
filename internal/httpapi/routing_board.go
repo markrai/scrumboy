@@ -10,8 +10,20 @@ import (
 	"time"
 
 	todoapp "scrumboy/internal/application/todo"
+	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/store"
 )
+
+func writeWorkflowMutationPrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, workflowapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, workflowapp.ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+	default:
+		writeInternal(w, err)
+	}
+}
 
 func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []string) {
 	if len(rest) == 0 {
@@ -156,14 +168,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	// POST /api/board/{slug}/workflow - add a new non-done lane before done.
 	if len(rest) == 2 && rest[1] == "workflow" && r.Method == http.MethodPost {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.workflowMutations.Prepare(ctx, workflowapp.ResolvedRESTMutationTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
 
@@ -183,12 +192,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 
-		col, err := s.store.AddWorkflowColumn(ctx, project.ID, in.Name)
+		col, err := prepared.Create(workflowapp.CreateCommand{Name: in.Name})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_added")
 		writeJSON(w, http.StatusCreated, workflowColumnJSON{
 			Key:      col.Key,
 			Name:     col.Name,
@@ -202,14 +210,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	// PATCH /api/board/{slug}/workflow/{key} - update workflow lane label and color.
 	if len(rest) == 3 && rest[1] == "workflow" && r.Method == http.MethodPatch {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.workflowMutations.Prepare(ctx, workflowapp.ResolvedRESTMutationTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
 		columnKey := strings.TrimSpace(rest[2])
@@ -243,11 +248,14 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid workflow column color", "invalid_workflow_column_color", map[string]any{"field": "color"})
 			return true
 		}
-		if err := s.store.UpdateWorkflowColumn(ctx, project.ID, columnKey, in.Name, in.Color); err != nil {
+		if err := prepared.Update(workflowapp.UpdateCommand{
+			Key:   columnKey,
+			Name:  in.Name,
+			Color: in.Color,
+		}); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -255,14 +263,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	// DELETE /api/board/{slug}/workflow/{key} - delete an empty non-done lane.
 	if len(rest) == 3 && rest[1] == "workflow" && r.Method == http.MethodDelete {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.workflowMutations.Prepare(ctx, workflowapp.ResolvedRESTMutationTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
 		columnKey := strings.TrimSpace(rest[2])
@@ -270,11 +275,10 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid workflow key", "invalid_workflow_key", map[string]any{"field": "key"})
 			return true
 		}
-		if err := s.store.DeleteWorkflowColumn(ctx, project.ID, columnKey); err != nil {
+		if err := prepared.Delete(workflowapp.DeleteCommand{Key: columnKey}); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
