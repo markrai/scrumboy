@@ -48,6 +48,20 @@ func TestMapMCPCreateErrorPreservesLocalReferenceDetails(t *testing.T) {
 			wantDetails: map[string]any{"field": "afterLocalId", "localId": int64(41)},
 		},
 		{
+			name: "missing positive before reference includes local ID",
+			err: &todoapp.MCPCreateValidationError{
+				Kind:       todoapp.MCPCreateInvalidLocalReference,
+				Field:      "beforeLocalId",
+				LocalID:    42,
+				HasLocalID: true,
+			},
+			wantMessage: "invalid local todo reference",
+			wantDetails: map[string]any{
+				"field":   "beforeLocalId",
+				"localId": int64(42),
+			},
+		},
+		{
 			name: "wrong-column reference includes local ID",
 			err: &todoapp.MCPCreateValidationError{
 				Kind:       todoapp.MCPCreateReferenceInWrongColumn,
