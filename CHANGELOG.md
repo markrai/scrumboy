@@ -2,6 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
 
+## [3.29.4] - 2026-08-02
+
+### Changed
+
+- **Workflow column mutations move behind application services** - REST and
+  MCP workflow column create, update, and delete now share
+  `internal/application/workflow` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST board-refresh side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
 ## [3.29.3] - 2026-08-02
 
 ### Changed
