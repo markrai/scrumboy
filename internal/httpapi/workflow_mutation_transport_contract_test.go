@@ -76,7 +76,7 @@ func TestWorkflowMutationRESTSuccessRefreshContracts(t *testing.T) {
 		}
 		persisted, ok := workflowColumnByKey(t, columns, created.Key)
 		if !ok || persisted.Name != created.Name {
-			t.Fatalf("created column not persisted once: response=%+v columns=%+v", created, columns)
+			t.Fatalf("created column not persisted as expected: response=%+v columns=%+v", created, columns)
 		}
 		assertWorkflowRESTRefresh(t, collectTodoUpdateEvents(t, stream), fx.project.ID, "workflow_column_added")
 	})
