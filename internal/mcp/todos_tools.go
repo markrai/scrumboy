@@ -80,9 +80,12 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoCreates.Prepare(ctx, todoapp.SlugCreateTarget{
+		Slug: in.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
 
 	columnKey := normalizeColumnKey(in.ColumnKey)
@@ -90,32 +93,54 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 		columnKey = store.DefaultColumnBacklog
 	}
 
-	afterID, beforeID, posErr := a.resolvePositionIDs(ctx, pc.Project.ID, in.Position, a.storeMode(), columnKey)
-	if posErr != nil {
-		return nil, nil, posErr
+	command := todoapp.MCPCreateCommand{
+		Values: todoapp.CreateValues{
+			Title:            in.Title,
+			Body:             in.Body,
+			Tags:             in.Tags,
+			ColumnKey:        columnKey,
+			EstimationPoints: in.EstimationPoints,
+			AssigneeUserID:   in.AssigneeUserId,
+			SprintID:         in.SprintId,
+		},
+	}
+	if in.Position != nil {
+		command.AfterLocalID = in.Position.AfterLocalId
+		command.BeforeLocalID = in.Position.BeforeLocalId
 	}
 
-	todo, createErr := a.store.CreateTodo(ctx, pc.Project.ID, store.CreateTodoInput{
-		Title:            in.Title,
-		Body:             in.Body,
-		Tags:             in.Tags,
-		ColumnKey:        columnKey,
-		EstimationPoints: in.EstimationPoints,
-		SprintID:         in.SprintId,
-		AssigneeUserID:   in.AssigneeUserId,
-		AfterID:          afterID,
-		BeforeID:         beforeID,
-	}, a.storeMode())
+	result, createErr := prepared.Create(command)
 	if createErr != nil {
-		if errors.Is(createErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(createErr)
+		return nil, nil, mapMCPCreateError(createErr)
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, todo),
+		"todo": todoToItem(in.ProjectSlug, result.Todo),
 	}, map[string]any{}, nil
+}
+
+func mapMCPCreateError(err error) *adapterError {
+	var validationErr *todoapp.MCPCreateValidationError
+	if errors.As(err, &validationErr) {
+		details := map[string]any{}
+		if validationErr.Field != "" {
+			details["field"] = validationErr.Field
+		}
+		if validationErr.HasLocalID {
+			details["localId"] = validationErr.LocalID
+		}
+
+		switch validationErr.Kind {
+		case todoapp.MCPCreateInvalidLocalReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", details)
+		case todoapp.MCPCreateReferenceInWrongColumn:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", details)
+		}
+	}
+	if errors.Is(err, store.ErrUnauthorized) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return mapStoreError(err)
 }
 
 func (a *Adapter) handleTodosGet(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -528,58 +553,6 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 
 func isNullJSON(v json.RawMessage) bool {
 	return strings.TrimSpace(string(v)) == "null"
-}
-
-func (a *Adapter) resolvePositionIDs(ctx context.Context, projectID int64, position *struct {
-	AfterLocalId  *int64 `json:"afterLocalId"`
-	BeforeLocalId *int64 `json:"beforeLocalId"`
-}, mode store.Mode, columnKey string) (*int64, *int64, *adapterError) {
-	if position == nil {
-		return nil, nil, nil
-	}
-
-	afterTodo, err := a.resolveLocalTodoForColumn(ctx, projectID, position.AfterLocalId, "afterLocalId", mode, columnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	beforeTodo, err := a.resolveLocalTodoForColumn(ctx, projectID, position.BeforeLocalId, "beforeLocalId", mode, columnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	var afterID, beforeID *int64
-	if afterTodo != nil {
-		id := afterTodo.ID
-		afterID = &id
-	}
-	if beforeTodo != nil {
-		id := beforeTodo.ID
-		beforeID = &id
-	}
-	return afterID, beforeID, nil
-}
-
-func (a *Adapter) resolveLocalTodoForColumn(ctx context.Context, projectID int64, localID *int64, field string, mode store.Mode, targetColumnKey string) (*store.Todo, *adapterError) {
-	if localID == nil {
-		return nil, nil
-	}
-	if *localID <= 0 {
-		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", map[string]any{"field": field})
-	}
-
-	todo, err := a.store.GetTodoByLocalID(ctx, projectID, *localID, mode)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", map[string]any{"field": field, "localId": *localID})
-		}
-		if errors.Is(err, store.ErrUnauthorized) {
-			return nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, mapStoreError(err)
-	}
-	if todo.ColumnKey != targetColumnKey {
-		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", map[string]any{"field": field, "localId": *localID})
-	}
-	return &todo, nil
 }
 
 func todoToItem(projectSlug string, todo store.Todo) todoItem {

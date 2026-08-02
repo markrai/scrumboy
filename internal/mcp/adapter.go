@@ -24,7 +24,7 @@ type storeAPI interface {
 	GetUserByOAuthAccessToken(ctx context.Context, rawToken, expectedResource string) (store.User, error)
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	todoapp.MCPMoveAccessStore
-	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
+	todoapp.CreateStore
 	todoapp.MCPMoveLookupStore
 	SearchTodosForLinkPicker(ctx context.Context, projectID int64, q string, limit int, excludeLocalIDs []int64, mode store.Mode) ([]store.TodoLinkTarget, error)
 	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
@@ -91,6 +91,7 @@ type Options struct {
 type Adapter struct {
 	store        storeAPI
 	boardReads   *boardapp.MCPBoardReadService
+	todoCreates  *todoapp.MCPCreateService
 	todoMoves    *todoapp.MCPMoveService
 	todoUpdates  *todoapp.MCPUpdateService
 	mode         string
@@ -124,6 +125,11 @@ func New(st storeAPI, opts Options) *Adapter {
 			ReportActivityRefreshFailure: func(_ context.Context, projectID int64, err error) {
 				logger.Printf("mcp: board activity refresh failed project_id=%d: %v", projectID, err)
 			},
+		}),
+		todoCreates: todoapp.NewMCPCreateService(todoapp.MCPCreateServiceDependencies{
+			Access: st,
+			Lookup: st,
+			Create: st,
 		}),
 		todoMoves: todoapp.NewMCPMoveService(todoapp.MCPMoveServiceDependencies{
 			Access: st,
