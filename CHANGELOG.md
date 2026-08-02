@@ -2,6 +2,21 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
 
+## [3.29.2] - 2026-07-31
+
+### Changed
+
+- **Todo writes move behind application services** - REST and MCP todo
+  updates and moves now share `internal/application/todo` command boundaries
+  instead of owning write logic in the transports. HTTP and MCP adapters stay
+  thin wrappers; permissions, validation, response shapes, and SSE side effects
+  are preserved. Contract tests lock the migrated update and move paths.
+
+### Fixed
+
+- **MCP todo update preserves sprint when omitted** - Omitting sprint from an
+  MCP todo update no longer clears the existing sprint assignment.
+
 ## [3.29.1] - 2026-07-31
 
 ### Fixed

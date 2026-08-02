@@ -12,6 +12,7 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
@@ -92,8 +93,10 @@ type Options struct {
 }
 
 type Server struct {
-	store      storeAPI
-	boardReads *boardapp.ReadService
+	store       storeAPI
+	boardReads  *boardapp.ReadService
+	todoMoves   *todoapp.MoveService
+	todoUpdates *todoapp.UpdateService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -275,10 +278,10 @@ type storeAPI interface {
 	DeleteTodo(ctx context.Context, todoID int64, mode store.Mode) error
 	GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, error)
 	MoveTodo(ctx context.Context, todoID int64, toColumnKey string, afterID, beforeID *int64, mode store.Mode) (store.Todo, error)
-	UpdateTodoByLocalID(ctx context.Context, projectID, localID int64, in store.UpdateTodoInput, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
-	MoveTodoByLocalID(ctx context.Context, projectID, localID int64, toColumnKey string, afterLocalID, beforeLocalID *int64, mode store.Mode) (store.Todo, error)
+	todoapp.UpdateStore
+	todoapp.MoveStore
 	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
 	RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, mode store.Mode) error
 	ListLinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
@@ -510,7 +513,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		publicOrigin = publicorigin.New(publicBaseURL, opts.TrustProxy)
 	}
 
-	return &Server{
+	server := &Server{
 		store: st,
 		boardReads: boardapp.NewReadService(boardapp.ReadServiceDependencies{
 			Initial:      st,
@@ -575,6 +578,18 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
+	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+		server.emitRefreshNeeded(ctx, projectID, reason)
+	})
+	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
+		Move:    st,
+		Refresh: boardRefreshPublisher,
+	})
+	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
+		Update:  st,
+		Refresh: boardRefreshPublisher,
+	})
+	return server
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
