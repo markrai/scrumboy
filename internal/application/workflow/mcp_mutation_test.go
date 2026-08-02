@@ -421,6 +421,9 @@ func TestPreparedMCPMutationUpdate(t *testing.T) {
 		if !errors.Is(err, ErrWorkflowProjectionFailed) {
 			t.Fatalf("Update error=%v want projection classification", err)
 		}
+		if !errors.Is(err, ErrWorkflowProjectionColumnMissing) {
+			t.Fatalf("Update error=%v want missing-column classification", err)
+		}
 		if errors.Unwrap(err) != nil {
 			t.Fatalf("missing-column projection error cause=%v want nil", errors.Unwrap(err))
 		}

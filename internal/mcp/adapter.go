@@ -13,6 +13,7 @@ import (
 
 	boardapp "scrumboy/internal/application/board"
 	todoapp "scrumboy/internal/application/todo"
+	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
 )
@@ -59,9 +60,7 @@ type storeAPI interface {
 	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error
 	GetProjectWorkflow(ctx context.Context, projectID int64) ([]store.WorkflowColumn, error)
-	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
-	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
-	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
+	workflowapp.MutationStore
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 	CreateProject(ctx context.Context, name string) (store.Project, error)
@@ -89,15 +88,16 @@ type Options struct {
 }
 
 type Adapter struct {
-	store        storeAPI
-	boardReads   *boardapp.MCPBoardReadService
-	todoCreates  *todoapp.MCPCreateService
-	todoMoves    *todoapp.MCPMoveService
-	todoUpdates  *todoapp.MCPUpdateService
-	mode         string
-	tools        toolRegistry
-	publicOrigin *publicorigin.Resolver
-	logger       *log.Logger
+	store             storeAPI
+	boardReads        *boardapp.MCPBoardReadService
+	todoCreates       *todoapp.MCPCreateService
+	todoMoves         *todoapp.MCPMoveService
+	todoUpdates       *todoapp.MCPUpdateService
+	workflowMutations *workflowapp.MCPMutationService
+	mode              string
+	tools             toolRegistry
+	publicOrigin      *publicorigin.Resolver
+	logger            *log.Logger
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -141,6 +141,11 @@ func New(st storeAPI, opts Options) *Adapter {
 			Access: st,
 			Lookup: st,
 			Update: st,
+		}),
+		workflowMutations: workflowapp.NewMCPMutationService(workflowapp.MCPMutationServiceDependencies{
+			Access:    st,
+			Mutations: st,
+			Workflow:  st,
 		}),
 		mode:         mode,
 		tools:        make(toolRegistry),

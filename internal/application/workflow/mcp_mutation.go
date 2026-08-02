@@ -10,12 +10,18 @@ import (
 
 var ErrWorkflowProjectionFailed = errors.New("workflow mutation projection failed")
 
+// ErrWorkflowProjectionColumnMissing identifies the internal inconsistency in
+// which a successful update is absent from the workflow returned immediately
+// afterward. It also satisfies ErrWorkflowProjectionFailed.
+var ErrWorkflowProjectionColumnMissing = errors.New("updated workflow column missing from projection")
+
 // workflowProjectionError marks failures that occur after a successful MCP
-// update mutation. Its cause remains available for diagnostics while adapters
-// must map the projection classification to an internal error.
+// update mutation. Its cause remains available so adapters can preserve their
+// established read-error mapping while distinguishing projection inconsistencies.
 type workflowProjectionError struct {
-	message string
-	cause   error
+	message        string
+	cause          error
+	classification error
 }
 
 func (e *workflowProjectionError) Error() string {
@@ -30,7 +36,7 @@ func (e *workflowProjectionError) Unwrap() error {
 }
 
 func (e *workflowProjectionError) Is(target error) bool {
-	return target == ErrWorkflowProjectionFailed
+	return target == ErrWorkflowProjectionFailed || target == e.classification
 }
 
 // MCPMutationAccessStore resolves the project-slug access boundary used by MCP
@@ -138,7 +144,8 @@ func (p *PreparedMCPMutation) Update(command UpdateCommand) (store.WorkflowColum
 		}
 	}
 	return store.WorkflowColumn{}, &workflowProjectionError{
-		message: fmt.Sprintf("updated workflow column %q not found in post-read", command.Key),
+		message:        fmt.Sprintf("updated workflow column %q not found in post-read", command.Key),
+		classification: ErrWorkflowProjectionColumnMissing,
 	}
 }
 
