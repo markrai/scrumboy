@@ -12,6 +12,7 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	membershipapp "scrumboy/internal/application/membership"
 	todoapp "scrumboy/internal/application/todo"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/publicorigin"
@@ -56,9 +57,7 @@ type storeAPI interface {
 	GetProjectScopedTagByID(ctx context.Context, projectID, tagID int64) (store.TagWithColor, error)
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
-	AddProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
-	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
-	RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error
+	membershipapp.MutationStore
 	GetProjectWorkflow(ctx context.Context, projectID int64) ([]store.WorkflowColumn, error)
 	workflowapp.MutationStore
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter) (int, error)
@@ -88,16 +87,17 @@ type Options struct {
 }
 
 type Adapter struct {
-	store             storeAPI
-	boardReads        *boardapp.MCPBoardReadService
-	todoCreates       *todoapp.MCPCreateService
-	todoMoves         *todoapp.MCPMoveService
-	todoUpdates       *todoapp.MCPUpdateService
-	workflowMutations *workflowapp.MCPMutationService
-	mode              string
-	tools             toolRegistry
-	publicOrigin      *publicorigin.Resolver
-	logger            *log.Logger
+	store               storeAPI
+	boardReads          *boardapp.MCPBoardReadService
+	todoCreates         *todoapp.MCPCreateService
+	todoMoves           *todoapp.MCPMoveService
+	todoUpdates         *todoapp.MCPUpdateService
+	workflowMutations   *workflowapp.MCPMutationService
+	membershipMutations *membershipapp.MCPMutationService
+	mode                string
+	tools               toolRegistry
+	publicOrigin        *publicorigin.Resolver
+	logger              *log.Logger
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -146,6 +146,11 @@ func New(st storeAPI, opts Options) *Adapter {
 			Access:    st,
 			Mutations: st,
 			Workflow:  st,
+		}),
+		membershipMutations: membershipapp.NewMCPMutationService(membershipapp.MCPMutationServiceDependencies{
+			Access:    st,
+			Mutations: st,
+			Members:   st,
 		}),
 		mode:         mode,
 		tools:        make(toolRegistry),
