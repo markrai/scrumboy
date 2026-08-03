@@ -2,6 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
 
+## [3.29.5] - 2026-08-03
+
+### Changed
+
+- **Project membership mutations move behind application services** - REST and
+  MCP member add, role update, and remove now share
+  `internal/application/membership` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST membership-event side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
 ## [3.29.4] - 2026-08-02
 
 ### Changed
