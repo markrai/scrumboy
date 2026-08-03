@@ -12,6 +12,7 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	membershipapp "scrumboy/internal/application/membership"
 	todoapp "scrumboy/internal/application/todo"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
@@ -94,12 +95,13 @@ type Options struct {
 }
 
 type Server struct {
-	store             storeAPI
-	boardReads        *boardapp.ReadService
-	todoCreates       *todoapp.CreateService
-	todoMoves         *todoapp.MoveService
-	todoUpdates       *todoapp.UpdateService
-	workflowMutations *workflowapp.RESTMutationService
+	store               storeAPI
+	boardReads          *boardapp.ReadService
+	todoCreates         *todoapp.CreateService
+	todoMoves           *todoapp.MoveService
+	todoUpdates         *todoapp.UpdateService
+	workflowMutations   *workflowapp.RESTMutationService
+	membershipMutations *membershipapp.RESTMutationService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -223,13 +225,11 @@ type storeAPI interface {
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	workflowapp.MutationStore
+	membershipapp.MutationStore
 	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
-	AddProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
-	RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error
-	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
 
 	boardapp.ReadStore
@@ -599,6 +599,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
 			server.emitRefreshNeeded(ctx, projectID, reason)
 		}),
+	})
+	server.membershipMutations = membershipapp.NewRESTMutationService(membershipapp.RESTMutationServiceDependencies{
+		Mutations: st,
+		Members:   st,
+		Publisher: membershipMutationPublisher{server: server},
 	})
 	return server
 }

@@ -4,9 +4,30 @@ import (
 	"context"
 	"encoding/json"
 
+	membershipapp "scrumboy/internal/application/membership"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
 )
+
+type membershipMutationPublisher struct {
+	server *Server
+}
+
+var _ membershipapp.RESTMutationPublisher = membershipMutationPublisher{}
+
+func (p membershipMutationPublisher) PublishMembersUpdated(ctx context.Context, projectID int64) {
+	p.server.emitMembersUpdated(ctx, projectID)
+}
+
+func (p membershipMutationPublisher) PublishMembershipChanged(
+	ctx context.Context,
+	projectID int64,
+	actorUserID int64,
+	targetUserID int64,
+	action membershipapp.MembershipAction,
+) {
+	p.server.emitMembership(ctx, projectID, actorUserID, targetUserID, string(action))
+}
 
 type refreshNeededEvent struct {
 	ID        string `json:"id,omitempty"`
@@ -81,11 +102,13 @@ func (s *Server) emitMembersUpdated(ctx context.Context, projectID int64) {
 // emitMembership publishes a per-user membership change, distinct from the
 // board-wide "board.members_updated" SSE invalidation signal, so consumers
 // like the email notifier can target the one affected user.
-func (s *Server) emitMembership(ctx context.Context, projectID, affectedUserID int64, action string) {
-	var actorUserID int64
-	if uid, ok := store.UserIDFromContext(ctx); ok {
-		actorUserID = uid
-	}
+func (s *Server) emitMembership(
+	ctx context.Context,
+	projectID int64,
+	actorUserID int64,
+	affectedUserID int64,
+	action string,
+) {
 	payload, _ := json.Marshal(eventbus.MembershipPayload{
 		ProjectID:      projectID,
 		AffectedUserID: affectedUserID,
