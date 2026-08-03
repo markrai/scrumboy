@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"scrumboy/internal/db"
@@ -182,7 +183,7 @@ func TestProjectMembershipMCPTransportAliasAndRealtimeMatrix(t *testing.T) {
 	}
 }
 
-func assertMembershipMCPError(t *testing.T, transport string, resp *http.Response, out map[string]any, wantStatus int, wantCode, wantMessage string) {
+func assertMembershipMCPError(t *testing.T, transport string, resp *http.Response, out map[string]any, wantStatus int, wantCode, wantMessage string) map[string]any {
 	t.Helper()
 	if transport == "legacy" {
 		if resp.StatusCode != wantStatus {
@@ -192,7 +193,7 @@ func assertMembershipMCPError(t *testing.T, transport string, resp *http.Respons
 		if !ok || errBody["code"] != wantCode || errBody["message"] != wantMessage {
 			t.Fatalf("legacy error=%+v", out)
 		}
-		return
+		return errBody
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("JSON-RPC status=%d response=%+v", resp.StatusCode, out)
@@ -209,6 +210,7 @@ func assertMembershipMCPError(t *testing.T, transport string, resp *http.Respons
 	if !ok || len(content) != 1 || content[0].(map[string]any)["text"] != wantMessage {
 		t.Fatalf("JSON-RPC content=%+v", result["content"])
 	}
+	return structured
 }
 
 func TestProjectMembershipMCPSemanticValidationPrecedesAccess(t *testing.T) {
@@ -409,11 +411,13 @@ func TestProjectMembershipMCPPostReadContracts(t *testing.T) {
 		wantStatus int
 		wantCode   string
 		wantMsg    string
+		forbidden  []string
 	}{
-		{name: "add generic read failure", operation: "add", transport: "legacy", readErr: errors.New("forced membership post-read failure"), wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error"},
+		{name: "add generic read failure", operation: "add", transport: "legacy", readErr: errors.New("forced membership post-read failure"), wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error", forbidden: []string{"forced membership post-read failure"}},
 		{name: "add wrapped not found", operation: "add", transport: "legacy", readErr: fmt.Errorf("wrapped membership read: %w", store.ErrNotFound), wantStatus: http.StatusNotFound, wantCode: "NOT_FOUND", wantMsg: "not found"},
-		{name: "add target missing", operation: "add", transport: "legacy", members: []store.ProjectMember{}, wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error"},
-		{name: "update generic read failure JSON-RPC", operation: "update", transport: "jsonrpc", readErr: errors.New("forced JSON-RPC membership post-read failure"), wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error"},
+		{name: "add target missing", operation: "add", transport: "legacy", members: []store.ProjectMember{}, wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error", forbidden: []string{"member not found after add"}},
+		{name: "add target missing JSON-RPC", operation: "add", transport: "jsonrpc", members: []store.ProjectMember{}, wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error", forbidden: []string{"member not found after add"}},
+		{name: "update generic read failure JSON-RPC", operation: "update", transport: "jsonrpc", readErr: errors.New("forced JSON-RPC membership post-read failure"), wantStatus: http.StatusInternalServerError, wantCode: "INTERNAL", wantMsg: "internal error", forbidden: []string{"forced JSON-RPC membership post-read failure"}},
 		{name: "update target missing", operation: "update", transport: "legacy", members: []store.ProjectMember{}, wantStatus: http.StatusNotFound, wantCode: "NOT_FOUND", wantMsg: "not found"},
 	}
 
@@ -446,7 +450,22 @@ func TestProjectMembershipMCPPostReadContracts(t *testing.T) {
 			stream := subscribeTodoUpdateMCPEvents(t, client, ts.URL+"/api/board/"+project.Slug+"/events")
 			defer stream.close()
 			resp, out := callTodoUpdateMCP(t, client, ts.URL, tt.transport, tool, args)
-			assertMembershipMCPError(t, tt.transport, resp, out, tt.wantStatus, tt.wantCode, tt.wantMsg)
+			publicError := assertMembershipMCPError(t, tt.transport, resp, out, tt.wantStatus, tt.wantCode, tt.wantMsg)
+			if tt.wantCode == "INTERNAL" {
+				details, ok := publicError["details"].(map[string]any)
+				if !ok || len(details) != 0 {
+					t.Fatalf("INTERNAL public details=%+v want empty object", publicError["details"])
+				}
+				encoded, err := json.Marshal(out)
+				if err != nil {
+					t.Fatalf("marshal public response: %v", err)
+				}
+				for _, forbidden := range tt.forbidden {
+					if strings.Contains(string(encoded), forbidden) {
+						t.Fatalf("public response leaked %q: %s", forbidden, encoded)
+					}
+				}
+			}
 			if wrapped.readCalls != 1 {
 				t.Fatalf("post-read calls=%d want=1", wrapped.readCalls)
 			}

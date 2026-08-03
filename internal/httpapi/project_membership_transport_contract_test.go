@@ -334,6 +334,8 @@ type membershipListFailureStore struct {
 	listCalls int
 }
 
+const membershipPostReadFailureMessage = "forced membership post-read failure"
+
 func (s *membershipListFailureStore) ListProjectMembers(context.Context, int64, int64) ([]store.ProjectMember, error) {
 	s.listCalls++
 	return nil, s.err
@@ -351,7 +353,7 @@ func newMembershipListFailureRESTServer(t *testing.T) (*httptest.Server, *sql.DB
 		_ = sqlDB.Close()
 		t.Fatalf("migrate: %v", err)
 	}
-	wrapper := &membershipListFailureStore{Store: store.New(sqlDB, nil), err: errors.New("forced membership post-read failure")}
+	wrapper := &membershipListFailureStore{Store: store.New(sqlDB, nil), err: errors.New(membershipPostReadFailureMessage)}
 	srv := NewServer(wrapper, Options{MaxRequestBody: 1 << 20, ScrumboyMode: "full"})
 	collector := &membershipEventCollector{}
 	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
@@ -400,9 +402,13 @@ func TestProjectMembershipRESTPostReadFailureOccursAfterCommit(t *testing.T) {
 			}
 			stream := subscribeTodoUpdateEvents(t, client, ts.URL+"/api/board/"+project.Slug+"/events")
 
-			resp, responseBody := doJSON(t, client, method, url, body, nil)
-			if resp.StatusCode != http.StatusInternalServerError {
-				t.Fatalf("post-read status=%d want=500 body=%s", resp.StatusCode, responseBody)
+			var envelope apiErrorEnvelope
+			resp, responseBody := doJSON(t, client, method, url, body, &envelope)
+			if resp.StatusCode != http.StatusInternalServerError || envelope.Error.Code != "INTERNAL" || envelope.Error.Message != "internal error" {
+				t.Fatalf("post-read status=%d error=%+v body=%s", resp.StatusCode, envelope, responseBody)
+			}
+			if len(envelope.Error.Details) != 1 || envelope.Error.Details["detail"] != membershipPostReadFailureMessage {
+				t.Fatalf("post-read details=%+v want exact current detail", envelope.Error.Details)
 			}
 			if wrapped.listCalls != 1 {
 				t.Fatalf("post-read calls=%d want=1", wrapped.listCalls)
@@ -470,6 +476,26 @@ func TestProjectMembershipRESTValidationRoleAndModeContracts(t *testing.T) {
 		}
 		if role, err := fx.st.GetProjectRole(fx.ctx, fx.project.ID, target.ID); err != nil || role != store.RoleMaintainer {
 			t.Fatalf("legacy owner stored role=%q err=%v", role, err)
+		}
+	})
+
+	t.Run("add rejects non-exact legacy owner variants", func(t *testing.T) {
+		fx := newMembershipRESTFixture(t, "membership-rest-owner-variants")
+		for i, role := range []string{"Owner", " owner", "owner "} {
+			t.Run(fmt.Sprintf("variant_%d", i), func(t *testing.T) {
+				target := createMembershipUser(t, fx.st, fmt.Sprintf("membership-rest-owner-variant-%d", i))
+				var envelope apiErrorEnvelope
+				resp, body := doJSON(t, fx.client, http.MethodPost, fx.membersURL(), map[string]any{"user_id": target.ID, "role": role}, &envelope)
+				if resp.StatusCode != http.StatusBadRequest || envelope.Error.Code != "VALIDATION_ERROR" || envelope.Error.Message != "invalid role" {
+					t.Fatalf("role %q status=%d error=%+v body=%s", role, resp.StatusCode, envelope, body)
+				}
+				if envelope.Error.Details["field"] != "role" || envelope.Error.Details["reason"] != "invalid_role" {
+					t.Fatalf("role %q details=%+v", role, envelope.Error.Details)
+				}
+				if gotRole, err := fx.st.GetProjectRole(fx.ctx, fx.project.ID, target.ID); err != nil || gotRole != "" {
+					t.Fatalf("role %q unexpectedly mutated membership: stored=%q err=%v", role, gotRole, err)
+				}
+			})
 		}
 	})
 
