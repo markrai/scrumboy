@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
 
+## [3.29.6] - 2026-08-03
+
+### Security
+
+- **npm advisories for transitive `postcss` and `undici`** - Pin
+  `postcss` to `8.5.25` and `undici` to `7.29.0` via npm overrides so Vite and
+  jsdom resolve patched releases for GHSA-fxqj-rqcc-2cmp and the five Undici
+  advisories reported against `7.28.0`. Dev/test tooling only; no production
+  runtime dependency change.
+
 ## [3.29.5] - 2026-08-03
 
 ### Changed
