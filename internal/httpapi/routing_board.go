@@ -10,6 +10,7 @@ import (
 	"time"
 
 	todoapp "scrumboy/internal/application/todo"
+	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/store"
 )
@@ -438,16 +439,41 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 		return true
 	}
 
-	if _, err := s.store.GetTodoByLocalID(s.requestContext(r), project.ID, localID, s.storeMode()); err != nil {
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
-		case errors.Is(err, store.ErrUnauthorized):
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
-		default:
-			writeStoreErr(w, err, true)
+	ctx := s.requestContext(r)
+	isAdd := len(rest) == 4 && r.Method == http.MethodPost
+	isRemove := len(rest) == 5 && r.Method == http.MethodDelete
+
+	var prepared *todolinkapp.PreparedRESTMutation
+	if isAdd || isRemove {
+		var err error
+		prepared, err = s.todoLinkMutations.Prepare(ctx, todolinkapp.ResolvedRESTMutationTarget{
+			ProjectID:     project.ID,
+			SourceLocalID: localID,
+			Mode:          s.storeMode(),
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+			case errors.Is(err, store.ErrUnauthorized):
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+			default:
+				writeStoreErr(w, err, true)
+			}
+			return true
 		}
-		return true
+	} else {
+		if _, err := s.store.GetTodoByLocalID(ctx, project.ID, localID, s.storeMode()); err != nil {
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+			case errors.Is(err, store.ErrUnauthorized):
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+			default:
+				writeStoreErr(w, err, true)
+			}
+			return true
+		}
 	}
 
 	switch {
@@ -485,7 +511,7 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 		})
 		return true
 
-	case len(rest) == 4 && r.Method == http.MethodPost:
+	case isAdd:
 		var in struct {
 			TargetLocalID int64  `json:"targetLocalId"`
 			LinkType      string `json:"linkType"`
@@ -505,7 +531,10 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			in.LinkType = "relates_to"
 		}
 
-		if err := s.store.AddLink(s.requestContext(r), project.ID, localID, in.TargetLocalID, in.LinkType, s.storeMode()); err != nil {
+		if err := prepared.Add(todolinkapp.AddCommand{
+			TargetLocalID: in.TargetLocalID,
+			LinkType:      in.LinkType,
+		}); err != nil {
 			switch {
 			case errors.Is(err, store.ErrValidation):
 				writeValidationError(w, "invalid link", "invalid_link", nil)
@@ -518,17 +547,16 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			}
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_links_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
-	case len(rest) == 5 && r.Method == http.MethodDelete:
+	case isRemove:
 		targetLocalID, ok := parseInt64(rest[4])
 		if !ok {
 			writeValidationError(w, "invalid targetLocalId", "invalid_target_local_id", map[string]any{"field": "targetLocalId"})
 			return true
 		}
-		if err := s.store.RemoveLink(s.requestContext(r), project.ID, localID, targetLocalID, s.storeMode()); err != nil {
+		if err := prepared.Remove(todolinkapp.RemoveCommand{TargetLocalID: targetLocalID}); err != nil {
 			switch {
 			case errors.Is(err, store.ErrUnauthorized):
 				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
@@ -539,7 +567,6 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			}
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_links_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 

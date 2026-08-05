@@ -316,6 +316,39 @@ func TestTodoLinkMutationRESTPrecedence(t *testing.T) {
 	}
 }
 
+func TestTodoLinkMutationRESTUnsupportedMethodContract(t *testing.T) {
+	fx := newTodoLinkRESTFixture(t, "todo-link-rest-unsupported-method")
+	stream := subscribeTodoUpdateEvents(t, fx.client, fx.ts.URL+"/api/board/"+fx.project.Slug+"/events")
+	beforeAdded := todoLinkAuditCount(t, fx.db, fx.project.ID, "link_added")
+	beforeRemoved := todoLinkAuditCount(t, fx.db, fx.project.ID, "link_removed")
+
+	var envelope apiErrorEnvelope
+	resp, body := doJSON(
+		t,
+		fx.client,
+		http.MethodPut,
+		fx.ts.URL+"/api/board/"+fx.project.Slug+"/todos/"+itoa(fx.from.LocalID)+"/links",
+		nil,
+		&envelope,
+	)
+	assertTodoLinkRESTError(t, resp, body, envelope, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+	if len(envelope.Error.Details) != 0 {
+		t.Fatalf("unsupported-method details=%+v want empty", envelope.Error.Details)
+	}
+	if got := todoLinkRowCount(t, fx.db, fx.project.ID, fx.from.LocalID, fx.to.LocalID); got != 0 {
+		t.Fatalf("unsupported method link rows=%d want=0", got)
+	}
+	if got := todoLinkAuditCount(t, fx.db, fx.project.ID, "link_added"); got != beforeAdded {
+		t.Fatalf("link_added audit count=%d want=%d", got, beforeAdded)
+	}
+	if got := todoLinkAuditCount(t, fx.db, fx.project.ID, "link_removed"); got != beforeRemoved {
+		t.Fatalf("link_removed audit count=%d want=%d", got, beforeRemoved)
+	}
+	if events := collectTodoUpdateEvents(t, stream); len(events) != 0 {
+		t.Fatalf("unsupported method emitted events: %+v", events)
+	}
+}
+
 func TestTodoLinkMutationRESTBoardModeContracts(t *testing.T) {
 	t.Run("Durable contributor can mutate", func(t *testing.T) {
 		fx := newTodoLinkRESTFixture(t, "todo-link-rest-contributor")
