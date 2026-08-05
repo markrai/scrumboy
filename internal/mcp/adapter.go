@@ -14,6 +14,7 @@ import (
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
 	todoapp "scrumboy/internal/application/todo"
+	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
@@ -29,10 +30,8 @@ type storeAPI interface {
 	todoapp.CreateStore
 	todoapp.MCPMoveLookupStore
 	SearchTodosForLinkPicker(ctx context.Context, projectID int64, q string, limit int, excludeLocalIDs []int64, mode store.Mode) ([]store.TodoLinkTarget, error)
-	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
-	RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, mode store.Mode) error
-	ListLinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
-	ListBacklinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
+	todolinkapp.MutationStore
+	todolinkapp.LinkReadStore
 	todoapp.UpdateStore
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	todoapp.MoveStore
@@ -92,6 +91,7 @@ type Adapter struct {
 	todoCreates         *todoapp.MCPCreateService
 	todoMoves           *todoapp.MCPMoveService
 	todoUpdates         *todoapp.MCPUpdateService
+	todoLinkMutations   *todolinkapp.MCPMutationService
 	workflowMutations   *workflowapp.MCPMutationService
 	membershipMutations *membershipapp.MCPMutationService
 	mode                string
@@ -141,6 +141,12 @@ func New(st storeAPI, opts Options) *Adapter {
 			Access: st,
 			Lookup: st,
 			Update: st,
+		}),
+		todoLinkMutations: todolinkapp.NewMCPMutationService(todolinkapp.MCPMutationServiceDependencies{
+			Access:    st,
+			Sources:   st,
+			Mutations: st,
+			Links:     st,
 		}),
 		workflowMutations: workflowapp.NewMCPMutationService(workflowapp.MCPMutationServiceDependencies{
 			Access:    st,
