@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	todolinkapp "scrumboy/internal/application/todolink"
 	"scrumboy/internal/store"
 )
 
@@ -36,6 +37,46 @@ func todoLinkTargetsToItems(targets []store.TodoLinkTarget) []todoLinkItem {
 		})
 	}
 	return out
+}
+
+func unwrapTodoLinkMutationStageError(err error) (error, *adapterError) {
+	cause := errors.Unwrap(err)
+	if cause != nil {
+		return cause, nil
+	}
+
+	mapped := newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", nil)
+	mapped.Cause = err
+	return nil, mapped
+}
+
+func mapTodoLinkMutationStoreError(err error) *adapterError {
+	if errors.Is(err, store.ErrUnauthorized) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return mapStoreError(err)
+}
+
+func mapTodoLinkMutationPrepareError(err error) *adapterError {
+	if errors.Is(err, todolinkapp.ErrMCPSourceLookupFailed) {
+		cause, invariantErr := unwrapTodoLinkMutationStageError(err)
+		if invariantErr != nil {
+			return invariantErr
+		}
+		return mapTodoLinkMutationStoreError(cause)
+	}
+	return mapStoreError(err)
+}
+
+func mapTodoLinkMutationOperationError(err error) *adapterError {
+	if errors.Is(err, todolinkapp.ErrMCPProjectionFailed) {
+		cause, invariantErr := unwrapTodoLinkMutationStageError(err)
+		if invariantErr != nil {
+			return invariantErr
+		}
+		return mapStoreError(cause)
+	}
+	return mapTodoLinkMutationStoreError(err)
 }
 
 func (a *Adapter) handleTodosLinksList(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -120,16 +161,13 @@ func (a *Adapter) handleTodosLinkAdd(ctx context.Context, input any) (any, map[s
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid targetLocalId", map[string]any{"field": "targetLocalId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
-	}
-
-	if _, getErr := a.store.GetTodoByLocalID(ctx, pc.Project.ID, in.LocalID, a.storeMode()); getErr != nil {
-		if errors.Is(getErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(getErr)
+	prepared, prepareErr := a.todoLinkMutations.Prepare(ctx, todolinkapp.MCPMutationTarget{
+		ProjectSlug:   in.ProjectSlug,
+		SourceLocalID: in.LocalID,
+		Mode:          a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapTodoLinkMutationPrepareError(prepareErr)
 	}
 
 	linkType := in.LinkType
@@ -137,25 +175,17 @@ func (a *Adapter) handleTodosLinkAdd(ctx context.Context, input any) (any, map[s
 		linkType = "relates_to"
 	}
 
-	if addErr := a.store.AddLink(ctx, pc.Project.ID, in.LocalID, in.TargetLocalId, linkType, a.storeMode()); addErr != nil {
-		if errors.Is(addErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(addErr)
-	}
-
-	outbound, listErr := a.store.ListLinksForTodo(ctx, pc.Project.ID, in.LocalID, a.storeMode())
-	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
-	}
-	inbound, listErr := a.store.ListBacklinksForTodo(ctx, pc.Project.ID, in.LocalID, a.storeMode())
-	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
+	linkSet, addErr := prepared.Add(todolinkapp.AddCommand{
+		TargetLocalID: in.TargetLocalId,
+		LinkType:      linkType,
+	})
+	if addErr != nil {
+		return nil, nil, mapTodoLinkMutationOperationError(addErr)
 	}
 
 	return map[string]any{
-		"outbound": todoLinkTargetsToItems(outbound),
-		"inbound":  todoLinkTargetsToItems(inbound),
+		"outbound": todoLinkTargetsToItems(linkSet.Outbound),
+		"inbound":  todoLinkTargetsToItems(linkSet.Inbound),
 	}, map[string]any{}, nil
 }
 
@@ -188,36 +218,24 @@ func (a *Adapter) handleTodosLinkRemove(ctx context.Context, input any) (any, ma
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid targetLocalId", map[string]any{"field": "targetLocalId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoLinkMutations.Prepare(ctx, todolinkapp.MCPMutationTarget{
+		ProjectSlug:   in.ProjectSlug,
+		SourceLocalID: in.LocalID,
+		Mode:          a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapTodoLinkMutationPrepareError(prepareErr)
 	}
 
-	if _, getErr := a.store.GetTodoByLocalID(ctx, pc.Project.ID, in.LocalID, a.storeMode()); getErr != nil {
-		if errors.Is(getErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(getErr)
-	}
-
-	if removeErr := a.store.RemoveLink(ctx, pc.Project.ID, in.LocalID, in.TargetLocalId, a.storeMode()); removeErr != nil {
-		if errors.Is(removeErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(removeErr)
-	}
-
-	outbound, listErr := a.store.ListLinksForTodo(ctx, pc.Project.ID, in.LocalID, a.storeMode())
-	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
-	}
-	inbound, listErr := a.store.ListBacklinksForTodo(ctx, pc.Project.ID, in.LocalID, a.storeMode())
-	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
+	linkSet, removeErr := prepared.Remove(todolinkapp.RemoveCommand{
+		TargetLocalID: in.TargetLocalId,
+	})
+	if removeErr != nil {
+		return nil, nil, mapTodoLinkMutationOperationError(removeErr)
 	}
 
 	return map[string]any{
-		"outbound": todoLinkTargetsToItems(outbound),
-		"inbound":  todoLinkTargetsToItems(inbound),
+		"outbound": todoLinkTargetsToItems(linkSet.Outbound),
+		"inbound":  todoLinkTargetsToItems(linkSet.Inbound),
 	}, map[string]any{}, nil
 }
