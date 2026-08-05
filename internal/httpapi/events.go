@@ -5,9 +5,20 @@ import (
 	"encoding/json"
 
 	membershipapp "scrumboy/internal/application/membership"
+	todolinkapp "scrumboy/internal/application/todolink"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
 )
+
+type todoLinkMutationPublisher struct {
+	server *Server
+}
+
+var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
+
+func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated")
+}
 
 type membershipMutationPublisher struct {
 	server *Server
