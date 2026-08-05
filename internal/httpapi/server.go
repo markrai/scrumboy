@@ -14,6 +14,7 @@ import (
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
 	todoapp "scrumboy/internal/application/todo"
+	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
@@ -100,6 +101,7 @@ type Server struct {
 	todoCreates         *todoapp.CreateService
 	todoMoves           *todoapp.MoveService
 	todoUpdates         *todoapp.UpdateService
+	todoLinkMutations   *todolinkapp.RESTMutationService
 	workflowMutations   *workflowapp.RESTMutationService
 	membershipMutations *membershipapp.RESTMutationService
 
@@ -282,8 +284,7 @@ type storeAPI interface {
 	todoapp.CreateStore
 	todoapp.UpdateStore
 	todoapp.MoveStore
-	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
-	RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, mode store.Mode) error
+	todolinkapp.MutationStore
 	ListLinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
 	ListBacklinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
 	SearchTodosForLinkPicker(ctx context.Context, projectID int64, q string, limit int, excludeLocalIDs []int64, mode store.Mode) ([]store.TodoLinkTarget, error)
@@ -592,6 +593,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
 		Update:  st,
 		Refresh: boardRefreshPublisher,
+	})
+	server.todoLinkMutations = todolinkapp.NewRESTMutationService(todolinkapp.RESTMutationServiceDependencies{
+		Sources:   st,
+		Mutations: st,
+		Publisher: todoLinkMutationPublisher{server: server},
 	})
 	server.workflowMutations = workflowapp.NewRESTMutationService(workflowapp.RESTMutationServiceDependencies{
 		Roles:     st,
