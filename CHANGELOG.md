@@ -2,6 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
 
+## [3.30.0] - 2026-08-06
+
+### Added
+
+- **Configurable role for default-board auto-enrollment** - The org-wide
+  "default board for new users" admin setting now accepts a project role
+  (Viewer, Contributor, or Maintainer) alongside the board, instead of always
+  enrolling new users as a Viewer. Existing configurations with no role set
+  keep enrolling at Viewer, and clearing the override resets the role back to
+  that same Viewer fallback.
+
 ## [3.29.7] - 2026-08-05
 
 ### Changed

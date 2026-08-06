@@ -1953,25 +1953,34 @@ export async function renderSettingsModal(options) {
                 await renderSettingsModal();
             }, { signal });
         }
-        // Default board: project picker. Saving a selection enables the org setting.
+        // Default board: project picker and role picker. Saving a project
+        // selection enables the org setting; the role picker is only meaningful
+        // once a project is chosen, so it reads the currently selected project
+        // rather than requiring the admin to re-pick it.
         const defaultBoardSelect = document.getElementById("defaultBoardProjectSelect");
+        const defaultBoardRoleSelect = document.getElementById("defaultBoardRoleSelect");
+        const saveDefaultBoard = async () => {
+            const projectId = Number(defaultBoardSelect?.value);
+            if (!defaultBoardSelect?.value || !Number.isFinite(projectId) || projectId <= 0)
+                return;
+            const role = defaultBoardRoleSelect?.value || "viewer";
+            try {
+                await apiFetch("/api/admin/settings/default-board", {
+                    method: "PUT",
+                    body: JSON.stringify({ projectId, role }),
+                });
+                showToast(t("settings.users.defaultBoard.toast.saved"));
+            }
+            catch (err) {
+                showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.defaultBoard.toast.saveFailed" }));
+            }
+            await renderSettingsModal();
+        };
         if (defaultBoardSelect) {
-            defaultBoardSelect.addEventListener("change", async () => {
-                const projectId = Number(defaultBoardSelect.value);
-                if (!defaultBoardSelect.value || !Number.isFinite(projectId) || projectId <= 0)
-                    return;
-                try {
-                    await apiFetch("/api/admin/settings/default-board", {
-                        method: "PUT",
-                        body: JSON.stringify({ projectId }),
-                    });
-                    showToast(t("settings.users.defaultBoard.toast.saved"));
-                }
-                catch (err) {
-                    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.defaultBoard.toast.saveFailed" }));
-                }
-                await renderSettingsModal();
-            }, { signal });
+            defaultBoardSelect.addEventListener("change", saveDefaultBoard, { signal });
+        }
+        if (defaultBoardRoleSelect) {
+            defaultBoardRoleSelect.addEventListener("change", saveDefaultBoard, { signal });
         }
     }
     // Setup sprints tab (create, activate, close)
@@ -2288,15 +2297,21 @@ export async function renderSettingsModal(options) {
         rerender: () => renderSettingsModal(),
     });
 }
+// Roles an admin may pick as the auto-enrollment level for the default
+// board. Mirrors the backend's IsValidProjectRole set (owner/editor are
+// deprecated aliases, never offered here).
+const DEFAULT_BOARD_ROLES = ["viewer", "contributor", "maintainer"];
 // Renders the org-wide "default board for new users" admin control shown at the
 // top of the Users tab. The enable toggle maps onto the existing admin API:
-// disabled == unset (`customized:false`), enabled == a saved `projectId`.
-// Turning the toggle off clears via DELETE; picking a project saves via PUT.
-// This never enrolls existing users -- it only seeds users created afterward.
+// disabled == unset (`customized:false`), enabled == a saved `projectId` (and
+// `role`, defaulting to viewer server-side when omitted). Turning the toggle
+// off clears via DELETE; picking a project or role saves via PUT. This never
+// enrolls existing users -- it only seeds users created afterward.
 function renderDefaultBoardSection(setting, projects) {
     const loadFailed = !setting;
     const customized = !!(setting && setting.customized);
     const configuredId = customized && typeof setting.projectId === "number" ? setting.projectId : null;
+    const configuredRole = DEFAULT_BOARD_ROLES.includes(setting?.role) ? setting.role : "viewer";
     // Only durable projects the requester maintains are valid write targets
     // (mirrors the store-side rule); temporary/anonymous boards are excluded.
     const durable = Array.isArray(projects) ? projects.filter((p) => !p.expiresAt) : [];
@@ -2312,6 +2327,7 @@ function renderDefaultBoardSection(setting, projects) {
     }
     const optionsHTML = eligible.map((p) => `<option value="${p.id}" ${p.id === configuredId ? "selected" : ""}>${escapeHTML(p.name)}</option>`).join("");
     const hasEligible = eligible.length > 0 || extraOptionHTML !== "";
+    const roleOptionsHTML = DEFAULT_BOARD_ROLES.map((role) => `<option value="${role}" ${role === configuredRole ? "selected" : ""}>${escapeHTML(t(`board.members.role.${role}`))}</option>`).join("");
     const controlsHTML = loadFailed
         ? `<p class="muted" style="margin:8px 0;font-size:13px;" data-i18n-text="settings.users.defaultBoard.loadFailed">Could not load the default board setting. Reload the page to try again.</p>`
         : `
@@ -2328,12 +2344,18 @@ function renderDefaultBoardSection(setting, projects) {
               ${extraOptionHTML}
               ${optionsHTML}
             </select>
+          </label>
+          <label class="field" style="display:block;margin-top:10px;">
+            <span class="muted" data-i18n-text="settings.users.defaultBoard.roleLabel">Role for new members</span>
+            <select id="defaultBoardRoleSelect" class="input" style="display:block;margin-top:4px;">
+              ${roleOptionsHTML}
+            </select>
           </label>` : `<p class="muted" style="margin:0;font-size:13px;" data-i18n-text="settings.users.defaultBoard.noEligibleProjects">You have no durable boards you maintain to use as a default.</p>`}
         </div>`;
     return `
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.users.defaultBoard.title">Default board for new users</div>
-        <div class="settings-section__description muted" data-i18n-text="settings.users.defaultBoard.description">New users are auto-enrolled as viewers on this board when their account is created. Changing or turning this off never affects existing users.</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.users.defaultBoard.description">New users are auto-enrolled on this board at the selected role when their account is created. Changing or turning this off never affects existing users.</div>
         ${controlsHTML}
       </div>
   `;

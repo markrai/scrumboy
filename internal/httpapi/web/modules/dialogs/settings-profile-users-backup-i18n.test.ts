@@ -616,7 +616,33 @@ describe('settings i18n (profile / users / backup / customization)', () => {
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/admin/settings/default-board', {
       method: 'PUT',
-      body: JSON.stringify({ projectId: 10 }),
+      body: JSON.stringify({ projectId: 10, role: 'viewer' }),
+    });
+    expect(showToastMock).toHaveBeenCalledWith('Default board saved');
+  });
+
+  it('saves the selected role via PUT when the role picker changes', async () => {
+    const owner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false };
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/admin/users') return [{ id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner' }];
+      if (url === '/api/admin/settings/default-board') return { customized: true, projectId: 10, role: 'viewer' };
+      if (url === '/api/projects') return [{ id: 10, name: 'Alpha', role: 'maintainer' }];
+      return undefined;
+    });
+    await setupSettingsView({ activeTab: 'users', user: owner });
+
+    const roleSelect = document.getElementById('defaultBoardRoleSelect') as HTMLSelectElement;
+    expect(roleSelect).not.toBeNull();
+    expect(roleSelect.value).toBe('viewer');
+
+    apiFetchMock.mockClear();
+    roleSelect.value = 'contributor';
+    roleSelect.dispatchEvent(new Event('change'));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/admin/settings/default-board', {
+      method: 'PUT',
+      body: JSON.stringify({ projectId: 10, role: 'contributor' }),
     });
     expect(showToastMock).toHaveBeenCalledWith('Default board saved');
   });
