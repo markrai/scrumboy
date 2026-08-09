@@ -1,11 +1,12 @@
 import { apiFetch } from '../api.js';
 import { emit } from '../events.js';
-import { refreshSprintsAndChips } from '../orchestration/board-refresh.js';
+import { invalidateBoard, refreshSprintsAndChips } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { getBoard, getSlug } from '../state/selectors.js';
 import { setBoard } from '../state/mutations.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
+import { clearSprintChipData } from '../views/board-filters.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, formatDate, t } from '../i18n/index.js';
 let editingSprintId = null;
@@ -221,13 +222,23 @@ export function bindSprintsTabInteractions(options) {
                 if (board) {
                     setBoard({ ...board, project: { ...board.project, sprintsEnabled: nextEnabled } });
                 }
-                showToast(nextEnabled ? t('settings.sprints.toast.enabled') : t('settings.sprints.toast.disabled'));
-                await rerender();
             }
             catch (err) {
                 sprintsEnabledToggle.checked = !nextEnabled;
                 showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.sprints.toast.toggleFailed' }));
+                return;
             }
+            clearSprintChipData();
+            invalidateSprintChartsCache();
+            const url = new URL(window.location.href);
+            url.searchParams.delete('sprintId');
+            history.replaceState({}, '', url.pathname + url.search);
+            showToast(nextEnabled ? t('settings.sprints.toast.enabled') : t('settings.sprints.toast.disabled'));
+            await invalidateBoard(slug, url.searchParams.get('tag') ?? undefined, url.searchParams.get('search') ?? undefined, null, url.searchParams.get('assignee'), url.searchParams.get('sort'), true).catch(() => { });
+            if (nextEnabled) {
+                await refreshSprintsAndChips(slug).catch(() => { });
+            }
+            await rerender().catch(() => { });
         }, { signal });
     }
     const defaultWeeksEl = document.getElementById('sprintDefaultWeeksSelect');

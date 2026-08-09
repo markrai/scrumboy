@@ -12,7 +12,11 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	membershipapp "scrumboy/internal/application/membership"
+	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
+	todolinkapp "scrumboy/internal/application/todolink"
+	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
@@ -93,10 +97,17 @@ type Options struct {
 }
 
 type Server struct {
-	store       storeAPI
-	boardReads  *boardapp.ReadService
-	todoMoves   *todoapp.MoveService
-	todoUpdates *todoapp.UpdateService
+	store               storeAPI
+	boardReads          *boardapp.ReadService
+	todoCreates         *todoapp.CreateService
+	todoMoves           *todoapp.MoveService
+	todoUpdates         *todoapp.UpdateService
+	todoLinkMutations   *todolinkapp.RESTMutationService
+	sprintDefinitions   *sprintapp.RESTDefinitionService
+	sprintLifecycle     *sprintapp.RESTLifecycleService
+	sprintDeletions     *sprintapp.RESTDeletionService
+	workflowMutations   *workflowapp.RESTMutationService
+	membershipMutations *membershipapp.RESTMutationService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -220,16 +231,12 @@ type storeAPI interface {
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
-	AddWorkflowColumn(ctx context.Context, projectID int64, name string) (store.WorkflowColumn, error)
-	DeleteWorkflowColumn(ctx context.Context, projectID int64, key string) error
-	UpdateWorkflowColumn(ctx context.Context, projectID int64, key, name, color string) error
+	workflowapp.MutationStore
+	membershipapp.MutationStore
 	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
-	AddProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
-	RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error
-	UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, role store.ProjectRole) error
 	ListAvailableUsersForProject(ctx context.Context, requesterID, projectID int64) ([]store.User, error)
 
 	boardapp.ReadStore
@@ -261,8 +268,7 @@ type storeAPI interface {
 	GetTagColor(ctx context.Context, userID int64, tagID int64) (*string, error)
 	DeleteTag(ctx context.Context, userID int64, tagID int64, isAnonymousBoard bool) error
 
-	CreateTodo(ctx context.Context, projectID int64, in store.CreateTodoInput, mode store.Mode) (store.Todo, error)
-	CreateSprint(ctx context.Context, projectID int64, name string, plannedStartAt, plannedEndAt time.Time) (store.Sprint, error)
+	sprintapp.DefinitionStore
 	ListSprints(ctx context.Context, projectID int64) ([]store.Sprint, error)
 	HasSprints(ctx context.Context, projectID int64) (bool, error)
 	ListSprintsWithTodoCount(ctx context.Context, projectID int64) ([]store.SprintWithTodoCount, error)
@@ -270,20 +276,18 @@ type storeAPI interface {
 	GetSprintByID(ctx context.Context, sprintID int64) (store.Sprint, error)
 	GetSprintByProjectNumber(ctx context.Context, projectID, number int64) (store.Sprint, error)
 	GetActiveSprintByProjectID(ctx context.Context, projectID int64) (*store.Sprint, error)
-	ActivateSprint(ctx context.Context, projectID, sprintID int64) error
-	CloseSprint(ctx context.Context, sprintID int64) error
-	UpdateSprint(ctx context.Context, sprintID int64, in store.UpdateSprintInput) error
-	DeleteSprint(ctx context.Context, projectID, sprintID int64) error
+	sprintapp.TransitionStore
+	sprintapp.DeletionStore
 	UpdateTodo(ctx context.Context, todoID int64, in store.UpdateTodoInput, mode store.Mode) (store.Todo, error)
 	DeleteTodo(ctx context.Context, todoID int64, mode store.Mode) error
 	GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, error)
 	MoveTodo(ctx context.Context, todoID int64, toColumnKey string, afterID, beforeID *int64, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
+	todoapp.CreateStore
 	todoapp.UpdateStore
 	todoapp.MoveStore
-	AddLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, linkType string, mode store.Mode) error
-	RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalID int64, mode store.Mode) error
+	todolinkapp.MutationStore
 	ListLinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
 	ListBacklinksForTodo(ctx context.Context, projectID, localID int64, mode store.Mode) ([]store.TodoLinkTarget, error)
 	SearchTodosForLinkPicker(ctx context.Context, projectID int64, q string, limit int, excludeLocalIDs []int64, mode store.Mode) ([]store.TodoLinkTarget, error)
@@ -581,6 +585,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
 		server.emitRefreshNeeded(ctx, projectID, reason)
 	})
+	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
+		Create:  st,
+		Refresh: boardRefreshPublisher,
+	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
 		Move:    st,
 		Refresh: boardRefreshPublisher,
@@ -588,6 +596,39 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
 		Update:  st,
 		Refresh: boardRefreshPublisher,
+	})
+	server.todoLinkMutations = todolinkapp.NewRESTMutationService(todolinkapp.RESTMutationServiceDependencies{
+		Sources:   st,
+		Mutations: st,
+		Publisher: todoLinkMutationPublisher{server: server},
+	})
+	server.sprintDefinitions = sprintapp.NewRESTDefinitionService(sprintapp.RESTDefinitionServiceDependencies{
+		Roles:       st,
+		Definitions: st,
+		Publisher:   sprintDefinitionPublisher{server: server},
+	})
+	server.sprintLifecycle = sprintapp.NewRESTLifecycleService(sprintapp.RESTLifecycleServiceDependencies{
+		Roles:       st,
+		Sprints:     st,
+		Transitions: st,
+		Publisher:   sprintTransitionPublisher{server: server},
+	})
+	server.sprintDeletions = sprintapp.NewRESTDeletionService(sprintapp.RESTDeletionServiceDependencies{
+		Roles:     st,
+		Deletions: st,
+		Publisher: sprintDeletionPublisher{server: server},
+	})
+	server.workflowMutations = workflowapp.NewRESTMutationService(workflowapp.RESTMutationServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+			server.emitRefreshNeeded(ctx, projectID, reason)
+		}),
+	})
+	server.membershipMutations = membershipapp.NewRESTMutationService(membershipapp.RESTMutationServiceDependencies{
+		Mutations: st,
+		Members:   st,
+		Publisher: membershipMutationPublisher{server: server},
 	})
 	return server
 }

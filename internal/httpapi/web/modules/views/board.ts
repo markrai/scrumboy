@@ -1672,7 +1672,8 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   try {
     board = await apiFetch<Board>(`/api/board/${slug}${qs}`);
   } catch (err: any) {
-    if (err?.status === 400 && requestSprintId) {
+    const reason = err?.data?.error?.details?.reason;
+    if (err?.status === 400 && requestSprintId && (reason === "sprints_disabled" || reason === "invalid_sprint_id")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("sprintId");
       const newUrl = url.pathname + (url.search ? url.search : "");
@@ -1718,11 +1719,17 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   if (!rendered) return;
   debugLog("loadBoardBySlug end (success)", slug);
 
-  if (!isAnonymousBoard(board) && boardSprintsEnabled(board) && !hasSprintChipDataForSlug(slug)) {
+  if (!boardSprintsEnabled(board)) {
+    clearSprintChipData();
+  } else if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
     setSprintChipDataForSlug(slug, null);
     apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`)
       .then((sprintsResp) => {
         if (requestSeq !== boardLoadSequence) return;
+        if (!boardSprintsEnabled(getBoard())) {
+          clearSprintChipData();
+          return;
+        }
         const sprints = normalizeSprints(sprintsResp);
         setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
         if (getSlug() === requestSlug) {
@@ -1869,11 +1876,17 @@ export async function renderBoard(
     });
     if (!rendered) return;
     if (getSlug() === slug) connectBoardEvents(slug);
-    if (!isAnonymousBoard(board) && boardSprintsEnabled(board) && !hasSprintChipDataForSlug(slug)) {
+    if (!boardSprintsEnabled(board)) {
+      clearSprintChipData();
+    } else if (!isAnonymousBoard(board) && !hasSprintChipDataForSlug(slug)) {
       setSprintChipDataForSlug(slug, null);
       apiFetch<SprintChipData | null>(`/api/board/${slug}/sprints`)
         .then((sprintsResp) => {
           if (getSlug() !== slug) return;
+          if (!boardSprintsEnabled(getBoard())) {
+            clearSprintChipData();
+            return;
+          }
           const sprints = normalizeSprints(sprintsResp);
           setSprintChipDataForSlug(slug, sprints.length > 0 ? { ...(sprintsResp || {}), sprints } : null);
           if (getSlug() === slug) {

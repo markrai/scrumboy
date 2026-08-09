@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Элемент стены не может быть связан сам с собой.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Требуются токен настройки и код.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Активировать можно только запланированные спринты.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Спринты отключены для этого проекта.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Дата окончания спринта должна быть не раньше даты начала.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Дата окончания спринта должна быть в будущем.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Спринт с таким названием уже существует.",

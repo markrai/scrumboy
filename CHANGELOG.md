@@ -2,6 +2,87 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
 
+## [3.29.9] - 2026-08-08
+
+### Security
+
+- **npm advisories for DOMPurify, Mermaid, and transitive NanoID** - Pin
+  `dompurify` to `3.4.13`, `mermaid` to `11.16.1`, and `nanoid` to `3.3.17`
+  beneath PostCSS via npm overrides so the frontend resolves patched releases
+  for GHSA-55q2-fjhq-7xh7, GHSA-2v8p-3f2j-5mp7, GHSA-3rrr-jr9j-h3q3,
+  GHSA-6x64-9x62-f2gx, GHSA-c4c3-pg64-4m4v, GHSA-rhh3-jpg6-66xh, and
+  GHSA-2v37-7h3g-55p8. Vendored browser bundles and documentation pins updated;
+  no application behavior change.
+
+## [3.29.8] - 2026-08-08
+
+### Changed
+
+- **Sprint mutations move behind application services** - REST and MCP sprint
+  definition, lifecycle, and deletion operations now use prepared application
+  services with narrow capability boundaries. Existing validation,
+  authorization, response, event, and compatibility contracts are preserved,
+  with comprehensive application, store, REST, and MCP contract coverage.
+
+### Fixed
+
+- **Sprint close mutations are project-scoped** - Closing a sprint now requires
+  both its project and sprint identity, preventing an authorized request for one
+  project from closing a sprint belonging to another project.
+
+## [3.29.7] - 2026-08-05
+
+### Changed
+
+- **Todo-link mutations move behind application services** - REST and
+  MCP directed todo-link add and remove now share
+  `internal/application/todolink` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST board-refresh side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
+## [3.29.6] - 2026-08-03
+
+### Security
+
+- **npm advisories for transitive `postcss` and `undici`** - Pin
+  `postcss` to `8.5.25` and `undici` to `7.29.0` via npm overrides so Vite and
+  jsdom resolve patched releases for GHSA-fxqj-rqcc-2cmp and the five Undici
+  advisories reported against `7.28.0`. Dev/test tooling only; no production
+  runtime dependency change.
+
+## [3.29.5] - 2026-08-03
+
+### Changed
+
+- **Project membership mutations move behind application services** - REST and
+  MCP member add, role update, and remove now share
+  `internal/application/membership` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST membership-event side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
+## [3.29.4] - 2026-08-02
+
+### Changed
+
+- **Workflow column mutations move behind application services** - REST and
+  MCP workflow column create, update, and delete now share
+  `internal/application/workflow` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST board-refresh side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
+## [3.29.3] - 2026-08-02
+
+### Changed
+
+- **Todo creates move behind application services** - REST and MCP todo
+  creates now share `internal/application/todo` command boundaries instead of
+  owning write logic in the transports. HTTP and MCP adapters stay thin
+  wrappers; permissions, validation, response shapes, and side effects are
+  preserved. Contract tests lock the migrated create paths.
+
 ## [3.29.2] - 2026-07-31
 
 ### Changed

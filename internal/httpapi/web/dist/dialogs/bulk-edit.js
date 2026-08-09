@@ -261,7 +261,7 @@ export async function openBulkEditDialog(initialIds, opts) {
 async function runBulkApply(todoIds) {
     const els = getBulkFormEls();
     const applyAssign = !!els.applyAssign?.checked;
-    const applySprint = !!els.applySprint?.checked;
+    const applySprint = boardSprintsEnabled(getBoard()) && !!els.applySprint?.checked;
     const applyStatus = !!els.applyStatus?.checked;
     const applyTags = !!els.applyTags?.checked;
     const applyEst = !!els.applyEst?.checked;

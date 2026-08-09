@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Um item do mural não pode ser vinculado a ele mesmo.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "O token de configuração e o código são obrigatórios.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Somente sprints planejados podem ser ativados.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Os sprints estão desativados para este projeto.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "A data de fim do sprint deve ser igual ou posterior à data de início.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "A data de fim do sprint deve estar no futuro.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Já existe um sprint com este nome.",

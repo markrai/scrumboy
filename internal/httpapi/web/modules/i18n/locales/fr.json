@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Un élément du mur ne peut pas être lié à lui-même.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Le jeton de configuration et le code sont requis.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Seuls les sprints planifiés peuvent être activés.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Les sprints sont désactivés pour ce projet.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "La date de fin du sprint doit être égale ou postérieure à la date de début.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "La date de fin du sprint doit être dans le futur.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Un sprint avec ce nom existe déjà.",

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "نوٹ وال آئٹم خود سے منسلک نہیں ہو سکتا۔",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup token اور code ضروری ہیں۔",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "صرف منصوبہ بند Sprint شروع کیے جا سکتے ہیں۔",
+  "errors.VALIDATION_ERROR.sprints_disabled": "اس پروجیکٹ کے لیے Sprints غیر فعال ہیں۔",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint اختتام شروع یا اس کے بعد ہونا چاہیے۔",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint اختتام مستقبل میں ہونا چاہیے۔",
   "errors.VALIDATION_ERROR.sprint_name_exists": "اس نام کا Sprint پہلے سے موجود ہے۔",

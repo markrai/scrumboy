@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Bir duvar öğesi kendisiyle bağlanamaz.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Kurulum jetonu ve kod gerekli.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Yalnızca planlanmış sprintler etkinleştirilebilir.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Bu proje için sprintler devre dışı.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint bitiş tarihi başlangıç tarihinde veya sonrasında olmalıdır.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint bitiş tarihi gelecekte olmalıdır.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Bu adla bir sprint zaten var.",

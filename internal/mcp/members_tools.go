@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	membershipapp "scrumboy/internal/application/membership"
 	"scrumboy/internal/store"
 )
 
@@ -19,6 +20,58 @@ func normalizeProjectMemberRoleForMCP(role string) string {
 		return "contributor"
 	default:
 		return s
+	}
+}
+
+func mapMembershipMutationPrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, membershipapp.ErrMaintainerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	case errors.Is(err, membershipapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapMembershipAddError(err error) *adapterError {
+	switch {
+	case errors.Is(err, membershipapp.ErrAddedMemberMissing):
+		return newAdapterError(http.StatusInternalServerError, CodeInternal, "member not found after add", nil)
+	case errors.Is(err, store.ErrUnauthorized):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapMembershipUpdateRoleError(err error) *adapterError {
+	switch {
+	case errors.Is(err, membershipapp.ErrUpdatedMemberMissing):
+		return newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	case errors.Is(err, store.ErrUnauthorized):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	case errors.Is(err, store.ErrConflict):
+		return newAdapterError(http.StatusConflict, CodeConflict, err.Error(), nil)
+	case errors.Is(err, store.ErrNotFound):
+		return newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	case errors.Is(err, store.ErrValidation):
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), map[string]any{"field": "role"})
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapMembershipRemoveError(err error) *adapterError {
+	switch {
+	case errors.Is(err, store.ErrUnauthorized):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	case errors.Is(err, store.ErrNotFound):
+		return newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	case errors.Is(err, store.ErrValidation):
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), nil)
+	default:
+		return mapStoreError(err)
 	}
 }
 
@@ -170,50 +223,30 @@ func (a *Adapter) handleMembersAdd(ctx context.Context, input any) (any, map[str
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported role", map[string]any{"field": "role"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.membershipMutations.Prepare(ctx, membershipapp.MCPMutationTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapMembershipMutationPrepareError(prepareErr)
 	}
 
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-
-	if err := a.store.AddProjectMember(ctx, requesterID, pc.Project.ID, in.UserID, pr); err != nil {
-		if errors.Is(err, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-		}
-		return nil, nil, mapStoreError(err)
-	}
-
-	members, mErr := a.store.ListProjectMembers(ctx, pc.Project.ID, requesterID)
-	if mErr != nil {
-		return nil, nil, mapStoreError(mErr)
-	}
-	var found *store.ProjectMember
-	for i := range members {
-		if members[i].UserID == in.UserID {
-			found = &members[i]
-			break
-		}
-	}
-	if found == nil {
-		return nil, nil, newAdapterError(http.StatusInternalServerError, CodeInternal, "member not found after add", nil)
+	member, addErr := prepared.Add(membershipapp.AddCommand{
+		TargetUserID: in.UserID,
+		Role:         pr,
+	})
+	if addErr != nil {
+		return nil, nil, mapMembershipAddError(addErr)
 	}
 
 	item := projectMemberItem{
 		ProjectSlug: in.ProjectSlug,
-		UserID:      found.UserID,
-		Email:       found.Email,
-		Name:        found.Name,
-		Image:       found.Image,
-		Role:        normalizeProjectMemberRoleForMCP(string(found.Role)),
-		CreatedAt:   found.CreatedAt,
+		UserID:      member.UserID,
+		Email:       member.Email,
+		Name:        member.Name,
+		Image:       member.Image,
+		Role:        normalizeProjectMemberRoleForMCP(string(member.Role)),
+		CreatedAt:   member.CreatedAt,
 	}
 
 	return map[string]any{
@@ -255,58 +288,30 @@ func (a *Adapter) handleMembersUpdateRole(ctx context.Context, input any) (any, 
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported role", map[string]any{"field": "role"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.membershipMutations.Prepare(ctx, membershipapp.MCPMutationTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapMembershipMutationPrepareError(prepareErr)
 	}
 
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-
-	if err := a.store.UpdateProjectMemberRole(ctx, requesterID, pc.Project.ID, in.UserID, pr); err != nil {
-		switch {
-		case errors.Is(err, store.ErrUnauthorized):
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-		case errors.Is(err, store.ErrConflict):
-			return nil, nil, newAdapterError(http.StatusConflict, CodeConflict, err.Error(), nil)
-		case errors.Is(err, store.ErrNotFound):
-			return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-		case errors.Is(err, store.ErrValidation):
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), map[string]any{"field": "role"})
-		default:
-			return nil, nil, mapStoreError(err)
-		}
-	}
-
-	members, mErr := a.store.ListProjectMembers(ctx, pc.Project.ID, requesterID)
-	if mErr != nil {
-		return nil, nil, mapStoreError(mErr)
-	}
-	var found *store.ProjectMember
-	for i := range members {
-		if members[i].UserID == in.UserID {
-			found = &members[i]
-			break
-		}
-	}
-	if found == nil {
-		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	member, updateErr := prepared.UpdateRole(membershipapp.UpdateRoleCommand{
+		TargetUserID: in.UserID,
+		Role:         pr,
+	})
+	if updateErr != nil {
+		return nil, nil, mapMembershipUpdateRoleError(updateErr)
 	}
 
 	item := projectMemberItem{
 		ProjectSlug: in.ProjectSlug,
-		UserID:      found.UserID,
-		Email:       found.Email,
-		Name:        found.Name,
-		Image:       found.Image,
-		Role:        normalizeProjectMemberRoleForMCP(string(found.Role)),
-		CreatedAt:   found.CreatedAt,
+		UserID:      member.UserID,
+		Email:       member.Email,
+		Name:        member.Name,
+		Image:       member.Image,
+		Role:        normalizeProjectMemberRoleForMCP(string(member.Role)),
+		CreatedAt:   member.CreatedAt,
 	}
 
 	return map[string]any{
@@ -340,31 +345,17 @@ func (a *Adapter) handleMembersRemove(ctx context.Context, input any) (any, map[
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid userId", map[string]any{"field": "userId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.membershipMutations.Prepare(ctx, membershipapp.MCPMutationTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapMembershipMutationPrepareError(prepareErr)
 	}
 
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-
-	if err := a.store.RemoveProjectMember(ctx, requesterID, pc.Project.ID, in.UserID); err != nil {
-		switch {
-		case errors.Is(err, store.ErrUnauthorized):
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-		case errors.Is(err, store.ErrNotFound):
-			return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-		case errors.Is(err, store.ErrValidation):
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), nil)
-		default:
-			return nil, nil, mapStoreError(err)
-		}
+	removeErr := prepared.Remove(membershipapp.RemoveCommand{TargetUserID: in.UserID})
+	if removeErr != nil {
+		return nil, nil, mapMembershipRemoveError(removeErr)
 	}
 
 	return map[string]any{

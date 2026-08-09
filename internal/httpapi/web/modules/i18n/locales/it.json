@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Un elemento della bacheca note non può collegarsi a se stesso.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Token e codice di configurazione sono obbligatori.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Solo gli Sprint pianificati possono essere avviati.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Gli Sprint sono disabilitati per questo progetto.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "La data di fine dello Sprint deve essere uguale o successiva alla data di inizio.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "La data di fine dello Sprint deve essere nel futuro.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Esiste già uno Sprint con questo nome.",

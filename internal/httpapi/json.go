@@ -313,6 +313,13 @@ func todoToJSON(t store.Todo) todoJSON {
 	}
 }
 
+func todoToJSONForProject(t store.Todo, project store.Project) todoJSON {
+	if !project.SprintsEnabled {
+		t.SprintID = nil
+	}
+	return todoToJSON(t)
+}
+
 type activeSprintInfoJSON struct {
 	ID      int64  `json:"id"`
 	Name    string `json:"name"`

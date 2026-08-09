@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "ウォール項目を自分自身にリンクすることはできません。",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "セットアップトークンとコードが必要です。",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "アクティブ化できるのは計画済みスプリントのみです。",
+  "errors.VALIDATION_ERROR.sprints_disabled": "このプロジェクトではスプリントが無効です。",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "スプリントの終了日は開始日以降である必要があります。",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "スプリントの終了日は未来の日付である必要があります。",
   "errors.VALIDATION_ERROR.sprint_name_exists": "この名前のスプリントはすでに存在します。",

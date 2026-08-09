@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall আইটেম নিজের সাথে লিংক হতে পারে না।",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup token ও code প্রয়োজন।",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "শুধু planned Sprint সক্রিয় করা যায়।",
+  "errors.VALIDATION_ERROR.sprints_disabled": "এই প্রজেক্টের জন্য Sprint বন্ধ আছে।",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint শেষ তারিখ শুরুর তারিখের পর বা একই দিন হতে হবে।",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint শেষ তারিখ ভবিষ্যতে হতে হবে।",
   "errors.VALIDATION_ERROR.sprint_name_exists": "এই নামের Sprint আগে থেকেই আছে।",

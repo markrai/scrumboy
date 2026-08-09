@@ -271,7 +271,7 @@ export async function openBulkEditDialog(initialIds: number[], opts: OpenBulkEdi
 async function runBulkApply(todoIds: number[]): Promise<void> {
   const els = getBulkFormEls();
   const applyAssign = !!els.applyAssign?.checked;
-  const applySprint = !!els.applySprint?.checked;
+  const applySprint = boardSprintsEnabled(getBoard()) && !!els.applySprint?.checked;
   const applyStatus = !!els.applyStatus?.checked;
   const applyTags = !!els.applyTags?.checked;
   const applyEst = !!els.applyEst?.checked;

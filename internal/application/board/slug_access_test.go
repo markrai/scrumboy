@@ -268,7 +268,7 @@ func TestPreparedSlugRead_HasSprintsUsesBoundContextAndProject(t *testing.T) {
 			h := newSlugReadTestHarness()
 			ctx := context.WithValue(context.Background(), slugReadContextKey{}, "sprints")
 			h.access.projectContext = store.ProjectContext{
-				Project: store.Project{ID: 73, Slug: "normalized-slug"},
+				Project: store.Project{ID: 73, Slug: "normalized-slug", SprintsEnabled: true},
 			}
 			h.sprints.hasSprints = want
 
@@ -316,7 +316,7 @@ func TestPreparedSlugRead_HasSprintsReturnsStoreErrorUnchanged(t *testing.T) {
 	h := newSlugReadTestHarness()
 	sentinel := errors.New("sentinel")
 	storeErr := fmt.Errorf("sprint state failed: %w", sentinel)
-	h.access.projectContext = store.ProjectContext{Project: store.Project{ID: 73}}
+	h.access.projectContext = store.ProjectContext{Project: store.Project{ID: 73, SprintsEnabled: true}}
 	h.sprints.err = storeErr
 
 	prepared, err := h.service().PrepareSlugRead(
@@ -346,6 +346,32 @@ func TestPreparedSlugRead_HasSprintsReturnsStoreErrorUnchanged(t *testing.T) {
 		)
 	}
 	h.assertLegacyUnused(t)
+}
+
+func TestPreparedSlugRead_HasSprintsReturnsFalseWhenCapabilityDisabled(t *testing.T) {
+	h := newSlugReadTestHarness()
+	h.access.projectContext = store.ProjectContext{
+		Project: store.Project{ID: 73, Slug: "normalized-slug"},
+	}
+	h.sprints.hasSprints = true
+
+	prepared, err := h.service().PrepareSlugRead(
+		context.Background(),
+		SlugReadTarget{Slug: "normalized-slug", Mode: store.ModeFull},
+	)
+	if err != nil {
+		t.Fatalf("PrepareSlugRead: %v", err)
+	}
+	got, err := prepared.HasSprints()
+	if err != nil {
+		t.Fatalf("HasSprints: %v", err)
+	}
+	if got {
+		t.Fatal("HasSprints returned true for a disabled project")
+	}
+	if h.sprints.calls != 1 {
+		t.Fatalf("HasSprints store calls = %d, want 1", h.sprints.calls)
+	}
 }
 
 func TestPreparedSlugRead_ReadInitialDelegatesExactly(t *testing.T) {
@@ -590,7 +616,7 @@ func TestPreparedSlugRead_ObservesCancellationAfterPreparation(t *testing.T) {
 	legacyAccess := &recordingLegacyReadAccessStore{}
 	legacy := &recordingLegacyReadStore{}
 	access := &recordingSlugReadAccessStore{
-		projectContext: store.ProjectContext{Project: store.Project{ID: 73}},
+		projectContext: store.ProjectContext{Project: store.Project{ID: 73, SprintsEnabled: true}},
 	}
 	sprints := &recordingSlugReadSprintStore{errFromContext: true}
 	ctx, cancel := context.WithCancel(context.Background())

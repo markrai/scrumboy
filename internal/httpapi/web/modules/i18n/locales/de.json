@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Ein Wall-Element kann nicht mit sich selbst verknüpft werden.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup-Token und Code sind erforderlich.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Nur geplante Sprints können aktiviert werden.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprints sind für dieses Projekt deaktiviert.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Das Sprint-Enddatum muss am oder nach dem Startdatum liegen.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Das Sprint-Enddatum muss in der Zukunft liegen.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Ein Sprint mit diesem Namen existiert bereits.",

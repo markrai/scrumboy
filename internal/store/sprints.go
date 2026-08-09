@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -73,15 +74,61 @@ type ActiveSprintInfo struct {
 	EndAt   int64 // Unix ms
 }
 
-// sprintNameExists returns true if another sprint in the same project already
-// uses this name. Pass excludeID=0 for creates; pass the sprint's own ID for updates.
-func (s *Store) sprintNameExists(ctx context.Context, projectID int64, name string, excludeID int64) (bool, error) {
+func lockProjectSprintsEnabledTx(ctx context.Context, tx *sql.Tx, projectID int64) error {
+	res, err := tx.ExecContext(ctx, `
+		UPDATE projects
+		SET updated_at = updated_at
+		WHERE id = ? AND sprints_enabled = 1
+	`, projectID)
+	if err != nil {
+		return fmt.Errorf("lock project sprint capability: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read project sprint capability lock result: %w", err)
+	}
+	if affected > 0 {
+		return nil
+	}
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?)`, projectID).Scan(&exists); err != nil {
+		return fmt.Errorf("check project sprint capability: %w", err)
+	}
+	if !exists {
+		return ErrNotFound
+	}
+	return ErrSprintsDisabled
+}
+
+// serializeProjectWriteTx acquires SQLite's writer reservation without
+// changing project data. Call it before reads in mutations that must later
+// check sprint capability, so a concurrent disable cannot invalidate a read
+// snapshot and turn the capability check into SQLITE_BUSY.
+func serializeProjectWriteTx(ctx context.Context, tx *sql.Tx, projectID int64) error {
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID); err != nil {
+		return fmt.Errorf("serialize project write: %w", err)
+	}
+	return nil
+}
+
+func serializeSprintProjectWriteTx(ctx context.Context, tx *sql.Tx, sprintID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE projects
+		SET updated_at = updated_at
+		WHERE id = (SELECT project_id FROM sprints WHERE id = ?)
+	`, sprintID); err != nil {
+		return fmt.Errorf("serialize sprint project write: %w", err)
+	}
+	return nil
+}
+
+func sprintNameExistsTx(ctx context.Context, tx *sql.Tx, projectID int64, name string, excludeID int64) (bool, error) {
 	var exists int
-	err := s.db.QueryRowContext(ctx,
+	err := tx.QueryRowContext(ctx,
 		`SELECT 1 FROM sprints WHERE project_id = ? AND name = ? AND id != ? LIMIT 1`,
 		projectID, name, excludeID,
 	).Scan(&exists)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
@@ -98,7 +145,16 @@ func (s *Store) CreateSprint(ctx context.Context, projectID int64, name string, 
 	if !plannedEndAt.After(plannedStartAt) && !plannedEndAt.Equal(plannedStartAt) {
 		return Sprint{}, fmt.Errorf("%w: end_at must be >= start_at", ErrValidation)
 	}
-	if dup, err := s.sprintNameExists(ctx, projectID, name, 0); err != nil {
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Sprint{}, fmt.Errorf("begin create sprint: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockProjectSprintsEnabledTx(ctx, tx, projectID); err != nil {
+		return Sprint{}, err
+	}
+	if dup, err := sprintNameExistsTx(ctx, tx, projectID, name, 0); err != nil {
 		return Sprint{}, err
 	} else if dup {
 		return Sprint{}, fmt.Errorf("%w: a sprint with this name already exists in the project", ErrValidation)
@@ -108,10 +164,7 @@ func (s *Store) CreateSprint(ctx context.Context, projectID int64, name string, 
 	startAtMs := plannedStartAt.UnixMilli()
 	endAtMs := plannedEndAt.UnixMilli()
 
-	var res sql.Result
-	var err error
-	for attempt := 0; attempt < 2; attempt++ {
-		res, err = s.db.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 			INSERT INTO sprints (
 				project_id,
 				name,
@@ -130,16 +183,15 @@ func (s *Store) CreateSprint(ctx context.Context, projectID int64, name string, 
 			FROM sprints
 			WHERE project_id = ?
 		`, projectID, name, startAtMs, endAtMs, SprintStatePlanned, nowMs, nowMs, projectID)
-		if err == nil {
-			break
-		}
-		if !strings.Contains(err.Error(), "UNIQUE constraint failed: sprints.project_id, sprints.number") || attempt == 1 {
-			return Sprint{}, fmt.Errorf("insert sprint: %w", err)
-		}
+	if err != nil {
+		return Sprint{}, fmt.Errorf("insert sprint: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
 		return Sprint{}, fmt.Errorf("last insert id sprint: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Sprint{}, fmt.Errorf("commit create sprint: %w", err)
 	}
 	return s.GetSprintByID(ctx, id)
 }
@@ -265,9 +317,10 @@ func (s *Store) GetActiveSprintByProjectID(ctx context.Context, projectID int64)
 	var startAtMs, endAtMs, createdAtMs, updatedAtMs int64
 	var startedAtMs, closedAtMs sql.NullInt64
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, project_id, number, name, planned_start_at, planned_end_at, started_at, closed_at, state, created_at, updated_at
-		FROM sprints
-		WHERE project_id = ? AND state = ?
+		SELECT s.id, s.project_id, s.number, s.name, s.planned_start_at, s.planned_end_at, s.started_at, s.closed_at, s.state, s.created_at, s.updated_at
+		FROM sprints s
+		JOIN projects p ON p.id = s.project_id AND p.sprints_enabled = 1
+		WHERE s.project_id = ? AND s.state = ?
 		LIMIT 1
 	`, projectID, SprintStateActive).Scan(&sp.ID, &sp.ProjectID, &sp.Number, &sp.Name, &startAtMs, &endAtMs, &startedAtMs, &closedAtMs, &sp.State, &createdAtMs, &updatedAtMs)
 	if err != nil {
@@ -305,9 +358,10 @@ func (s *Store) GetActiveSprintsByProjectIDs(ctx context.Context, projectIDs []i
 	}
 	placeholders := makePlaceholders(len(projectIDs))
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, project_id, name, planned_start_at, planned_end_at
-		FROM sprints
-		WHERE state = ? AND project_id IN `+placeholders,
+		SELECT s.id, s.project_id, s.name, s.planned_start_at, s.planned_end_at
+		FROM sprints s
+		JOIN projects p ON p.id = s.project_id AND p.sprints_enabled = 1
+		WHERE s.state = ? AND s.project_id IN `+placeholders,
 		args...)
 	if err != nil {
 		return nil, fmt.Errorf("get active sprints by project ids: %w", err)
@@ -351,6 +405,9 @@ func (s *Store) ActivateSprint(ctx context.Context, projectID, sprintID int64) e
 		return fmt.Errorf("begin activate sprint: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
+		return err
+	}
 
 	sp, err := s.getSprintByIDTx(ctx, tx, sprintID)
 	if err != nil {
@@ -358,6 +415,9 @@ func (s *Store) ActivateSprint(ctx context.Context, projectID, sprintID int64) e
 	}
 	if sp.ProjectID != projectID {
 		return fmt.Errorf("%w: sprint does not belong to project", ErrValidation)
+	}
+	if err := lockProjectSprintsEnabledTx(ctx, tx, projectID); err != nil {
+		return err
 	}
 	if sp.State == SprintStateActive {
 		return nil // already active
@@ -394,19 +454,30 @@ func (s *Store) ActivateSprint(ctx context.Context, projectID, sprintID int64) e
 	return tx.Commit()
 }
 
-func (s *Store) CloseSprint(ctx context.Context, sprintID int64) error {
+func (s *Store) CloseSprint(ctx context.Context, projectID, sprintID int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin close sprint: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockProjectSprintsEnabledTx(ctx, tx, projectID); err != nil {
+		return err
+	}
 	nowMs := time.Now().UTC().UnixMilli()
-	res, err := s.db.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 		UPDATE sprints
 		SET state = ?, closed_at = COALESCE(closed_at, ?), updated_at = ?
-		WHERE id = ? AND state = ?
-	`, SprintStateClosed, nowMs, nowMs, sprintID, SprintStateActive)
+		WHERE id = ? AND project_id = ? AND state = ?
+	`, SprintStateClosed, nowMs, nowMs, sprintID, projectID, SprintStateActive)
 	if err != nil {
 		return fmt.Errorf("close sprint: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit close sprint: %w", err)
 	}
 	return nil
 }
@@ -425,14 +496,25 @@ type UpdateSprintInput struct {
 }
 
 func (s *Store) DeleteSprint(ctx context.Context, projectID, sprintID int64) error {
-	sp, err := s.GetSprintByID(ctx, sprintID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete sprint: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
+		return err
+	}
+	sp, err := s.getSprintByIDTx(ctx, tx, sprintID)
 	if err != nil {
 		return err
 	}
 	if sp.ProjectID != projectID {
 		return ErrNotFound
 	}
-	res, err := s.db.ExecContext(ctx, `DELETE FROM sprints WHERE id = ?`, sprintID)
+	if err := lockProjectSprintsEnabledTx(ctx, tx, projectID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM sprints WHERE id = ?`, sprintID)
 	if err != nil {
 		return fmt.Errorf("delete sprint: %w", err)
 	}
@@ -440,12 +522,26 @@ func (s *Store) DeleteSprint(ctx context.Context, projectID, sprintID int64) err
 	if n == 0 {
 		return ErrNotFound
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete sprint: %w", err)
+	}
 	return nil
 }
 
 func (s *Store) UpdateSprint(ctx context.Context, sprintID int64, in UpdateSprintInput) error {
-	sp, err := s.GetSprintByID(ctx, sprintID)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("begin update sprint: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := serializeSprintProjectWriteTx(ctx, tx, sprintID); err != nil {
+		return err
+	}
+	sp, err := s.getSprintByIDTx(ctx, tx, sprintID)
+	if err != nil {
+		return err
+	}
+	if err := lockProjectSprintsEnabledTx(ctx, tx, sp.ProjectID); err != nil {
 		return err
 	}
 	// Enforce state rules: reject forbidden fields, do not partially apply.
@@ -478,7 +574,7 @@ func (s *Store) UpdateSprint(ctx context.Context, sprintID int64, in UpdateSprin
 		if name == "" || len(name) > 200 {
 			return fmt.Errorf("%w: invalid sprint name", ErrValidation)
 		}
-		if dup, err := s.sprintNameExists(ctx, sp.ProjectID, name, sprintID); err != nil {
+		if dup, err := sprintNameExistsTx(ctx, tx, sp.ProjectID, name, sprintID); err != nil {
 			return err
 		} else if dup {
 			return fmt.Errorf("%w: a sprint with this name already exists in the project", ErrValidation)
@@ -514,9 +610,12 @@ func (s *Store) UpdateSprint(ctx context.Context, sprintID int64, in UpdateSprin
 	args = append(args, time.Now().UTC().UnixMilli())
 	args = append(args, sprintID)
 	query := `UPDATE sprints SET ` + strings.Join(set, ", ") + ` WHERE id = ?`
-	_, err = s.db.ExecContext(ctx, query, args...)
+	_, err = tx.ExecContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("update sprint: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update sprint: %w", err)
 	}
 	return nil
 }

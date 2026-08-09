@@ -140,6 +140,39 @@ func (s *Store) checkProjectSettingsAuth(ctx context.Context, p Project, userID 
 	return ErrNotFound
 }
 
+func (s *Store) checkProjectSettingsAuthTx(ctx context.Context, tx *sql.Tx, p Project, userID int64) error {
+	if err := rejectIfExpiredTemporaryProject(p); err != nil {
+		return err
+	}
+	if isAnonymousTemporaryBoard(p) {
+		return ErrNotFound
+	}
+	if isTemporaryProject(p) {
+		if p.CreatorUserID == nil || *p.CreatorUserID != userID {
+			return ErrForbidden
+		}
+		return nil
+	}
+	enabled, err := authEnabledTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+	role, err := s.getProjectRoleTx(ctx, tx, p.ID, userID)
+	if err != nil {
+		return err
+	}
+	if role.HasMinimumRole(RoleMaintainer) {
+		return nil
+	}
+	if role.HasMinimumRole(RoleViewer) {
+		return ErrForbidden
+	}
+	return ErrNotFound
+}
+
 func (s *Store) getProjectForRead(ctx context.Context, projectID int64, mode Mode) (Project, error) {
 	p, err := s.getProject(ctx, projectID)
 	if err != nil {
@@ -916,7 +949,7 @@ func (s *Store) userHasProjectRoleTx(ctx context.Context, tx *sql.Tx, projectID 
 }
 
 func (s *Store) getProjectForReadTx(ctx context.Context, tx *sql.Tx, projectID int64, mode Mode) (Project, error) {
-	p, err := getProjectTx(ctx, tx, projectID, s)
+	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
 	if err != nil {
 		return Project{}, err
 	}
@@ -1195,23 +1228,42 @@ func (s *Store) UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID i
 }
 
 // UpdateProjectSprintsEnabled toggles whether sprints are available for a project.
-// Disabling only hides the feature (UI + create/activate endpoints); existing sprints
-// and their assignments are left untouched so re-enabling restores prior state.
 func (s *Store) UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error {
-	if err := s.CheckProjectRole(ctx, projectID, userID, RoleMaintainer); err != nil {
-		return err
-	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin update project sprints enabled: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID)
+	if err != nil {
+		return fmt.Errorf("lock project sprints enabled: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read project sprints enabled lock result: %w", err)
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
+	if err != nil {
+		return err
+	}
+	if err := s.checkProjectSettingsAuthTx(ctx, tx, p, userID); err != nil {
+		return err
+	}
 	var fromEnabledInt int
 	if err := tx.QueryRowContext(ctx, `SELECT sprints_enabled FROM projects WHERE id = ?`, projectID).Scan(&fromEnabledInt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		return fmt.Errorf("get project sprints_enabled: %w", err)
+	}
+	if (fromEnabledInt == 1) == enabled {
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit unchanged project sprints enabled: %w", err)
+		}
+		return nil
 	}
 	nowMs := time.Now().UTC().UnixMilli()
 	if _, err := tx.ExecContext(ctx, `UPDATE projects SET sprints_enabled = ?, updated_at = ? WHERE id = ?`, boolToInt(enabled), nowMs, projectID); err != nil {

@@ -15,6 +15,14 @@ export type TodoCreatePayloadInput = TodoBasePayloadInput & {
   columnKey: string;
 };
 
+export function shouldSubmitSprintAssignment(
+  sprintControlsEnabled: boolean,
+  currentSprintId: number | null | undefined,
+  nextSprintId: number | null,
+): boolean {
+  return sprintControlsEnabled && (currentSprintId ?? null) !== nextSprintId;
+}
+
 function appendOptionalFields(
   payload: Record<string, unknown>,
   input: TodoBasePayloadInput,

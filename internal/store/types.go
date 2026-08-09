@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"time"
 
 	"scrumboy/internal/errs"
@@ -14,6 +15,7 @@ var (
 	ErrForbidden                  = errs.ErrForbidden
 	ErrTooManyAttempts            = errs.ErrTooManyAttempts
 	Err2FAEncryptionNotConfigured = errs.Err2FAEncryptionNotConfigured
+	ErrSprintsDisabled            = errors.New("sprints are disabled for this project")
 )
 
 const (

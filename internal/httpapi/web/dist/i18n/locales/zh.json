@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall 项不能链接到自身。",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "需要设置令牌和验证码。",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "只能开始已计划的 Sprint。",
+  "errors.VALIDATION_ERROR.sprints_disabled": "此项目已禁用 Sprint。",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint 结束日期必须不早于开始日期。",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint 结束日期必须在未来。",
   "errors.VALIDATION_ERROR.sprint_name_exists": "已存在同名的 Sprint。",

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Kipengee cha ukuta hakiwezi kuunganishwa na chenyewe.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Tokeni ya usanidi na msimbo vinahitajika.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Sprint zilizopangwa pekee ndizo zinaweza kuwashwa.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprint zimezimwa kwa mradi huu.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Tarehe ya mwisho ya Sprint lazima iwe siku ya kuanza au baada yake.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Tarehe ya mwisho ya Sprint lazima iwe siku zijazo.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint yenye jina hili tayari ipo.",

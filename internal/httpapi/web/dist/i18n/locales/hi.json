@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "नोट वॉल आइटम स्वयं से लिंक नहीं हो सकता।",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "सेटअप टोकन और कोड आवश्यक हैं।",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "केवल planned Sprint सक्रिय किए जा सकते हैं।",
+  "errors.VALIDATION_ERROR.sprints_disabled": "इस प्रोजेक्ट के लिए Sprint अक्षम हैं।",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint समाप्ति तिथि प्रारंभ तिथि के बाद या उसी दिन होनी चाहिए।",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint समाप्ति तिथि भविष्य में होनी चाहिए।",
   "errors.VALIDATION_ERROR.sprint_name_exists": "इस नाम का Sprint पहले से मौजूद है।",

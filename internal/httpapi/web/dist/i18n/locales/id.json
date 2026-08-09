@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Item wall tidak dapat ditautkan ke dirinya sendiri.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Token penyiapan dan kode diperlukan.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Hanya sprint yang direncanakan yang dapat diaktifkan.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprint dinonaktifkan untuk proyek ini.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Tanggal akhir sprint harus pada atau setelah tanggal mulai.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Tanggal akhir sprint harus di masa depan.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint dengan nama ini sudah ada.",

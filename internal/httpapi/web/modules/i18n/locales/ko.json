@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall 항목은 자기 자신과 연결할 수 없습니다.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "설정 토큰과 코드가 필요합니다.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "예정된 Sprint만 활성화할 수 있습니다.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "이 프로젝트에서는 Sprint가 비활성화되어 있습니다.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint 종료일은 시작일 이후여야 합니다.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint 종료일은 미래여야 합니다.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "이 이름의 Sprint가 이미 있습니다.",

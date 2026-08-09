@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "لا يمكن لعنصر الجدار الارتباط بنفسه.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "رمز الإعداد والرمز مطلوبان.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "يمكن تفعيل Sprints المخططة فقط.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "تم تعطيل Sprints لهذا المشروع.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "يجب أن يكون تاريخ انتهاء Sprint في تاريخ البدء أو بعده.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "يجب أن يكون تاريخ انتهاء Sprint في المستقبل.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "يوجد Sprint بهذا الاسم بالفعل.",

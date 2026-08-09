@@ -78,6 +78,8 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 		}
 	case errors.Is(err, store.ErrForbidden):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+	case errors.Is(err, store.ErrSprintsDisabled):
+		writeValidationError(w, store.ErrSprintsDisabled.Error(), "sprints_disabled", nil)
 	case errors.Is(err, store.ErrValidation):
 		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), nil)
 	case errors.Is(err, store.ErrConflict):

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "รายการกระดานโน้ตไม่สามารถเชื่อมโยงกับตัวเอง",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "ต้องมีโทเค็นตั้งค่าและรหัส",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "เริ่มได้เฉพาะ Sprint ที่วางแผนแล้ว",
+  "errors.VALIDATION_ERROR.sprints_disabled": "ปิดใช้งาน Sprint สำหรับโปรเจกต์นี้",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "วันที่สิ้นสุด Sprint ต้องไม่ก่อนวันที่เริ่ม",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "วันที่สิ้นสุด Sprint ต้องอยู่ในอนาคต",
   "errors.VALIDATION_ERROR.sprint_name_exists": "มี Sprint ชื่อนี้อยู่แล้ว",

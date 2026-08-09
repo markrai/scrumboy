@@ -397,7 +397,7 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), readServiceContextKey{}, "legacy")
 	pc := &store.ProjectContext{
-		Project: store.Project{ID: 7, Slug: "project-slug"},
+		Project: store.Project{ID: 7, Slug: "project-slug", SprintsEnabled: true},
 		Role:    store.RoleViewer,
 	}
 	query := LegacyQuery{
@@ -494,6 +494,35 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result, want) {
 		t.Fatalf("result = %#v, want %#v", result, want)
+	}
+}
+
+func TestPreparedLegacyRead_RejectsSprintFilterWhenDisabledAfterAccess(t *testing.T) {
+	access := &recordingLegacyReadAccessStore{
+		projectContext: store.ProjectContext{
+			Project: store.Project{ID: 73, SprintsEnabled: false},
+			Role:    store.RoleViewer,
+		},
+	}
+	legacy := &recordingLegacyReadStore{}
+	prepared, err := NewReadService(ReadServiceDependencies{
+		Initial:      &recordingReadStore{},
+		Lane:         &recordingLaneReadStore{},
+		LegacyAccess: access,
+		Legacy:       legacy,
+		SlugAccess:   &recordingSlugReadAccessStore{},
+		SlugSprints:  &recordingSlugReadSprintStore{},
+	}).PrepareLegacy(context.Background(), LegacyReadTarget{ProjectID: 73, Mode: store.ModeFull})
+	if err != nil {
+		t.Fatalf("PrepareLegacy: %v", err)
+	}
+
+	_, err = prepared.Read(LegacyQuery{SprintFilter: store.SprintFilter{Mode: "sprint_number", SprintNumber: 4}})
+	if !errors.Is(err, store.ErrSprintsDisabled) {
+		t.Fatalf("Read error = %v, want ErrSprintsDisabled", err)
+	}
+	if access.calls != 1 || legacy.calls != 0 {
+		t.Fatalf("calls access=%d legacy=%d, want 1/0", access.calls, legacy.calls)
 	}
 }
 
