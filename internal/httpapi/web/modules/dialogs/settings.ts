@@ -1340,6 +1340,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   // Charts tab only applies in durable project board view (not Dashboard/Projects/Temporary Boards, not anonymous mode, not temporary boards)
   const board = getBoard();
   const isTemporaryBoard = !!(board?.project?.expiresAt);
+  const sprintsEnabled = board?.project?.sprintsEnabled !== false;
   const showChartsTab =
     !!slug &&
     hasProjectAccess &&
@@ -1397,11 +1398,12 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       if (activeTab === "charts") {
         // Fetch sprints for burndown navigation
         const slug = getSlug();
-        if (!slug) {
+        if (!slug || !sprintsEnabled) {
           cachedSprintsForCharts = null;
           cachedSprintsForChartsSlug = null;
+          burndownSprintIndex = 0;
         }
-        if (slug && (cachedSprintsForCharts === null || cachedSprintsForChartsSlug !== slug)) {
+        if (slug && sprintsEnabled && (cachedSprintsForCharts === null || cachedSprintsForChartsSlug !== slug)) {
           try {
             const sprintsRes = await apiFetch<{ sprints?: { id: number; name: string; plannedStartAt: number; plannedEndAt: number; state?: string }[] } | null>(`/api/board/${slug}/sprints`);
             const rawSprints = normalizeSprints(sprintsRes);
@@ -1416,7 +1418,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
           }
         }
         // When a sprint is selected in board view, use sprint-scoped burndown endpoint
-        const sprints = slug ? (cachedSprintsForCharts ?? []) : [];
+        const sprints = slug && sprintsEnabled ? (cachedSprintsForCharts ?? []) : [];
         const burndownSprintIndexClamped = sprints.length > 0 ? Math.min(burndownSprintIndex, sprints.length - 1) : 0;
         const currentSprintForFetch = sprints.length > 0 ? sprints[burndownSprintIndexClamped] : null;
         const effectiveBurndownURL =

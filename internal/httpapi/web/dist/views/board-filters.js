@@ -1,6 +1,7 @@
 import { on } from '../events.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
 import { getAssigneeFromUrl, getBoard, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag, getTagColors, } from '../state/selectors.js';
+import { boardSprintsEnabled } from '../sprints.js';
 import { isAnonymousBoard, showToast } from '../utils.js';
 import { buildChipsHTML, getCombinedChipData, isBoardFilterActive, } from './board-rendering.js';
 let lastDisplayChipData = [];
@@ -397,7 +398,9 @@ export function computeBoardChipsRender(board, tag, sprintId) {
     const displayTags = isAnonymousTempBoard
         ? board.tags.filter((t) => t.count > 0)
         : board.tags;
-    const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, getTagColors());
+    const sprintData = boardSprintsEnabled(board) ? lastSprintsData : null;
+    const effectiveSprintId = boardSprintsEnabled(board) ? sprintId : null;
+    const combinedChipData = getCombinedChipData(displayTags, tag || "", sprintData, effectiveSprintId, getTagColors());
     lastDisplayChipData = combinedChipData;
     const chipsHTML = buildChipsHTML(combinedChipData);
     const chipsUnchanged = chipsHTML === lastRenderedChipsHTML;

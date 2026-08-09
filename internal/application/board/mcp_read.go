@@ -246,6 +246,7 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 		if err != nil {
 			return MCPBoardReadResult{}, err
 		}
+		suppressDisabledSprintAssignmentsInTodos(r.projectContext.Project, todos)
 
 		totalCount, err := r.service.lanes.CountTodosForBoardLane(
 			r.ctx,
@@ -294,6 +295,9 @@ func (r *PreparedMCPBoardRead) resolveSprintFilter(sprintID *int64) (store.Sprin
 	}
 	if *sprintID <= 0 {
 		return store.SprintFilter{}, ErrInvalidMCPBoardSprintID
+	}
+	if !r.projectContext.Project.SprintsEnabled {
+		return store.SprintFilter{}, store.ErrSprintsDisabled
 	}
 
 	sprint, err := r.service.sprints.GetSprintByID(r.ctx, *sprintID)

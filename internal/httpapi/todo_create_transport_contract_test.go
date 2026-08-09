@@ -497,3 +497,46 @@ func TestTodoCreateRESTResponseCarriesExistingFields(t *testing.T) {
 		t.Fatalf("tag projection=%v want normalized tags", created.Tags)
 	}
 }
+
+func TestTodoCreateRESTRejectsSprintAssignmentWhenDisabled(t *testing.T) {
+	ts, db, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+	st := wireTodoUpdatePublisher(t, ts)
+	client := newCookieClient(t)
+	owner := bootstrapUserClient(t, client, ts.URL, "Owner", "rest-create-disabled@example.com", "password123")
+	ownerID := int64(owner["id"].(float64))
+	project, ownerCtx := createTodoCreateProject(t, st, ownerID, "REST disabled sprint create")
+	now := time.Now().UTC()
+	sp, err := st.CreateSprint(ownerCtx, project.ID, "Dormant", now, now.Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("CreateSprint: %v", err)
+	}
+	if err := st.UpdateProjectSprintsEnabled(ownerCtx, project.ID, ownerID, false); err != nil {
+		t.Fatalf("disable sprints: %v", err)
+	}
+	stream := subscribeTodoUpdateEvents(t, client, ts.URL+"/api/board/"+project.Slug+"/events")
+
+	payload := todoCreateRESTPayload("blocked assignment")
+	payload["sprintId"] = sp.ID
+	var envelope apiErrorEnvelope
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/todos", payload, &envelope)
+	if resp.StatusCode != http.StatusBadRequest || envelope.Error.Code != "VALIDATION_ERROR" ||
+		envelope.Error.Message != store.ErrSprintsDisabled.Error() || envelope.Error.Details["reason"] != "sprints_disabled" {
+		t.Fatalf("disabled assigned create status=%d envelope=%+v body=%s", resp.StatusCode, envelope, body)
+	}
+	if events := collectTodoUpdateEvents(t, stream); len(events) != 0 {
+		t.Fatalf("disabled assigned create emitted events: %+v", events)
+	}
+	if got := countProjectTodos(t, db, project.ID); got != 0 {
+		t.Fatalf("disabled assigned create persisted %d todos", got)
+	}
+	if got := countProjectTodoCreateAudits(t, db, project.ID); got != 0 {
+		t.Fatalf("disabled assigned create persisted %d audits", got)
+	}
+
+	delete(payload, "sprintId")
+	created := createTodoThroughREST(t, client, ts.URL, project.Slug, payload)
+	if created.SprintId != nil {
+		t.Fatalf("unscheduled create returned sprint: %+v", created)
+	}
+}

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "ウォール項目を自分自身にリンクすることはできません。",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "セットアップトークンとコードが必要です。",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "アクティブ化できるのは計画済みスプリントのみです。",
+  "errors.VALIDATION_ERROR.sprints_disabled": "このプロジェクトではスプリントが無効です。",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "スプリントの終了日は開始日以降である必要があります。",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "スプリントの終了日は未来の日付である必要があります。",
   "errors.VALIDATION_ERROR.sprint_name_exists": "この名前のスプリントはすでに存在します。",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO を接続できませんでした。",
   "settings.profile.authentication.linked": "SSO を接続しました。",
   "settings.users.table.authentication": "認証",
-  "settings.profile.authentication.warning.localDisabledOwner": "ローカル認証が無効なため、この所有者は SSO に依存しています。SSO が利用できなくなった場合、オペレーターが Scrumboy ホストにアクセスし、recover-owner を実行してローカル認証を再有効化する必要があります。"
+  "settings.profile.authentication.warning.localDisabledOwner": "ローカル認証が無効なため、この所有者は SSO に依存しています。SSO が利用できなくなった場合、オペレーターが Scrumboy ホストにアクセスし、recover-owner を実行してローカル認証を再有効化する必要があります。",
+  "settings.sprints.enableToggle": "このボードでスプリントを有効にする",
+  "settings.sprints.disabledHint": "このボードではスプリントが無効になっています。スプリントを作成・管理するには上で有効にしてください。",
+  "settings.sprints.toast.enabled": "スプリントを有効にしました",
+  "settings.sprints.toast.disabled": "スプリントを無効にしました",
+  "settings.sprints.toast.toggleFailed": "スプリント設定の更新に失敗しました"
 }

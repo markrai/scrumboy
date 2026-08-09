@@ -65,6 +65,14 @@ func (s *Server) handlePreparedSlugBoardInitial(
 		writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
 		return
 	}
+	if r.URL.Query().Get("sprintId") != "" && !prepared.SprintsEnabled() {
+		if _, err := s.parseSprintFilterFromQuery(r); err != nil {
+			writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
+			return
+		}
+		writeStoreErr(w, store.ErrSprintsDisabled, true)
+		return
+	}
 	hasSprints, err := prepared.HasSprints()
 	if err != nil {
 		writeStoreErr(w, err, true)
@@ -125,6 +133,10 @@ func (s *Server) handlePreparedSlugBoardLane(
 	sprintFilter, err := s.parseSprintFilterFromQuery(r)
 	if err != nil {
 		writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
+		return
+	}
+	if sprintFilter.Mode != "none" && !prepared.SprintsEnabled() {
+		writeStoreErr(w, store.ErrSprintsDisabled, true)
 		return
 	}
 	sortOrder, err := s.parseSortOrderFromQuery(r)

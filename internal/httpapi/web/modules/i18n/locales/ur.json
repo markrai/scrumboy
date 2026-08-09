@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "نوٹ وال آئٹم خود سے منسلک نہیں ہو سکتا۔",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup token اور code ضروری ہیں۔",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "صرف منصوبہ بند Sprint شروع کیے جا سکتے ہیں۔",
+  "errors.VALIDATION_ERROR.sprints_disabled": "اس پروجیکٹ کے لیے Sprints غیر فعال ہیں۔",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint اختتام شروع یا اس کے بعد ہونا چاہیے۔",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint اختتام مستقبل میں ہونا چاہیے۔",
   "errors.VALIDATION_ERROR.sprint_name_exists": "اس نام کا Sprint پہلے سے موجود ہے۔",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO منسلک نہیں ہو سکا۔",
   "settings.profile.authentication.linked": "SSO منسلک ہو گیا۔",
   "settings.users.table.authentication": "توثیق",
-  "settings.profile.authentication.warning.localDisabledOwner": "مقامی توثیق بند ہونے کے دوران یہ مالک SSO پر منحصر ہے۔ اگر SSO دستیاب نہ رہے تو آپریٹر کو Scrumboy ہوسٹ تک رسائی حاصل کر کے recover-owner چلانا اور مقامی توثیق دوبارہ فعال کرنی ہوگی۔"
+  "settings.profile.authentication.warning.localDisabledOwner": "مقامی توثیق بند ہونے کے دوران یہ مالک SSO پر منحصر ہے۔ اگر SSO دستیاب نہ رہے تو آپریٹر کو Scrumboy ہوسٹ تک رسائی حاصل کر کے recover-owner چلانا اور مقامی توثیق دوبارہ فعال کرنی ہوگی۔",
+  "settings.sprints.enableToggle": "اس بورڈ کے لیے سپرنٹس فعال کریں",
+  "settings.sprints.disabledHint": "اس بورڈ کے لیے سپرنٹس غیر فعال ہیں۔ سپرنٹس بنانے اور منظم کرنے کے لیے اوپر فعال کریں۔",
+  "settings.sprints.toast.enabled": "سپرنٹس فعال کر دیے گئے",
+  "settings.sprints.toast.disabled": "سپرنٹس غیر فعال کر دیے گئے",
+  "settings.sprints.toast.toggleFailed": "سپرنٹ کی ترتیب اپ ڈیٹ کرنے میں ناکامی"
 }

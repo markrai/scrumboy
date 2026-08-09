@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Kipengee cha ukuta hakiwezi kuunganishwa na chenyewe.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Tokeni ya usanidi na msimbo vinahitajika.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Sprint zilizopangwa pekee ndizo zinaweza kuwashwa.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprint zimezimwa kwa mradi huu.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Tarehe ya mwisho ya Sprint lazima iwe siku ya kuanza au baada yake.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Tarehe ya mwisho ya Sprint lazima iwe siku zijazo.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint yenye jina hili tayari ipo.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Imeshindikana kuunganisha SSO.",
   "settings.profile.authentication.linked": "SSO imeunganishwa.",
   "settings.users.table.authentication": "Uthibitishaji",
-  "settings.profile.authentication.warning.localDisabledOwner": "Mmiliki huyu anategemea SSO wakati uthibitishaji wa ndani umezimwa. Ikiwa SSO haitapatikana, mwendeshaji lazima afikie seva inayoendesha Scrumboy, aendeshe recover-owner, na awashe tena uthibitishaji wa ndani."
+  "settings.profile.authentication.warning.localDisabledOwner": "Mmiliki huyu anategemea SSO wakati uthibitishaji wa ndani umezimwa. Ikiwa SSO haitapatikana, mwendeshaji lazima afikie seva inayoendesha Scrumboy, aendeshe recover-owner, na awashe tena uthibitishaji wa ndani.",
+  "settings.sprints.enableToggle": "Washa spirinti kwa bodi hii",
+  "settings.sprints.disabledHint": "Spirinti zimezimwa kwa bodi hii. Ziwashe hapo juu ili kuunda na kudhibiti spirinti.",
+  "settings.sprints.toast.enabled": "Spirinti zimewashwa",
+  "settings.sprints.toast.disabled": "Spirinti zimezimwa",
+  "settings.sprints.toast.toggleFailed": "Imeshindwa kusasisha mpangilio wa spirinti"
 }

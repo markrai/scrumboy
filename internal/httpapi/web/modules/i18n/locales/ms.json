@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Item wall tidak dapat ditautkan ke dirinya sendiri.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Token persediaan dan kod diperlukan.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Hanya Sprint yang dirancang boleh diaktifkan.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprint dinyahdayakan untuk projek ini.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Tarikh akhir Sprint mesti pada atau selepas tarikh mula.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Tarikh akhir Sprint mesti pada masa hadapan.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint dengan nama ini sudah ada.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO tidak dapat disambungkan.",
   "settings.profile.authentication.linked": "SSO disambungkan.",
   "settings.users.table.authentication": "Pengesahan",
-  "settings.profile.authentication.warning.localDisabledOwner": "Pemilik ini bergantung pada SSO ketika pengesahan setempat dinyahdayakan. Jika SSO tidak tersedia, pengendali mesti mengakses hos Scrumboy, menjalankan recover-owner dan mendayakan semula pengesahan setempat."
+  "settings.profile.authentication.warning.localDisabledOwner": "Pemilik ini bergantung pada SSO ketika pengesahan setempat dinyahdayakan. Jika SSO tidak tersedia, pengendali mesti mengakses hos Scrumboy, menjalankan recover-owner dan mendayakan semula pengesahan setempat.",
+  "settings.sprints.enableToggle": "Aktifkan sprint untuk papan ini",
+  "settings.sprints.disabledHint": "Sprint dilumpuhkan untuk papan ini. Aktifkan di atas untuk mencipta dan mengurus sprint.",
+  "settings.sprints.toast.enabled": "Sprint diaktifkan",
+  "settings.sprints.toast.disabled": "Sprint dilumpuhkan",
+  "settings.sprints.toast.toggleFailed": "Gagal mengemas kini tetapan sprint"
 }

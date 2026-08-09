@@ -50,21 +50,24 @@ type SprintExport struct {
 // ProjectExport represents a project with its todos and tags.
 // EstimationMode is exported for readability only; on import it is ignored and we always use EstimationModeModifiedFibonacci (v1).
 type ProjectExport struct {
-	Slug               string                 `json:"slug"`
-	Name               string                 `json:"name"`
-	EstimationMode     string                 `json:"estimationMode,omitempty"`
-	Image              *string                `json:"image,omitempty"`
-	DominantColor      string                 `json:"dominantColor,omitempty"`
-	DefaultSprintWeeks int                    `json:"defaultSprintWeeks,omitempty"`
-	ExpiresAt          *time.Time             `json:"expiresAt"`
-	CreatedAt          time.Time              `json:"createdAt"`
-	UpdatedAt          time.Time              `json:"updatedAt"`
-	WorkflowColumns    []WorkflowColumnExport `json:"workflowColumns,omitempty"`
-	Sprints            []SprintExport         `json:"sprints,omitempty"`
-	Todos              []TodoExport           `json:"todos"`
-	Tags               []TagExport            `json:"tags"`
-	Links              []LinkExport           `json:"links,omitempty"`
-	Wall               *WallExport            `json:"wall,omitempty"`
+	Slug               string  `json:"slug"`
+	Name               string  `json:"name"`
+	EstimationMode     string  `json:"estimationMode,omitempty"`
+	Image              *string `json:"image,omitempty"`
+	DominantColor      string  `json:"dominantColor,omitempty"`
+	DefaultSprintWeeks int     `json:"defaultSprintWeeks,omitempty"`
+	// SprintsEnabled is a pointer so absence (older exports predating this field) is
+	// distinguishable from an explicit false; nil is treated as enabled on import.
+	SprintsEnabled  *bool                  `json:"sprintsEnabled,omitempty"`
+	ExpiresAt       *time.Time             `json:"expiresAt"`
+	CreatedAt       time.Time              `json:"createdAt"`
+	UpdatedAt       time.Time              `json:"updatedAt"`
+	WorkflowColumns []WorkflowColumnExport `json:"workflowColumns,omitempty"`
+	Sprints         []SprintExport         `json:"sprints,omitempty"`
+	Todos           []TodoExport           `json:"todos"`
+	Tags            []TagExport            `json:"tags"`
+	Links           []LinkExport           `json:"links,omitempty"`
+	Wall            *WallExport            `json:"wall,omitempty"`
 }
 
 // TodoExport represents a todo in export format
@@ -194,7 +197,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 		// In anonymous mode, export the single current project
 		// We need to get it from the context or find the most recent one
 		rows, err := s.db.QueryContext(ctx, `
-			SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at
+			SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at
 			FROM projects
 			WHERE expires_at IS NOT NULL AND import_batch_id IS NULL
 			ORDER BY updated_at DESC, id DESC
@@ -211,9 +214,11 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			var ownerUserID sql.NullInt64
 			var creatorUserID sql.NullInt64
 			var image sql.NullString
-			if err := rows.Scan(&p.ID, &p.Name, &image, &p.Slug, &p.DominantColor, &p.EstimationMode, &p.DefaultSprintWeeks, &ownerUserID, &creatorUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs); err != nil {
+			var sprintsEnabled int
+			if err := rows.Scan(&p.ID, &p.Name, &image, &p.Slug, &p.DominantColor, &p.EstimationMode, &p.DefaultSprintWeeks, &sprintsEnabled, &ownerUserID, &creatorUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs); err != nil {
 				return nil, fmt.Errorf("scan project: %w", err)
 			}
+			p.SprintsEnabled = sprintsEnabled == 1
 			if image.Valid && image.String != "" {
 				p.Image = &image.String
 			}
@@ -242,7 +247,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 		}
 
 		rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
-			SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, last_activity_at, expires_at, created_at, updated_at
+			SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, last_activity_at, expires_at, created_at, updated_at
 			FROM projects
 			WHERE %s
 			ORDER BY updated_at DESC, id DESC`, whereClause), args...)
@@ -257,9 +262,11 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			var expiresAtMs sql.NullInt64
 			var ownerUserID sql.NullInt64
 			var image sql.NullString
-			if err := rows.Scan(&p.ID, &p.Name, &image, &p.Slug, &p.DominantColor, &p.EstimationMode, &p.DefaultSprintWeeks, &ownerUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs); err != nil {
+			var sprintsEnabled int
+			if err := rows.Scan(&p.ID, &p.Name, &image, &p.Slug, &p.DominantColor, &p.EstimationMode, &p.DefaultSprintWeeks, &sprintsEnabled, &ownerUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs); err != nil {
 				return nil, fmt.Errorf("scan project: %w", err)
 			}
+			p.SprintsEnabled = sprintsEnabled == 1
 			if image.Valid && image.String != "" {
 				p.Image = &image.String
 			}
@@ -422,6 +429,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			defaultSprintWeeks = 2
 		}
 
+		sprintsEnabled := p.SprintsEnabled
 		exportProjects = append(exportProjects, ProjectExport{
 			Slug:               p.Slug,
 			Name:               p.Name,
@@ -429,6 +437,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			Image:              p.Image,
 			DominantColor:      dominantColor,
 			DefaultSprintWeeks: defaultSprintWeeks,
+			SprintsEnabled:     &sprintsEnabled,
 			ExpiresAt:          p.ExpiresAt,
 			CreatedAt:          p.CreatedAt,
 			UpdatedAt:          p.UpdatedAt,
@@ -1341,15 +1350,19 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 				dominantColor = "#888888"
 			}
 
-			// Update mutable fields (name, image, dominant_color, default_sprint_weeks, updated_at)
+			// Update mutable fields (name, image, dominant_color, default_sprint_weeks, sprints_enabled, updated_at)
 			defaultSprintWeeks := 2
 			if pExport.DefaultSprintWeeks == 1 || pExport.DefaultSprintWeeks == 2 {
 				defaultSprintWeeks = pExport.DefaultSprintWeeks
 			}
+			sprintsEnabled := true
+			if pExport.SprintsEnabled != nil {
+				sprintsEnabled = *pExport.SprintsEnabled
+			}
 			_, err = tx.ExecContext(ctx, `
-				UPDATE projects SET name = ?, image = ?, dominant_color = ?, default_sprint_weeks = ?, updated_at = ?
+				UPDATE projects SET name = ?, image = ?, dominant_color = ?, default_sprint_weeks = ?, sprints_enabled = ?, updated_at = ?
 				WHERE id = ?`,
-				pExport.Name, image, dominantColor, defaultSprintWeeks, nowMs, projectID)
+				pExport.Name, image, dominantColor, defaultSprintWeeks, boolToInt(sprintsEnabled), nowMs, projectID)
 			if err != nil {
 				return nil, fmt.Errorf("update project: %w", err)
 			}
@@ -1463,10 +1476,14 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 			if pExport.DefaultSprintWeeks == 1 || pExport.DefaultSprintWeeks == 2 {
 				defaultSprintWeeks = pExport.DefaultSprintWeeks
 			}
+			sprintsEnabled := true
+			if pExport.SprintsEnabled != nil {
+				sprintsEnabled = *pExport.SprintsEnabled
+			}
 			res, err := tx.ExecContext(ctx, `
-				INSERT INTO projects(name, image, dominant_color, slug, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				pExport.Name, image, dominantColor, slug, EstimationModeModifiedFibonacci, defaultSprintWeeks, ownerUserID, creatorUserID, nowMs, expiresAtMs, createdAtMs, updatedAtMs)
+				INSERT INTO projects(name, image, dominant_color, slug, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				pExport.Name, image, dominantColor, slug, EstimationModeModifiedFibonacci, defaultSprintWeeks, boolToInt(sprintsEnabled), ownerUserID, creatorUserID, nowMs, expiresAtMs, createdAtMs, updatedAtMs)
 			if err != nil {
 				return nil, fmt.Errorf("insert project: %w", err)
 			}
@@ -1783,10 +1800,14 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		if pExport.DefaultSprintWeeks == 1 || pExport.DefaultSprintWeeks == 2 {
 			defaultSprintWeeks = pExport.DefaultSprintWeeks
 		}
+		sprintsEnabled := true
+		if pExport.SprintsEnabled != nil {
+			sprintsEnabled = *pExport.SprintsEnabled
+		}
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO projects(name, image, dominant_color, slug, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			pExport.Name, image, dominantColor, slug, EstimationModeModifiedFibonacci, defaultSprintWeeks, ownerUserID, creatorUserID, nowMs, expiresAtMs, createdAtMs, updatedAtMs)
+			INSERT INTO projects(name, image, dominant_color, slug, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			pExport.Name, image, dominantColor, slug, EstimationModeModifiedFibonacci, defaultSprintWeeks, boolToInt(sprintsEnabled), ownerUserID, creatorUserID, nowMs, expiresAtMs, createdAtMs, updatedAtMs)
 		if err != nil {
 			return nil, fmt.Errorf("insert project: %w", err)
 		}

@@ -62,6 +62,7 @@ func (s *Service) ReadInitial(ctx context.Context, pc *store.ProjectContext, que
 	if err != nil {
 		return Result{}, err
 	}
+	suppressDisabledSprintAssignments(project, columns)
 
 	return Result{
 		Project:     project,

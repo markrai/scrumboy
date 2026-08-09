@@ -30,13 +30,16 @@
     "vitest": "3.2.6"
   },
   "dependencies": {
-    "dompurify": "3.4.12",
+    "dompurify": "3.4.13",
     "markdown-it": "14.3.0",
-    "mermaid": "11.16.0",
+    "mermaid": "11.16.1",
     "uplot": "^1.6.32"
   },
   "overrides": {
-    "postcss": "8.5.25",
+    "postcss": {
+      ".": "8.5.25",
+      "nanoid": "3.3.17"
+    },
     "undici": "7.29.0"
   }
 }

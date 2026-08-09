@@ -115,7 +115,7 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, result.Todo),
+		"todo": todoToItemForProject(in.ProjectSlug, result.Project, result.Todo),
 	}, map[string]any{}, nil
 }
 
@@ -183,7 +183,7 @@ func (a *Adapter) handleTodosGet(ctx context.Context, input any) (any, map[strin
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, todo),
+		"todo": todoToItemForProject(in.ProjectSlug, pc.Project, todo),
 	}, map[string]any{}, nil
 }
 
@@ -309,7 +309,7 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 	}
 
 	return map[string]any{
-		"todo": todoToItem(env.ProjectSlug, result.Todo),
+		"todo": todoToItemForProject(env.ProjectSlug, result.Project, result.Todo),
 	}, map[string]any{}, nil
 }
 
@@ -413,7 +413,7 @@ func (a *Adapter) handleTodosMove(ctx context.Context, input any) (any, map[stri
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, result.Todo),
+		"todo": todoToItemForProject(in.ProjectSlug, result.Project, result.Todo),
 	}, map[string]any{}, nil
 }
 
@@ -570,4 +570,11 @@ func todoToItem(projectSlug string, todo store.Todo) todoItem {
 		UpdatedAt:        todo.UpdatedAt,
 		DoneAt:           todo.DoneAt,
 	}
+}
+
+func todoToItemForProject(projectSlug string, project store.Project, todo store.Todo) todoItem {
+	if !project.SprintsEnabled {
+		todo.SprintID = nil
+	}
+	return todoToItem(projectSlug, todo)
 }

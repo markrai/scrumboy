@@ -8,7 +8,7 @@ import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } f
 import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../utils.js';
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
 import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, t } from '../i18n/index.js';
-import { normalizeSprints } from '../sprints.js';
+import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
@@ -334,7 +334,8 @@ export async function openTodoDialog(opts) {
         sprintSelect &&
         !isAnonymousBoard(getBoard()) &&
         !!getSlug() &&
-        opts.role === "maintainer";
+        opts.role === "maintainer" &&
+        boardSprintsEnabled(getBoard());
     if (sprintField) {
         sprintField.style.display = showSprint ? "" : "none";
     }

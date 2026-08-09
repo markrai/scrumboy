@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Елемент на стіні не може з'єднуватися сам із собою.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Потрібні setup token і код.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Активувати можна лише заплановані Sprint.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprint вимкнено для цього проєкту.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Дата завершення Sprint має бути в день початку або пізніше.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Дата завершення Sprint має бути в майбутньому.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint з такою назвою вже існує.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Не вдалося підключити SSO.",
   "settings.profile.authentication.linked": "SSO підключено.",
   "settings.users.table.authentication": "Автентифікація",
-  "settings.profile.authentication.warning.localDisabledOwner": "Цей власник залежить від SSO, поки локальну автентифікацію вимкнено. Якщо SSO стане недоступним, оператор повинен отримати доступ до хоста Scrumboy, запустити recover-owner і знову ввімкнути локальну автентифікацію."
+  "settings.profile.authentication.warning.localDisabledOwner": "Цей власник залежить від SSO, поки локальну автентифікацію вимкнено. Якщо SSO стане недоступним, оператор повинен отримати доступ до хоста Scrumboy, запустити recover-owner і знову ввімкнути локальну автентифікацію.",
+  "settings.sprints.enableToggle": "Увімкнути спринти для цієї дошки",
+  "settings.sprints.disabledHint": "Спринти вимкнено для цієї дошки. Увімкніть їх вище, щоб створювати спринти та керувати ними.",
+  "settings.sprints.toast.enabled": "Спринти увімкнено",
+  "settings.sprints.toast.disabled": "Спринти вимкнено",
+  "settings.sprints.toast.toggleFailed": "Не вдалося оновити налаштування спринтів"
 }

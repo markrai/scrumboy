@@ -44,6 +44,10 @@ func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoIn
 		if err != nil {
 			return Todo{}, fmt.Errorf("begin create todo: %w", err)
 		}
+		if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
+			_ = tx.Rollback()
+			return Todo{}, err
+		}
 
 		p, err := s.getProjectForWriteTx(ctx, tx, projectID, mode)
 		if err != nil {
@@ -153,12 +157,6 @@ func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoIn
 			userIDPtr = &userID
 		}
 
-		// Write lock early (SQLite acquires write lock on first write in a deferred tx).
-		if _, err := tx.ExecContext(ctx, `UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID); err != nil {
-			_ = tx.Rollback()
-			return Todo{}, fmt.Errorf("lock project row: %w", err)
-		}
-
 		// Loud-fail if migration is incomplete (NULL local_id would defeat uniqueness).
 		var nullCount int
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM todos WHERE project_id = ? AND local_id IS NULL`, projectID).Scan(&nullCount); err != nil {
@@ -192,6 +190,10 @@ func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoIn
 		}
 
 		if in.SprintID != nil {
+			if err := lockProjectSprintsEnabledTx(ctx, tx, projectID); err != nil {
+				_ = tx.Rollback()
+				return Todo{}, err
+			}
 			var sprintProjectID int64
 			if err := tx.QueryRowContext(ctx, `SELECT project_id FROM sprints WHERE id = ?`, *in.SprintID).Scan(&sprintProjectID); err != nil {
 				_ = tx.Rollback()
@@ -371,6 +373,13 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		return Todo{}, fmt.Errorf("begin update todo: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE projects
+		SET updated_at = updated_at
+		WHERE id = (SELECT project_id FROM todos WHERE id = ?)
+	`, todoID); err != nil {
+		return Todo{}, fmt.Errorf("serialize todo project write: %w", err)
+	}
 
 	existing, err := getTodoTx(ctx, tx, todoID)
 	if err != nil {
@@ -495,11 +504,17 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 	}
 
+	sprintAssignmentChanged := in.SprintID != nil && !sameInt64Ptr(existing.SprintID, in.SprintID)
 	if in.ClearSprint || in.SprintID != nil {
 		if !actorRole.HasMinimumRole(RoleMaintainer) {
 			return Todo{}, ErrUnauthorized
 		}
 		if in.SprintID != nil {
+			if sprintAssignmentChanged {
+				if err := lockProjectSprintsEnabledTx(ctx, tx, existing.ProjectID); err != nil {
+					return Todo{}, err
+				}
+			}
 			var sprintProjectID int64
 			if err := tx.QueryRowContext(ctx, `SELECT project_id FROM sprints WHERE id = ?`, *in.SprintID).Scan(&sprintProjectID); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {

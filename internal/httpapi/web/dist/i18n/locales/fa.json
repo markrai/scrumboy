@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "آیتم wall نمی‌تواند به خودش لینک شود.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup token و code لازم است.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "فقط Sprintهای planned قابل فعال‌سازی هستند.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprintها برای این پروژه غیرفعال هستند.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "تاریخ پایان Sprint باید در یا بعد از تاریخ شروع باشد.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "تاریخ پایان Sprint باید در آینده باشد.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint با این نام از قبل وجود دارد.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "اتصال SSO ممکن نشد.",
   "settings.profile.authentication.linked": "SSO متصل شد.",
   "settings.users.table.authentication": "احراز هویت",
-  "settings.profile.authentication.warning.localDisabledOwner": "این مالک در حالی به SSO وابسته است که احراز هویت محلی غیرفعال است. اگر SSO در دسترس نباشد، اپراتور باید به میزبان Scrumboy دسترسی پیدا کند، recover-owner را اجرا کند و احراز هویت محلی را دوباره فعال کند."
+  "settings.profile.authentication.warning.localDisabledOwner": "این مالک در حالی به SSO وابسته است که احراز هویت محلی غیرفعال است. اگر SSO در دسترس نباشد، اپراتور باید به میزبان Scrumboy دسترسی پیدا کند، recover-owner را اجرا کند و احراز هویت محلی را دوباره فعال کند.",
+  "settings.sprints.enableToggle": "فعال‌سازی اسپرینت‌ها برای این تخته",
+  "settings.sprints.disabledHint": "اسپرینت‌ها برای این تخته غیرفعال هستند. برای ایجاد و مدیریت اسپرینت‌ها، آن‌ها را در بالا فعال کنید.",
+  "settings.sprints.toast.enabled": "اسپرینت‌ها فعال شدند",
+  "settings.sprints.toast.disabled": "اسپرینت‌ها غیرفعال شدند",
+  "settings.sprints.toast.toggleFailed": "به‌روزرسانی تنظیمات اسپرینت‌ها ناموفق بود"
 }

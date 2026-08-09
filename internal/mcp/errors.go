@@ -55,6 +55,8 @@ func mapStoreError(err error) *adapterError {
 		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
 	case errors.Is(err, store.ErrNotFound):
 		return newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	case errors.Is(err, store.ErrSprintsDisabled):
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, store.ErrSprintsDisabled.Error(), map[string]any{"reason": "sprints_disabled"})
 	case errors.Is(err, store.ErrValidation):
 		return newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), nil)
 	case errors.Is(err, store.ErrConflict):
@@ -79,6 +81,7 @@ var clientErrorDetailKeys = map[string]struct{}{
 	"field":     {},
 	"fields":    {},
 	"localId":   {},
+	"reason":    {},
 	"tool":      {},
 }
 

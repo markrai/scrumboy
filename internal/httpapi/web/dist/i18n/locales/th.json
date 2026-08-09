@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "รายการกระดานโน้ตไม่สามารถเชื่อมโยงกับตัวเอง",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "ต้องมีโทเค็นตั้งค่าและรหัส",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "เริ่มได้เฉพาะ Sprint ที่วางแผนแล้ว",
+  "errors.VALIDATION_ERROR.sprints_disabled": "ปิดใช้งาน Sprint สำหรับโปรเจกต์นี้",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "วันที่สิ้นสุด Sprint ต้องไม่ก่อนวันที่เริ่ม",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "วันที่สิ้นสุด Sprint ต้องอยู่ในอนาคต",
   "errors.VALIDATION_ERROR.sprint_name_exists": "มี Sprint ชื่อนี้อยู่แล้ว",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "ไม่สามารถเชื่อมต่อ SSO ได้",
   "settings.profile.authentication.linked": "เชื่อมต่อ SSO แล้ว",
   "settings.users.table.authentication": "การยืนยันตัวตน",
-  "settings.profile.authentication.warning.localDisabledOwner": "เจ้าของรายนี้พึ่งพา SSO ขณะที่ปิดการยืนยันตัวตนภายใน หาก SSO ไม่พร้อมใช้งาน ผู้ดูแลต้องเข้าถึงโฮสต์ที่รัน Scrumboy รัน recover-owner และเปิดการยืนยันตัวตนภายในอีกครั้ง"
+  "settings.profile.authentication.warning.localDisabledOwner": "เจ้าของรายนี้พึ่งพา SSO ขณะที่ปิดการยืนยันตัวตนภายใน หาก SSO ไม่พร้อมใช้งาน ผู้ดูแลต้องเข้าถึงโฮสต์ที่รัน Scrumboy รัน recover-owner และเปิดการยืนยันตัวตนภายในอีกครั้ง",
+  "settings.sprints.enableToggle": "เปิดใช้งานสปรินต์สำหรับบอร์ดนี้",
+  "settings.sprints.disabledHint": "สปรินต์ถูกปิดใช้งานสำหรับบอร์ดนี้ เปิดใช้งานด้านบนเพื่อสร้างและจัดการสปรินต์",
+  "settings.sprints.toast.enabled": "เปิดใช้งานสปรินต์แล้ว",
+  "settings.sprints.toast.disabled": "ปิดใช้งานสปรินต์แล้ว",
+  "settings.sprints.toast.toggleFailed": "อัปเดตการตั้งค่าสปรินต์ไม่สำเร็จ"
 }

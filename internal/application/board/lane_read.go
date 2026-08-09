@@ -59,6 +59,7 @@ func (s *LaneService) Read(ctx context.Context, pc *store.ProjectContext, query 
 	if err != nil {
 		return LaneResult{}, err
 	}
+	suppressDisabledSprintAssignmentsInTodos(pc.Project, items)
 
 	return LaneResult{
 		Items:      items,

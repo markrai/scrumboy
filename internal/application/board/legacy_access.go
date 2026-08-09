@@ -50,6 +50,9 @@ func (s *ReadService) PrepareLegacy(
 func (r *PreparedLegacyRead) Read(
 	query LegacyQuery,
 ) (LegacyResult, error) {
+	if query.SprintFilter.Mode != "" && query.SprintFilter.Mode != "none" && !r.projectContext.Project.SprintsEnabled {
+		return LegacyResult{}, store.ErrSprintsDisabled
+	}
 	return readLegacy(r.ctx, r.legacy, &r.projectContext, query)
 }
 
@@ -71,6 +74,7 @@ func readLegacy(
 	if err != nil {
 		return LegacyResult{}, err
 	}
+	suppressDisabledSprintAssignments(project, columns)
 
 	return LegacyResult{
 		Project:  project,

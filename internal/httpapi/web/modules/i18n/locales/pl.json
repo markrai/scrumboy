@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Element na ścianie nie może łączyć się sam ze sobą.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Wymagany jest token konfiguracji i kod.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Aktywować można tylko zaplanowane sprinty.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprinty są wyłączone dla tego projektu.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Data końca sprintu musi być w dniu rozpoczęcia lub później.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Data końca sprintu musi być w przyszłości.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint o tej nazwie już istnieje.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Nie udało się połączyć SSO.",
   "settings.profile.authentication.linked": "Połączono SSO.",
   "settings.users.table.authentication": "Uwierzytelnianie",
-  "settings.profile.authentication.warning.localDisabledOwner": "Ten właściciel zależy od SSO, gdy uwierzytelnianie lokalne jest wyłączone. Jeśli SSO stanie się niedostępne, operator musi uzyskać dostęp do hosta Scrumboy, uruchomić recover-owner i ponownie włączyć uwierzytelnianie lokalne."
+  "settings.profile.authentication.warning.localDisabledOwner": "Ten właściciel zależy od SSO, gdy uwierzytelnianie lokalne jest wyłączone. Jeśli SSO stanie się niedostępne, operator musi uzyskać dostęp do hosta Scrumboy, uruchomić recover-owner i ponownie włączyć uwierzytelnianie lokalne.",
+  "settings.sprints.enableToggle": "Włącz sprinty dla tej tablicy",
+  "settings.sprints.disabledHint": "Sprinty są wyłączone dla tej tablicy. Włącz je powyżej, aby tworzyć i zarządzać sprintami.",
+  "settings.sprints.toast.enabled": "Sprinty włączone",
+  "settings.sprints.toast.disabled": "Sprinty wyłączone",
+  "settings.sprints.toast.toggleFailed": "Nie udało się zaktualizować ustawienia sprintów"
 }

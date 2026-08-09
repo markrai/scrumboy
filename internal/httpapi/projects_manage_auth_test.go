@@ -246,9 +246,17 @@ func TestRESTPatchBoardSettings_temporaryBoardOwnerSuccess(t *testing.T) {
 
 	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug+"/settings", map[string]any{
 		"defaultSprintWeeks": 1,
+		"sprintsEnabled":     false,
 	}, nil)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, string(body))
+	}
+	var sprintsEnabled int
+	if err := sqlDB.QueryRow(`SELECT sprints_enabled FROM projects WHERE id = ?`, tempBoard.ID).Scan(&sprintsEnabled); err != nil {
+		t.Fatalf("read sprints_enabled: %v", err)
+	}
+	if sprintsEnabled != 0 {
+		t.Fatalf("sprints_enabled=%d, want 0", sprintsEnabled)
 	}
 }
 
@@ -265,7 +273,7 @@ func TestRESTPatchBoardSettings_temporaryBoardNonOwnerForbidden(t *testing.T) {
 	loginUserClient(t, otherClient, ts.URL, "temp-settings-other@example.com", "password123")
 
 	resp, body := doJSON(t, otherClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug+"/settings", map[string]any{
-		"defaultSprintWeeks": 1,
+		"sprintsEnabled": false,
 	}, nil)
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403, got %d body=%s", resp.StatusCode, string(body))
@@ -311,7 +319,7 @@ func TestRESTPatchBoardSettings_anonymousBoardNotFound(t *testing.T) {
 	}
 
 	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/board/"+anonBoard.Slug+"/settings", map[string]any{
-		"defaultSprintWeeks": 1,
+		"sprintsEnabled": false,
 	}, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d body=%s", resp.StatusCode, string(body))

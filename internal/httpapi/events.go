@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	membershipapp "scrumboy/internal/application/membership"
+	sprintapp "scrumboy/internal/application/sprint"
 	todolinkapp "scrumboy/internal/application/todolink"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
@@ -18,6 +19,44 @@ var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
 
 func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
 	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated")
+}
+
+type sprintDefinitionPublisher struct {
+	server *Server
+}
+
+var _ sprintapp.RESTDefinitionPublisher = sprintDefinitionPublisher{}
+
+func (p sprintDefinitionPublisher) PublishSprintCreated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_created")
+}
+
+func (p sprintDefinitionPublisher) PublishSprintUpdated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_updated")
+}
+
+type sprintTransitionPublisher struct {
+	server *Server
+}
+
+var _ sprintapp.RESTTransitionPublisher = sprintTransitionPublisher{}
+
+func (p sprintTransitionPublisher) PublishSprintActivated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_activated")
+}
+
+func (p sprintTransitionPublisher) PublishSprintClosed(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_closed")
+}
+
+type sprintDeletionPublisher struct {
+	server *Server
+}
+
+var _ sprintapp.RESTDeletionPublisher = sprintDeletionPublisher{}
+
+func (p sprintDeletionPublisher) PublishSprintDeleted(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_deleted")
 }
 
 type membershipMutationPublisher struct {

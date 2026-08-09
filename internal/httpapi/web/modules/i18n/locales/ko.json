@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall 항목은 자기 자신과 연결할 수 없습니다.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "설정 토큰과 코드가 필요합니다.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "예정된 Sprint만 활성화할 수 있습니다.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "이 프로젝트에서는 Sprint가 비활성화되어 있습니다.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint 종료일은 시작일 이후여야 합니다.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint 종료일은 미래여야 합니다.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "이 이름의 Sprint가 이미 있습니다.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO를 연결할 수 없습니다.",
   "settings.profile.authentication.linked": "SSO가 연결되었습니다.",
   "settings.users.table.authentication": "인증",
-  "settings.profile.authentication.warning.localDisabledOwner": "로컬 인증이 비활성화된 동안 이 소유자는 SSO에 의존합니다. SSO를 사용할 수 없게 되면 운영자가 Scrumboy 호스트에 접근하여 recover-owner를 실행하고 로컬 인증을 다시 활성화해야 합니다."
+  "settings.profile.authentication.warning.localDisabledOwner": "로컬 인증이 비활성화된 동안 이 소유자는 SSO에 의존합니다. SSO를 사용할 수 없게 되면 운영자가 Scrumboy 호스트에 접근하여 recover-owner를 실행하고 로컬 인증을 다시 활성화해야 합니다.",
+  "settings.sprints.enableToggle": "이 보드에서 스프린트 사용",
+  "settings.sprints.disabledHint": "이 보드는 스프린트가 비활성화되어 있습니다. 스프린트를 생성 및 관리하려면 위에서 활성화하세요.",
+  "settings.sprints.toast.enabled": "스프린트가 활성화되었습니다",
+  "settings.sprints.toast.disabled": "스프린트가 비활성화되었습니다",
+  "settings.sprints.toast.toggleFailed": "스프린트 설정을 업데이트하지 못했습니다"
 }

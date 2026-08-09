@@ -628,3 +628,55 @@ func TestTodoCreateMCPLaneAndFieldProjectionContracts(t *testing.T) {
 		t.Fatalf("unknown status details=%+v", errorBody)
 	}
 }
+
+func TestTodoCreateMCPRejectsSprintAssignmentWhenDisabledAcrossTransports(t *testing.T) {
+	ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
+	defer cleanup()
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	ownerID := firstUserID(t, db)
+
+	for _, transport := range []string{"legacy", "jsonrpc"} {
+		t.Run(transport, func(t *testing.T) {
+			project, ownerCtx := createTodoCreateMCPProject(t, st, ownerID, "MCP disabled sprint create "+transport)
+			now := time.Now().UTC()
+			sp, err := st.CreateSprint(ownerCtx, project.ID, "Dormant", now, now.Add(24*time.Hour))
+			if err != nil {
+				t.Fatalf("CreateSprint: %v", err)
+			}
+			if err := st.UpdateProjectSprintsEnabled(ownerCtx, project.ID, ownerID, false); err != nil {
+				t.Fatalf("disable sprints: %v", err)
+			}
+
+			args := todoCreateMCPArgs(project.Slug, "blocked assignment")
+			args["sprintId"] = sp.ID
+			resp, out := callTodoCreateMCP(t, client, ts.URL, transport, "todos_create", args)
+			var publicErr map[string]any
+			if transport == "legacy" {
+				if resp.StatusCode != http.StatusBadRequest {
+					t.Fatalf("legacy status=%d response=%+v", resp.StatusCode, out)
+				}
+				publicErr = assertTodoCreateMCPLegacyError(t, out, "VALIDATION_ERROR", store.ErrSprintsDisabled.Error())
+			} else {
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("JSON-RPC status=%d response=%+v", resp.StatusCode, out)
+				}
+				publicErr = assertTodoCreateMCPJSONRPCError(t, out, "VALIDATION_ERROR", store.ErrSprintsDisabled.Error())
+			}
+			details, ok := publicErr["details"].(map[string]any)
+			if !ok || details["reason"] != "sprints_disabled" {
+				t.Fatalf("disabled details=%+v", publicErr)
+			}
+			if got := todoCreateMCPProjectAuditCount(t, db, project.ID); got != 0 {
+				t.Fatalf("disabled assigned create audits=%d", got)
+			}
+
+			delete(args, "sprintId")
+			resp, out = callTodoCreateMCP(t, client, ts.URL, transport, "todos_create", args)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("unscheduled create status=%d response=%+v", resp.StatusCode, out)
+			}
+			assertTodoCreateMCPSuccess(t, transport, out, project.Slug, 1)
+		})
+	}
+}

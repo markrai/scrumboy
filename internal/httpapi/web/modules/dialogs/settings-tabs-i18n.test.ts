@@ -65,6 +65,8 @@ vi.mock('../events.js', () => ({ emit: vi.fn() }));
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: (value: { sprints?: any[] } | null | undefined) => value?.sprints ?? [],
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 // Keep the real tab modules (settings-sprints/workflow/tags), but mock the chart

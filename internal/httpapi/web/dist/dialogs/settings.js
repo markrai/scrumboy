@@ -1168,6 +1168,7 @@ export async function renderSettingsModal(options) {
     // Charts tab only applies in durable project board view (not Dashboard/Projects/Temporary Boards, not anonymous mode, not temporary boards)
     const board = getBoard();
     const isTemporaryBoard = !!(board?.project?.expiresAt);
+    const sprintsEnabled = board?.project?.sprintsEnabled !== false;
     const showChartsTab = !!slug &&
         hasProjectAccess &&
         getAuthStatusAvailable() &&
@@ -1227,11 +1228,12 @@ export async function renderSettingsModal(options) {
             if (activeTab === "charts") {
                 // Fetch sprints for burndown navigation
                 const slug = getSlug();
-                if (!slug) {
+                if (!slug || !sprintsEnabled) {
                     cachedSprintsForCharts = null;
                     cachedSprintsForChartsSlug = null;
+                    burndownSprintIndex = 0;
                 }
-                if (slug && (cachedSprintsForCharts === null || cachedSprintsForChartsSlug !== slug)) {
+                if (slug && sprintsEnabled && (cachedSprintsForCharts === null || cachedSprintsForChartsSlug !== slug)) {
                     try {
                         const sprintsRes = await apiFetch(`/api/board/${slug}/sprints`);
                         const rawSprints = normalizeSprints(sprintsRes);
@@ -1247,7 +1249,7 @@ export async function renderSettingsModal(options) {
                     }
                 }
                 // When a sprint is selected in board view, use sprint-scoped burndown endpoint
-                const sprints = slug ? (cachedSprintsForCharts ?? []) : [];
+                const sprints = slug && sprintsEnabled ? (cachedSprintsForCharts ?? []) : [];
                 const burndownSprintIndexClamped = sprints.length > 0 ? Math.min(burndownSprintIndex, sprints.length - 1) : 0;
                 const currentSprintForFetch = sprints.length > 0 ? sprints[burndownSprintIndexClamped] : null;
                 const effectiveBurndownURL = slug && currentSprintForFetch

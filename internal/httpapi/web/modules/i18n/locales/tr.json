@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Bir duvar öğesi kendisiyle bağlanamaz.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Kurulum jetonu ve kod gerekli.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Yalnızca planlanmış sprintler etkinleştirilebilir.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Bu proje için sprintler devre dışı.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint bitiş tarihi başlangıç tarihinde veya sonrasında olmalıdır.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint bitiş tarihi gelecekte olmalıdır.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Bu adla bir sprint zaten var.",
@@ -1053,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO bağlanamadı.",
   "settings.profile.authentication.linked": "SSO bağlandı.",
   "settings.users.table.authentication": "Kimlik doğrulama",
-  "settings.profile.authentication.warning.localDisabledOwner": "Yerel kimlik doğrulama devre dışıyken bu sahip SSO’ya bağlıdır. SSO kullanılamaz hale gelirse, bir operatör Scrumboy ana makinesine erişmeli, recover-owner çalıştırmalı ve yerel kimlik doğrulamayı yeniden etkinleştirmelidir."
+  "settings.profile.authentication.warning.localDisabledOwner": "Yerel kimlik doğrulama devre dışıyken bu sahip SSO’ya bağlıdır. SSO kullanılamaz hale gelirse, bir operatör Scrumboy ana makinesine erişmeli, recover-owner çalıştırmalı ve yerel kimlik doğrulamayı yeniden etkinleştirmelidir.",
+  "settings.sprints.enableToggle": "Bu pano için sprintleri etkinleştir",
+  "settings.sprints.disabledHint": "Bu pano için sprintler devre dışı. Sprint oluşturmak ve yönetmek için yukarıdan etkinleştirin.",
+  "settings.sprints.toast.enabled": "Sprintler etkinleştirildi",
+  "settings.sprints.toast.disabled": "Sprintler devre dışı bırakıldı",
+  "settings.sprints.toast.toggleFailed": "Sprint ayarı güncellenemedi"
 }
