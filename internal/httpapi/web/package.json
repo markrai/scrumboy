@@ -22,8 +22,8 @@
     "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
-    "happy-dom": "^20.10.6",
+    "@playwright/test": "^1.62.1",
+    "happy-dom": "^20.11.1",
     "jsdom": "^29.1.1",
     "typescript": "^5.0.0",
     "vite": "6.4.3",
