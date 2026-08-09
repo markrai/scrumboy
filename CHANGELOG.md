@@ -1,6 +1,33 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.30.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability) - see those releases.
+
+## [3.30.0] - 2026-08-09
+
+### Added
+
+- **Reversible per-project sprint capability** - Maintainers can disable sprints
+  from project settings without deleting or changing sprint records, lifecycle
+  timestamps, or todo-to-sprint associations. Existing and imported projects
+  default to enabled, backups preserve the setting, and older backups without
+  it remain compatible.
+
+### Changed
+
+- **Disabled sprint policy is enforced across every canonical boundary** -
+  Sprint create, update, activate, close, and delete operations are rejected
+  consistently through REST and both MCP transports. Todo creation or updates
+  cannot introduce or change a non-null sprint assignment while disabled;
+  unrelated edits preserve dormant assignments and explicit removal remains
+  available. Transactional project locking keeps capability changes and
+  mutations race-safe without bypassing the sprint application services.
+
+- **Live reads and UI honor suspended sprints** - Board and dashboard
+  projections expose no effective active sprint and treat dormant sprint todos
+  as unscheduled while retaining historical data. Sprint filters, controls,
+  chips, and sprint-scoped charts are removed or rejected while disabled.
+  Re-enabling forces fresh board and sprint data so the original lifecycle
+  state and todo associations become effective again without reconstruction.
 
 ## [3.29.9] - 2026-08-08
 
