@@ -361,15 +361,23 @@ func (s *Server) handleAdminDefaultBoard(w http.ResponseWriter, r *http.Request,
 	case http.MethodPut:
 		// PUT /api/admin/settings/default-board - Body: { projectId: number, role?: string }
 		var in struct {
-			ProjectID int64  `json:"projectId"`
-			Role      string `json:"role"`
+			ProjectID int64   `json:"projectId"`
+			Role      *string `json:"role"`
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return
 		}
-		role := store.RoleViewer
-		if in.Role != "" {
-			role = store.ProjectRole(in.Role)
+		var role store.ProjectRole
+		if in.Role == nil {
+			// Preserve an already-configured role when older clients omit it.
+			_, existingRole, _, err := s.store.GetDefaultBoardOrgSetting(ctx)
+			if err != nil {
+				writeStoreErr(w, err, false)
+				return
+			}
+			role = existingRole
+		} else {
+			role = store.ProjectRole(*in.Role)
 			if !store.IsValidProjectRole(role) {
 				writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid role", nil)
 				return

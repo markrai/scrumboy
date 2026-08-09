@@ -387,6 +387,41 @@ func TestCreateUserOIDC_SeedsDefaultBoardMembership(t *testing.T) {
 	}
 }
 
+// TestCreateUserOIDC_SeedsDefaultBoardMembershipAtConfiguredRole mirrors
+// TestCreateUser_SeedsDefaultBoardMembershipAtConfiguredRole for the OIDC
+// user-creation path.
+func TestCreateUserOIDC_SeedsDefaultBoardMembershipAtConfiguredRole(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	st.configuredOIDCIssuer = "https://idp.example"
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	project, err := st.CreateProject(WithUserID(ctx, owner.ID), "Onboarding")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleContributor); err != nil {
+		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
+	}
+
+	oidcUser, err := st.CreateUserOIDC(ctx, st.configuredOIDCIssuer, st.configuredOIDCIssuer, "sub-2", "sso2@test.com", "SSO User 2")
+	if err != nil {
+		t.Fatalf("CreateUserOIDC: %v", err)
+	}
+
+	role, err := st.GetProjectRole(ctx, project.ID, oidcUser.ID)
+	if err != nil {
+		t.Fatalf("GetProjectRole: %v", err)
+	}
+	if role != RoleContributor {
+		t.Fatalf("expected OIDC user seeded as RoleContributor, got %q", role)
+	}
+}
+
 // TestBootstrapUser_NotSeededIntoDefaultBoard documents that BootstrapUser
 // never runs seedDefaultBoardMembershipTx. When the bootstrap owner later
 // creates a project, CreateProject inserts their Maintainer membership —

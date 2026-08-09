@@ -436,8 +436,8 @@ func TestAdminDefaultBoard_PutWithRoleSeedsNewUsersAtThatRole(t *testing.T) {
 	}
 }
 
-// TestAdminDefaultBoard_PutOmittedRoleDefaultsToViewer preserves the
-// pre-existing behavior for callers that don't send a role at all.
+// TestAdminDefaultBoard_PutOmittedRoleDefaultsToViewer covers first-time
+// configure when no role has ever been stored.
 func TestAdminDefaultBoard_PutOmittedRoleDefaultsToViewer(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServer(t, "full")
 	defer cleanup()
@@ -459,6 +459,54 @@ func TestAdminDefaultBoard_PutOmittedRoleDefaultsToViewer(t *testing.T) {
 	}
 	if out["role"] != "viewer" {
 		t.Fatalf("expected role to default to viewer, got %v", out["role"])
+	}
+}
+
+// TestAdminDefaultBoard_PutOmittedRolePreservesExistingRole ensures older
+// clients that only send projectId do not downgrade an already-configured role.
+func TestAdminDefaultBoard_PutOmittedRolePreservesExistingRole(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Onboarding"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	var out map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+		"role":      "contributor",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT with contributor role: expected 200, got %d", resp.StatusCode)
+	}
+	if out["role"] != "contributor" {
+		t.Fatalf("expected contributor role, got %v", out["role"])
+	}
+
+	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT without role: expected 200, got %d", resp.StatusCode)
+	}
+	if out["role"] != "contributor" {
+		t.Fatalf("expected omitted role to preserve contributor, got %v", out["role"])
+	}
+
+	var get map[string]any
+	resp, _ = doJSON(t, owner, http.MethodGet, ts.URL+defaultBoardPath, nil, &get)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET: expected 200, got %d", resp.StatusCode)
+	}
+	if get["role"] != "contributor" {
+		t.Fatalf("expected GET role to remain contributor, got %v", get["role"])
 	}
 }
 

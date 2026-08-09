@@ -2150,10 +2150,16 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     const defaultBoardSelect = document.getElementById("defaultBoardProjectSelect") as HTMLSelectElement | null;
     const defaultBoardRoleSelect = document.getElementById("defaultBoardRoleSelect") as HTMLSelectElement | null;
 
+    let defaultBoardSaving = false;
     const saveDefaultBoard = async () => {
+      if (defaultBoardSaving) return;
       const projectId = Number(defaultBoardSelect?.value);
       if (!defaultBoardSelect?.value || !Number.isFinite(projectId) || projectId <= 0) return;
       const role = defaultBoardRoleSelect?.value || "viewer";
+
+      defaultBoardSaving = true;
+      if (defaultBoardSelect) defaultBoardSelect.disabled = true;
+      if (defaultBoardRoleSelect) defaultBoardRoleSelect.disabled = true;
       try {
         await apiFetch("/api/admin/settings/default-board", {
           method: "PUT",
@@ -2162,6 +2168,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         showToast(t("settings.users.defaultBoard.toast.saved"));
       } catch (err: any) {
         showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.defaultBoard.toast.saveFailed" }));
+      } finally {
+        defaultBoardSaving = false;
       }
       await renderSettingsModal();
     };

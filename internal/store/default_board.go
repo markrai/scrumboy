@@ -23,29 +23,55 @@ const orgSettingDefaultBoardRole = "defaultBoardRole"
 // GetDefaultBoardOrgSetting returns the org-wide default board project ID and
 // role new users are seeded into, and whether an admin has actually
 // configured one. projectID is 0 and role is RoleViewer when unconfigured
-// (customized=false).
+// (customized=false). Both org_settings rows are read from one read-only
+// transaction so project ID and role come from the same SQLite snapshot.
 func (s *Store) GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, role ProjectRole, customized bool, err error) {
-	raw, err := s.GetOrgSetting(ctx, orgSettingDefaultBoardProjectID)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return 0, RoleViewer, false, err
+		return 0, RoleViewer, false, fmt.Errorf("begin get default board tx: %w", err)
 	}
-	if raw == "" {
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, `
+SELECT key, value FROM org_settings WHERE key IN (?, ?)
+`, orgSettingDefaultBoardProjectID, orgSettingDefaultBoardRole)
+	if err != nil {
+		return 0, RoleViewer, false, fmt.Errorf("get default board org settings: %w", err)
+	}
+	defer rows.Close()
+
+	var rawProject, rawRole string
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return 0, RoleViewer, false, fmt.Errorf("scan default board org setting: %w", err)
+		}
+		switch key {
+		case orgSettingDefaultBoardProjectID:
+			rawProject = value
+		case orgSettingDefaultBoardRole:
+			rawRole = value
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, RoleViewer, false, fmt.Errorf("iterate default board org settings: %w", err)
+	}
+
+	if rawProject == "" {
 		return 0, RoleViewer, false, nil
 	}
-	id, err := strconv.ParseInt(raw, 10, 64)
+	id, err := strconv.ParseInt(rawProject, 10, 64)
 	if err != nil {
 		return 0, RoleViewer, false, fmt.Errorf("%w: corrupt default board org setting", ErrValidation)
 	}
-	return id, s.getDefaultBoardRoleOrgSetting(ctx), true, nil
+	return id, parseDefaultBoardRole(rawRole), true, nil
 }
 
-// getDefaultBoardRoleOrgSetting returns the configured default-board role,
-// falling back to RoleViewer when unset or corrupt. Errors reading the
-// underlying org setting also fall back to RoleViewer rather than failing the
-// caller -- this mirrors seedDefaultBoardMembershipTx's fail-safe posture.
-func (s *Store) getDefaultBoardRoleOrgSetting(ctx context.Context) ProjectRole {
-	raw, err := s.GetOrgSetting(ctx, orgSettingDefaultBoardRole)
-	if err != nil || raw == "" {
+// parseDefaultBoardRole returns the configured default-board role, falling
+// back to RoleViewer when unset or corrupt. Real database errors are handled
+// by GetDefaultBoardOrgSetting before this helper is called.
+func parseDefaultBoardRole(raw string) ProjectRole {
+	if raw == "" {
 		return RoleViewer
 	}
 	role, ok := ParseProjectRole(raw)
