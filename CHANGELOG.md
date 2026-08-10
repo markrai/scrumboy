@@ -2,6 +2,14 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.30.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability) - see those releases.
 
+## [3.30.2] - 2026-08-09
+
+### Changed
+
+- **Go dependency upgrades** - Bump `github.com/coreos/go-oidc/v3` to `v3.20.0`,
+  `github.com/golang-jwt/jwt/v5` to `v5.3.1`, and `modernc.org/sqlite` to
+  `v1.54.0` (SQLite 3.53.3 engine; transitive `modernc.org/libc` to `v1.74.1`).
+
 ## [3.30.1] - 2026-08-09
 
 ### Added
