@@ -81,6 +81,8 @@ vi.mock('../events.js', () => ({
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: (value: { sprints?: any[] } | null | undefined) => value?.sprints ?? [],
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 vi.mock('../core/keybindings.js', () => ({
@@ -234,5 +236,26 @@ describe('settings-charts', () => {
       .map((args) => args[0])
       .filter((url): url is string => typeof url === 'string' && url.endsWith('/burndown'));
     expect(burndownUrls[burndownUrls.length - 1]).toBe('/api/board/alpha/sprints/3/burndown');
+  });
+
+  it('uses only project-level chart data while sprints are disabled', async () => {
+    apiFetchMock.mockResolvedValue([]);
+    const settings = await loadSettingsModule();
+    const state = await loadStateMutations();
+    state.setAuthStatusAvailable(true);
+    state.setSlug('alpha');
+    state.setBoard({
+      project: { id: 1, slug: 'alpha', name: 'Alpha', sprintsEnabled: false },
+      tags: [],
+      columns: {},
+    } as any);
+    state.setProjectId(1);
+    state.setSettingsActiveTab('charts');
+    state.setBoardMembers([]);
+
+    await settings.renderSettingsModal();
+
+    const urls = apiFetchMock.mock.calls.map((args) => String(args[0]));
+    expect(urls.some((url) => url.includes('/sprints'))).toBe(false);
   });
 });

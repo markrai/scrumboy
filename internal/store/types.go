@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"time"
 
 	"scrumboy/internal/errs"
@@ -14,6 +15,7 @@ var (
 	ErrForbidden                  = errs.ErrForbidden
 	ErrTooManyAttempts            = errs.ErrTooManyAttempts
 	Err2FAEncryptionNotConfigured = errs.Err2FAEncryptionNotConfigured
+	ErrSprintsDisabled            = errors.New("sprints are disabled for this project")
 )
 
 const (
@@ -159,6 +161,7 @@ type Project struct {
 	DominantColor      string
 	EstimationMode     string
 	DefaultSprintWeeks int
+	SprintsEnabled     bool
 	Slug               string
 	OwnerUserID        *int64 // NULL for unowned boards (Temporary and Anonymous Boards); set for Durable Projects
 	// CreatorUserID represents who created the project at creation time.

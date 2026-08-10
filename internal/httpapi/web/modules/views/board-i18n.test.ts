@@ -102,6 +102,8 @@ vi.mock("../orchestration/board-refresh.js", () => ({
 
 vi.mock("../sprints.js", () => ({
   normalizeSprints: vi.fn(() => []),
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 vi.mock("./mobile-lane-tabs.js", () => ({

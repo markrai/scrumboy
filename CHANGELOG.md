@@ -1,6 +1,154 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.29.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.30.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability) - see those releases.
+
+## [3.30.1] - 2026-08-09
+
+### Added
+
+- **Configurable role for default-board auto-enrollment** - The org-wide
+  "default board for new users" admin setting now accepts a project role
+  (Viewer, Contributor, or Maintainer) alongside the board, instead of always
+  enrolling new users as a Viewer. Settings → Users shows a role picker next to
+  the project picker. Existing configurations with no role set keep enrolling at
+  Viewer, and clearing the override resets the role back to that same Viewer
+  fallback.
+
+- **Default-board GET consistency and role-read errors** - The admin GET path
+  now reads `defaultBoardProjectId` and `defaultBoardRole` from one read-only
+  SQLite snapshot. Real database errors on the role row propagate instead of
+  being reported as Viewer.
+
+### Changed
+
+- **Omitted `role` preserves an existing default-board role** - PUT
+  `/api/admin/settings/default-board` with only `projectId` keeps a previously
+  configured role instead of resetting it to Viewer, so older clients that do
+  not send `role` cannot downgrade a setting they do not understand. First-time
+  configure with no stored role still defaults to Viewer.
+
+## [3.30.0] - 2026-08-09
+
+### Added
+
+- **Reversible per-project sprint capability** - Maintainers can disable sprints
+  from project settings without deleting or changing sprint records, lifecycle
+  timestamps, or todo-to-sprint associations. Existing and imported projects
+  default to enabled, backups preserve the setting, and older backups without
+  it remain compatible.
+
+### Changed
+
+- **Disabled sprint policy is enforced across every canonical boundary** -
+  Sprint create, update, activate, close, and delete operations are rejected
+  consistently through REST and both MCP transports. Todo creation or updates
+  cannot introduce or change a non-null sprint assignment while disabled;
+  unrelated edits preserve dormant assignments and explicit removal remains
+  available. Transactional project locking keeps capability changes and
+  mutations race-safe without bypassing the sprint application services.
+
+- **Live reads and UI honor suspended sprints** - Board and dashboard
+  projections expose no effective active sprint and treat dormant sprint todos
+  as unscheduled while retaining historical data. Sprint filters, controls,
+  chips, and sprint-scoped charts are removed or rejected while disabled.
+  Re-enabling forces fresh board and sprint data so the original lifecycle
+  state and todo associations become effective again without reconstruction.
+
+## [3.29.9] - 2026-08-08
+
+### Security
+
+- **npm advisories for DOMPurify, Mermaid, and transitive NanoID** - Pin
+  `dompurify` to `3.4.13`, `mermaid` to `11.16.1`, and `nanoid` to `3.3.17`
+  beneath PostCSS via npm overrides so the frontend resolves patched releases
+  for GHSA-55q2-fjhq-7xh7, GHSA-2v8p-3f2j-5mp7, GHSA-3rrr-jr9j-h3q3,
+  GHSA-6x64-9x62-f2gx, GHSA-c4c3-pg64-4m4v, GHSA-rhh3-jpg6-66xh, and
+  GHSA-2v37-7h3g-55p8. Vendored browser bundles and documentation pins updated;
+  no application behavior change.
+
+## [3.29.8] - 2026-08-08
+
+### Changed
+
+- **Sprint mutations move behind application services** - REST and MCP sprint
+  definition, lifecycle, and deletion operations now use prepared application
+  services with narrow capability boundaries. Existing validation,
+  authorization, response, event, and compatibility contracts are preserved,
+  with comprehensive application, store, REST, and MCP contract coverage.
+
+### Fixed
+
+- **Sprint close mutations are project-scoped** - Closing a sprint now requires
+  both its project and sprint identity, preventing an authorized request for one
+  project from closing a sprint belonging to another project.
+
+## [3.29.7] - 2026-08-05
+
+### Changed
+
+- **Todo-link mutations move behind application services** - REST and
+  MCP directed todo-link add and remove now share
+  `internal/application/todolink` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST board-refresh side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
+## [3.29.6] - 2026-08-03
+
+### Security
+
+- **npm advisories for transitive `postcss` and `undici`** - Pin
+  `postcss` to `8.5.25` and `undici` to `7.29.0` via npm overrides so Vite and
+  jsdom resolve patched releases for GHSA-fxqj-rqcc-2cmp and the five Undici
+  advisories reported against `7.28.0`. Dev/test tooling only; no production
+  runtime dependency change.
+
+## [3.29.5] - 2026-08-03
+
+### Changed
+
+- **Project membership mutations move behind application services** - REST and
+  MCP member add, role update, and remove now share
+  `internal/application/membership` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST membership-event side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
+## [3.29.4] - 2026-08-02
+
+### Changed
+
+- **Workflow column mutations move behind application services** - REST and
+  MCP workflow column create, update, and delete now share
+  `internal/application/workflow` command boundaries instead of owning write
+  logic in the transports. HTTP and MCP adapters stay thin wrappers;
+  permissions, validation, response shapes, and REST board-refresh side
+  effects are preserved. Contract tests lock the migrated mutation paths.
+
+## [3.29.3] - 2026-08-02
+
+### Changed
+
+- **Todo creates move behind application services** - REST and MCP todo
+  creates now share `internal/application/todo` command boundaries instead of
+  owning write logic in the transports. HTTP and MCP adapters stay thin
+  wrappers; permissions, validation, response shapes, and side effects are
+  preserved. Contract tests lock the migrated create paths.
+
+## [3.29.2] - 2026-07-31
+
+### Changed
+
+- **Todo writes move behind application services** - REST and MCP todo
+  updates and moves now share `internal/application/todo` command boundaries
+  instead of owning write logic in the transports. HTTP and MCP adapters stay
+  thin wrappers; permissions, validation, response shapes, and SSE side effects
+  are preserved. Contract tests lock the migrated update and move paths.
+
+### Fixed
+
+- **MCP todo update preserves sprint when omitted** - Omitting sprint from an
+  MCP todo update no longer clears the existing sprint assignment.
 
 ## [3.29.1] - 2026-07-31
 

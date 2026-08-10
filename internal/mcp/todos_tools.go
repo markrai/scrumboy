@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/store"
 )
 
@@ -79,9 +80,12 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoCreates.Prepare(ctx, todoapp.SlugCreateTarget{
+		Slug: in.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
 
 	columnKey := normalizeColumnKey(in.ColumnKey)
@@ -89,32 +93,54 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 		columnKey = store.DefaultColumnBacklog
 	}
 
-	afterID, beforeID, posErr := a.resolvePositionIDs(ctx, pc.Project.ID, in.Position, a.storeMode(), columnKey)
-	if posErr != nil {
-		return nil, nil, posErr
+	command := todoapp.MCPCreateCommand{
+		Values: todoapp.CreateValues{
+			Title:            in.Title,
+			Body:             in.Body,
+			Tags:             in.Tags,
+			ColumnKey:        columnKey,
+			EstimationPoints: in.EstimationPoints,
+			AssigneeUserID:   in.AssigneeUserId,
+			SprintID:         in.SprintId,
+		},
+	}
+	if in.Position != nil {
+		command.AfterLocalID = in.Position.AfterLocalId
+		command.BeforeLocalID = in.Position.BeforeLocalId
 	}
 
-	todo, createErr := a.store.CreateTodo(ctx, pc.Project.ID, store.CreateTodoInput{
-		Title:            in.Title,
-		Body:             in.Body,
-		Tags:             in.Tags,
-		ColumnKey:        columnKey,
-		EstimationPoints: in.EstimationPoints,
-		SprintID:         in.SprintId,
-		AssigneeUserID:   in.AssigneeUserId,
-		AfterID:          afterID,
-		BeforeID:         beforeID,
-	}, a.storeMode())
+	result, createErr := prepared.Create(command)
 	if createErr != nil {
-		if errors.Is(createErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(createErr)
+		return nil, nil, mapMCPCreateError(createErr)
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, todo),
+		"todo": todoToItemForProject(in.ProjectSlug, result.Project, result.Todo),
 	}, map[string]any{}, nil
+}
+
+func mapMCPCreateError(err error) *adapterError {
+	var validationErr *todoapp.MCPCreateValidationError
+	if errors.As(err, &validationErr) {
+		details := map[string]any{}
+		if validationErr.Field != "" {
+			details["field"] = validationErr.Field
+		}
+		if validationErr.HasLocalID {
+			details["localId"] = validationErr.LocalID
+		}
+
+		switch validationErr.Kind {
+		case todoapp.MCPCreateInvalidLocalReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", details)
+		case todoapp.MCPCreateReferenceInWrongColumn:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", details)
+		}
+	}
+	if errors.Is(err, store.ErrUnauthorized) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return mapStoreError(err)
 }
 
 func (a *Adapter) handleTodosGet(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -157,7 +183,7 @@ func (a *Adapter) handleTodosGet(ctx context.Context, input any) (any, map[strin
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, todo),
+		"todo": todoToItemForProject(in.ProjectSlug, pc.Project, todo),
 	}, map[string]any{}, nil
 }
 
@@ -253,12 +279,15 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing patch", map[string]any{"field": "patch"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, env.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoUpdates.Prepare(ctx, todoapp.SlugUpdateTarget{
+		Slug: env.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
 
-	existing, getErr := a.store.GetTodoByLocalID(ctx, pc.Project.ID, env.LocalID, a.storeMode())
+	preparedTodo, getErr := prepared.PrepareTodo(env.LocalID)
 	if getErr != nil {
 		if errors.Is(getErr, store.ErrUnauthorized) {
 			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
@@ -266,17 +295,12 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 		return nil, nil, mapStoreError(getErr)
 	}
 
-	updateIn, changed, patchErr := buildUpdateTodoInput(existing, env.Patch)
+	patch, patchErr := buildUpdatePatch(env.Patch)
 	if patchErr != nil {
 		return nil, nil, patchErr
 	}
-	if !changed {
-		return map[string]any{
-			"todo": todoToItem(env.ProjectSlug, existing),
-		}, map[string]any{}, nil
-	}
 
-	todo, updateErr := a.store.UpdateTodoByLocalID(ctx, pc.Project.ID, env.LocalID, updateIn, a.storeMode())
+	result, updateErr := preparedTodo.Update(patch)
 	if updateErr != nil {
 		if errors.Is(updateErr, store.ErrUnauthorized) {
 			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
@@ -285,7 +309,7 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 	}
 
 	return map[string]any{
-		"todo": todoToItem(env.ProjectSlug, todo),
+		"todo": todoToItemForProject(env.ProjectSlug, result.Project, result.Todo),
 	}, map[string]any{}, nil
 }
 
@@ -370,59 +394,73 @@ func (a *Adapter) handleTodosMove(ctx context.Context, input any) (any, map[stri
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "beforeLocalId cannot equal localId", map[string]any{"field": "beforeLocalId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoMoves.Prepare(ctx, todoapp.SlugMoveTarget{
+		Slug: in.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
-
-	movingTodo, getErr := a.store.GetTodoByLocalID(ctx, pc.Project.ID, in.LocalID, a.storeMode())
-	if getErr != nil {
-		if errors.Is(getErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, nil, mapStoreError(getErr)
-	}
-
 	toColumnKey := normalizeColumnKey(in.ToColumnKey)
-	if toColumnKey == "" {
-		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing toColumnKey", map[string]any{"field": "toColumnKey"})
-	}
-
-	afterTodo, err := a.resolveLocalTodoForColumn(ctx, pc.Project.ID, in.AfterLocalId, "afterLocalId", a.storeMode(), toColumnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	beforeTodo, err := a.resolveLocalTodoForColumn(ctx, pc.Project.ID, in.BeforeLocalId, "beforeLocalId", a.storeMode(), toColumnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := a.validateMoveAnchors(ctx, pc.Project.ID, toColumnKey, afterTodo, beforeTodo, a.storeMode()); err != nil {
-		return nil, nil, err
-	}
-
-	todo, moveErr := a.store.MoveTodoByLocalID(ctx, pc.Project.ID, movingTodo.LocalID, toColumnKey, in.AfterLocalId, in.BeforeLocalId, a.storeMode())
+	result, moveErr := prepared.Move(todoapp.MoveCommand{
+		LocalID:       in.LocalID,
+		ToColumnKey:   toColumnKey,
+		AfterLocalID:  in.AfterLocalId,
+		BeforeLocalID: in.BeforeLocalId,
+	})
 	if moveErr != nil {
-		if errors.Is(moveErr, store.ErrUnauthorized) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		if errors.Is(moveErr, store.ErrNotFound) && (in.AfterLocalId != nil || in.BeforeLocalId != nil) {
-			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid neighbor reference", map[string]any{})
-		}
-		return nil, nil, mapStoreError(moveErr)
+		return nil, nil, mapMCPMoveError(moveErr)
 	}
 
 	return map[string]any{
-		"todo": todoToItem(in.ProjectSlug, todo),
+		"todo": todoToItemForProject(in.ProjectSlug, result.Project, result.Todo),
 	}, map[string]any{}, nil
 }
 
-func buildUpdateTodoInput(existing store.Todo, patchRaw json.RawMessage) (store.UpdateTodoInput, bool, *adapterError) {
+func mapMCPMoveError(err error) *adapterError {
+	var anchorReadErr *todoapp.MCPMoveAnchorReadError
+	if errors.As(err, &anchorReadErr) {
+		return mapStoreError(anchorReadErr.Err)
+	}
+
+	var validationErr *todoapp.MCPMoveValidationError
+	if errors.As(err, &validationErr) {
+		details := map[string]any{}
+		if validationErr.Field != "" {
+			details["field"] = validationErr.Field
+		}
+		if validationErr.HasLocalID {
+			details["localId"] = validationErr.LocalID
+		}
+
+		switch validationErr.Kind {
+		case todoapp.MCPMoveMissingColumn:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "missing toColumnKey", details)
+		case todoapp.MCPMoveInvalidLocalReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", details)
+		case todoapp.MCPMoveReferenceInWrongColumn:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", details)
+		case todoapp.MCPMoveAmbiguousAfterReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "afterLocalId is ambiguous unless it is already the last item in the target column", details)
+		case todoapp.MCPMoveAmbiguousBeforeReference:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "beforeLocalId is ambiguous unless it is already the first item in the target column", details)
+		case todoapp.MCPMoveInvalidNeighbor:
+			return newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid neighbor reference", details)
+		}
+	}
+	if errors.Is(err, store.ErrUnauthorized) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	}
+	return mapStoreError(err)
+}
+
+func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterError) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(patchRaw, &raw); err != nil {
-		return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"detail": err.Error()})
+		return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"detail": err.Error()})
 	}
 	if raw == nil {
-		return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"field": "patch"})
+		return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid patch", map[string]any{"field": "patch"})
 	}
 
 	allowed := map[string]struct{}{
@@ -435,200 +473,86 @@ func buildUpdateTodoInput(existing store.Todo, patchRaw json.RawMessage) (store.
 	}
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported patch field", map[string]any{"field": key})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported patch field", map[string]any{"field": key})
 		}
 	}
 
-	in := store.UpdateTodoInput{
-		Title:            existing.Title,
-		Body:             existing.Body,
-		Tags:             cloneStrings(existing.Tags),
-		EstimationPoints: cloneInt64(existing.EstimationPoints),
-		AssigneeUserID:   cloneInt64(existing.AssigneeUserID),
-		SprintID:         cloneInt64(existing.SprintID),
-	}
-	changed := false
+	var patch todoapp.UpdatePatch
 
 	if v, ok := raw["title"]; ok {
 		if isNullJSON(v) {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "title cannot be null", map[string]any{"field": "title"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "title cannot be null", map[string]any{"field": "title"})
 		}
 		var title string
 		if err := json.Unmarshal(v, &title); err != nil {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid title", map[string]any{"field": "title"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid title", map[string]any{"field": "title"})
 		}
-		in.Title = title
-		changed = true
+		patch.Title = todoapp.Field[string]{Present: true, Value: title}
 	}
 
 	if v, ok := raw["body"]; ok {
 		if isNullJSON(v) {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "body cannot be null", map[string]any{"field": "body"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "body cannot be null", map[string]any{"field": "body"})
 		}
 		var body string
 		if err := json.Unmarshal(v, &body); err != nil {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid body", map[string]any{"field": "body"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid body", map[string]any{"field": "body"})
 		}
-		in.Body = body
-		changed = true
+		patch.Body = todoapp.Field[string]{Present: true, Value: body}
 	}
 
 	if v, ok := raw["tags"]; ok {
 		if isNullJSON(v) {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "tags cannot be null", map[string]any{"field": "tags"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "tags cannot be null", map[string]any{"field": "tags"})
 		}
 		var tags []string
 		if err := json.Unmarshal(v, &tags); err != nil {
-			return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tags", map[string]any{"field": "tags"})
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tags", map[string]any{"field": "tags"})
 		}
-		in.Tags = tags
-		changed = true
+		patch.Tags = todoapp.Field[[]string]{Present: true, Value: tags}
 	}
 
 	if v, ok := raw["estimationPoints"]; ok {
 		if isNullJSON(v) {
-			in.EstimationPoints = nil
+			patch.EstimationPoints = todoapp.Field[*int64]{Present: true}
 		} else {
 			var points int64
 			if err := json.Unmarshal(v, &points); err != nil {
-				return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid estimationPoints", map[string]any{"field": "estimationPoints"})
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid estimationPoints", map[string]any{"field": "estimationPoints"})
 			}
-			in.EstimationPoints = &points
+			patch.EstimationPoints = todoapp.Field[*int64]{Present: true, Value: &points}
 		}
-		changed = true
 	}
 
 	if v, ok := raw["assigneeUserId"]; ok {
 		if isNullJSON(v) {
-			in.AssigneeUserID = nil
+			patch.AssigneeUserID = todoapp.Field[*int64]{Present: true}
 		} else {
 			var assignee int64
 			if err := json.Unmarshal(v, &assignee); err != nil {
-				return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assigneeUserId", map[string]any{"field": "assigneeUserId"})
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assigneeUserId", map[string]any{"field": "assigneeUserId"})
 			}
-			in.AssigneeUserID = &assignee
+			patch.AssigneeUserID = todoapp.Field[*int64]{Present: true, Value: &assignee}
 		}
-		changed = true
 	}
 
 	if v, ok := raw["sprintId"]; ok {
 		if isNullJSON(v) {
-			in.SprintID = nil
-			in.ClearSprint = true
+			patch.SprintID = todoapp.Field[*int64]{Present: true}
 		} else {
 			var sprintID int64
 			if err := json.Unmarshal(v, &sprintID); err != nil {
-				return store.UpdateTodoInput{}, false, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sprintId", map[string]any{"field": "sprintId"})
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sprintId", map[string]any{"field": "sprintId"})
 			}
-			in.SprintID = &sprintID
-			in.ClearSprint = false
+			patch.SprintID = todoapp.Field[*int64]{Present: true, Value: &sprintID}
 		}
-		changed = true
 	}
 
-	return in, changed, nil
+	return patch, nil
 }
 
 func isNullJSON(v json.RawMessage) bool {
 	return strings.TrimSpace(string(v)) == "null"
-}
-
-func cloneStrings(v []string) []string {
-	if v == nil {
-		return nil
-	}
-	out := make([]string, len(v))
-	copy(out, v)
-	return out
-}
-
-func cloneInt64(v *int64) *int64 {
-	if v == nil {
-		return nil
-	}
-	c := *v
-	return &c
-}
-
-func (a *Adapter) resolvePositionIDs(ctx context.Context, projectID int64, position *struct {
-	AfterLocalId  *int64 `json:"afterLocalId"`
-	BeforeLocalId *int64 `json:"beforeLocalId"`
-}, mode store.Mode, columnKey string) (*int64, *int64, *adapterError) {
-	if position == nil {
-		return nil, nil, nil
-	}
-
-	afterTodo, err := a.resolveLocalTodoForColumn(ctx, projectID, position.AfterLocalId, "afterLocalId", mode, columnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	beforeTodo, err := a.resolveLocalTodoForColumn(ctx, projectID, position.BeforeLocalId, "beforeLocalId", mode, columnKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	var afterID, beforeID *int64
-	if afterTodo != nil {
-		id := afterTodo.ID
-		afterID = &id
-	}
-	if beforeTodo != nil {
-		id := beforeTodo.ID
-		beforeID = &id
-	}
-	return afterID, beforeID, nil
-}
-
-func (a *Adapter) resolveLocalTodoForColumn(ctx context.Context, projectID int64, localID *int64, field string, mode store.Mode, targetColumnKey string) (*store.Todo, *adapterError) {
-	if localID == nil {
-		return nil, nil
-	}
-	if *localID <= 0 {
-		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", map[string]any{"field": field})
-	}
-
-	todo, err := a.store.GetTodoByLocalID(ctx, projectID, *localID, mode)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid local todo reference", map[string]any{"field": field, "localId": *localID})
-		}
-		if errors.Is(err, store.ErrUnauthorized) {
-			return nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
-		return nil, mapStoreError(err)
-	}
-	if todo.ColumnKey != targetColumnKey {
-		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "position reference must be in target column", map[string]any{"field": field, "localId": *localID})
-	}
-	return &todo, nil
-}
-
-func (a *Adapter) validateMoveAnchors(ctx context.Context, projectID int64, columnKey string, afterTodo, beforeTodo *store.Todo, mode store.Mode) *adapterError {
-	// One-sided anchors are intentionally stricter than the raw store API here.
-	// The backend rank logic can place "after X" or "before Y" non-adjacently when
-	// there are additional todos on the far side, so MCP only accepts anchors that
-	// are already at the boundary of the target column.
-	if afterTodo != nil {
-		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, afterTodo.Rank, afterTodo.ID, "", "", store.AssigneeFilter{}, store.SprintFilter{}, store.SortOrderDefault)
-		if err != nil {
-			return mapStoreError(err)
-		}
-		if len(items) > 0 {
-			return newAdapterError(http.StatusBadRequest, CodeValidationError, "afterLocalId is ambiguous unless it is already the last item in the target column", map[string]any{"field": "afterLocalId", "localId": afterTodo.LocalID})
-		}
-	}
-
-	if beforeTodo != nil {
-		const laneStartRank int64 = -1 << 63
-		items, _, _, err := a.store.ListTodosForBoardLane(ctx, projectID, columnKey, 1, laneStartRank, 0, "", "", store.AssigneeFilter{}, store.SprintFilter{}, store.SortOrderDefault)
-		if err != nil {
-			return mapStoreError(err)
-		}
-		if len(items) > 0 && items[0].LocalID != beforeTodo.LocalID {
-			return newAdapterError(http.StatusBadRequest, CodeValidationError, "beforeLocalId is ambiguous unless it is already the first item in the target column", map[string]any{"field": "beforeLocalId", "localId": beforeTodo.LocalID})
-		}
-	}
-
-	return nil
 }
 
 func todoToItem(projectSlug string, todo store.Todo) todoItem {
@@ -646,4 +570,11 @@ func todoToItem(projectSlug string, todo store.Todo) todoItem {
 		UpdatedAt:        todo.UpdatedAt,
 		DoneAt:           todo.DoneAt,
 	}
+}
+
+func todoToItemForProject(projectSlug string, project store.Project, todo store.Todo) todoItem {
+	if !project.SprintsEnabled {
+		todo.SprintID = nil
+	}
+	return todoToItem(projectSlug, todo)
 }

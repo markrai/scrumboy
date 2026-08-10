@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "لا يمكن لعنصر الجدار الارتباط بنفسه.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "رمز الإعداد والرمز مطلوبان.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "يمكن تفعيل Sprints المخططة فقط.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "تم تعطيل Sprints لهذا المشروع.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "يجب أن يكون تاريخ انتهاء Sprint في تاريخ البدء أو بعده.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "يجب أن يكون تاريخ انتهاء Sprint في المستقبل.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "يوجد Sprint بهذا الاسم بالفعل.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "تم إنشاء المستخدم بنجاح",
   "settings.users.createUser.failed": "فشل إنشاء المستخدم",
   "settings.users.defaultBoard.title": "اللوحة الافتراضية للمستخدمين الجدد",
-  "settings.users.defaultBoard.description": "يُضاف المستخدمون الجدد تلقائيًا كمشاهدين إلى هذه اللوحة عند إنشاء حساباتهم. تغيير هذا الإعداد أو إيقافه لا يؤثر على المستخدمين الحاليين.",
+  "settings.users.defaultBoard.description": "يتم تسجيل المستخدمين الجدد تلقائيًا في هذا اللوحة بالدور المحدد عند إنشاء حسابهم. تغيير هذا الإعداد أو إيقافه لا يؤثر على المستخدمين الحاليين.",
   "settings.users.defaultBoard.loadFailed": "تعذّر تحميل إعداد اللوحة الافتراضية. أعد تحميل الصفحة للمحاولة مرة أخرى.",
   "settings.users.defaultBoard.enableLabel": "إضافة المستخدمين الجدد إلى لوحة افتراضية",
   "settings.users.defaultBoard.selectLabel": "اللوحة الافتراضية",
+  "settings.users.defaultBoard.roleLabel": "الدور للأعضاء الجدد",
   "settings.users.defaultBoard.placeholder": "اختر مشروعًا…",
   "settings.users.defaultBoard.noEligibleProjects": "ليس لديك لوحات دائمة تديرها لاستخدامها كلوحة افتراضية.",
   "settings.users.defaultBoard.toast.saved": "تم حفظ اللوحة الافتراضية",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "تعذّر ربط SSO.",
   "settings.profile.authentication.linked": "تم ربط SSO.",
   "settings.users.table.authentication": "المصادقة",
-  "settings.profile.authentication.warning.localDisabledOwner": "يعتمد هذا المالك على SSO بينما المصادقة المحلية معطلة. إذا أصبح SSO غير متاح، يجب على المشغّل الوصول إلى المضيف الذي يشغّل Scrumboy، وتشغيل recover-owner، وإعادة تفعيل المصادقة المحلية."
+  "settings.profile.authentication.warning.localDisabledOwner": "يعتمد هذا المالك على SSO بينما المصادقة المحلية معطلة. إذا أصبح SSO غير متاح، يجب على المشغّل الوصول إلى المضيف الذي يشغّل Scrumboy، وتشغيل recover-owner، وإعادة تفعيل المصادقة المحلية.",
+  "settings.sprints.enableToggle": "تفعيل السبرنتات لهذه اللوحة",
+  "settings.sprints.disabledHint": "السبرنتات معطلة لهذه اللوحة. قم بتفعيلها أعلاه لإنشاء السبرنتات وإدارتها.",
+  "settings.sprints.toast.enabled": "تم تفعيل السبرنتات",
+  "settings.sprints.toast.disabled": "تم تعطيل السبرنتات",
+  "settings.sprints.toast.toggleFailed": "فشل تحديث إعداد السبرنتات"
 }

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Un elemento del muro no puede vincularse a sí mismo.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Se requieren token y código de configuración.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Solo los sprints planificados pueden iniciarse.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Los sprints están desactivados para este proyecto.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "La fecha de fin del sprint debe ser igual o posterior a la de inicio.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "La fecha de fin del sprint debe ser futura.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Ya existe un sprint con este nombre.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Usuario creado correctamente",
   "settings.users.createUser.failed": "Error al crear usuario",
   "settings.users.defaultBoard.title": "Tablero predeterminado para nuevos usuarios",
-  "settings.users.defaultBoard.description": "Los nuevos usuarios se inscriben automáticamente como visores en este tablero cuando se crea su cuenta. Cambiarlo o desactivarlo nunca afecta a los usuarios existentes.",
+  "settings.users.defaultBoard.description": "Los nuevos usuarios se inscriben automáticamente en este tablero con el rol seleccionado al crear su cuenta. Cambiar o desactivar esto nunca afecta a los usuarios existentes.",
   "settings.users.defaultBoard.loadFailed": "No se pudo cargar la configuración del tablero predeterminado. Vuelve a cargar la página para intentarlo de nuevo.",
   "settings.users.defaultBoard.enableLabel": "Inscribir a los nuevos usuarios en un tablero predeterminado",
   "settings.users.defaultBoard.selectLabel": "Tablero predeterminado",
+  "settings.users.defaultBoard.roleLabel": "Rol para los nuevos miembros",
   "settings.users.defaultBoard.placeholder": "Selecciona un proyecto…",
   "settings.users.defaultBoard.noEligibleProjects": "No tienes tableros permanentes que administres para usar como predeterminado.",
   "settings.users.defaultBoard.toast.saved": "Tablero predeterminado guardado",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "No se pudo conectar SSO.",
   "settings.profile.authentication.linked": "SSO conectado.",
   "settings.users.table.authentication": "Autenticación",
-  "settings.profile.authentication.warning.localDisabledOwner": "Este propietario depende de SSO mientras la autenticación local está desactivada. Si SSO deja de estar disponible, un operador debe acceder al host de Scrumboy, ejecutar recover-owner y volver a activar la autenticación local."
+  "settings.profile.authentication.warning.localDisabledOwner": "Este propietario depende de SSO mientras la autenticación local está desactivada. Si SSO deja de estar disponible, un operador debe acceder al host de Scrumboy, ejecutar recover-owner y volver a activar la autenticación local.",
+  "settings.sprints.enableToggle": "Habilitar sprints para este tablero",
+  "settings.sprints.disabledHint": "Los sprints están deshabilitados para este tablero. Habilítelos arriba para crear y gestionar sprints.",
+  "settings.sprints.toast.enabled": "Sprints habilitados",
+  "settings.sprints.toast.disabled": "Sprints deshabilitados",
+  "settings.sprints.toast.toggleFailed": "Error al actualizar la configuración de sprints"
 }

@@ -73,6 +73,8 @@ vi.mock('../realtime/guard.js', () => ({
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: (value: { sprints?: any[] } | null | undefined) => value?.sprints ?? [],
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 vi.mock('./settings.js', () => ({
@@ -142,6 +144,7 @@ describe('bulk edit i18n', () => {
     apiFetchMock.mockResolvedValue({ sprints: [] });
     invalidateBoardMock.mockReset();
     setBulkUpdatingMock.mockReset();
+    delete selectorState.board.project.sprintsEnabled;
   });
 
   afterEach(async () => {
@@ -180,5 +183,26 @@ describe('bulk edit i18n', () => {
     expect(document.querySelector('.tag-chip-remove')?.getAttribute('aria-label')).toBe(deCatalog['board.bulkEdit.removeTag']);
     expect((document.getElementById('bulkApplyTags') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('bulkTagsInput') as HTMLInputElement).value).toBe('draft');
+  });
+
+  it('does not submit a stale sprint mutation after the board is disabled', async () => {
+    await initI18n('en');
+    const bulkEdit = await import('./bulk-edit.js');
+    bulkEdit.initBulkEditDialog(vi.fn());
+    apiFetchMock.mockResolvedValueOnce({
+      sprints: [{ id: 9, name: 'Sprint 9', state: 'PLANNED' }],
+    });
+    await bulkEdit.openBulkEditDialog([1], { role: 'maintainer', onPruned: vi.fn() });
+
+    (document.getElementById('bulkApplySprint') as HTMLInputElement).checked = true;
+    (document.getElementById('bulkSprint') as HTMLSelectElement).value = '9';
+    selectorState.board.project.sprintsEnabled = false;
+    apiFetchMock.mockClear();
+    (document.getElementById('bulkEditForm') as HTMLFormElement).dispatchEvent(
+      new SubmitEvent('submit', { bubbles: true, cancelable: true }),
+    );
+    await flushPromises();
+
+    expect(apiFetchMock).not.toHaveBeenCalled();
   });
 });

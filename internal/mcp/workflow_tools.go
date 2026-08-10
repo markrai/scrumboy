@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
+	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/store"
 )
 
@@ -40,15 +42,37 @@ func workflowColumnToItem(col store.WorkflowColumn) workflowColumnItem {
 	}
 }
 
-func (a *Adapter) requireMaintainerProjectContext(ctx context.Context, projectSlug string) (store.ProjectContext, *adapterError) {
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, projectSlug, a.storeMode())
-	if pcErr != nil {
-		return store.ProjectContext{}, mapStoreError(pcErr)
+func mapWorkflowMutationPrepareError(err error) *adapterError {
+	if errors.Is(err, workflowapp.ErrMaintainerRequired) {
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
 	}
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return store.ProjectContext{}, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	return mapStoreError(err)
+}
+
+func mapWorkflowMutationUpdateError(err error) *adapterError {
+	switch {
+	case errors.Is(err, workflowapp.ErrWorkflowProjectionColumnMissing):
+		projectionErr := newAdapterError(
+			http.StatusInternalServerError,
+			CodeInternal,
+			"internal error",
+			map[string]any{"detail": "updated workflow column not found in post-read"},
+		)
+		projectionErr.Cause = err
+		return projectionErr
+	case errors.Is(err, workflowapp.ErrWorkflowProjectionFailed):
+		if cause := errors.Unwrap(err); cause != nil {
+			mapped := mapStoreError(cause)
+			mapped.Cause = err
+			return mapped
+		}
+
+		projectionErr := newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", nil)
+		projectionErr.Cause = err
+		return projectionErr
+	default:
+		return mapStoreError(err)
 	}
-	return pc, nil
 }
 
 func (a *Adapter) handleWorkflowList(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -124,12 +148,15 @@ func (a *Adapter) handleWorkflowCreate(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid workflow column name", map[string]any{"field": "name"})
 	}
 
-	pc, pcErr := a.requireMaintainerProjectContext(ctx, in.ProjectSlug)
-	if pcErr != nil {
-		return nil, nil, pcErr
+	prepared, prepareErr := a.workflowMutations.Prepare(ctx, workflowapp.MCPMutationTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapWorkflowMutationPrepareError(prepareErr)
 	}
 
-	col, colErr := a.store.AddWorkflowColumn(ctx, pc.Project.ID, in.Name)
+	col, colErr := prepared.Create(workflowapp.CreateCommand{Name: in.Name})
 	if colErr != nil {
 		return nil, nil, mapStoreError(colErr)
 	}
@@ -180,31 +207,26 @@ func (a *Adapter) handleWorkflowUpdate(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid workflow column color", map[string]any{"field": "color"})
 	}
 
-	pc, pcErr := a.requireMaintainerProjectContext(ctx, in.ProjectSlug)
-	if pcErr != nil {
-		return nil, nil, pcErr
+	prepared, prepareErr := a.workflowMutations.Prepare(ctx, workflowapp.MCPMutationTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapWorkflowMutationPrepareError(prepareErr)
 	}
 
-	if updateErr := a.store.UpdateWorkflowColumn(ctx, pc.Project.ID, in.ColumnKey, in.Name, in.Color); updateErr != nil {
-		return nil, nil, mapStoreError(updateErr)
+	col, updateErr := prepared.Update(workflowapp.UpdateCommand{
+		Key:   in.ColumnKey,
+		Name:  in.Name,
+		Color: in.Color,
+	})
+	if updateErr != nil {
+		return nil, nil, mapWorkflowMutationUpdateError(updateErr)
 	}
 
-	workflow, workflowErr := a.store.GetProjectWorkflow(ctx, pc.Project.ID)
-	if workflowErr != nil {
-		return nil, nil, mapStoreError(workflowErr)
-	}
-	for _, col := range workflow {
-		if col.Key == in.ColumnKey {
-			return map[string]any{
-				"column": workflowColumnToItem(col),
-			}, map[string]any{}, nil
-		}
-	}
-
-	// Existence was already verified by the store update above succeeding; if the
-	// column vanishes here, treat it as an internal inconsistency rather than
-	// weakening the contract with a not-found response.
-	return nil, nil, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": "updated workflow column not found in post-read"})
+	return map[string]any{
+		"column": workflowColumnToItem(col),
+	}, map[string]any{}, nil
 }
 
 func (a *Adapter) handleWorkflowDelete(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -234,12 +256,15 @@ func (a *Adapter) handleWorkflowDelete(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing columnKey", map[string]any{"field": "columnKey"})
 	}
 
-	pc, pcErr := a.requireMaintainerProjectContext(ctx, in.ProjectSlug)
-	if pcErr != nil {
-		return nil, nil, pcErr
+	prepared, prepareErr := a.workflowMutations.Prepare(ctx, workflowapp.MCPMutationTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapWorkflowMutationPrepareError(prepareErr)
 	}
 
-	if deleteErr := a.store.DeleteWorkflowColumn(ctx, pc.Project.ID, in.ColumnKey); deleteErr != nil {
+	if deleteErr := prepared.Delete(workflowapp.DeleteCommand{Key: in.ColumnKey}); deleteErr != nil {
 		return nil, nil, mapStoreError(deleteErr)
 	}
 

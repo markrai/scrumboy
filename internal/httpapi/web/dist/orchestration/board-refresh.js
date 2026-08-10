@@ -38,12 +38,12 @@ export function registerSprintsRefresher(fn) {
  * duplicate slug/tag/search/sprintId/assignee/sort invalidates are coalesced within
  * INVALIDATE_COALESCE_MS.
  */
-export async function invalidateBoard(slug, tag, search, sprintId, assignee, sort) {
+export async function invalidateBoard(slug, tag, search, sprintId, assignee, sort, force = false) {
     if (!refreshBoard)
         return;
     const now = Date.now();
     const key = invalidateCoalesceKey(slug, tag, search, sprintId, assignee, sort);
-    if (lastInvalidate && lastInvalidate.key === key && now - lastInvalidate.at < INVALIDATE_COALESCE_MS) {
+    if (!force && lastInvalidate && lastInvalidate.key === key && now - lastInvalidate.at < INVALIDATE_COALESCE_MS) {
         return;
     }
     lastInvalidate = { key, at: now };

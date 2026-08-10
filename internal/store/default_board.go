@@ -14,39 +14,92 @@ import (
 // from #169/#171 (see internal/store/org_settings.go).
 const orgSettingDefaultBoardProjectID = "defaultBoardProjectId"
 
-// GetDefaultBoardOrgSetting returns the org-wide default board project ID new
-// users are seeded into, and whether an admin has actually configured one.
-// projectID is 0 when unconfigured (customized=false).
-func (s *Store) GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, customized bool, err error) {
-	raw, err := s.GetOrgSetting(ctx, orgSettingDefaultBoardProjectID)
+// orgSettingDefaultBoardRole is the org_settings key holding the
+// admin-configured project role new users are seeded with on the default
+// board. Unset (or corrupt) falls back to RoleViewer so untouched instances
+// and pre-existing configurations keep their original behavior.
+const orgSettingDefaultBoardRole = "defaultBoardRole"
+
+// GetDefaultBoardOrgSetting returns the org-wide default board project ID and
+// role new users are seeded into, and whether an admin has actually
+// configured one. projectID is 0 and role is RoleViewer when unconfigured
+// (customized=false). Both org_settings rows are read from one read-only
+// transaction so project ID and role come from the same SQLite snapshot.
+func (s *Store) GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, role ProjectRole, customized bool, err error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return 0, false, err
+		return 0, RoleViewer, false, fmt.Errorf("begin get default board tx: %w", err)
 	}
-	if raw == "" {
-		return 0, false, nil
-	}
-	id, err := strconv.ParseInt(raw, 10, 64)
+	defer func() { _ = tx.Rollback() }()
+
+	rows, err := tx.QueryContext(ctx, `
+SELECT key, value FROM org_settings WHERE key IN (?, ?)
+`, orgSettingDefaultBoardProjectID, orgSettingDefaultBoardRole)
 	if err != nil {
-		return 0, false, fmt.Errorf("%w: corrupt default board org setting", ErrValidation)
+		return 0, RoleViewer, false, fmt.Errorf("get default board org settings: %w", err)
 	}
-	return id, true, nil
+	defer rows.Close()
+
+	var rawProject, rawRole string
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return 0, RoleViewer, false, fmt.Errorf("scan default board org setting: %w", err)
+		}
+		switch key {
+		case orgSettingDefaultBoardProjectID:
+			rawProject = value
+		case orgSettingDefaultBoardRole:
+			rawRole = value
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, RoleViewer, false, fmt.Errorf("iterate default board org settings: %w", err)
+	}
+
+	if rawProject == "" {
+		return 0, RoleViewer, false, nil
+	}
+	id, err := strconv.ParseInt(rawProject, 10, 64)
+	if err != nil {
+		return 0, RoleViewer, false, fmt.Errorf("%w: corrupt default board org setting", ErrValidation)
+	}
+	return id, parseDefaultBoardRole(rawRole), true, nil
 }
 
-// SetDefaultBoardOrgSetting sets the org-wide default board project new users
-// are auto-enrolled into (as RoleViewer, the lowest-appropriate project role)
-// at creation time. Requires system Admin/Owner and Maintainer membership on
-// the selected durable project (expires_at IS NULL). Existence, durability,
-// and maintainer checks run in the same transaction as the org_settings write.
-// Missing or inaccessible projects return ErrNotFound (404 / no existence leak).
-// Temporary and anonymous boards (expires_at set) return ErrValidation.
-// Existing users are never retroactively enrolled -- the new default only takes
-// effect for users created after it's set (see seedDefaultBoardMembershipTx).
-func (s *Store) SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64) error {
+// parseDefaultBoardRole returns the configured default-board role, falling
+// back to RoleViewer when unset or corrupt. Real database errors are handled
+// by GetDefaultBoardOrgSetting before this helper is called.
+func parseDefaultBoardRole(raw string) ProjectRole {
+	if raw == "" {
+		return RoleViewer
+	}
+	role, ok := ParseProjectRole(raw)
+	if !ok || !IsValidProjectRole(role) {
+		return RoleViewer
+	}
+	return role
+}
+
+// SetDefaultBoardOrgSetting sets the org-wide default board project and
+// project role new users are auto-enrolled into at creation time. Requires
+// system Admin/Owner and Maintainer membership on the selected durable
+// project (expires_at IS NULL). Existence, durability, and maintainer checks
+// run in the same transaction as the org_settings write. Missing or
+// inaccessible projects return ErrNotFound (404 / no existence leak).
+// Temporary and anonymous boards (expires_at set) return ErrValidation, as
+// does an unrecognized role. Existing users are never retroactively enrolled
+// -- the new default only takes effect for users created after it's set (see
+// seedDefaultBoardMembershipTx).
+func (s *Store) SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64, defaultRole ProjectRole) error {
 	if err := s.requireAdmin(ctx, requesterID); err != nil {
 		return err
 	}
 	if projectID <= 0 {
 		return fmt.Errorf("%w: invalid project id", ErrValidation)
+	}
+	if !IsValidProjectRole(defaultRole) {
+		return fmt.Errorf("%w: invalid default board role", ErrValidation)
 	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
@@ -68,11 +121,11 @@ SELECT expires_at FROM projects WHERE id = ? AND import_batch_id IS NULL
 
 	// Membership is checked via project_members directly (not userHasProjectRoleTx),
 	// because that helper treats temporary boards as universally accessible.
-	role, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
+	requesterRole, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
 	if err != nil {
 		return err
 	}
-	if !role.HasMinimumRole(RoleMaintainer) {
+	if !requesterRole.HasMinimumRole(RoleMaintainer) {
 		return ErrNotFound
 	}
 
@@ -81,6 +134,9 @@ SELECT expires_at FROM projects WHERE id = ? AND import_batch_id IS NULL
 	}
 
 	if err := setOrgSettingTx(ctx, tx, orgSettingDefaultBoardProjectID, strconv.FormatInt(projectID, 10)); err != nil {
+		return err
+	}
+	if err := setOrgSettingTx(ctx, tx, orgSettingDefaultBoardRole, defaultRole.String()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -96,7 +152,7 @@ func (s *Store) ClearDefaultBoardOrgSetting(ctx context.Context, requesterID int
 	if err := s.requireAdmin(ctx, requesterID); err != nil {
 		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM org_settings WHERE key = ?`, orgSettingDefaultBoardProjectID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM org_settings WHERE key IN (?, ?)`, orgSettingDefaultBoardProjectID, orgSettingDefaultBoardRole); err != nil {
 		return fmt.Errorf("clear default board org setting: %w", err)
 	}
 	return nil
@@ -109,9 +165,10 @@ func (s *Store) ClearDefaultBoardOrgSetting(ctx context.Context, requesterID int
 // Compatibility contract:
 //   - No admin override configured -> insert nothing, so an untouched instance
 //     behaves identically to before this feature existed.
-//   - Override configured -> insert a project_members row at RoleViewer (the
-//     lowest-appropriate project role). INSERT OR IGNORE so this can never
-//     conflict with (and never overrides) an already-existing membership.
+//   - Override configured -> insert a project_members row at the configured
+//     default role (RoleViewer if none was ever set, preserving pre-existing
+//     behavior). INSERT OR IGNORE so this can never conflict with (and never
+//     overrides) an already-existing membership.
 //   - Corrupt (non-empty, unparseable) override -> skip seeding rather than
 //     failing account creation.
 //   - Override points at a project that no longer exists, or is no longer a
@@ -152,11 +209,21 @@ SELECT EXISTS(
 		return nil
 	}
 
+	role := RoleViewer
+	var rawRole string
+	err = tx.QueryRowContext(ctx, `SELECT value FROM org_settings WHERE key = ?`, orgSettingDefaultBoardRole).Scan(&rawRole)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("get default board role org setting: %w", err)
+	}
+	if parsed, ok := ParseProjectRole(rawRole); ok && IsValidProjectRole(parsed) {
+		role = parsed
+	}
+
 	nowMs := time.Now().UTC().UnixMilli()
 	if _, err := tx.ExecContext(ctx, `
 INSERT OR IGNORE INTO project_members (project_id, user_id, role, created_at)
 VALUES (?, ?, ?, ?)
-`, projectID, userID, RoleViewer, nowMs); err != nil {
+`, projectID, userID, role, nowMs); err != nil {
 		return fmt.Errorf("seed default board membership: %w", err)
 	}
 	return nil

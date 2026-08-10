@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Un élément du mur ne peut pas être lié à lui-même.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Le jeton de configuration et le code sont requis.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Seuls les sprints planifiés peuvent être activés.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Les sprints sont désactivés pour ce projet.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "La date de fin du sprint doit être égale ou postérieure à la date de début.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "La date de fin du sprint doit être dans le futur.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Un sprint avec ce nom existe déjà.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Utilisateur créé avec succès",
   "settings.users.createUser.failed": "Échec de la création de l'utilisateur",
   "settings.users.defaultBoard.title": "Tableau par défaut pour les nouveaux utilisateurs",
-  "settings.users.defaultBoard.description": "Les nouveaux utilisateurs sont automatiquement ajoutés comme lecteurs à ce tableau lors de la création de leur compte. Modifier ou désactiver ce réglage n'affecte jamais les utilisateurs existants.",
+  "settings.users.defaultBoard.description": "Les nouveaux utilisateurs sont automatiquement inscrits sur ce tableau avec le rôle sélectionné à la création de leur compte. La modification ou la désactivation de ce paramètre n'affecte jamais les utilisateurs existants.",
   "settings.users.defaultBoard.loadFailed": "Impossible de charger le réglage du tableau par défaut. Rechargez la page pour réessayer.",
   "settings.users.defaultBoard.enableLabel": "Ajouter les nouveaux utilisateurs à un tableau par défaut",
   "settings.users.defaultBoard.selectLabel": "Tableau par défaut",
+  "settings.users.defaultBoard.roleLabel": "Rôle pour les nouveaux membres",
   "settings.users.defaultBoard.placeholder": "Sélectionnez un projet…",
   "settings.users.defaultBoard.noEligibleProjects": "Vous n'avez aucun tableau permanent que vous gérez à utiliser par défaut.",
   "settings.users.defaultBoard.toast.saved": "Tableau par défaut enregistré",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Impossible de connecter le SSO.",
   "settings.profile.authentication.linked": "SSO connecté.",
   "settings.users.table.authentication": "Authentification",
-  "settings.profile.authentication.warning.localDisabledOwner": "Ce propriétaire dépend du SSO alors que l’authentification locale est désactivée. Si le SSO devient indisponible, un opérateur doit accéder à l’hôte Scrumboy, exécuter recover-owner et réactiver l’authentification locale."
+  "settings.profile.authentication.warning.localDisabledOwner": "Ce propriétaire dépend du SSO alors que l’authentification locale est désactivée. Si le SSO devient indisponible, un opérateur doit accéder à l’hôte Scrumboy, exécuter recover-owner et réactiver l’authentification locale.",
+  "settings.sprints.enableToggle": "Activer les sprints pour ce tableau",
+  "settings.sprints.disabledHint": "Les sprints sont désactivés pour ce tableau. Activez-les ci-dessus pour créer et gérer des sprints.",
+  "settings.sprints.toast.enabled": "Sprints activés",
+  "settings.sprints.toast.disabled": "Sprints désactivés",
+  "settings.sprints.toast.toggleFailed": "Échec de la mise à jour du paramètre des sprints"
 }

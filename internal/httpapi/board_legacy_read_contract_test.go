@@ -254,6 +254,46 @@ func TestBoardLegacyRead_RESTCombinedFiltersUnpagedResponseContract(t *testing.T
 	}
 }
 
+func TestBoardLegacyRead_RESTRejectsSprintFilterWhenDisabled(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t)
+	ownerJSON := bootstrapUserClient(t, client, ts.URL, "Owner", "board-legacy-disabled@example.com", "password123")
+	ownerID := int64(ownerJSON["id"].(float64))
+	ctxOwner := store.WithUserID(context.Background(), ownerID)
+	st := store.New(sqlDB, nil)
+	project, err := st.CreateProject(ctxOwner, "Legacy Disabled Board")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := st.UpdateProjectSprintsEnabled(ctxOwner, project.ID, ownerID, false); err != nil {
+		t.Fatalf("UpdateProjectSprintsEnabled: %v", err)
+	}
+
+	var errorBody struct {
+		Error struct {
+			Details struct {
+				Reason string `json:"reason"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	resp, body := doJSON(
+		t,
+		client,
+		http.MethodGet,
+		ts.URL+"/api/projects/"+strconv.FormatInt(project.ID, 10)+"/board?sprintId=1",
+		nil,
+		&errorBody,
+	)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("GET disabled legacy sprint filter: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if errorBody.Error.Details.Reason != "sprints_disabled" {
+		t.Fatalf("reason=%q, want sprints_disabled", errorBody.Error.Details.Reason)
+	}
+}
+
 func TestBoardLegacyRead_RESTAnonymousModeHidesRouteBeforeIDValidation(t *testing.T) {
 	ts, _, cleanup := newTestHTTPServer(t, "anonymous")
 	defer cleanup()

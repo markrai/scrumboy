@@ -11,6 +11,7 @@ import {
   getTagColors,
 } from '../state/selectors.js';
 import { Board } from '../types.js';
+import { boardSprintsEnabled } from '../sprints.js';
 import { isAnonymousBoard, showToast } from '../utils.js';
 import {
   buildChipsHTML,
@@ -438,7 +439,9 @@ export function computeBoardChipsRender(board: Board, tag: string, sprintId: str
   const displayTags = isAnonymousTempBoard
     ? board.tags.filter((t) => t.count > 0)
     : board.tags;
-  const combinedChipData = getCombinedChipData(displayTags, tag || "", lastSprintsData, sprintId ?? null, getTagColors());
+  const sprintData = boardSprintsEnabled(board) ? lastSprintsData : null;
+  const effectiveSprintId = boardSprintsEnabled(board) ? sprintId : null;
+  const combinedChipData = getCombinedChipData(displayTags, tag || "", sprintData, effectiveSprintId, getTagColors());
   lastDisplayChipData = combinedChipData;
   const chipsHTML = buildChipsHTML(combinedChipData);
   const chipsUnchanged = chipsHTML === lastRenderedChipsHTML;

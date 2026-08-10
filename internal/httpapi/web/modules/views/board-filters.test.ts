@@ -156,6 +156,20 @@ describe('board-filters', () => {
     expect(second.chipsUnchanged).toBe(true);
   });
 
+  it('does not render cached sprint chips or selection for a disabled board', async () => {
+    const board = makeBoard();
+    board.project.sprintsEnabled = false;
+    const { boardFilters } = await setupBoardFiltersState('/alpha?sprintId=7', { board });
+    boardFilters.setSprintChipDataForSlug('alpha', {
+      sprints: [{ id: 12, number: 7, name: 'Sprint 7', state: 'ACTIVE' }],
+    });
+
+    const rendered = boardFilters.computeBoardChipsRender(board, '', '7');
+
+    expect(rendered.chipsHTML).not.toContain('data-sprint-id');
+    expect(rendered.chipsHTML).not.toContain('Sprint 7');
+  });
+
   it('non-additive tag chip click clears sprint filter and reloads with the selected tag', async () => {
     const { boardFilters, board } = await setupBoardFiltersState(
       '/alpha?search=query&sprintId=7',

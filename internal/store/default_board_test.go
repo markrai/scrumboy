@@ -12,7 +12,7 @@ func TestGetDefaultBoardOrgSetting_UnsetIsNotCustomized(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	projectID, customized, err := st.GetDefaultBoardOrgSetting(ctx)
+	projectID, role, customized, err := st.GetDefaultBoardOrgSetting(ctx)
 	if err != nil {
 		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
 	}
@@ -21,6 +21,9 @@ func TestGetDefaultBoardOrgSetting_UnsetIsNotCustomized(t *testing.T) {
 	}
 	if projectID != 0 {
 		t.Fatalf("expected projectID=0 when unset, got %d", projectID)
+	}
+	if role != RoleViewer {
+		t.Fatalf("expected default role RoleViewer when unset, got %q", role)
 	}
 }
 
@@ -42,15 +45,15 @@ func TestSetDefaultBoardOrgSetting_RequiresAdminOrOwner(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, user.ID, project.ID); !errors.Is(err, ErrUnauthorized) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, user.ID, project.ID, RoleViewer); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized for plain user, got %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting(owner): %v", err)
 	}
 
-	got, customized, err := st.GetDefaultBoardOrgSetting(ctx)
+	got, _, customized, err := st.GetDefaultBoardOrgSetting(ctx)
 	if err != nil {
 		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
 	}
@@ -85,7 +88,7 @@ func TestSetDefaultBoardOrgSetting_AdminWithoutProjectMembershipRejected(t *test
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, admin.ID, project.ID); !errors.Is(err, ErrNotFound) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, admin.ID, project.ID, RoleViewer); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for admin without project membership, got %v", err)
 	}
 }
@@ -116,10 +119,10 @@ func TestSetDefaultBoardOrgSetting_AdminWhoIsMaintainerSucceeds(t *testing.T) {
 		t.Fatalf("AddProjectMember(admin): %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, admin.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, admin.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting(admin+maintainer): %v", err)
 	}
-	got, customized, err := st.GetDefaultBoardOrgSetting(ctx)
+	got, _, customized, err := st.GetDefaultBoardOrgSetting(ctx)
 	if err != nil {
 		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
 	}
@@ -138,13 +141,13 @@ func TestSetDefaultBoardOrgSetting_RejectsMissingProject(t *testing.T) {
 		t.Fatalf("BootstrapUser: %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, 999999); !errors.Is(err, ErrNotFound) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, 999999, RoleViewer); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for nonexistent project, got %v", err)
 	}
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, 0); !errors.Is(err, ErrValidation) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, 0, RoleViewer); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected ErrValidation for projectID=0, got %v", err)
 	}
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, -1); !errors.Is(err, ErrValidation) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, -1, RoleViewer); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected ErrValidation for negative projectID, got %v", err)
 	}
 }
@@ -171,7 +174,7 @@ func TestSetDefaultBoardOrgSetting_RejectsTemporaryBoard(t *testing.T) {
 		t.Fatalf("EnsureMaintainerMembership: %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, tempBoard.ID); !errors.Is(err, ErrValidation) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, tempBoard.ID, RoleViewer); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected ErrValidation for temporary board, got %v", err)
 	}
 }
@@ -203,7 +206,7 @@ func TestSetDefaultBoardOrgSetting_RejectsAnonymousBoard(t *testing.T) {
 		t.Fatalf("EnsureMaintainerMembership: %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, anonBoard.ID); !errors.Is(err, ErrValidation) {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, anonBoard.ID, RoleViewer); !errors.Is(err, ErrValidation) {
 		t.Fatalf("expected ErrValidation for anonymous board, got %v", err)
 	}
 }
@@ -224,7 +227,7 @@ func TestCreateUser_SeedsDefaultBoardMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
 	}
 
@@ -295,7 +298,7 @@ func TestCreateUser_ExistingUsersUnaffectedByLaterDefaultBoardChange(t *testing.
 		t.Fatalf("CreateUser(early): %v", err)
 	}
 
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
 	}
 
@@ -363,7 +366,7 @@ func TestCreateUserOIDC_SeedsDefaultBoardMembership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
 	}
 
@@ -381,6 +384,41 @@ func TestCreateUserOIDC_SeedsDefaultBoardMembership(t *testing.T) {
 	}
 	if role != RoleViewer {
 		t.Fatalf("expected OIDC user seeded as RoleViewer, got %q", role)
+	}
+}
+
+// TestCreateUserOIDC_SeedsDefaultBoardMembershipAtConfiguredRole mirrors
+// TestCreateUser_SeedsDefaultBoardMembershipAtConfiguredRole for the OIDC
+// user-creation path.
+func TestCreateUserOIDC_SeedsDefaultBoardMembershipAtConfiguredRole(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	st.configuredOIDCIssuer = "https://idp.example"
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	project, err := st.CreateProject(WithUserID(ctx, owner.ID), "Onboarding")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleContributor); err != nil {
+		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
+	}
+
+	oidcUser, err := st.CreateUserOIDC(ctx, st.configuredOIDCIssuer, st.configuredOIDCIssuer, "sub-2", "sso2@test.com", "SSO User 2")
+	if err != nil {
+		t.Fatalf("CreateUserOIDC: %v", err)
+	}
+
+	role, err := st.GetProjectRole(ctx, project.ID, oidcUser.ID)
+	if err != nil {
+		t.Fatalf("GetProjectRole: %v", err)
+	}
+	if role != RoleContributor {
+		t.Fatalf("expected OIDC user seeded as RoleContributor, got %q", role)
 	}
 }
 
@@ -433,7 +471,7 @@ func TestCreateUser_DeletedDefaultBoardProjectSkipsSeedingWithoutFailingCreation
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
 	}
 	if _, err := st.DeleteProject(ctxOwner, project.ID, owner.ID); err != nil {
@@ -465,7 +503,7 @@ func TestCreateUser_StaleNonDurableDefaultBoardSkipsSeeding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID); err != nil {
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
 		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
 	}
 
@@ -484,5 +522,145 @@ func TestCreateUser_StaleNonDurableDefaultBoardSkipsSeeding(t *testing.T) {
 	}
 	if role != "" {
 		t.Fatalf("expected no membership seeded for non-durable default board, got %q", role)
+	}
+}
+
+// TestCreateUser_SeedsDefaultBoardMembershipAtConfiguredRole proves the
+// auto-enrolled role now follows the admin-configured setting instead of
+// always being RoleViewer.
+func TestCreateUser_SeedsDefaultBoardMembershipAtConfiguredRole(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	project, err := st.CreateProject(WithUserID(ctx, owner.ID), "Onboarding")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleContributor); err != nil {
+		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
+	}
+
+	_, role, customized, err := st.GetDefaultBoardOrgSetting(ctx)
+	if err != nil {
+		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
+	}
+	if !customized || role != RoleContributor {
+		t.Fatalf("expected customized role=contributor, got customized=%v role=%q", customized, role)
+	}
+
+	newUser, err := st.CreateUser(ctx, "new@test.com", "password123", "New User")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	memberRole, err := st.GetProjectRole(ctx, project.ID, newUser.ID)
+	if err != nil {
+		t.Fatalf("GetProjectRole: %v", err)
+	}
+	if memberRole != RoleContributor {
+		t.Fatalf("expected new user seeded as RoleContributor, got %q", memberRole)
+	}
+}
+
+// TestSetDefaultBoardOrgSetting_RejectsInvalidRole ensures an unrecognized
+// role string is rejected without partially updating the org setting.
+func TestSetDefaultBoardOrgSetting_RejectsInvalidRole(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	project, err := st.CreateProject(WithUserID(ctx, owner.ID), "Onboarding")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, ProjectRole("nonsense")); !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected ErrValidation for invalid role, got %v", err)
+	}
+	_, _, customized, err := st.GetDefaultBoardOrgSetting(ctx)
+	if err != nil {
+		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
+	}
+	if customized {
+		t.Fatalf("expected rejected role to leave the setting unconfigured")
+	}
+}
+
+// TestSetDefaultBoardOrgSetting_RejectsDeprecatedRoles ensures the
+// deprecated owner/editor aliases -- valid for ParseProjectRole but not for
+// IsValidProjectRole -- cannot be configured as the default board role.
+func TestSetDefaultBoardOrgSetting_RejectsDeprecatedRoles(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	project, err := st.CreateProject(WithUserID(ctx, owner.ID), "Onboarding")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	for _, deprecated := range []ProjectRole{RoleOwner, RoleEditor} {
+		if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, deprecated); !errors.Is(err, ErrValidation) {
+			t.Fatalf("expected ErrValidation for deprecated role %q, got %v", deprecated, err)
+		}
+	}
+}
+
+// TestClearDefaultBoardOrgSetting_ResetsRoleToViewerFallback proves clearing
+// the override also resets the role, so a later re-configuration without an
+// explicit role starts from RoleViewer rather than the previous role.
+func TestClearDefaultBoardOrgSetting_ResetsRoleToViewerFallback(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	owner, err := st.BootstrapUser(ctx, "owner@test.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	project, err := st.CreateProject(WithUserID(ctx, owner.ID), "Onboarding")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleMaintainer); err != nil {
+		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
+	}
+	if err := st.ClearDefaultBoardOrgSetting(ctx, owner.ID); err != nil {
+		t.Fatalf("ClearDefaultBoardOrgSetting: %v", err)
+	}
+
+	_, role, customized, err := st.GetDefaultBoardOrgSetting(ctx)
+	if err != nil {
+		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
+	}
+	if customized {
+		t.Fatalf("expected customized=false after clearing")
+	}
+	if role != RoleViewer {
+		t.Fatalf("expected role to reset to RoleViewer fallback after clearing, got %q", role)
+	}
+
+	if err := st.SetDefaultBoardOrgSetting(ctx, owner.ID, project.ID, RoleViewer); err != nil {
+		t.Fatalf("SetDefaultBoardOrgSetting: %v", err)
+	}
+	_, role, _, err = st.GetDefaultBoardOrgSetting(ctx)
+	if err != nil {
+		t.Fatalf("GetDefaultBoardOrgSetting: %v", err)
+	}
+	if role != RoleViewer {
+		t.Fatalf("expected role RoleViewer, not the previously-cleared RoleMaintainer, got %q", role)
 	}
 }

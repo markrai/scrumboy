@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Элемент стены не может быть связан сам с собой.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Требуются токен настройки и код.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Активировать можно только запланированные спринты.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Спринты отключены для этого проекта.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Дата окончания спринта должна быть не раньше даты начала.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Дата окончания спринта должна быть в будущем.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Спринт с таким названием уже существует.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Пользователь успешно создан",
   "settings.users.createUser.failed": "Не удалось создать пользователя",
   "settings.users.defaultBoard.title": "Доска по умолчанию для новых пользователей",
-  "settings.users.defaultBoard.description": "Новые пользователи автоматически добавляются как наблюдатели на эту доску при создании учётной записи. Изменение или отключение этого параметра не затрагивает существующих пользователей.",
+  "settings.users.defaultBoard.description": "Новые пользователи автоматически добавляются на эту доску с выбранной ролью при создании учётной записи. Изменение или отключение этой настройки никогда не влияет на существующих пользователей.",
   "settings.users.defaultBoard.loadFailed": "Не удалось загрузить настройку доски по умолчанию. Перезагрузите страницу и попробуйте снова.",
   "settings.users.defaultBoard.enableLabel": "Добавлять новых пользователей на доску по умолчанию",
   "settings.users.defaultBoard.selectLabel": "Доска по умолчанию",
+  "settings.users.defaultBoard.roleLabel": "Роль для новых участников",
   "settings.users.defaultBoard.placeholder": "Выберите проект…",
   "settings.users.defaultBoard.noEligibleProjects": "У вас нет постоянных досок, которыми вы управляете, чтобы использовать их по умолчанию.",
   "settings.users.defaultBoard.toast.saved": "Доска по умолчанию сохранена",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Не удалось подключить SSO.",
   "settings.profile.authentication.linked": "SSO подключён.",
   "settings.users.table.authentication": "Аутентификация",
-  "settings.profile.authentication.warning.localDisabledOwner": "Этот владелец зависит от SSO, пока локальная аутентификация отключена. Если SSO станет недоступен, оператору потребуется доступ к хосту Scrumboy, запуск recover-owner и повторное включение локальной аутентификации."
+  "settings.profile.authentication.warning.localDisabledOwner": "Этот владелец зависит от SSO, пока локальная аутентификация отключена. Если SSO станет недоступен, оператору потребуется доступ к хосту Scrumboy, запуск recover-owner и повторное включение локальной аутентификации.",
+  "settings.sprints.enableToggle": "Включить спринты для этой доски",
+  "settings.sprints.disabledHint": "Спринты отключены для этой доски. Включите их выше, чтобы создавать спринты и управлять ими.",
+  "settings.sprints.toast.enabled": "Спринты включены",
+  "settings.sprints.toast.disabled": "Спринты отключены",
+  "settings.sprints.toast.toggleFailed": "Не удалось обновить настройку спринтов"
 }

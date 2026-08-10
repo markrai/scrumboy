@@ -222,7 +222,7 @@ func newMCPBoardReadHarness() *mcpBoardReadHarness {
 	access := &mcpBoardReadAccessFake{
 		recorder: recorder,
 		result: store.ProjectContext{
-			Project: store.Project{ID: 17, Slug: "stored-slug", Name: "Board"},
+			Project: store.Project{ID: 17, Slug: "stored-slug", Name: "Board", SprintsEnabled: true},
 			Role:    store.RoleMaintainer,
 		},
 	}
@@ -516,6 +516,31 @@ func TestMCPBoardReadSprintSemantics(t *testing.T) {
 			t.Fatalf("Read error = %v, want injected store error", err)
 		}
 	})
+}
+
+func TestMCPBoardReadDisabledSprintProjection(t *testing.T) {
+	h := newMCPBoardReadHarness()
+	h.access.result.Project.SprintsEnabled = false
+	sprintID := int64(91)
+	h.lanes.pages["triage"] = mcpBoardReadLanePage{
+		todos: []store.Todo{{ID: 101, ProjectID: 17, LocalID: 1, ColumnKey: "triage", SprintID: &sprintID}},
+	}
+	h.lanes.pages["shipped"] = mcpBoardReadLanePage{todos: []store.Todo{}}
+	prepared := prepareMCPBoardRead(t, h, context.Background())
+
+	result, err := prepared.Read(MCPBoardReadQuery{Limit: 20})
+	if err != nil {
+		t.Fatalf("Read without sprint filter: %v", err)
+	}
+	if len(result.Columns) == 0 || len(result.Columns[0].Todos) == 0 || result.Columns[0].Todos[0].SprintID != nil {
+		t.Fatalf("disabled projection exposed sprint assignment: %+v", result.Columns)
+	}
+
+	prepared = prepareMCPBoardRead(t, h, context.Background())
+	_, err = prepared.Read(MCPBoardReadQuery{SprintID: &sprintID, Limit: 20})
+	if !errors.Is(err, store.ErrSprintsDisabled) {
+		t.Fatalf("filtered Read error = %v, want ErrSprintsDisabled", err)
+	}
 }
 
 func TestMCPBoardReadFailureShortCircuiting(t *testing.T) {

@@ -137,8 +137,14 @@ func (s *Store) GetDashboardSummary(ctx context.Context, userID int64, timezone 
 	weekStartMs := weekStart.UnixMilli()
 	weekEndMs := weekEnd.UnixMilli()
 
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return DashboardSummary{}, fmt.Errorf("begin dashboard summary: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// Projects with assigned todos (for activeSprint per project)
-	projectRows, err := s.db.QueryContext(ctx, `
+	projectRows, err := tx.QueryContext(ctx, `
 SELECT DISTINCT p.id, p.name, p.slug
 FROM todos t
 JOIN projects p ON p.id = t.project_id
@@ -169,7 +175,7 @@ ORDER BY p.name
 		return DashboardSummary{}, fmt.Errorf("rows dashboard projects: %w", err)
 	}
 
-	workflowByProject, err := s.GetProjectWorkflows(ctx, projectIDs)
+	workflowByProject, err := getDashboardProjectWorkflows(ctx, tx, projectIDs)
 	if err != nil {
 		return DashboardSummary{}, fmt.Errorf("get project workflows: %w", err)
 	}
@@ -179,7 +185,7 @@ ORDER BY p.name
 	}
 
 	// Batched active sprints per project (MUST be null when no ACTIVE sprint)
-	activeSprints, err := s.GetActiveSprintsByProjectIDs(ctx, projectIDs)
+	activeSprints, err := getDashboardActiveSprints(ctx, tx, projectIDs)
 	if err != nil {
 		return DashboardSummary{}, fmt.Errorf("get active sprints: %w", err)
 	}
@@ -192,7 +198,7 @@ ORDER BY p.name
 	}
 
 	// SprintSections: populate immediately after activeSprints, before analytics.
-	sprintSectionsByProject, err := s.listSprintSectionsForProjects(ctx, projectIDs)
+	sprintSectionsByProject, err := listSprintSectionsForProjects(ctx, tx, projectIDs)
 	if err != nil {
 		return DashboardSummary{}, fmt.Errorf("list sprint sections for projects: %w", err)
 	}
@@ -227,7 +233,7 @@ ORDER BY p.name
 		}
 		args = append(args, userID)
 		var spPts, blPts sql.NullInt64
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT
   COALESCE(SUM(CASE WHEN sprint_id IN `+ph+` THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN sprint_id IN `+ph+` THEN estimation_points ELSE 0 END), 0),
@@ -248,7 +254,7 @@ WHERE assignee_user_id = ? AND wc.is_done = 0
 	} else {
 		// No active sprints: all assigned non-DONE is unscheduled
 		var pUnsched sql.NullInt64
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT COUNT(*), COALESCE(SUM(estimation_points), 0)
 FROM todos t
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
@@ -282,7 +288,7 @@ WHERE assignee_user_id = ? AND wc.is_done = 0`, userID).Scan(&backlogCount, &pUn
 			args = append(args, id)
 		}
 		args = append(args, userID)
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(t.estimation_points), 0), COUNT(*)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -312,7 +318,7 @@ WHERE t.assignee_user_id = ?
 			}
 			var p int64
 			var c int
-			if err := s.db.QueryRowContext(ctx, `
+			if err := tx.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(estimation_points), 0), COUNT(*)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -328,7 +334,7 @@ WHERE assignee_user_id = ? AND done_at >= ? AND done_at < ?
 
 	// If no project has active sprint, use calendar week globally
 	if len(projectIDsWithActive) == 0 {
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT COALESCE(SUM(estimation_points), 0), COUNT(*)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -358,7 +364,7 @@ WHERE assignee_user_id = ? AND done_at >= ? AND done_at < ?
 		var totalAll, doneCountAll int
 		var totalPointsAll, donePointsAll int64
 		doneCond := `done_wc.id IS NOT NULL AND s.started_at IS NOT NULL AND t.done_at >= s.started_at AND t.done_at < COALESCE(s.closed_at, s.planned_end_at)`
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT
   COALESCE(SUM(CASE WHEN t.assignee_user_id = ? THEN 1 ELSE 0 END), 0),
   COALESCE(SUM(CASE WHEN t.assignee_user_id = ? THEN t.estimation_points ELSE 0 END), 0),
@@ -390,7 +396,7 @@ WHERE t.sprint_id IN `+ph,
 	}
 
 	var wipCount, wipInProgressCount, wipTestingCount int
-	wipRows, err := s.db.QueryContext(ctx, `
+	wipRows, err := tx.QueryContext(ctx, `
 SELECT t.project_id, t.column_key, t.local_id, t.title, t.updated_at, p.name, p.slug
 FROM todos t
 JOIN projects p ON p.id = t.project_id
@@ -461,7 +467,7 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0
 		})
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := tx.QueryContext(ctx, `
 SELECT
   CAST((done_at - ?) / ? AS INTEGER) AS week_bucket,
   COUNT(*) AS stories,
@@ -504,7 +510,7 @@ ORDER BY week_bucket ASC
 		}
 		args = append(args, userID)
 		var avg sql.NullFloat64
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT AVG((t.done_at - t.created_at) / 86400000.0)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -521,7 +527,7 @@ WHERE t.assignee_user_id = ?
 	} else {
 		thirtyDaysAgo := time.Now().UTC().AddDate(0, 0, -30).UnixMilli()
 		var avg sql.NullFloat64
-		if err := s.db.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(ctx, `
 SELECT AVG((done_at - created_at) / 86400000.0)
 FROM todos t
 JOIN project_workflow_columns done_wc ON done_wc.project_id = t.project_id AND done_wc.key = t.column_key AND done_wc.is_done = 1
@@ -552,7 +558,82 @@ WHERE assignee_user_id = ? AND done_at >= ?
 	}, nil
 }
 
-func (s *Store) listSprintSectionsForProjects(ctx context.Context, projectIDs []int64) (map[int64][]SprintSectionInfo, error) {
+func getDashboardProjectWorkflows(ctx context.Context, tx *sql.Tx, projectIDs []int64) (map[int64][]WorkflowColumn, error) {
+	out := make(map[int64][]WorkflowColumn, len(projectIDs))
+	if len(projectIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, 0, len(projectIDs))
+	seen := make(map[int64]struct{}, len(projectIDs))
+	for _, projectID := range projectIDs {
+		if _, ok := seen[projectID]; ok {
+			continue
+		}
+		seen[projectID] = struct{}{}
+		args = append(args, projectID)
+		out[projectID] = []WorkflowColumn{}
+	}
+	rows, err := tx.QueryContext(ctx, `
+SELECT id, project_id, key, name, color, position, is_done, system
+FROM project_workflow_columns
+WHERE project_id IN `+makePlaceholders(len(args))+`
+ORDER BY project_id ASC, position ASC, id ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list workflow columns for projects: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col WorkflowColumn
+		var isDone, isSystem int
+		if err := rows.Scan(&col.ID, &col.ProjectID, &col.Key, &col.Name, &col.Color, &col.Position, &isDone, &isSystem); err != nil {
+			return nil, fmt.Errorf("scan workflow column for project: %w", err)
+		}
+		col.IsDone = isDone == 1
+		col.System = isSystem == 1
+		out[col.ProjectID] = append(out[col.ProjectID], col)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows workflow columns for projects: %w", err)
+	}
+	return out, nil
+}
+
+func getDashboardActiveSprints(ctx context.Context, tx *sql.Tx, projectIDs []int64) (map[int64]*ActiveSprintInfo, error) {
+	if len(projectIDs) == 0 {
+		return map[int64]*ActiveSprintInfo{}, nil
+	}
+	args := make([]any, 0, len(projectIDs)+1)
+	args = append(args, SprintStateActive)
+	for _, id := range projectIDs {
+		args = append(args, id)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.id, s.project_id, s.name, s.planned_start_at, s.planned_end_at
+		FROM sprints s
+		JOIN projects p ON p.id = s.project_id AND p.sprints_enabled = 1
+		WHERE s.state = ? AND s.project_id IN `+makePlaceholders(len(projectIDs)),
+		args...)
+	if err != nil {
+		return nil, fmt.Errorf("get active sprints by project ids: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64]*ActiveSprintInfo)
+	for rows.Next() {
+		var id, projectID int64
+		var name string
+		var startAtMs, endAtMs int64
+		if err := rows.Scan(&id, &projectID, &name, &startAtMs, &endAtMs); err != nil {
+			return nil, fmt.Errorf("scan active sprint: %w", err)
+		}
+		out[projectID] = &ActiveSprintInfo{ID: id, Name: name, StartAt: startAtMs, EndAt: endAtMs}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows active sprints: %w", err)
+	}
+	return out, nil
+}
+
+func listSprintSectionsForProjects(ctx context.Context, tx *sql.Tx, projectIDs []int64) (map[int64][]SprintSectionInfo, error) {
 	out := make(map[int64][]SprintSectionInfo, len(projectIDs))
 	if len(projectIDs) == 0 {
 		return out, nil
@@ -570,20 +651,21 @@ func (s *Store) listSprintSectionsForProjects(ctx context.Context, projectIDs []
 	}
 
 	ph := makePlaceholders(len(args))
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT project_id, id, name, state, planned_start_at, planned_end_at
-		FROM sprints
-		WHERE project_id IN `+ph+`
+	rows, err := tx.QueryContext(ctx, `
+		SELECT s.project_id, s.id, s.name, s.state, s.planned_start_at, s.planned_end_at
+		FROM sprints s
+		JOIN projects p ON p.id = s.project_id AND p.sprints_enabled = 1
+		WHERE s.project_id IN `+ph+`
 		ORDER BY
-		  project_id ASC,
-		  CASE state
+		  s.project_id ASC,
+		  CASE s.state
 		    WHEN 'ACTIVE' THEN 0
 		    WHEN 'PLANNED' THEN 1
 		    WHEN 'CLOSED' THEN 2
 		    ELSE 3
 		  END,
-		  CASE WHEN state = 'PLANNED' THEN planned_start_at END ASC,
-		  CASE WHEN state = 'CLOSED' THEN planned_end_at END DESC
+		  CASE WHEN s.state = 'PLANNED' THEN s.planned_start_at END ASC,
+		  CASE WHEN s.state = 'CLOSED' THEN s.planned_end_at END DESC
 	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list sprint sections (batched): %w", err)
@@ -715,7 +797,8 @@ func (s *Store) listDashboardTodosActivity(ctx context.Context, userID int64, li
 			return nil, nil, fmt.Errorf("%w: invalid dashboard cursor", ErrValidation)
 		}
 		rows, err = s.db.QueryContext(ctx, `
-SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
+SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
+       CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END,
        p.name, p.slug, p.image, p.dominant_color,
        wc.name AS status_name, wc.color AS status_color
 FROM todos t
@@ -728,7 +811,8 @@ LIMIT ?
 `, userID, updatedAtCursor, updatedAtCursor, idCursor, limit+1)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
-SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
+SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
+       CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END,
        p.name, p.slug, p.image, p.dominant_color,
        wc.name AS status_name, wc.color AS status_color
 FROM todos t
@@ -828,7 +912,8 @@ func (s *Store) listDashboardTodosBoard(ctx context.Context, userID int64, limit
 			return nil, nil, fmt.Errorf("%w: invalid dashboard cursor", ErrValidation)
 		}
 		rows, err = s.db.QueryContext(ctx, `
-SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
+SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
+       CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END,
        t.rank, wc.position,
        p.name, p.slug, p.image, p.dominant_color,
        wc.name AS status_name, wc.color AS status_color
@@ -842,7 +927,8 @@ LIMIT ?
 `, userID, pid, wcPos, rank, todoID, limit+1)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
-SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points, t.sprint_id,
+SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
+       CASE WHEN p.sprints_enabled = 1 THEN t.sprint_id ELSE NULL END,
        t.rank, wc.position,
        p.name, p.slug, p.image, p.dominant_color,
        wc.name AS status_name, wc.color AS status_color

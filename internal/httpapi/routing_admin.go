@@ -335,21 +335,21 @@ func (s *Server) handleAdminEmailNotifyDefault(w http.ResponseWriter, r *http.Re
 }
 
 // handleAdminDefaultBoard gets/sets/clears the org-wide default board project
-// new users are auto-enrolled into (as a viewer) at creation time. It never
-// touches existing users' memberships -- see seedDefaultBoardMembershipTx in
-// internal/store.
+// (and project role) new users are auto-enrolled into at creation time. It
+// never touches existing users' memberships -- see
+// seedDefaultBoardMembershipTx in internal/store.
 func (s *Server) handleAdminDefaultBoard(w http.ResponseWriter, r *http.Request, requesterID int64) {
 	ctx := s.requestContext(r)
 
 	switch r.Method {
 	case http.MethodGet:
 		// GET /api/admin/settings/default-board
-		projectID, customized, err := s.store.GetDefaultBoardOrgSetting(ctx)
+		projectID, role, customized, err := s.store.GetDefaultBoardOrgSetting(ctx)
 		if err != nil {
 			writeStoreErr(w, err, false)
 			return
 		}
-		resp := map[string]any{"customized": customized}
+		resp := map[string]any{"customized": customized, "role": role.String()}
 		if customized {
 			resp["projectId"] = projectID
 		} else {
@@ -359,19 +359,37 @@ func (s *Server) handleAdminDefaultBoard(w http.ResponseWriter, r *http.Request,
 		return
 
 	case http.MethodPut:
-		// PUT /api/admin/settings/default-board - Body: { projectId: number }
+		// PUT /api/admin/settings/default-board - Body: { projectId: number, role?: string }
 		var in struct {
-			ProjectID int64 `json:"projectId"`
+			ProjectID int64   `json:"projectId"`
+			Role      *string `json:"role"`
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return
 		}
-		if err := s.store.SetDefaultBoardOrgSetting(ctx, requesterID, in.ProjectID); err != nil {
+		var role store.ProjectRole
+		if in.Role == nil {
+			// Preserve an already-configured role when older clients omit it.
+			_, existingRole, _, err := s.store.GetDefaultBoardOrgSetting(ctx)
+			if err != nil {
+				writeStoreErr(w, err, false)
+				return
+			}
+			role = existingRole
+		} else {
+			role = store.ProjectRole(*in.Role)
+			if !store.IsValidProjectRole(role) {
+				writeError(w, http.StatusBadRequest, "VALIDATION_ERROR", "invalid role", nil)
+				return
+			}
+		}
+		if err := s.store.SetDefaultBoardOrgSetting(ctx, requesterID, in.ProjectID, role); err != nil {
 			writeStoreErr(w, err, false)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"projectId":  in.ProjectID,
+			"role":       role.String(),
 			"customized": true,
 		})
 		return

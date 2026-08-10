@@ -379,7 +379,8 @@ describe("dashboard i18n", () => {
       expect((document.getElementById("dashboardTodoSort") as HTMLSelectElement | null)?.options[1]?.textContent).toBe("Board Order (per project)");
       expect(document.getElementById("dashboardLoadMoreBtn")?.textContent?.trim()).toBe("Load more");
       expect(document.querySelector('[data-sprint-section="unscheduled"] .dashboard-project-group__tab--sprint')?.textContent).toBe("Unscheduled");
-      expect(document.querySelector(".dashboard-stats__section .dashboard-stats__label")?.textContent).toBe("CURRENT SPRINT");
+      expect(document.querySelector(".dashboard-stats__section .dashboard-stats__label")?.textContent).toBe("YOUR WORKLOAD");
+      expect(document.body.textContent).not.toContain("CURRENT SPRINT");
       expect(apiFetchMock).toHaveBeenCalledTimes(3);
 
       await i18n.setLocale("pseudo");
@@ -394,7 +395,8 @@ describe("dashboard i18n", () => {
       expect((document.getElementById("dashboardTodoSort") as HTMLSelectElement | null)?.options[1]?.textContent).toBe("[!! Board Order (per project) !!]");
       expect(document.getElementById("dashboardLoadMoreBtn")?.textContent?.trim()).toBe("[!! Load more !!]");
       expect(document.querySelector('[data-sprint-section="unscheduled"] .dashboard-project-group__tab--sprint')?.textContent).toBe("[!! Unscheduled !!]");
-      expect(document.querySelector(".dashboard-stats__section .dashboard-stats__label")?.textContent).toBe("[!! CURRENT SPRINT !!]");
+      expect(document.querySelector(".dashboard-stats__section .dashboard-stats__label")?.textContent).toBe("[!! YOUR WORKLOAD !!]");
+      expect(document.body.textContent).not.toContain("[!! CURRENT SPRINT !!]");
       expect(apiFetchMock).toHaveBeenCalledTimes(3);
     } finally {
       cleanup();
@@ -509,6 +511,12 @@ describe("dashboard i18n", () => {
               projectId: 1,
               projectName: "Project Raw",
               projectSlug: "project-raw",
+              activeSprint: {
+                id: 10,
+                name: "Sprint Raw",
+                startAt: sprintStart,
+                endAt: sprintEnd,
+              },
               sprintSections: [
                 {
                   id: 10,
@@ -558,6 +566,7 @@ describe("dashboard i18n", () => {
       expect(sprintTab?.getAttribute("title")).toBe(
         `Sprint Raw\n${i18n.formatLongDateWithWeekday(sprintStart)} - ${i18n.formatLongDateWithWeekday(sprintEnd)}`,
       );
+      expect(document.querySelector(".dashboard-stats__section .dashboard-stats__label")?.textContent).toBe("AKTUELLER SPRINT");
       expect(formatLongDateSpy).toHaveBeenCalledWith(sprintStart);
       expect(formatLongDateSpy).toHaveBeenCalledWith(sprintEnd);
       expect(apiFetchMock).toHaveBeenCalledTimes(3);
