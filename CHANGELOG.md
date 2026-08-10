@@ -2,6 +2,31 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.30.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability) - see those releases.
 
+## [3.30.1] - 2026-08-09
+
+### Added
+
+- **Configurable role for default-board auto-enrollment** - The org-wide
+  "default board for new users" admin setting now accepts a project role
+  (Viewer, Contributor, or Maintainer) alongside the board, instead of always
+  enrolling new users as a Viewer. Settings → Users shows a role picker next to
+  the project picker. Existing configurations with no role set keep enrolling at
+  Viewer, and clearing the override resets the role back to that same Viewer
+  fallback.
+
+- **Default-board GET consistency and role-read errors** - The admin GET path
+  now reads `defaultBoardProjectId` and `defaultBoardRole` from one read-only
+  SQLite snapshot. Real database errors on the role row propagate instead of
+  being reported as Viewer.
+
+### Changed
+
+- **Omitted `role` preserves an existing default-board role** - PUT
+  `/api/admin/settings/default-board` with only `projectId` keeps a previously
+  configured role instead of resetting it to Viewer, so older clients that do
+  not send `role` cannot downgrade a setting they do not understand. First-time
+  configure with no stored role still defaults to Viewer.
+
 ## [3.30.0] - 2026-08-09
 
 ### Added
@@ -56,17 +81,6 @@
 - **Sprint close mutations are project-scoped** - Closing a sprint now requires
   both its project and sprint identity, preventing an authorized request for one
   project from closing a sprint belonging to another project.
-
-## [3.30.0] - 2026-08-06
-
-### Added
-
-- **Configurable role for default-board auto-enrollment** - The org-wide
-  "default board for new users" admin setting now accepts a project role
-  (Viewer, Contributor, or Maintainer) alongside the board, instead of always
-  enrolling new users as a Viewer. Existing configurations with no role set
-  keep enrolling at Viewer, and clearing the override resets the role back to
-  that same Viewer fallback.
 
 ## [3.29.7] - 2026-08-05
 
