@@ -2151,10 +2151,19 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     const defaultBoardRoleSelect = document.getElementById("defaultBoardRoleSelect") as HTMLSelectElement | null;
 
     let defaultBoardSaving = false;
+    const syncDefaultBoardRoleEnabled = () => {
+      if (!defaultBoardRoleSelect || !defaultBoardSelect) return;
+      const projectId = Number(defaultBoardSelect.value);
+      const hasProject = !!defaultBoardSelect.value && Number.isFinite(projectId) && projectId > 0;
+      defaultBoardRoleSelect.disabled = defaultBoardSaving || !hasProject;
+    };
     const saveDefaultBoard = async () => {
       if (defaultBoardSaving) return;
       const projectId = Number(defaultBoardSelect?.value);
-      if (!defaultBoardSelect?.value || !Number.isFinite(projectId) || projectId <= 0) return;
+      if (!defaultBoardSelect?.value || !Number.isFinite(projectId) || projectId <= 0) {
+        syncDefaultBoardRoleEnabled();
+        return;
+      }
       const role = defaultBoardRoleSelect?.value || "viewer";
 
       defaultBoardSaving = true;
@@ -2175,7 +2184,11 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     };
 
     if (defaultBoardSelect) {
-      defaultBoardSelect.addEventListener("change", saveDefaultBoard, { signal });
+      defaultBoardSelect.addEventListener("change", async () => {
+        syncDefaultBoardRoleEnabled();
+        await saveDefaultBoard();
+      }, { signal });
+      syncDefaultBoardRoleEnabled();
     }
     if (defaultBoardRoleSelect) {
       defaultBoardRoleSelect.addEventListener("change", saveDefaultBoard, { signal });
@@ -2598,7 +2611,7 @@ function renderDefaultBoardSection(setting: any, projects: any[]): string {
           </label>
           <label class="field" style="display:block;margin-top:10px;">
             <span class="muted" data-i18n-text="settings.users.defaultBoard.roleLabel">Role for new members</span>
-            <select id="defaultBoardRoleSelect" class="input" style="display:block;margin-top:4px;">
+            <select id="defaultBoardRoleSelect" class="input" style="display:block;margin-top:4px;"${configuredId == null ? " disabled" : ""}>
               ${roleOptionsHTML}
             </select>
           </label>` : `<p class="muted" style="margin:0;font-size:13px;" data-i18n-text="settings.users.defaultBoard.noEligibleProjects">You have no durable boards you maintain to use as a default.</p>`}

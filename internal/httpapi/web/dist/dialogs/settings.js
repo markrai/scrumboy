@@ -1961,11 +1961,28 @@ export async function renderSettingsModal(options) {
         // rather than requiring the admin to re-pick it.
         const defaultBoardSelect = document.getElementById("defaultBoardProjectSelect");
         const defaultBoardRoleSelect = document.getElementById("defaultBoardRoleSelect");
-        const saveDefaultBoard = async () => {
-            const projectId = Number(defaultBoardSelect?.value);
-            if (!defaultBoardSelect?.value || !Number.isFinite(projectId) || projectId <= 0)
+        let defaultBoardSaving = false;
+        const syncDefaultBoardRoleEnabled = () => {
+            if (!defaultBoardRoleSelect || !defaultBoardSelect)
                 return;
+            const projectId = Number(defaultBoardSelect.value);
+            const hasProject = !!defaultBoardSelect.value && Number.isFinite(projectId) && projectId > 0;
+            defaultBoardRoleSelect.disabled = defaultBoardSaving || !hasProject;
+        };
+        const saveDefaultBoard = async () => {
+            if (defaultBoardSaving)
+                return;
+            const projectId = Number(defaultBoardSelect?.value);
+            if (!defaultBoardSelect?.value || !Number.isFinite(projectId) || projectId <= 0) {
+                syncDefaultBoardRoleEnabled();
+                return;
+            }
             const role = defaultBoardRoleSelect?.value || "viewer";
+            defaultBoardSaving = true;
+            if (defaultBoardSelect)
+                defaultBoardSelect.disabled = true;
+            if (defaultBoardRoleSelect)
+                defaultBoardRoleSelect.disabled = true;
             try {
                 await apiFetch("/api/admin/settings/default-board", {
                     method: "PUT",
@@ -1976,10 +1993,17 @@ export async function renderSettingsModal(options) {
             catch (err) {
                 showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.users.defaultBoard.toast.saveFailed" }));
             }
+            finally {
+                defaultBoardSaving = false;
+            }
             await renderSettingsModal();
         };
         if (defaultBoardSelect) {
-            defaultBoardSelect.addEventListener("change", saveDefaultBoard, { signal });
+            defaultBoardSelect.addEventListener("change", async () => {
+                syncDefaultBoardRoleEnabled();
+                await saveDefaultBoard();
+            }, { signal });
+            syncDefaultBoardRoleEnabled();
         }
         if (defaultBoardRoleSelect) {
             defaultBoardRoleSelect.addEventListener("change", saveDefaultBoard, { signal });
@@ -2349,7 +2373,7 @@ function renderDefaultBoardSection(setting, projects) {
           </label>
           <label class="field" style="display:block;margin-top:10px;">
             <span class="muted" data-i18n-text="settings.users.defaultBoard.roleLabel">Role for new members</span>
-            <select id="defaultBoardRoleSelect" class="input" style="display:block;margin-top:4px;">
+            <select id="defaultBoardRoleSelect" class="input" style="display:block;margin-top:4px;"${configuredId == null ? " disabled" : ""}>
               ${roleOptionsHTML}
             </select>
           </label>` : `<p class="muted" style="margin:0;font-size:13px;" data-i18n-text="settings.users.defaultBoard.noEligibleProjects">You have no durable boards you maintain to use as a default.</p>`}

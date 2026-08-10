@@ -608,6 +608,9 @@ describe('settings i18n (profile / users / backup / customization)', () => {
     await flushPromises();
     expect(document.getElementById('defaultBoardSelectRow')?.hasAttribute('hidden')).toBe(false);
 
+    const roleSelect = document.getElementById('defaultBoardRoleSelect') as HTMLSelectElement;
+    expect(roleSelect.disabled).toBe(true);
+
     const select = document.getElementById('defaultBoardProjectSelect') as HTMLSelectElement;
     apiFetchMock.mockClear();
     select.value = '10';
@@ -633,6 +636,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
 
     const roleSelect = document.getElementById('defaultBoardRoleSelect') as HTMLSelectElement;
     expect(roleSelect).not.toBeNull();
+    expect(roleSelect.disabled).toBe(false);
     expect(roleSelect.value).toBe('viewer');
 
     apiFetchMock.mockClear();
