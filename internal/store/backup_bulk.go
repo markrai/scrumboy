@@ -198,6 +198,10 @@ func insertProjectWithBatchID(ctx context.Context, tx *sql.Tx, pExport ProjectEx
 	if pExport.DefaultSprintWeeks == 1 || pExport.DefaultSprintWeeks == 2 {
 		defaultSprintWeeks = pExport.DefaultSprintWeeks
 	}
+	sprintsEnabled := true
+	if pExport.SprintsEnabled != nil {
+		sprintsEnabled = *pExport.SprintsEnabled
+	}
 
 	// Set creator_user_id for temporary boards (importing user becomes creator)
 	var creatorUserID *int64
@@ -210,9 +214,9 @@ func insertProjectWithBatchID(ctx context.Context, tx *sql.Tx, pExport ProjectEx
 
 	// Insert project with import_batch_id
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO projects(name, image, dominant_color, slug, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at, import_batch_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			pExport.Name, image, dominantColor, slug, EstimationModeModifiedFibonacci, defaultSprintWeeks, ownerUserID, creatorUserID, nowMs, expiresAtMs, createdAtMs, updatedAtMs, batchID)
+		INSERT INTO projects(name, image, dominant_color, slug, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at, import_batch_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		pExport.Name, image, dominantColor, slug, EstimationModeModifiedFibonacci, defaultSprintWeeks, boolToInt(sprintsEnabled), ownerUserID, creatorUserID, nowMs, expiresAtMs, createdAtMs, updatedAtMs, batchID)
 	if err != nil {
 		return 0, fmt.Errorf("insert project: %w", err)
 	}

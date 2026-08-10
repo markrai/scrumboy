@@ -278,6 +278,13 @@ function renderDashboardContent(): void {
   const currentSprintCardRows = [sprintAssignedRow, completionRateRow, completionRateAllUsersRow].filter(Boolean).join('');
   const workloadCardRows = [workloadAssignedRow, wipRow, oldestWipRow].filter(Boolean).join('');
   const flowCardRows = [leadTimeRow, throughputRow].filter(Boolean).join('');
+  const hasActiveSprint = (summary?.projects ?? []).some((project) => project.activeSprint != null);
+  const currentSprintSection = hasActiveSprint
+    ? `<div class="dashboard-stats__section">
+        <span class="dashboard-stats__label" data-i18n-text="dashboard.stats.currentSprint">${escapeHTML(t("dashboard.stats.currentSprint"))}</span>
+        <div class="dashboard-stats__section-card">${currentSprintCardRows}</div>
+      </div>`
+    : '';
 
   const contentMarkup = `
     <div class="dashboard-content">
@@ -285,10 +292,7 @@ function renderDashboardContent(): void {
         ${leftColumnMarkup}
       </div>
       <div class="dashboard-stats">
-        <div class="dashboard-stats__section">
-          <span class="dashboard-stats__label" data-i18n-text="dashboard.stats.currentSprint">${escapeHTML(t("dashboard.stats.currentSprint"))}</span>
-          <div class="dashboard-stats__section-card">${currentSprintCardRows}</div>
-        </div>
+        ${currentSprintSection}
         <div class="dashboard-stats__section dashboard-stats__section--spaced">
           <span class="dashboard-stats__label" data-i18n-text="dashboard.stats.yourWorkload">${escapeHTML(t("dashboard.stats.yourWorkload"))}</span>
           <div class="dashboard-stats__section-card">${workloadCardRows}</div>

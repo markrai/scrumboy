@@ -8,6 +8,7 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	membershipapp "scrumboy/internal/application/membership"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
 )
@@ -328,24 +329,27 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			return true
 		}
 
-		userID, ok := store.UserIDFromContext(s.requestContext(r))
-		if !ok {
+		ctx := s.requestContext(r)
+		prepared, err := s.membershipMutations.Prepare(ctx, membershipapp.ResolvedRESTMutationTarget{
+			ProjectID: projectID,
+		})
+		if errors.Is(err, membershipapp.ErrActorRequired) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 			return true
 		}
-
-		if err := s.store.AddProjectMember(s.requestContext(r), userID, projectID, in.UserID, role); err != nil {
-			writeStoreErr(w, err, true)
+		if err != nil {
+			writeInternal(w, err)
 			return true
 		}
 
-		members, err := s.store.ListProjectMembers(s.requestContext(r), projectID, userID)
+		members, err := prepared.Add(membershipapp.AddCommand{
+			TargetUserID: in.UserID,
+			Role:         role,
+		})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitMembersUpdated(r.Context(), projectID)
-		s.emitMembership(s.requestContext(r), projectID, in.UserID, "added")
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return true
 	}
@@ -357,24 +361,24 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			return true
 		}
 
-		requesterID, ok := store.UserIDFromContext(s.requestContext(r))
-		if !ok {
+		ctx := s.requestContext(r)
+		prepared, err := s.membershipMutations.Prepare(ctx, membershipapp.ResolvedRESTMutationTarget{
+			ProjectID: projectID,
+		})
+		if errors.Is(err, membershipapp.ErrActorRequired) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 			return true
 		}
-
-		if err := s.store.RemoveProjectMember(s.requestContext(r), requesterID, projectID, targetUserID); err != nil {
-			writeStoreErr(w, err, true)
+		if err != nil {
+			writeInternal(w, err)
 			return true
 		}
 
-		members, err := s.store.ListProjectMembers(s.requestContext(r), projectID, requesterID)
+		members, err := prepared.Remove(membershipapp.RemoveCommand{TargetUserID: targetUserID})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitMembersUpdated(r.Context(), projectID)
-		s.emitMembership(s.requestContext(r), projectID, targetUserID, "removed")
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return true
 	}
@@ -396,12 +400,23 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			writeValidationError(w, "invalid role", "invalid_role", map[string]any{"field": "role"})
 			return true
 		}
-		requesterID, ok := store.UserIDFromContext(s.requestContext(r))
-		if !ok {
+		ctx := s.requestContext(r)
+		prepared, err := s.membershipMutations.Prepare(ctx, membershipapp.ResolvedRESTMutationTarget{
+			ProjectID: projectID,
+		})
+		if errors.Is(err, membershipapp.ErrActorRequired) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 			return true
 		}
-		if err := s.store.UpdateProjectMemberRole(s.requestContext(r), requesterID, projectID, targetUserID, role); err != nil {
+		if err != nil {
+			writeInternal(w, err)
+			return true
+		}
+		members, err := prepared.UpdateRole(membershipapp.UpdateRoleCommand{
+			TargetUserID: targetUserID,
+			Role:         role,
+		})
+		if err != nil {
 			switch {
 			case errors.Is(err, store.ErrNotFound):
 				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
@@ -416,13 +431,6 @@ func (s *Server) handleProjectsProjectMembers(w http.ResponseWriter, r *http.Req
 			}
 			return true
 		}
-		members, err := s.store.ListProjectMembers(s.requestContext(r), projectID, requesterID)
-		if err != nil {
-			writeStoreErr(w, err, true)
-			return true
-		}
-		s.emitMembersUpdated(r.Context(), projectID)
-		s.emitMembership(s.requestContext(r), projectID, targetUserID, "role_changed")
 		writeJSON(w, http.StatusOK, projectMembersToJSON(members))
 		return true
 	}

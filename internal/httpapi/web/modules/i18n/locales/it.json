@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Un elemento della bacheca note non può collegarsi a se stesso.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Token e codice di configurazione sono obbligatori.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Solo gli Sprint pianificati possono essere avviati.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Gli Sprint sono disabilitati per questo progetto.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "La data di fine dello Sprint deve essere uguale o successiva alla data di inizio.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "La data di fine dello Sprint deve essere nel futuro.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Esiste già uno Sprint con questo nome.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Utente creato",
   "settings.users.createUser.failed": "Impossibile creare l'utente",
   "settings.users.defaultBoard.title": "Bacheca predefinita per i nuovi utenti",
-  "settings.users.defaultBoard.description": "I nuovi utenti vengono aggiunti automaticamente come osservatori a questa bacheca alla creazione dell'account. Modificarla o disattivarla non influisce mai sugli utenti esistenti.",
+  "settings.users.defaultBoard.description": "I nuovi utenti vengono iscritti automaticamente a questa bacheca con il ruolo selezionato alla creazione dell'account. Modificare o disattivare questa opzione non influisce mai sugli utenti esistenti.",
   "settings.users.defaultBoard.loadFailed": "Impossibile caricare l'impostazione della bacheca predefinita. Ricarica la pagina per riprovare.",
   "settings.users.defaultBoard.enableLabel": "Aggiungi i nuovi utenti a una bacheca predefinita",
   "settings.users.defaultBoard.selectLabel": "Bacheca predefinita",
+  "settings.users.defaultBoard.roleLabel": "Ruolo per i nuovi membri",
   "settings.users.defaultBoard.placeholder": "Seleziona un progetto…",
   "settings.users.defaultBoard.noEligibleProjects": "Non hai bacheche permanenti che gestisci da usare come predefinita.",
   "settings.users.defaultBoard.toast.saved": "Bacheca predefinita salvata",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Impossibile collegare SSO.",
   "settings.profile.authentication.linked": "SSO collegato.",
   "settings.users.table.authentication": "Autenticazione",
-  "settings.profile.authentication.warning.localDisabledOwner": "Questo proprietario dipende da SSO mentre l’autenticazione locale è disabilitata. Se SSO non è disponibile, un operatore deve accedere all’host Scrumboy, eseguire recover-owner e riattivare l’autenticazione locale."
+  "settings.profile.authentication.warning.localDisabledOwner": "Questo proprietario dipende da SSO mentre l’autenticazione locale è disabilitata. Se SSO non è disponibile, un operatore deve accedere all’host Scrumboy, eseguire recover-owner e riattivare l’autenticazione locale.",
+  "settings.sprints.enableToggle": "Abilita gli sprint per questa bacheca",
+  "settings.sprints.disabledHint": "Gli sprint sono disabilitati per questa bacheca. Abilitali sopra per creare e gestire gli sprint.",
+  "settings.sprints.toast.enabled": "Sprint abilitati",
+  "settings.sprints.toast.disabled": "Sprint disabilitati",
+  "settings.sprints.toast.toggleFailed": "Impossibile aggiornare l'impostazione degli sprint"
 }

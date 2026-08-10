@@ -42,6 +42,7 @@ export interface Project {
   image?: string;
   dominantColor: string;
   defaultSprintWeeks?: number;
+  sprintsEnabled?: boolean;
   estimationMode?: string;
   expiresAt?: string; // ISO date string for temporary boards
   creatorUserId?: number; // NULL for anonymous temp boards

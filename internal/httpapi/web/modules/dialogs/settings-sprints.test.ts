@@ -36,7 +36,7 @@ type SprintShape = {
 };
 
 const selectorState: {
-  board: { project: { defaultSprintWeeks?: number } } | null;
+  board: { project: { defaultSprintWeeks?: number; sprintsEnabled?: boolean } } | null;
   slug: string | null;
 } = {
   board: null,
@@ -45,9 +45,11 @@ const selectorState: {
 
 const apiFetchMock = vi.fn();
 const emitMock = vi.fn();
+const invalidateBoardMock = vi.fn().mockResolvedValue(undefined);
 const refreshSprintsAndChipsMock = vi.fn().mockResolvedValue(undefined);
+const clearSprintChipDataMock = vi.fn();
 const recordLocalMutationMock = vi.fn();
-const setBoardMock = vi.fn((nextBoard: { project: { defaultSprintWeeks?: number } }) => {
+const setBoardMock = vi.fn((nextBoard: { project: { defaultSprintWeeks?: number; sprintsEnabled?: boolean } }) => {
   selectorState.board = nextBoard;
 });
 const showConfirmDialogMock = vi.fn();
@@ -62,7 +64,12 @@ vi.mock('../events.js', () => ({
 }));
 
 vi.mock('../orchestration/board-refresh.js', () => ({
+  invalidateBoard: invalidateBoardMock,
   refreshSprintsAndChips: refreshSprintsAndChipsMock,
+}));
+
+vi.mock('../views/board-filters.js', () => ({
+  clearSprintChipData: clearSprintChipDataMock,
 }));
 
 vi.mock('../realtime/guard.js', () => ({
@@ -80,6 +87,8 @@ vi.mock('../state/mutations.js', () => ({
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: (res: { sprints?: SprintShape[] } | null | undefined) => res?.sprints ?? [],
+  boardSprintsEnabled: (board: { project?: { sprintsEnabled?: boolean } } | null | undefined) =>
+    board?.project?.sprintsEnabled !== false,
 }));
 
 vi.mock('../utils.js', () => ({
@@ -132,8 +141,11 @@ describe('settings-sprints', () => {
     selectorState.slug = 'alpha';
     apiFetchMock.mockReset();
     emitMock.mockClear();
+    invalidateBoardMock.mockClear();
+    invalidateBoardMock.mockResolvedValue(undefined);
     refreshSprintsAndChipsMock.mockClear();
     refreshSprintsAndChipsMock.mockResolvedValue(undefined);
+    clearSprintChipDataMock.mockClear();
     recordLocalMutationMock.mockClear();
     setBoardMock.mockClear();
     showConfirmDialogMock.mockReset();
@@ -175,6 +187,74 @@ describe('settings-sprints', () => {
     expect(document.querySelector('[data-sprint-activate="1"]')).not.toBeNull();
     expect(document.querySelector('[data-sprint-close="2"]')).not.toBeNull();
     expect(document.querySelector('[data-sprint-id="3"] .settings-sprint-row__action-placeholder')).not.toBeNull();
+  });
+
+  it('clears an active sprint filter and reloads unscheduled board state when disabled', async () => {
+    window.history.replaceState({}, '', '/alpha?tag=focus&sprintId=7');
+    apiFetchMock.mockResolvedValueOnce({ sprints: [] });
+    const mod = await loadSprintsModule();
+    render(await mod.renderSprintsTabContent());
+    mod.bindSprintsTabInteractions({
+      signal: new AbortController().signal,
+      rerender: vi.fn().mockResolvedValue(undefined),
+      invalidateSprintChartsCache: vi.fn(),
+    });
+    apiFetchMock.mockResolvedValueOnce({ sprintsEnabled: false });
+
+    const toggle = document.getElementById('sprintsEnabledToggle') as HTMLInputElement | null;
+    if (!toggle) throw new Error('missing sprints enabled toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+
+    expect(window.location.search).toBe('?tag=focus');
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'focus', undefined, null, null, null, true);
+    expect(clearSprintChipDataMock).toHaveBeenCalledTimes(1);
+    expect(selectorState.board?.project.sprintsEnabled).toBe(false);
+  });
+
+  it('force-reloads preserved sprint state and chips when re-enabled', async () => {
+    selectorState.board = { project: { defaultSprintWeeks: 1, sprintsEnabled: false } };
+    const mod = await loadSprintsModule();
+    render(await mod.renderSprintsTabContent());
+    mod.bindSprintsTabInteractions({
+      signal: new AbortController().signal,
+      rerender: vi.fn().mockResolvedValue(undefined),
+      invalidateSprintChartsCache: vi.fn(),
+    });
+    apiFetchMock.mockResolvedValueOnce({ sprintsEnabled: true });
+
+    const toggle = document.getElementById('sprintsEnabledToggle') as HTMLInputElement | null;
+    if (!toggle) throw new Error('missing sprints enabled toggle');
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', undefined, undefined, null, null, null, true);
+    expect(refreshSprintsAndChipsMock).toHaveBeenCalledWith('alpha');
+    expect(selectorState.board?.project.sprintsEnabled).toBe(true);
+  });
+
+  it('keeps the committed capability state when post-patch refresh fails', async () => {
+    const mod = await loadSprintsModule();
+    render(await mod.renderSprintsTabContent());
+    mod.bindSprintsTabInteractions({
+      signal: new AbortController().signal,
+      rerender: vi.fn().mockRejectedValue(new Error('render failed')),
+      invalidateSprintChartsCache: vi.fn(),
+    });
+    apiFetchMock.mockResolvedValueOnce({ sprintsEnabled: false });
+    invalidateBoardMock.mockRejectedValueOnce(new Error('refresh failed'));
+
+    const toggle = document.getElementById('sprintsEnabledToggle') as HTMLInputElement | null;
+    if (!toggle) throw new Error('missing sprints enabled toggle');
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    await flushPromises();
+
+    expect(toggle.checked).toBe(false);
+    expect(selectorState.board?.project.sprintsEnabled).toBe(false);
+    expect(showToastMock).toHaveBeenCalledWith(enCatalog['settings.sprints.toast.disabled']);
   });
 
   it('keeps sprint edit state in module state after clicking Edit', async () => {

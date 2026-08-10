@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall 项不能链接到自身。",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "需要设置令牌和验证码。",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "只能开始已计划的 Sprint。",
+  "errors.VALIDATION_ERROR.sprints_disabled": "此项目已禁用 Sprint。",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint 结束日期必须不早于开始日期。",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint 结束日期必须在未来。",
   "errors.VALIDATION_ERROR.sprint_name_exists": "已存在同名的 Sprint。",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "用户创建成功",
   "settings.users.createUser.failed": "创建用户失败",
   "settings.users.defaultBoard.title": "新用户的默认看板",
-  "settings.users.defaultBoard.description": "新用户在创建账户时会被自动添加为此看板的查看者。更改或关闭此设置不会影响现有用户。",
+  "settings.users.defaultBoard.description": "新用户在创建账户时会以所选角色自动加入此看板。更改或关闭此设置不会影响现有用户。",
   "settings.users.defaultBoard.loadFailed": "无法加载默认看板设置。请重新加载页面后重试。",
   "settings.users.defaultBoard.enableLabel": "为新用户设置默认看板",
   "settings.users.defaultBoard.selectLabel": "默认看板",
+  "settings.users.defaultBoard.roleLabel": "新成员的角色",
   "settings.users.defaultBoard.placeholder": "选择一个项目…",
   "settings.users.defaultBoard.noEligibleProjects": "你没有可作为默认看板、由你维护的长期看板。",
   "settings.users.defaultBoard.toast.saved": "默认看板已保存",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "无法连接 SSO。",
   "settings.profile.authentication.linked": "已连接 SSO。",
   "settings.users.table.authentication": "认证",
-  "settings.profile.authentication.warning.localDisabledOwner": "本地认证被禁用时，此所有者依赖 SSO。如果 SSO 不可用，运维人员必须访问 Scrumboy 主机、运行 recover-owner 并重新启用本地认证。"
+  "settings.profile.authentication.warning.localDisabledOwner": "本地认证被禁用时，此所有者依赖 SSO。如果 SSO 不可用，运维人员必须访问 Scrumboy 主机、运行 recover-owner 并重新启用本地认证。",
+  "settings.sprints.enableToggle": "为此看板启用 Sprint",
+  "settings.sprints.disabledHint": "此看板已禁用 Sprint。请在上方启用以创建和管理 Sprint。",
+  "settings.sprints.toast.enabled": "Sprint 已启用",
+  "settings.sprints.toast.disabled": "Sprint 已禁用",
+  "settings.sprints.toast.toggleFailed": "更新 Sprint 设置失败"
 }

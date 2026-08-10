@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Um item do mural não pode ser vinculado a ele mesmo.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "O token de configuração e o código são obrigatórios.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Somente sprints planejados podem ser ativados.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Os sprints estão desativados para este projeto.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "A data de fim do sprint deve ser igual ou posterior à data de início.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "A data de fim do sprint deve estar no futuro.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Já existe um sprint com este nome.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Usuário criado com sucesso",
   "settings.users.createUser.failed": "Falha ao criar usuário",
   "settings.users.defaultBoard.title": "Quadro padrão para novos usuários",
-  "settings.users.defaultBoard.description": "Novos usuários são inscritos automaticamente como visualizadores neste quadro quando a conta é criada. Alterar ou desativar isso nunca afeta usuários existentes.",
+  "settings.users.defaultBoard.description": "Novos usuários são automaticamente inscritos neste quadro com a função selecionada quando a conta é criada. Alterar ou desativar isso nunca afeta os usuários existentes.",
   "settings.users.defaultBoard.loadFailed": "Não foi possível carregar a configuração do quadro padrão. Recarregue a página para tentar novamente.",
   "settings.users.defaultBoard.enableLabel": "Inscrever novos usuários em um quadro padrão",
   "settings.users.defaultBoard.selectLabel": "Quadro padrão",
+  "settings.users.defaultBoard.roleLabel": "Função para novos membros",
   "settings.users.defaultBoard.placeholder": "Selecione um projeto…",
   "settings.users.defaultBoard.noEligibleProjects": "Você não tem quadros permanentes que administra para usar como padrão.",
   "settings.users.defaultBoard.toast.saved": "Quadro padrão salvo",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "Não foi possível conectar o SSO.",
   "settings.profile.authentication.linked": "SSO conectado.",
   "settings.users.table.authentication": "Autenticação",
-  "settings.profile.authentication.warning.localDisabledOwner": "Este proprietário depende do SSO enquanto a autenticação local está desativada. Se o SSO ficar indisponível, um operador deve acessar o host do Scrumboy, executar recover-owner e reativar a autenticação local."
+  "settings.profile.authentication.warning.localDisabledOwner": "Este proprietário depende do SSO enquanto a autenticação local está desativada. Se o SSO ficar indisponível, um operador deve acessar o host do Scrumboy, executar recover-owner e reativar a autenticação local.",
+  "settings.sprints.enableToggle": "Ativar sprints para este quadro",
+  "settings.sprints.disabledHint": "Os sprints estão desativados para este quadro. Ative-os acima para criar e gerenciar sprints.",
+  "settings.sprints.toast.enabled": "Sprints ativados",
+  "settings.sprints.toast.disabled": "Sprints desativados",
+  "settings.sprints.toast.toggleFailed": "Falha ao atualizar a configuração de sprints"
 }

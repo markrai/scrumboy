@@ -140,6 +140,39 @@ func (s *Store) checkProjectSettingsAuth(ctx context.Context, p Project, userID 
 	return ErrNotFound
 }
 
+func (s *Store) checkProjectSettingsAuthTx(ctx context.Context, tx *sql.Tx, p Project, userID int64) error {
+	if err := rejectIfExpiredTemporaryProject(p); err != nil {
+		return err
+	}
+	if isAnonymousTemporaryBoard(p) {
+		return ErrNotFound
+	}
+	if isTemporaryProject(p) {
+		if p.CreatorUserID == nil || *p.CreatorUserID != userID {
+			return ErrForbidden
+		}
+		return nil
+	}
+	enabled, err := authEnabledTx(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+	role, err := s.getProjectRoleTx(ctx, tx, p.ID, userID)
+	if err != nil {
+		return err
+	}
+	if role.HasMinimumRole(RoleMaintainer) {
+		return nil
+	}
+	if role.HasMinimumRole(RoleViewer) {
+		return ErrForbidden
+	}
+	return ErrNotFound
+}
+
 func (s *Store) getProjectForRead(ctx context.Context, projectID int64, mode Mode) (Project, error) {
 	p, err := s.getProject(ctx, projectID)
 	if err != nil {
@@ -349,7 +382,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]ProjectListEntry, error) {
 		// IMPORTANT: Anonymous temp boards (creator_user_id IS NULL) stay out of listings — including the membership branch below
 		// so orphan project_members rows cannot surface unowned paste boards in a user's project list.
 		rows, err = s.db.QueryContext(ctx, `
-SELECT p.id, p.name, p.image, p.slug, p.dominant_color, p.estimation_mode, p.default_sprint_weeks, p.owner_user_id, p.creator_user_id, p.last_activity_at, p.expires_at, p.created_at, p.updated_at,
+SELECT p.id, p.name, p.image, p.slug, p.dominant_color, p.estimation_mode, p.default_sprint_weeks, p.sprints_enabled, p.owner_user_id, p.creator_user_id, p.last_activity_at, p.expires_at, p.created_at, p.updated_at,
   CASE
     WHEN p.expires_at IS NOT NULL AND p.creator_user_id = ? THEN 'maintainer'
     ELSE (SELECT pm.role FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ? LIMIT 1)
@@ -364,7 +397,7 @@ ORDER BY p.updated_at DESC, p.id DESC`, userID, userID, userID, userID, userID)
 	} else {
 		// Anonymous mode: no authenticated project listings - return empty result explicitly
 		rows, err = s.db.QueryContext(ctx, `
-SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at, '' AS role
+SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at, '' AS role
 FROM projects
 WHERE 1=0`)
 	}
@@ -382,9 +415,11 @@ WHERE 1=0`)
 		var creatorUserID sql.NullInt64
 		var image sql.NullString
 		var role string
-		if err := rows.Scan(&e.Project.ID, &e.Project.Name, &image, &e.Project.Slug, &e.Project.DominantColor, &e.Project.EstimationMode, &e.Project.DefaultSprintWeeks, &ownerUserID, &creatorUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs, &role); err != nil {
+		var sprintsEnabled int
+		if err := rows.Scan(&e.Project.ID, &e.Project.Name, &image, &e.Project.Slug, &e.Project.DominantColor, &e.Project.EstimationMode, &e.Project.DefaultSprintWeeks, &sprintsEnabled, &ownerUserID, &creatorUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs, &role); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
+		e.Project.SprintsEnabled = sprintsEnabled == 1
 		if image.Valid && image.String != "" {
 			e.Project.Image = &image.String
 		}
@@ -642,6 +677,7 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 		DominantColor:      "#888888",
 		EstimationMode:     EstimationModeModifiedFibonacci,
 		DefaultSprintWeeks: 2,
+		SprintsEnabled:     true,
 		Slug:               slug,
 		OwnerUserID:        ownerUserID,
 		LastActivityAt:     time.UnixMilli(nowMs).UTC(),
@@ -823,7 +859,7 @@ func (s *Store) ensureProjectHasSlug(ctx context.Context, projectID int64, name 
 }
 
 func (s *Store) getProject(ctx context.Context, projectID int64) (Project, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
 	p, err := scanProject(row)
 	if err != nil {
 		return p, err
@@ -834,7 +870,7 @@ func (s *Store) getProject(ctx context.Context, projectID int64) (Project, error
 			return Project{}, fmt.Errorf("ensure slug: %w", err)
 		}
 		// Re-fetch project to get the newly generated slug
-		row = s.db.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
+		row = s.db.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
 		return scanProject(row)
 	}
 	return p, nil
@@ -850,12 +886,12 @@ func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (Project, err
 		return Project{}, fmt.Errorf("%w: invalid slug", ErrValidation)
 	}
 	// Keep the scan shape consistent with scanProject().
-	row := s.db.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE slug=? AND import_batch_id IS NULL`, slug)
+	row := s.db.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE slug=? AND import_batch_id IS NULL`, slug)
 	return scanProject(row)
 }
 
 func getProjectTx(ctx context.Context, tx *sql.Tx, projectID int64, store *Store) (Project, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
+	row := tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
 	p, err := scanProject(row)
 	if err != nil {
 		return p, err
@@ -868,7 +904,7 @@ func getProjectTx(ctx context.Context, tx *sql.Tx, projectID int64, store *Store
 			return Project{}, fmt.Errorf("ensure slug: %w", err)
 		}
 		// Re-fetch project to get the newly generated slug (using transaction)
-		row = tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
+		row = tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID)
 		return scanProject(row)
 	}
 	return p, nil
@@ -913,7 +949,7 @@ func (s *Store) userHasProjectRoleTx(ctx context.Context, tx *sql.Tx, projectID 
 }
 
 func (s *Store) getProjectForReadTx(ctx context.Context, tx *sql.Tx, projectID int64, mode Mode) (Project, error) {
-	p, err := getProjectTx(ctx, tx, projectID, s)
+	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
 	if err != nil {
 		return Project{}, err
 	}
@@ -995,12 +1031,14 @@ func scanProject(row projectRow) (Project, error) {
 	var ownerUserID sql.NullInt64
 	var creatorUserID sql.NullInt64
 	var image sql.NullString
-	if err := row.Scan(&p.ID, &p.Name, &image, &p.Slug, &p.DominantColor, &p.EstimationMode, &p.DefaultSprintWeeks, &ownerUserID, &creatorUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs); err != nil {
+	var sprintsEnabled int
+	if err := row.Scan(&p.ID, &p.Name, &image, &p.Slug, &p.DominantColor, &p.EstimationMode, &p.DefaultSprintWeeks, &sprintsEnabled, &ownerUserID, &creatorUserID, &lastActivityAtMs, &expiresAtMs, &createdAtMs, &updatedAtMs); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Project{}, ErrNotFound
 		}
 		return Project{}, fmt.Errorf("get project: %w", err)
 	}
+	p.SprintsEnabled = sprintsEnabled == 1
 	if image.Valid && image.String != "" {
 		p.Image = &image.String
 	}
@@ -1189,6 +1227,59 @@ func (s *Store) UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID i
 	return nil
 }
 
+// UpdateProjectSprintsEnabled toggles whether sprints are available for a project.
+func (s *Store) UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin update project sprints enabled: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE projects SET updated_at = updated_at WHERE id = ?`, projectID)
+	if err != nil {
+		return fmt.Errorf("lock project sprints enabled: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read project sprints enabled lock result: %w", err)
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
+	if err != nil {
+		return err
+	}
+	if err := s.checkProjectSettingsAuthTx(ctx, tx, p, userID); err != nil {
+		return err
+	}
+	var fromEnabledInt int
+	if err := tx.QueryRowContext(ctx, `SELECT sprints_enabled FROM projects WHERE id = ?`, projectID).Scan(&fromEnabledInt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get project sprints_enabled: %w", err)
+	}
+	if (fromEnabledInt == 1) == enabled {
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit unchanged project sprints enabled: %w", err)
+		}
+		return nil
+	}
+	nowMs := time.Now().UTC().UnixMilli()
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET sprints_enabled = ?, updated_at = ? WHERE id = ?`, boolToInt(enabled), nowMs, projectID); err != nil {
+		return fmt.Errorf("update project sprints enabled: %w", err)
+	}
+	actorUserID := &userID
+	meta := map[string]any{"from_enabled": fromEnabledInt == 1, "to_enabled": enabled}
+	if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_sprints_enabled_updated", "project", &projectID, meta); err != nil {
+		return fmt.Errorf("audit project_sprints_enabled_updated: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update project sprints enabled: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error {
 	p, err := s.getProject(ctx, projectID)
 	if err != nil {
@@ -1324,6 +1415,7 @@ func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 		DominantColor:      "#888888",
 		EstimationMode:     EstimationModeModifiedFibonacci,
 		DefaultSprintWeeks: 2,
+		SprintsEnabled:     true,
 		Slug:               slug,
 		LastActivityAt:     time.UnixMilli(nowMs).UTC(),
 		ExpiresAt:          &expiresAt,

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Ein Wall-Element kann nicht mit sich selbst verknüpft werden.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup-Token und Code sind erforderlich.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Nur geplante Sprints können aktiviert werden.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprints sind für dieses Projekt deaktiviert.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Das Sprint-Enddatum muss am oder nach dem Startdatum liegen.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Das Sprint-Enddatum muss in der Zukunft liegen.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Ein Sprint mit diesem Namen existiert bereits.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Benutzer erfolgreich erstellt",
   "settings.users.createUser.failed": "Benutzer konnte nicht erstellt werden",
   "settings.users.defaultBoard.title": "Standard-Board für neue Benutzer",
-  "settings.users.defaultBoard.description": "Neue Benutzer werden bei der Kontoerstellung automatisch als Betrachter zu diesem Board hinzugefügt. Das Ändern oder Deaktivieren wirkt sich nie auf bestehende Benutzer aus.",
+  "settings.users.defaultBoard.description": "Neue Benutzer werden bei Kontoerstellung automatisch mit der ausgewählten Rolle zu diesem Board hinzugefügt. Änderungen oder das Deaktivieren betreffen bestehende Benutzer nie.",
   "settings.users.defaultBoard.loadFailed": "Die Einstellung für das Standard-Board konnte nicht geladen werden. Laden Sie die Seite neu, um es erneut zu versuchen.",
   "settings.users.defaultBoard.enableLabel": "Neue Benutzer zu einem Standard-Board hinzufügen",
   "settings.users.defaultBoard.selectLabel": "Standard-Board",
+  "settings.users.defaultBoard.roleLabel": "Rolle für neue Mitglieder",
   "settings.users.defaultBoard.placeholder": "Projekt auswählen…",
   "settings.users.defaultBoard.noEligibleProjects": "Sie haben keine dauerhaften Boards, die Sie verwalten, um sie als Standard zu verwenden.",
   "settings.users.defaultBoard.toast.saved": "Standard-Board gespeichert",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO konnte nicht verbunden werden.",
   "settings.profile.authentication.linked": "SSO wurde verbunden.",
   "settings.users.table.authentication": "Authentifizierung",
-  "settings.profile.authentication.warning.localDisabledOwner": "Dieser Eigentümer ist auf SSO angewiesen, während die lokale Authentifizierung deaktiviert ist. Wenn SSO nicht verfügbar ist, muss ein Betreiber auf den Scrumboy-Host zugreifen, recover-owner ausführen und die lokale Authentifizierung wieder aktivieren."
+  "settings.profile.authentication.warning.localDisabledOwner": "Dieser Eigentümer ist auf SSO angewiesen, während die lokale Authentifizierung deaktiviert ist. Wenn SSO nicht verfügbar ist, muss ein Betreiber auf den Scrumboy-Host zugreifen, recover-owner ausführen und die lokale Authentifizierung wieder aktivieren.",
+  "settings.sprints.enableToggle": "Sprints für dieses Board aktivieren",
+  "settings.sprints.disabledHint": "Sprints sind für dieses Board deaktiviert. Aktivieren Sie sie oben, um Sprints zu erstellen und zu verwalten.",
+  "settings.sprints.toast.enabled": "Sprints aktiviert",
+  "settings.sprints.toast.disabled": "Sprints deaktiviert",
+  "settings.sprints.toast.toggleFailed": "Sprint-Einstellung konnte nicht aktualisiert werden"
 }

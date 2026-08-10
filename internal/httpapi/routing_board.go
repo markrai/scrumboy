@@ -9,9 +9,47 @@ import (
 	"strings"
 	"time"
 
+	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
+	todolinkapp "scrumboy/internal/application/todolink"
+	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/store"
 )
+
+func writeWorkflowMutationPrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, workflowapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, workflowapp.ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+	default:
+		writeInternal(w, err)
+	}
+}
+
+func writeSprintDefinitionPrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, sprintapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, sprintapp.ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+	default:
+		writeInternal(w, err)
+	}
+}
+
+func writeSprintLifecyclePrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, sprintapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, sprintapp.ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+	case errors.Is(err, sprintapp.ErrSprintNotInProject):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+	default:
+		writeStoreErr(w, err, true)
+	}
+}
 
 func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []string) {
 	if len(rest) == 0 {
@@ -92,30 +130,40 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 		}
 
 		var in struct {
-			DefaultSprintWeeks *int `json:"defaultSprintWeeks"`
+			DefaultSprintWeeks *int  `json:"defaultSprintWeeks"`
+			SprintsEnabled     *bool `json:"sprintsEnabled"`
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		if in.DefaultSprintWeeks == nil {
+		if in.DefaultSprintWeeks == nil && in.SprintsEnabled == nil {
 			writeValidationError(w, "defaultSprintWeeks required", "default_sprint_weeks_required", map[string]any{"field": "defaultSprintWeeks"})
 			return true
 		}
-		if *in.DefaultSprintWeeks != 1 && *in.DefaultSprintWeeks != 2 {
+		if in.DefaultSprintWeeks != nil && *in.DefaultSprintWeeks != 1 && *in.DefaultSprintWeeks != 2 {
 			writeValidationError(w, "defaultSprintWeeks must be 1 or 2", "invalid_default_sprint_weeks", map[string]any{"field": "defaultSprintWeeks"})
 			return true
 		}
-		if project.DefaultSprintWeeks == *in.DefaultSprintWeeks {
-			writeJSON(w, http.StatusOK, map[string]any{"defaultSprintWeeks": *in.DefaultSprintWeeks})
-			return true
-		}
 
-		if err := s.store.UpdateProjectDefaultSprintWeeks(ctx, project.ID, userID, *in.DefaultSprintWeeks); err != nil {
-			writeStoreErr(w, err, true)
-			return true
+		resp := map[string]any{}
+		if in.DefaultSprintWeeks != nil {
+			if project.DefaultSprintWeeks != *in.DefaultSprintWeeks {
+				if err := s.store.UpdateProjectDefaultSprintWeeks(ctx, project.ID, userID, *in.DefaultSprintWeeks); err != nil {
+					writeStoreErr(w, err, true)
+					return true
+				}
+			}
+			resp["defaultSprintWeeks"] = *in.DefaultSprintWeeks
+		}
+		if in.SprintsEnabled != nil {
+			if err := s.store.UpdateProjectSprintsEnabled(ctx, project.ID, userID, *in.SprintsEnabled); err != nil {
+				writeStoreErr(w, err, true)
+				return true
+			}
+			resp["sprintsEnabled"] = *in.SprintsEnabled
 		}
 		s.emitRefreshNeeded(s.requestContext(r), project.ID, "project_settings_updated")
-		writeJSON(w, http.StatusOK, map[string]any{"defaultSprintWeeks": *in.DefaultSprintWeeks})
+		writeJSON(w, http.StatusOK, resp)
 		return true
 	}
 
@@ -156,14 +204,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	// POST /api/board/{slug}/workflow - add a new non-done lane before done.
 	if len(rest) == 2 && rest[1] == "workflow" && r.Method == http.MethodPost {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.workflowMutations.Prepare(ctx, workflowapp.ResolvedRESTMutationTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
 
@@ -183,12 +228,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 
-		col, err := s.store.AddWorkflowColumn(ctx, project.ID, in.Name)
+		col, err := prepared.Create(workflowapp.CreateCommand{Name: in.Name})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_added")
 		writeJSON(w, http.StatusCreated, workflowColumnJSON{
 			Key:      col.Key,
 			Name:     col.Name,
@@ -202,14 +246,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	// PATCH /api/board/{slug}/workflow/{key} - update workflow lane label and color.
 	if len(rest) == 3 && rest[1] == "workflow" && r.Method == http.MethodPatch {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.workflowMutations.Prepare(ctx, workflowapp.ResolvedRESTMutationTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
 		columnKey := strings.TrimSpace(rest[2])
@@ -243,11 +284,14 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid workflow column color", "invalid_workflow_column_color", map[string]any{"field": "color"})
 			return true
 		}
-		if err := s.store.UpdateWorkflowColumn(ctx, project.ID, columnKey, in.Name, in.Color); err != nil {
+		if err := prepared.Update(workflowapp.UpdateCommand{
+			Key:   columnKey,
+			Name:  in.Name,
+			Color: in.Color,
+		}); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -255,14 +299,11 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	// DELETE /api/board/{slug}/workflow/{key} - delete an empty non-done lane.
 	if len(rest) == 3 && rest[1] == "workflow" && r.Method == http.MethodDelete {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.workflowMutations.Prepare(ctx, workflowapp.ResolvedRESTMutationTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
 		columnKey := strings.TrimSpace(rest[2])
@@ -270,11 +311,10 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid workflow key", "invalid_workflow_key", map[string]any{"field": "key"})
 			return true
 		}
-		if err := s.store.DeleteWorkflowColumn(ctx, project.ID, columnKey); err != nil {
+		if err := prepared.Delete(workflowapp.DeleteCommand{Key: columnKey}); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "workflow_column_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -344,23 +384,28 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			columnKey = store.DefaultColumnBacklog
 		}
 
-		var afterID, beforeID *int64
+		position := todoapp.ResolvedCreatePosition{}
 		if in.Position != nil {
-			afterID = in.Position.AfterID
-			beforeID = in.Position.BeforeID
+			position.AfterTodoID = in.Position.AfterID
+			position.BeforeTodoID = in.Position.BeforeID
 		}
 
-		todo, err := s.store.CreateTodo(s.requestContext(r), project.ID, store.CreateTodoInput{
-			Title:            in.Title,
-			Body:             in.Body,
-			Tags:             in.Tags,
-			ColumnKey:        columnKey,
-			EstimationPoints: in.EstimationPoints,
-			SprintID:         in.SprintID,
-			AssigneeUserID:   in.AssigneeUserID,
-			AfterID:          afterID,
-			BeforeID:         beforeID,
-		}, s.storeMode())
+		prepared := s.todoCreates.Prepare(s.requestContext(r), todoapp.ResolvedCreateTarget{
+			ProjectContext: *pc,
+			Mode:           s.storeMode(),
+		})
+		result, err := prepared.Create(todoapp.CreateCommand{
+			Values: todoapp.CreateValues{
+				Title:            in.Title,
+				Body:             in.Body,
+				Tags:             in.Tags,
+				ColumnKey:        columnKey,
+				EstimationPoints: in.EstimationPoints,
+				AssigneeUserID:   in.AssigneeUserID,
+				SprintID:         in.SprintID,
+			},
+			Position: position,
+		})
 		if err != nil {
 			if errors.Is(err, store.ErrUnauthorized) {
 				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
@@ -369,10 +414,7 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			writeStoreErr(w, err, true)
 			return true
 		}
-		if !todo.AssignmentChanged {
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_created")
-		}
-		writeJSON(w, http.StatusCreated, todoToJSON(todo))
+		writeJSON(w, http.StatusCreated, todoToJSONForProject(result.Todo, project))
 		return true
 	}
 
@@ -432,16 +474,41 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 		return true
 	}
 
-	if _, err := s.store.GetTodoByLocalID(s.requestContext(r), project.ID, localID, s.storeMode()); err != nil {
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
-		case errors.Is(err, store.ErrUnauthorized):
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
-		default:
-			writeStoreErr(w, err, true)
+	ctx := s.requestContext(r)
+	isAdd := len(rest) == 4 && r.Method == http.MethodPost
+	isRemove := len(rest) == 5 && r.Method == http.MethodDelete
+
+	var prepared *todolinkapp.PreparedRESTMutation
+	if isAdd || isRemove {
+		var err error
+		prepared, err = s.todoLinkMutations.Prepare(ctx, todolinkapp.ResolvedRESTMutationTarget{
+			ProjectID:     project.ID,
+			SourceLocalID: localID,
+			Mode:          s.storeMode(),
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+			case errors.Is(err, store.ErrUnauthorized):
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+			default:
+				writeStoreErr(w, err, true)
+			}
+			return true
 		}
-		return true
+	} else {
+		if _, err := s.store.GetTodoByLocalID(ctx, project.ID, localID, s.storeMode()); err != nil {
+			switch {
+			case errors.Is(err, store.ErrNotFound):
+				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+			case errors.Is(err, store.ErrUnauthorized):
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+			default:
+				writeStoreErr(w, err, true)
+			}
+			return true
+		}
 	}
 
 	switch {
@@ -479,7 +546,7 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 		})
 		return true
 
-	case len(rest) == 4 && r.Method == http.MethodPost:
+	case isAdd:
 		var in struct {
 			TargetLocalID int64  `json:"targetLocalId"`
 			LinkType      string `json:"linkType"`
@@ -499,7 +566,10 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			in.LinkType = "relates_to"
 		}
 
-		if err := s.store.AddLink(s.requestContext(r), project.ID, localID, in.TargetLocalID, in.LinkType, s.storeMode()); err != nil {
+		if err := prepared.Add(todolinkapp.AddCommand{
+			TargetLocalID: in.TargetLocalID,
+			LinkType:      in.LinkType,
+		}); err != nil {
 			switch {
 			case errors.Is(err, store.ErrValidation):
 				writeValidationError(w, "invalid link", "invalid_link", nil)
@@ -512,17 +582,16 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			}
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_links_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
-	case len(rest) == 5 && r.Method == http.MethodDelete:
+	case isRemove:
 		targetLocalID, ok := parseInt64(rest[4])
 		if !ok {
 			writeValidationError(w, "invalid targetLocalId", "invalid_target_local_id", map[string]any{"field": "targetLocalId"})
 			return true
 		}
-		if err := s.store.RemoveLink(s.requestContext(r), project.ID, localID, targetLocalID, s.storeMode()); err != nil {
+		if err := prepared.Remove(todolinkapp.RemoveCommand{TargetLocalID: targetLocalID}); err != nil {
 			switch {
 			case errors.Is(err, store.ErrUnauthorized):
 				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
@@ -533,7 +602,6 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 			}
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_links_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
@@ -564,7 +632,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			}
 			return true
 		}
-		writeJSON(w, http.StatusOK, todoToJSON(todo))
+		writeJSON(w, http.StatusOK, todoToJSONForProject(todo, project))
 		return true
 	}
 
@@ -629,7 +697,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				writeStoreErr(w, err, true)
 				return true
 			}
-			writeJSON(w, http.StatusOK, todoToJSON(result.Todo))
+			writeJSON(w, http.StatusOK, todoToJSONForProject(result.Todo, project))
 			return true
 
 		case http.MethodDelete:
@@ -692,7 +760,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		writeJSON(w, http.StatusOK, todoToJSON(result.Todo))
+		writeJSON(w, http.StatusOK, todoToJSONForProject(result.Todo, project))
 		return true
 	}
 
@@ -725,14 +793,11 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 	// POST /api/board/{slug}/sprints - create sprint (Maintainer+)
 	if len(rest) == 2 && rest[1] == "sprints" && r.Method == http.MethodPost {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+		prepared, err := s.sprintDefinitions.PrepareCreate(ctx, sprintapp.ResolvedRESTProjectTarget{
+			ProjectID: project.ID,
+		})
+		if err != nil {
+			writeSprintDefinitionPrepareError(w, err)
 			return true
 		}
 		var in struct {
@@ -747,12 +812,15 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			writeValidationError(w, "name required", "name_required", map[string]any{"field": "name"})
 			return true
 		}
-		sprint, err := s.store.CreateSprint(ctx, project.ID, in.Name, time.UnixMilli(in.PlannedStartAt), time.UnixMilli(in.PlannedEndAt))
+		sprint, err := prepared.Create(sprintapp.CreateCommand{
+			Name:           in.Name,
+			PlannedStartAt: time.UnixMilli(in.PlannedStartAt),
+			PlannedEndAt:   time.UnixMilli(in.PlannedEndAt),
+		})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_created")
 		writeJSON(w, http.StatusCreated, sprintToJSON(sprint))
 		return true
 	}
@@ -795,14 +863,12 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 
 		case http.MethodPatch:
 			ctx := s.requestContext(r)
-			userID, ok := store.UserIDFromContext(ctx)
-			if !ok {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-				return true
-			}
-			role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-			if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-				writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+			prepared, err := s.sprintDefinitions.PrepareUpdate(ctx, sprintapp.ResolvedRESTSprintTarget{
+				ProjectID: project.ID,
+				SprintID:  sp.ID,
+			})
+			if err != nil {
+				writeSprintDefinitionPrepareError(w, err)
 				return true
 			}
 			var in struct {
@@ -813,43 +879,36 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			if err := readJSON(w, r, s.maxBody, &in); err != nil {
 				return true
 			}
-			opts := store.UpdateSprintInput{}
-			if in.Name != nil {
-				opts.Name = in.Name
-			}
+			command := sprintapp.UpdateCommand{Name: in.Name}
 			if in.PlannedStartAt != nil {
 				t := time.UnixMilli(*in.PlannedStartAt)
-				opts.PlannedStartAt = &t
+				command.PlannedStartAt = &t
 			}
 			if in.PlannedEndAt != nil {
 				t := time.UnixMilli(*in.PlannedEndAt)
-				opts.PlannedEndAt = &t
+				command.PlannedEndAt = &t
 			}
-			if err := s.store.UpdateSprint(ctx, sprintID, opts); err != nil {
+			if err := prepared.Update(command); err != nil {
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_updated")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 
 		case http.MethodDelete:
 			ctx := s.requestContext(r)
-			userID, ok := store.UserIDFromContext(ctx)
-			if !ok {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			prepared, err := s.sprintDeletions.PrepareDelete(ctx, sprintapp.DeletionTarget{
+				ProjectID: project.ID,
+				SprintID:  sprintID,
+			})
+			if err != nil {
+				writeSprintLifecyclePrepareError(w, err)
 				return true
 			}
-			role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-			if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-				writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
-				return true
-			}
-			if err := s.store.DeleteSprint(ctx, project.ID, sprintID); err != nil {
+			if err := prepared.Delete(); err != nil {
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 
@@ -882,21 +941,18 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			return true
 		}
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+		prepared, err := s.sprintLifecycle.PrepareActivate(ctx, sprintapp.TransitionTarget{
+			ProjectID: project.ID,
+			SprintID:  sprintID,
+		})
+		if err != nil {
+			writeSprintLifecyclePrepareError(w, err)
 			return true
 		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
-			return true
-		}
-		if err := s.store.ActivateSprint(ctx, project.ID, sprintID); err != nil {
+		if err := prepared.Activate(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_activated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -909,21 +965,18 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			return true
 		}
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+		prepared, err := s.sprintLifecycle.PrepareClose(ctx, sprintapp.TransitionTarget{
+			ProjectID: project.ID,
+			SprintID:  sprintID,
+		})
+		if err != nil {
+			writeSprintLifecyclePrepareError(w, err)
 			return true
 		}
-		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
-		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
-			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
-			return true
-		}
-		if err := s.store.CloseSprint(ctx, sprintID); err != nil {
+		if err := prepared.Close(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "sprint_closed")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

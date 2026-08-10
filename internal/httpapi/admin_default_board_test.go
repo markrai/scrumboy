@@ -371,3 +371,168 @@ func TestAdminDefaultBoard_DeleteResetsToUnset(t *testing.T) {
 		t.Fatalf("expected after-reset user to have no membership, got %q", afterRole)
 	}
 }
+
+// TestAdminDefaultBoard_PutWithRoleSeedsNewUsersAtThatRole is the end-to-end
+// happy path for the configurable role: PUT with an explicit role, then a
+// user created afterward is enrolled at that role, not the RoleViewer
+// default.
+func TestAdminDefaultBoard_PutWithRoleSeedsNewUsersAtThatRole(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Onboarding"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	var out map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+		"role":      "contributor",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT with role: expected 200, got %d", resp.StatusCode)
+	}
+	if out["role"] != "contributor" {
+		t.Fatalf("expected response role=contributor, got %v", out["role"])
+	}
+
+	var getOut map[string]any
+	resp, _ = doJSON(t, owner, http.MethodGet, ts.URL+defaultBoardPath, nil, &getOut)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET: expected 200, got %d", resp.StatusCode)
+	}
+	if getOut["role"] != "contributor" {
+		t.Fatalf("expected GET role=contributor, got %v", getOut["role"])
+	}
+
+	var newUser map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPost, ts.URL+"/api/admin/users", map[string]any{
+		"name": "New", "email": "new@example.com", "password": "password123",
+	}, &newUser)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create new user: expected 201, got %d", resp.StatusCode)
+	}
+	newUserID := int64(newUser["id"].(float64))
+
+	var members []map[string]any
+	resp, _ = doJSON(t, owner, http.MethodGet, ts.URL+fmt.Sprintf("/api/projects/%d/members", projectID), nil, &members)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list members: expected 200, got %d", resp.StatusCode)
+	}
+	var newUserRole string
+	for _, m := range members {
+		if int64(m["userId"].(float64)) == newUserID {
+			newUserRole = m["role"].(string)
+		}
+	}
+	if newUserRole != "contributor" {
+		t.Fatalf("expected new user seeded as contributor, got %q", newUserRole)
+	}
+}
+
+// TestAdminDefaultBoard_PutOmittedRoleDefaultsToViewer covers first-time
+// configure when no role has ever been stored.
+func TestAdminDefaultBoard_PutOmittedRoleDefaultsToViewer(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Onboarding"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	var out map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{"projectId": projectID}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT without role: expected 200, got %d", resp.StatusCode)
+	}
+	if out["role"] != "viewer" {
+		t.Fatalf("expected role to default to viewer, got %v", out["role"])
+	}
+}
+
+// TestAdminDefaultBoard_PutOmittedRolePreservesExistingRole ensures older
+// clients that only send projectId do not downgrade an already-configured role.
+func TestAdminDefaultBoard_PutOmittedRolePreservesExistingRole(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Onboarding"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	var out map[string]any
+	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+		"role":      "contributor",
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT with contributor role: expected 200, got %d", resp.StatusCode)
+	}
+	if out["role"] != "contributor" {
+		t.Fatalf("expected contributor role, got %v", out["role"])
+	}
+
+	resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+		"projectId": projectID,
+	}, &out)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT without role: expected 200, got %d", resp.StatusCode)
+	}
+	if out["role"] != "contributor" {
+		t.Fatalf("expected omitted role to preserve contributor, got %v", out["role"])
+	}
+
+	var get map[string]any
+	resp, _ = doJSON(t, owner, http.MethodGet, ts.URL+defaultBoardPath, nil, &get)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET: expected 200, got %d", resp.StatusCode)
+	}
+	if get["role"] != "contributor" {
+		t.Fatalf("expected GET role to remain contributor, got %v", get["role"])
+	}
+}
+
+// TestAdminDefaultBoard_PutRejectsInvalidRole covers malformed and deprecated
+// role values, neither of which are valid default-board roles.
+func TestAdminDefaultBoard_PutRejectsInvalidRole(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "owner@example.com", "password123")
+
+	var project map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Onboarding"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d", resp.StatusCode)
+	}
+	projectID := int64(project["id"].(float64))
+
+	for _, role := range []string{"nonsense", "owner", "editor"} {
+		resp, _ = doJSON(t, owner, http.MethodPut, ts.URL+defaultBoardPath, map[string]any{
+			"projectId": projectID,
+			"role":      role,
+		}, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("PUT with role=%q: expected 400, got %d", role, resp.StatusCode)
+		}
+	}
+}

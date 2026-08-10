@@ -103,6 +103,7 @@ vi.mock('../orchestration/board-refresh.js', () => ({
 
 vi.mock('../sprints.js', () => ({
   normalizeSprints: vi.fn(() => []),
+  boardSprintsEnabled: vi.fn(() => true),
 }));
 
 vi.mock('./mobile-lane-tabs.js', () => ({

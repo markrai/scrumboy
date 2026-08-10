@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Item wall tidak dapat ditautkan ke dirinya sendiri.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Token penyiapan dan kode diperlukan.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Hanya sprint yang direncanakan yang dapat diaktifkan.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprint dinonaktifkan untuk proyek ini.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Tanggal akhir sprint harus pada atau setelah tanggal mulai.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Tanggal akhir sprint harus di masa depan.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "Sprint dengan nama ini sudah ada.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "Pengguna berhasil dibuat",
   "settings.users.createUser.failed": "Gagal membuat pengguna",
   "settings.users.defaultBoard.title": "Papan default untuk pengguna baru",
-  "settings.users.defaultBoard.description": "Pengguna baru otomatis didaftarkan sebagai pengamat di papan ini saat akun mereka dibuat. Mengubah atau menonaktifkannya tidak pernah memengaruhi pengguna yang sudah ada.",
+  "settings.users.defaultBoard.description": "Pengguna baru otomatis didaftarkan ke board ini dengan peran yang dipilih saat akun mereka dibuat. Mengubah atau mematikan ini tidak pernah memengaruhi pengguna yang sudah ada.",
   "settings.users.defaultBoard.loadFailed": "Tidak dapat memuat pengaturan papan default. Muat ulang halaman untuk mencoba lagi.",
   "settings.users.defaultBoard.enableLabel": "Daftarkan pengguna baru ke papan default",
   "settings.users.defaultBoard.selectLabel": "Papan default",
+  "settings.users.defaultBoard.roleLabel": "Peran untuk anggota baru",
   "settings.users.defaultBoard.placeholder": "Pilih proyek…",
   "settings.users.defaultBoard.noEligibleProjects": "Anda tidak memiliki papan permanen yang Anda kelola untuk dijadikan default.",
   "settings.users.defaultBoard.toast.saved": "Papan default disimpan",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO tidak dapat dihubungkan.",
   "settings.profile.authentication.linked": "SSO terhubung.",
   "settings.users.table.authentication": "Autentikasi",
-  "settings.profile.authentication.warning.localDisabledOwner": "Pemilik ini bergantung pada SSO saat autentikasi lokal dinonaktifkan. Jika SSO tidak tersedia, operator harus mengakses host Scrumboy, menjalankan recover-owner, dan mengaktifkan kembali autentikasi lokal."
+  "settings.profile.authentication.warning.localDisabledOwner": "Pemilik ini bergantung pada SSO saat autentikasi lokal dinonaktifkan. Jika SSO tidak tersedia, operator harus mengakses host Scrumboy, menjalankan recover-owner, dan mengaktifkan kembali autentikasi lokal.",
+  "settings.sprints.enableToggle": "Aktifkan sprint untuk board ini",
+  "settings.sprints.disabledHint": "Sprint dinonaktifkan untuk board ini. Aktifkan di atas untuk membuat dan mengelola sprint.",
+  "settings.sprints.toast.enabled": "Sprint diaktifkan",
+  "settings.sprints.toast.disabled": "Sprint dinonaktifkan",
+  "settings.sprints.toast.toggleFailed": "Gagal memperbarui pengaturan sprint"
 }

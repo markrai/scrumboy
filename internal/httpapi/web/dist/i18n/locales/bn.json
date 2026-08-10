@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall আইটেম নিজের সাথে লিংক হতে পারে না।",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup token ও code প্রয়োজন।",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "শুধু planned Sprint সক্রিয় করা যায়।",
+  "errors.VALIDATION_ERROR.sprints_disabled": "এই প্রজেক্টের জন্য Sprint বন্ধ আছে।",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint শেষ তারিখ শুরুর তারিখের পর বা একই দিন হতে হবে।",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint শেষ তারিখ ভবিষ্যতে হতে হবে।",
   "errors.VALIDATION_ERROR.sprint_name_exists": "এই নামের Sprint আগে থেকেই আছে।",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "ব্যবহারকারী সফলভাবে তৈরি",
   "settings.users.createUser.failed": "ব্যবহারকারী তৈরি ব্যর্থ",
   "settings.users.defaultBoard.title": "নতুন ব্যবহারকারীদের জন্য ডিফল্ট বোর্ড",
-  "settings.users.defaultBoard.description": "অ্যাকাউন্ট তৈরি হলে নতুন ব্যবহারকারীদের স্বয়ংক্রিয়ভাবে এই বোর্ডে দর্শক হিসেবে যোগ করা হয়। এটি পরিবর্তন বা বন্ধ করলে বিদ্যমান ব্যবহারকারীদের ওপর কোনো প্রভাব পড়ে না।",
+  "settings.users.defaultBoard.description": "অ্যাকাউন্ট তৈরি হওয়ার সময় নতুন ব্যবহারকারীরা এই বোর্ডে নির্বাচিত ভূমিকায় স্বয়ংক্রিয়ভাবে যুক্ত হন। এটি পরিবর্তন করা বা বন্ধ করা বিদ্যমান ব্যবহারকারীদের প্রভাবিত করে না।",
   "settings.users.defaultBoard.loadFailed": "ডিফল্ট বোর্ড সেটিং লোড করা যায়নি। আবার চেষ্টা করতে পৃষ্ঠাটি রিলোড করুন।",
   "settings.users.defaultBoard.enableLabel": "নতুন ব্যবহারকারীদের একটি ডিফল্ট বোর্ডে যোগ করুন",
   "settings.users.defaultBoard.selectLabel": "ডিফল্ট বোর্ড",
+  "settings.users.defaultBoard.roleLabel": "নতুন সদস্যদের জন্য ভূমিকা",
   "settings.users.defaultBoard.placeholder": "একটি প্রকল্প নির্বাচন করুন…",
   "settings.users.defaultBoard.noEligibleProjects": "ডিফল্ট হিসেবে ব্যবহারের জন্য আপনার রক্ষণাবেক্ষণ করা কোনো স্থায়ী বোর্ড নেই।",
   "settings.users.defaultBoard.toast.saved": "ডিফল্ট বোর্ড সংরক্ষিত হয়েছে",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO সংযুক্ত করা যায়নি।",
   "settings.profile.authentication.linked": "SSO সংযুক্ত হয়েছে।",
   "settings.users.table.authentication": "প্রমাণীকরণ",
-  "settings.profile.authentication.warning.localDisabledOwner": "স্থানীয় প্রমাণীকরণ বন্ধ থাকায় এই মালিক SSO-র ওপর নির্ভরশীল। SSO অনুপলব্ধ হলে, অপারেটরকে Scrumboy হোস্টে প্রবেশ করে recover-owner চালাতে এবং স্থানীয় প্রমাণীকরণ আবার চালু করতে হবে।"
+  "settings.profile.authentication.warning.localDisabledOwner": "স্থানীয় প্রমাণীকরণ বন্ধ থাকায় এই মালিক SSO-র ওপর নির্ভরশীল। SSO অনুপলব্ধ হলে, অপারেটরকে Scrumboy হোস্টে প্রবেশ করে recover-owner চালাতে এবং স্থানীয় প্রমাণীকরণ আবার চালু করতে হবে।",
+  "settings.sprints.enableToggle": "এই বোর্ডের জন্য স্প্রিন্ট সক্ষম করুন",
+  "settings.sprints.disabledHint": "এই বোর্ডের জন্য স্প্রিন্ট নিষ্ক্রিয় করা আছে। স্প্রিন্ট তৈরি ও পরিচালনা করতে উপরে সক্ষম করুন।",
+  "settings.sprints.toast.enabled": "স্প্রিন্ট সক্ষম করা হয়েছে",
+  "settings.sprints.toast.disabled": "স্প্রিন্ট নিষ্ক্রিয় করা হয়েছে",
+  "settings.sprints.toast.toggleFailed": "স্প্রিন্ট সেটিং আপডেট করতে ব্যর্থ"
 }

@@ -61,7 +61,15 @@ func (s *ReadService) PrepareSlugRead(
 
 // HasSprints reports whether the authorized project has any sprints.
 func (r *PreparedSlugRead) HasSprints() (bool, error) {
-	return r.sprints.HasSprints(r.ctx, r.projectContext.Project.ID)
+	hasSprints, err := r.sprints.HasSprints(r.ctx, r.projectContext.Project.ID)
+	if err != nil {
+		return false, err
+	}
+	return r.projectContext.Project.SprintsEnabled && hasSprints, nil
+}
+
+func (r *PreparedSlugRead) SprintsEnabled() bool {
+	return r.projectContext.Project.SprintsEnabled
 }
 
 // ReadInitial executes the initial board read with the authorization context

@@ -4,9 +4,80 @@ import (
 	"context"
 	"encoding/json"
 
+	membershipapp "scrumboy/internal/application/membership"
+	sprintapp "scrumboy/internal/application/sprint"
+	todolinkapp "scrumboy/internal/application/todolink"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
 )
+
+type todoLinkMutationPublisher struct {
+	server *Server
+}
+
+var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
+
+func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated")
+}
+
+type sprintDefinitionPublisher struct {
+	server *Server
+}
+
+var _ sprintapp.RESTDefinitionPublisher = sprintDefinitionPublisher{}
+
+func (p sprintDefinitionPublisher) PublishSprintCreated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_created")
+}
+
+func (p sprintDefinitionPublisher) PublishSprintUpdated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_updated")
+}
+
+type sprintTransitionPublisher struct {
+	server *Server
+}
+
+var _ sprintapp.RESTTransitionPublisher = sprintTransitionPublisher{}
+
+func (p sprintTransitionPublisher) PublishSprintActivated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_activated")
+}
+
+func (p sprintTransitionPublisher) PublishSprintClosed(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_closed")
+}
+
+type sprintDeletionPublisher struct {
+	server *Server
+}
+
+var _ sprintapp.RESTDeletionPublisher = sprintDeletionPublisher{}
+
+func (p sprintDeletionPublisher) PublishSprintDeleted(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "sprint_deleted")
+}
+
+type membershipMutationPublisher struct {
+	server *Server
+}
+
+var _ membershipapp.RESTMutationPublisher = membershipMutationPublisher{}
+
+func (p membershipMutationPublisher) PublishMembersUpdated(ctx context.Context, projectID int64) {
+	p.server.emitMembersUpdated(ctx, projectID)
+}
+
+func (p membershipMutationPublisher) PublishMembershipChanged(
+	ctx context.Context,
+	projectID int64,
+	actorUserID int64,
+	targetUserID int64,
+	action membershipapp.MembershipAction,
+) {
+	p.server.emitMembership(ctx, projectID, actorUserID, targetUserID, string(action))
+}
 
 type refreshNeededEvent struct {
 	ID        string `json:"id,omitempty"`
@@ -81,11 +152,13 @@ func (s *Server) emitMembersUpdated(ctx context.Context, projectID int64) {
 // emitMembership publishes a per-user membership change, distinct from the
 // board-wide "board.members_updated" SSE invalidation signal, so consumers
 // like the email notifier can target the one affected user.
-func (s *Server) emitMembership(ctx context.Context, projectID, affectedUserID int64, action string) {
-	var actorUserID int64
-	if uid, ok := store.UserIDFromContext(ctx); ok {
-		actorUserID = uid
-	}
+func (s *Server) emitMembership(
+	ctx context.Context,
+	projectID int64,
+	actorUserID int64,
+	affectedUserID int64,
+	action string,
+) {
 	payload, _ := json.Marshal(eventbus.MembershipPayload{
 		ProjectID:      projectID,
 		AffectedUserID: affectedUserID,

@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "नोट वॉल आइटम स्वयं से लिंक नहीं हो सकता।",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "सेटअप टोकन और कोड आवश्यक हैं।",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "केवल planned Sprint सक्रिय किए जा सकते हैं।",
+  "errors.VALIDATION_ERROR.sprints_disabled": "इस प्रोजेक्ट के लिए Sprint अक्षम हैं।",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint समाप्ति तिथि प्रारंभ तिथि के बाद या उसी दिन होनी चाहिए।",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint समाप्ति तिथि भविष्य में होनी चाहिए।",
   "errors.VALIDATION_ERROR.sprint_name_exists": "इस नाम का Sprint पहले से मौजूद है।",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "उपयोगकर्ता सफलतापूर्वक बनाया गया",
   "settings.users.createUser.failed": "उपयोगकर्ता बनाना विफल",
   "settings.users.defaultBoard.title": "नए उपयोगकर्ताओं के लिए डिफ़ॉल्ट बोर्ड",
-  "settings.users.defaultBoard.description": "खाता बनने पर नए उपयोगकर्ता इस बोर्ड पर स्वतः दर्शक के रूप में जोड़ दिए जाते हैं। इसे बदलने या बंद करने से मौजूदा उपयोगकर्ताओं पर कोई असर नहीं पड़ता।",
+  "settings.users.defaultBoard.description": "खाता बनने पर नए उपयोगकर्ता इस बोर्ड पर चुनी गई भूमिका के साथ स्वतः जोड़ दिए जाते हैं। इसे बदलने या बंद करने से मौजूदा उपयोगकर्ताओं पर कोई असर नहीं पड़ता।",
   "settings.users.defaultBoard.loadFailed": "डिफ़ॉल्ट बोर्ड सेटिंग लोड नहीं हो सकी। पुनः प्रयास के लिए पेज फिर से लोड करें।",
   "settings.users.defaultBoard.enableLabel": "नए उपयोगकर्ताओं को डिफ़ॉल्ट बोर्ड पर जोड़ें",
   "settings.users.defaultBoard.selectLabel": "डिफ़ॉल्ट बोर्ड",
+  "settings.users.defaultBoard.roleLabel": "नए सदस्यों के लिए भूमिका",
   "settings.users.defaultBoard.placeholder": "कोई प्रोजेक्ट चुनें…",
   "settings.users.defaultBoard.noEligibleProjects": "आपके पास डिफ़ॉल्ट के रूप में उपयोग करने योग्य, आपके द्वारा अनुरक्षित कोई स्थायी बोर्ड नहीं है।",
   "settings.users.defaultBoard.toast.saved": "डिफ़ॉल्ट बोर्ड सहेजा गया",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO कनेक्ट नहीं किया जा सका।",
   "settings.profile.authentication.linked": "SSO कनेक्ट हो गया।",
   "settings.users.table.authentication": "प्रमाणीकरण",
-  "settings.profile.authentication.warning.localDisabledOwner": "स्थानीय प्रमाणीकरण बंद होने पर यह स्वामी SSO पर निर्भर है। यदि SSO अनुपलब्ध हो जाए, तो ऑपरेटर को Scrumboy होस्ट पर पहुँचकर recover-owner चलाना और स्थानीय प्रमाणीकरण फिर से चालू करना होगा।"
+  "settings.profile.authentication.warning.localDisabledOwner": "स्थानीय प्रमाणीकरण बंद होने पर यह स्वामी SSO पर निर्भर है। यदि SSO अनुपलब्ध हो जाए, तो ऑपरेटर को Scrumboy होस्ट पर पहुँचकर recover-owner चलाना और स्थानीय प्रमाणीकरण फिर से चालू करना होगा।",
+  "settings.sprints.enableToggle": "इस बोर्ड के लिए स्प्रिंट सक्षम करें",
+  "settings.sprints.disabledHint": "इस बोर्ड के लिए स्प्रिंट अक्षम हैं। स्प्रिंट बनाने और प्रबंधित करने के लिए ऊपर सक्षम करें।",
+  "settings.sprints.toast.enabled": "स्प्रिंट सक्षम किए गए",
+  "settings.sprints.toast.disabled": "स्प्रिंट अक्षम किए गए",
+  "settings.sprints.toast.toggleFailed": "स्प्रिंट सेटिंग अपडेट करने में विफल"
 }

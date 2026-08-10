@@ -327,6 +327,7 @@
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "Wall 항목은 자기 자신과 연결할 수 없습니다.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "설정 토큰과 코드가 필요합니다.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "예정된 Sprint만 활성화할 수 있습니다.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "이 프로젝트에서는 Sprint가 비활성화되어 있습니다.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint 종료일은 시작일 이후여야 합니다.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint 종료일은 미래여야 합니다.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "이 이름의 Sprint가 이미 있습니다.",
@@ -701,10 +702,11 @@
   "settings.users.createUser.created": "사용자가 생성되었습니다",
   "settings.users.createUser.failed": "사용자 생성에 실패했습니다",
   "settings.users.defaultBoard.title": "신규 사용자를 위한 기본 보드",
-  "settings.users.defaultBoard.description": "신규 사용자는 계정이 생성될 때 이 보드에 뷰어로 자동 등록됩니다. 이 설정을 변경하거나 끄더라도 기존 사용자에게는 영향을 주지 않습니다.",
+  "settings.users.defaultBoard.description": "새 사용자는 계정이 생성될 때 선택한 역할로 이 보드에 자동 등록됩니다. 이 설정을 변경하거나 끄더라도 기존 사용자에게는 영향을 주지 않습니다.",
   "settings.users.defaultBoard.loadFailed": "기본 보드 설정을 불러오지 못했습니다. 페이지를 새로고침하여 다시 시도하세요.",
   "settings.users.defaultBoard.enableLabel": "신규 사용자를 기본 보드에 등록",
   "settings.users.defaultBoard.selectLabel": "기본 보드",
+  "settings.users.defaultBoard.roleLabel": "새 멤버의 역할",
   "settings.users.defaultBoard.placeholder": "프로젝트 선택…",
   "settings.users.defaultBoard.noEligibleProjects": "기본값으로 사용할 수 있는, 회원님이 관리하는 영구 보드가 없습니다.",
   "settings.users.defaultBoard.toast.saved": "기본 보드가 저장되었습니다",
@@ -1052,5 +1054,10 @@
   "settings.profile.authentication.linkFailed": "SSO를 연결할 수 없습니다.",
   "settings.profile.authentication.linked": "SSO가 연결되었습니다.",
   "settings.users.table.authentication": "인증",
-  "settings.profile.authentication.warning.localDisabledOwner": "로컬 인증이 비활성화된 동안 이 소유자는 SSO에 의존합니다. SSO를 사용할 수 없게 되면 운영자가 Scrumboy 호스트에 접근하여 recover-owner를 실행하고 로컬 인증을 다시 활성화해야 합니다."
+  "settings.profile.authentication.warning.localDisabledOwner": "로컬 인증이 비활성화된 동안 이 소유자는 SSO에 의존합니다. SSO를 사용할 수 없게 되면 운영자가 Scrumboy 호스트에 접근하여 recover-owner를 실행하고 로컬 인증을 다시 활성화해야 합니다.",
+  "settings.sprints.enableToggle": "이 보드에서 스프린트 사용",
+  "settings.sprints.disabledHint": "이 보드는 스프린트가 비활성화되어 있습니다. 스프린트를 생성 및 관리하려면 위에서 활성화하세요.",
+  "settings.sprints.toast.enabled": "스프린트가 활성화되었습니다",
+  "settings.sprints.toast.disabled": "스프린트가 비활성화되었습니다",
+  "settings.sprints.toast.toggleFailed": "스프린트 설정을 업데이트하지 못했습니다"
 }

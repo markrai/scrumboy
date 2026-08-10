@@ -335,6 +335,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "errors.VALIDATION_ERROR.self_edges_not_allowed": "A wall item cannot link to itself.",
   "errors.VALIDATION_ERROR.setup_token_and_code_required": "Setup token and code are required.",
   "errors.VALIDATION_ERROR.sprint_activate_requires_planned": "Only planned sprints can be activated.",
+  "errors.VALIDATION_ERROR.sprints_disabled": "Sprints are disabled for this project.",
   "errors.VALIDATION_ERROR.sprint_end_before_start": "Sprint end date must be on or after the start date.",
   "errors.VALIDATION_ERROR.sprint_end_in_past": "Sprint end date must be in the future.",
   "errors.VALIDATION_ERROR.sprint_name_exists": "A sprint with this name already exists.",

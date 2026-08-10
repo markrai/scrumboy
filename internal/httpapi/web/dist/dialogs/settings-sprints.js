@@ -1,11 +1,12 @@
 import { apiFetch } from '../api.js';
 import { emit } from '../events.js';
-import { refreshSprintsAndChips } from '../orchestration/board-refresh.js';
+import { invalidateBoard, refreshSprintsAndChips } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { getBoard, getSlug } from '../state/selectors.js';
 import { setBoard } from '../state/mutations.js';
-import { normalizeSprints } from '../sprints.js';
+import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
+import { clearSprintChipData } from '../views/board-filters.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, formatDate, t } from '../i18n/index.js';
 let editingSprintId = null;
@@ -62,10 +63,27 @@ function computeDefaultSprintEnd(start, weeks) {
     end.setHours(23, 59, 0, 0);
     return end;
 }
+function renderSprintsEnabledToggle(sprintsEnabled) {
+    return `
+      <div class="settings-section">
+        <label class="field" style="display: flex; align-items: center; gap: 8px;">
+          <input type="checkbox" id="sprintsEnabledToggle" ${sprintsEnabled ? 'checked' : ''} />
+          <span data-i18n-text="settings.sprints.enableToggle">Enable sprints for this board</span>
+        </label>
+      </div>`;
+}
 export async function renderSprintsTabContent() {
     const slug = getSlug();
     if (!slug)
         return `<div class='muted'>${escapeHTML(t('settings.sprints.error.noProject'))}</div>`;
+    const sprintsEnabled = boardSprintsEnabled(getBoard());
+    if (!sprintsEnabled) {
+        return `
+      ${renderSprintsEnabledToggle(false)}
+      <div class="settings-section">
+        <div class="muted" data-i18n-text="settings.sprints.disabledHint">Sprints are disabled for this board. Enable them above to create and manage sprints.</div>
+      </div>`;
+    }
     try {
         const res = await apiFetch(`/api/board/${slug}/sprints`);
         const sprints = normalizeSprints(res);
@@ -141,6 +159,7 @@ export async function renderSprintsTabContent() {
         const defaultStartStr = msToDateTimeLocalStr(defaultStart.getTime());
         const defaultEndStr = msToDateTimeLocalStr(defaultEnd.getTime());
         return `
+      ${renderSprintsEnabledToggle(true)}
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.sprints.create.title">Create Sprint</div>
         <div class="settings-section__description muted settings-sprint-duration">
@@ -186,6 +205,42 @@ export async function renderSprintsTabContent() {
 }
 export function bindSprintsTabInteractions(options) {
     const { invalidateSprintChartsCache, rerender, signal } = options;
+    const sprintsEnabledToggle = document.getElementById('sprintsEnabledToggle');
+    if (sprintsEnabledToggle) {
+        sprintsEnabledToggle.addEventListener('change', async () => {
+            const slug = getSlug();
+            if (!slug)
+                return;
+            const nextEnabled = sprintsEnabledToggle.checked;
+            try {
+                recordLocalMutation();
+                await apiFetch(`/api/board/${slug}/settings`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ sprintsEnabled: nextEnabled }),
+                });
+                const board = getBoard();
+                if (board) {
+                    setBoard({ ...board, project: { ...board.project, sprintsEnabled: nextEnabled } });
+                }
+            }
+            catch (err) {
+                sprintsEnabledToggle.checked = !nextEnabled;
+                showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.sprints.toast.toggleFailed' }));
+                return;
+            }
+            clearSprintChipData();
+            invalidateSprintChartsCache();
+            const url = new URL(window.location.href);
+            url.searchParams.delete('sprintId');
+            history.replaceState({}, '', url.pathname + url.search);
+            showToast(nextEnabled ? t('settings.sprints.toast.enabled') : t('settings.sprints.toast.disabled'));
+            await invalidateBoard(slug, url.searchParams.get('tag') ?? undefined, url.searchParams.get('search') ?? undefined, null, url.searchParams.get('assignee'), url.searchParams.get('sort'), true).catch(() => { });
+            if (nextEnabled) {
+                await refreshSprintsAndChips(slug).catch(() => { });
+            }
+            await rerender().catch(() => { });
+        }, { signal });
+    }
     const defaultWeeksEl = document.getElementById('sprintDefaultWeeksSelect');
     const startEl = document.getElementById('sprintStartInput');
     const endEl = document.getElementById('sprintEndInput');
