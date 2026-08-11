@@ -306,8 +306,8 @@ type storeAPI interface {
 	GetEmailNotifyOrgDefault(ctx context.Context) (store.EmailNotifyPref, bool, error)
 	SetEmailNotifyOrgDefault(ctx context.Context, requesterID int64, raw string) error
 	ClearEmailNotifyOrgDefault(ctx context.Context, requesterID int64) error
-	GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, customized bool, err error)
-	SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64) error
+	GetDefaultBoardOrgSetting(ctx context.Context) (projectID int64, role store.ProjectRole, customized bool, err error)
+	SetDefaultBoardOrgSetting(ctx context.Context, requesterID, projectID int64, role store.ProjectRole) error
 	ClearDefaultBoardOrgSetting(ctx context.Context, requesterID int64) error
 
 	// 2FA
