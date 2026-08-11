@@ -34,7 +34,17 @@ export type RenderTodoCardOpts = {
   tagColors?: Record<string, string>;
   showPointsMode?: boolean;
   selectedIds?: Set<number>;
+  priorityTiers?: Record<string, { name: string; color: string }>;
 };
+
+export function buildPriorityTierMap(board: Board): Record<string, { name: string; color: string }> {
+  const tiers = board.priorityOrder ?? [];
+  const out: Record<string, { name: string; color: string }> = {};
+  for (const tier of tiers) {
+    out[tier.key] = { name: tier.name, color: tier.color };
+  }
+  return out;
+}
 
 type BuildTopbarHtmlArgs = {
   board: Board;
@@ -194,7 +204,15 @@ export function renderTodoCard(
   const pointsHTML = showPoints
     ? `<span class="card__points"${titleAttr(FIELD_TOOLTIPS.estimationPoints)} aria-label="${escapeHTML(t("todo.fields.estimationPoints"))}" data-i18n-aria-label="todo.fields.estimationPoints">${todo.estimationPoints}</span>`
     : "";
-  const footerContent = pointsHTML + avatarHTML;
+  const priorityTier = todo.priorityKey ? opts?.priorityTiers?.[todo.priorityKey] : null;
+  const priorityColor = sanitizeHexColor(priorityTier?.color ?? null);
+  const priorityStyle = priorityColor
+    ? ` style="border-color:${priorityColor}; background:${priorityColor}20; color:${priorityColor};"`
+    : "";
+  const priorityHTML = priorityTier
+    ? `<span class="card__priority"${priorityStyle}${titleAttr(FIELD_TOOLTIPS.priority)} aria-label="${escapeHTML(t("todo.fields.priority"))}: ${escapeHTML(priorityTier.name)}">${escapeHTML(priorityTier.name)}</span>`
+    : "";
+  const footerContent = priorityHTML + pointsHTML + avatarHTML;
   const selectedClass = opts?.selectedIds?.has(todo.id) ? " card--selected" : "";
   const dragHandleHTML = `
       <div class="card__drag-handle" aria-label="${escapeHTML(t("board.todo.dragCard"))}" data-i18n-aria-label="board.todo.dragCard">

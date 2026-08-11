@@ -1378,7 +1378,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 .field__label[title],
 .chip[title],
 #searchInput[title],
-.card__points[title] {
+.card__points[title],
+.card__priority[title] {
   cursor: help;
 }
 
@@ -4232,6 +4233,25 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   justify-content: center;
 }
 
+.card__priority {
+  flex-shrink: 0;
+  height: var(--s-20);
+  padding: 0 var(--s-8);
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--text);
+  font-size: var(--fs-11);
+  font-weight: 700;
+  line-height: calc(18px * var(--ui-scale));
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 
 .card__drag-handle {
   display: flex;
@@ -5127,6 +5147,21 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 @media (max-width: 768px) {
   .settings-workflow-footer {
+    justify-content: center;
+  }
+}
+
+/* Settings → Priorities: draft actions */
+.settings-priorities-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+@media (max-width: 768px) {
+  .settings-priorities-footer {
     justify-content: center;
   }
 }

@@ -46,6 +46,11 @@ func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, proje
 		}
 	}
 
+	// Trello has no native priority concept: always seed default tiers, imported todos get no priority.
+	if err := s.ensureDefaultPriorityTiersExec(ctx, tx, newProjectID); err != nil {
+		return Project{}, fmt.Errorf("ensure default priority tiers for Trello import: %w", err)
+	}
+
 	usedTodoMetadata := make(map[int64]struct{}, len(todoImportMetadataByLocalID))
 	for _, todoExport := range projectExport.Todos {
 		if err := validateEstimationPoints(todoExport.EstimationPoints); err != nil {

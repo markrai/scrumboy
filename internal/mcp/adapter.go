@@ -12,6 +12,7 @@ import (
 
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
+	priorityapp "scrumboy/internal/application/priority"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -57,6 +58,8 @@ type storeAPI interface {
 	membershipapp.MutationStore
 	GetProjectWorkflow(ctx context.Context, projectID int64) ([]store.WorkflowColumn, error)
 	workflowapp.MutationStore
+	priorityapp.MutationStore
+	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 	CreateProject(ctx context.Context, name string) (store.Project, error)
@@ -91,6 +94,7 @@ type Adapter struct {
 	todoUpdates         *todoapp.MCPUpdateService
 	todoLinkMutations   *todolinkapp.MCPMutationService
 	workflowMutations   *workflowapp.MCPMutationService
+	priorityMutations   *priorityapp.MCPMutationService
 	membershipMutations *membershipapp.MCPMutationService
 	sprintDefinitions   *sprintapp.MCPDefinitionService
 	sprintLifecycle     *sprintapp.MCPLifecycleService
@@ -153,6 +157,9 @@ func New(st storeAPI, opts Options) *Adapter {
 			Access:    st,
 			Mutations: st,
 			Workflow:  st,
+		}),
+		priorityMutations: priorityapp.NewMCPMutationService(priorityapp.MCPMutationServiceDependencies{
+			Access: st, Mutations: st, Priority: st,
 		}),
 		membershipMutations: membershipapp.NewMCPMutationService(membershipapp.MCPMutationServiceDependencies{
 			Access:    st,
@@ -367,6 +374,10 @@ func (a *Adapter) implementedTools() []string {
 		"workflow_create",
 		"workflow_update",
 		"workflow_delete",
+		"priorities_list",
+		"priorities_create",
+		"priorities_update",
+		"priorities_delete",
 		"dashboard_getSummary",
 		"dashboard_listTodos",
 		"metrics_getBurndown",

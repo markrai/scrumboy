@@ -57,6 +57,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"estimationPoints": jsonPropWithNull("integer", "Story points estimate"),
 				"sprintId":         jsonPropWithNull("integer", "Sprint ID to assign"),
 				"assigneeUserId":   jsonPropWithNull("integer", "User ID to assign"),
+				"priorityKey":      jsonPropWithNull("string", "Priority tier key to assign"),
 				"position": jsonObjectProp("Position hint within the target column", map[string]any{
 					"afterLocalId":  jsonPropWithNull("integer", "Place after this todo local ID"),
 					"beforeLocalId": jsonPropWithNull("integer", "Place before this todo local ID"),
@@ -94,6 +95,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 					"estimationPoints": jsonPropWithNull("integer", "Story points estimate"),
 					"assigneeUserId":   jsonPropWithNull("integer", "Assignee user ID"),
 					"sprintId":         jsonPropWithNull("integer", "Sprint ID"),
+					"priorityKey":      jsonPropWithNull("string", "Priority tier key"),
 				}, nil),
 			}, []string{"projectSlug", "localId", "patch"}),
 		},
@@ -352,6 +354,39 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"columnKey":   jsonProp("string", "Workflow column key to delete"),
 			}, []string{"projectSlug", "columnKey"}),
+		},
+		"priorities_list": {
+			Name:        "priorities_list",
+			Description: "List a project's priority tiers in position order.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+			}, []string{"projectSlug"}),
+		},
+		"priorities_create": {
+			Name:        "priorities_create",
+			Description: "Add a new priority tier, appended after the existing tiers. Requires maintainer role or higher.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"name":        jsonProp("string", "Display name for the new priority tier"),
+			}, []string{"projectSlug", "name"}),
+		},
+		"priorities_update": {
+			Name:        "priorities_update",
+			Description: "Update a priority tier's display name and color (both required). Requires maintainer role or higher.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"priorityKey": jsonProp("string", "Priority tier key to update"),
+				"name":        jsonProp("string", "New display name"),
+				"color":       jsonProp("string", "New color as a #RRGGBB hex value"),
+			}, []string{"projectSlug", "priorityKey", "name", "color"}),
+		},
+		"priorities_delete": {
+			Name:        "priorities_delete",
+			Description: "Delete an empty priority tier. Requires maintainer role or higher. Rejects non-empty tiers and deletes that would leave zero tiers.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"priorityKey": jsonProp("string", "Priority tier key to delete"),
+			}, []string{"projectSlug", "priorityKey"}),
 		},
 		"dashboard_getSummary": {
 			Name:        "dashboard_getSummary",

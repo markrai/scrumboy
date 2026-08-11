@@ -109,6 +109,7 @@ func (s *Server) handlePreparedSlugBoardInitial(
 	writeJSON(w, http.StatusOK, boardToJSONWithMeta(
 		result.Project,
 		result.Workflow,
+		result.Priorities,
 		result.Tags,
 		result.Columns,
 		result.ColumnsMeta,

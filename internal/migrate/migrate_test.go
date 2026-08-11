@@ -197,6 +197,71 @@ SELECT COUNT(*) FROM (
 	}
 }
 
+func TestApplyUpgradesCurrentMain061WithPriorityDefaults(t *testing.T) {
+	ctx := context.Background()
+	sqlDB := openRawTestDB(t)
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	for _, migrationVersion := range embeddedMigrationVersions(t) {
+		if migrationVersion > "061_add_sprints_enabled.sql" {
+			break
+		}
+		if err := applyOne(ctx, sqlDB, migrationVersion); err != nil {
+			t.Fatalf("apply %s: %v", migrationVersion, err)
+		}
+	}
+
+	now := time.Now().UTC().UnixMilli()
+	res, err := sqlDB.ExecContext(ctx, `INSERT INTO projects(name, slug, created_at, updated_at) VALUES ('Durable', 'durable', ?, ?)`, now, now)
+	if err != nil {
+		t.Fatalf("insert durable project: %v", err)
+	}
+	durableID, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("durable project id: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO projects(name, slug, created_at, updated_at, import_batch_id) VALUES ('Staging', 'staging', ?, ?, 'batch')`, now, now); err != nil {
+		t.Fatalf("insert staging project: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO todos(project_id, local_id, title, body, column_key, rank, created_at, updated_at) VALUES (?, 1, 'Existing', '', 'backlog', 1000, ?, ?)`, durableID, now, now); err != nil {
+		t.Fatalf("insert existing todo: %v", err)
+	}
+
+	if err := Apply(ctx, sqlDB); err != nil {
+		t.Fatalf("upgrade from 061: %v", err)
+	}
+	if !tableExists(t, sqlDB, "project_priorities") || !columnExists(t, sqlDB, "todos", "priority_key") {
+		t.Fatal("priority schema was not installed")
+	}
+	var durableTiers, stagingTiers int
+	if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_priorities WHERE project_id = ?`, durableID).Scan(&durableTiers); err != nil {
+		t.Fatalf("count durable tiers: %v", err)
+	}
+	if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_priorities pp JOIN projects p ON p.id = pp.project_id WHERE p.slug = 'staging'`).Scan(&stagingTiers); err != nil {
+		t.Fatalf("count staging tiers: %v", err)
+	}
+	if durableTiers != 4 || stagingTiers != 0 {
+		t.Fatalf("durable tiers=%d staging tiers=%d, want 4 and 0", durableTiers, stagingTiers)
+	}
+	var priority sql.NullString
+	if err := sqlDB.QueryRowContext(ctx, `SELECT priority_key FROM todos WHERE project_id = ? AND local_id = 1`, durableID).Scan(&priority); err != nil {
+		t.Fatalf("read existing todo priority: %v", err)
+	}
+	if priority.Valid {
+		t.Fatalf("existing todo priority=%q, want NULL", priority.String)
+	}
+	if err := Apply(ctx, sqlDB); err != nil {
+		t.Fatalf("idempotent reapply: %v", err)
+	}
+	if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM project_priorities WHERE project_id = ?`, durableID).Scan(&durableTiers); err != nil {
+		t.Fatalf("recount durable tiers: %v", err)
+	}
+	if durableTiers != 4 {
+		t.Fatalf("reapply duplicated tiers: got %d", durableTiers)
+	}
+}
+
 func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 	sqlDB := openMigratedDB(t)
 
@@ -207,6 +272,7 @@ func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 		"sessions",
 		"project_members",
 		"project_workflow_columns",
+		"project_priorities",
 		"todo_assignee_events",
 		"audit_events",
 		"api_tokens",
@@ -218,6 +284,12 @@ func TestApplyCreatesCurrentSchemaLandmarks(t *testing.T) {
 		if !tableExists(t, sqlDB, table) {
 			t.Fatalf("expected table %s to exist", table)
 		}
+	}
+	if !columnExists(t, sqlDB, "todos", "priority_key") {
+		t.Fatal("expected todos.priority_key to exist")
+	}
+	if !indexExists(t, sqlDB, "idx_project_priorities_project_position") || !indexExists(t, sqlDB, "idx_project_priorities_project_key") {
+		t.Fatal("expected priority indexes to exist")
 	}
 
 	for _, tc := range []struct {

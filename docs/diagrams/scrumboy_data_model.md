@@ -13,6 +13,7 @@ flowchart TB
     Proj[projects memberships]
     Todo[todos links tags]
     Board[board lanes workflows]
+    Priority[project priority tiers and todo priority keys]
     Sprint[sprints burndown]
     AuthDom[users sessions api tokens oidc]
     OAuthDom[oauth_clients codes access refresh]
@@ -54,6 +55,17 @@ sequenceDiagram
   Main->>Main: store.New with optional 2FA encryption key
 ```
 
-As of this tree the highest embedded file is `059_add_user_preferences_provenance.sql` (`org_settings` in 058, preference provenance in 059; OAuth AS in 055, first-password grants in 056, resource binding in 057). New files under `internal/migrate/migrations/` are applied automatically; do not document a frozen upper bound.
+As of this tree the highest embedded file is
+`063_add_todos_priority_key.sql`. Migration 061 adds the reversible
+`projects.sprints_enabled` capability, 062 creates and seeds
+`project_priorities`, and 063 adds nullable `todos.priority_key`. New files
+under `internal/migrate/migrations/` are applied automatically; do not encode a
+fixed upper bound in the migration runner.
+
+`project_priorities` belongs to one project and has an immutable project-local
+`key`, editable `name`/`color`, and contiguous `position`. A todo's nullable
+`priority_key` is valid only when the same project owns that tier. Supported
+CRUD and import paths enforce this membership invariant; tier deletion is
+blocked while in use.
 
 Authorization checks live in store methods (`CheckProjectRole`, system roles), not only in HTTP handlers.

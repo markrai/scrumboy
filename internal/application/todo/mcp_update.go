@@ -129,6 +129,7 @@ func cloneMCPUpdateTodo(todo store.Todo) store.Todo {
 	todo.EstimationPoints = cloneUpdateInt64Ptr(todo.EstimationPoints)
 	todo.AssigneeUserID = cloneUpdateInt64Ptr(todo.AssigneeUserID)
 	todo.SprintID = cloneUpdateInt64Ptr(todo.SprintID)
+	todo.PriorityKey = cloneUpdateStringPtr(todo.PriorityKey)
 	if todo.DoneAt != nil {
 		doneAt := *todo.DoneAt
 		todo.DoneAt = &doneAt

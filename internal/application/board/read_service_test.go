@@ -418,6 +418,9 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 			store.DefaultColumnBacklog: {{ID: 101, Title: "Todo"}},
 		},
 	}
+	priorityStore := &recordingPriorityReadStore{
+		tiers: []store.PriorityTier{{Key: "high", Name: "High", Color: "#ff8800", Position: 0}},
+	}
 	slugAccessStore := &recordingSlugReadAccessStore{}
 	slugSprintStore := &recordingSlugReadSprintStore{}
 
@@ -426,6 +429,7 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 		Lane:         laneStore,
 		LegacyAccess: legacyAccessStore,
 		Legacy:       legacyStore,
+		Priorities:   priorityStore,
 		SlugAccess:   slugAccessStore,
 		SlugSprints:  slugSprintStore,
 	}).PrepareLegacy(ctx, LegacyReadTarget{
@@ -445,6 +449,9 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	}
 	if legacyStore.calls != 1 {
 		t.Fatalf("GetBoard calls = %d, want 1", legacyStore.calls)
+	}
+	if priorityStore.calls != 1 || priorityStore.ctx != ctx || priorityStore.projectID != pc.Project.ID {
+		t.Fatalf("priority read calls=%d contextMatch=%v projectID=%d", priorityStore.calls, priorityStore.ctx == ctx, priorityStore.projectID)
 	}
 	if initialStore.calls != 0 ||
 		laneStore.calls != 0 ||
@@ -487,10 +494,11 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	}
 
 	want := LegacyResult{
-		Project:  legacyStore.project,
-		Tags:     legacyStore.tags,
-		Workflow: legacyStore.workflow,
-		Columns:  legacyStore.columns,
+		Project:    legacyStore.project,
+		Tags:       legacyStore.tags,
+		Workflow:   legacyStore.workflow,
+		Columns:    legacyStore.columns,
+		Priorities: priorityStore.tiers,
 	}
 	if !reflect.DeepEqual(result, want) {
 		t.Fatalf("result = %#v, want %#v", result, want)

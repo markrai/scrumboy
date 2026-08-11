@@ -61,6 +61,7 @@ import {
   buildFiltersHtml,
   buildNoResultsHtml,
   buildTopbarHtml,
+  buildPriorityTierMap,
   getBoardColumns,
   renderVoiceCommandTriggerHtml,
   renderTodoCard,
@@ -546,6 +547,7 @@ async function handleLoadMore(status: TodoStatus): Promise<void> {
         tagColors,
         showPointsMode,
         selectedIds: getSelectedTodoIds(),
+        priorityTiers: board ? buildPriorityTierMap(board) : undefined,
       };
       items.forEach((t) => {
         const card = document.createElement("div");
@@ -862,6 +864,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
       tagColors,
       showPointsMode,
       selectedIds: getSelectedTodoIds(),
+      priorityTiers: buildPriorityTierMap(board),
     };
     boardEl.innerHTML = buildBoardColumnsHtml({
       boardCols,
@@ -991,6 +994,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     tagColors,
     showPointsMode,
     selectedIds: getSelectedTodoIds(),
+    priorityTiers: buildPriorityTierMap(board),
   };
 
   app.innerHTML = `

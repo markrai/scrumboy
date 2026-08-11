@@ -123,4 +123,54 @@ describe('board topbar rendering', () => {
     expect(html).toContain('aria-label="Drag card"');
     expect(html).toContain('data-i18n-aria-label="board.todo.dragCard"');
   });
+
+  it('renders a priority badge with the tier name and color when the todo has a priority set', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({
+      locale: 'en',
+      loadLocale: vi.fn(async () => enCatalog),
+    });
+
+    const todo = {
+      id: 8,
+      localId: 13,
+      title: 'Urgent fix',
+      body: '',
+      status: 'BACKLOG',
+      tags: [],
+      priorityKey: 'urgent',
+    };
+
+    const html = renderTodoCard(todo, undefined, undefined, {
+      priorityTiers: { urgent: { name: 'Urgent', color: '#EF4444' } },
+    });
+
+    expect(html).toContain('card__priority');
+    expect(html).toContain('Urgent');
+    expect(html).toContain('#EF4444');
+  });
+
+  it('omits the priority badge when the todo has no priority set', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({
+      locale: 'en',
+      loadLocale: vi.fn(async () => enCatalog),
+    });
+
+    const todo = {
+      id: 9,
+      localId: 14,
+      title: 'No priority',
+      body: '',
+      status: 'BACKLOG',
+      tags: [],
+      priorityKey: null,
+    };
+
+    const html = renderTodoCard(todo, undefined, undefined, {
+      priorityTiers: { urgent: { name: 'Urgent', color: '#EF4444' } },
+    });
+
+    expect(html).not.toContain('card__priority');
+  });
 });

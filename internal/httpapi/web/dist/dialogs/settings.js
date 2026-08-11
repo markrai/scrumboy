@@ -19,6 +19,7 @@ import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '..
 import { getWrapLanesPreference, setWrapLanesPreference, syncOpenBoardWrapLanesClass, } from '../core/wrap-lanes-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref } from '../core/email-notify-preferences.js';
 import { bindWorkflowTabInteractions, clearWorkflowDraftState, invalidateWorkflowLaneCountsCache, isWorkflowDraftDirty, loadWorkflowTabContent, resetWorkflowDraftToBaseline, } from './settings-workflow.js';
+import { bindPriorityTabInteractions, clearPriorityDraftState, invalidatePriorityTierCountsCache, isPriorityDraftDirty, loadPriorityTabContent, resetPriorityDraftToBaseline, syncPriorityLocaleState, } from './settings-priorities.js';
 import { bindTagTabInteractions, invalidateTagsCache as invalidateTagSettingsCache, loadTagSettingsContent, } from './settings-tags.js';
 import { bindSprintsTabInteractions, refreshSprintDateLabels, renderSprintsTabContent } from './settings-sprints.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
@@ -98,6 +99,16 @@ async function switchSettingsTab(tabName) {
     if (tabName === "workflow") {
         invalidateWorkflowLaneCountsCache();
         clearWorkflowDraftState();
+    }
+    if (getSettingsActiveTab() === "priorities" && isPriorityDraftDirty()) {
+        const discard = await showConfirmDialog(t('settings.priorities.unsavedConfirm.message'), t('settings.priorities.unsavedConfirm.title'), t('settings.priorities.unsavedConfirm.confirm'));
+        if (!discard)
+            return;
+        resetPriorityDraftToBaseline();
+    }
+    if (tabName === "priorities") {
+        invalidatePriorityTierCountsCache();
+        clearPriorityDraftState();
     }
     setSettingsActiveTab(tabName);
     await renderSettingsModal();
@@ -316,6 +327,11 @@ function applySettingsLocaleToOpenDialog() {
     if (activeTab === "workflow") {
         hydrateI18n(tabContentEl);
         syncWorkflowLocaleState(tabContentEl);
+        return;
+    }
+    if (activeTab === "priorities") {
+        hydrateI18n(tabContentEl);
+        syncPriorityLocaleState(tabContentEl);
         return;
     }
     if (activeTab === "tag-colors") {
@@ -1165,6 +1181,7 @@ export async function renderSettingsModal(options) {
     const myMember = currentUser ? boardMembers.find((m) => m.userId === currentUser.id) : null;
     const showSprintsTab = !!slug && hasProjectAccess && myMember?.role === "maintainer";
     const showWorkflowTab = !!slug && hasProjectAccess && myMember?.role === "maintainer";
+    const showPrioritiesTab = !!slug && hasProjectAccess && myMember?.role === "maintainer";
     // Charts tab only applies in durable project board view (not Dashboard/Projects/Temporary Boards, not anonymous mode, not temporary boards)
     const board = getBoard();
     const isTemporaryBoard = !!(board?.project?.expiresAt);
@@ -1192,6 +1209,9 @@ export async function renderSettingsModal(options) {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (!showWorkflowTab && getSettingsActiveTab() === "workflow") {
+        setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
+    }
+    else if (!showPrioritiesTab && getSettingsActiveTab() === "priorities") {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (getSettingsActiveTab() === "voiceflow") {
@@ -1653,6 +1673,10 @@ export async function renderSettingsModal(options) {
     if (showWorkflowTab && getSettingsActiveTab() === "workflow" && slug) {
         workflowHTML = loadWorkflowTabContent({ slug, rerender: () => renderSettingsModal() });
     }
+    let prioritiesHTML = "";
+    if (showPrioritiesTab && getSettingsActiveTab() === "priorities" && slug) {
+        prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
+    }
     destroyBurndownChart();
     contentEl.innerHTML = `
     <div class="settings-tabs">
@@ -1660,13 +1684,14 @@ export async function renderSettingsModal(options) {
       ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
       ${showWorkflowTab ? `<button class="settings-tab ${activeSettingsTab === "workflow" ? "settings-tab--active" : ""}" data-tab="workflow" data-i18n-text="settings.tabs.workflow">Workflow</button>` : ``}
+      ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
       <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
       <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
       <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
     </div>
   `;
     if (getLocale() !== "en") {
@@ -1747,6 +1772,14 @@ export async function renderSettingsModal(options) {
     const settingsDlg = settingsDialog;
     if (getSettingsActiveTab() === "workflow") {
         bindWorkflowTabInteractions({
+            signal,
+            settingsDialog: settingsDlg,
+            closeSettingsBtn,
+            rerender: () => renderSettingsModal(),
+        });
+    }
+    if (getSettingsActiveTab() === "priorities") {
+        bindPriorityTabInteractions({
             signal,
             settingsDialog: settingsDlg,
             closeSettingsBtn,

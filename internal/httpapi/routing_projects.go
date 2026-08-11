@@ -268,6 +268,7 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusOK, boardToJSON(
 			result.Project,
 			result.Workflow,
+			result.Priorities,
 			result.Tags,
 			result.Columns,
 		))

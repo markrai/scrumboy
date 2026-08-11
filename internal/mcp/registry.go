@@ -45,6 +45,10 @@ func (a *Adapter) registerTools() {
 	a.tools["workflow_create"] = a.handleWorkflowCreate
 	a.tools["workflow_update"] = a.handleWorkflowUpdate
 	a.tools["workflow_delete"] = a.handleWorkflowDelete
+	a.tools["priorities_list"] = a.handlePriorityList
+	a.tools["priorities_create"] = a.handlePriorityCreate
+	a.tools["priorities_update"] = a.handlePriorityUpdate
+	a.tools["priorities_delete"] = a.handlePriorityDelete
 	a.tools["dashboard_getSummary"] = a.handleDashboardGetSummary
 	a.tools["dashboard_listTodos"] = a.handleDashboardListTodos
 	a.tools["metrics_getBurndown"] = a.handleMetricsGetBurndown

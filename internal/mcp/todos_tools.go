@@ -20,6 +20,7 @@ type createTodoInput struct {
 	EstimationPoints *int64   `json:"estimationPoints"`
 	SprintId         *int64   `json:"sprintId"`
 	AssigneeUserId   *int64   `json:"assigneeUserId"`
+	PriorityKey      *string  `json:"priorityKey"`
 	Position         *struct {
 		AfterLocalId  *int64 `json:"afterLocalId"`
 		BeforeLocalId *int64 `json:"beforeLocalId"`
@@ -102,6 +103,7 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 			EstimationPoints: in.EstimationPoints,
 			AssigneeUserID:   in.AssigneeUserId,
 			SprintID:         in.SprintId,
+			PriorityKey:      in.PriorityKey,
 		},
 	}
 	if in.Position != nil {
@@ -470,6 +472,7 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 		"estimationPoints": {},
 		"assigneeUserId":   {},
 		"sprintId":         {},
+		"priorityKey":      {},
 	}
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
@@ -548,6 +551,18 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 		}
 	}
 
+	if v, ok := raw["priorityKey"]; ok {
+		if isNullJSON(v) {
+			patch.PriorityKey = todoapp.Field[*string]{Present: true}
+		} else {
+			var priorityKey string
+			if err := json.Unmarshal(v, &priorityKey); err != nil {
+				return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid priorityKey", map[string]any{"field": "priorityKey"})
+			}
+			patch.PriorityKey = todoapp.Field[*string]{Present: true, Value: &priorityKey}
+		}
+	}
+
 	return patch, nil
 }
 
@@ -566,6 +581,7 @@ func todoToItem(projectSlug string, todo store.Todo) todoItem {
 		EstimationPoints: todo.EstimationPoints,
 		AssigneeUserId:   todo.AssigneeUserID,
 		SprintId:         todo.SprintID,
+		PriorityKey:      todo.PriorityKey,
 		CreatedAt:        todo.CreatedAt,
 		UpdatedAt:        todo.UpdatedAt,
 		DoneAt:           todo.DoneAt,

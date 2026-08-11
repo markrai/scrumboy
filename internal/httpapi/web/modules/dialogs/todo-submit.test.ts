@@ -18,6 +18,7 @@ describe("todo submit payload helpers", () => {
       sprintId: 12,
       assigneeEnabled: true,
       assigneeUserId: 44,
+	  priorityKey: null,
     });
 
     expect(payload).toEqual({
@@ -28,6 +29,7 @@ describe("todo submit payload helpers", () => {
       estimationPoints: 5,
       sprintId: 12,
       assigneeUserId: 44,
+      priorityKey: null,
     });
   });
 
@@ -40,6 +42,7 @@ describe("todo submit payload helpers", () => {
       estimationRaw: "invalid",
       assigneeEnabled: true,
       assigneeUserId: null,
+	  priorityKey: null,
       sprintEnabled: false,
       sprintId: 8,
     });
@@ -49,9 +52,19 @@ describe("todo submit payload helpers", () => {
       body,
       tags: [],
       assigneeUserId: null,
+      priorityKey: null,
     });
     expect(JSON.stringify(payload)).not.toContain("<h2>");
     expect(JSON.stringify(payload)).not.toContain("<strong>");
+  });
+
+  it("includes and normalizes priority selection", () => {
+    expect(buildTodoCreatePayload({
+      title: "Title", body: "", tags: [], columnKey: "backlog", priorityKey: "urgent",
+    }).priorityKey).toBe("urgent");
+    expect(buildTodoPatchPayload({
+      title: "Title", body: "", tags: [], priorityKey: "",
+    }).priorityKey).toBeNull();
   });
 
   it("submits sprint assignment only when enabled controls change the value", () => {

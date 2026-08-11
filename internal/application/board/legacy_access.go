@@ -28,6 +28,7 @@ type LegacyReadAccessStore interface {
 type PreparedLegacyRead struct {
 	ctx            context.Context
 	legacy         LegacyReadStore
+	priorities     PriorityReadStore
 	projectContext store.ProjectContext
 }
 
@@ -43,6 +44,7 @@ func (s *ReadService) PrepareLegacy(
 	return &PreparedLegacyRead{
 		ctx:            ctx,
 		legacy:         s.legacy,
+		priorities:     s.priorities,
 		projectContext: pc,
 	}, nil
 }
@@ -53,12 +55,13 @@ func (r *PreparedLegacyRead) Read(
 	if query.SprintFilter.Mode != "" && query.SprintFilter.Mode != "none" && !r.projectContext.Project.SprintsEnabled {
 		return LegacyResult{}, store.ErrSprintsDisabled
 	}
-	return readLegacy(r.ctx, r.legacy, &r.projectContext, query)
+	return readLegacy(r.ctx, r.legacy, r.priorities, &r.projectContext, query)
 }
 
 func readLegacy(
 	ctx context.Context,
 	legacy LegacyReadStore,
+	prioritiesStore PriorityReadStore,
 	pc *store.ProjectContext,
 	query LegacyQuery,
 ) (LegacyResult, error) {
@@ -75,11 +78,19 @@ func readLegacy(
 		return LegacyResult{}, err
 	}
 	suppressDisabledSprintAssignments(project, columns)
+	var priorities []store.PriorityTier
+	if prioritiesStore != nil {
+		priorities, err = prioritiesStore.GetProjectPriorities(ctx, pc.Project.ID)
+		if err != nil {
+			return LegacyResult{}, err
+		}
+	}
 
 	return LegacyResult{
-		Project:  project,
-		Tags:     tags,
-		Workflow: workflow,
-		Columns:  columns,
+		Project:    project,
+		Tags:       tags,
+		Workflow:   workflow,
+		Columns:    columns,
+		Priorities: priorities,
 	}, nil
 }

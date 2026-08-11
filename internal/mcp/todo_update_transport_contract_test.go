@@ -369,6 +369,48 @@ func TestTodoUpdateMCPTransportAliasMatrix(t *testing.T) {
 	})
 }
 
+func TestTodoUpdateMCPPriorityPresenceContract(t *testing.T) {
+	for _, transport := range []string{"legacy", "jsonrpc"} {
+		t.Run(transport, func(t *testing.T) {
+			ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
+			defer cleanup()
+			client := newCookieClient(t, ts)
+			bootstrapUser(t, client, ts.URL)
+			project, ctx := createTodoUpdateMCPProject(t, st, firstUserID(t, db), "MCP priority presence "+transport)
+			high := "high"
+			todo, err := st.CreateTodo(ctx, project.ID, store.CreateTodoInput{Title: "priority presence", PriorityKey: &high}, store.ModeFull)
+			if err != nil {
+				t.Fatalf("create todo: %v", err)
+			}
+
+			assertUpdate := func(name string, patch map[string]any, want *string) {
+				t.Helper()
+				resp, out := callTodoUpdateMCP(t, client, ts.URL, transport, "todos_update", map[string]any{
+					"projectSlug": project.Slug,
+					"localId":     todo.LocalID,
+					"patch":       patch,
+				})
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("%s status=%d response=%+v", name, resp.StatusCode, out)
+				}
+				got, err := st.GetTodoByLocalID(ctx, project.ID, todo.LocalID, store.ModeFull)
+				if err != nil {
+					t.Fatalf("%s reload: %v", name, err)
+				}
+				if (got.PriorityKey == nil) != (want == nil) || got.PriorityKey != nil && *got.PriorityKey != *want {
+					t.Fatalf("%s priority=%v want=%v", name, got.PriorityKey, want)
+				}
+			}
+
+			assertUpdate("omitted", map[string]any{"body": "omitted preserves"}, mcpStringPtr("high"))
+			assertUpdate("clear", map[string]any{"priorityKey": nil}, nil)
+			assertUpdate("assign", map[string]any{"priorityKey": "urgent"}, mcpStringPtr("urgent"))
+		})
+	}
+}
+
+func mcpStringPtr(value string) *string { return &value }
+
 func TestTodoUpdateMCPRealtimeContracts(t *testing.T) {
 	ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
 	defer cleanup()

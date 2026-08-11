@@ -12,6 +12,7 @@ import {
   todoDialogTitle,
   todoEstimationField,
   todoEstimationPoints,
+  todoPriority,
   todoStatus,
   todoTags,
   todoTitle,
@@ -66,6 +67,7 @@ type TodoDialogSnapshot = {
   estimation: string;
   assignee: string;
   sprint: string;
+  priority: string;
 };
 
 let todoNotesMode: TodoNotesMode = "markdown";
@@ -121,6 +123,21 @@ function populateTodoStatusOptions(preferredKey: string): string {
     .join("");
   const hasPreferred = order.some((c) => c.key === preferredKey);
   const selected = hasPreferred ? preferredKey : order[0].key;
+  select.value = selected;
+  return selected;
+}
+
+function populateTodoPriorityOptions(preferredKey: string | null | undefined): string {
+  const select = todoPriority as HTMLSelectElement | null;
+  if (!select) return preferredKey ?? "";
+  const board = getBoard();
+  const tiers = board?.priorityOrder ?? [];
+  const noneOption = `<option value="" data-i18n-text="todo.priority.none">${escapeHTML(t("todo.priority.none"))}</option>`;
+  select.innerHTML =
+    noneOption +
+    tiers.map((tier) => `<option value="${escapeHTML(tier.key)}">${escapeHTML(tier.name)}</option>`).join("");
+  const hasPreferred = !!preferredKey && tiers.some((tier) => tier.key === preferredKey);
+  const selected = hasPreferred ? (preferredKey as string) : "";
   select.value = selected;
   return selected;
 }
@@ -256,6 +273,7 @@ function readTodoDialogSnapshot(): TodoDialogSnapshot {
     estimation: (todoEstimationPoints as HTMLSelectElement | null)?.value ?? "",
     assignee: assignee?.value ?? "",
     sprint: sprint?.value ?? "",
+    priority: (todoPriority as HTMLSelectElement | null)?.value ?? "",
   };
 }
 
@@ -275,6 +293,7 @@ function isTodoDialogDirty(): boolean {
     current.estimation !== todoDialogBaseline.estimation ||
     current.assignee !== todoDialogBaseline.assignee ||
     current.sprint !== todoDialogBaseline.sprint ||
+    current.priority !== todoDialogBaseline.priority ||
     current.tags.length !== todoDialogBaseline.tags.length ||
     current.tags.some((tag, idx) => tag !== todoDialogBaseline?.tags[idx])
   );
@@ -594,6 +613,7 @@ export async function openTodoDialog(opts: {
     const initialKey = resolveColumnKey(status);
     const selected = populateTodoStatusOptions(initialKey);
     (todoStatus as HTMLSelectElement).value = selected;
+    populateTodoPriorityOptions(null);
     (deleteTodoBtn as HTMLElement).style.display = "none";
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "none";
     setDates(undefined, undefined);
@@ -605,6 +625,7 @@ export async function openTodoDialog(opts: {
     const initialKey = resolveColumnKey(todo.columnKey || todo.status);
     const selected = populateTodoStatusOptions(initialKey);
     (todoStatus as HTMLSelectElement).value = selected;
+    populateTodoPriorityOptions(todo.priorityKey);
     (deleteTodoBtn as HTMLElement).style.display = permissions.canDeleteTodo ? "" : "none";
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "";
     setDates(todo.createdAt, todo.updatedAt);
@@ -623,6 +644,7 @@ export async function openTodoDialog(opts: {
 
   if (assigneeSelect) assigneeSelect.disabled = !permissions.canEditAssignment;
   if (estimationSelect) estimationSelect.disabled = !permissions.canChangeEstimation;
+  if (todoPriority) (todoPriority as HTMLSelectElement).disabled = !permissions.canChangeEstimation;
   const tagInput = document.getElementById("todoTags") as HTMLInputElement | null;
   if (tagInput) tagInput.disabled = !permissions.canEditTags;
   if (addTagBtn) (addTagBtn as HTMLButtonElement).disabled = !permissions.canEditTags;

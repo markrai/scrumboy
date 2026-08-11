@@ -9,10 +9,11 @@ import (
 // LegacyResult names the values returned by the unpaged numeric-ID board
 // read.
 type LegacyResult struct {
-	Project  store.Project
-	Tags     []store.TagCount
-	Workflow []store.WorkflowColumn
-	Columns  map[string][]store.Todo
+	Project    store.Project
+	Tags       []store.TagCount
+	Workflow   []store.WorkflowColumn
+	Columns    map[string][]store.Todo
+	Priorities []store.PriorityTier
 }
 
 // LegacyReadStore is the persistence capability required by the unpaged
@@ -44,6 +45,7 @@ type ReadService struct {
 	lane         *LaneService
 	legacyAccess LegacyReadAccessStore
 	legacy       LegacyReadStore
+	priorities   PriorityReadStore
 	slugAccess   SlugReadAccessStore
 	slugSprints  SlugReadSprintStore
 }
@@ -55,16 +57,18 @@ type ReadServiceDependencies struct {
 	Lane         LaneReadStore
 	LegacyAccess LegacyReadAccessStore
 	Legacy       LegacyReadStore
+	Priorities   PriorityReadStore
 	SlugAccess   SlugReadAccessStore
 	SlugSprints  SlugReadSprintStore
 }
 
 func NewReadService(deps ReadServiceDependencies) *ReadService {
 	return &ReadService{
-		initial:      NewService(deps.Initial),
+		initial:      NewService(deps.Initial, deps.Priorities),
 		lane:         NewLaneService(deps.Lane),
 		legacyAccess: deps.LegacyAccess,
 		legacy:       deps.Legacy,
+		priorities:   deps.Priorities,
 		slugAccess:   deps.SlugAccess,
 		slugSprints:  deps.SlugSprints,
 	}

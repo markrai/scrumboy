@@ -30,6 +30,21 @@ type recordingReadStore struct {
 	err         error
 }
 
+type recordingPriorityReadStore struct {
+	calls     int
+	ctx       context.Context
+	projectID int64
+	tiers     []store.PriorityTier
+	err       error
+}
+
+func (s *recordingPriorityReadStore) GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error) {
+	s.calls++
+	s.ctx = ctx
+	s.projectID = projectID
+	return s.tiers, s.err
+}
+
 func (s *recordingReadStore) GetBoardPaged(
 	ctx context.Context,
 	pc *store.ProjectContext,
@@ -93,8 +108,11 @@ func TestServiceReadInitial_DelegatesExactlyAndNamesResult(t *testing.T) {
 			store.DefaultColumnBacklog: {HasMore: true, NextCursor: "10:101", TotalCount: 2},
 		},
 	}
+	priorityStore := &recordingPriorityReadStore{
+		tiers: []store.PriorityTier{{Key: "urgent", Name: "Urgent", Color: "#ff0000", Position: 0}},
+	}
 
-	result, err := NewService(readStore).ReadInitial(ctx, pc, query)
+	result, err := NewService(readStore, priorityStore).ReadInitial(ctx, pc, query)
 	if err != nil {
 		t.Fatalf("ReadInitial: %v", err)
 	}
@@ -126,6 +144,9 @@ func TestServiceReadInitial_DelegatesExactlyAndNamesResult(t *testing.T) {
 	if readStore.limitPerLane != query.LimitPerLane {
 		t.Fatalf("limitPerLane = %d, want %d", readStore.limitPerLane, query.LimitPerLane)
 	}
+	if priorityStore.calls != 1 || priorityStore.ctx != ctx || priorityStore.projectID != pc.Project.ID {
+		t.Fatalf("priority read calls=%d contextMatch=%v projectID=%d", priorityStore.calls, priorityStore.ctx == ctx, priorityStore.projectID)
+	}
 
 	want := Result{
 		Project:     readStore.project,
@@ -133,9 +154,29 @@ func TestServiceReadInitial_DelegatesExactlyAndNamesResult(t *testing.T) {
 		Workflow:    readStore.workflow,
 		Columns:     readStore.columns,
 		ColumnsMeta: readStore.columnsMeta,
+		Priorities:  priorityStore.tiers,
 	}
 	if !reflect.DeepEqual(result, want) {
 		t.Fatalf("result = %#v, want %#v", result, want)
+	}
+}
+
+func TestServiceReadInitial_ReturnsPriorityReadErrorUnchanged(t *testing.T) {
+	sentinel := errors.New("priority sentinel")
+	priorityErr := fmt.Errorf("priority read failed: %w", sentinel)
+	readStore := &recordingReadStore{project: store.Project{ID: 999}}
+	priorityStore := &recordingPriorityReadStore{err: priorityErr}
+	pc := &store.ProjectContext{Project: store.Project{ID: 7}}
+
+	result, err := NewService(readStore, priorityStore).ReadInitial(context.Background(), pc, Query{})
+	if err != priorityErr || !errors.Is(err, sentinel) {
+		t.Fatalf("error=%v want original %v", err, priorityErr)
+	}
+	if !reflect.DeepEqual(result, Result{}) {
+		t.Fatalf("result=%#v want zero", result)
+	}
+	if priorityStore.calls != 1 || priorityStore.projectID != 7 {
+		t.Fatalf("priority calls=%d projectID=%d", priorityStore.calls, priorityStore.projectID)
 	}
 }
 

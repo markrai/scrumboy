@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	priorityapp "scrumboy/internal/application/priority"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -21,6 +22,17 @@ func writeWorkflowMutationPrepareError(w http.ResponseWriter, err error) {
 	case errors.Is(err, workflowapp.ErrActorRequired):
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 	case errors.Is(err, workflowapp.ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+	default:
+		writeInternal(w, err)
+	}
+}
+
+func writePriorityMutationPrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, priorityapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, priorityapp.ErrMaintainerRequired):
 		writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
 	default:
 		writeInternal(w, err)
@@ -77,6 +89,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 	if s.handleBoardWorkflowRoutes(w, r, rest, &pc) {
+		return
+	}
+	if s.handleBoardPriorityRoutes(w, r, rest, &pc) {
 		return
 	}
 	if s.handleBoardClaimRoute(w, r, rest, &pc) {
@@ -322,6 +337,138 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 	return false
 }
 
+func (s *Server) handleBoardPriorityRoutes(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
+	project := pc.Project
+	ctx := s.requestContext(r)
+
+	// Readers may list the same definitions already included in the initial board projection.
+	if len(rest) == 2 && rest[1] == "priorities" && r.Method == http.MethodGet {
+		priorities, err := s.store.GetProjectPriorities(ctx, project.ID)
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		items := make([]priorityTierJSON, 0, len(priorities))
+		for _, tier := range priorities {
+			items = append(items, priorityTierJSON{
+				Key: tier.Key, Name: tier.Name, Color: tier.Color, Position: tier.Position,
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": items})
+		return true
+	}
+
+	if len(rest) == 3 && rest[1] == "priorities" && rest[2] == "counts" && r.Method == http.MethodGet {
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return true
+		}
+		role, err := s.store.GetProjectRole(ctx, project.ID, userID)
+		if err != nil || !role.HasMinimumRole(store.RoleMaintainer) {
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "maintainer or higher required", nil)
+			return true
+		}
+		counts, err := s.store.CountTodosByPriorityKey(ctx, project.ID)
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		if counts == nil {
+			counts = map[string]int{}
+		}
+		writeJSON(w, http.StatusOK, priorityTierCountsJSON{Slug: project.Slug, CountsByPriorityKey: counts})
+		return true
+	}
+
+	if len(rest) == 2 && rest[1] == "priorities" && r.Method == http.MethodPost {
+		prepared, err := s.priorityMutations.Prepare(ctx, priorityapp.ResolvedRESTMutationTarget{ProjectID: project.ID})
+		if err != nil {
+			writePriorityMutationPrepareError(w, err)
+			return true
+		}
+		var in struct {
+			Name string `json:"name"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return true
+		}
+		in.Name = strings.TrimSpace(in.Name)
+		if in.Name == "" {
+			writeValidationError(w, "name required", "invalid_priority_tier_name", map[string]any{"field": "name"})
+			return true
+		}
+		if len(in.Name) > 200 {
+			writeValidationError(w, "invalid priority tier name", "invalid_priority_tier_name", map[string]any{"field": "name"})
+			return true
+		}
+		tier, err := prepared.Create(priorityapp.CreateCommand{Name: in.Name})
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		writeJSON(w, http.StatusCreated, priorityTierJSON{Key: tier.Key, Name: tier.Name, Color: tier.Color, Position: tier.Position})
+		return true
+	}
+
+	if len(rest) == 3 && rest[1] == "priorities" && r.Method == http.MethodPatch {
+		prepared, err := s.priorityMutations.Prepare(ctx, priorityapp.ResolvedRESTMutationTarget{ProjectID: project.ID})
+		if err != nil {
+			writePriorityMutationPrepareError(w, err)
+			return true
+		}
+		key := strings.TrimSpace(rest[2])
+		if key == "" {
+			writeValidationError(w, "invalid priority key", "invalid_priority_key", map[string]any{"field": "key"})
+			return true
+		}
+		var in struct {
+			Name  string `json:"name"`
+			Color string `json:"color"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return true
+		}
+		in.Name = strings.TrimSpace(in.Name)
+		in.Color = strings.TrimSpace(in.Color)
+		if in.Name == "" || len(in.Name) > 200 {
+			writeValidationError(w, "invalid priority tier name", "invalid_priority_tier_name", map[string]any{"field": "name"})
+			return true
+		}
+		if !store.ValidWorkflowColumnColor(in.Color) {
+			writeValidationError(w, "invalid priority tier color", "invalid_priority_tier_color", map[string]any{"field": "color"})
+			return true
+		}
+		if err := prepared.Update(priorityapp.UpdateCommand{Key: key, Name: in.Name, Color: in.Color}); err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+
+	if len(rest) == 3 && rest[1] == "priorities" && r.Method == http.MethodDelete {
+		prepared, err := s.priorityMutations.Prepare(ctx, priorityapp.ResolvedRESTMutationTarget{ProjectID: project.ID})
+		if err != nil {
+			writePriorityMutationPrepareError(w, err)
+			return true
+		}
+		key := strings.TrimSpace(rest[2])
+		if key == "" {
+			writeValidationError(w, "invalid priority key", "invalid_priority_key", map[string]any{"field": "key"})
+			return true
+		}
+		if err := prepared.Delete(priorityapp.DeleteCommand{Key: key}); err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+
+	return false
+}
+
 func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
 	project := pc.Project
 
@@ -367,6 +514,7 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 			EstimationPoints *int64   `json:"estimationPoints"`
 			SprintID         *int64   `json:"sprintId"`
 			AssigneeUserID   *int64   `json:"assigneeUserId"`
+			PriorityKey      *string  `json:"priorityKey"`
 			Position         *struct {
 				AfterID  *int64 `json:"afterId"`
 				BeforeID *int64 `json:"beforeId"`
@@ -403,6 +551,7 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 				EstimationPoints: in.EstimationPoints,
 				AssigneeUserID:   in.AssigneeUserID,
 				SprintID:         in.SprintID,
+				PriorityKey:      in.PriorityKey,
 			},
 			Position: position,
 		})
@@ -664,6 +813,7 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				EstimationPoints *int64   `json:"estimationPoints"`
 				AssigneeUserID   *int64   `json:"assigneeUserId"`
 				SprintID         *int64   `json:"sprintId"`
+				PriorityKey      *string  `json:"priorityKey"`
 			}
 			payload, err := json.Marshal(raw)
 			if err != nil {
@@ -683,6 +833,9 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			}
 			if _, hasSprintID := raw["sprintId"]; hasSprintID {
 				patch.SprintID = todoapp.Field[*int64]{Present: true, Value: in.SprintID}
+			}
+			if _, hasPriorityKey := raw["priorityKey"]; hasPriorityKey {
+				patch.PriorityKey = todoapp.Field[*string]{Present: true, Value: in.PriorityKey}
 			}
 			prepared := s.todoUpdates.Prepare(s.requestContext(r), todoapp.ResolvedUpdateTarget{
 				ProjectContext: *pc,

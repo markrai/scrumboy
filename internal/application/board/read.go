@@ -13,6 +13,7 @@ type Result struct {
 	Workflow    []store.WorkflowColumn
 	Columns     map[string][]store.Todo
 	ColumnsMeta map[string]store.LaneMeta
+	Priorities  []store.PriorityTier
 }
 
 // ReadStore is the persistence capability required by the initial board-read
@@ -37,13 +38,24 @@ type ReadStore interface {
 	)
 }
 
-// Service provides board-read application operations.
-type Service struct {
-	store ReadStore
+// PriorityReadStore is the narrow project-definition read required only by
+// complete initial board projections. Lane pagination does not use it.
+type PriorityReadStore interface {
+	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 }
 
-func NewService(store ReadStore) *Service {
-	return &Service{store: store}
+// Service provides board-read application operations.
+type Service struct {
+	store      ReadStore
+	priorities PriorityReadStore
+}
+
+func NewService(store ReadStore, priorities ...PriorityReadStore) *Service {
+	service := &Service{store: store}
+	if len(priorities) > 0 {
+		service.priorities = priorities[0]
+	}
+	return service
 }
 
 // ReadInitial performs the initial, optionally paged board read without
@@ -63,6 +75,13 @@ func (s *Service) ReadInitial(ctx context.Context, pc *store.ProjectContext, que
 		return Result{}, err
 	}
 	suppressDisabledSprintAssignments(project, columns)
+	var priorities []store.PriorityTier
+	if s.priorities != nil {
+		priorities, err = s.priorities.GetProjectPriorities(ctx, pc.Project.ID)
+		if err != nil {
+			return Result{}, err
+		}
+	}
 
 	return Result{
 		Project:     project,
@@ -70,5 +89,6 @@ func (s *Service) ReadInitial(ctx context.Context, pc *store.ProjectContext, que
 		Workflow:    workflow,
 		Columns:     columns,
 		ColumnsMeta: columnsMeta,
+		Priorities:  priorities,
 	}, nil
 }

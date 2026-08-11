@@ -13,6 +13,7 @@ import (
 
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
+	priorityapp "scrumboy/internal/application/priority"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -107,6 +108,7 @@ type Server struct {
 	sprintLifecycle     *sprintapp.RESTLifecycleService
 	sprintDeletions     *sprintapp.RESTDeletionService
 	workflowMutations   *workflowapp.RESTMutationService
+	priorityMutations   *priorityapp.RESTMutationService
 	membershipMutations *membershipapp.RESTMutationService
 
 	logger                  *log.Logger
@@ -232,8 +234,11 @@ type storeAPI interface {
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
 	workflowapp.MutationStore
+	priorityapp.MutationStore
 	membershipapp.MutationStore
 	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
+	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
+	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
@@ -524,6 +529,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 			Lane:         st,
 			LegacyAccess: st,
 			Legacy:       st,
+			Priorities:   st,
 			SlugAccess:   st,
 			SlugSprints:  st,
 		}),
@@ -622,6 +628,13 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Roles:     st,
 		Mutations: st,
 		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+			server.emitRefreshNeeded(ctx, projectID, reason)
+		}),
+	})
+	server.priorityMutations = priorityapp.NewRESTMutationService(priorityapp.RESTMutationServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh: priorityapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
 			server.emitRefreshNeeded(ctx, projectID, reason)
 		}),
 	})

@@ -1,6 +1,25 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.30.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability) - see those releases.
+## [3.31.0] - 2026-08-11
+
+### Added
+
+- **Customizable project priority tiers** - Maintainers can create, rename,
+  recolor, and delete unused priority tiers. Todos can carry a stable
+  `priorityKey`; board responses include ordered tier definitions, and REST and
+  MCP expose priority configuration operations.
+- **Priority-aware backup/import** - Export format 1.1 now emits explicit
+  priority presence while remaining compatible with older 1.1 backups.
+
+### Fixed
+
+- REST todo PATCH distinguishes omitted priority (preserve), explicit `null`
+  (clear), and a string key (assign). Merge import enforces that every stored
+  todo priority resolves within its project.
+- Priority mutations and merge imports share project-level SQLite writer
+  serialization, preventing avoidable busy errors and delete/assignment races.
+
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
 ## [3.30.3] - 2026-08-10
 

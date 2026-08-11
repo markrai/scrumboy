@@ -186,6 +186,9 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
   "implementedTools": [
     "system_getCapabilities",
     "projects_list",
+    "projects_create",
+    "projects_update",
+    "projects_delete",
     "todos_create",
     "todos_get",
     "todos_search",
@@ -218,7 +221,18 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "workflow_list",
     "workflow_create",
     "workflow_update",
-    "workflow_delete"
+    "workflow_delete",
+    "priorities_list",
+    "priorities_create",
+    "priorities_update",
+    "priorities_delete",
+    "dashboard_getSummary",
+    "dashboard_listTodos",
+    "metrics_getBurndown",
+    "metrics_getBacklogSize",
+    "admin_listUsers",
+    "admin_updateUserRole",
+    "admin_deleteUser"
   ]
 }
 ```
@@ -229,7 +243,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (35 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -408,6 +422,18 @@ partial update). `workflow_delete` removes an empty non-done column and rejects 
 columns, and deletes that would leave fewer than 2 columns. See [API.md](../API.md#workflow) for full
 semantics.
 
+**Priorities**
+
+- `priorities_list`
+- `priorities_create`
+- `priorities_update`
+- `priorities_delete`
+
+`priorities_list` is available to any project Viewer or above.
+Create/update/delete require Maintainer. Tiers use immutable `key`, editable
+`name` and `#RRGGBB` `color`, and stable `position` order. Projects support at
+most 12 tiers and must retain one; an in-use tier cannot be deleted.
+
 ### Tool Index (Flat)
 
 One tool name per line (same order as `implementedTools()` in code):
@@ -451,6 +477,10 @@ workflow_list
 workflow_create
 workflow_update
 workflow_delete
+priorities_list
+priorities_create
+priorities_update
+priorities_delete
 dashboard_getSummary
 dashboard_listTodos
 metrics_getBurndown
@@ -533,7 +563,7 @@ Use real values in place of the placeholders (e.g. `"my-project"`, `"Example tit
 
 (`todoItem` in `internal/mcp/types.go`; default column when omitted is `store.DefaultColumnBacklog` = **`backlog`** after `normalizeColumnKey` in `internal/mcp/adapter.go`.)
 
-**3. `todos_update`** — required: `projectSlug`, `localId`, `patch` (object). Only fields present in `patch` are updated; some fields may be set to JSON `null` to clear where the store allows it. Success data uses the same `todo` object shape as `todos_create` / `todos_get`.
+**3. `todos_update`** — required: `projectSlug`, `localId`, `patch` (object). Only fields present in `patch` are updated; some fields may be set to JSON `null` to clear where the store allows it. For `priorityKey`, omission preserves, `null` clears, and a string assigns a tier from the same project. Success data uses the same `todo` object shape as `todos_create` / `todos_get`.
 
 ## Examples
 

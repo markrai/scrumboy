@@ -405,6 +405,10 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 - `workflow_list`, `workflow_create`, `workflow_update`, `workflow_delete` - manage a project's workflow columns (board lanes).
 
+**priorities**
+
+- `priorities_list`, `priorities_create`, `priorities_update`, `priorities_delete` - list and manage a project's ordered priority tiers.
+
 **Planned tools:** none exposed in capabilities today (`plannedTools` omitted when empty).
 
 ---
@@ -466,7 +470,7 @@ Conventions:
 
 | Tool | Input (summary) | Output (summary) |
 |------|-----------------|------------------|
-| `todos_create` | `projectSlug`, `title`, optional `body`, `tags`, `columnKey`, `estimationPoints`, `sprintId`, `assigneeUserId`, `position` | `data.todo` |
+| `todos_create` | `projectSlug`, `title`, optional `body`, `tags`, `columnKey`, `estimationPoints`, `sprintId`, `assigneeUserId`, `priorityKey`, `position` | `data.todo` |
 | `todos_get` | `projectSlug`, `localId` | `data.todo` |
 | `todos_search` | `projectSlug`, `query`, optional `limit`, `excludeLocalIds` | `data.items` (lightweight search hits) |
 | `todos_update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
@@ -477,6 +481,12 @@ Conventions:
 | `todos_linkRemove` | `projectSlug`, `localId`, `targetLocalId` | `data.outbound`, `data.inbound` (refreshed) |
 
 Column keys accept common aliases (normalized internally). Todo payloads use **`localId`** and **`projectSlug`**; they do not expose the internal global todo id.
+
+Todo objects include optional `priorityKey`. For `todos_update`, omitting
+`patch.priorityKey` preserves the current assignment, JSON `null` clears it,
+and a string assigns that project-local tier. Unknown and cross-project keys
+return `VALIDATION_ERROR`. Priority filtering and priority-based sorting are
+not supported in this release.
 
 **Linked stories:** this is the same "Linked Stories" relation shown on the todo detail page in the
 web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]`). `todos_linkAdd`
@@ -555,6 +565,46 @@ Manage a project's workflow columns (board lanes). These call the same store met
 `workflow_delete` constraints (store-enforced): the **done** column cannot be deleted (`VALIDATION_ERROR`); a **non-empty** column cannot be deleted (`CONFLICT`); a project must keep **at least 2 columns** (`VALIDATION_ERROR`). System columns are not specially protected from deletion when empty.
 
 Like other MCP mutations, workflow changes call the store directly and do not emit `board.refresh_needed`, so open web clients stay stale until another refresh.
+
+### Priorities
+
+Priority tiers are project definitions with shape
+`{ "key", "name", "color", "position" }`. Keys are stable and immutable;
+names and `#RRGGBB` colors are editable. A project supports at most 12 tiers
+and must retain at least one.
+
+REST routes:
+
+| Method and path | Role | Response / behavior |
+|---|---|---|
+| `GET /api/board/{slug}/priorities` | Viewer+; active link-accessible temporary boards | `200 {"items":[...]}` in position order |
+| `POST /api/board/{slug}/priorities` | Maintainer+ | Body `{"name":"Critical"}`; `201` tier |
+| `PATCH /api/board/{slug}/priorities/{key}` | Maintainer+ | Body requires `name` and `color`; `204` |
+| `DELETE /api/board/{slug}/priorities/{key}` | Maintainer+ | `204`; rejects the last or an in-use tier |
+| `GET /api/board/{slug}/priorities/counts` | Maintainer+ | `200 {"slug", "countsByPriorityKey"}`; missing keys count as zero |
+
+Both REST todo PATCH forms—preferred
+`/api/board/{slug}/todos/{localId}` and legacy `/api/todos/{id}`—use the same
+priority presence contract: omitted preserves, `null` clears, and a string
+assigns. Other established replacement-style fields retain their existing
+semantics. Initial REST board responses expose `priorityOrder`; lane pagination
+does not repeat it.
+
+MCP tools:
+
+| Tool | Input | Output / role |
+|---|---|---|
+| `priorities_list` | `projectSlug` | `data.items`; Viewer+ |
+| `priorities_create` | `projectSlug`, `name` | `data.priority`; Maintainer+ |
+| `priorities_update` | `projectSlug`, `priorityKey`, `name`, `color` | `data.priority`; Maintainer+ |
+| `priorities_delete` | `projectSlug`, `priorityKey` | `data.deleted`; Maintainer+ |
+
+Stable priority validation reasons include `invalid_priority_key`,
+`invalid_priority_tier_name`, `invalid_priority_tier_color`,
+`priority_tier_limit_reached`, and `priority_tier_minimum_required`.
+Deleting an assigned tier returns `CONFLICT` with
+`reason: priority_tier_in_use`. Inaccessible durable projects retain the
+shared `NOT_FOUND` existence-hiding behavior.
 
 ### Dashboard
 
@@ -669,6 +719,15 @@ Some handlers return **`FORBIDDEN`** with a clear message where **`mapStoreError
 ---
 
 ## Notes and guarantees
+
+**Backup 1.1 priority presence:** new exports always emit project
+`priorityTiers` and todo `priorityKey`. `priorityTiers: []` means the canonical
+default tier set and `priorityKey: null` means intentionally unprioritized.
+For matched-project merge, absence of either field identifies legacy/patch
+input and preserves the existing target value; strings assign against the
+effective project tier set. `priorityTiers: null` is invalid. New and
+replace-mode projects with absent legacy definitions receive defaults. Import
+commits only if every non-null todo key resolves to a tier in the same project.
 
 1. **Public identifiers first:** Mutations and reads are keyed by **`projectSlug`**, **`localId`**, and similar fields - not internal numeric ids for todos or projects in MCP command shapes (except `projectId` on list output as noted).
 2. **Capabilities match implementation:** `implementedTools` is the authoritative list of POST tool names.
