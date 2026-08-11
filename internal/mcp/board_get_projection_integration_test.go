@@ -130,6 +130,65 @@ func TestMCPBoardGetFilters(t *testing.T) {
 	}
 }
 
+func TestMCPBoardGetColumnKeyFilter(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	resp := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{
+		"name": "Board Column Filter Project",
+	}, &map[string]any{})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project status=%d", resp.StatusCode)
+	}
+
+	slug := projectSlugByName(t, sqlDB, "Board Column Filter Project")
+	projectID := projectIDBySlug(t, sqlDB, slug)
+	ownerID := firstUserID(t, sqlDB)
+	st := store.New(sqlDB, nil)
+	ctx := store.WithUserID(context.Background(), ownerID)
+	if _, err := st.CreateTodo(ctx, projectID, store.CreateTodoInput{
+		Title:     "Backlog todo",
+		ColumnKey: store.DefaultColumnBacklog,
+	}, store.ModeFull); err != nil {
+		t.Fatalf("create backlog todo: %v", err)
+	}
+	if _, err := st.CreateTodo(ctx, projectID, store.CreateTodoInput{
+		Title:     "Doing todo",
+		ColumnKey: store.DefaultColumnDoing,
+	}, store.ModeFull); err != nil {
+		t.Fatalf("create doing todo: %v", err)
+	}
+
+	resp2, out := doMCP(t, client, ts.URL+"/mcp", map[string]any{
+		"tool": "board_get",
+		"input": map[string]any{
+			"projectSlug": slug,
+			"columnKey":   store.DefaultColumnBacklog,
+		},
+	})
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp2.StatusCode)
+	}
+
+	columns := out["data"].(map[string]any)["columns"].([]any)
+	if len(columns) != 1 {
+		t.Fatalf("expected exactly one column in the response, got %#v", columns)
+	}
+	backlog := boardColumnByKey(t, columns, store.DefaultColumnBacklog)
+	items := backlog["items"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["title"] != "Backlog todo" {
+		t.Fatalf("unexpected backlog items: %#v", items)
+	}
+
+	meta := out["meta"].(map[string]any)
+	totalCountByColumn := meta["totalCountByColumn"].(map[string]any)
+	if len(totalCountByColumn) != 1 {
+		t.Fatalf("expected totalCountByColumn to be scoped to the requested column, got %#v", totalCountByColumn)
+	}
+}
+
 func TestMCPBoardGetSprintFilter(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()

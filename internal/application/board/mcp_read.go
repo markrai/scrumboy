@@ -15,6 +15,11 @@ import (
 // Transport adapters remain responsible for mapping it to public error copy.
 var ErrInvalidMCPBoardSprintID = errors.New("invalid MCP board sprint ID")
 
+// ErrInvalidMCPBoardColumnKey identifies a columnKey filter that does not
+// match any workflow column on the project. Transport adapters remain
+// responsible for mapping it to public error copy.
+var ErrInvalidMCPBoardColumnKey = errors.New("invalid MCP board column key")
+
 // MCPBoardCursorErrorKind identifies the application-level cursor condition
 // without coupling the application service to a transport error envelope.
 type MCPBoardCursorErrorKind uint8
@@ -53,6 +58,7 @@ type MCPBoardReadQuery struct {
 	SearchFilter   string
 	AssigneeFilter store.AssigneeFilter
 	SprintID       *int64
+	ColumnKey      string
 	Limit          int
 	CursorByColumn map[string]string
 	SortOrder      store.SortOrder
@@ -207,6 +213,14 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 	for _, column := range workflow {
 		knownColumns[column.Key] = struct{}{}
 	}
+
+	columnKeyFilter := strings.TrimSpace(query.ColumnKey)
+	if columnKeyFilter != "" {
+		if _, ok := knownColumns[columnKeyFilter]; !ok {
+			return MCPBoardReadResult{}, ErrInvalidMCPBoardColumnKey
+		}
+	}
+
 	for columnKey := range query.CursorByColumn {
 		if _, ok := knownColumns[columnKey]; !ok {
 			return MCPBoardReadResult{}, &MCPBoardCursorError{
@@ -218,6 +232,10 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 
 	columns := make([]MCPBoardReadColumn, 0, len(workflow))
 	for _, column := range workflow {
+		if columnKeyFilter != "" && column.Key != columnKeyFilter {
+			continue
+		}
+
 		afterA, afterB := mcpBoardCursorSentinel(query.SortOrder)
 		if token, ok := query.CursorByColumn[column.Key]; ok && strings.TrimSpace(token) != "" {
 			rawCursor, decodeErr := decodeMCPBoardCursor(token)

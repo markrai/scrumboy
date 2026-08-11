@@ -18,6 +18,7 @@ type boardGetInput struct {
 	Assignee       string            `json:"assignee"`
 	Sort           string            `json:"sort"`
 	SprintId       *int64            `json:"sprintId"`
+	ColumnKey      string            `json:"columnKey"`
 	Limit          int               `json:"limit"`
 	CursorByColumn map[string]string `json:"cursorByColumn"`
 }
@@ -112,6 +113,7 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
 		SprintID:       in.SprintId,
+		ColumnKey:      strings.TrimSpace(in.ColumnKey),
 		Limit:          limit,
 		CursorByColumn: in.CursorByColumn,
 		SortOrder:      sortOrder,
@@ -169,6 +171,15 @@ func mapMCPBoardReadError(err error) *adapterError {
 			CodeValidationError,
 			"invalid sprintId",
 			map[string]any{"field": "sprintId"},
+		)
+	}
+
+	if errors.Is(err, boardapp.ErrInvalidMCPBoardColumnKey) {
+		return newAdapterError(
+			http.StatusBadRequest,
+			CodeValidationError,
+			"invalid columnKey",
+			map[string]any{"field": "columnKey"},
 		)
 	}
 
