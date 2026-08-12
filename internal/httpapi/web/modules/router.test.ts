@@ -364,7 +364,7 @@ describe('router cold-start boardData handoff', () => {
     await mod.router();
 
     expect(renderBoardMock).toHaveBeenCalledTimes(1);
-    const opts = renderBoardMock.mock.calls[0][8];
+    const opts = renderBoardMock.mock.calls[0][9];
     expect(opts?.prefetchedBoard).toBeUndefined();
     expect((window.history.state as { boardData?: unknown } | null)?.boardData).toBeUndefined();
   });
@@ -379,7 +379,7 @@ describe('router cold-start boardData handoff', () => {
     await mod.router();
 
     expect(renderBoardMock).toHaveBeenCalledTimes(1);
-    const opts = renderBoardMock.mock.calls[0][8];
+    const opts = renderBoardMock.mock.calls[0][9];
     expect(opts?.prefetchedBoard).toEqual(staleBoard);
   });
 });

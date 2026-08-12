@@ -3,6 +3,7 @@ import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import {
   getAssigneeFromUrl,
+  getPriorityFromUrl,
   getSortFromUrl,
   getBoard,
   getSearch,
@@ -255,7 +256,7 @@ async function addPriorityTier(name: string, rerender: RerenderFn): Promise<void
       body: JSON.stringify({ name: trimmed }),
     });
     invalidatePriorityTierCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncPriorityDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.priorities.toast.tierAdded'));
@@ -289,7 +290,7 @@ async function savePriorityDraftChanges(rerender: RerenderFn): Promise<void> {
         body: JSON.stringify({ name, color }),
       });
     }
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncPriorityDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.priorities.toast.updated'));
@@ -304,6 +305,7 @@ async function savePriorityDraftChanges(rerender: RerenderFn): Promise<void> {
         getSprintIdFromUrl(),
         getAssigneeFromUrl(),
         getSortFromUrl(),
+        getPriorityFromUrl(),
         true
       );
       syncPriorityDraftFromBoardAfterMutation();
@@ -340,7 +342,7 @@ async function deletePriorityTier(key: string, rerender: RerenderFn): Promise<vo
       method: 'DELETE',
     });
     invalidatePriorityTierCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncPriorityDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.priorities.toast.tierDeleted'));

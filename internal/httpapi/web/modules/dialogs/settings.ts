@@ -21,6 +21,7 @@ import {
   getSprintIdFromUrl,
   getAssigneeFromUrl,
   getSortFromUrl,
+  getPriorityFromUrl,
   getBoard,
   getProjectId, 
   getProjects, 
@@ -2296,6 +2297,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
             getSprintIdFromUrl(),
             getAssigneeFromUrl(),
             getSortFromUrl(),
+            getPriorityFromUrl(),
           );
         }
         showToast(t("settings.customization.cardsPerLane.toast.updated"));

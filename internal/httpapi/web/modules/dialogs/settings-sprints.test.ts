@@ -208,7 +208,7 @@ describe('settings-sprints', () => {
     await flushPromises();
 
     expect(window.location.search).toBe('?tag=focus');
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'focus', undefined, null, null, null, true);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'focus', undefined, null, null, null, null, true);
     expect(clearSprintChipDataMock).toHaveBeenCalledTimes(1);
     expect(selectorState.board?.project.sprintsEnabled).toBe(false);
   });
@@ -230,7 +230,7 @@ describe('settings-sprints', () => {
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
     await flushPromises();
 
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', undefined, undefined, null, null, null, true);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', undefined, undefined, null, null, null, null, true);
     expect(refreshSprintsAndChipsMock).toHaveBeenCalledWith('alpha');
     expect(selectorState.board?.project.sprintsEnabled).toBe(true);
   });

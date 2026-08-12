@@ -21,7 +21,7 @@ describe('board-refresh orchestration', () => {
     await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', '7');
 
     expect(refreshBoard).toHaveBeenCalledTimes(1);
-    expect(refreshBoard).toHaveBeenCalledWith('alpha', 'tag-a', 'query', '42', '7', undefined);
+    expect(refreshBoard).toHaveBeenCalledWith('alpha', 'tag-a', 'query', '42', '7', undefined, undefined);
   });
 
   it('coalesces identical invalidates within 700ms', async () => {
@@ -52,9 +52,9 @@ describe('board-refresh orchestration', () => {
     await mod.invalidateBoard('alpha', 'tag-a', 'other-query', '43');
 
     expect(refreshBoard).toHaveBeenCalledTimes(3);
-    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', undefined, undefined);
-    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'other-query', '42', undefined, undefined);
-    expect(refreshBoard).toHaveBeenNthCalledWith(3, 'alpha', 'tag-a', 'other-query', '43', undefined, undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', undefined, undefined, undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'other-query', '42', undefined, undefined, undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(3, 'alpha', 'tag-a', 'other-query', '43', undefined, undefined, undefined);
   });
 
   it('does not coalesce when only the assignee filter changes', async () => {
@@ -67,8 +67,8 @@ describe('board-refresh orchestration', () => {
     await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', 'me');
 
     expect(refreshBoard).toHaveBeenCalledTimes(2);
-    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', 'unassigned', undefined);
-    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', 'me', undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', 'unassigned', undefined, undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', 'me', undefined, undefined);
   });
 
   it('does not coalesce when only the sort order changes', async () => {
@@ -81,8 +81,22 @@ describe('board-refresh orchestration', () => {
     await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, 'oldest');
 
     expect(refreshBoard).toHaveBeenCalledTimes(2);
-    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', null, 'newest');
-    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, 'oldest');
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', null, 'newest', undefined);
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, 'oldest', undefined);
+  });
+
+  it('does not coalesce when only the priority filter changes', async () => {
+    const mod = await import('./board-refresh.js');
+    const refreshBoard = vi.fn().mockResolvedValue(undefined);
+
+    mod.registerBoardRefresher(refreshBoard);
+
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, null, 'high');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, null, 'none');
+
+    expect(refreshBoard).toHaveBeenCalledTimes(2);
+    expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', null, null, 'high');
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, null, 'none');
   });
 
   it('setDefaultCardsPerLane clears any elevated floor slug so the new default applies immediately', async () => {

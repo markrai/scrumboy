@@ -55,6 +55,7 @@ vi.mock('../realtime/guard.js', () => ({
 vi.mock('../state/selectors.js', () => ({
   getAssigneeFromUrl: () => new URL(window.location.href).searchParams.get('assignee'),
   getSortFromUrl: () => new URL(window.location.href).searchParams.get('sort'),
+  getPriorityFromUrl: () => new URL(window.location.href).searchParams.get('priority'),
   getBoard: () => selectorState.board,
   getSearch: () => selectorState.search,
   getSettingsActiveTab: () => selectorState.activeTab,
@@ -271,7 +272,7 @@ describe('settings-priorities', () => {
       method: 'POST',
       body: JSON.stringify({ name: 'Critical' }),
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 
@@ -347,7 +348,7 @@ describe('settings-priorities', () => {
       method: 'PATCH',
       body: JSON.stringify({ name: 'Mid', color: '#222222' }),
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 
@@ -398,7 +399,7 @@ describe('settings-priorities', () => {
     expect(apiFetchMock).toHaveBeenCalledTimes(2);
     expect(apiFetchMock.mock.calls[0]?.[0]).toBe('/api/board/alpha/priorities/low');
     expect(apiFetchMock.mock.calls[1]?.[0]).toBe('/api/board/alpha/priorities/medium');
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, true);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null, true);
     expect(rerender).toHaveBeenCalledTimes(1);
     expect(mod.isPriorityDraftDirty()).toBe(false);
     expect(showToastMock).toHaveBeenCalledWith('second patch failed');
@@ -432,7 +433,7 @@ describe('settings-priorities', () => {
     await flushPromises(12);
 
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, true);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null, true);
     expect(rerender).not.toHaveBeenCalled();
     expect(mod.isPriorityDraftDirty()).toBe(false);
     expect(showToastMock).toHaveBeenNthCalledWith(1, 'network result unknown');
@@ -463,7 +464,7 @@ describe('settings-priorities', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/board/alpha/priorities/low', {
       method: 'DELETE',
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 

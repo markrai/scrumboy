@@ -1,6 +1,6 @@
 import { columnsSpec } from '../features/drag-drop.js';
 import type { BoardMember } from '../state/state.js';
-import { Board, Todo } from '../types.js';
+import { Board, PriorityTier, Todo } from '../types.js';
 import {
   escapeHTML,
   isTemporaryBoard,
@@ -62,6 +62,7 @@ type BuildTopbarHtmlArgs = {
   wallEnabled?: boolean;
   assignee?: string | null;
   sort?: string | null;
+  priority?: string | null;
   boardMembers?: BoardMember[];
 };
 
@@ -309,9 +310,10 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     wallEnabled,
     assignee,
     sort,
+    priority,
     boardMembers,
   } = args;
-  const filterPanelHTML = buildFilterPanelHtml(assignee ?? null, sort ?? null, boardMembers ?? [], user);
+  const filterPanelHTML = buildFilterPanelHtml(assignee ?? null, sort ?? null, boardMembers ?? [], user, priority ?? null, board.priorityOrder ?? []);
   const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
   const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
   // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
@@ -451,21 +453,48 @@ function sortFilterOptionsHtml(sort: string | null): string {
   `;
 }
 
-// isBoardFilterActive is true whenever a non-default assignee filter or a
-// non-default (manual) sort order is applied. Used to drive the toggle's
-// pulse animation, both on initial render and after the user picks an option.
-export function isBoardFilterActive(assignee: string | null, sort: string | null): boolean {
-  return !!assignee || !!sort;
+function priorityFilterOptionsHtml(priority: string | null, tiers: PriorityTier[]): string {
+  const current = priority || "";
+  const optionClass = (value: string) => `search-filter-option${current === value ? " is-active" : ""}`;
+  const allPrioritiesLabel = escapeHTML(t("board.filters.allPriorities"));
+  const noPriorityLabel = escapeHTML(t("board.filters.noPriority"));
+  const tierOptions = tiers
+    .map((tier) => {
+      const safe = sanitizeHexColor(tier.color);
+      const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20;"` : "";
+      return `<button type="button" class="${optionClass(tier.key)}" data-priority-option="${escapeHTML(tier.key)}" ${colorStyle}>${escapeHTML(tier.name)}</button>`;
+    })
+    .join("");
+  return `
+      <button type="button" class="${optionClass("")}" data-priority-option="" data-i18n-text="board.filters.allPriorities">${allPrioritiesLabel}</button>
+      <button type="button" class="${optionClass("none")}" data-priority-option="none" data-i18n-text="board.filters.noPriority">${noPriorityLabel}</button>
+      ${tierOptions}
+  `;
 }
 
-// buildFilterPanelHtml is the single source of truth for the assignee/sort
+// isBoardFilterActive is true whenever a non-default assignee filter, a
+// non-default (manual) sort order, or a priority filter is applied. Used to
+// drive the toggle's pulse animation, both on initial render and after the
+// user picks an option.
+export function isBoardFilterActive(assignee: string | null, sort: string | null, priority: string | null): boolean {
+  return !!assignee || !!sort || !!priority;
+}
+
+// buildFilterPanelHtml is the single source of truth for the assignee/sort/priority
 // option lists (labels + i18n + active-state) rendered inside the expandable
 // search-filter popover. It replaces the old standalone <select> (assignee
-// only) with a button-list panel that also carries the new sort option,
-// dual-purposing the search input instead of adding another topbar control.
-export function buildFilterPanelHtml(assignee: string | null, sort: string | null, boardMembers: BoardMember[], user: any): string {
+// only) with a button-list panel that also carries the sort and priority
+// options, dual-purposing the search input instead of adding another topbar control.
+export function buildFilterPanelHtml(
+  assignee: string | null,
+  sort: string | null,
+  boardMembers: BoardMember[],
+  user: any,
+  priority: string | null = null,
+  priorityTiers: PriorityTier[] = [],
+): string {
   const filtersLabel = escapeHTML(t("board.filters.openFilters"));
-  const toggleActiveClass = isBoardFilterActive(assignee, sort) ? " search-filter-toggle--active" : "";
+  const toggleActiveClass = isBoardFilterActive(assignee, sort, priority) ? " search-filter-toggle--active" : "";
   return `
     <button
       type="button"
@@ -490,6 +519,10 @@ export function buildFilterPanelHtml(assignee: string | null, sort: string | nul
       <div class="search-filter-panel__section">
         <div class="search-filter-panel__label" data-i18n-text="board.filters.sort">${escapeHTML(t("board.filters.sort"))}</div>
         ${sortFilterOptionsHtml(sort)}
+      </div>
+      <div class="search-filter-panel__section">
+        <div class="search-filter-panel__label" data-i18n-text="board.filters.priority">${escapeHTML(t("board.filters.priority"))}</div>
+        ${priorityFilterOptionsHtml(priority, priorityTiers)}
       </div>
     </div>
   `;
