@@ -101,6 +101,7 @@ type Server struct {
 	store               storeAPI
 	boardReads          *boardapp.ReadService
 	todoCreates         *todoapp.CreateService
+	todoDeletes         *todoapp.DeleteService
 	todoMoves           *todoapp.MoveService
 	todoUpdates         *todoapp.UpdateService
 	todoLinkMutations   *todolinkapp.RESTMutationService
@@ -593,6 +594,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
 		Create:  st,
+		Refresh: boardRefreshPublisher,
+	})
+	server.todoDeletes = todoapp.NewDeleteService(todoapp.DeleteServiceDependencies{
+		Delete:  st,
 		Refresh: boardRefreshPublisher,
 	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{

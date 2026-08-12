@@ -854,7 +854,11 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			return true
 
 		case http.MethodDelete:
-			if err := s.store.DeleteTodoByLocalID(s.requestContext(r), project.ID, localID, s.storeMode()); err != nil {
+			prepared := s.todoDeletes.Prepare(s.requestContext(r), todoapp.ResolvedDeleteTarget{
+				ProjectContext: *pc,
+				Mode:           s.storeMode(),
+			})
+			if err := prepared.Delete(todoapp.DeleteCommand{LocalID: localID}); err != nil {
 				if errors.Is(err, store.ErrUnauthorized) {
 					writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
 					return true
@@ -862,7 +866,6 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "todo_deleted")
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
