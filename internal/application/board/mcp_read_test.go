@@ -25,6 +25,7 @@ type mcpBoardReadCall struct {
 	tagFilter      string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
+	priorityFilter store.PriorityFilter
 	sprintFilter   store.SprintFilter
 	sortOrder      store.SortOrder
 	err            error
@@ -131,6 +132,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 ) ([]store.Todo, string, bool, error) {
@@ -145,6 +147,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 		tagFilter:      tagFilter,
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
+		priorityFilter: priorityFilter,
 		sprintFilter:   sprintFilter,
 		sortOrder:      sortOrder,
 	})
@@ -167,6 +170,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 ) (int, error) {
 	f.recorder.record(mcpBoardReadCall{
@@ -177,6 +181,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 		tagFilter:      tagFilter,
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
+		priorityFilter: priorityFilter,
 		sprintFilter:   sprintFilter,
 	})
 	if f.contextErr {
@@ -360,6 +365,10 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priority, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 	sprintID := int64(91)
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "bound")
@@ -369,6 +378,7 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 		TagFilter:      "tag",
 		SearchFilter:   "search",
 		AssigneeFilter: assignee,
+		PriorityFilter: priority,
 		SprintID:       &sprintID,
 		Limit:          7,
 		SortOrder:      store.SortOrderDefault,
@@ -422,6 +432,7 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 		}
 		if call.projectID != 17 || call.tagFilter != "tag" || call.searchFilter != "search" ||
 			!reflect.DeepEqual(call.assigneeFilter, assignee) ||
+			!reflect.DeepEqual(call.priorityFilter, priority) ||
 			call.sprintFilter != (store.SprintFilter{Mode: "sprint", SprintID: 91}) {
 			t.Fatalf("%s arguments = %#v", call.operation, call)
 		}

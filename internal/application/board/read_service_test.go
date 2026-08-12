@@ -18,6 +18,7 @@ type recordingLegacyReadStore struct {
 	tagFilter      string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
+	priorityFilter store.PriorityFilter
 	sprintFilter   store.SprintFilter
 	sortOrder      store.SortOrder
 
@@ -59,6 +60,7 @@ func (s *recordingLegacyReadStore) GetBoard(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 ) (
@@ -74,6 +76,7 @@ func (s *recordingLegacyReadStore) GetBoard(
 	s.tagFilter = tagFilter
 	s.searchFilter = searchFilter
 	s.assigneeFilter = assigneeFilter
+	s.priorityFilter = priorityFilter
 	s.sprintFilter = sprintFilter
 	s.sortOrder = sortOrder
 
@@ -90,6 +93,10 @@ func TestPreparedSlugRead_ReadInitialDelegatesToExistingService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priorityFilter, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 
 	ctx := context.WithValue(context.Background(), readServiceContextKey{}, "initial")
 	pc := &store.ProjectContext{Project: store.Project{ID: 7, Slug: "project-slug"}}
@@ -97,6 +104,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesToExistingService(t *testing.T) {
 		TagFilter:      "focus",
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   store.SprintFilter{Mode: "none"},
 		SortOrder:      store.SortOrderNewest,
 		LimitPerLane:   17,
@@ -163,6 +171,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesToExistingService(t *testing.T) {
 	if initialStore.tagFilter != query.TagFilter ||
 		initialStore.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(initialStore.assigneeFilter, query.AssigneeFilter) ||
+		!reflect.DeepEqual(initialStore.priorityFilter, query.PriorityFilter) ||
 		!reflect.DeepEqual(initialStore.sprintFilter, query.SprintFilter) ||
 		initialStore.sortOrder != query.SortOrder ||
 		initialStore.limitPerLane != query.LimitPerLane {
@@ -185,6 +194,10 @@ func TestPreparedSlugRead_ReadLaneDelegatesToExistingService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priorityFilter, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 
 	ctx := context.WithValue(context.Background(), readServiceContextKey{}, "lane")
 	pc := &store.ProjectContext{Project: store.Project{ID: 7, Slug: "project-slug"}}
@@ -196,6 +209,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesToExistingService(t *testing.T) {
 		TagFilter:      "focus",
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   store.SprintFilter{Mode: "none"},
 		SortOrder:      store.SortOrderOldest,
 	}
@@ -253,6 +267,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesToExistingService(t *testing.T) {
 		laneStore.tagFilter != query.TagFilter ||
 		laneStore.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(laneStore.assigneeFilter, query.AssigneeFilter) ||
+		!reflect.DeepEqual(laneStore.priorityFilter, query.PriorityFilter) ||
 		!reflect.DeepEqual(laneStore.sprintFilter, query.SprintFilter) ||
 		laneStore.sortOrder != query.SortOrder {
 		t.Fatalf("ReadLane changed the normalized query: store=%+v query=%+v", laneStore, query)
@@ -394,6 +409,10 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priorityFilter, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 
 	ctx := context.WithValue(context.Background(), readServiceContextKey{}, "legacy")
 	pc := &store.ProjectContext{
@@ -404,6 +423,7 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 		TagFilter:      "make space",
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   store.SprintFilter{Mode: "sprint_number", SprintNumber: 3},
 		SortOrder:      store.SortOrderNewest,
 	}
@@ -485,6 +505,9 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	}
 	if !reflect.DeepEqual(legacyStore.assigneeFilter, query.AssigneeFilter) {
 		t.Fatal("ReadLegacy changed the assignee filter")
+	}
+	if !reflect.DeepEqual(legacyStore.priorityFilter, query.PriorityFilter) {
+		t.Fatal("ReadLegacy changed the priority filter")
 	}
 	if !reflect.DeepEqual(legacyStore.sprintFilter, query.SprintFilter) {
 		t.Fatal("ReadLegacy changed the sprint filter")

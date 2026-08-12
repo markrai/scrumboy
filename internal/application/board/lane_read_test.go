@@ -22,6 +22,7 @@ type recordingLaneReadStore struct {
 	tagFilter      string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
+	priorityFilter store.PriorityFilter
 	sprintFilter   store.SprintFilter
 	sortOrder      store.SortOrder
 
@@ -41,6 +42,7 @@ func (s *recordingLaneReadStore) ListTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 ) ([]store.Todo, string, bool, error) {
@@ -54,6 +56,7 @@ func (s *recordingLaneReadStore) ListTodosForBoardLane(
 	s.tagFilter = tagFilter
 	s.searchFilter = searchFilter
 	s.assigneeFilter = assigneeFilter
+	s.priorityFilter = priorityFilter
 	s.sprintFilter = sprintFilter
 	s.sortOrder = sortOrder
 
@@ -66,6 +69,10 @@ func TestLaneServiceRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	assigneeFilter, err := store.ParseAssigneeFilter("42", nil)
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
+	}
+	priorityFilter, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
 	}
 
 	ctx := context.WithValue(context.Background(), laneReadContextKey{}, "request")
@@ -81,6 +88,7 @@ func TestLaneServiceRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 		TagFilter:      "make space",
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   store.SprintFilter{Mode: "sprint_number", SprintNumber: 3},
 		SortOrder:      store.SortOrderNewest,
 	}
@@ -122,6 +130,9 @@ func TestLaneServiceRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	}
 	if !reflect.DeepEqual(readStore.assigneeFilter, query.AssigneeFilter) {
 		t.Fatal("Read changed the assignee filter")
+	}
+	if !reflect.DeepEqual(readStore.priorityFilter, query.PriorityFilter) {
+		t.Fatal("Read changed the priority filter")
 	}
 	if !reflect.DeepEqual(readStore.sprintFilter, query.SprintFilter) {
 		t.Fatal("Read changed the sprint filter")

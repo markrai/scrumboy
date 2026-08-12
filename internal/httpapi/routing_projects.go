@@ -244,6 +244,11 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
 			return true
 		}
+		priorityFilter, err := s.parsePriorityFilterFromQuery(r)
+		if err != nil {
+			writeValidationError(w, "invalid priority", "invalid_priority", map[string]any{"field": "priority"})
+			return true
+		}
 		sprintFilter, err := s.parseSprintFilterFromQuery(r)
 		if err != nil {
 			writeValidationError(w, err.Error(), "invalid_sprint_id", map[string]any{"field": "sprintId"})
@@ -258,6 +263,7 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			TagFilter:      tag,
 			SearchFilter:   search,
 			AssigneeFilter: assigneeFilter,
+			PriorityFilter: priorityFilter,
 			SprintFilter:   sprintFilter,
 			SortOrder:      sortOrder,
 		})

@@ -26,6 +26,7 @@ type LaneReadStore interface {
 		tagFilter string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
+		priorityFilter store.PriorityFilter,
 		sprintFilter store.SprintFilter,
 		sortOrder store.SortOrder,
 	) ([]store.Todo, string, bool, error)
@@ -53,6 +54,7 @@ func (s *LaneService) Read(ctx context.Context, pc *store.ProjectContext, query 
 		query.TagFilter,
 		query.SearchFilter,
 		query.AssigneeFilter,
+		query.PriorityFilter,
 		query.SprintFilter,
 		query.SortOrder,
 	)

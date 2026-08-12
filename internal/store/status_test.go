@@ -207,7 +207,7 @@ func TestGetBoard_IncludesTestingColumn(t *testing.T) {
 
 	// Get board
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}

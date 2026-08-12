@@ -35,6 +35,7 @@ type boardGetStoreCall struct {
 	Tag       string
 	Search    string
 	Assignee  store.AssigneeFilter
+	Priority  store.PriorityFilter
 	Sprint    store.SprintFilter
 	Sort      store.SortOrder
 	ResultErr error
@@ -164,6 +165,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 ) ([]store.Todo, string, bool, error) {
@@ -188,6 +190,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 			tagFilter,
 			searchFilter,
 			assigneeFilter,
+			priorityFilter,
 			sprintFilter,
 			sortOrder,
 		)
@@ -209,6 +212,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 		Tag:       tagFilter,
 		Search:    searchFilter,
 		Assignee:  assigneeFilter,
+		Priority:  priorityFilter,
 		Sprint:    sprintFilter,
 		Sort:      sortOrder,
 		ResultErr: err,
@@ -223,6 +227,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 ) (int, error) {
 	var (
@@ -239,6 +244,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 			tagFilter,
 			searchFilter,
 			assigneeFilter,
+			priorityFilter,
 			sprintFilter,
 		)
 	}
@@ -254,6 +260,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 		Tag:       tagFilter,
 		Search:    searchFilter,
 		Assignee:  assigneeFilter,
+		Priority:  priorityFilter,
 		Sprint:    sprintFilter,
 		ResultErr: err,
 	})

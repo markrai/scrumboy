@@ -106,7 +106,7 @@ func TestGetBoard_SortOrder(t *testing.T) {
 	}
 
 	t.Run("default preserves manual rank order", func(t *testing.T) {
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestGetBoard_SortOrder(t *testing.T) {
 	})
 
 	t.Run("newest first orders by created_at desc", func(t *testing.T) {
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderNewest)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderNewest)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -122,7 +122,7 @@ func TestGetBoard_SortOrder(t *testing.T) {
 	})
 
 	t.Run("oldest first orders by created_at asc", func(t *testing.T) {
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderOldest)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderOldest)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestGetBoard_SortOrder(t *testing.T) {
 	})
 
 	t.Run("paged fast path matches sort order", func(t *testing.T) {
-		_, _, _, cols, _, err := st.GetBoardPaged(ctxOwner, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderNewest, 10)
+		_, _, _, cols, _, err := st.GetBoardPaged(ctxOwner, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderNewest, 10)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
 		}
@@ -171,7 +171,7 @@ func TestListTodosForBoardLane_SortOrderPagination(t *testing.T) {
 		}
 		seen := map[string]bool{}
 		for i := 0; i < 10; i++ { // hard cap so a pagination bug can't infinite-loop the test
-			items, nextCursor, hasMore, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, pageSize, afterA, afterB, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, sortOrder)
+			items, nextCursor, hasMore, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, pageSize, afterA, afterB, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, sortOrder)
 			if err != nil {
 				t.Fatalf("ListTodosForBoardLane: %v", err)
 			}

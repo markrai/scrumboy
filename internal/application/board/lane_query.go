@@ -14,6 +14,7 @@ type LaneQuery struct {
 	TagFilter      string
 	SearchFilter   string
 	AssigneeFilter store.AssigneeFilter
+	PriorityFilter store.PriorityFilter
 	SprintFilter   store.SprintFilter
 	SortOrder      store.SortOrder
 }

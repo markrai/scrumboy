@@ -60,7 +60,7 @@ type storeAPI interface {
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
-	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, sprintFilter store.SprintFilter) (int, error)
+	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, priorityFilter store.PriorityFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 	CreateProject(ctx context.Context, name string) (store.Project, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)

@@ -16,6 +16,7 @@ type boardGetInput struct {
 	Tag            string            `json:"tag"`
 	Search         string            `json:"search"`
 	Assignee       string            `json:"assignee"`
+	Priority       string            `json:"priority"`
 	Sort           string            `json:"sort"`
 	SprintId       *int64            `json:"sprintId"`
 	ColumnKey      string            `json:"columnKey"`
@@ -93,6 +94,10 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 	if assigneeErr != nil {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assignee", map[string]any{"field": "assignee"})
 	}
+	priorityFilter, priorityErr := store.ParsePriorityFilter(in.Priority)
+	if priorityErr != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid priority", map[string]any{"field": "priority"})
+	}
 	sortOrder, sortErr := store.ParseSortOrder(in.Sort)
 	if sortErr != nil {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sort", map[string]any{"field": "sort"})
@@ -112,6 +117,7 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		TagFilter:      tag,
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintID:       in.SprintId,
 		ColumnKey:      strings.TrimSpace(in.ColumnKey),
 		Limit:          limit,
