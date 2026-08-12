@@ -1,6 +1,7 @@
 import { showToast } from '../utils.js';
 import {
   getAssigneeFromUrl,
+  getPriorityFromUrl,
   getSortFromUrl,
   getAuthStatusAvailable,
   getProjectId,
@@ -227,7 +228,7 @@ function flushPendingRealtimeRefresh(force = false): void {
 
   clearPendingRealtimeRefresh();
   debugLog(force ? "flushPendingRealtimeRefresh forcing invalidateBoard" : "flushPendingRealtimeRefresh running invalidateBoard", slug);
-  invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err: any) => {
+  invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err: any) => {
     console.warn("Realtime board refresh failed:", err?.message || err);
   });
 }

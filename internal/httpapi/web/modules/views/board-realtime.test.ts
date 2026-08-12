@@ -16,6 +16,7 @@ const {
     sprintId: "7",
     assignee: null as string | null,
     sort: null as string | null,
+    priority: null as string | null,
     authStatusAvailable: false,
     user: null as { id: number } | null,
     projectId: null as number | null,
@@ -34,6 +35,7 @@ vi.mock("../utils.js", () => ({
 vi.mock("../state/selectors.js", () => ({
   getAssigneeFromUrl: () => selectorState.assignee,
   getSortFromUrl: () => selectorState.sort ?? null,
+  getPriorityFromUrl: () => selectorState.priority ?? null,
   getAuthStatusAvailable: () => selectorState.authStatusAvailable,
   getProjectId: () => selectorState.projectId,
   getSlug: () => selectorState.slug,
@@ -149,7 +151,7 @@ describe("board-realtime drag refresh guards", () => {
     vi.advanceTimersByTime(mod.__getRealtimeRefreshDebounceMsForTest() + 5);
 
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
     expect(mod.__getPendingRealtimeRefreshSlugForTest()).toBeNull();
 
     vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest());
@@ -189,7 +191,7 @@ describe("board-realtime drag refresh guards", () => {
 
     vi.advanceTimersByTime(2);
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
   });
 
   it("preserves the old force-flush behavior for non-drag guards", async () => {
@@ -202,6 +204,6 @@ describe("board-realtime drag refresh guards", () => {
 
     vi.advanceTimersByTime(20);
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
   });
 });

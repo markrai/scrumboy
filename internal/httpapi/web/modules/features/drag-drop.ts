@@ -1,6 +1,6 @@
 import { apiFetch } from '../api.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
-import { getAssigneeFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
+import { getAssigneeFromUrl, getPriorityFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
 import { showToast } from '../utils.js';
 import { invalidateBoard, setBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { recordBoardInteraction, recordLocalMutation } from '../realtime/guard.js';
@@ -117,11 +117,13 @@ function parseLocalId(el: Element | null): number | null {
 function hasActiveBoardSubsetFilter(): boolean {
   const sprintId = getSprintIdFromUrl();
   const assignee = getAssigneeFromUrl();
+  const priority = getPriorityFromUrl();
   return !!(
     (getTag() && getTag().trim() !== "")
     || (getSearch() && getSearch().trim() !== "")
     || (sprintId && sprintId.trim() !== "")
     || (assignee && assignee.trim() !== "")
+    || (priority && priority.trim() !== "")
   );
 }
 
@@ -152,11 +154,13 @@ async function getHiddenLaneBoundaryLocalId(status: string): Promise<number | nu
   const sprintId = getSprintIdFromUrl();
   const assignee = getAssigneeFromUrl();
   const sort = getSortFromUrl();
+  const priority = getPriorityFromUrl();
   if (tag) params.set("tag", tag);
   if (search) params.set("search", search);
   if (sprintId) params.set("sprintId", sprintId);
   if (assignee) params.set("assignee", assignee);
   if (sort) params.set("sort", sort);
+  if (priority) params.set("priority", priority);
 
   const res = await apiFetch<LanePageResponse>(`/api/board/${slug}/lanes/${status}?${params.toString()}`);
   return res?.items?.[0]?.localId ?? null;
@@ -269,7 +273,7 @@ export function initDnD(): void {
       // Rely on SSE todo_moved event (debounced ~400ms) to refresh board; avoid double fetch.
     } catch (err: any) {
       showToast(apiErrorMessage(err, { fallbackKey: "board.todo.moveFailed" }));
-      invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl())
+      invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl())
         .catch((e: any) => showToast(apiErrorMessage(e, { fallbackKey: "board.refreshFailed" })));
     } finally {
       moveInFlight = false;

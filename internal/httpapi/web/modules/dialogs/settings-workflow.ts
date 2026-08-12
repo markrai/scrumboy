@@ -3,6 +3,7 @@ import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import {
   getAssigneeFromUrl,
+  getPriorityFromUrl,
   getSortFromUrl,
   getBoard,
   getSearch,
@@ -259,7 +260,7 @@ async function addWorkflowLane(name: string, rerender: RerenderFn): Promise<void
       body: JSON.stringify({ name: trimmed }),
     });
     invalidateWorkflowLaneCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncWorkflowDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.workflow.toast.laneAdded'));
@@ -296,7 +297,7 @@ async function saveWorkflowDraftChanges(rerender: RerenderFn): Promise<void> {
         body: JSON.stringify({ name, color }),
       });
     }
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncWorkflowDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.workflow.toast.updated'));
@@ -332,7 +333,7 @@ async function deleteWorkflowLane(key: string, rerender: RerenderFn): Promise<vo
       method: 'DELETE',
     });
     invalidateWorkflowLaneCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncWorkflowDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.workflow.toast.laneDeleted'));
