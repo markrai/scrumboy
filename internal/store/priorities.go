@@ -76,7 +76,7 @@ func priorityTierCountReason(count int) string {
 
 func defaultPriorityTiers() []PriorityTier {
 	return []PriorityTier{
-		{Key: "low", Name: "Low", Color: "#9CA3AF", Position: 0},
+		{Key: "low", Name: "Low", Color: "#EAB308", Position: 0},
 		{Key: "medium", Name: "Medium", Color: "#F59E0B", Position: 1},
 		{Key: "high", Name: "High", Color: "#F97316", Position: 2},
 		{Key: "urgent", Name: "Urgent", Color: "#EF4444", Position: 3},
