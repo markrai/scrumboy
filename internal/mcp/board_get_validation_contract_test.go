@@ -364,6 +364,46 @@ func TestBoardGetContract_ColumnKeyScopesLaneQueriesToOneColumn(t *testing.T) {
 	}
 }
 
+func TestBoardGetContract_ColumnKeyIgnoresMalformedCursorForOtherValidColumn(t *testing.T) {
+	h := newBoardGetContractHarness(t)
+
+	_, _, err := h.call(map[string]any{
+		"projectSlug": h.Project.Slug,
+		"columnKey":   "triage",
+		"cursorByColumn": map[string]any{
+			"building": "not-base64!",
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %#v", err)
+	}
+	requireOperationNames(t, h.Recording, "countUsers", "access", "workflow", "list", "count")
+	if got := h.Recording.callsFor("list")[0].ColumnKey; got != "triage" {
+		t.Fatalf("list column = %q, want triage", got)
+	}
+	if got := h.Recording.callsFor("count")[0].ColumnKey; got != "triage" {
+		t.Fatalf("count column = %q, want triage", got)
+	}
+}
+
+func TestBoardGetContract_UnknownCursorColumnStillRejectedWithColumnKey(t *testing.T) {
+	h := newBoardGetContractHarness(t)
+
+	_, _, err := h.call(map[string]any{
+		"projectSlug": h.Project.Slug,
+		"columnKey":   "triage",
+		"cursorByColumn": map[string]any{
+			"not-a-workflow-column": encodeBoardCursor("1:1"),
+		},
+	})
+
+	requireBoardGetError(t, err, http.StatusBadRequest, CodeValidationError, "invalid column cursor", map[string]any{
+		"field":     "cursorByColumn",
+		"columnKey": "not-a-workflow-column",
+	})
+	requireOperationNames(t, h.Recording, "countUsers", "access", "workflow")
+}
+
 func TestBoardGetContract_MalformedLaterCursorPreservesPartialReadBoundary(t *testing.T) {
 	h := newBoardGetContractHarness(t)
 

@@ -293,3 +293,134 @@ func TestBoardGetContract_SuccessfulStorePortCardinality(t *testing.T) {
 		t.Fatalf("unexpected cardinality: operations=%v", h.Recording.operationNames())
 	}
 }
+
+func TestBoardGetContract_ColumnKeyPaginationContinuesSelectedLane(t *testing.T) {
+	h := newBoardGetContractHarness(t)
+
+	firstTodo, err := h.Store.CreateTodo(h.Context, h.Project.ID, store.CreateTodoInput{
+		Title:     "Triage first",
+		ColumnKey: "triage",
+	}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("create first triage todo: %v", err)
+	}
+	secondTodo, err := h.Store.CreateTodo(h.Context, h.Project.ID, store.CreateTodoInput{
+		Title:     "Triage second",
+		ColumnKey: "triage",
+	}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("create second triage todo: %v", err)
+	}
+	if _, err := h.Store.CreateTodo(h.Context, h.Project.ID, store.CreateTodoInput{
+		Title:     "Building control",
+		ColumnKey: "building",
+	}, store.ModeFull); err != nil {
+		t.Fatalf("create building todo: %v", err)
+	}
+
+	data, meta, readErr := h.call(map[string]any{
+		"projectSlug": h.Project.Slug,
+		"columnKey":   "triage",
+		"limit":       1,
+	})
+	if readErr != nil {
+		t.Fatalf("first page board_get: %v", readErr)
+	}
+
+	columns := data.(map[string]any)["columns"].([]boardColumnItem)
+	if len(columns) != 1 || columns[0].Key != "triage" {
+		t.Fatalf("first page columns = %#v, want only triage", columns)
+	}
+	if len(columns[0].Items) != 1 {
+		t.Fatalf("first page triage items = %#v, want one", columns[0].Items)
+	}
+	firstPageLocalID := columns[0].Items[0].LocalID
+
+	nextByColumn := meta["nextCursorByColumn"].(map[string]any)
+	hasMoreByColumn := meta["hasMoreByColumn"].(map[string]bool)
+	totalByColumn := meta["totalCountByColumn"].(map[string]int)
+	if len(nextByColumn) != 1 || len(hasMoreByColumn) != 1 || len(totalByColumn) != 1 {
+		t.Fatalf("first page meta not scoped to triage: next=%#v hasMore=%#v total=%#v", nextByColumn, hasMoreByColumn, totalByColumn)
+	}
+	cursor, ok := nextByColumn["triage"].(string)
+	if !ok || cursor == "" {
+		t.Fatalf("first page triage cursor = %#v, want non-empty string", nextByColumn["triage"])
+	}
+	if hasMoreByColumn["triage"] != true {
+		t.Fatalf("first page triage hasMore = %v, want true", hasMoreByColumn["triage"])
+	}
+	if totalByColumn["triage"] != 2 {
+		t.Fatalf("first page triage total = %d, want 2", totalByColumn["triage"])
+	}
+	for _, call := range h.Recording.callsFor("list") {
+		if call.ColumnKey != "triage" {
+			t.Fatalf("first page list column = %q, want triage only", call.ColumnKey)
+		}
+	}
+	for _, call := range h.Recording.callsFor("count") {
+		if call.ColumnKey != "triage" {
+			t.Fatalf("first page count column = %q, want triage only", call.ColumnKey)
+		}
+	}
+	requireOperationNames(t, h.Recording, "countUsers", "access", "workflow", "list", "count")
+
+	data2, meta2, readErr2 := h.call(map[string]any{
+		"projectSlug": h.Project.Slug,
+		"columnKey":   "triage",
+		"limit":       1,
+		"cursorByColumn": map[string]any{
+			"triage": cursor,
+		},
+	})
+	if readErr2 != nil {
+		t.Fatalf("second page board_get: %v", readErr2)
+	}
+
+	columns2 := data2.(map[string]any)["columns"].([]boardColumnItem)
+	if len(columns2) != 1 || columns2[0].Key != "triage" {
+		t.Fatalf("second page columns = %#v, want only triage", columns2)
+	}
+	if len(columns2[0].Items) != 1 {
+		t.Fatalf("second page triage items = %#v, want one", columns2[0].Items)
+	}
+	secondPageLocalID := columns2[0].Items[0].LocalID
+	if secondPageLocalID == firstPageLocalID {
+		t.Fatalf("second page returned duplicate todo localId=%d title=%q", secondPageLocalID, columns2[0].Items[0].Title)
+	}
+	wantLocalIDs := map[int64]struct{}{
+		firstTodo.LocalID:  {},
+		secondTodo.LocalID: {},
+	}
+	if _, ok := wantLocalIDs[firstPageLocalID]; !ok {
+		t.Fatalf("first page localId = %d, want one of %#v", firstPageLocalID, wantLocalIDs)
+	}
+	if _, ok := wantLocalIDs[secondPageLocalID]; !ok {
+		t.Fatalf("second page localId = %d, want one of %#v", secondPageLocalID, wantLocalIDs)
+	}
+
+	nextByColumn2 := meta2["nextCursorByColumn"].(map[string]any)
+	hasMoreByColumn2 := meta2["hasMoreByColumn"].(map[string]bool)
+	totalByColumn2 := meta2["totalCountByColumn"].(map[string]int)
+	if len(nextByColumn2) != 1 || len(hasMoreByColumn2) != 1 || len(totalByColumn2) != 1 {
+		t.Fatalf("second page meta not scoped to triage: next=%#v hasMore=%#v total=%#v", nextByColumn2, hasMoreByColumn2, totalByColumn2)
+	}
+	if hasMoreByColumn2["triage"] != false {
+		t.Fatalf("second page triage hasMore = %v, want false", hasMoreByColumn2["triage"])
+	}
+	if nextByColumn2["triage"] != nil {
+		t.Fatalf("second page triage next cursor = %#v, want nil", nextByColumn2["triage"])
+	}
+	if totalByColumn2["triage"] != 2 {
+		t.Fatalf("second page triage total = %d, want 2", totalByColumn2["triage"])
+	}
+	for _, call := range h.Recording.callsFor("list") {
+		if call.ColumnKey != "triage" {
+			t.Fatalf("second page list column = %q, want triage only", call.ColumnKey)
+		}
+	}
+	for _, call := range h.Recording.callsFor("count") {
+		if call.ColumnKey != "triage" {
+			t.Fatalf("second page count column = %q, want triage only", call.ColumnKey)
+		}
+	}
+}

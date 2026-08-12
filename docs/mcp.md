@@ -379,16 +379,27 @@ cross-project IDs both return `NOT_FOUND`. This stored-ID convention is shared
 by MCP sprint mutations, todo sprint assignment, and sprint-scoped metrics.
 REST board URLs intentionally use the project-local sprint number instead.
 
+The optional `columnKey` filter restricts the board read to a single workflow
+column key (as returned by `workflow_list`). Surrounding whitespace is trimmed.
+Omit `columnKey` to preserve the existing all-columns behavior. An unknown or
+nonexistent column key returns `VALIDATION_ERROR` with `details.field:
+"columnKey"`. When set, `data.columns` and the pagination meta maps
+(`nextCursorByColumn`, `hasMoreByColumn`, `totalCountByColumn`) contain only
+that column; other workflow columns are omitted and are not queried. Pagination
+still uses column keys in `cursorByColumn`; entries for other valid workflow
+columns are ignored and are not decoded when `columnKey` scopes the request.
+
 `board_get` uses explicit validation tiers. Authentication/capability checks,
 input shape, required `projectSlug`, `limit`, assignee type/grammar, and `sort`
 are checked before project access because they are target-independent. Project
-access then precedes sprint resolution and workflow/cursor validation. As a
-result, a bad pre-access field still returns its exact `VALIDATION_ERROR` when
-the slug is denied, missing, or expired, while bad `sprintId` and
-`cursorByColumn` values are masked by `NOT_FOUND` for those targets. Cursor
-values are decoded in workflow order, so a malformed cursor for a later lane
-can follow successful reads of earlier lanes. The permanent `board.get` alias
-and both MCP transports use this same ordering.
+access then precedes sprint resolution, workflow/`columnKey` validation, and
+`cursorByColumn` validation. As a result, a bad pre-access field still returns
+its exact `VALIDATION_ERROR` when the slug is denied, missing, or expired,
+while bad `sprintId`, `columnKey`, and `cursorByColumn` values are masked by
+`NOT_FOUND` for those targets. Cursor values are decoded in workflow order for
+columns that are actually read, so a malformed cursor for a later lane can
+follow successful reads of earlier lanes. The permanent `board.get` alias and
+both MCP transports use this same ordering.
 
 REST slug board reads intentionally differ: they resolve access before query
 validation, so an inaccessible REST target masks all later query errors. This

@@ -1,5 +1,18 @@
 # Changelog
 
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+
+## [3.31.1] - 2026-08-11
+
+### Added
+
+- **MCP `board_get.columnKey` filter** - Optional `columnKey` scopes a board read
+  to one workflow column. Omitting it preserves the existing all-columns
+  behavior. Pagination metadata and `cursorByColumn` remain keyed by column;
+  cursors for other valid workflow columns are ignored when the request is
+  scoped. Public MCP documentation and contract coverage now describe and lock
+  down the filter, pagination continuation, and irrelevant-cursor semantics.
+
 ## [3.31.0] - 2026-08-11
 
 ### Added
@@ -18,8 +31,6 @@
   todo priority resolves within its project.
 - Priority mutations and merge imports share project-level SQLite writer
   serialization, preventing avoidable busy errors and delete/assignment races.
-
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
 ## [3.30.3] - 2026-08-10
 
