@@ -67,6 +67,7 @@ func (s *cancellationReadStore) GetBoardPaged(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 	limitPerLane int,
@@ -84,6 +85,7 @@ func (s *cancellationReadStore) GetBoardPaged(
 		tagFilter,
 		searchFilter,
 		assigneeFilter,
+		priorityFilter,
 		sprintFilter,
 		sortOrder,
 		limitPerLane,
@@ -105,6 +107,7 @@ func (s *cancellationLaneReadStore) ListTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 ) ([]store.Todo, string, bool, error) {
@@ -118,6 +121,7 @@ func (s *cancellationLaneReadStore) ListTodosForBoardLane(
 		tagFilter,
 		searchFilter,
 		assigneeFilter,
+		priorityFilter,
 		sprintFilter,
 		sortOrder,
 	)
@@ -385,10 +389,15 @@ func TestPreparedSlugRead_ReadInitialDelegatesExactly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priorityFilter, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 	query := Query{
 		TagFilter:      "focus",
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   store.SprintFilter{Mode: "sprint_number", SprintNumber: 3},
 		SortOrder:      store.SortOrderNewest,
 		LimitPerLane:   17,
@@ -433,6 +442,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesExactly(t *testing.T) {
 	if h.initial.tagFilter != query.TagFilter ||
 		h.initial.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(h.initial.assigneeFilter, query.AssigneeFilter) ||
+		!reflect.DeepEqual(h.initial.priorityFilter, query.PriorityFilter) ||
 		!reflect.DeepEqual(h.initial.sprintFilter, query.SprintFilter) ||
 		h.initial.sortOrder != query.SortOrder ||
 		h.initial.limitPerLane != query.LimitPerLane {
@@ -505,6 +515,10 @@ func TestPreparedSlugRead_ReadLaneDelegatesExactly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priorityFilter, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 	query := LaneQuery{
 		ColumnKey:      store.DefaultColumnBacklog,
 		Limit:          17,
@@ -513,6 +527,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesExactly(t *testing.T) {
 		TagFilter:      "focus",
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   store.SprintFilter{Mode: "sprint_number", SprintNumber: 3},
 		SortOrder:      store.SortOrderOldest,
 	}
@@ -552,6 +567,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesExactly(t *testing.T) {
 		h.lane.tagFilter != query.TagFilter ||
 		h.lane.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(h.lane.assigneeFilter, query.AssigneeFilter) ||
+		!reflect.DeepEqual(h.lane.priorityFilter, query.PriorityFilter) ||
 		!reflect.DeepEqual(h.lane.sprintFilter, query.SprintFilter) ||
 		h.lane.sortOrder != query.SortOrder {
 		t.Fatalf("ReadLane changed the normalized query: store=%+v query=%+v", h.lane, query)

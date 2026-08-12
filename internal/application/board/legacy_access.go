@@ -71,6 +71,7 @@ func readLegacy(
 		query.TagFilter,
 		query.SearchFilter,
 		query.AssigneeFilter,
+		query.PriorityFilter,
 		query.SprintFilter,
 		query.SortOrder,
 	)

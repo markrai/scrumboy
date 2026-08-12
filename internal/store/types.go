@@ -143,6 +143,24 @@ type AssigneeFilter struct {
 	userID int64
 }
 
+type priorityFilterMode uint8
+
+const (
+	priorityFilterNone priorityFilterMode = iota
+	priorityFilterNoPriority
+	priorityFilterKey
+)
+
+// PriorityFilter represents a validated board priority filter.
+//
+// Its zero value applies no priority filter. The internal fields deliberately
+// remain opaque so callers must use ParsePriorityFilter and cannot construct an
+// invalid mode.
+type PriorityFilter struct {
+	mode priorityFilterMode
+	key  string
+}
+
 // SortOrder represents the board todo ordering within each lane.
 //
 // The zero value (SortOrderDefault) preserves today's manual drag-rank order

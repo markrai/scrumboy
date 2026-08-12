@@ -46,7 +46,7 @@ func TestDurableBoardRead_DoesNotRefreshLastActivityAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	if _, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
+	if _, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
 	var lastMs int64
@@ -108,7 +108,7 @@ func TestExpiringBoardRead_RefreshesLastActivityWhenStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	if _, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
+	if _, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
 	var lastMs int64

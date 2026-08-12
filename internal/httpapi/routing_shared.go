@@ -34,6 +34,11 @@ func (s *Server) parseAssigneeFilterFromQuery(ctx context.Context, r *http.Reque
 	return store.ParseAssigneeFilter(r.URL.Query().Get("assignee"), actorUserID)
 }
 
+// parsePriorityFilterFromQuery validates the board "priority" query value.
+func (s *Server) parsePriorityFilterFromQuery(r *http.Request) (store.PriorityFilter, error) {
+	return store.ParsePriorityFilter(r.URL.Query().Get("priority"))
+}
+
 // parseSortOrderFromQuery validates the board "sort" query value.
 func (s *Server) parseSortOrderFromQuery(r *http.Request) (store.SortOrder, error) {
 	return store.ParseSortOrder(r.URL.Query().Get("sort"))

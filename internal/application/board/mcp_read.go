@@ -57,6 +57,7 @@ type MCPBoardReadQuery struct {
 	TagFilter      string
 	SearchFilter   string
 	AssigneeFilter store.AssigneeFilter
+	PriorityFilter store.PriorityFilter
 	SprintID       *int64
 	ColumnKey      string
 	Limit          int
@@ -107,6 +108,7 @@ type MCPBoardReadLaneStore interface {
 		tagFilter string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
+		priorityFilter store.PriorityFilter,
 		sprintFilter store.SprintFilter,
 		sortOrder store.SortOrder,
 	) ([]store.Todo, string, bool, error)
@@ -117,6 +119,7 @@ type MCPBoardReadLaneStore interface {
 		tagFilter string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
+		priorityFilter store.PriorityFilter,
 		sprintFilter store.SprintFilter,
 	) (int, error)
 }
@@ -258,6 +261,7 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 			query.TagFilter,
 			query.SearchFilter,
 			query.AssigneeFilter,
+			query.PriorityFilter,
 			sprintFilter,
 			query.SortOrder,
 		)
@@ -273,6 +277,7 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 			query.TagFilter,
 			query.SearchFilter,
 			query.AssigneeFilter,
+			query.PriorityFilter,
 			sprintFilter,
 		)
 		if err != nil {

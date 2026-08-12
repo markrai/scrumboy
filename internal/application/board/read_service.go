@@ -25,6 +25,7 @@ type LegacyReadStore interface {
 		tagFilter string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
+		priorityFilter store.PriorityFilter,
 		sprintFilter store.SprintFilter,
 		sortOrder store.SortOrder,
 	) (
