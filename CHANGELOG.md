@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
+## [3.31.3] - 2026-08-12
+
+### Added
+
+- **Board priority filter** - Board reads accept an optional `priority` query
+  param / MCP `board_get.priority` (empty = all, `none` = unset, otherwise a
+  tier key). The filter dropdown adds a Priority section listing all tiers,
+  “No priority,” and “All priorities,” and keeps the selection across board
+  reloads. REST and MCP contract tests cover the filter grammar.
+
 ## [3.31.2] - 2026-08-12
 
 ### Changed
