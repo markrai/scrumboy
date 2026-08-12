@@ -341,12 +341,15 @@ func (a *Adapter) handleTodosDelete(ctx context.Context, input any) (any, map[st
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid localId", map[string]any{"field": "localId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	prepared, prepareErr := a.todoDeletes.Prepare(ctx, todoapp.SlugDeleteTarget{
+		Slug: in.ProjectSlug,
+		Mode: a.storeMode(),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapStoreError(prepareErr)
 	}
 
-	deleteErr := a.store.DeleteTodoByLocalID(ctx, pc.Project.ID, in.LocalID, a.storeMode())
+	deleteErr := prepared.Delete(todoapp.DeleteCommand{LocalID: in.LocalID})
 	if deleteErr != nil {
 		if errors.Is(deleteErr, store.ErrUnauthorized) {
 			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)

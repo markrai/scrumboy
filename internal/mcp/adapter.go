@@ -90,6 +90,7 @@ type Adapter struct {
 	store               storeAPI
 	boardReads          *boardapp.MCPBoardReadService
 	todoCreates         *todoapp.MCPCreateService
+	todoDeletes         *todoapp.MCPDeleteService
 	todoMoves           *todoapp.MCPMoveService
 	todoUpdates         *todoapp.MCPUpdateService
 	todoLinkMutations   *todolinkapp.MCPMutationService
@@ -135,6 +136,10 @@ func New(st storeAPI, opts Options) *Adapter {
 			Access: st,
 			Lookup: st,
 			Create: st,
+		}),
+		todoDeletes: todoapp.NewMCPDeleteService(todoapp.MCPDeleteServiceDependencies{
+			Access: st,
+			Delete: st,
 		}),
 		todoMoves: todoapp.NewMCPMoveService(todoapp.MCPMoveServiceDependencies{
 			Access: st,
