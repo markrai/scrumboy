@@ -1,4 +1,4 @@
-import { addTagBtn, closeTodoBtn, deleteTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
+import { addTagBtn, closeTodoBtn, deleteTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoPriority, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
 import { renderMarkdownPreviewInto } from '../markdown-preview.js';
@@ -63,6 +63,21 @@ function populateTodoStatusOptions(preferredKey) {
         .join("");
     const hasPreferred = order.some((c) => c.key === preferredKey);
     const selected = hasPreferred ? preferredKey : order[0].key;
+    select.value = selected;
+    return selected;
+}
+function populateTodoPriorityOptions(preferredKey) {
+    const select = todoPriority;
+    if (!select)
+        return preferredKey ?? "";
+    const board = getBoard();
+    const tiers = board?.priorityOrder ?? [];
+    const noneOption = `<option value="" data-i18n-text="todo.priority.none">${escapeHTML(t("todo.priority.none"))}</option>`;
+    select.innerHTML =
+        noneOption +
+            tiers.map((tier) => `<option value="${escapeHTML(tier.key)}">${escapeHTML(tier.name)}</option>`).join("");
+    const hasPreferred = !!preferredKey && tiers.some((tier) => tier.key === preferredKey);
+    const selected = hasPreferred ? preferredKey : "";
     select.value = selected;
     return selected;
 }
@@ -182,6 +197,7 @@ function readTodoDialogSnapshot() {
         estimation: todoEstimationPoints?.value ?? "",
         assignee: assignee?.value ?? "",
         sprint: sprint?.value ?? "",
+        priority: todoPriority?.value ?? "",
     };
 }
 function captureTodoDialogBaseline() {
@@ -198,6 +214,7 @@ function isTodoDialogDirty() {
         current.estimation !== todoDialogBaseline.estimation ||
         current.assignee !== todoDialogBaseline.assignee ||
         current.sprint !== todoDialogBaseline.sprint ||
+        current.priority !== todoDialogBaseline.priority ||
         current.tags.length !== todoDialogBaseline.tags.length ||
         current.tags.some((tag, idx) => tag !== todoDialogBaseline?.tags[idx]));
 }
@@ -493,6 +510,7 @@ export async function openTodoDialog(opts) {
         const initialKey = resolveColumnKey(status);
         const selected = populateTodoStatusOptions(initialKey);
         todoStatus.value = selected;
+        populateTodoPriorityOptions(null);
         deleteTodoBtn.style.display = "none";
         if (shareTodoBtn)
             shareTodoBtn.style.display = "none";
@@ -506,6 +524,7 @@ export async function openTodoDialog(opts) {
         const initialKey = resolveColumnKey(todo.columnKey || todo.status);
         const selected = populateTodoStatusOptions(initialKey);
         todoStatus.value = selected;
+        populateTodoPriorityOptions(todo.priorityKey);
         deleteTodoBtn.style.display = permissions.canDeleteTodo ? "" : "none";
         if (shareTodoBtn)
             shareTodoBtn.style.display = "";
@@ -525,6 +544,8 @@ export async function openTodoDialog(opts) {
         assigneeSelect.disabled = !permissions.canEditAssignment;
     if (estimationSelect)
         estimationSelect.disabled = !permissions.canChangeEstimation;
+    if (todoPriority)
+        todoPriority.disabled = !permissions.canChangeEstimation;
     const tagInput = document.getElementById("todoTags");
     if (tagInput)
         tagInput.disabled = !permissions.canEditTags;

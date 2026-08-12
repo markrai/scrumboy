@@ -58,12 +58,20 @@ func mapStoreError(err error) *adapterError {
 	case errors.Is(err, store.ErrSprintsDisabled):
 		return newAdapterError(http.StatusBadRequest, CodeValidationError, store.ErrSprintsDisabled.Error(), map[string]any{"reason": "sprints_disabled"})
 	case errors.Is(err, store.ErrValidation):
-		return newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), nil)
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, err.Error(), reasonDetails(err))
 	case errors.Is(err, store.ErrConflict):
-		return newAdapterError(http.StatusConflict, CodeConflict, err.Error(), nil)
+		return newAdapterError(http.StatusConflict, CodeConflict, err.Error(), reasonDetails(err))
 	default:
 		return newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": err.Error()})
 	}
+}
+
+func reasonDetails(err error) any {
+	reason := store.ErrorReason(err)
+	if reason == "" {
+		return nil
+	}
+	return map[string]any{"reason": reason}
 }
 
 // mapPrivilegedStoreError maps store errors for authenticated callers of privileged tools.

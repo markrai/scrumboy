@@ -15,6 +15,7 @@ const addTagBtn = document.getElementById("addTagBtn");
 const todoStatus = document.getElementById("todoStatus");
 const todoEstimationField = document.getElementById("todoEstimationField");
 const todoEstimationPoints = document.getElementById("todoEstimationPoints");
+const todoPriority = document.getElementById("todoPriority");
 const deleteTodoBtn = document.getElementById("deleteTodoBtn");
 const closeTodoBtn = document.getElementById("closeTodoBtn");
 const shareTodoBtn = document.getElementById("shareTodoBtn");
@@ -49,6 +50,7 @@ export {
   todoStatus,
   todoEstimationField,
   todoEstimationPoints,
+  todoPriority,
   deleteTodoBtn,
   closeTodoBtn,
   shareTodoBtn,

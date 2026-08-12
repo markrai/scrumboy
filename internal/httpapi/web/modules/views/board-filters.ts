@@ -3,6 +3,7 @@ import { apiErrorMessage, t } from '../i18n/index.js';
 import {
   getAssigneeFromUrl,
   getBoard,
+  getPriorityFromUrl,
   getSearch,
   getSlug,
   getSortFromUrl,
@@ -35,7 +36,7 @@ const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
 
-type ReloadBoardFn = (slug: string | null, tag: string | null, search: string | null, sprintId: string | null, assignee: string | null, sort: string | null) => Promise<void>;
+type ReloadBoardFn = (slug: string | null, tag: string | null, search: string | null, sprintId: string | null, assignee: string | null, sort: string | null, priority?: string | null) => Promise<void>;
 
 let reloadBoardFn: ReloadBoardFn | null = null;
 let showErrorFn: ((message: string) => void) | null = null;
@@ -75,6 +76,13 @@ function setSortParam(sort: string | null): void {
   history.replaceState({}, "", url.pathname + url.search);
 }
 
+function setPriorityParam(priority: string | null): void {
+  const url = new URL(window.location.href);
+  if (priority) url.searchParams.set("priority", priority);
+  else url.searchParams.delete("priority");
+  history.replaceState({}, "", url.pathname + url.search);
+}
+
 function reloadBoardWithCurrentFilters(): void {
   if (!reloadBoardFn) return;
   reloadBoardFn(
@@ -84,6 +92,7 @@ function reloadBoardWithCurrentFilters(): void {
     getSprintIdFromUrl(),
     getAssigneeFromUrl(),
     getSortFromUrl(),
+    getPriorityFromUrl(),
   ).catch((err: any) => {
     showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
   });
@@ -136,7 +145,7 @@ function bindSearchInput(): void {
     searchInput.value = "";
     setSearchParam("");
     if (!reloadBoardFn) return;
-    reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err: any) => {
+    reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err: any) => {
       showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });
     updateClearButton();
@@ -173,7 +182,7 @@ function bindSearchInput(): void {
       const trimmedValue = value.trim();
       setSearchParam(trimmedValue);
       if (!reloadBoardFn) return;
-      reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl()).catch((err: any) => {
+      reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err: any) => {
         showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
       });
     }, 300);
@@ -218,7 +227,7 @@ function openFilterPanel(panel: HTMLElement, toggle: HTMLElement): void {
 // pulse/glow @keyframes animation on the chevron whenever a non-default
 // assignee filter or sort order is currently applied (from the URL).
 function updateFilterToggleActiveState(toggle: HTMLElement): void {
-  const active = isBoardFilterActive(getAssigneeFromUrl(), getSortFromUrl());
+  const active = isBoardFilterActive(getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
   toggle.classList.toggle("search-filter-toggle--active", active);
 }
 
@@ -244,25 +253,32 @@ function handleFilterPanelDocumentClick(e: MouseEvent): void {
   }
 
   const optionEl = target instanceof Element
-    ? target.closest("[data-assignee-option], [data-sort-option]") as HTMLElement | null
+    ? target.closest("[data-assignee-option], [data-sort-option], [data-priority-option]") as HTMLElement | null
     : null;
   if (optionEl && panel.contains(optionEl)) {
-    const isAssignee = optionEl.hasAttribute("data-assignee-option");
-    const attr = isAssignee ? "data-assignee-option" : "data-sort-option";
+    const kind = optionEl.hasAttribute("data-assignee-option")
+      ? "assignee"
+      : optionEl.hasAttribute("data-sort-option")
+        ? "sort"
+        : "priority";
+    const attr = kind === "assignee" ? "data-assignee-option" : kind === "sort" ? "data-sort-option" : "data-priority-option";
     const value = optionEl.getAttribute(attr) || null;
     const label = optionEl.textContent?.trim() || "";
 
-    if (isAssignee) {
+    if (kind === "assignee") {
       setAssigneeParam(value);
       panel.querySelectorAll("[data-assignee-option]").forEach((el) => el.classList.remove("is-active"));
-    } else {
+    } else if (kind === "sort") {
       setSortParam(value);
       panel.querySelectorAll("[data-sort-option]").forEach((el) => el.classList.remove("is-active"));
+    } else {
+      setPriorityParam(value);
+      panel.querySelectorAll("[data-priority-option]").forEach((el) => el.classList.remove("is-active"));
     }
     optionEl.classList.add("is-active");
 
     if (value) {
-      showToast(t(isAssignee ? "board.filters.filteringOn" : "board.filters.sortedBy", { value: label }));
+      showToast(t(kind === "sort" ? "board.filters.sortedBy" : "board.filters.filteringOn", { value: label }));
     }
 
     updateFilterToggleActiveState(toggle);
@@ -275,6 +291,7 @@ function handleFilterPanelDocumentClick(e: MouseEvent): void {
       getSprintIdFromUrl(),
       getAssigneeFromUrl(),
       getSortFromUrl(),
+      getPriorityFromUrl(),
     ).catch((err: any) => {
       showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });

@@ -13,6 +13,7 @@ const {
   invalidateBoardMock,
   refreshSprintsAndChipsMock,
   recordLocalMutationMock,
+  showConfirmDialogMock,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   fetchProjectMembersMock: vi.fn(),
@@ -21,6 +22,7 @@ const {
   invalidateBoardMock: vi.fn(),
   refreshSprintsAndChipsMock: vi.fn(),
   recordLocalMutationMock: vi.fn(),
+  showConfirmDialogMock: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
@@ -36,7 +38,7 @@ vi.mock('../utils.js', () => ({
       .replaceAll("'", '&#039;'),
   showToast: vi.fn(),
   getAppVersion: () => 'test-version',
-  showConfirmDialog: vi.fn().mockResolvedValue(false),
+  showConfirmDialog: showConfirmDialogMock,
   confirmDelete: vi.fn(),
   isAnonymousBoard: () => false,
   renderUserAvatar: () => '',
@@ -226,6 +228,8 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     invalidateBoardMock.mockReset();
     refreshSprintsAndChipsMock.mockReset();
     recordLocalMutationMock.mockReset();
+    showConfirmDialogMock.mockReset();
+    showConfirmDialogMock.mockResolvedValue(false);
   });
 
   afterEach(async () => {
@@ -431,6 +435,54 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
 
     // Lane name input value (user data) preserved + chrome localized.
     expect(document.querySelector('[data-i18n-text="settings.workflow.title"]')?.textContent).toBe(deCatalog['settings.workflow.title']);
+  });
+
+  it('Priorities: uses priority-specific unsaved confirmation when switching tabs with a dirty draft', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      if (url === '/api/board/alpha/priorities/counts') {
+        return { countsByPriorityKey: { low: 0, medium: 0, urgent: 0 } };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    const { i18n } = await setupSettingsView({
+      activeTab: 'priorities',
+      slug: 'alpha',
+      board: {
+        project: { id: 7 },
+        priorityOrder: [
+          { key: 'low', name: 'Low', color: '#9CA3AF' },
+          { key: 'medium', name: 'Medium', color: '#F59E0B' },
+          { key: 'urgent', name: 'Urgent', color: '#EF4444' },
+        ],
+      },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    await flushPromises();
+    await i18n.setLocale('de');
+    await flushPromises();
+
+    const nameInput = document.querySelector('[data-priority-name="medium"]') as HTMLInputElement | null;
+    if (!nameInput) throw new Error('missing priority name input');
+    nameInput.value = 'Dirty priority';
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const profileTab = document.querySelector('.settings-tab[data-tab="profile"]') as HTMLElement | null;
+    if (!profileTab) throw new Error('missing profile settings tab');
+    profileTab.click();
+    await flushPromises();
+
+    expect(showConfirmDialogMock).toHaveBeenCalledOnce();
+    expect(showConfirmDialogMock).toHaveBeenCalledWith(
+      deCatalog['settings.priorities.unsavedConfirm.message'],
+      deCatalog['settings.priorities.unsavedConfirm.title'],
+      deCatalog['settings.priorities.unsavedConfirm.confirm'],
+    );
+    expect(document.querySelector('.settings-tab--active[data-tab="priorities"]')).toBeTruthy();
   });
 
   it('Workflow: localizes lanes-unavailable error in place without refetching counts', async () => {

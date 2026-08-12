@@ -25,6 +25,7 @@ type mcpBoardReadCall struct {
 	tagFilter      string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
+	priorityFilter store.PriorityFilter
 	sprintFilter   store.SprintFilter
 	sortOrder      store.SortOrder
 	err            error
@@ -131,6 +132,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 	sortOrder store.SortOrder,
 ) ([]store.Todo, string, bool, error) {
@@ -145,6 +147,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 		tagFilter:      tagFilter,
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
+		priorityFilter: priorityFilter,
 		sprintFilter:   sprintFilter,
 		sortOrder:      sortOrder,
 	})
@@ -167,6 +170,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 	tagFilter string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
+	priorityFilter store.PriorityFilter,
 	sprintFilter store.SprintFilter,
 ) (int, error) {
 	f.recorder.record(mcpBoardReadCall{
@@ -177,6 +181,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 		tagFilter:      tagFilter,
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
+		priorityFilter: priorityFilter,
 		sprintFilter:   sprintFilter,
 	})
 	if f.contextErr {
@@ -360,6 +365,10 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseAssigneeFilter: %v", err)
 	}
+	priority, err := store.ParsePriorityFilter("urgent")
+	if err != nil {
+		t.Fatalf("ParsePriorityFilter: %v", err)
+	}
 	sprintID := int64(91)
 	type contextKey struct{}
 	ctx := context.WithValue(context.Background(), contextKey{}, "bound")
@@ -369,6 +378,7 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 		TagFilter:      "tag",
 		SearchFilter:   "search",
 		AssigneeFilter: assignee,
+		PriorityFilter: priority,
 		SprintID:       &sprintID,
 		Limit:          7,
 		SortOrder:      store.SortOrderDefault,
@@ -422,6 +432,7 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 		}
 		if call.projectID != 17 || call.tagFilter != "tag" || call.searchFilter != "search" ||
 			!reflect.DeepEqual(call.assigneeFilter, assignee) ||
+			!reflect.DeepEqual(call.priorityFilter, priority) ||
 			call.sprintFilter != (store.SprintFilter{Mode: "sprint", SprintID: 91}) {
 			t.Fatalf("%s arguments = %#v", call.operation, call)
 		}
@@ -434,6 +445,73 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestMCPBoardReadColumnKeyFilter(t *testing.T) {
+	t.Run("matching key queries only that lane and omits the rest", func(t *testing.T) {
+		h := newMCPBoardReadHarness()
+		h.lanes.pages["triage"] = mcpBoardReadLanePage{
+			todos: []store.Todo{
+				{ID: 101, ProjectID: 17, LocalID: 1, ColumnKey: "triage", Rank: 100},
+			},
+		}
+		h.lanes.counts["triage"] = 5
+		prepared := prepareMCPBoardRead(t, h, context.Background())
+
+		result, err := prepared.Read(MCPBoardReadQuery{ColumnKey: "triage", Limit: 20})
+		if err != nil {
+			t.Fatalf("Read: %v", err)
+		}
+
+		wantOperations := []string{"access", "workflow", "list:triage", "count:triage"}
+		if got := h.recorder.operations(); !reflect.DeepEqual(got, wantOperations) {
+			t.Fatalf("operations = %v, want %v (the shipped lane must not be queried)", got, wantOperations)
+		}
+		if len(result.Columns) != 1 || result.Columns[0].Workflow.Key != "triage" {
+			t.Fatalf("columns = %#v, want only triage", result.Columns)
+		}
+	})
+
+	t.Run("surrounding whitespace is trimmed before matching", func(t *testing.T) {
+		h := newMCPBoardReadHarness()
+		prepared := prepareMCPBoardRead(t, h, context.Background())
+
+		result, err := prepared.Read(MCPBoardReadQuery{ColumnKey: "  shipped  ", Limit: 20})
+		if err != nil {
+			t.Fatalf("Read: %v", err)
+		}
+		if len(result.Columns) != 1 || result.Columns[0].Workflow.Key != "shipped" {
+			t.Fatalf("columns = %#v, want only shipped", result.Columns)
+		}
+	})
+
+	t.Run("unknown key fails validation before any lane is queried", func(t *testing.T) {
+		h := newMCPBoardReadHarness()
+		prepared := prepareMCPBoardRead(t, h, context.Background())
+
+		_, err := prepared.Read(MCPBoardReadQuery{ColumnKey: "does-not-exist", Limit: 20})
+
+		if !errors.Is(err, ErrInvalidMCPBoardColumnKey) {
+			t.Fatalf("Read error = %v, want ErrInvalidMCPBoardColumnKey", err)
+		}
+		wantOperations := []string{"access", "workflow"}
+		if got := h.recorder.operations(); !reflect.DeepEqual(got, wantOperations) {
+			t.Fatalf("operations = %v, want %v", got, wantOperations)
+		}
+	})
+
+	t.Run("empty key preserves existing all-columns behavior", func(t *testing.T) {
+		h := newMCPBoardReadHarness()
+		prepared := prepareMCPBoardRead(t, h, context.Background())
+
+		result, err := prepared.Read(MCPBoardReadQuery{ColumnKey: "", Limit: 20})
+		if err != nil {
+			t.Fatalf("Read: %v", err)
+		}
+		if len(result.Columns) != 2 {
+			t.Fatalf("columns = %#v, want both columns", result.Columns)
+		}
+	})
 }
 
 func TestMCPBoardReadSprintSemantics(t *testing.T) {

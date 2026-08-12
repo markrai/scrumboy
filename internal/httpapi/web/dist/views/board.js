@@ -18,7 +18,7 @@ import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneF
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
-import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, getBoardColumns, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
+import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
 import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
@@ -453,6 +453,7 @@ async function handleLoadMore(status) {
                 tagColors,
                 showPointsMode,
                 selectedIds: getSelectedTodoIds(),
+                priorityTiers: board ? buildPriorityTierMap(board) : undefined,
             };
             items.forEach((t) => {
                 const card = document.createElement("div");
@@ -763,6 +764,7 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort) {
             tagColors,
             showPointsMode,
             selectedIds: getSelectedTodoIds(),
+            priorityTiers: buildPriorityTierMap(board),
         };
         boardEl.innerHTML = buildBoardColumnsHtml({
             boardCols,
@@ -881,6 +883,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
         tagColors,
         showPointsMode,
         selectedIds: getSelectedTodoIds(),
+        priorityTiers: buildPriorityTierMap(board),
     };
     app.innerHTML = `
     <div class="page">

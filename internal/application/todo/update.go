@@ -24,6 +24,7 @@ type UpdatePatch struct {
 	EstimationPoints Field[*int64]
 	AssigneeUserID   Field[*int64]
 	SprintID         Field[*int64]
+	PriorityKey      Field[*string]
 }
 
 // HasFields reports syntactic patch presence. It intentionally does not
@@ -35,7 +36,8 @@ func (p UpdatePatch) HasFields() bool {
 		p.Tags.Present ||
 		p.EstimationPoints.Present ||
 		p.AssigneeUserID.Present ||
-		p.SprintID.Present
+		p.SprintID.Present ||
+		p.PriorityKey.Present
 }
 
 // UpdateCommand identifies a todo by its project-local ID and carries its
@@ -94,6 +96,11 @@ func MaterializeUpdateInput(existing store.Todo, patch UpdatePatch) store.Update
 		assigneeUserID = cloneUpdateInt64Ptr(patch.AssigneeUserID.Value)
 	}
 
+	priorityKey := cloneUpdateStringPtr(existing.PriorityKey)
+	if patch.PriorityKey.Present {
+		priorityKey = cloneUpdateStringPtr(patch.PriorityKey.Value)
+	}
+
 	var sprintID *int64
 	clearSprint := false
 	if patch.SprintID.Present {
@@ -105,13 +112,15 @@ func MaterializeUpdateInput(existing store.Todo, patch UpdatePatch) store.Update
 	}
 
 	return store.UpdateTodoInput{
-		Title:            title,
-		Body:             body,
-		Tags:             tags,
-		EstimationPoints: estimationPoints,
-		AssigneeUserID:   assigneeUserID,
-		SprintID:         sprintID,
-		ClearSprint:      clearSprint,
+		Title:              title,
+		Body:               body,
+		Tags:               tags,
+		EstimationPoints:   estimationPoints,
+		AssigneeUserID:     assigneeUserID,
+		SprintID:           sprintID,
+		ClearSprint:        clearSprint,
+		PriorityKey:        priorityKey,
+		PriorityKeyPresent: patch.PriorityKey.Present,
 	}
 }
 
@@ -125,6 +134,14 @@ func cloneUpdateStrings(values []string) []string {
 }
 
 func cloneUpdateInt64Ptr(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneUpdateStringPtr(value *string) *string {
 	if value == nil {
 		return nil
 	}

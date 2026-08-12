@@ -19,6 +19,8 @@ export const FIELD_TOOLTIP_MESSAGE_KEYS = {
   sprintDefaultWeeks: 'tooltips.sprintDefaultWeeks',
   doneLane: 'tooltips.doneLane',
   workflowAddLane: 'tooltips.workflowAddLane',
+  priorityAddTier: 'tooltips.priorityAddTier',
+  priority: 'tooltips.priority',
   tags: 'tooltips.tags',
   boardSearch: 'tooltips.boardSearch',
   sprintFilterScheduled: 'tooltips.sprintFilterScheduled',

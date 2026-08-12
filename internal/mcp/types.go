@@ -78,6 +78,7 @@ type todoItem struct {
 	EstimationPoints *int64     `json:"estimationPoints"`
 	AssigneeUserId   *int64     `json:"assigneeUserId"`
 	SprintId         *int64     `json:"sprintId"`
+	PriorityKey      *string    `json:"priorityKey"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	DoneAt           *time.Time `json:"doneAt"`
@@ -145,6 +146,13 @@ type workflowColumnItem struct {
 	Position int    `json:"position"`
 	IsDone   bool   `json:"isDone"`
 	System   bool   `json:"system"`
+}
+
+type priorityTierItem struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Color    string `json:"color"`
+	Position int    `json:"position"`
 }
 
 type boardColumnItem struct {

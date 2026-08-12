@@ -42,6 +42,9 @@
 | Add/remove members             | Maintainer+   | Last maintainer cannot be removed      |
 | List available users (add UI)  | Maintainer+   |                                        |
 | Sprints CRUD (create/activate/close) | Maintainer+ | Via board settings                      |
+| List priority tiers              | Viewer+       | Same definitions shown on the board     |
+| Create/update/delete priority tiers | Maintainer+ | Last and in-use tiers cannot be deleted |
+| Assign/clear todo priority       | Maintainer    | Key must belong to the todo's project   |
 
 ---
 
@@ -101,12 +104,13 @@ This table is **Settings tab visibility** in the SPA (`modules/dialogs/settings.
 | Users | Full mode **and** system role Admin or Owner |
 | Sprints | Board view (`slug` set) **and** project role Maintainer |
 | Workflow | Board view **and** project role Maintainer |
+| Priorities | Board view **and** project role Maintainer |
 | Customization | Always when Settings is open |
 | Tag Colors | Always when Settings is open (replaces older “Tags” label) |
 | Charts | Board view, full mode, **and** durable project (not temporary/anonymous expiry boards) |
 | Backup | Always when Settings is open |
 
-Contributor/Viewer on a durable board typically see Customization, Tag Colors, Charts, and Backup (not Sprints/Workflow). Anonymous/temporary boards omit Charts; Profile/Users require full mode.
+Contributor/Viewer on a durable board typically see Customization, Tag Colors, Charts, and Backup (not Sprints/Workflow/Priorities). Anonymous/temporary boards omit Charts; Profile/Users require full mode.
 
 ---
 

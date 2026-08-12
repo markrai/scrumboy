@@ -867,7 +867,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 	// Filtering by the label the chip renders, and by the legacy spelling a stale
 	// client may still send, must both resolve to the same two todos.
 	for _, filter := range []string{"make-space", "make space"} {
-		_, _, _, cols, err := st.GetBoard(ctx1, &pc, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctx1, &pc, filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard(%q): %v", filter, err)
 		}
@@ -875,7 +875,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 			t.Errorf("GetBoard(%q) returned %v, want %v", filter, got, want)
 		}
 
-		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
+		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
 		if err != nil {
 			t.Fatalf("GetBoardPaged(%q): %v", filter, err)
 		}
@@ -888,7 +888,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 
 		// Lane pagination path, used directly by the lane endpoint and by the
 		// per-lane fallback above the board soft cap.
-		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("ListTodosForBoardLane(%q): %v", filter, err)
 		}
@@ -896,7 +896,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 			t.Errorf("ListTodosForBoardLane(%q) returned %v, want %v", filter, got, want)
 		}
 
-		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"})
 		if err != nil {
 			t.Fatalf("CountTodosForBoardLane(%q): %v", filter, err)
 		}
@@ -906,7 +906,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 	}
 
 	// Paging through the filtered lane must still see both spellings.
-	page1, cursor, hasMore, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, math.MinInt64, 0, "make-space", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	page1, cursor, hasMore, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, math.MinInt64, 0, "make-space", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane page 1: %v", err)
 	}
@@ -914,7 +914,7 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 		t.Fatalf("expected a first page of 1 with more to come, got %d items hasMore=%v", len(page1), hasMore)
 	}
 	afterRank, afterID := ParseLaneCursor(cursor)
-	page2, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "make-space", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	page2, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 1, afterRank, afterID, "make-space", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane page 2: %v", err)
 	}
@@ -924,14 +924,14 @@ func TestProjectLabels_CanonicalFilterMatchesGroupedCount(t *testing.T) {
 
 	// A filter matching no backing row must return an empty board, never fall back
 	// to the unfiltered query.
-	_, _, _, emptyCols, err := st.GetBoard(ctx1, &pc, "no-such-tag", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, emptyCols, err := st.GetBoard(ctx1, &pc, "no-such-tag", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard(no-such-tag): %v", err)
 	}
 	if got := plBoardTitles(emptyCols); len(got) != 0 {
 		t.Errorf("unmatched filter must return no todos, got %v", got)
 	}
-	emptyCount, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, "no-such-tag", "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+	emptyCount, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, "no-such-tag", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"})
 	if err != nil {
 		t.Fatalf("CountTodosForBoardLane(no-such-tag): %v", err)
 	}
@@ -979,7 +979,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 		{filter: "make space", want: []string{"legacy"}},
 	}
 	for _, tc := range cases {
-		_, _, _, cols, err := st.GetBoard(ctx1, &pc, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctx1, &pc, tc.filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard(%q): %v", tc.filter, err)
 		}
@@ -987,7 +987,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 			t.Errorf("GetBoard(%q) returned %v, want %v", tc.filter, got, tc.want)
 		}
 
-		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
+		_, _, _, pagedCols, meta, err := st.GetBoardPaged(ctx1, &pc, tc.filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 10)
 		if err != nil {
 			t.Fatalf("GetBoardPaged(%q): %v", tc.filter, err)
 		}
@@ -998,7 +998,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 			t.Errorf("GetBoardPaged(%q) lane total = %d, want 1", tc.filter, total)
 		}
 
-		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		items, _, _, err := st.ListTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, 10, math.MinInt64, 0, tc.filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("ListTodosForBoardLane(%q): %v", tc.filter, err)
 		}
@@ -1006,7 +1006,7 @@ func TestProjectLabels_TemporaryBoardFilterStaysRowLevel(t *testing.T) {
 			t.Errorf("ListTodosForBoardLane(%q) returned %v, want %v", tc.filter, got, tc.want)
 		}
 
-		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, tc.filter, "", AssigneeFilter{}, SprintFilter{Mode: "none"})
+		count, err := st.CountTodosForBoardLane(ctx1, p.ID, DefaultColumnBacklog, tc.filter, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"})
 		if err != nil {
 			t.Fatalf("CountTodosForBoardLane(%q): %v", tc.filter, err)
 		}
@@ -1056,7 +1056,7 @@ func TestProjectLabels_UncanonicalizableRowStaysAddressable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	_, _, _, cols, err := st.GetBoard(ctx1, &pc, legacyName, "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx1, &pc, legacyName, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard(%q): %v", legacyName, err)
 	}

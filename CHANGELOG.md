@@ -1,6 +1,57 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.30.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+
+## [3.31.3] - 2026-08-12
+
+### Added
+
+- **Board priority filter** - Board reads accept an optional `priority` query
+  param / MCP `board_get.priority` (empty = all, `none` = unset, otherwise a
+  tier key). The filter dropdown adds a Priority section listing all tiers,
+  “No priority,” and “All priorities,” and keeps the selection across board
+  reloads. REST and MCP contract tests cover the filter grammar.
+
+## [3.31.2] - 2026-08-12
+
+### Changed
+
+- **Todo deletions move behind application services** - REST and MCP todo
+  deletions now share `internal/application/todo` command boundaries instead of
+  owning write logic in the transports. HTTP and MCP adapters stay thin
+  wrappers; permissions, validation, response shapes, and REST board-refresh
+  side effects are preserved (MCP remains realtime-silent). Contract tests lock
+  the migrated deletion paths.
+
+## [3.31.1] - 2026-08-11
+
+### Added
+
+- **MCP `board_get.columnKey` filter** - Optional `columnKey` scopes a board read
+  to one workflow column. Omitting it preserves the existing all-columns
+  behavior. Pagination metadata and `cursorByColumn` remain keyed by column;
+  cursors for other valid workflow columns are ignored when the request is
+  scoped. Public MCP documentation and contract coverage now describe and lock
+  down the filter, pagination continuation, and irrelevant-cursor semantics.
+
+## [3.31.0] - 2026-08-11
+
+### Added
+
+- **Customizable project priority tiers** - Maintainers can create, rename,
+  recolor, and delete unused priority tiers. Todos can carry a stable
+  `priorityKey`; board responses include ordered tier definitions, and REST and
+  MCP expose priority configuration operations.
+- **Priority-aware backup/import** - Export format 1.1 now emits explicit
+  priority presence while remaining compatible with older 1.1 backups.
+
+### Fixed
+
+- REST todo PATCH distinguishes omitted priority (preserve), explicit `null`
+  (clear), and a string key (assign). Merge import enforces that every stored
+  todo priority resolves within its project.
+- Priority mutations and merge imports share project-level SQLite writer
+  serialization, preventing avoidable busy errors and delete/assignment races.
 
 ## [3.30.3] - 2026-08-10
 

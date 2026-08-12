@@ -33,6 +33,7 @@ type MCPMoveLaneStore interface {
 		tagFilter string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
+		priorityFilter store.PriorityFilter,
 		sprintFilter store.SprintFilter,
 		sortOrder store.SortOrder,
 	) ([]store.Todo, string, bool, error)
@@ -179,6 +180,7 @@ func (m *PreparedMCPMove) validateAnchors(columnKey string, afterTodo, beforeTod
 			"",
 			"",
 			store.AssigneeFilter{},
+			store.PriorityFilter{},
 			store.SprintFilter{},
 			store.SortOrderDefault,
 		)
@@ -207,6 +209,7 @@ func (m *PreparedMCPMove) validateAnchors(columnKey string, afterTodo, beforeTod
 			"",
 			"",
 			store.AssigneeFilter{},
+			store.PriorityFilter{},
 			store.SprintFilter{},
 			store.SortOrderDefault,
 		)

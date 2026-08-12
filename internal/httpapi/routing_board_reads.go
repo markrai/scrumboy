@@ -60,6 +60,11 @@ func (s *Server) handlePreparedSlugBoardInitial(
 		writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
 		return
 	}
+	priorityFilter, err := s.parsePriorityFilterFromQuery(r)
+	if err != nil {
+		writeValidationError(w, "invalid priority", "invalid_priority", map[string]any{"field": "priority"})
+		return
+	}
 	sortOrder, err := s.parseSortOrderFromQuery(r)
 	if err != nil {
 		writeValidationError(w, "invalid sort", "invalid_sort", map[string]any{"field": "sort"})
@@ -98,6 +103,7 @@ func (s *Server) handlePreparedSlugBoardInitial(
 		TagFilter:      tag,
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   sprintFilter,
 		SortOrder:      sortOrder,
 		LimitPerLane:   limitPerLane,
@@ -109,6 +115,7 @@ func (s *Server) handlePreparedSlugBoardInitial(
 	writeJSON(w, http.StatusOK, boardToJSONWithMeta(
 		result.Project,
 		result.Workflow,
+		result.Priorities,
 		result.Tags,
 		result.Columns,
 		result.ColumnsMeta,
@@ -128,6 +135,11 @@ func (s *Server) handlePreparedSlugBoardLane(
 	assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
 	if err != nil {
 		writeValidationError(w, "invalid assignee", "invalid_assignee", map[string]any{"field": "assignee"})
+		return
+	}
+	priorityFilter, err := s.parsePriorityFilterFromQuery(r)
+	if err != nil {
+		writeValidationError(w, "invalid priority", "invalid_priority", map[string]any{"field": "priority"})
 		return
 	}
 	sprintFilter, err := s.parseSprintFilterFromQuery(r)
@@ -172,6 +184,7 @@ func (s *Server) handlePreparedSlugBoardLane(
 		TagFilter:      tag,
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
+		PriorityFilter: priorityFilter,
 		SprintFilter:   sprintFilter,
 		SortOrder:      sortOrder,
 	})

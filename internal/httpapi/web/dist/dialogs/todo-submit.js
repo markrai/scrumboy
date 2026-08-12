@@ -15,6 +15,7 @@ function appendOptionalFields(payload, input) {
     if (input.assigneeEnabled) {
         payload.assigneeUserId = input.assigneeUserId ?? null;
     }
+    payload.priorityKey = input.priorityKey || null;
     return payload;
 }
 export function buildTodoCreatePayload(input) {

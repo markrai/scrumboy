@@ -659,6 +659,9 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 			return Project{}, err
 		}
 	}
+	if err := s.ensureDefaultPriorityTiersTx(ctx, tx, id); err != nil {
+		return Project{}, err
+	}
 
 	actorUserID := ownerUserID
 	meta := map[string]any{"name": name, "is_anonymous": false}
@@ -1384,6 +1387,10 @@ func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 			return Project{}, fmt.Errorf("last insert id anonymous board: %w", err)
 		}
 		id = lastID
+		if err := s.ensureDefaultPriorityTiersTx(ctx, tx, id); err != nil {
+			_ = tx.Rollback()
+			return Project{}, err
+		}
 
 		actorUserID := creatorUserID
 		meta := map[string]any{"name": name, "is_anonymous": creatorUserID == nil}

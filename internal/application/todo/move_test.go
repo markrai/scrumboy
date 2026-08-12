@@ -214,6 +214,7 @@ func (f *mcpMoveLaneFake) ListTodosForBoardLane(
 	_ string,
 	_ string,
 	_ store.AssigneeFilter,
+	_ store.PriorityFilter,
 	_ store.SprintFilter,
 	sortOrder store.SortOrder,
 ) ([]store.Todo, string, bool, error) {

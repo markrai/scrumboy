@@ -186,6 +186,9 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
   "implementedTools": [
     "system_getCapabilities",
     "projects_list",
+    "projects_create",
+    "projects_update",
+    "projects_delete",
     "todos_create",
     "todos_get",
     "todos_search",
@@ -218,7 +221,18 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "workflow_list",
     "workflow_create",
     "workflow_update",
-    "workflow_delete"
+    "workflow_delete",
+    "priorities_list",
+    "priorities_create",
+    "priorities_update",
+    "priorities_delete",
+    "dashboard_getSummary",
+    "dashboard_listTodos",
+    "metrics_getBurndown",
+    "metrics_getBacklogSize",
+    "admin_listUsers",
+    "admin_updateUserRole",
+    "admin_deleteUser"
   ]
 }
 ```
@@ -229,7 +243,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (35 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -365,16 +379,27 @@ cross-project IDs both return `NOT_FOUND`. This stored-ID convention is shared
 by MCP sprint mutations, todo sprint assignment, and sprint-scoped metrics.
 REST board URLs intentionally use the project-local sprint number instead.
 
+The optional `columnKey` filter restricts the board read to a single workflow
+column key (as returned by `workflow_list`). Surrounding whitespace is trimmed.
+Omit `columnKey` to preserve the existing all-columns behavior. An unknown or
+nonexistent column key returns `VALIDATION_ERROR` with `details.field:
+"columnKey"`. When set, `data.columns` and the pagination meta maps
+(`nextCursorByColumn`, `hasMoreByColumn`, `totalCountByColumn`) contain only
+that column; other workflow columns are omitted and are not queried. Pagination
+still uses column keys in `cursorByColumn`; entries for other valid workflow
+columns are ignored and are not decoded when `columnKey` scopes the request.
+
 `board_get` uses explicit validation tiers. Authentication/capability checks,
 input shape, required `projectSlug`, `limit`, assignee type/grammar, and `sort`
 are checked before project access because they are target-independent. Project
-access then precedes sprint resolution and workflow/cursor validation. As a
-result, a bad pre-access field still returns its exact `VALIDATION_ERROR` when
-the slug is denied, missing, or expired, while bad `sprintId` and
-`cursorByColumn` values are masked by `NOT_FOUND` for those targets. Cursor
-values are decoded in workflow order, so a malformed cursor for a later lane
-can follow successful reads of earlier lanes. The permanent `board.get` alias
-and both MCP transports use this same ordering.
+access then precedes sprint resolution, workflow/`columnKey` validation, and
+`cursorByColumn` validation. As a result, a bad pre-access field still returns
+its exact `VALIDATION_ERROR` when the slug is denied, missing, or expired,
+while bad `sprintId`, `columnKey`, and `cursorByColumn` values are masked by
+`NOT_FOUND` for those targets. Cursor values are decoded in workflow order for
+columns that are actually read, so a malformed cursor for a later lane can
+follow successful reads of earlier lanes. The permanent `board.get` alias and
+both MCP transports use this same ordering.
 
 REST slug board reads intentionally differ: they resolve access before query
 validation, so an inaccessible REST target masks all later query errors. This
@@ -407,6 +432,18 @@ require **maintainer role or higher**. `workflow_update` requires **both** `name
 partial update). `workflow_delete` removes an empty non-done column and rejects the done column, non-empty
 columns, and deletes that would leave fewer than 2 columns. See [API.md](../API.md#workflow) for full
 semantics.
+
+**Priorities**
+
+- `priorities_list`
+- `priorities_create`
+- `priorities_update`
+- `priorities_delete`
+
+`priorities_list` is available to any project Viewer or above.
+Create/update/delete require Maintainer. Tiers use immutable `key`, editable
+`name` and `#RRGGBB` `color`, and stable `position` order. Projects support at
+most 12 tiers and must retain one; an in-use tier cannot be deleted.
 
 ### Tool Index (Flat)
 
@@ -451,6 +488,10 @@ workflow_list
 workflow_create
 workflow_update
 workflow_delete
+priorities_list
+priorities_create
+priorities_update
+priorities_delete
 dashboard_getSummary
 dashboard_listTodos
 metrics_getBurndown
@@ -533,7 +574,7 @@ Use real values in place of the placeholders (e.g. `"my-project"`, `"Example tit
 
 (`todoItem` in `internal/mcp/types.go`; default column when omitted is `store.DefaultColumnBacklog` = **`backlog`** after `normalizeColumnKey` in `internal/mcp/adapter.go`.)
 
-**3. `todos_update`** — required: `projectSlug`, `localId`, `patch` (object). Only fields present in `patch` are updated; some fields may be set to JSON `null` to clear where the store allows it. Success data uses the same `todo` object shape as `todos_create` / `todos_get`.
+**3. `todos_update`** — required: `projectSlug`, `localId`, `patch` (object). Only fields present in `patch` are updated; some fields may be set to JSON `null` to clear where the store allows it. For `priorityKey`, omission preserves, `null` clears, and a string assigns a tier from the same project. Success data uses the same `todo` object shape as `todos_create` / `todos_get`.
 
 ## Examples
 

@@ -522,7 +522,7 @@ func TestAuthenticatedUser_ViewsAnonymousBoard(t *testing.T) {
 	// Authenticated user views board (with userID context)
 	ctxWithUser := WithUserID(ctx, user.ID)
 	pc, _ := st.GetProjectContextForRead(ctxWithUser, project.ID, ModeFull)
-	_, tags, _, cols, err := st.GetBoard(ctxWithUser, &pc, "", "", AssigneeFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, tags, _, cols, err := st.GetBoard(ctxWithUser, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("get board: %v", err)
 	}

@@ -649,14 +649,15 @@ func TransformBoard(board *Board, now time.Time) (*Bundle, error) {
 		}
 		todoMetadataByLocalID[localID] = string(metadataJSON)
 		todoExports = append(todoExports, store.TodoExport{
-			LocalID:   localID,
-			Title:     converted.title,
-			Body:      converted.body,
-			Status:    strings.ToUpper(converted.targetColumnKey),
-			Rank:      columnRanks[converted.targetColumnKey],
-			Tags:      converted.tagNames,
-			CreatedAt: now,
-			UpdatedAt: now,
+			LocalID:            localID,
+			Title:              converted.title,
+			Body:               converted.body,
+			Status:             strings.ToUpper(converted.targetColumnKey),
+			Rank:               columnRanks[converted.targetColumnKey],
+			Tags:               converted.tagNames,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			PriorityKeyPresent: true,
 		})
 	}
 
@@ -686,12 +687,14 @@ func TransformBoard(board *Board, now time.Time) (*Bundle, error) {
 			Scope:      "project",
 			Projects: []store.ProjectExport{
 				{
-					Name:            strings.TrimSpace(board.Name),
-					CreatedAt:       now,
-					UpdatedAt:       now,
-					WorkflowColumns: workflowColumns,
-					Todos:           todoExports,
-					Tags:            tagExports,
+					Name:                 strings.TrimSpace(board.Name),
+					CreatedAt:            now,
+					UpdatedAt:            now,
+					WorkflowColumns:      workflowColumns,
+					PriorityTiers:        []store.PriorityTierExport{},
+					PriorityTiersPresent: true,
+					Todos:                todoExports,
+					Tags:                 tagExports,
 				},
 			},
 		},

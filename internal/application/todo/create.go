@@ -18,6 +18,7 @@ type CreateValues struct {
 	EstimationPoints *int64
 	AssigneeUserID   *int64
 	SprintID         *int64
+	PriorityKey      *string
 }
 
 // ResolvedCreatePosition carries internal todo-row identities (store.Todo.ID)
@@ -73,6 +74,7 @@ func MaterializeCreateInput(command CreateCommand) store.CreateTodoInput {
 		EstimationPoints: cloneCreateInt64Ptr(command.Values.EstimationPoints),
 		SprintID:         cloneCreateInt64Ptr(command.Values.SprintID),
 		AssigneeUserID:   cloneCreateInt64Ptr(command.Values.AssigneeUserID),
+		PriorityKey:      cloneCreateStringPtr(command.Values.PriorityKey),
 		AfterID:          cloneCreateInt64Ptr(command.Position.AfterTodoID),
 		BeforeID:         cloneCreateInt64Ptr(command.Position.BeforeTodoID),
 	}
@@ -88,6 +90,14 @@ func cloneCreateStrings(values []string) []string {
 }
 
 func cloneCreateInt64Ptr(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
+}
+
+func cloneCreateStringPtr(value *string) *string {
 	if value == nil {
 		return nil
 	}

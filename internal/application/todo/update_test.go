@@ -36,6 +36,7 @@ func TestMaterializeUpdateInputCompleteOmission(t *testing.T) {
 	estimation := int64(5)
 	assignee := int64(41)
 	sprint := int64(7)
+	priority := "high"
 	existing := store.Todo{
 		Title:            "existing title",
 		Body:             "existing body",
@@ -43,6 +44,7 @@ func TestMaterializeUpdateInputCompleteOmission(t *testing.T) {
 		EstimationPoints: &estimation,
 		AssigneeUserID:   &assignee,
 		SprintID:         &sprint,
+		PriorityKey:      &priority,
 	}
 
 	in := MaterializeUpdateInput(existing, UpdatePatch{})
@@ -58,6 +60,9 @@ func TestMaterializeUpdateInputCompleteOmission(t *testing.T) {
 	}
 	assertCopiedUpdatePointer(t, "estimation", in.EstimationPoints, existing.EstimationPoints, estimation)
 	assertCopiedUpdatePointer(t, "assignee", in.AssigneeUserID, existing.AssigneeUserID, assignee)
+	if in.PriorityKey == nil || *in.PriorityKey != "high" || in.PriorityKey == existing.PriorityKey || in.PriorityKeyPresent {
+		t.Fatalf("omitted priority materialization=%+v", in)
+	}
 	if in.SprintID != nil || in.ClearSprint {
 		t.Fatalf("omitted sprint requested a mutation: SprintID=%v ClearSprint=%v", in.SprintID, in.ClearSprint)
 	}
@@ -74,6 +79,7 @@ func TestMaterializeUpdateInputExplicitReplacement(t *testing.T) {
 		EstimationPoints: Field[*int64]{Present: true, Value: &estimation},
 		AssigneeUserID:   Field[*int64]{Present: true, Value: &assignee},
 		SprintID:         Field[*int64]{Present: true, Value: &sprint},
+		PriorityKey:      Field[*string]{Present: true, Value: updateTestString("urgent")},
 	}
 	existing := fullyPopulatedUpdateTodo()
 
@@ -88,6 +94,9 @@ func TestMaterializeUpdateInputExplicitReplacement(t *testing.T) {
 	assertUpdatePointerValue(t, "estimation", in.EstimationPoints, estimation)
 	assertUpdatePointerValue(t, "assignee", in.AssigneeUserID, assignee)
 	assertUpdatePointerValue(t, "sprint", in.SprintID, sprint)
+	if !in.PriorityKeyPresent || in.PriorityKey == nil || *in.PriorityKey != "urgent" {
+		t.Fatalf("priority set=%+v", in)
+	}
 	if in.ClearSprint {
 		t.Fatal("explicit sprint set also requested sprint clearing")
 	}
@@ -98,6 +107,7 @@ func TestMaterializeUpdateInputExplicitClear(t *testing.T) {
 		EstimationPoints: Field[*int64]{Present: true, Value: nil},
 		AssigneeUserID:   Field[*int64]{Present: true, Value: nil},
 		SprintID:         Field[*int64]{Present: true, Value: nil},
+		PriorityKey:      Field[*string]{Present: true, Value: nil},
 	}
 
 	in := MaterializeUpdateInput(fullyPopulatedUpdateTodo(), patch)
@@ -109,6 +119,9 @@ func TestMaterializeUpdateInputExplicitClear(t *testing.T) {
 	}
 	if in.SprintID != nil || !in.ClearSprint {
 		t.Fatalf("sprint clear = SprintID %v, ClearSprint %v", in.SprintID, in.ClearSprint)
+	}
+	if !in.PriorityKeyPresent || in.PriorityKey != nil {
+		t.Fatalf("priority clear=%+v", in)
 	}
 
 	omitted := MaterializeUpdateInput(fullyPopulatedUpdateTodo(), UpdatePatch{})
@@ -215,6 +228,7 @@ func fullyPopulatedUpdateTodo() store.Todo {
 	estimation := int64(3)
 	assignee := int64(21)
 	sprint := int64(5)
+	priority := "high"
 	return store.Todo{
 		Title:            "existing title",
 		Body:             "existing body",
@@ -222,12 +236,15 @@ func fullyPopulatedUpdateTodo() store.Todo {
 		EstimationPoints: &estimation,
 		AssigneeUserID:   &assignee,
 		SprintID:         &sprint,
+		PriorityKey:      &priority,
 	}
 }
 
 func updateTestInt64(value int64) *int64 {
 	return &value
 }
+
+func updateTestString(value string) *string { return &value }
 
 func assertCopiedUpdatePointer(t *testing.T, name string, got, source *int64, want int64) {
 	t.Helper()

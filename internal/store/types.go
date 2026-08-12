@@ -102,6 +102,16 @@ type WorkflowColumn struct {
 	System    bool
 }
 
+// PriorityTier defines one ordered, per-project priority level for todos.
+type PriorityTier struct {
+	ID        int64
+	ProjectID int64
+	Key       string
+	Name      string
+	Color     string
+	Position  int
+}
+
 // SprintFilter represents the sprint filter for board queries.
 // Mode:
 // - "none" = no filter
@@ -131,6 +141,24 @@ const (
 type AssigneeFilter struct {
 	mode   assigneeFilterMode
 	userID int64
+}
+
+type priorityFilterMode uint8
+
+const (
+	priorityFilterNone priorityFilterMode = iota
+	priorityFilterNoPriority
+	priorityFilterKey
+)
+
+// PriorityFilter represents a validated board priority filter.
+//
+// Its zero value applies no priority filter. The internal fields deliberately
+// remain opaque so callers must use ParsePriorityFilter and cannot construct an
+// invalid mode.
+type PriorityFilter struct {
+	mode priorityFilterMode
+	key  string
 }
 
 // SortOrder represents the board todo ordering within each lane.
@@ -262,6 +290,7 @@ type Todo struct {
 	EstimationPoints *int64
 	AssigneeUserID   *int64
 	SprintID         *int64 // NULL = backlog; non-NULL = in that sprint
+	PriorityKey      *string
 	Tags             []string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time

@@ -220,7 +220,7 @@ describe('settings cards per lane', () => {
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await vi.waitFor(() => expect(invalidateBoardMock).toHaveBeenCalled());
 
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', '', '', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', '', '', null, null, null, null);
   });
 
   it('restores the previous value when save fails', async () => {

@@ -83,7 +83,7 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 	case errors.Is(err, store.ErrValidation):
 		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), nil)
 	case errors.Is(err, store.ErrConflict):
-		writeError(w, http.StatusConflict, "CONFLICT", err.Error(), nil)
+		writeError(w, http.StatusConflict, "CONFLICT", err.Error(), validationDetails(store.ErrorReason(err), nil))
 	case errors.Is(err, store.ErrTooManyAttempts):
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "too many attempts; please sign in again", nil)
 	case errors.Is(err, store.Err2FAEncryptionNotConfigured):
@@ -118,6 +118,9 @@ func writeValidationError(w http.ResponseWriter, message, reason string, details
 func validationReasonFromStoreError(err error) string {
 	if err == nil || !errors.Is(err, store.ErrValidation) {
 		return ""
+	}
+	if reason := store.ErrorReason(err); reason != "" {
+		return reason
 	}
 	msg := strings.TrimSpace(err.Error())
 	if strings.HasPrefix(msg, store.ErrValidation.Error()+": ") {

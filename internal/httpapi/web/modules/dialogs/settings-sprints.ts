@@ -276,6 +276,7 @@ export function bindSprintsTabInteractions(options: BindSprintsTabInteractionsOp
           null,
           url.searchParams.get('assignee'),
           url.searchParams.get('sort'),
+          url.searchParams.get('priority'),
           true
         ).catch(() => {});
         if (nextEnabled) {

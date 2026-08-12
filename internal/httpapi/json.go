@@ -287,6 +287,7 @@ type todoJSON struct {
 	EstimationPoints *int64     `json:"estimationPoints,omitempty"`
 	AssigneeUserId   *int64     `json:"assigneeUserId,omitempty"`
 	SprintId         *int64     `json:"sprintId,omitempty"`
+	PriorityKey      *string    `json:"priorityKey,omitempty"`
 	Tags             []string   `json:"tags"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
@@ -306,6 +307,7 @@ func todoToJSON(t store.Todo) todoJSON {
 		EstimationPoints: t.EstimationPoints,
 		AssigneeUserId:   t.AssigneeUserID,
 		SprintId:         t.SprintID,
+		PriorityKey:      t.PriorityKey,
 		Tags:             t.Tags,
 		CreatedAt:        t.CreatedAt,
 		UpdatedAt:        t.UpdatedAt,
@@ -399,6 +401,7 @@ type dashboardTodoJSON struct {
 	ProjectDominantColor string    `json:"projectDominantColor"`
 	EstimationPoints     *int64    `json:"estimationPoints,omitempty"`
 	SprintId             *int64    `json:"sprintId,omitempty"`
+	PriorityKey          *string   `json:"priorityKey,omitempty"`
 	Status               string    `json:"status"`
 	StatusName           string    `json:"statusName"`
 	StatusColor          string    `json:"statusColor"`
@@ -507,6 +510,7 @@ func dashboardTodoToJSON(t store.DashboardTodo) dashboardTodoJSON {
 		ProjectDominantColor: t.ProjectDominantColor,
 		EstimationPoints:     t.EstimationPoints,
 		SprintId:             t.SprintID,
+		PriorityKey:          t.PriorityKey,
 		Status:               strings.ToUpper(t.ColumnKey),
 		StatusName:           t.StatusName,
 		StatusColor:          t.StatusColor,
@@ -562,11 +566,12 @@ type columnMetaJSON struct {
 }
 
 type boardJSON struct {
-	Project     projectJSON               `json:"project"`
-	ColumnOrder []workflowColumnJSON      `json:"columnOrder"`
-	Tags        []tagCountJSON            `json:"tags"`
-	Columns     map[string][]todoJSON     `json:"columns"`
-	ColumnsMeta map[string]columnMetaJSON `json:"columnsMeta,omitempty"`
+	Project       projectJSON               `json:"project"`
+	ColumnOrder   []workflowColumnJSON      `json:"columnOrder"`
+	PriorityOrder []priorityTierJSON        `json:"priorityOrder"`
+	Tags          []tagCountJSON            `json:"tags"`
+	Columns       map[string][]todoJSON     `json:"columns"`
+	ColumnsMeta   map[string]columnMetaJSON `json:"columnsMeta,omitempty"`
 }
 
 type lanePageJSON struct {
@@ -602,20 +607,40 @@ type workflowLaneCountsJSON struct {
 	CountsByColumnKey map[string]int `json:"countsByColumnKey"`
 }
 
-func boardToJSON(p store.Project, workflow []store.WorkflowColumn, tags []store.TagCount, cols map[string][]store.Todo) boardJSON {
-	return boardToJSONWithMeta(p, workflow, tags, cols, nil)
+type priorityTierJSON struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Color    string `json:"color"`
+	Position int    `json:"position"`
 }
 
-func boardToJSONWithMeta(p store.Project, workflow []store.WorkflowColumn, tags []store.TagCount, cols map[string][]store.Todo, meta map[string]store.LaneMeta) boardJSON {
+// priorityTierCountsJSON is the body for GET /api/board/{slug}/priorities/counts.
+// Priority tiers with zero todos may be omitted from countsByPriorityKey; clients treat a missing key as 0.
+type priorityTierCountsJSON struct {
+	Slug                string         `json:"slug"`
+	CountsByPriorityKey map[string]int `json:"countsByPriorityKey"`
+}
+
+func boardToJSON(p store.Project, workflow []store.WorkflowColumn, priorities []store.PriorityTier, tags []store.TagCount, cols map[string][]store.Todo) boardJSON {
+	return boardToJSONWithMeta(p, workflow, priorities, tags, cols, nil)
+}
+
+func boardToJSONWithMeta(p store.Project, workflow []store.WorkflowColumn, priorities []store.PriorityTier, tags []store.TagCount, cols map[string][]store.Todo, meta map[string]store.LaneMeta) boardJSON {
 	out := boardJSON{
-		Project:     projectToJSON(p),
-		ColumnOrder: make([]workflowColumnJSON, 0, len(workflow)),
-		Tags:        make([]tagCountJSON, 0, len(tags)),
-		Columns:     map[string][]todoJSON{},
+		Project:       projectToJSON(p),
+		ColumnOrder:   make([]workflowColumnJSON, 0, len(workflow)),
+		PriorityOrder: make([]priorityTierJSON, 0, len(priorities)),
+		Tags:          make([]tagCountJSON, 0, len(tags)),
+		Columns:       map[string][]todoJSON{},
 	}
 	for _, wc := range workflow {
 		out.ColumnOrder = append(out.ColumnOrder, workflowColumnJSON{
 			Key: wc.Key, Name: wc.Name, Color: wc.Color, IsDone: wc.IsDone, Position: wc.Position,
+		})
+	}
+	for _, pt := range priorities {
+		out.PriorityOrder = append(out.PriorityOrder, priorityTierJSON{
+			Key: pt.Key, Name: pt.Name, Color: pt.Color, Position: pt.Position,
 		})
 	}
 	for _, tc := range tags {
@@ -713,17 +738,23 @@ type exportDataJSON struct {
 
 // projectExportJSON: EstimationMode is exported for backup readability; on import the server ignores it and uses store.EstimationModeModifiedFibonacci (v1).
 type projectExportJSON struct {
-	Slug           string           `json:"slug"`
-	Name           string           `json:"name"`
-	EstimationMode string           `json:"estimationMode,omitempty"`
-	Image          *string          `json:"image,omitempty"`
-	DominantColor  string           `json:"dominantColor,omitempty"`
-	ExpiresAt      *time.Time       `json:"expiresAt"`
-	CreatedAt      time.Time        `json:"createdAt"`
-	UpdatedAt      time.Time        `json:"updatedAt"`
-	Todos          []todoExportJSON `json:"todos"`
-	Tags           []tagExportJSON  `json:"tags"`
-	Links          []linkExportJSON `json:"links,omitempty"`
+	Slug               string                       `json:"slug"`
+	Name               string                       `json:"name"`
+	EstimationMode     string                       `json:"estimationMode,omitempty"`
+	Image              *string                      `json:"image,omitempty"`
+	DominantColor      string                       `json:"dominantColor,omitempty"`
+	DefaultSprintWeeks int                          `json:"defaultSprintWeeks,omitempty"`
+	SprintsEnabled     *bool                        `json:"sprintsEnabled,omitempty"`
+	ExpiresAt          *time.Time                   `json:"expiresAt"`
+	CreatedAt          time.Time                    `json:"createdAt"`
+	UpdatedAt          time.Time                    `json:"updatedAt"`
+	WorkflowColumns    []store.WorkflowColumnExport `json:"workflowColumns,omitempty"`
+	PriorityTiers      []store.PriorityTierExport   `json:"priorityTiers"`
+	Sprints            []store.SprintExport         `json:"sprints,omitempty"`
+	Todos              []todoExportJSON             `json:"todos"`
+	Tags               []tagExportJSON              `json:"tags"`
+	Links              []linkExportJSON             `json:"links,omitempty"`
+	Wall               *store.WallExport            `json:"wall,omitempty"`
 }
 
 type todoExportJSON struct {
@@ -734,9 +765,12 @@ type todoExportJSON struct {
 	Rank             int64     `json:"rank"`
 	EstimationPoints *int64    `json:"estimationPoints,omitempty"`
 	AssigneeUserId   *int64    `json:"assigneeUserId,omitempty"`
+	SprintNumber     *int64    `json:"sprintNumber,omitempty"`
+	PriorityKey      *string   `json:"priorityKey"`
 	Tags             []string  `json:"tags"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	DoneAt           *int64    `json:"doneAt,omitempty"`
 }
 
 type tagExportJSON struct {
@@ -763,9 +797,12 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 				Rank:             t.Rank,
 				EstimationPoints: t.EstimationPoints,
 				AssigneeUserId:   t.AssigneeUserId,
+				SprintNumber:     t.SprintNumber,
+				PriorityKey:      t.PriorityKey,
 				Tags:             t.Tags,
 				CreatedAt:        t.CreatedAt,
 				UpdatedAt:        t.UpdatedAt,
+				DoneAt:           t.DoneAt,
 			})
 		}
 
@@ -787,17 +824,12 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 		}
 
 		projects = append(projects, projectExportJSON{
-			Slug:           p.Slug,
-			Name:           p.Name,
-			EstimationMode: p.EstimationMode,
-			Image:          p.Image,
-			DominantColor:  p.DominantColor,
-			ExpiresAt:      p.ExpiresAt,
-			CreatedAt:      p.CreatedAt,
-			UpdatedAt:      p.UpdatedAt,
-			Todos:          todos,
-			Tags:           tags,
-			Links:          links,
+			Slug: p.Slug, Name: p.Name, EstimationMode: p.EstimationMode,
+			Image: p.Image, DominantColor: p.DominantColor,
+			DefaultSprintWeeks: p.DefaultSprintWeeks, SprintsEnabled: p.SprintsEnabled,
+			ExpiresAt: p.ExpiresAt, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+			WorkflowColumns: p.WorkflowColumns, PriorityTiers: p.PriorityTiers, Sprints: p.Sprints,
+			Todos: todos, Tags: tags, Links: links, Wall: p.Wall,
 		})
 	}
 
