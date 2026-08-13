@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/store"
 )
 
@@ -64,23 +65,26 @@ func (s *Server) handleTodosPatchOrDelete(w http.ResponseWriter, r *http.Request
 			writeValidationError(w, "invalid json payload", "invalid_json", nil)
 			return true
 		}
-		todo, err := s.store.UpdateTodo(s.requestContext(r), todoID, store.UpdateTodoInput{
-			Title:              in.Title,
-			Body:               in.Body,
-			Tags:               in.Tags,
-			EstimationPoints:   in.EstimationPoints,
-			AssigneeUserID:     in.AssigneeUserID,
-			PriorityKey:        in.PriorityKey,
-			PriorityKeyPresent: raw["priorityKey"] != nil,
-		}, s.storeMode())
+		prepared := s.todoLegacyUpdates.Prepare(s.requestContext(r), todoapp.LegacyUpdateTarget{
+			Mode: s.storeMode(),
+		})
+		result, err := prepared.Update(todoapp.LegacyUpdateCommand{
+			TodoID:           todoID,
+			Title:            in.Title,
+			Body:             in.Body,
+			Tags:             in.Tags,
+			EstimationPoints: in.EstimationPoints,
+			AssigneeUserID:   in.AssigneeUserID,
+			PriorityKey: todoapp.Field[*string]{
+				Present: raw["priorityKey"] != nil,
+				Value:   in.PriorityKey,
+			},
+		})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		if !todo.AssignmentChanged {
-			s.emitRefreshNeeded(s.requestContext(r), todo.ProjectID, "todo_updated")
-		}
-		writeJSON(w, http.StatusOK, s.legacyTodoMutationJSON(s.requestContext(r), todo))
+		writeJSON(w, http.StatusOK, s.legacyTodoMutationJSON(s.requestContext(r), result.Todo))
 		return true
 
 	case http.MethodDelete:
