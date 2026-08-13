@@ -88,16 +88,18 @@ func (s *Server) handleTodosPatchOrDelete(w http.ResponseWriter, r *http.Request
 		return true
 
 	case http.MethodDelete:
-		projectID, err := s.store.GetProjectIDForTodo(s.requestContext(r), todoID)
+		prepared, err := s.todoLegacyDeletes.Prepare(s.requestContext(r), todoapp.LegacyDeleteTarget{
+			TodoID: todoID,
+			Mode:   s.storeMode(),
+		})
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		if err := s.store.DeleteTodo(s.requestContext(r), todoID, s.storeMode()); err != nil {
+		if err := prepared.Delete(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "todo_deleted")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
