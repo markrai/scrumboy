@@ -130,13 +130,20 @@ func (s *Server) handleTodosMove(w http.ResponseWriter, r *http.Request, rest []
 		writeValidationError(w, "missing toColumnKey", "missing_to_column_key", map[string]any{"field": "toColumnKey"})
 		return true
 	}
-	todo, err := s.store.MoveTodo(s.requestContext(r), todoID, toColumnKey, in.AfterID, in.BeforeID, s.storeMode())
+	prepared := s.todoLegacyMoves.Prepare(s.requestContext(r), todoapp.LegacyMoveTarget{
+		Mode: s.storeMode(),
+	})
+	result, err := prepared.Move(todoapp.LegacyMoveCommand{
+		TodoID:       todoID,
+		ToColumnKey:  toColumnKey,
+		AfterTodoID:  in.AfterID,
+		BeforeTodoID: in.BeforeID,
+	})
 	if err != nil {
 		writeStoreErr(w, err, true)
 		return true
 	}
-	s.emitRefreshNeeded(s.requestContext(r), todo.ProjectID, "todo_moved")
-	writeJSON(w, http.StatusOK, s.legacyTodoMutationJSON(s.requestContext(r), todo))
+	writeJSON(w, http.StatusOK, s.legacyTodoMutationJSON(s.requestContext(r), result.Todo))
 	return true
 }
 

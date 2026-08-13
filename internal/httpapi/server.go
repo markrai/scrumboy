@@ -104,6 +104,7 @@ type Server struct {
 	todoDeletes         *todoapp.DeleteService
 	todoMoves           *todoapp.MoveService
 	todoUpdates         *todoapp.UpdateService
+	todoLegacyMoves     *todoapp.LegacyMoveService
 	todoLegacyUpdates   *todoapp.LegacyUpdateService
 	todoLinkMutations   *todolinkapp.RESTMutationService
 	sprintDefinitions   *sprintapp.RESTDefinitionService
@@ -607,6 +608,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
 		Update:  st,
+		Refresh: boardRefreshPublisher,
+	})
+	server.todoLegacyMoves = todoapp.NewLegacyMoveService(todoapp.LegacyMoveServiceDependencies{
+		Move:    st,
 		Refresh: boardRefreshPublisher,
 	})
 	server.todoLegacyUpdates = todoapp.NewLegacyUpdateService(todoapp.LegacyUpdateServiceDependencies{
