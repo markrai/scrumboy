@@ -114,6 +114,9 @@ describe("board-realtime drag refresh guards", () => {
     selectorState.tag = "bug";
     selectorState.search = "login";
     selectorState.sprintId = "7";
+    selectorState.assignee = null;
+    selectorState.sort = null;
+    selectorState.priority = null;
     selectorState.authStatusAvailable = false;
     selectorState.user = null;
     selectorState.projectId = null;
@@ -142,6 +145,7 @@ describe("board-realtime drag refresh guards", () => {
   it("flushes a queued refresh exactly once after drag ends", async () => {
     const mod = await loadBoardRealtimeModule();
     dragState.value = true;
+    selectorState.priority = "deleted";
 
     mod.__queuePendingRealtimeRefreshForTest("alpha");
     vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest() + 500);
@@ -151,7 +155,7 @@ describe("board-realtime drag refresh guards", () => {
     vi.advanceTimersByTime(mod.__getRealtimeRefreshDebounceMsForTest() + 5);
 
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, "deleted");
     expect(mod.__getPendingRealtimeRefreshSlugForTest()).toBeNull();
 
     vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest());

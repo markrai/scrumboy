@@ -7,10 +7,11 @@
 ### Added
 
 - **Board priority filter** - Board reads accept an optional `priority` query
-  param / MCP `board_get.priority` (empty = all, `none` = unset, otherwise a
-  tier key). The filter dropdown adds a Priority section listing all tiers,
-  “No priority,” and “All priorities,” and keeps the selection across board
-  reloads. REST and MCP contract tests cover the filter grammar.
+  param / MCP `board_get.priority` (empty = all, `**none**` = unset, otherwise
+  a literal tier key, including `none`). The filter dropdown adds a Priority
+  section listing all tiers, “No priority,” and “All priorities,” and keeps the
+  selection across board reloads. REST and MCP contract tests cover the filter
+  grammar.
 
 ## [3.31.2] - 2026-08-12
 

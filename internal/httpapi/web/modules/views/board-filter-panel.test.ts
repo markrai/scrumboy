@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Board, PriorityTier } from '../types.js';
+import { NO_PRIORITY_FILTER_VALUE } from '../types.js';
 import { buildFilterPanelHtml, isBoardFilterActive } from './board-rendering.js';
 import type { BoardMember } from '../state/state.js';
 import enCatalog from '../i18n/locales/en.json';
@@ -63,6 +64,7 @@ function makeTiers(): PriorityTier[] {
   return [
     { key: 'high', name: 'High', color: '#ff0000', position: 0 },
     { key: 'low', name: 'Low', color: '#00ff00', position: 1 },
+    { key: 'none', name: 'None tier', color: '#0000ff', position: 2 },
   ];
 }
 
@@ -161,24 +163,31 @@ describe('board filter panel (assignee + sort)', () => {
       const html = buildFilterPanelHtml(null, null, makeMembers(), { id: 1, name: 'Me', email: 'me@example.com' }, null, makeTiers());
 
       expect(html).toContain('data-priority-option=""');
+      expect(html).toContain(`data-priority-option="${NO_PRIORITY_FILTER_VALUE}"`);
       expect(html).toContain('data-priority-option="none"');
       expect(html).toContain('data-priority-option="high"');
       expect(html).toContain('data-priority-option="low"');
+      expect(html.match(/data-priority-option="none"/g)).toHaveLength(1);
+      expect(html.match(/data-priority-option="\*\*none\*\*"/g)).toHaveLength(1);
       expect(html).toContain('>High<');
       expect(html).toContain('>Low<');
+      expect(html).toContain('>None tier<');
       expect(html).toContain('border-color: #ff0000');
     });
 
-    it('marks the option matching the current priority value as active', () => {
-      const html = buildFilterPanelHtml(null, null, makeMembers(), null, 'high', makeTiers());
-      expect(html).toContain('class="search-filter-option is-active" data-priority-option="high"');
+    it('distinguishes active real-none-tier and no-priority options', () => {
+      document.body.innerHTML = buildFilterPanelHtml(null, null, makeMembers(), null, 'none', makeTiers());
+      expect(Array.from(document.querySelectorAll('[data-priority-option].is-active')).map((el) => el.getAttribute('data-priority-option'))).toEqual(['none']);
+
+      document.body.innerHTML = buildFilterPanelHtml(null, null, makeMembers(), null, NO_PRIORITY_FILTER_VALUE, makeTiers());
+      expect(Array.from(document.querySelectorAll('[data-priority-option].is-active')).map((el) => el.getAttribute('data-priority-option'))).toEqual([NO_PRIORITY_FILTER_VALUE]);
     });
 
     it('marks the toggle as active when a priority filter is applied', () => {
       const htmlInactive = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers());
       expect(htmlInactive).not.toContain('search-filter-toggle--active');
 
-      const htmlActive = buildFilterPanelHtml(null, null, makeMembers(), null, 'none', makeTiers());
+      const htmlActive = buildFilterPanelHtml(null, null, makeMembers(), null, NO_PRIORITY_FILTER_VALUE, makeTiers());
       expect(htmlActive).toContain('search-filter-toggle--active');
     });
   });
@@ -361,7 +370,18 @@ describe('board filter panel (assignee + sort)', () => {
       expect(toastMock).not.toHaveBeenCalled();
     });
 
-    it('picking "No priority" sets priority=none', async () => {
+    it('picking "No priority" uses the collision-proof sentinel', async () => {
+      const { boardFilters } = await setupState('/alpha');
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+      (document.querySelector(`[data-priority-option="${NO_PRIORITY_FILTER_VALUE}"]`) as HTMLButtonElement).click();
+
+      expect(new URL(window.location.href).searchParams.get('priority')).toBe(NO_PRIORITY_FILTER_VALUE);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, NO_PRIORITY_FILTER_VALUE);
+    });
+
+    it('picking a real tier whose key is none keeps the literal tier key', async () => {
       const { boardFilters } = await setupState('/alpha');
       const reloadBoard = vi.fn().mockResolvedValue(undefined);
       boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });

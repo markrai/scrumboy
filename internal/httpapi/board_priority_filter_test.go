@@ -48,12 +48,21 @@ func TestBoardPriorityFilter_RESTContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
+	noneTier, err := st.AddPriorityTier(ctxOwner, project.ID, "None")
+	if err != nil {
+		t.Fatalf("AddPriorityTier None: %v", err)
+	}
+	if noneTier.Key != "none" {
+		t.Fatalf("None tier key = %q, want none", noneTier.Key)
+	}
 
 	urgent := "urgent"
 	high := "high"
+	none := noneTier.Key
 	for _, in := range []store.CreateTodoInput{
 		{Title: "Urgent card", PriorityKey: &urgent},
 		{Title: "High card", PriorityKey: &high},
+		{Title: "None tier card", PriorityKey: &none},
 		{Title: "No priority"},
 	} {
 		if _, err := st.CreateTodo(ctxOwner, project.ID, in, store.ModeFull); err != nil {
@@ -70,11 +79,20 @@ func TestBoardPriorityFilter_RESTContract(t *testing.T) {
 		assertPriorityBacklogTitles(t, board, "Urgent card")
 	})
 
-	t.Run("none", func(t *testing.T) {
+	t.Run("real tier whose key is none", func(t *testing.T) {
 		var board priorityFilterBoardResponse
 		resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"?priority=none", nil, &board)
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET board priority=none: status=%d body=%s", resp.StatusCode, string(body))
+		}
+		assertPriorityBacklogTitles(t, board, "None tier card")
+	})
+
+	t.Run("no priority sentinel", func(t *testing.T) {
+		var board priorityFilterBoardResponse
+		resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"?priority=%2A%2Anone%2A%2A", nil, &board)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET board priority=%s: status=%d body=%s", store.PriorityFilterNoPriorityValue, resp.StatusCode, string(body))
 		}
 		assertPriorityBacklogTitles(t, board, "No priority")
 	})
@@ -94,8 +112,8 @@ func TestBoardPriorityFilter_RESTContract(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("GET board no filter: status=%d body=%s", resp.StatusCode, string(body))
 		}
-		if got := len(board.Columns[store.DefaultColumnBacklog]); got != 3 {
-			t.Fatalf("backlog has %d todos, want 3", got)
+		if got := len(board.Columns[store.DefaultColumnBacklog]); got != 4 {
+			t.Fatalf("backlog has %d todos, want 4", got)
 		}
 	})
 

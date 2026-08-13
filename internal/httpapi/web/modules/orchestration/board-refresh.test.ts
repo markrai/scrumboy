@@ -92,11 +92,11 @@ describe('board-refresh orchestration', () => {
     mod.registerBoardRefresher(refreshBoard);
 
     await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, null, 'high');
-    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, null, 'none');
+    await mod.invalidateBoard('alpha', 'tag-a', 'query', '42', null, null, '**none**');
 
     expect(refreshBoard).toHaveBeenCalledTimes(2);
     expect(refreshBoard).toHaveBeenNthCalledWith(1, 'alpha', 'tag-a', 'query', '42', null, null, 'high');
-    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, null, 'none');
+    expect(refreshBoard).toHaveBeenNthCalledWith(2, 'alpha', 'tag-a', 'query', '42', null, null, '**none**');
   });
 
   it('setDefaultCardsPerLane clears any elevated floor slug so the new default applies immediately', async () => {

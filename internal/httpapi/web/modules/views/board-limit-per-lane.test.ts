@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NO_PRIORITY_FILTER_VALUE } from "../types.js";
 
 const { state, apiFetchMock, floorBySlug, defaultCardsPerLane } = vi.hoisted(() => ({
   state: { board: null as any, slug: null as string | null },
@@ -101,6 +102,7 @@ vi.mock("../sprints.js", () => ({ normalizeSprints: vi.fn((r: any) => r) }));
 vi.mock("../events.js", () => ({ on: vi.fn(), off: vi.fn() }));
 vi.mock("../realtime/guard.js", () => ({ recordLocalMutation: vi.fn() }));
 vi.mock("./board-rendering.js", () => ({
+  buildPriorityTierMap: vi.fn(() => ({})),
   buildBoardColumnsHtml: vi.fn(() => ""),
   buildFiltersHtml: vi.fn(() => ""),
   buildNoResultsHtml: vi.fn(() => ""),
@@ -235,6 +237,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.resetModules();
   });
 
@@ -276,5 +279,90 @@ describe("loadBoardBySlug limitPerLane query", () => {
     await board.loadBoardBySlug("beta", null, null, null);
 
     expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(50);
+  });
+
+  it("keeps a selected priority tier that still exists", async () => {
+    const board = await import("./board.js");
+    apiFetchMock.mockResolvedValue({
+      project: { id: 1, slug: "alpha" },
+      priorityOrder: [{ key: "high", name: "High", color: "#ff0000", position: 0 }],
+      tags: [],
+      columns: {},
+    });
+    window.history.replaceState({}, "", "/alpha?priority=high");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+
+    await board.loadBoardBySlug("alpha", null, null, null, null, null, "high");
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams.get("priority")).toBe("high");
+    expect(new URL(window.location.href).searchParams.get("priority")).toBe("high");
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("keeps the no-priority sentinel without reloading", async () => {
+    const board = await import("./board.js");
+    apiFetchMock.mockResolvedValue({
+      project: { id: 1, slug: "alpha" },
+      priorityOrder: [],
+      tags: [],
+      columns: {},
+    });
+    window.history.replaceState({}, "", `/alpha?priority=${encodeURIComponent(NO_PRIORITY_FILTER_VALUE)}`);
+    const replaceState = vi.spyOn(window.history, "replaceState");
+
+    await board.loadBoardBySlug("alpha", null, null, null, null, null, NO_PRIORITY_FILTER_VALUE);
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams.get("priority")).toBe(NO_PRIORITY_FILTER_VALUE);
+    expect(new URL(window.location.href).searchParams.get("priority")).toBe(NO_PRIORITY_FILTER_VALUE);
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
+  it("clears a nonexistent priority tier, preserves other query state, and reloads once", async () => {
+    const board = await import("./board.js");
+    apiFetchMock.mockResolvedValue({
+      project: { id: 1, slug: "alpha" },
+      priorityOrder: [{ key: "high", name: "High", color: "#ff0000", position: 0 }],
+      tags: [],
+      columns: {},
+    });
+    window.history.replaceState({}, "", "/alpha/t/9?tag=bug&search=needle&sprintId=7&assignee=me&sort=newest&columnKey=doing&priority=deleted#card");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+
+    await board.loadBoardBySlug("alpha", "bug", "needle", "7", "me", "newest", "deleted");
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+    const firstParams = new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams;
+    const secondParams = new URL(apiFetchMock.mock.calls[1][0], window.location.origin).searchParams;
+    expect(firstParams.get("priority")).toBe("deleted");
+    expect(secondParams.get("priority")).toBeNull();
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe("/alpha/t/9");
+    expect(window.location.hash).toBe("#card");
+    expect(Object.fromEntries(new URL(window.location.href).searchParams)).toEqual({
+      tag: "bug",
+      search: "needle",
+      sprintId: "7",
+      assignee: "me",
+      sort: "newest",
+      columnKey: "doing",
+    });
+  });
+
+  it("keeps a real tier whose key is the old none sentinel", async () => {
+    const board = await import("./board.js");
+    apiFetchMock.mockResolvedValue({
+      project: { id: 1, slug: "alpha" },
+      priorityOrder: [{ key: "none", name: "None", color: "#0000ff", position: 0 }],
+      tags: [],
+      columns: {},
+    });
+    window.history.replaceState({}, "", "/alpha?priority=none");
+
+    await board.loadBoardBySlug("alpha", null, null, null, null, null, "none");
+
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+    expect(new URL(window.location.href).searchParams.get("priority")).toBe("none");
   });
 });

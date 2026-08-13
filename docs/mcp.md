@@ -367,6 +367,13 @@ including non-string JSON values, return `VALIDATION_ERROR` with
 `details.field: "assignee"` instead of silently returning an unfiltered board.
 A valid unknown or non-member user ID returns an empty board.
 
+`board_get` accepts an optional string `priority` filter. Omit it or send an
+empty string for all priorities, use `"**none**"` for todos without a priority,
+or pass a literal priority-tier key. Priority keys use lowercase letters,
+digits, and underscores, so the `*` characters keep the sentinel outside that
+grammar and a real tier key such as `"none"` remains filterable. An unknown tier
+key returns an empty board.
+
 `board_get` also accepts an optional string `sort`: `"newest"` or `"oldest"`
 orders items within each lane by creation time with a stable ID tie-break.
 Omit `sort` to preserve manual drag-rank order.

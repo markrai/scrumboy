@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"scrumboy/internal/store"
 )
 
 // claudeToolNamePattern mirrors the regex Claude's MCP client validates every
@@ -123,6 +125,39 @@ func TestToolCatalog_BoardGetAssigneeIsDocumentedStringUnion(t *testing.T) {
 	for _, requiredText := range []string{`"me"`, `"unassigned"`, "encoded as a string"} {
 		if !strings.Contains(description, requiredText) {
 			t.Fatalf("board_get assignee description %q missing %q", description, requiredText)
+		}
+	}
+}
+
+func TestToolCatalog_BoardGetPriorityAdvertisesRuntimeContract(t *testing.T) {
+	def, ok := toolCatalogDefinitions()["board_get"]
+	if !ok {
+		t.Fatal("board_get missing from tool catalog")
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("board_get input schema has unexpected type %T", def.InputSchema)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get schema properties have unexpected shape: %#v", schema)
+	}
+	priority, ok := properties["priority"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get priority schema has unexpected shape: %#v", properties["priority"])
+	}
+	if priority["type"] != "string" {
+		t.Fatalf("board_get priority type = %#v, want string", priority["type"])
+	}
+	description, _ := priority["description"].(string)
+	for _, requiredText := range []string{"priority tier key", store.PriorityFilterNoPriorityValue, "omit for all priorities"} {
+		if !strings.Contains(description, requiredText) {
+			t.Fatalf("board_get priority description %q missing %q", description, requiredText)
+		}
+	}
+	for _, required := range requiredFieldNamesFromSchema(schema) {
+		if required == "priority" {
+			t.Fatal("board_get priority must remain optional")
 		}
 	}
 }

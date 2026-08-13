@@ -1,6 +1,6 @@
 import { columnsSpec } from '../features/drag-drop.js';
 import type { BoardMember } from '../state/state.js';
-import { Board, PriorityTier, Todo } from '../types.js';
+import { Board, NO_PRIORITY_FILTER_VALUE, PriorityTier, Todo } from '../types.js';
 import {
   escapeHTML,
   isTemporaryBoard,
@@ -467,7 +467,7 @@ function priorityFilterOptionsHtml(priority: string | null, tiers: PriorityTier[
     .join("");
   return `
       <button type="button" class="${optionClass("")}" data-priority-option="" data-i18n-text="board.filters.allPriorities">${allPrioritiesLabel}</button>
-      <button type="button" class="${optionClass("none")}" data-priority-option="none" data-i18n-text="board.filters.noPriority">${noPriorityLabel}</button>
+      <button type="button" class="${optionClass(NO_PRIORITY_FILTER_VALUE)}" data-priority-option="${NO_PRIORITY_FILTER_VALUE}" data-i18n-text="board.filters.noPriority">${noPriorityLabel}</button>
       ${tierOptions}
   `;
 }
