@@ -10,6 +10,7 @@ const EMAIL_NOTIFY_FIELDS = new Set([
   'v',
   'enabled',
   'assigned',
+  'createdByMe',
   'cardActivity',
   'sprintActivity',
   'projectActivity',
@@ -24,6 +25,7 @@ export function defaultEmailNotifyPref(): EmailNotifyPref {
     v: EMAIL_NOTIFY_PREF_VERSION,
     enabled: false,
     assigned: true,
+    createdByMe: true,
     cardActivity: false,
     sprintActivity: false,
     projectActivity: false,
@@ -53,7 +55,7 @@ export function parseEmailNotifyPref(raw: string | null | undefined): EmailNotif
     throw new Error('invalid email notification preference');
   }
   const pref = defaultEmailNotifyPref();
-  for (const key of ['enabled', 'assigned', 'cardActivity', 'sprintActivity', 'projectActivity', 'addedToProject'] as const) {
+  for (const key of ['enabled', 'assigned', 'createdByMe', 'cardActivity', 'sprintActivity', 'projectActivity', 'addedToProject'] as const) {
     if (!(key in fields)) continue;
     if (typeof fields[key] !== 'boolean') {
       throw new Error('invalid email notification preference');
@@ -68,6 +70,7 @@ function canonicalEmailNotifyPref(pref: EmailNotifyPref): EmailNotifyPref {
     v: EMAIL_NOTIFY_PREF_VERSION,
     enabled: pref.enabled,
     assigned: pref.assigned,
+    createdByMe: pref.createdByMe,
     cardActivity: pref.cardActivity,
     sprintActivity: pref.sprintActivity,
     projectActivity: pref.projectActivity,

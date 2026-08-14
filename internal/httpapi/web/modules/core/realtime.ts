@@ -38,7 +38,7 @@ type RealtimePayload = {
   type?: string;
   projectId?: number;
   projectSlug?: string | null;
-  payload?: { todoId?: number; title?: string; assigneeId?: number; actorUserId?: number };
+  payload?: { todoId?: number; localId?: number; title?: string; assigneeId?: number; actorUserId?: number };
 };
 
 function handleIncomingMessage(ev: MessageEvent): void {
@@ -63,6 +63,7 @@ function handleIncomingMessage(ev: MessageEvent): void {
 
   emit('realtime:event', parsed);
   handleTodoAssignedSideEffects(parsed);
+  handleTodoCreatorNotifiedSideEffects(parsed);
 }
 
 /**
@@ -183,4 +184,17 @@ function handleTodoAssignedSideEffects(parsed: RealtimePayload): void {
     return;
   }
   incrementUnread();
+}
+
+// Delivered only to the todo's creator (server-side EmitUser), so no assignee/self-authorship
+// check is needed here — receiving this event at all means someone else changed your card.
+function handleTodoCreatorNotifiedSideEffects(parsed: RealtimePayload): void {
+  if (parsed.type !== 'todo.creator_notified') return;
+  if (!getAuthStatusAvailable() || !getUser()) return;
+  const inner = parsed.payload;
+  if (!inner || typeof inner.todoId !== 'number') return;
+
+  const title = typeof inner.title === 'string' ? inner.title : '';
+  const fallbackTitle = title || t("realtime.todoFallback");
+  showToast(t("realtime.taskUpdated", { title: fallbackTitle }));
 }

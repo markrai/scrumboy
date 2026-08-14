@@ -129,5 +129,37 @@ func (b *sseBridge) OnEvent(_ context.Context, e eventbus.Event) {
 			b.hub.Emit(e.ProjectID, assignedData)
 			b.hub.EmitUser(*domain.ToAssigneeUID, assignedData)
 		}
+
+	case "todo.creator_notified":
+		var domain eventbus.TodoCreatorNotifiedPayload
+		if err := json.Unmarshal(e.Payload, &domain); err != nil {
+			return
+		}
+		type creatorNotifiedWire struct {
+			ID          string `json:"id"`
+			Type        string `json:"type"`
+			ProjectID   int64  `json:"projectId"`
+			ProjectSlug string `json:"projectSlug,omitempty"`
+			Payload     struct {
+				TodoID      int64  `json:"todoId"`
+				LocalID     int64  `json:"localId"`
+				Title       string `json:"title"`
+				ActorUserID int64  `json:"actorUserId"`
+			} `json:"payload"`
+		}
+		var w creatorNotifiedWire
+		w.ID = e.ID
+		w.Type = "todo.creator_notified"
+		w.ProjectID = e.ProjectID
+		w.ProjectSlug = domain.ProjectSlug
+		w.Payload.TodoID = domain.TodoID
+		w.Payload.LocalID = domain.LocalID
+		w.Payload.Title = domain.Title
+		w.Payload.ActorUserID = domain.ActorUserID
+		data, err := json.Marshal(w)
+		if err != nil {
+			return
+		}
+		b.hub.EmitUser(domain.CreatedByUID, data)
 	}
 }

@@ -800,6 +800,13 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID)
 	}
 
+	if s.todoCreatorNotifiedFunc != nil && !isAnonymousBoard && existing.CreatedByUserID != nil {
+		if actorID, ok := UserIDFromContext(ctx); ok && actorID != *existing.CreatedByUserID {
+			// Use committed title (existing.Title), not in.Title — partial PATCH may omit title.
+			s.todoCreatorNotifiedFunc(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", *existing.CreatedByUserID, actorID)
+		}
+	}
+
 	return existing, nil
 }
 
@@ -985,6 +992,13 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 		t := time.UnixMilli(*doneAtMs).UTC()
 		existing.DoneAt = &t
 	}
+
+	if s.todoCreatorNotifiedFunc != nil && !isAnonymousTemporaryBoard(p) && existing.CreatedByUserID != nil {
+		if actorID, ok := UserIDFromContext(ctx); ok && actorID != *existing.CreatedByUserID {
+			s.todoCreatorNotifiedFunc(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_moved", *existing.CreatedByUserID, actorID)
+		}
+	}
+
 	return existing, nil
 }
 

@@ -848,3 +848,23 @@ func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, loc
 		Payload:   payload,
 	})
 }
+
+// PublishTodoCreatorNotified emits a "todo.creator_notified" event through the event bus.
+// Designed to be passed to store.SetTodoCreatorNotifiedPublisher.
+func (s *Server) PublishTodoCreatorNotified(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, createdByUserID, actorUserID int64) {
+	payload, _ := json.Marshal(eventbus.TodoCreatorNotifiedPayload{
+		ProjectID:      projectID,
+		ProjectSlug:    projectSlug,
+		TodoID:         todoID,
+		LocalID:        localID,
+		Title:          title,
+		ActivityReason: activityReason,
+		CreatedByUID:   createdByUserID,
+		ActorUserID:    actorUserID,
+	})
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      "todo.creator_notified",
+		ProjectID: projectID,
+		Payload:   payload,
+	})
+}

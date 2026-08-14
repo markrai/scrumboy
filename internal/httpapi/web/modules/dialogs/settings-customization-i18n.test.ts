@@ -263,6 +263,7 @@ const enCatalog = {
   'settings.customization.emailNotify.saveFailed': 'Could not save email notification settings. Your previous settings are still active.',
   'settings.customization.emailNotify.toggleLabel': 'Email notifications on',
   'settings.customization.emailNotify.category.assigned': 'When a card is assigned to me',
+  'settings.customization.emailNotify.category.createdByMe': 'When a card I opened is updated',
   'settings.customization.emailNotify.category.cardActivity': 'Card created, moved, or deleted',
   'settings.customization.emailNotify.category.sprintActivity': 'Sprint activity',
   'settings.customization.emailNotify.category.projectActivity': 'Project, workflow, or tag changes',

@@ -16,11 +16,11 @@ func TestParseEmailNotifyPref(t *testing.T) {
 	}{
 		{name: "unset", raw: "", want: defaults},
 		{name: "empty object", raw: `{}`, want: defaults},
-		{name: "missing version", raw: `{"enabled":true}`, want: EmailNotifyPref{V: 1, Enabled: true, Assigned: true, AddedToProject: true}},
-		{name: "partial v1", raw: `{"v":1,"cardActivity":true}`, want: EmailNotifyPref{V: 1, Assigned: true, CardActivity: true, AddedToProject: true}},
+		{name: "missing version", raw: `{"enabled":true}`, want: EmailNotifyPref{V: 1, Enabled: true, Assigned: true, CreatedByMe: true, AddedToProject: true}},
+		{name: "partial v1", raw: `{"v":1,"cardActivity":true}`, want: EmailNotifyPref{V: 1, Assigned: true, CreatedByMe: true, CardActivity: true, AddedToProject: true}},
 		{name: "numeric v1", raw: `{"v":1.0}`, want: defaults},
-		{name: "explicit false", raw: `{"v":1,"assigned":false,"addedToProject":false}`, want: EmailNotifyPref{V: 1}},
-		{name: "complete", raw: `{"v":1,"enabled":true,"assigned":false,"cardActivity":true,"sprintActivity":true,"projectActivity":true,"addedToProject":false}`, want: EmailNotifyPref{V: 1, Enabled: true, CardActivity: true, SprintActivity: true, ProjectActivity: true}},
+		{name: "explicit false", raw: `{"v":1,"assigned":false,"createdByMe":false,"addedToProject":false}`, want: EmailNotifyPref{V: 1}},
+		{name: "complete", raw: `{"v":1,"enabled":true,"assigned":false,"createdByMe":true,"cardActivity":true,"sprintActivity":true,"projectActivity":true,"addedToProject":false}`, want: EmailNotifyPref{V: 1, Enabled: true, CreatedByMe: true, CardActivity: true, SprintActivity: true, ProjectActivity: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -46,6 +46,7 @@ func TestParseEmailNotifyPrefRejectsInvalidJSON(t *testing.T) {
 		`{"v":1.5}`,
 		`{"enabled":"true"}`,
 		`{"assigned":null}`,
+		`{"createdByMe":null}`,
 		`{"unknown":true}`,
 	}
 	for _, raw := range tests {
@@ -60,7 +61,7 @@ func TestEmailNotifyPrefCanonicalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"v":1,"enabled":false,"assigned":true,"cardActivity":false,"sprintActivity":false,"projectActivity":false,"addedToProject":true}`
+	want := `{"v":1,"enabled":false,"assigned":true,"createdByMe":true,"cardActivity":false,"sprintActivity":false,"projectActivity":false,"addedToProject":true}`
 	if string(raw) != want {
 		t.Fatalf("got %s, want %s", raw, want)
 	}

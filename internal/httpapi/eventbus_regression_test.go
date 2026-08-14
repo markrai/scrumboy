@@ -63,6 +63,7 @@ func newTestServerWithCollector(t *testing.T) (*Server, *store.Store, *collectin
 		mode:   "full",
 	}
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
+	st.SetTodoCreatorNotifiedPublisher(srv.PublishTodoCreatorNotified)
 	return srv, st, collector
 }
 
@@ -525,6 +526,83 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 	case msg := <-hubCh:
 		t.Fatalf("unexpected third hub event: %s", string(msg))
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// --- Test 4b: update by someone other than the creator => todo.creator_notified delivered to the creator's user channel ---
+
+func TestEventbus_UpdateByOtherUser_NotifiesCreator(t *testing.T) {
+	srv, st, collector := newTestServerWithCollector(t)
+
+	creatorCtx, creator, p := setupAuthenticatedProject(t, st)
+
+	todo, err := st.CreateTodo(creatorCtx, p.ID, store.CreateTodoInput{
+		Title:     "created by owner",
+		ColumnKey: store.DefaultColumnBacklog,
+	}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("create todo: %v", err)
+	}
+
+	actor, err := st.CreateUser(context.Background(), "actor@example.com", "pass1234A!", "Actor")
+	if err != nil {
+		t.Fatalf("create actor: %v", err)
+	}
+	if err := st.AddProjectMember(creatorCtx, creator.ID, p.ID, actor.ID, store.RoleMaintainer); err != nil {
+		t.Fatalf("add project member: %v", err)
+	}
+	actorCtx := store.WithUserID(context.Background(), actor.ID)
+
+	userCh, unsub := srv.hub.SubscribeUser(creator.ID)
+	defer unsub()
+	collector.events = nil
+
+	updated, err := st.UpdateTodo(actorCtx, todo.ID, store.UpdateTodoInput{
+		Title: "edited by someone else",
+	}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("update todo: %v", err)
+	}
+	if updated.AssignmentChanged {
+		t.Fatalf("expected AssignmentChanged=false for a title-only edit")
+	}
+
+	notifiedEvents := filterEvents(collector.events, "todo.creator_notified")
+	if len(notifiedEvents) != 1 {
+		t.Fatalf("expected 1 todo.creator_notified, got %d", len(notifiedEvents))
+	}
+	var notifiedPayload eventbus.TodoCreatorNotifiedPayload
+	if err := json.Unmarshal(notifiedEvents[0].Payload, &notifiedPayload); err != nil {
+		t.Fatal(err)
+	}
+	if notifiedPayload.CreatedByUID != creator.ID || notifiedPayload.ActorUserID != actor.ID {
+		t.Fatalf("unexpected creator/actor: createdByUserId=%d actorUserId=%d", notifiedPayload.CreatedByUID, notifiedPayload.ActorUserID)
+	}
+	if notifiedPayload.Title != "edited by someone else" {
+		t.Fatalf("expected committed title on payload, got %q", notifiedPayload.Title)
+	}
+
+	select {
+	case msg := <-userCh:
+		var ev struct {
+			Type    string `json:"type"`
+			Payload struct {
+				TodoID      int64  `json:"todoId"`
+				Title       string `json:"title"`
+				ActorUserID int64  `json:"actorUserId"`
+			} `json:"payload"`
+		}
+		if err := json.Unmarshal(msg, &ev); err != nil {
+			t.Fatalf("unmarshal user-channel msg: %v", err)
+		}
+		if ev.Type != "todo.creator_notified" {
+			t.Fatalf("expected todo.creator_notified on the creator's user channel, got %s", ev.Type)
+		}
+		if ev.Payload.ActorUserID != actor.ID {
+			t.Fatalf("expected actorUserId %d, got %d", actor.ID, ev.Payload.ActorUserID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for todo.creator_notified on creator's user channel")
 	}
 }
 
