@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Niezapisane zmiany",
   "todo.created": "Todo utworzone",
   "todo.deleteFailed": "Nie udało się usunąć Todo",
+  "todo.dialog.openedBy": "przez {name}",
   "todo.dialog.title.edit": "Edytuj Todo",
   "todo.dialog.title.new": "Nowe Todo",
   "todo.dialog.title.view": "Podgląd Todo",

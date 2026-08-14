@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Несохранённые изменения",
   "todo.created": "Задача создана",
   "todo.deleteFailed": "Не удалось удалить задачу",
+  "todo.dialog.openedBy": "автор: {name}",
   "todo.dialog.title.edit": "Редактировать задачу",
   "todo.dialog.title.new": "Новая задача",
   "todo.dialog.title.view": "Просмотр задачи",

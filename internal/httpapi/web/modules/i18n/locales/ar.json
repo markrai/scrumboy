@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "تغييرات غير محفوظة",
   "todo.created": "تم إنشاء المهمة",
   "todo.deleteFailed": "فشل حذف المهمة",
+  "todo.dialog.openedBy": "بواسطة {name}",
   "todo.dialog.title.edit": "تحرير المهمة",
   "todo.dialog.title.new": "مهمة جديدة",
   "todo.dialog.title.view": "عرض المهمة",

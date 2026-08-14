@@ -967,6 +967,7 @@
   "todo.confirm.discardTitle": "Unsaved changes",
   "todo.created": "Todo created",
   "todo.deleteFailed": "Failed to delete todo",
+  "todo.dialog.openedBy": "by {name}",
   "todo.dialog.title.edit": "Edit Todo",
   "todo.dialog.title.new": "New Todo",
   "todo.dialog.title.view": "View Todo",

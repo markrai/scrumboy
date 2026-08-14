@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Modifications non enregistrées",
   "todo.created": "Todo créé",
   "todo.deleteFailed": "Impossible de supprimer le todo",
+  "todo.dialog.openedBy": "par {name}",
   "todo.dialog.title.edit": "Modifier le todo",
   "todo.dialog.title.new": "Nouveau todo",
   "todo.dialog.title.view": "Afficher le todo",

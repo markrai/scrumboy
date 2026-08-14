@@ -237,10 +237,14 @@ func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoIn
 		if in.PriorityKey != nil {
 			priorityKeyArg = *in.PriorityKey
 		}
+		var createdByArg any = nil
+		if userIDPtr != nil {
+			createdByArg = *userIDPtr
+		}
 		res, err := tx.ExecContext(ctx, `
-INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			projectID, localID, in.Title, in.Body, in.ColumnKey, newRank, estimationPoints, assigneeArg, sprintIDArg, priorityKeyArg, nowMs, nowMs, doneAtArg,
+INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_by_user_id, created_at, updated_at, done_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			projectID, localID, in.Title, in.Body, in.ColumnKey, newRank, estimationPoints, assigneeArg, sprintIDArg, priorityKeyArg, createdByArg, nowMs, nowMs, doneAtArg,
 		)
 		if err != nil {
 			// Retry on unique collision for (project_id, local_id).
@@ -299,6 +303,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			Rank:             newRank,
 			EstimationPoints: cloneInt64Ptr(in.EstimationPoints),
 			AssigneeUserID:   cloneInt64Ptr(in.AssigneeUserID),
+			CreatedByUserID:  cloneInt64Ptr(userIDPtr),
 			SprintID:         cloneInt64Ptr(in.SprintID),
 			PriorityKey:      cloneStringPtr(in.PriorityKey),
 			Tags:             tags,
@@ -984,17 +989,18 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 }
 
 func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at FROM todos WHERE id=?`, todoID)
+	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at FROM todos WHERE id=?`, todoID)
 	var t Todo
 	var columnKey string
 	var createdAtMs, updatedAtMs int64
 	var localID sql.NullInt64
 	var estimationPoints sql.NullInt64
 	var assigneeUserID sql.NullInt64
+	var createdByUserID sql.NullInt64
 	var sprintID sql.NullInt64
 	var priorityKey sql.NullString
 	var doneAtMs sql.NullInt64
-	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Todo{}, ErrNotFound
 		}
@@ -1014,6 +1020,12 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 		t.AssigneeUserID = &v
 	} else {
 		t.AssigneeUserID = nil
+	}
+	if createdByUserID.Valid {
+		v := createdByUserID.Int64
+		t.CreatedByUserID = &v
+	} else {
+		t.CreatedByUserID = nil
 	}
 	if sprintID.Valid {
 		v := sprintID.Int64

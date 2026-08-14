@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "การเปลี่ยนแปลงที่ยังไม่บันทึก",
   "todo.created": "สร้าง Todo แล้ว",
   "todo.deleteFailed": "ลบ Todo ไม่สำเร็จ",
+  "todo.dialog.openedBy": "โดย {name}",
   "todo.dialog.title.edit": "แก้ไข Todo",
   "todo.dialog.title.new": "Todo ใหม่",
   "todo.dialog.title.view": "ดู Todo",

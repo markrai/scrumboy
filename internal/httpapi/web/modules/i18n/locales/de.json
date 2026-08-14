@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Ungespeicherte Änderungen",
   "todo.created": "Todo erstellt",
   "todo.deleteFailed": "Todo konnte nicht gelöscht werden",
+  "todo.dialog.openedBy": "von {name}",
   "todo.dialog.title.edit": "Todo bearbeiten",
   "todo.dialog.title.new": "Neues Todo",
   "todo.dialog.title.view": "Todo anzeigen",

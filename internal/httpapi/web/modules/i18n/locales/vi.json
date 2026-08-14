@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Thay đổi chưa lưu",
   "todo.created": "Đã tạo todo",
   "todo.deleteFailed": "Không xóa được todo",
+  "todo.dialog.openedBy": "bởi {name}",
   "todo.dialog.title.edit": "Sửa Todo",
   "todo.dialog.title.new": "Todo mới",
   "todo.dialog.title.view": "Xem Todo",

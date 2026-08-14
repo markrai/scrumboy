@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "未保存的更改",
   "todo.created": "Todo 已创建",
   "todo.deleteFailed": "删除 Todo 失败",
+  "todo.dialog.openedBy": "由 {name} 创建",
   "todo.dialog.title.edit": "编辑 Todo",
   "todo.dialog.title.new": "新建 Todo",
   "todo.dialog.title.view": "查看 Todo",

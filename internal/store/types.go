@@ -289,6 +289,7 @@ type Todo struct {
 	Rank             int64
 	EstimationPoints *int64
 	AssigneeUserID   *int64
+	CreatedByUserID  *int64 // NULL for anonymous boards or todos created before this field existed
 	SprintID         *int64 // NULL = backlog; non-NULL = in that sprint
 	PriorityKey      *string
 	Tags             []string

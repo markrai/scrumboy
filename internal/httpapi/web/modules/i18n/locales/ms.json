@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Perubahan belum disimpan",
   "todo.created": "Todo dicipta",
   "todo.deleteFailed": "Gagal memadam Todo",
+  "todo.dialog.openedBy": "oleh {name}",
   "todo.dialog.title.edit": "Edit Todo",
   "todo.dialog.title.new": "Todo Baharu",
   "todo.dialog.title.view": "Lihat Todo",

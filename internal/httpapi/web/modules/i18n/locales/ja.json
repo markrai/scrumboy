@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "未保存の変更",
   "todo.created": "Todo を作成しました",
   "todo.deleteFailed": "Todo の削除に失敗しました",
+  "todo.dialog.openedBy": "作成者: {name}",
   "todo.dialog.title.edit": "Todo を編集",
   "todo.dialog.title.new": "新しい Todo",
   "todo.dialog.title.view": "Todo を表示",

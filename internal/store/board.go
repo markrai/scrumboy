@@ -331,7 +331,7 @@ func (s *Store) listAllTodosForBoard(ctx context.Context, projectID int64, tagFi
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
 FROM todos t
 WHERE
   t.project_id = ?
@@ -361,7 +361,7 @@ WITH tagged_todos AS (
   WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
 FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
 WHERE
@@ -387,10 +387,11 @@ ORDER BY `+orderBy+`
 		var localID sql.NullInt64
 		var estimationPoints sql.NullInt64
 		var assigneeUserID sql.NullInt64
+		var createdByUserID sql.NullInt64
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
 			return nil, fmt.Errorf("scan todo: %w", err)
 		}
 		if !localID.Valid {
@@ -405,6 +406,10 @@ ORDER BY `+orderBy+`
 		if assigneeUserID.Valid {
 			v := assigneeUserID.Int64
 			t.AssigneeUserID = &v
+		}
+		if createdByUserID.Valid {
+			v := createdByUserID.Int64
+			t.CreatedByUserID = &v
 		}
 		if sprintID.Valid {
 			v := sprintID.Int64
@@ -509,7 +514,7 @@ func (s *Store) listAllTodosForBoardWithCounts(ctx context.Context, projectID in
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
   COUNT(*) OVER (PARTITION BY t.column_key) AS lane_total
 FROM todos t
 WHERE
@@ -537,7 +542,7 @@ WITH tagged_todos AS (
   WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
   COUNT(*) OVER (PARTITION BY t.column_key) AS lane_total
 FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
@@ -562,11 +567,12 @@ ORDER BY `+orderBy+`
 		var localID sql.NullInt64
 		var estimationPoints sql.NullInt64
 		var assigneeUserID sql.NullInt64
+		var createdByUserID sql.NullInt64
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
 		var laneTotal int
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &laneTotal); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &laneTotal); err != nil {
 			return nil, fmt.Errorf("scan todo: %w", err)
 		}
 		if !localID.Valid {
@@ -581,6 +587,10 @@ ORDER BY `+orderBy+`
 		if assigneeUserID.Valid {
 			v := assigneeUserID.Int64
 			t.AssigneeUserID = &v
+		}
+		if createdByUserID.Valid {
+			v := createdByUserID.Int64
+			t.CreatedByUserID = &v
 		}
 		if sprintID.Valid {
 			v := sprintID.Int64
@@ -662,7 +672,7 @@ func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int
 		args = append(args, afterA, afterB, searchFilter, searchFilter, searchFilter, fetchLimit)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
 FROM todos t
 WHERE
   t.project_id = ? AND t.column_key = ?
@@ -694,7 +704,7 @@ WITH tagged_todos AS (
   WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
 FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
 WHERE
@@ -722,10 +732,11 @@ LIMIT ?
 		var localID sql.NullInt64
 		var estimationPoints sql.NullInt64
 		var assigneeUserID sql.NullInt64
+		var createdByUserID sql.NullInt64
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &rowColumnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &rowColumnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
 			return nil, "", false, fmt.Errorf("scan todo: %w", err)
 		}
 		if !localID.Valid {
@@ -740,6 +751,10 @@ LIMIT ?
 		if assigneeUserID.Valid {
 			v := assigneeUserID.Int64
 			t.AssigneeUserID = &v
+		}
+		if createdByUserID.Valid {
+			v := createdByUserID.Int64
+			t.CreatedByUserID = &v
 		}
 		if sprintID.Valid {
 			v := sprintID.Int64

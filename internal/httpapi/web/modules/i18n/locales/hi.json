@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "असहेजे परिवर्तन",
   "todo.created": "Todo बनाया गया",
   "todo.deleteFailed": "Todo हटाना विफल",
+  "todo.dialog.openedBy": "{name} द्वारा",
   "todo.dialog.title.edit": "Todo संपादित करें",
   "todo.dialog.title.new": "नया Todo",
   "todo.dialog.title.view": "Todo देखें",

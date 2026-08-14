@@ -573,6 +573,7 @@ export async function openTodoDialog(opts: {
   }
 
   const createdEl = document.getElementById("todoDialogCreated") as HTMLElement | null;
+  const createdByEl = document.getElementById("todoDialogCreatedBy") as HTMLElement | null;
   const updatedEl = document.getElementById("todoDialogUpdated") as HTMLElement | null;
   const formatDialogDate = (d: string) =>
     formatLocalizedDate(d, {
@@ -604,6 +605,12 @@ export async function openTodoDialog(opts: {
       }
     }
   };
+  const setCreatedBy = (createdByUserId: number | null | undefined) => {
+    if (!createdByEl) return;
+    const member = createdByUserId != null ? getBoardMembers().find((m) => m.userId === createdByUserId) : null;
+    const name = member?.name || member?.email || "";
+    createdByEl.textContent = name ? t("todo.dialog.openedBy", { name }) : "";
+  };
 
   if (mode === "create") {
     setTodoDialogTitleKey("todo.dialog.title.new");
@@ -617,6 +624,7 @@ export async function openTodoDialog(opts: {
     (deleteTodoBtn as HTMLElement).style.display = "none";
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "none";
     setDates(undefined, undefined);
+    setCreatedBy(undefined);
   } else {
     setTodoDialogTitleKey(permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
     (todoTitle as HTMLInputElement).value = todo.title || "";
@@ -629,6 +637,7 @@ export async function openTodoDialog(opts: {
     (deleteTodoBtn as HTMLElement).style.display = permissions.canDeleteTodo ? "" : "none";
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "";
     setDates(todo.createdAt, todo.updatedAt);
+    setCreatedBy(todo.createdByUserId);
   }
   setTodoNotesMode("markdown");
 

@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Mabadiliko yasiyohifadhiwa",
   "todo.created": "Todo imeundwa",
   "todo.deleteFailed": "Imeshindwa kufuta Todo",
+  "todo.dialog.openedBy": "na {name}",
   "todo.dialog.title.edit": "Hariri Todo",
   "todo.dialog.title.new": "Todo mpya",
   "todo.dialog.title.view": "Angalia Todo",

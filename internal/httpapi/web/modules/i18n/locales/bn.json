@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "অসংরক্ষিত পরিবর্তন",
   "todo.created": "Todo তৈরি",
   "todo.deleteFailed": "Todo মুছতে ব্যর্থ",
+  "todo.dialog.openedBy": "{name} দ্বারা",
   "todo.dialog.title.edit": "Todo সম্পাদনা",
   "todo.dialog.title.new": "নতুন Todo",
   "todo.dialog.title.view": "Todo দেখুন",

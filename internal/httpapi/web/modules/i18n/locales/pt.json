@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Alterações não salvas",
   "todo.created": "Todo criado",
   "todo.deleteFailed": "Não foi possível excluir o todo",
+  "todo.dialog.openedBy": "por {name}",
   "todo.dialog.title.edit": "Editar todo",
   "todo.dialog.title.new": "Novo todo",
   "todo.dialog.title.view": "Visualizar todo",

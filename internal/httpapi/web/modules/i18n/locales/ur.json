@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "غیر محفوظ تبدیلیاں",
   "todo.created": "Todo بن گیا",
   "todo.deleteFailed": "Todo حذف ناکام",
+  "todo.dialog.openedBy": "{name} کی طرف سے",
   "todo.dialog.title.edit": "Todo ترمیم",
   "todo.dialog.title.new": "نیا Todo",
   "todo.dialog.title.view": "Todo دیکھیں",

@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "저장되지 않은 변경 사항",
   "todo.created": "Todo가 생성되었습니다",
   "todo.deleteFailed": "Todo 삭제에 실패했습니다",
+  "todo.dialog.openedBy": "작성자: {name}",
   "todo.dialog.title.edit": "Todo 편집",
   "todo.dialog.title.new": "새 Todo",
   "todo.dialog.title.view": "Todo 보기",

@@ -102,6 +102,7 @@ func TestMCPBoardGetTransportContract_LegacySuccessEnvelope(t *testing.T) {
 		"body",
 		"columnKey",
 		"createdAt",
+		"createdByUserId",
 		"doneAt",
 		"estimationPoints",
 		"localId",

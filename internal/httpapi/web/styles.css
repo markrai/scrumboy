@@ -1941,6 +1941,15 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   flex-shrink: 0;
 }
 
+.todo-dialog-createdby {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.todo-dialog-createdby:empty {
+  display: none;
+}
+
 /* Scoped under .dialog for specificity to beat the .muted utility class (mobile only) */
 @media (max-width: 767px) {
   .dialog .todo-dialog-dates {

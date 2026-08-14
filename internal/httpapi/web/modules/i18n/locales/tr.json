@@ -962,6 +962,7 @@
   "todo.confirm.discardTitle": "Kaydedilmemiş değişiklikler",
   "todo.created": "Todo oluşturuldu",
   "todo.deleteFailed": "Todo silinemedi",
+  "todo.dialog.openedBy": "{name} tarafından",
   "todo.dialog.title.edit": "Todo'yu düzenle",
   "todo.dialog.title.new": "Yeni Todo",
   "todo.dialog.title.view": "Todo'yu görüntüle",

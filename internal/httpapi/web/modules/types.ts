@@ -20,6 +20,7 @@ export interface Todo {
   tags?: string[];
   estimationPoints?: number | null;
   assigneeUserId?: number | null;
+  createdByUserId?: number | null;
   sprintId?: number | null;
   priorityKey?: string | null;
   createdAt?: string;
