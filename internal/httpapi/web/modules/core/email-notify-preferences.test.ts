@@ -16,6 +16,7 @@ const enabledPref = {
   v: 1 as const,
   enabled: true,
   assigned: true,
+  createdByMe: true,
   cardActivity: true,
   sprintActivity: false,
   projectActivity: false,
@@ -134,7 +135,7 @@ describe('Authenticated email notification preferences', () => {
     const request = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     expect(request).toEqual({
       key: EMAIL_NOTIFY_PREF_KEY,
-      value: '{"v":1,"enabled":true,"assigned":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}',
+      value: '{"v":1,"enabled":true,"assigned":true,"createdByMe":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}',
     });
     expect(getStoredEmailNotifyPref()).toEqual(enabledPref);
   });
