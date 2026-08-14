@@ -2,6 +2,18 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
+## [3.31.5] - 2026-08-13
+
+### Changed
+
+- **Legacy todo mutations move behind application services** - Numeric
+  compatibility REST routes for todo update, move, and delete now share
+  `internal/application/todo` command boundaries (`LegacyUpdateService`,
+  `LegacyMoveService`, `LegacyDeleteService`) instead of owning call logic in
+  the HTTP transport. Adapters stay thin wrappers; permissions, validation,
+  response shapes, and board-refresh side effects are preserved. Contract tests
+  lock the migrated legacy mutation paths.
+
 ## [3.31.4] - 2026-08-12
 
 ### Fixed
