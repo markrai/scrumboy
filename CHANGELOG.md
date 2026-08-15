@@ -2,6 +2,15 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
+## [3.32.1] - 2026-08-15
+
+### Fixed
+
+- **Post-mutation board refresh keeps filter context** - Todo save and delete
+  refreshes now pass assignee, sort, and priority from the URL into
+  `loadBoardBySlug`, so those board filters are no longer dropped after a
+  dialog mutation. Coverage locks the refresh argument wiring.
+
 ## [3.32.0] - 2026-08-15
 
 ### Added

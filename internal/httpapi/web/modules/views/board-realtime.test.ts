@@ -211,6 +211,24 @@ describe("board-realtime drag refresh guards", () => {
     expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
   });
 
+  it("cancels a filter-complete realtime recovery when a manual board load starts", async () => {
+    const mod = await loadBoardRealtimeModule();
+    selectorState.assignee = "42";
+    selectorState.sort = "newest";
+    selectorState.priority = "high";
+    guardState.lastLocalMutationTimestamp = Date.now();
+    guardState.lastBoardInteractionTimestamp = Date.now();
+
+    mod.__queuePendingRealtimeRefreshForTest("alpha");
+    expect(mod.__getPendingRealtimeRefreshSlugForTest()).toBe("alpha");
+
+    mod.clearPendingRealtimeRefresh();
+    vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest() + 500);
+
+    expect(mod.__getPendingRealtimeRefreshSlugForTest()).toBeNull();
+    expect(invalidateBoardMock).not.toHaveBeenCalled();
+  });
+
   it("does not turn a private creator activity toast into a board refresh", async () => {
     const mod = await loadBoardRealtimeModule();
     selectorState.authStatusAvailable = true;
