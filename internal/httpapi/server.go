@@ -850,19 +850,23 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 
 // PublishCreatorNotificationRequest records the internal consideration request,
 // then performs the Phase 3 fresh-access check. Neither internal event is
-// exposed verbatim. The authorized-recipient event may only become private SSE
-// after the bridge performs the independent Phase 4 delivery-time access check;
-// email, push, and webhooks remain excluded.
+// exposed verbatim. SSE and creator email independently treat the authorized
+// event as a candidate and repeat current-access checks at their delivery
+// boundaries; push and webhooks remain excluded.
 func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request todoapp.CreatorNotificationRequest) {
 	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
-		ProjectID:       request.ProjectID,
-		ProjectSlug:     request.ProjectSlug,
-		TodoID:          request.TodoID,
-		LocalID:         request.LocalID,
-		Title:           request.Title,
-		ActivityReason:  request.ActivityReason,
-		CreatedByUserID: request.CreatedByUserID,
-		ActorUserID:     request.ActorUserID,
+		ProjectID:             request.ProjectID,
+		ProjectSlug:           request.ProjectSlug,
+		TodoID:                request.TodoID,
+		LocalID:               request.LocalID,
+		Title:                 request.Title,
+		ActivityReason:        request.ActivityReason,
+		CreatedByUserID:       request.CreatedByUserID,
+		ActorUserID:           request.ActorUserID,
+		MaterialChanged:       request.MaterialChanged,
+		AssignmentChanged:     request.AssignmentChanged,
+		ToAssigneeUserID:      request.ToAssigneeUserID,
+		CardActivityCandidate: request.CardActivityCandidate,
 	})
 	if err != nil {
 		return
@@ -893,14 +897,18 @@ func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request 
 
 func (s *Server) publishAuthorizedCreatorNotification(ctx context.Context, authorized todoapp.AuthorizedCreatorNotification) {
 	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRecipientAuthorizedPayload{
-		ProjectID:       authorized.ProjectID,
-		ProjectSlug:     authorized.ProjectSlug,
-		TodoID:          authorized.TodoID,
-		LocalID:         authorized.LocalID,
-		Title:           authorized.Title,
-		ActivityReason:  authorized.ActivityReason,
-		RecipientUserID: authorized.RecipientUserID,
-		ActorUserID:     authorized.ActorUserID,
+		ProjectID:             authorized.ProjectID,
+		ProjectSlug:           authorized.ProjectSlug,
+		TodoID:                authorized.TodoID,
+		LocalID:               authorized.LocalID,
+		Title:                 authorized.Title,
+		ActivityReason:        authorized.ActivityReason,
+		RecipientUserID:       authorized.RecipientUserID,
+		ActorUserID:           authorized.ActorUserID,
+		MaterialChanged:       authorized.MaterialChanged,
+		AssignmentChanged:     authorized.AssignmentChanged,
+		ToAssigneeUserID:      authorized.ToAssigneeUserID,
+		CardActivityCandidate: authorized.CardActivityCandidate,
 	})
 	if err != nil {
 		return
@@ -914,7 +922,7 @@ func (s *Server) publishAuthorizedCreatorNotification(ctx context.Context, autho
 
 // PublishTodoAssigned emits a "todo.assigned" event through the event bus.
 // Designed to be passed to store.SetTodoAssignedPublisher.
-func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64) {
+func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64, facts store.TodoAssignedMutationFacts) {
 	payload, _ := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:       projectID,
 		ProjectSlug:     projectSlug,
@@ -927,7 +935,7 @@ func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, loc
 		ToAssigneeUID:   to,
 		ActorUserID:     actorUserID,
 	})
-	s.PublishEvent(ctx, eventbus.Event{
+	s.PublishEvent(withTodoAssignedMutationFacts(ctx, facts), eventbus.Event{
 		Type:      "todo.assigned",
 		ProjectID: projectID,
 		Payload:   payload,

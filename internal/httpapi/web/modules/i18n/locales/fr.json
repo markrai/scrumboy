@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Impossible d’enregistrer les paramètres de notification par e-mail. Vos paramètres précédents restent actifs.",
   "settings.customization.emailNotify.toggleLabel": "Notifications par e-mail activées",
   "settings.customization.emailNotify.category.assigned": "Quand un todo m'est assigné",
+  "settings.customization.emailNotify.category.createdByMe": "Quand une carte que j’ai ouverte est mise à jour ou déplacée",
   "settings.customization.emailNotify.category.cardActivity": "Todo créé, déplacé ou supprimé",
   "settings.customization.emailNotify.category.sprintActivity": "Activité du sprint",
   "settings.customization.emailNotify.category.projectActivity": "Changements de projet, de workflow ou de tags",

@@ -47,6 +47,7 @@ toggle:
 | Category           | Fires on                                                                                   | Default |
 | ------------------ | -------------------------------------------------------------------------------------------- | ------- |
 | Assigned to me      | A card is assigned to you (mirrors the existing Web Push assignment notification)             | on      |
+| Cards I opened      | A card whose historical creator is you is materially updated or moved while you still have access | off     |
 | Card activity        | A card is created, updated, moved, deleted, or its links change                              | off     |
 | Sprint activity       | A sprint is created, updated, deleted, activated, or closed                                   | off     |
 | Project activity      | A project is updated or deleted, or its settings, workflow columns, or tags change             | off     |
@@ -54,7 +55,7 @@ toggle:
 
 Categories map onto the server's existing event taxonomy (the same `reason` values already used
 for realtime board refresh) rather than introducing a parallel event system — see the
-`refreshReasonCategory` table in `internal/httpapi/email_notify.go` for the exact mapping.
+`refreshReasonInfo` table in `internal/httpapi/email_notify.go` for the exact mapping.
 
 A todo's `createdByUserId` is historical data only. A committed update or move by another
 authenticated user can publish the internal `todo.creator_notification_requested` consideration
@@ -83,23 +84,41 @@ the existing todo-title fallback. It does not reload the board, navigate, change
 counters, play a sound, or create a desktop notification. Creator SSE is best-effort; cancellation
 or a missing connection can drop it without changing the successful todo mutation.
 
-Creator email, Web Push, and webhook delivery remain disabled. There is no `createdByMe` email
-preference or creator-notification category yet, and the existing email category table above is
-unchanged.
+Independently of SSE, the authorized-recipient event starts a non-blocking fresh access check before
+it may enqueue a non-sensitive creator email candidate for a material mutation. The queued item
+contains no destination, rendered subject, or rendered body. At every SMTP attempt the notification
+worker reauthorizes current durable
+project access, reads the current master and category preferences, resolves the current user email,
+and only then renders the message using the fresh project name and slug. Removal, deletion,
+temporary/missing projects, lookup failures, preference changes, or a cancelled worker context all
+drop the best-effort email without affecting the committed mutation. Web Push and webhook delivery
+remain disabled for creator activity.
 
 ---
 
 ## Recipients
 
 - **Assigned to me:** the new assignee only. No email on self-assignment.
+- **Cards I opened (`createdByMe`):** the historical creator, only after fresh current-access checks.
 - **Card / sprint / project activity:** every member of the affected project, except the user who
   made the change.
 - **Added to a project:** the newly added user only. No email if you add yourself.
 
-When a card mutation also changes its assignee, the new assignee receives only the targeted
-**Assigned to me** message for that event. Other eligible members can receive the separate
-**Card activity** message. Removing an assignment still counts as card activity. This keeps the
-assignment and activity meanings distinct without duplicating mail to the new assignee.
+For a historical creator who qualifies for overlapping categories on one mutation, the server
+selects at most one email using `Assigned to me` > `Cards I opened` > `Card activity`. A disabled
+higher-priority category falls through to the next category that this adapter actually produces.
+REST and legacy update/move paths can fall back to card activity; ordinary MCP/Agora mutations do
+not invent a `board.refresh_needed` candidate. The selected category is fixed for the queued work
+item across SMTP retries: if that category is later disabled, the retry is dropped rather than
+switching categories. Semantic update no-ops do not queue creator email. Other eligible members
+retain the existing card-activity behavior.
+
+Assignment overlap is decided from private transaction-authoritative creator and durable-project
+facts carried by the existing post-commit assignment publication; those facts are not added to the
+public `todo.assigned` payload. The email notifier does not reread the todo to guess creator
+identity. Temporary projects therefore retain ordinary assignment-email behavior, while a durable
+creator candidate that later loses authorization fails closed instead of falling back to a
+potentially unauthorized assignment or activity disclosure.
 
 Project deletion is captured from a committed pre-deletion snapshot. Eligible members are checked
 against their server-side preferences after the deletion succeeds, the actor is skipped, and the
@@ -116,6 +135,10 @@ The window starts only after that recipient's message is accepted by the notific
 Lookup failures, opt-outs, a lack of eligible recipients, and queue rejection do not consume the
 window. Assignment and added-to-project notifications are not debounced because they already
 target a single recipient per event. This is repeat suppression, not a digest or aggregation.
+When creator precedence selects `Card activity` as its fallback, its first send preparation claims
+this same window (the category is not known when the minimal candidate initially enters the queue).
+That creator work item retains its claim across SMTP retries, so retrying one delivery is not
+mistaken for a second activity event.
 
 ---
 
@@ -125,7 +148,8 @@ Settings → Customization → **Email notifications**:
 
 - A master **Email notifications on** toggle (off by default). No category fires while this is
   off, even if individual categories are checked.
-- Five category checkboxes, enabled only once the master toggle is on.
+- Six category checkboxes, including the email-only **Cards I opened** option, enabled only once
+  the master toggle is on.
 
 Preferences are stored as a JSON blob under the existing generic `user_preferences` table (key
 `emailNotifications`), the same mechanism used for wallpaper and other structured preferences —
@@ -203,9 +227,10 @@ The JSON shape is:
 
 ```json
 {
-  "v": 1,
+  "v": 2,
   "enabled": false,
   "assigned": true,
+  "createdByMe": false,
   "cardActivity": false,
   "sprintActivity": false,
   "projectActivity": false,
@@ -214,11 +239,12 @@ The JSON shape is:
 ```
 
 Unset or empty stored values use the complete defaults above. Otherwise the value must be a JSON
-object. Missing `v` is accepted as legacy v1 and normalized to `v: 1`, so `{}` also means the
-canonical defaults. An explicit `v` must be numeric `1`. Known boolean fields may be omitted and
-inherit their canonical defaults, while explicit `false` is preserved. Unknown fields, `null`,
-arrays, malformed JSON, unsupported or invalid versions, and non-boolean category values are
-rejected. Every write emits the complete canonical v1 object shown above in stable field order.
+object. Missing `v` is accepted as legacy v1 and normalized to v2 with `createdByMe: false`; an
+explicit v1 value is migrated the same way. The creator field is valid only in v2, preventing an
+old or versionless value from silently opting in. Known boolean fields may be omitted and inherit
+their canonical defaults, while explicit `false` is preserved. Unknown fields, `null`, arrays,
+malformed JSON, unsupported or invalid versions, and non-boolean category values are rejected.
+Every write emits the complete canonical v2 object shown above in stable field order.
 
 **Org-wide default** (admin/owner only — see
 [Org-wide default for new users](#org-wide-default-for-new-users)):

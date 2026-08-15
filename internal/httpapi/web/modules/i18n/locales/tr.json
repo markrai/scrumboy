@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "E-posta bildirimi ayarları kaydedilemedi. Önceki ayarlarınız hâlâ etkin.",
   "settings.customization.emailNotify.toggleLabel": "E-posta bildirimleri açık",
   "settings.customization.emailNotify.category.assigned": "Bana bir Todo atandığında",
+  "settings.customization.emailNotify.category.createdByMe": "Açtığım bir kart güncellendiğinde veya taşındığında",
   "settings.customization.emailNotify.category.cardActivity": "Todo oluşturuldu, taşındı veya silindi",
   "settings.customization.emailNotify.category.sprintActivity": "Sprint etkinliği",
   "settings.customization.emailNotify.category.projectActivity": "Proje, iş akışı veya etiket değişiklikleri",

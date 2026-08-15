@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Không thể lưu cài đặt thông báo email. Cài đặt trước đó của bạn vẫn đang có hiệu lực.",
   "settings.customization.emailNotify.toggleLabel": "Đã bật thông báo qua email",
   "settings.customization.emailNotify.category.assigned": "Khi tôi được giao một Todo",
+  "settings.customization.emailNotify.category.createdByMe": "Khi thẻ tôi đã mở được cập nhật hoặc di chuyển",
   "settings.customization.emailNotify.category.cardActivity": "Todo được tạo, di chuyển hoặc xóa",
   "settings.customization.emailNotify.category.sprintActivity": "Hoạt động sprint",
   "settings.customization.emailNotify.category.projectActivity": "Thay đổi dự án, quy trình làm việc hoặc thẻ",

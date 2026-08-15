@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "メール通知設定を保存できませんでした。以前の設定が引き続き有効です。",
   "settings.customization.emailNotify.toggleLabel": "メール通知オン",
   "settings.customization.emailNotify.category.assigned": "Todo が自分に割り当てられたとき",
+  "settings.customization.emailNotify.category.createdByMe": "自分が開いたカードが更新または移動されたとき",
   "settings.customization.emailNotify.category.cardActivity": "Todo の作成・移動・削除",
   "settings.customization.emailNotify.category.sprintActivity": "スプリントのアクティビティ",
   "settings.customization.emailNotify.category.projectActivity": "プロジェクト、ワークフロー、タグの変更",

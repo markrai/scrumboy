@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Impossibile salvare le impostazioni delle notifiche email. Le impostazioni precedenti sono ancora attive.",
   "settings.customization.emailNotify.toggleLabel": "Notifiche email attive",
   "settings.customization.emailNotify.category.assigned": "Quando mi viene assegnato un Todo",
+  "settings.customization.emailNotify.category.createdByMe": "Quando una scheda che ho aperto viene aggiornata o spostata",
   "settings.customization.emailNotify.category.cardActivity": "Todo creato, spostato o eliminato",
   "settings.customization.emailNotify.category.sprintActivity": "Attività dello sprint",
   "settings.customization.emailNotify.category.projectActivity": "Modifiche a progetto, workflow o tag",

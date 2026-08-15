@@ -263,6 +263,7 @@ const enCatalog = {
   'settings.customization.emailNotify.saveFailed': 'Could not save email notification settings. Your previous settings are still active.',
   'settings.customization.emailNotify.toggleLabel': 'Email notifications on',
   'settings.customization.emailNotify.category.assigned': 'When a card is assigned to me',
+  'settings.customization.emailNotify.category.createdByMe': 'When a card I opened is updated or moved',
   'settings.customization.emailNotify.category.cardActivity': 'Card created, moved, or deleted',
   'settings.customization.emailNotify.category.sprintActivity': 'Sprint activity',
   'settings.customization.emailNotify.category.projectActivity': 'Project, workflow, or tag changes',
@@ -627,9 +628,10 @@ describe('settings customization i18n', () => {
         userId: 1,
         status: 'ready',
         value: {
-          v: 1,
+          v: 2,
           enabled: false,
           assigned: true,
+          createdByMe: false,
           cardActivity: false,
           sprintActivity: false,
           projectActivity: false,
@@ -640,6 +642,9 @@ describe('settings customization i18n', () => {
     apiFetchMock.mockRejectedValueOnce(new Error('sensitive backend detail'));
 
     const toggle = document.getElementById('emailNotifyEnabledToggle') as HTMLInputElement;
+    const creatorToggle = document.querySelector<HTMLInputElement>('.email-notify-category-toggle[data-category="createdByMe"]');
+    expect(creatorToggle).not.toBeNull();
+    expect(creatorToggle?.checked).toBe(false);
     toggle.checked = true;
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
     await flushPromises(16);

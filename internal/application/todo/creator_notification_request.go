@@ -10,14 +10,31 @@ import (
 // todo's historical creator about a committed mutation. It does not assert
 // current access, preference eligibility, queueing, sending, or delivery.
 type CreatorNotificationRequest struct {
-	ProjectID       int64
-	ProjectSlug     string
-	TodoID          int64
-	LocalID         int64
-	Title           string
-	ActivityReason  string
-	CreatedByUserID int64
-	ActorUserID     int64
+	ProjectID             int64
+	ProjectSlug           string
+	TodoID                int64
+	LocalID               int64
+	Title                 string
+	ActivityReason        string
+	CreatedByUserID       int64
+	ActorUserID           int64
+	MaterialChanged       bool
+	AssignmentChanged     bool
+	ToAssigneeUserID      *int64
+	CardActivityCandidate bool
+}
+
+type creatorNotificationRequestContextKey struct{}
+
+// CreatorNotificationRequestFromContext exposes mutation-local creator facts
+// to in-process ancillary consumers without creating a public correlation ID.
+func CreatorNotificationRequestFromContext(ctx context.Context) (CreatorNotificationRequest, bool) {
+	request, ok := ctx.Value(creatorNotificationRequestContextKey{}).(CreatorNotificationRequest)
+	if ok && request.ToAssigneeUserID != nil {
+		value := *request.ToAssigneeUserID
+		request.ToAssigneeUserID = &value
+	}
+	return request, ok
 }
 
 // CreatorNotificationRequestPublisher receives best-effort, post-commit
@@ -51,22 +68,30 @@ func publishCreatorNotificationRequest(
 	project store.Project,
 	todo store.Todo,
 	activityReason string,
-) {
+	cardActivityCandidate bool,
+) context.Context {
 	if project.ExpiresAt != nil || !shouldRequestCreatorNotification(ctx, todo) {
-		return
+		return ctx
 	}
 	actorUserID, _ := store.UserIDFromContext(ctx)
 
-	publisher.PublishCreatorNotificationRequest(ctx, CreatorNotificationRequest{
-		ProjectID:       project.ID,
-		ProjectSlug:     project.Slug,
-		TodoID:          todo.ID,
-		LocalID:         todo.LocalID,
-		Title:           todo.Title,
-		ActivityReason:  activityReason,
-		CreatedByUserID: *todo.CreatedByUserID,
-		ActorUserID:     actorUserID,
-	})
+	request := CreatorNotificationRequest{
+		ProjectID:             project.ID,
+		ProjectSlug:           project.Slug,
+		TodoID:                todo.ID,
+		LocalID:               todo.LocalID,
+		Title:                 todo.Title,
+		ActivityReason:        activityReason,
+		CreatedByUserID:       *todo.CreatedByUserID,
+		ActorUserID:           actorUserID,
+		MaterialChanged:       todo.MaterialChanged,
+		AssignmentChanged:     todo.AssignmentChanged,
+		ToAssigneeUserID:      cloneUpdateInt64Ptr(todo.AssigneeUserID),
+		CardActivityCandidate: cardActivityCandidate,
+	}
+	effectCtx := context.WithValue(ctx, creatorNotificationRequestContextKey{}, request)
+	publisher.PublishCreatorNotificationRequest(effectCtx, request)
+	return effectCtx
 }
 
 // shouldRequestCreatorNotification applies the predicates that can be decided

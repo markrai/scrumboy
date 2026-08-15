@@ -130,13 +130,14 @@ func (u *PreparedLegacyUpdate) Update(command LegacyUpdateCommand) (LegacyUpdate
 		return LegacyUpdateResult{}, err
 	}
 
+	effectCtx := u.ctx
 	if u.service.creatorRequestsEnabled && u.service.projects != nil && shouldRequestCreatorNotification(u.ctx, updated) {
 		if project, projectErr := u.service.projects.GetProject(u.ctx, updated.ProjectID); projectErr == nil {
-			publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated)
+			effectCtx = publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated, true)
 		}
 	}
 	if !updated.AssignmentChanged {
-		u.service.refresh.PublishBoardRefresh(u.ctx, updated.ProjectID, RefreshReasonTodoUpdated)
+		u.service.refresh.PublishBoardRefresh(effectCtx, updated.ProjectID, RefreshReasonTodoUpdated)
 	}
 
 	return LegacyUpdateResult{Todo: updated}, nil

@@ -130,7 +130,7 @@ func (m *PreparedMove) Move(command MoveCommand) (MoveResult, error) {
 		return MoveResult{}, err
 	}
 
-	publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved)
-	m.service.refresh.PublishBoardRefresh(m.ctx, project.ID, RefreshReasonTodoMoved)
+	effectCtx := publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved, true)
+	m.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoMoved)
 	return MoveResult{Project: project, Todo: todo}, nil
 }

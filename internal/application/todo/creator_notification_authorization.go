@@ -18,14 +18,19 @@ type CreatorNotificationAuthorizationStore interface {
 // that the historical creator currently has access to the durable project. It
 // does not assert notification preferences, queueing, sending, or delivery.
 type AuthorizedCreatorNotification struct {
-	ProjectID       int64
-	ProjectSlug     string
-	TodoID          int64
-	LocalID         int64
-	Title           string
-	ActivityReason  string
-	RecipientUserID int64
-	ActorUserID     int64
+	ProjectID             int64
+	ProjectSlug           string
+	ProjectName           string
+	TodoID                int64
+	LocalID               int64
+	Title                 string
+	ActivityReason        string
+	RecipientUserID       int64
+	ActorUserID           int64
+	MaterialChanged       bool
+	AssignmentChanged     bool
+	ToAssigneeUserID      *int64
+	CardActivityCandidate bool
 }
 
 type CreatorNotificationAuthorizationService struct {
@@ -52,14 +57,18 @@ func (s *CreatorNotificationAuthorizationService) Authorize(
 	}
 
 	return s.authorizeCurrentRecipient(ctx, AuthorizedCreatorNotification{
-		ProjectID:       request.ProjectID,
-		ProjectSlug:     request.ProjectSlug,
-		TodoID:          request.TodoID,
-		LocalID:         request.LocalID,
-		Title:           request.Title,
-		ActivityReason:  request.ActivityReason,
-		RecipientUserID: request.CreatedByUserID,
-		ActorUserID:     request.ActorUserID,
+		ProjectID:             request.ProjectID,
+		ProjectSlug:           request.ProjectSlug,
+		TodoID:                request.TodoID,
+		LocalID:               request.LocalID,
+		Title:                 request.Title,
+		ActivityReason:        request.ActivityReason,
+		RecipientUserID:       request.CreatedByUserID,
+		ActorUserID:           request.ActorUserID,
+		MaterialChanged:       request.MaterialChanged,
+		AssignmentChanged:     request.AssignmentChanged,
+		ToAssigneeUserID:      cloneUpdateInt64Ptr(request.ToAssigneeUserID),
+		CardActivityCandidate: request.CardActivityCandidate,
 	})
 }
 
@@ -97,14 +106,19 @@ func (s *CreatorNotificationAuthorizationService) authorizeCurrentRecipient(
 	}
 
 	return AuthorizedCreatorNotification{
-		ProjectID:       project.ID,
-		ProjectSlug:     project.Slug,
-		TodoID:          candidate.TodoID,
-		LocalID:         candidate.LocalID,
-		Title:           candidate.Title,
-		ActivityReason:  candidate.ActivityReason,
-		RecipientUserID: candidate.RecipientUserID,
-		ActorUserID:     candidate.ActorUserID,
+		ProjectID:             project.ID,
+		ProjectSlug:           project.Slug,
+		ProjectName:           project.Name,
+		TodoID:                candidate.TodoID,
+		LocalID:               candidate.LocalID,
+		Title:                 candidate.Title,
+		ActivityReason:        candidate.ActivityReason,
+		RecipientUserID:       candidate.RecipientUserID,
+		ActorUserID:           candidate.ActorUserID,
+		MaterialChanged:       candidate.MaterialChanged,
+		AssignmentChanged:     candidate.AssignmentChanged,
+		ToAssigneeUserID:      cloneUpdateInt64Ptr(candidate.ToAssigneeUserID),
+		CardActivityCandidate: candidate.CardActivityCandidate,
 	}, true, nil
 }
 

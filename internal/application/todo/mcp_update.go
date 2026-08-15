@@ -128,7 +128,7 @@ func (u *PreparedMCPTodoUpdate) Update(patch UpdatePatch) (UpdateResult, error) 
 	if err != nil {
 		return UpdateResult{}, err
 	}
-	publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated)
+	publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated, updated.AssignmentChanged)
 	return UpdateResult{Project: project, Todo: updated}, nil
 }
 

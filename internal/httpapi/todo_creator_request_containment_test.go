@@ -67,14 +67,16 @@ func TestCreatorNotificationPipelineContainmentAndPrivateSSE(t *testing.T) {
 		creatorNotificationAuthorizer: authorizer,
 	}
 	request := todoapp.CreatorNotificationRequest{
-		ProjectID:       project.ID,
-		ProjectSlug:     project.Slug,
-		TodoID:          71,
-		LocalID:         4,
-		Title:           "Internal title",
-		ActivityReason:  "todo_updated",
-		CreatedByUserID: creator.ID,
-		ActorUserID:     owner.ID,
+		ProjectID:             project.ID,
+		ProjectSlug:           project.Slug,
+		TodoID:                71,
+		LocalID:               4,
+		Title:                 "Internal title",
+		ActivityReason:        "todo_updated",
+		CreatedByUserID:       creator.ID,
+		ActorUserID:           owner.ID,
+		MaterialChanged:       true,
+		CardActivityCandidate: true,
 	}
 
 	t.Run("cancelled authorization lookup fails closed", func(t *testing.T) {
@@ -114,7 +116,7 @@ func TestCreatorNotificationPipelineContainmentAndPrivateSSE(t *testing.T) {
 		default:
 			t.Fatal("current creator received no private SSE")
 		}
-		assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue)
+		assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue, 1)
 		assertNoCreatorActivityHubMessage(t, creatorEvents, "duplicate creator")
 	})
 
@@ -139,7 +141,7 @@ func assertCreatorPipelineNoDelivery(
 	mailQueue *mailQueue,
 ) {
 	t.Helper()
-	assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue)
+	assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue, 0)
 	select {
 	case message := <-creatorEvents:
 		t.Fatalf("denied creator pipeline leaked to creator SSE: %s", message)
@@ -152,6 +154,7 @@ func assertCreatorPipelineNoNonSSEDelivery(
 	projectEvents <-chan []byte,
 	webhookQueue *webhookQueue,
 	mailQueue *mailQueue,
+	wantMailCandidates int,
 ) {
 	t.Helper()
 	select {
@@ -162,7 +165,17 @@ func assertCreatorPipelineNoNonSSEDelivery(
 	if deliveries := webhookQueue.Drain(); len(deliveries) != 0 {
 		t.Fatalf("exact/wildcard webhooks received creator internal events: %+v", deliveries)
 	}
-	if deliveries := mailQueue.Drain(); len(deliveries) != 0 {
-		t.Fatalf("email queue received creator pipeline events: %+v", deliveries)
+	deliveries := drainAfterAsync(mailQueue)
+	if len(deliveries) != wantMailCandidates {
+		t.Fatalf("email candidates=%+v, want %d", deliveries, wantMailCandidates)
+	}
+	for _, delivery := range deliveries {
+		if delivery.Prepare == nil || delivery.To != "" || delivery.Subject != "" || delivery.Body != "" {
+			t.Fatalf("creator queue item was not a deferred minimum-data candidate: %+v", delivery)
+		}
+		prepared, ok, err := delivery.Prepare(context.Background())
+		if err != nil || ok || prepared.To != "" || prepared.Subject != "" || prepared.Body != "" {
+			t.Fatalf("default master-off candidate did not drop at send time: %+v ok=%v err=%v", prepared, ok, err)
+		}
 	}
 }

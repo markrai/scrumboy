@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Не удалось сохранить настройки уведомлений по электронной почте. Предыдущие настройки остаются активными.",
   "settings.customization.emailNotify.toggleLabel": "Уведомления по email включены",
   "settings.customization.emailNotify.category.assigned": "Когда мне назначают Todo",
+  "settings.customization.emailNotify.category.createdByMe": "Когда созданная мной карточка обновлена или перемещена",
   "settings.customization.emailNotify.category.cardActivity": "Todo создан, перемещён или удалён",
   "settings.customization.emailNotify.category.sprintActivity": "Активность спринта",
   "settings.customization.emailNotify.category.projectActivity": "Изменения проекта, workflow или тегов",

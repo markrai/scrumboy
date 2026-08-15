@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"scrumboy/internal/db"
 	"scrumboy/internal/mailer/mailertest"
@@ -161,5 +162,124 @@ func TestEmailNotify_EndToEnd_TodoAssignedOverRealSMTP(t *testing.T) {
 	}
 	if activityByRecipient["member-e2e@example.com"] != 1 || activityByRecipient["assignee-e2e@example.com"] != 1 {
 		t.Fatalf("expected card activity only for the other eligible member on each combined event, got %+v", msgs)
+	}
+
+	// The original owner is the card's historical creator. Let the other
+	// member mutate it as a maintainer and opt the owner into every overlapping
+	// creator/activity category. The creator policy must still deliver once.
+	ownerCtx := store.WithUserID(context.Background(), ownerID)
+	if err := st.UpdateProjectMemberRole(ownerCtx, ownerID, projectID, member.ID, store.RoleMaintainer); err != nil {
+		t.Fatalf("promote member actor: %v", err)
+	}
+	ownerPref := store.DefaultEmailNotifyPref()
+	ownerPref.Enabled = true
+	ownerPref.CreatedByMe = true
+	ownerPref.CardActivity = true
+	ownerPrefJSON, _ := json.Marshal(ownerPref)
+	if err := st.SetUserPreference(context.Background(), ownerID, "emailNotifications", string(ownerPrefJSON)); err != nil {
+		t.Fatalf("enable creator preference: %v", err)
+	}
+	memberClient := newCookieClient(t)
+	loginResp, loginBody = doJSON(t, memberClient, http.MethodPost, ts.URL+"/api/auth/login", map[string]any{
+		"email": "member-e2e@example.com", "password": "password123",
+	}, nil)
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("member login: status=%d body=%s", loginResp.StatusCode, string(loginBody))
+	}
+	creatorUpdate := map[string]any{
+		"title": "Ship the corrected feature", "body": "creator-visible material change", "tags": []string{},
+		"estimationPoints": nil, "assigneeUserId": member.ID,
+	}
+	updateResp, updateBody = doJSON(t, memberClient, http.MethodPatch,
+		ts.URL+"/api/board/"+slug+"/todos/"+strconv.FormatInt(localID, 10), creatorUpdate, nil)
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("creator-notify update: status=%d body=%s", updateResp.StatusCode, string(updateBody))
+	}
+	msgs = waitForMessages(t, fake, 5)
+	ownerMessages := 0
+	for _, message := range msgs {
+		if message.To == "owner-e2e@example.com" {
+			ownerMessages++
+			if !strings.Contains(message.Subject, "card you opened") {
+				t.Fatalf("owner received wrong precedence category: %+v", message)
+			}
+		}
+	}
+	if ownerMessages != 1 {
+		t.Fatalf("creator received %d emails for one mutation, messages=%+v", ownerMessages, msgs)
+	}
+
+	// Repeating the identical replacement payload is a successful semantic
+	// no-op. It may retain the existing refresh contract, but must not add any
+	// creator-category or card-activity fallback mail for the creator.
+	updateResp, updateBody = doJSON(t, memberClient, http.MethodPatch,
+		ts.URL+"/api/board/"+slug+"/todos/"+strconv.FormatInt(localID, 10), creatorUpdate, nil)
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("creator semantic no-op: status=%d body=%s", updateResp.StatusCode, string(updateBody))
+	}
+	time.Sleep(300 * time.Millisecond)
+	if got := len(fake.Messages()); got != 5 {
+		t.Fatalf("semantic no-op produced email: count=%d messages=%+v", got, fake.Messages())
+	}
+
+	creatorAssignment := map[string]any{
+		"title": "Ship the corrected feature", "body": "assignment overlap", "tags": []string{},
+		"estimationPoints": nil, "assigneeUserId": ownerID,
+	}
+	updateResp, updateBody = doJSON(t, memberClient, http.MethodPatch,
+		ts.URL+"/api/board/"+slug+"/todos/"+strconv.FormatInt(localID, 10), creatorAssignment, nil)
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("creator assignment overlap: status=%d body=%s", updateResp.StatusCode, string(updateBody))
+	}
+	msgs = waitForMessages(t, fake, 6)
+	ownerAssignments := 0
+	ownerMessages = 0
+	for _, message := range msgs {
+		if message.To != "owner-e2e@example.com" {
+			continue
+		}
+		ownerMessages++
+		if strings.Contains(message.Subject, "Assigned to you") {
+			ownerAssignments++
+		}
+	}
+	if ownerMessages != 2 || ownerAssignments != 1 {
+		t.Fatalf("assignment/creator/activity overlap did not collapse to one assignment email: %+v", msgs)
+	}
+
+	// Prepare the same card for the contributor-only mutation branch without a
+	// creator request (the owner/creator is the actor), then prove an assigned
+	// contributor's real body change still reaches creator email policy.
+	assignContributor := map[string]any{
+		"title": "Ship the corrected feature", "body": "prepare contributor", "tags": []string{},
+		"estimationPoints": nil, "assigneeUserId": member.ID,
+	}
+	updateResp, updateBody = doJSON(t, client, http.MethodPatch,
+		ts.URL+"/api/board/"+slug+"/todos/"+strconv.FormatInt(localID, 10), assignContributor, nil)
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("assign contributor setup: status=%d body=%s", updateResp.StatusCode, string(updateBody))
+	}
+	waitForMessages(t, fake, 7)
+	if err := st.UpdateProjectMemberRole(ownerCtx, ownerID, projectID, member.ID, store.RoleContributor); err != nil {
+		t.Fatalf("downgrade assigned member to contributor: %v", err)
+	}
+	contributorBodyOnly := map[string]any{
+		"title": "must be ignored", "body": "assigned contributor body", "tags": []string{"must-be-ignored"},
+		"estimationPoints": int64(99), "assigneeUserId": ownerID,
+	}
+	updateResp, updateBody = doJSON(t, memberClient, http.MethodPatch,
+		ts.URL+"/api/board/"+slug+"/todos/"+strconv.FormatInt(localID, 10), contributorBodyOnly, nil)
+	if updateResp.StatusCode != http.StatusOK {
+		t.Fatalf("assigned contributor body-only update: status=%d body=%s", updateResp.StatusCode, string(updateBody))
+	}
+	msgs = waitForMessages(t, fake, 8)
+	ownerCreatorMessages := 0
+	for _, message := range msgs {
+		if message.To == "owner-e2e@example.com" && strings.Contains(message.Subject, "card you opened") {
+			ownerCreatorMessages++
+		}
+	}
+	if ownerCreatorMessages != 2 {
+		t.Fatalf("assigned contributor body-only mutation did not add exactly one creator email: %+v", msgs)
 	}
 }

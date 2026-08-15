@@ -74,7 +74,7 @@ func TestPublishCreatorNotificationRequestEligibilityAndPayload(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := &creatorRequestRecorder{}
-			publishCreatorNotificationRequest(tt.ctx, recorder, tt.project, tt.todo, RefreshReasonTodoUpdated)
+			publishCreatorNotificationRequest(tt.ctx, recorder, tt.project, tt.todo, RefreshReasonTodoUpdated, true)
 			if len(recorder.requests) != tt.want {
 				t.Fatalf("request calls = %d, want %d", len(recorder.requests), tt.want)
 			}
@@ -82,19 +82,52 @@ func TestPublishCreatorNotificationRequestEligibilityAndPayload(t *testing.T) {
 				return
 			}
 			want := CreatorNotificationRequest{
-				ProjectID:       7,
-				ProjectSlug:     "durable",
-				TodoID:          81,
-				LocalID:         5,
-				Title:           "Committed title",
-				ActivityReason:  RefreshReasonTodoUpdated,
-				CreatedByUserID: creatorID,
-				ActorUserID:     actorID,
+				ProjectID:             7,
+				ProjectSlug:           "durable",
+				TodoID:                81,
+				LocalID:               5,
+				Title:                 "Committed title",
+				ActivityReason:        RefreshReasonTodoUpdated,
+				CreatedByUserID:       creatorID,
+				ActorUserID:           actorID,
+				CardActivityCandidate: true,
 			}
 			if !reflect.DeepEqual(recorder.requests[0], want) {
 				t.Fatalf("request = %+v, want %+v", recorder.requests[0], want)
 			}
 		})
+	}
+}
+
+func TestPublishCreatorNotificationRequestCarriesEmailPolicyFactsInEffectContext(t *testing.T) {
+	creatorID := int64(11)
+	actorID := int64(22)
+	assigneeID := creatorID
+	todo := creatorRequestTestTodo(creatorID)
+	todo.MaterialChanged = true
+	todo.AssignmentChanged = true
+	todo.AssigneeUserID = &assigneeID
+	recorder := &creatorRequestRecorder{}
+
+	effectCtx := publishCreatorNotificationRequest(
+		store.WithUserID(context.Background(), actorID),
+		recorder,
+		store.Project{ID: 7, Slug: "durable"},
+		todo,
+		RefreshReasonTodoUpdated,
+		true,
+	)
+	request, ok := CreatorNotificationRequestFromContext(effectCtx)
+	if !ok || len(recorder.requests) != 1 || !reflect.DeepEqual(request, recorder.requests[0]) {
+		t.Fatalf("effect context request=%+v ok=%v published=%+v", request, ok, recorder.requests)
+	}
+	if !request.MaterialChanged || !request.AssignmentChanged || !request.CardActivityCandidate ||
+		request.ToAssigneeUserID == nil || *request.ToAssigneeUserID != creatorID {
+		t.Fatalf("email policy facts=%+v", request)
+	}
+	*request.ToAssigneeUserID = 999
+	if *recorder.requests[0].ToAssigneeUserID != creatorID {
+		t.Fatal("context read aliased the published request assignee pointer")
 	}
 }
 

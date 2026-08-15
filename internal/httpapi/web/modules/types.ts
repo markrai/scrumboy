@@ -194,9 +194,10 @@ export interface WebPushStatus {
 }
 
 export interface EmailNotifyPref {
-  v: 1;
+  v: 2;
   enabled: boolean;
   assigned: boolean;
+  createdByMe: boolean;
   cardActivity: boolean;
   sprintActivity: boolean;
   projectActivity: boolean;

@@ -318,7 +318,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		todo.AssignmentChanged = hadAssignee
 		if s.todoAssignedPublisher != nil && hadAssignee {
 			actorID, _ := UserIDFromContext(ctx)
-			s.todoAssignedPublisher(ctx, projectID, todoID, localID, in.Title, p.Slug, "todo_created", nil, in.AssigneeUserID, actorID)
+			s.todoAssignedPublisher(ctx, projectID, todoID, localID, in.Title, p.Slug, "todo_created", nil, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
+				CreatedByUserID: cloneInt64Ptr(todo.CreatedByUserID),
+				DurableProject:  p.ExpiresAt == nil,
+			})
 		}
 		return todo, nil
 	}
@@ -354,6 +357,18 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, value := range a {
+		if !containsString(b, value) {
+			return false
+		}
+	}
+	return true
 }
 
 func sameInt64Ptr(a, b *int64) bool {
@@ -468,6 +483,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 				if err := tx.Commit(); err != nil {
 					return Todo{}, fmt.Errorf("commit update todo: %w", err)
 				}
+				existing.MaterialChanged = existing.Body != in.Body
 				existing.Body = in.Body
 				existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 				if err := s.UpdateBoardActivity(ctx, existing.ProjectID); err != nil {
@@ -574,6 +590,21 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			return Todo{}, err
 		}
 	}
+	var effectiveSprint *int64
+	if in.ClearSprint {
+		effectiveSprint = nil
+	} else if in.SprintID != nil {
+		effectiveSprint = in.SprintID
+	} else {
+		effectiveSprint = existing.SprintID
+	}
+	materialChanged := existing.Title != in.Title ||
+		existing.Body != in.Body ||
+		assignmentChanged ||
+		!sameInt64Ptr(existing.EstimationPoints, in.EstimationPoints) ||
+		!sameInt64Ptr(existing.SprintID, effectiveSprint) ||
+		!sameStringPtr(existing.PriorityKey, effectivePriorityKey) ||
+		!sameStringSet(existing.Tags, tags)
 
 	var userIDPtr *int64
 	if !ok && len(tags) > 0 {
@@ -680,14 +711,6 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 
 	// Audit todo_updated: diff title, body, sprint, estimation, tags; emit only if changed
-	var effectiveSprint *int64
-	if in.ClearSprint {
-		effectiveSprint = nil
-	} else if in.SprintID != nil {
-		effectiveSprint = in.SprintID
-	} else {
-		effectiveSprint = existing.SprintID
-	}
 	var changedFields []string
 	if existing.Title != in.Title {
 		changedFields = append(changedFields, "title")
@@ -793,11 +816,15 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.AssignmentChanged = assignmentChanged
+	existing.MaterialChanged = materialChanged
 
 	if s.todoAssignedPublisher != nil && assignmentChanged && !isAnonymousBoard {
 		actorID, _ := UserIDFromContext(ctx)
 		// Use committed title (existing.Title), not in.Title — partial PATCH may omit title.
-		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID)
+		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
+			CreatedByUserID: cloneInt64Ptr(existing.CreatedByUserID),
+			DurableProject:  p.ExpiresAt == nil,
+		})
 	}
 
 	return existing, nil
@@ -978,9 +1005,11 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 		_ = err // Log but don't fail
 	}
 
+	materialChanged := existing.ColumnKey != toColumnKey || existing.Rank != newRank
 	existing.ColumnKey = toColumnKey
 	existing.Rank = newRank
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
+	existing.MaterialChanged = materialChanged
 	if doneAtMs != nil {
 		t := time.UnixMilli(*doneAtMs).UTC()
 		existing.DoneAt = &t

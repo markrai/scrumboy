@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "ইমেইল বিজ্ঞপ্তির সেটিংস সংরক্ষণ করা যায়নি। আপনার আগের সেটিংস এখনও সক্রিয় আছে।",
   "settings.customization.emailNotify.toggleLabel": "ইমেইল বিজ্ঞপ্তি চালু",
   "settings.customization.emailNotify.category.assigned": "যখন আমাকে একটি Todo বরাদ্দ করা হয়",
+  "settings.customization.emailNotify.category.createdByMe": "আমার খোলা কার্ড আপডেট বা সরানো হলে",
   "settings.customization.emailNotify.category.cardActivity": "Todo তৈরি, সরানো বা মুছে ফেলা হয়েছে",
   "settings.customization.emailNotify.category.sprintActivity": "স্প্রিন্ট কার্যকলাপ",
   "settings.customization.emailNotify.category.projectActivity": "প্রোজেক্ট, ওয়ার্কফ্লো, বা ট্যাগ পরিবর্তন",

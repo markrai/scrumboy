@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Pengaturan notifikasi email tidak dapat disimpan. Pengaturan sebelumnya masih aktif.",
   "settings.customization.emailNotify.toggleLabel": "Notifikasi email aktif",
   "settings.customization.emailNotify.category.assigned": "Saat sebuah Todo ditugaskan kepada saya",
+  "settings.customization.emailNotify.category.createdByMe": "Saat kartu yang saya buka diperbarui atau dipindahkan",
   "settings.customization.emailNotify.category.cardActivity": "Todo dibuat, dipindahkan, atau dihapus",
   "settings.customization.emailNotify.category.sprintActivity": "Aktivitas sprint",
   "settings.customization.emailNotify.category.projectActivity": "Perubahan proyek, alur kerja, atau tag",

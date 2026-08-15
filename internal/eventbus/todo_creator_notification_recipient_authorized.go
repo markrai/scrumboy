@@ -8,12 +8,16 @@ const TodoCreatorNotificationRecipientAuthorizedEventType = "todo.creator_notifi
 // delivery. It remains internal; channel adapters must freshly reauthorize
 // before any disclosure rather than exposing this event directly.
 type TodoCreatorNotificationRecipientAuthorizedPayload struct {
-	ProjectID       int64  `json:"projectId"`
-	ProjectSlug     string `json:"projectSlug"`
-	TodoID          int64  `json:"todoId"`
-	LocalID         int64  `json:"localId"`
-	Title           string `json:"title"`
-	ActivityReason  string `json:"activityReason"`
-	RecipientUserID int64  `json:"recipientUserId"`
-	ActorUserID     int64  `json:"actorUserId"`
+	ProjectID             int64  `json:"projectId"`
+	ProjectSlug           string `json:"projectSlug"`
+	TodoID                int64  `json:"todoId"`
+	LocalID               int64  `json:"localId"`
+	Title                 string `json:"title"`
+	ActivityReason        string `json:"activityReason"`
+	RecipientUserID       int64  `json:"recipientUserId"`
+	ActorUserID           int64  `json:"actorUserId"`
+	MaterialChanged       bool   `json:"materialChanged"`
+	AssignmentChanged     bool   `json:"assignmentChanged"`
+	ToAssigneeUserID      *int64 `json:"toAssigneeUserId,omitempty"`
+	CardActivityCandidate bool   `json:"cardActivityCandidate"`
 }

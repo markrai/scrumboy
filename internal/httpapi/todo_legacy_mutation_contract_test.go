@@ -230,8 +230,14 @@ func legacyTodoAssertRefreshAndCreatorRequest(
 		authorized.Title != request.Title ||
 		authorized.ActivityReason != request.ActivityReason ||
 		authorized.RecipientUserID != request.CreatedByUserID ||
-		authorized.ActorUserID != request.ActorUserID {
+		authorized.ActorUserID != request.ActorUserID ||
+		authorized.MaterialChanged != request.MaterialChanged ||
+		authorized.AssignmentChanged != request.AssignmentChanged ||
+		authorized.CardActivityCandidate != request.CardActivityCandidate {
 		t.Fatalf("authorized payload=%+v does not match request=%+v", authorized, request)
+	}
+	if !request.MaterialChanged || !request.CardActivityCandidate {
+		t.Fatalf("legacy mutation lost email policy facts: %+v", request)
 	}
 	var refresh legacyTodoRefreshPayload
 	if err := json.Unmarshal(events[2].Payload, &refresh); err != nil {

@@ -114,11 +114,12 @@ func (m *PreparedLegacyMove) Move(command LegacyMoveCommand) (LegacyMoveResult, 
 		return LegacyMoveResult{}, err
 	}
 
+	effectCtx := m.ctx
 	if m.service.creatorRequestsEnabled && m.service.projects != nil && shouldRequestCreatorNotification(m.ctx, moved) {
 		if project, projectErr := m.service.projects.GetProject(m.ctx, moved.ProjectID); projectErr == nil {
-			publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, moved, RefreshReasonTodoMoved)
+			effectCtx = publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, moved, RefreshReasonTodoMoved, true)
 		}
 	}
-	m.service.refresh.PublishBoardRefresh(m.ctx, moved.ProjectID, RefreshReasonTodoMoved)
+	m.service.refresh.PublishBoardRefresh(effectCtx, moved.ProjectID, RefreshReasonTodoMoved)
 	return LegacyMoveResult{Todo: moved}, nil
 }

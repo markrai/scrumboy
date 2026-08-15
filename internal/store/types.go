@@ -302,6 +302,9 @@ type Todo struct {
 	// AssignmentChanged is set when this mutation changed assignee handling: CreateTodo (initial assignee on create)
 	// or UpdateTodo (assignee field changed). Not persisted; used by callers to gate SSE emissions.
 	AssignmentChanged bool `json:"-"`
+	// MaterialChanged is transaction-authoritative mutation metadata. It ignores
+	// bookkeeping timestamps and is not persisted or projected to clients.
+	MaterialChanged bool `json:"-"`
 }
 
 // Sprint time terminology (see Sprint struct in sprints.go):

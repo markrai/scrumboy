@@ -135,7 +135,7 @@ func (m *PreparedMCPMove) Move(command MoveCommand) (MoveResult, error) {
 		return MoveResult{}, err
 	}
 
-	publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved)
+	publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved, false)
 	return MoveResult{Project: project, Todo: todo}, nil
 }
 

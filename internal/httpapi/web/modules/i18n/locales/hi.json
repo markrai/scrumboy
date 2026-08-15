@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "ईमेल सूचना सेटिंग सहेजी नहीं जा सकीं। आपकी पिछली सेटिंग अभी भी सक्रिय हैं।",
   "settings.customization.emailNotify.toggleLabel": "ईमेल सूचनाएँ चालू",
   "settings.customization.emailNotify.category.assigned": "जब मुझे कोई Todo नियत किया जाए",
+  "settings.customization.emailNotify.category.createdByMe": "जब मेरे द्वारा खोला गया कार्ड अपडेट या स्थानांतरित हो",
   "settings.customization.emailNotify.category.cardActivity": "Todo बनाया, ले जाया गया, या हटाया गया",
   "settings.customization.emailNotify.category.sprintActivity": "स्प्रिंट गतिविधि",
   "settings.customization.emailNotify.category.projectActivity": "परियोजना, वर्कफ़्लो, या टैग में बदलाव",

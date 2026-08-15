@@ -127,6 +127,9 @@ func assertCreatorRequestEvent(t *testing.T, event eventbus.Event, fixture *crea
 	if payload.ProjectID != fixture.project.ID || payload.ProjectSlug != fixture.project.Slug || payload.TodoID != fixture.todo.ID || payload.LocalID != fixture.todo.LocalID || payload.Title != fixture.todo.Title || payload.ActivityReason != reason || payload.CreatedByUserID != fixture.creator.ID || payload.ActorUserID != fixture.actor.ID {
 		t.Fatalf("creator request payload=%+v", payload)
 	}
+	if !payload.MaterialChanged {
+		t.Fatalf("creator request lacks committed material-change fact: %+v", payload)
+	}
 	return payload
 }
 
@@ -142,6 +145,9 @@ func assertAuthorizedCreatorNotificationEvent(t *testing.T, event eventbus.Event
 	if payload.ProjectID != fixture.project.ID || payload.ProjectSlug != fixture.project.Slug || payload.TodoID != fixture.todo.ID || payload.LocalID != fixture.todo.LocalID || payload.Title != fixture.todo.Title || payload.ActivityReason != reason || payload.RecipientUserID != fixture.creator.ID || payload.ActorUserID != fixture.actor.ID {
 		t.Fatalf("authorized creator recipient payload=%+v", payload)
 	}
+	if !payload.MaterialChanged {
+		t.Fatalf("authorized payload lost material-change fact: %+v", payload)
+	}
 	return payload
 }
 
@@ -151,8 +157,11 @@ func assertCreatorAuthorizationThenRefresh(t *testing.T, fixture *creatorRequest
 	if len(events) != 3 {
 		t.Fatalf("events=%+v, want request, authorized recipient, then refresh", events)
 	}
-	assertCreatorRequestEvent(t, events[0], fixture, reason)
-	assertAuthorizedCreatorNotificationEvent(t, events[1], fixture, reason)
+	request := assertCreatorRequestEvent(t, events[0], fixture, reason)
+	authorized := assertAuthorizedCreatorNotificationEvent(t, events[1], fixture, reason)
+	if !request.CardActivityCandidate || !authorized.CardActivityCandidate {
+		t.Fatalf("REST/legacy activity candidate facts request=%+v authorized=%+v", request, authorized)
+	}
 	if events[2].Type != "board.refresh_needed" || events[2].ProjectID != fixture.project.ID {
 		t.Fatalf("third event=%+v, want board.refresh_needed", events[2])
 	}
@@ -173,8 +182,11 @@ func assertCreatorAuthorizationWithoutRefresh(t *testing.T, fixture *creatorRequ
 	if len(fixture.collector.events) != 2 {
 		t.Fatalf("events=%+v, want request and authorized recipient with zero board refresh", fixture.collector.events)
 	}
-	assertCreatorRequestEvent(t, fixture.collector.events[0], fixture, reason)
-	assertAuthorizedCreatorNotificationEvent(t, fixture.collector.events[1], fixture, reason)
+	request := assertCreatorRequestEvent(t, fixture.collector.events[0], fixture, reason)
+	authorized := assertAuthorizedCreatorNotificationEvent(t, fixture.collector.events[1], fixture, reason)
+	if request.CardActivityCandidate || authorized.CardActivityCandidate {
+		t.Fatalf("MCP/Agora must not invent card-activity fallback: request=%+v authorized=%+v", request, authorized)
+	}
 
 }
 
@@ -326,8 +338,12 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if len(events) != 3 || events[0].Type != "todo.assigned" || events[1].Type != eventbus.TodoCreatorNotificationRequestedEventType || events[2].Type != eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
 			t.Fatalf("events=%+v, want todo.assigned, creator request, authorized recipient, and no direct refresh", events)
 		}
-		assertCreatorRequestEvent(t, events[1], fixture, "todo_updated")
-		assertAuthorizedCreatorNotificationEvent(t, events[2], fixture, "todo_updated")
+		request := assertCreatorRequestEvent(t, events[1], fixture, "todo_updated")
+		authorized := assertAuthorizedCreatorNotificationEvent(t, events[2], fixture, "todo_updated")
+		if !request.AssignmentChanged || request.ToAssigneeUserID == nil || *request.ToAssigneeUserID != fixture.actor.ID ||
+			!authorized.AssignmentChanged || authorized.ToAssigneeUserID == nil || *authorized.ToAssigneeUserID != fixture.actor.ID {
+			t.Fatalf("assignment policy facts request=%+v authorized=%+v", request, authorized)
+		}
 		assertCreatorActivityDelivery(t, fixture, "todo_updated", 1, 1)
 	})
 

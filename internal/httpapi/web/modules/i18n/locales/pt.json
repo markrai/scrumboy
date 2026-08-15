@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Não foi possível salvar as configurações de notificação por e-mail. Suas configurações anteriores continuam ativas.",
   "settings.customization.emailNotify.toggleLabel": "Notificações por e-mail ativadas",
   "settings.customization.emailNotify.category.assigned": "Quando um todo é atribuído a mim",
+  "settings.customization.emailNotify.category.createdByMe": "Quando um cartão que abri é atualizado ou movido",
   "settings.customization.emailNotify.category.cardActivity": "Todo criado, movido ou excluído",
   "settings.customization.emailNotify.category.sprintActivity": "Atividade da sprint",
   "settings.customization.emailNotify.category.projectActivity": "Alterações de projeto, fluxo de trabalho ou tags",

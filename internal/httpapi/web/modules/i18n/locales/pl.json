@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Nie udało się zapisać ustawień powiadomień e-mail. Poprzednie ustawienia są nadal aktywne.",
   "settings.customization.emailNotify.toggleLabel": "Powiadomienia e-mail włączone",
   "settings.customization.emailNotify.category.assigned": "Gdy Todo zostanie mi przypisane",
+  "settings.customization.emailNotify.category.createdByMe": "Gdy otwarta przeze mnie karta zostanie zaktualizowana lub przeniesiona",
   "settings.customization.emailNotify.category.cardActivity": "Todo utworzone, przeniesione lub usunięte",
   "settings.customization.emailNotify.category.sprintActivity": "Aktywność sprintu",
   "settings.customization.emailNotify.category.projectActivity": "Zmiany projektu, workflow lub tagów",

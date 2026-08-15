@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Tetapan pemberitahuan e-mel tidak dapat disimpan. Tetapan terdahulu anda masih aktif.",
   "settings.customization.emailNotify.toggleLabel": "Notifikasi e-mel dihidupkan",
   "settings.customization.emailNotify.category.assigned": "Apabila Todo ditugaskan kepada saya",
+  "settings.customization.emailNotify.category.createdByMe": "Apabila kad yang saya buka dikemas kini atau dialihkan",
   "settings.customization.emailNotify.category.cardActivity": "Todo dicipta, dipindahkan atau dipadam",
   "settings.customization.emailNotify.category.sprintActivity": "Aktiviti sprint",
   "settings.customization.emailNotify.category.projectActivity": "Perubahan projek, aliran kerja atau tag",

@@ -173,14 +173,18 @@ func (b *sseBridge) emitCreatorActivity(ctx context.Context, e eventbus.Event) {
 	}
 
 	authorized, ok, err := b.creatorNotificationAuthorizer.ReauthorizeRecipient(ctx, todoapp.AuthorizedCreatorNotification{
-		ProjectID:       payload.ProjectID,
-		ProjectSlug:     payload.ProjectSlug,
-		TodoID:          payload.TodoID,
-		LocalID:         payload.LocalID,
-		Title:           payload.Title,
-		ActivityReason:  payload.ActivityReason,
-		RecipientUserID: payload.RecipientUserID,
-		ActorUserID:     payload.ActorUserID,
+		ProjectID:             payload.ProjectID,
+		ProjectSlug:           payload.ProjectSlug,
+		TodoID:                payload.TodoID,
+		LocalID:               payload.LocalID,
+		Title:                 payload.Title,
+		ActivityReason:        payload.ActivityReason,
+		RecipientUserID:       payload.RecipientUserID,
+		ActorUserID:           payload.ActorUserID,
+		MaterialChanged:       payload.MaterialChanged,
+		AssignmentChanged:     payload.AssignmentChanged,
+		ToAssigneeUserID:      payload.ToAssigneeUserID,
+		CardActivityCandidate: payload.CardActivityCandidate,
 	})
 	if err != nil || !ok {
 		return

@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "이메일 알림 설정을 저장하지 못했습니다. 이전 설정이 계속 적용됩니다.",
   "settings.customization.emailNotify.toggleLabel": "이메일 알림 켜짐",
   "settings.customization.emailNotify.category.assigned": "Todo가 나에게 할당되었을 때",
+  "settings.customization.emailNotify.category.createdByMe": "내가 연 카드가 업데이트되거나 이동될 때",
   "settings.customization.emailNotify.category.cardActivity": "Todo 생성, 이동 또는 삭제",
   "settings.customization.emailNotify.category.sprintActivity": "스프린트 활동",
   "settings.customization.emailNotify.category.projectActivity": "프로젝트, 워크플로 또는 태그 변경",

@@ -13,9 +13,10 @@ import {
 } from './email-notify-preferences.js';
 
 const enabledPref = {
-  v: 1 as const,
+  v: 2 as const,
   enabled: true,
   assigned: true,
+  createdByMe: true,
   cardActivity: true,
   sprintActivity: false,
   projectActivity: false,
@@ -40,11 +41,14 @@ describe('Email notification preference JSON', () => {
     ['unset', undefined, defaultEmailNotifyPref()],
     ['empty', '', defaultEmailNotifyPref()],
     ['empty object', '{}', defaultEmailNotifyPref()],
-    ['missing version', '{"enabled":true}', { ...defaultEmailNotifyPref(), enabled: true }],
-    ['partial v1', '{"v":1,"cardActivity":true}', { ...defaultEmailNotifyPref(), cardActivity: true }],
+    ['missing version migrates without creator opt in', '{"enabled":true}', { ...defaultEmailNotifyPref(), enabled: true }],
+    ['partial v1 migrates without creator opt in', '{"v":1,"cardActivity":true}', { ...defaultEmailNotifyPref(), cardActivity: true }],
     ['numeric v1', '{"v":1.0,"enabled":true}', { ...defaultEmailNotifyPref(), enabled: true }],
     ['explicit false', '{"assigned":false,"addedToProject":false}', { ...defaultEmailNotifyPref(), assigned: false, addedToProject: false }],
-    ['complete v1', JSON.stringify(enabledPref), enabledPref],
+    ['complete v1 migrates', '{"v":1,"enabled":true,"assigned":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}', { ...enabledPref, createdByMe: false }],
+    ['explicit v2 creator opt in', JSON.stringify(enabledPref), enabledPref],
+    ['v2 absent creator', '{"v":2,"enabled":true}', { ...defaultEmailNotifyPref(), enabled: true }],
+    ['v2 explicit creator false', '{"v":2,"enabled":true,"createdByMe":false}', { ...defaultEmailNotifyPref(), enabled: true }],
   ])('parses %s with canonical defaults', (_name, raw, expected) => {
     expect(parseEmailNotifyPref(raw)).toEqual(expected);
   });
@@ -53,12 +57,14 @@ describe('Email notification preference JSON', () => {
     ['null', 'null'],
     ['array', '[]'],
     ['malformed', '{'],
-    ['unsupported version', '{"v":2}'],
+    ['unsupported version', '{"v":3}'],
     ['null version', '{"v":null}'],
     ['string version', '{"v":"1"}'],
     ['fractional version', '{"v":1.5}'],
     ['invalid boolean', '{"enabled":"true"}'],
     ['null boolean', '{"assigned":null}'],
+    ['creator field on v1', '{"v":1,"createdByMe":true}'],
+    ['creator field without version', '{"createdByMe":true}'],
     ['unknown field', '{"future":true}'],
   ])('rejects %s', (_name, raw) => {
     expect(() => parseEmailNotifyPref(raw)).toThrow('invalid email notification preference');
@@ -120,7 +126,7 @@ describe('Authenticated email notification preferences', () => {
     expect(getEmailNotifyPreferenceState()).toEqual({ userId: 1, status: 'ready', value: previous });
   });
 
-  it('saves successfully on retry and emits a complete canonical v1 object', async () => {
+  it('saves successfully on retry and emits a complete canonical v2 object', async () => {
     setUser({ id: 1, name: 'Ada' });
     hydrateEmailNotifyFromServer('{}');
     const fetchMock = vi.fn()
@@ -134,7 +140,7 @@ describe('Authenticated email notification preferences', () => {
     const request = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     expect(request).toEqual({
       key: EMAIL_NOTIFY_PREF_KEY,
-      value: '{"v":1,"enabled":true,"assigned":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}',
+      value: '{"v":2,"enabled":true,"assigned":true,"createdByMe":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}',
     });
     expect(getStoredEmailNotifyPref()).toEqual(enabledPref);
   });

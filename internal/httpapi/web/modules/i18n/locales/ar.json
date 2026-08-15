@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "تعذر حفظ إعدادات إشعارات البريد الإلكتروني. لا تزال إعداداتك السابقة سارية.",
   "settings.customization.emailNotify.toggleLabel": "إشعارات البريد الإلكتروني مفعّلة",
   "settings.customization.emailNotify.category.assigned": "عند إسناد Todo إليّ",
+  "settings.customization.emailNotify.category.createdByMe": "عند تحديث بطاقة فتحتها أو نقلها",
   "settings.customization.emailNotify.category.cardActivity": "إنشاء Todo أو نقله أو حذفه",
   "settings.customization.emailNotify.category.sprintActivity": "نشاط السبرنت",
   "settings.customization.emailNotify.category.projectActivity": "تغييرات المشروع أو سير العمل أو الوسوم",

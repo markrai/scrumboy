@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "无法保存电子邮件通知设置。之前的设置仍然有效。",
   "settings.customization.emailNotify.toggleLabel": "邮件通知已开启",
   "settings.customization.emailNotify.category.assigned": "当有 Todo 分配给我时",
+  "settings.customization.emailNotify.category.createdByMe": "当我创建的卡片被更新或移动时",
   "settings.customization.emailNotify.category.cardActivity": "Todo 已创建、移动或删除",
   "settings.customization.emailNotify.category.sprintActivity": "冲刺活动",
   "settings.customization.emailNotify.category.projectActivity": "项目、工作流或标签变更",

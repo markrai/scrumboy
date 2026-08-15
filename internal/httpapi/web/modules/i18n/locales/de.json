@@ -948,6 +948,7 @@
   "settings.customization.emailNotify.saveFailed": "Die Einstellungen für E-Mail-Benachrichtigungen konnten nicht gespeichert werden. Deine bisherigen Einstellungen bleiben aktiv.",
   "settings.customization.emailNotify.toggleLabel": "E-Mail-Benachrichtigungen aktiviert",
   "settings.customization.emailNotify.category.assigned": "Wenn mir ein Todo zugewiesen wird",
+  "settings.customization.emailNotify.category.createdByMe": "Wenn eine von mir eröffnete Karte aktualisiert oder verschoben wird",
   "settings.customization.emailNotify.category.cardActivity": "Todo erstellt, verschoben oder gelöscht",
   "settings.customization.emailNotify.category.sprintActivity": "Sprint-Aktivität",
   "settings.customization.emailNotify.category.projectActivity": "Änderungen an Projekt, Workflow oder Tags",
