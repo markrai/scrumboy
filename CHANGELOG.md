@@ -1,6 +1,23 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+
+## [3.32.0] - 2026-08-15
+
+### Added
+
+- **Todo creator attribution** - Authenticated creates store a nullable
+  `created_by_user_id` (left null for anonymous/legacy todos). The identity is
+  carried through board reads, REST/MCP DTOs, backup export/import/restore, and
+  project duplication, and the todo dialog shows an “Opened by” line beside the
+  existing timestamps.
+- **Creator update notifications** - When someone else updates or moves a todo,
+  prepared application services can request a creator-facing notification after
+  commit. Delivery is authorized (creator still on the project, actor ≠ creator),
+  emailed under a new `createdByMe` preference (defaults on, like assigned), and
+  pushed in-app over the creator’s private SSE user channel rather than a board
+  broadcast. MCP keeps board-refresh silence but still requests creator notify;
+  deletes and creates do not.
 
 ## [3.31.5] - 2026-08-13
 
