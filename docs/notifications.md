@@ -58,9 +58,18 @@ for realtime board refresh) rather than introducing a parallel event system — 
 
 A todo's `createdByUserId` is historical data only. A committed update or move by another
 authenticated user can publish the internal `todo.creator_notification_requested` consideration
-request from the prepared application service. The request is not a recipient-authorization or
-delivery decision. It is excluded from webhooks and currently has no SSE, email, Web Push,
-frontend, or preference consumer; there is no creator-notification category yet.
+request from the prepared application service. Historical attribution only nominates a candidate.
+When the request is consumed, the creator-specific authorization service freshly resolves the
+durable project and requires the creator to have a current viewer-or-higher project membership.
+Success produces the point-in-time internal `todo.creator_notification_recipient_authorized`
+decision; a removed, deleted, or nonexistent creator, temporary or missing project, self request,
+or lookup failure produces no recipient. Membership is evaluated in its current state at that
+instant, so membership added before authorization permits the decision and membership removed
+before authorization denies it.
+
+Neither internal event is a preference or delivery decision. Both are excluded from webhooks and
+currently have no SSE, email, Web Push, frontend, or preference consumer; there is no
+creator-notification category yet.
 
 ---
 

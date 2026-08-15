@@ -110,27 +110,43 @@ func assertCreatorRequestEvent(t *testing.T, event eventbus.Event, fixture *crea
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		t.Fatalf("decode creator request: %v", err)
 	}
-	if payload.ProjectID != fixture.project.ID || payload.ProjectSlug != fixture.project.Slug || payload.TodoID != fixture.todo.ID || payload.LocalID != fixture.todo.LocalID || payload.ActivityReason != reason || payload.CreatedByUserID != fixture.creator.ID || payload.ActorUserID != fixture.actor.ID {
+	if payload.ProjectID != fixture.project.ID || payload.ProjectSlug != fixture.project.Slug || payload.TodoID != fixture.todo.ID || payload.LocalID != fixture.todo.LocalID || payload.Title != fixture.todo.Title || payload.ActivityReason != reason || payload.CreatedByUserID != fixture.creator.ID || payload.ActorUserID != fixture.actor.ID {
 		t.Fatalf("creator request payload=%+v", payload)
 	}
 	return payload
 }
 
-func assertCreatorRequestThenRefresh(t *testing.T, fixture *creatorRequestTransportFixture, reason string) {
+func assertAuthorizedCreatorNotificationEvent(t *testing.T, event eventbus.Event, fixture *creatorRequestTransportFixture, reason string) eventbus.TodoCreatorNotificationRecipientAuthorizedPayload {
+	t.Helper()
+	if event.Type != eventbus.TodoCreatorNotificationRecipientAuthorizedEventType || event.ProjectID != fixture.project.ID {
+		t.Fatalf("event=%+v, want internal authorized creator recipient for project %d", event, fixture.project.ID)
+	}
+	var payload eventbus.TodoCreatorNotificationRecipientAuthorizedPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("decode authorized creator recipient: %v", err)
+	}
+	if payload.ProjectID != fixture.project.ID || payload.ProjectSlug != fixture.project.Slug || payload.TodoID != fixture.todo.ID || payload.LocalID != fixture.todo.LocalID || payload.Title != fixture.todo.Title || payload.ActivityReason != reason || payload.RecipientUserID != fixture.creator.ID || payload.ActorUserID != fixture.actor.ID {
+		t.Fatalf("authorized creator recipient payload=%+v", payload)
+	}
+	return payload
+}
+
+func assertCreatorAuthorizationThenRefresh(t *testing.T, fixture *creatorRequestTransportFixture, reason string) {
 	t.Helper()
 	events := fixture.collector.events
-	if len(events) != 2 {
-		t.Fatalf("events=%+v, want request then refresh", events)
+	if len(events) != 3 {
+		t.Fatalf("events=%+v, want request, authorized recipient, then refresh", events)
 	}
 	assertCreatorRequestEvent(t, events[0], fixture, reason)
-	if events[1].Type != "board.refresh_needed" || events[1].ProjectID != fixture.project.ID {
-		t.Fatalf("second event=%+v, want board.refresh_needed", events[1])
+	assertAuthorizedCreatorNotificationEvent(t, events[1], fixture, reason)
+	if events[2].Type != "board.refresh_needed" || events[2].ProjectID != fixture.project.ID {
+		t.Fatalf("third event=%+v, want board.refresh_needed", events[2])
 	}
 	var refresh struct {
 		Reason      string `json:"reason"`
 		ActorUserID int64  `json:"actorUserId"`
 	}
-	if err := json.Unmarshal(events[1].Payload, &refresh); err != nil {
+	if err := json.Unmarshal(events[2].Payload, &refresh); err != nil {
 		t.Fatalf("decode refresh: %v", err)
 	}
 	if refresh.Reason != reason || refresh.ActorUserID != fixture.actor.ID {
@@ -138,10 +154,20 @@ func assertCreatorRequestThenRefresh(t *testing.T, fixture *creatorRequestTransp
 	}
 }
 
+func assertCreatorAuthorizationWithoutRefresh(t *testing.T, fixture *creatorRequestTransportFixture, reason string) {
+	t.Helper()
+	if len(fixture.collector.events) != 2 {
+		t.Fatalf("events=%+v, want request and authorized recipient with zero board refresh", fixture.collector.events)
+	}
+	assertCreatorRequestEvent(t, fixture.collector.events[0], fixture, reason)
+	assertAuthorizedCreatorNotificationEvent(t, fixture.collector.events[1], fixture, reason)
+
+}
+
 func assertCreatorRequestOnly(t *testing.T, fixture *creatorRequestTransportFixture, reason string) {
 	t.Helper()
 	if len(fixture.collector.events) != 1 {
-		t.Fatalf("events=%+v, want one creator request and zero board refresh", fixture.collector.events)
+		t.Fatalf("events=%+v, want denied creator request only", fixture.collector.events)
 	}
 	assertCreatorRequestEvent(t, fixture.collector.events[0], fixture, reason)
 }
@@ -162,7 +188,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("modern update status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestThenRefresh(t, fixture, "todo_updated")
+		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_updated")
 	})
 
 	t.Run("modern REST move", func(t *testing.T) {
@@ -173,7 +199,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("modern move status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestThenRefresh(t, fixture, "todo_moved")
+		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_moved")
 	})
 
 	t.Run("legacy numeric update", func(t *testing.T) {
@@ -187,7 +213,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("legacy update status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestThenRefresh(t, fixture, "todo_updated")
+		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_updated")
 	})
 
 	t.Run("legacy numeric move", func(t *testing.T) {
@@ -198,7 +224,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("legacy move status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestThenRefresh(t, fixture, "todo_moved")
+		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_moved")
 	})
 
 	t.Run("assignment change preserves store event and suppresses direct refresh", func(t *testing.T) {
@@ -213,10 +239,11 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("assignment update status=%d body=%s", response.StatusCode, body)
 		}
 		events := fixture.collector.events
-		if len(events) != 2 || events[0].Type != "todo.assigned" || events[1].Type != eventbus.TodoCreatorNotificationRequestedEventType {
-			t.Fatalf("events=%+v, want todo.assigned then creator request and no direct refresh", events)
+		if len(events) != 3 || events[0].Type != "todo.assigned" || events[1].Type != eventbus.TodoCreatorNotificationRequestedEventType || events[2].Type != eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
+			t.Fatalf("events=%+v, want todo.assigned, creator request, authorized recipient, and no direct refresh", events)
 		}
 		assertCreatorRequestEvent(t, events[1], fixture, "todo_updated")
+		assertAuthorizedCreatorNotificationEvent(t, events[2], fixture, "todo_updated")
 	})
 
 	projectHub, unsubscribeProject := fixture.server.hub.Subscribe(fixture.project.ID)
@@ -237,7 +264,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("MCP update status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestOnly(t, fixture, "todo_updated")
+		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_updated")
 		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
 	})
 
@@ -254,7 +281,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("MCP move status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestOnly(t, fixture, "todo_moved")
+		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_moved")
 		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
 	})
 
@@ -271,7 +298,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		if response.StatusCode != http.StatusOK {
 			t.Fatalf("Agora update status=%d body=%s", response.StatusCode, body)
 		}
-		assertCreatorRequestOnly(t, fixture, "todo_updated")
+		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_updated")
 		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
 	})
 

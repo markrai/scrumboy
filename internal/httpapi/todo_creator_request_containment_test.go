@@ -12,7 +12,7 @@ import (
 	"scrumboy/internal/store"
 )
 
-func TestCreatorNotificationRequestRemainsInternalWithCancelledContext(t *testing.T) {
+func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
 	st := newTestStore(t)
 	owner, err := st.BootstrapUser(context.Background(), "containment-owner@example.com", "password123", "Owner")
 	if err != nil {
@@ -23,7 +23,18 @@ func TestCreatorNotificationRequestRemainsInternalWithCancelledContext(t *testin
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	for _, events := range [][]string{{eventbus.TodoCreatorNotificationRequestedEventType}, {"*"}} {
+	creator, err := st.CreateUser(context.Background(), "containment-creator@example.com", "password123", "Creator")
+	if err != nil {
+		t.Fatalf("create creator: %v", err)
+	}
+	if err := st.AddProjectMember(ownerCtx, owner.ID, project.ID, creator.ID, store.RoleViewer); err != nil {
+		t.Fatalf("add creator member: %v", err)
+	}
+	for _, events := range [][]string{
+		{eventbus.TodoCreatorNotificationRequestedEventType},
+		{eventbus.TodoCreatorNotificationRecipientAuthorizedEventType},
+		{"*"},
+	} {
 		if _, err := st.CreateWebhook(ownerCtx, owner.ID, store.CreateWebhookInput{
 			ProjectID: project.ID,
 			URL:       "https://example.invalid/hook",
@@ -37,7 +48,7 @@ func TestCreatorNotificationRequestRemainsInternalWithCancelledContext(t *testin
 	hub := NewHub(defaultSubscriberBuffer)
 	projectEvents, unsubscribeProject := hub.Subscribe(project.ID)
 	defer unsubscribeProject()
-	creatorEvents, unsubscribeCreator := hub.SubscribeUser(91)
+	creatorEvents, unsubscribeCreator := hub.SubscribeUser(creator.ID)
 	defer unsubscribeCreator()
 	webhookQueue := newWebhookQueue(logger)
 	mailQueue := newMailQueue(logger)
@@ -49,39 +60,80 @@ func TestCreatorNotificationRequestRemainsInternalWithCancelledContext(t *testin
 		newEmailNotifier(st, mailQueue, "https://scrumboy.example.com", true, logger),
 		collector,
 	)
-	server := &Server{fanout: fanout}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	server.PublishCreatorNotificationRequest(ctx, todoapp.CreatorNotificationRequest{
+	server := &Server{
+		fanout:                        fanout,
+		creatorNotificationAuthorizer: todoapp.NewCreatorNotificationAuthorizationService(st),
+	}
+	request := todoapp.CreatorNotificationRequest{
 		ProjectID:       project.ID,
 		ProjectSlug:     project.Slug,
 		TodoID:          71,
 		LocalID:         4,
 		Title:           "Internal title",
 		ActivityReason:  "todo_updated",
-		CreatedByUserID: 91,
+		CreatedByUserID: creator.ID,
 		ActorUserID:     owner.ID,
+	}
+
+	t.Run("cancelled authorization lookup fails closed", func(t *testing.T) {
+		collector.events = nil
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		server.PublishCreatorNotificationRequest(ctx, request)
+		if len(collector.events) != 1 || collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType {
+			t.Fatalf("internal collector events=%+v, want request only", collector.events)
+		}
+		assertCreatorAuthorizationNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
 	})
 
-	if len(collector.events) != 1 || collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType {
-		t.Fatalf("internal collector events=%+v, want one request", collector.events)
-	}
-	if collector.events[0].ID == "" || collector.events[0].Time.IsZero() {
-		t.Fatalf("internal event lacks fanout identity/time: %+v", collector.events[0])
-	}
+	t.Run("current member produces contained authorized decision", func(t *testing.T) {
+		collector.events = nil
+		server.PublishCreatorNotificationRequest(context.Background(), request)
+		if len(collector.events) != 2 ||
+			collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType ||
+			collector.events[1].Type != eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
+			t.Fatalf("internal collector events=%+v, want request then authorized recipient", collector.events)
+		}
+		for _, event := range collector.events {
+			if event.ID == "" || event.Time.IsZero() {
+				t.Fatalf("internal event lacks fanout identity/time: %+v", event)
+			}
+		}
+		assertCreatorAuthorizationNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
+	})
 
+	t.Run("removed member produces no recipient", func(t *testing.T) {
+		if err := st.RemoveProjectMember(ownerCtx, owner.ID, project.ID, creator.ID); err != nil {
+			t.Fatalf("remove creator: %v", err)
+		}
+		collector.events = nil
+		server.PublishCreatorNotificationRequest(context.Background(), request)
+		if len(collector.events) != 1 || collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType {
+			t.Fatalf("internal collector events=%+v, want denied request only", collector.events)
+		}
+		assertCreatorAuthorizationNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
+	})
+}
+
+func assertCreatorAuthorizationNoDelivery(
+	t *testing.T,
+	projectEvents <-chan []byte,
+	creatorEvents <-chan []byte,
+	webhookQueue *webhookQueue,
+	mailQueue *mailQueue,
+) {
+	t.Helper()
 	select {
 	case message := <-projectEvents:
-		t.Fatalf("request leaked to project SSE: %s", message)
+		t.Fatalf("creator authorization leaked to project SSE: %s", message)
 	case message := <-creatorEvents:
-		t.Fatalf("request leaked to creator SSE: %s", message)
+		t.Fatalf("creator authorization leaked to creator SSE: %s", message)
 	case <-time.After(100 * time.Millisecond):
 	}
 	if deliveries := webhookQueue.Drain(); len(deliveries) != 0 {
-		t.Fatalf("exact/wildcard webhooks received internal request: %+v", deliveries)
+		t.Fatalf("exact/wildcard webhooks received creator authorization events: %+v", deliveries)
 	}
 	if deliveries := mailQueue.Drain(); len(deliveries) != 0 {
-		t.Fatalf("email queue received internal request: %+v", deliveries)
+		t.Fatalf("email queue received creator authorization events: %+v", deliveries)
 	}
 }

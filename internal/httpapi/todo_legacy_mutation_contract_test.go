@@ -209,15 +209,32 @@ func legacyTodoAssertRefreshAndCreatorRequest(
 ) eventbus.TodoCreatorNotificationRequestedPayload {
 	t.Helper()
 	events := legacyTodoEventsForProject(fixture, projectID)
-	if len(events) != 2 || events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType || events[1].Type != "board.refresh_needed" {
-		t.Fatalf("events=%+v, want creator request then one board.refresh_needed", events)
+	if len(events) != 3 ||
+		events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType ||
+		events[1].Type != eventbus.TodoCreatorNotificationRecipientAuthorizedEventType ||
+		events[2].Type != "board.refresh_needed" {
+		t.Fatalf("events=%+v, want creator request, authorized recipient, then one board.refresh_needed", events)
 	}
 	var request eventbus.TodoCreatorNotificationRequestedPayload
 	if err := json.Unmarshal(events[0].Payload, &request); err != nil {
 		t.Fatalf("decode creator request payload: %v", err)
 	}
+	var authorized eventbus.TodoCreatorNotificationRecipientAuthorizedPayload
+	if err := json.Unmarshal(events[1].Payload, &authorized); err != nil {
+		t.Fatalf("decode authorized creator recipient payload: %v", err)
+	}
+	if authorized.ProjectID != request.ProjectID ||
+		authorized.ProjectSlug != request.ProjectSlug ||
+		authorized.TodoID != request.TodoID ||
+		authorized.LocalID != request.LocalID ||
+		authorized.Title != request.Title ||
+		authorized.ActivityReason != request.ActivityReason ||
+		authorized.RecipientUserID != request.CreatedByUserID ||
+		authorized.ActorUserID != request.ActorUserID {
+		t.Fatalf("authorized payload=%+v does not match request=%+v", authorized, request)
+	}
 	var refresh legacyTodoRefreshPayload
-	if err := json.Unmarshal(events[1].Payload, &refresh); err != nil {
+	if err := json.Unmarshal(events[2].Payload, &refresh); err != nil {
 		t.Fatalf("decode refresh payload: %v", err)
 	}
 	if refresh.Reason != reason || refresh.ActorUserID != refreshActorID {

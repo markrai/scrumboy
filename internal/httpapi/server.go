@@ -106,22 +106,23 @@ type Options struct {
 }
 
 type Server struct {
-	store               storeAPI
-	boardReads          *boardapp.ReadService
-	todoCreates         *todoapp.CreateService
-	todoDeletes         *todoapp.DeleteService
-	todoMoves           *todoapp.MoveService
-	todoUpdates         *todoapp.UpdateService
-	todoLegacyDeletes   *todoapp.LegacyDeleteService
-	todoLegacyMoves     *todoapp.LegacyMoveService
-	todoLegacyUpdates   *todoapp.LegacyUpdateService
-	todoLinkMutations   *todolinkapp.RESTMutationService
-	sprintDefinitions   *sprintapp.RESTDefinitionService
-	sprintLifecycle     *sprintapp.RESTLifecycleService
-	sprintDeletions     *sprintapp.RESTDeletionService
-	workflowMutations   *workflowapp.RESTMutationService
-	priorityMutations   *priorityapp.RESTMutationService
-	membershipMutations *membershipapp.RESTMutationService
+	store                         storeAPI
+	boardReads                    *boardapp.ReadService
+	todoCreates                   *todoapp.CreateService
+	todoDeletes                   *todoapp.DeleteService
+	todoMoves                     *todoapp.MoveService
+	todoUpdates                   *todoapp.UpdateService
+	todoLegacyDeletes             *todoapp.LegacyDeleteService
+	todoLegacyMoves               *todoapp.LegacyMoveService
+	todoLegacyUpdates             *todoapp.LegacyUpdateService
+	creatorNotificationAuthorizer *todoapp.CreatorNotificationAuthorizationService
+	todoLinkMutations             *todolinkapp.RESTMutationService
+	sprintDefinitions             *sprintapp.RESTDefinitionService
+	sprintLifecycle               *sprintapp.RESTLifecycleService
+	sprintDeletions               *sprintapp.RESTDeletionService
+	workflowMutations             *workflowapp.RESTMutationService
+	priorityMutations             *priorityapp.RESTMutationService
+	membershipMutations           *membershipapp.RESTMutationService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -535,7 +536,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 	}
 
 	server := &Server{
-		store: st,
+		store:                         st,
+		creatorNotificationAuthorizer: todoapp.NewCreatorNotificationAuthorizationService(st),
 		boardReads: boardapp.NewReadService(boardapp.ReadServiceDependencies{
 			Initial:      st,
 			Lane:         st,
@@ -845,9 +847,10 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 	_ = s.fanout.Publish(ctx, e)
 }
 
-// PublishCreatorNotificationRequest publishes an internal request to consider
-// a historical todo creator. No Phase 2 consumer delivers this event through
-// SSE, email, push, or webhooks.
+// PublishCreatorNotificationRequest records the internal consideration request,
+// then performs the Phase 3 fresh-access check. Neither the request nor a
+// resulting authorized-recipient decision is delivered through SSE, email,
+// push, or webhooks.
 func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request todoapp.CreatorNotificationRequest) {
 	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
 		ProjectID:       request.ProjectID,
@@ -865,6 +868,44 @@ func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request 
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      eventbus.TodoCreatorNotificationRequestedEventType,
 		ProjectID: request.ProjectID,
+		Payload:   payload,
+	})
+
+	authorized, ok, err := s.creatorNotificationAuthorizer.Authorize(ctx, request)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf(
+				"creator notification authorization lookup failed project_id=%d recipient_user_id=%d: %v",
+				request.ProjectID,
+				request.CreatedByUserID,
+				err,
+			)
+		}
+		return
+	}
+	if !ok {
+		return
+	}
+	s.publishAuthorizedCreatorNotification(ctx, authorized)
+}
+
+func (s *Server) publishAuthorizedCreatorNotification(ctx context.Context, authorized todoapp.AuthorizedCreatorNotification) {
+	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRecipientAuthorizedPayload{
+		ProjectID:       authorized.ProjectID,
+		ProjectSlug:     authorized.ProjectSlug,
+		TodoID:          authorized.TodoID,
+		LocalID:         authorized.LocalID,
+		Title:           authorized.Title,
+		ActivityReason:  authorized.ActivityReason,
+		RecipientUserID: authorized.RecipientUserID,
+		ActorUserID:     authorized.ActorUserID,
+	})
+	if err != nil {
+		return
+	}
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      eventbus.TodoCreatorNotificationRecipientAuthorizedEventType,
+		ProjectID: authorized.ProjectID,
 		Payload:   payload,
 	})
 }
