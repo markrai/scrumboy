@@ -25,9 +25,6 @@ type emailNotifyFakeStore struct {
 	memberCalls  int
 	userCalls    int
 	roles        map[int64]store.ProjectRole
-	todos        map[int64]store.Todo
-	todoErr      error
-	todoCalls    int
 }
 
 func (s *emailNotifyFakeStore) GetEmailNotifyPref(_ context.Context, userID int64) (store.EmailNotifyPref, error) {
@@ -70,20 +67,6 @@ func (s *emailNotifyFakeStore) GetProjectRole(_ context.Context, _ int64, userID
 	return role, nil
 }
 
-func (s *emailNotifyFakeStore) GetTodoByLocalID(_ context.Context, _ int64, localID int64, _ store.Mode) (store.Todo, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.todoCalls++
-	if s.todoErr != nil {
-		return store.Todo{}, s.todoErr
-	}
-	todo, ok := s.todos[localID]
-	if !ok {
-		return store.Todo{}, store.ErrNotFound
-	}
-	return todo, nil
-}
-
 func (s *emailNotifyFakeStore) ListProjectMembers(_ context.Context, _ int64, _ int64) ([]store.ProjectMember, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,7 +103,6 @@ func newEmailNotifyFake() *emailNotifyFakeStore {
 		prefs:    map[int64]store.EmailNotifyPref{1: pref, 2: pref, 3: pref},
 		prefErrs: make(map[int64]error),
 		roles:    map[int64]store.ProjectRole{1: store.RoleViewer, 2: store.RoleViewer, 3: store.RoleViewer},
-		todos:    make(map[int64]store.Todo),
 	}
 }
 

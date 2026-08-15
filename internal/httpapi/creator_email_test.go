@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -288,6 +287,59 @@ func TestCreatorEmailRESTActivityOverlapQueuesCreatorOnlyThroughCandidate(t *tes
 	}
 }
 
+func TestCreatorEmailMutationFactsSurviveAsyncFanoutBoundary(t *testing.T) {
+	t.Run("refresh creator exclusion survives cancellation", func(t *testing.T) {
+		st := newEmailNotifyFake()
+		st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true, CardActivity: true}
+		q := newMailQueue(discardLogger())
+		n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+		creatorID := int64(2)
+		updated := store.Todo{
+			ID: 11, ProjectID: 7, LocalID: 4, Title: "Ship it", CreatedByUserID: &creatorID, MaterialChanged: true,
+		}
+		service := todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
+			Update:          creatorEmailUpdateStore{todo: updated},
+			CreatorRequests: todoapp.CreatorNotificationRequestPublisherFunc(func(context.Context, todoapp.CreatorNotificationRequest) {}),
+			Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+				payload, _ := json.Marshal(map[string]any{"reason": reason, "actorUserId": int64(1)})
+				n.OnEvent(ctx, eventbus.Event{Type: "board.refresh_needed", ProjectID: projectID, Payload: payload})
+			}),
+		})
+		bound := store.WithUserID(context.Background(), 1)
+		cancelled, cancel := context.WithCancel(bound)
+		cancel()
+		if _, err := service.Prepare(cancelled, todoapp.ResolvedUpdateTarget{
+			ProjectContext: store.ProjectContext{Project: st.project}, Mode: store.ModeFull,
+		}).Update(todoapp.UpdateCommand{LocalID: 4}); err != nil {
+			t.Fatal(err)
+		}
+		deliveries := drainAfterAsync(q)
+		if len(deliveries) != 1 || deliveries[0].To != "member@example.com" {
+			t.Fatalf("async refresh deliveries=%+v, want creator excluded and unrelated member retained", deliveries)
+		}
+	})
+
+	t.Run("assignment creator arbitration survives cancellation", func(t *testing.T) {
+		st := newEmailNotifyFake()
+		creatorID := int64(2)
+		st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, Assigned: true, CreatedByMe: true, CardActivity: true}
+		q := newMailQueue(discardLogger())
+		n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+		ctx := withTodoAssignedMutationFacts(context.Background(), store.TodoAssignedMutationFacts{
+			CreatedByUserID: &creatorID,
+			DurableProject:  true,
+		})
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+
+		n.OnEvent(cancelled, assignedEvent(t, 1, &creatorID, todoapp.RefreshReasonTodoUpdated))
+		deliveries := drainAfterAsync(q)
+		if len(deliveries) != 1 || deliveries[0].To != "member@example.com" {
+			t.Fatalf("async assignment deliveries=%+v, want creator deferred and unrelated member retained", deliveries)
+		}
+	})
+}
+
 func TestCreatorEmailRESTSemanticNoOpSuppressesCreatorCategoryAndFallback(t *testing.T) {
 	st := newEmailNotifyFake()
 	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true, CardActivity: true}
@@ -322,7 +374,6 @@ func TestCreatorEmailRESTSemanticNoOpSuppressesCreatorCategoryAndFallback(t *tes
 func TestCreatorEmailAssignmentOverlapUsesSingleCreatorCandidate(t *testing.T) {
 	st := newEmailNotifyFake()
 	creatorID := int64(2)
-	st.todoErr = errors.New("post-commit todo reread must not be used")
 	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, Assigned: true, CreatedByMe: true, CardActivity: true}
 	q := newMailQueue(discardLogger())
 	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
@@ -336,10 +387,6 @@ func TestCreatorEmailAssignmentOverlapUsesSingleCreatorCandidate(t *testing.T) {
 	if len(activity) != 1 || activity[0].To != "member@example.com" {
 		t.Fatalf("assignment/activity deliveries=%+v, want no direct creator email", activity)
 	}
-	if st.todoCalls != 0 {
-		t.Fatalf("assignment arbitration performed %d post-commit todo rereads, want 0", st.todoCalls)
-	}
-
 	event := creatorEmailCandidateEvent(t, true)
 	var payload eventbus.TodoCreatorNotificationRecipientAuthorizedPayload
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {

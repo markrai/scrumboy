@@ -347,6 +347,30 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		assertCreatorActivityDelivery(t, fixture, "todo_updated", 1, 1)
 	})
 
+	t.Run("legacy assignment change preserves store event and suppresses direct refresh", func(t *testing.T) {
+		fixture.resetEvents()
+		response, body := doJSON(t, fixture.client, http.MethodPatch,
+			fmt.Sprintf("%s/api/todos/%d", base, fixture.todo.ID),
+			map[string]any{
+				"title": fixture.todo.Title, "body": "legacy assignment clear", "tags": []string{},
+				"estimationPoints": nil, "assigneeUserId": nil,
+			}, nil)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("legacy assignment update status=%d body=%s", response.StatusCode, body)
+		}
+		events := fixture.collector.events
+		if len(events) != 3 || events[0].Type != "todo.assigned" || events[1].Type != eventbus.TodoCreatorNotificationRequestedEventType || events[2].Type != eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
+			t.Fatalf("events=%+v, want todo.assigned, creator request, authorized recipient, and no direct refresh", events)
+		}
+		request := assertCreatorRequestEvent(t, events[1], fixture, "todo_updated")
+		authorized := assertAuthorizedCreatorNotificationEvent(t, events[2], fixture, "todo_updated")
+		if !request.AssignmentChanged || request.ToAssigneeUserID != nil ||
+			!authorized.AssignmentChanged || authorized.ToAssigneeUserID != nil {
+			t.Fatalf("legacy assignment policy facts request=%+v authorized=%+v", request, authorized)
+		}
+		assertCreatorActivityDelivery(t, fixture, "todo_updated", 1, 0)
+	})
+
 	t.Run("MCP update delivers privately and retains zero board refresh", func(t *testing.T) {
 		fixture.resetEvents()
 		response, body := doJSON(t, fixture.client, http.MethodPost, base+"/mcp", map[string]any{
@@ -396,6 +420,23 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		}
 		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_updated")
 		assertCreatorActivityDelivery(t, fixture, "todo_updated", 0, 0)
+	})
+
+	t.Run("Agora move uses the same bound MCP adapter and retains zero board refresh", func(t *testing.T) {
+		fixture.resetEvents()
+		response, body := doJSON(t, fixture.client, http.MethodPost, base+"/agora/v1/invoke", map[string]any{
+			"tool": "todos_move",
+			"arguments": map[string]any{
+				"projectSlug": fixture.project.Slug,
+				"localId":     fixture.todo.LocalID,
+				"toColumnKey": store.DefaultColumnDoing,
+			},
+		}, nil)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("Agora move status=%d body=%s", response.StatusCode, body)
+		}
+		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_moved")
+		assertCreatorActivityDelivery(t, fixture, "todo_moved", 0, 0)
 	})
 
 	t.Run("removed historical creator still only produces internal consideration", func(t *testing.T) {
