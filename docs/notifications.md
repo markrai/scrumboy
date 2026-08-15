@@ -56,9 +56,11 @@ Categories map onto the server's existing event taxonomy (the same `reason` valu
 for realtime board refresh) rather than introducing a parallel event system — see the
 `refreshReasonCategory` table in `internal/httpapi/email_notify.go` for the exact mapping.
 
-A todo's `createdByUserId` is historical data only. It is not currently a notification category,
-recipient rule, or delivery trigger: creator attribution emits no creator-specific application
-event, SSE message, or email.
+A todo's `createdByUserId` is historical data only. A committed update or move by another
+authenticated user can publish the internal `todo.creator_notification_requested` consideration
+request from the prepared application service. The request is not a recipient-authorization or
+delivery decision. It is excluded from webhooks and currently has no SSE, email, Web Push,
+frontend, or preference consumer; there is no creator-notification category yet.
 
 ---
 

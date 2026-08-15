@@ -78,7 +78,10 @@ func TestLegacyTodoPatchAccessAndValidationContracts(t *testing.T) {
 		if got := legacyTodoAssignmentCount(t, fixture, todo.ID); got != ledgerBefore {
 			t.Fatalf("assignment rows=%d, want unchanged %d", got, ledgerBefore)
 		}
-		legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_updated", contributor.ID)
+		request := legacyTodoAssertRefreshAndCreatorRequest(t, fixture, project.ID, "todo_updated", contributor.ID)
+		if request.ProjectID != project.ID || request.ProjectSlug != project.Slug || request.TodoID != todo.ID || request.LocalID != todo.LocalID || request.Title != todo.Title || request.ActivityReason != "todo_updated" || request.CreatedByUserID != owner.ID || request.ActorUserID != contributor.ID {
+			t.Fatalf("creator request payload=%+v", request)
+		}
 	})
 
 	failureCases := []struct {

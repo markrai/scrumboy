@@ -634,7 +634,7 @@ curl -sS -X POST 'https://YOUR_HOST/mcp' \
   }'
 ```
 
-Minimal input requires at least `projectSlug` and `title`. Success includes `data.todo` as in the schema section above. Todo results include read-only `createdByUserId`: the authenticated creation actor's historical user ID, or explicit JSON `null` when no safe attribution exists. The value does not imply current project membership or notification eligibility and cannot be supplied in create/update inputs.
+Minimal input requires at least `projectSlug` and `title`. Success includes `data.todo` as in the schema section above. Todo results include read-only `createdByUserId`: the authenticated creation actor's historical user ID, or explicit JSON `null` when no safe attribution exists. The value does not imply current project membership or notification eligibility and cannot be supplied in create/update inputs. Successful MCP update/move mutations may publish an internal creator-consideration request through their prepared application services, while still publishing no `board.refresh_needed`; the request currently has no SSE, email, push, webhook, frontend, or preference consumer.
 
 ### Example Workflow
 

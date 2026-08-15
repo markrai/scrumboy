@@ -17,6 +17,12 @@ type LegacyUpdateStore interface {
 	) (store.Todo, error)
 }
 
+// CreatorNotificationProjectStore supplies the project facts that the legacy
+// global-ID compatibility path learns only after its authoritative mutation.
+type CreatorNotificationProjectStore interface {
+	GetProject(ctx context.Context, projectID int64) (store.Project, error)
+}
+
 // LegacyUpdateCommand preserves the numeric PATCH vocabulary. TodoID is a
 // global Todo ID; the ordinary fields are replacement values, while
 // PriorityKey retains omitted/clear/set presence. Sprint mutation is
@@ -41,16 +47,21 @@ type LegacyUpdateResult struct {
 // LegacyUpdateServiceDependencies names the global update and REST refresh
 // capabilities used by the numeric PATCH compatibility use case.
 type LegacyUpdateServiceDependencies struct {
-	Update  LegacyUpdateStore
-	Refresh BoardRefreshPublisher
+	Update          LegacyUpdateStore
+	Refresh         BoardRefreshPublisher
+	Projects        CreatorNotificationProjectStore
+	CreatorRequests CreatorNotificationRequestPublisher
 }
 
 // LegacyUpdateService owns global-ID update persistence and post-commit
 // direct-refresh gating. Authorization and assignment publication remain in
 // the store; HTTP validation, error mapping, and projection remain adapters.
 type LegacyUpdateService struct {
-	update  LegacyUpdateStore
-	refresh BoardRefreshPublisher
+	update                 LegacyUpdateStore
+	refresh                BoardRefreshPublisher
+	projects               CreatorNotificationProjectStore
+	creatorRequests        CreatorNotificationRequestPublisher
+	creatorRequestsEnabled bool
 }
 
 func NewLegacyUpdateService(deps LegacyUpdateServiceDependencies) *LegacyUpdateService {
@@ -58,7 +69,18 @@ func NewLegacyUpdateService(deps LegacyUpdateServiceDependencies) *LegacyUpdateS
 	if refresh == nil {
 		refresh = nopBoardRefreshPublisher{}
 	}
-	return &LegacyUpdateService{update: deps.Update, refresh: refresh}
+	creatorRequests := deps.CreatorRequests
+	creatorRequestsEnabled := creatorRequests != nil
+	if creatorRequests == nil {
+		creatorRequests = nopCreatorNotificationRequestPublisher{}
+	}
+	return &LegacyUpdateService{
+		update:                 deps.Update,
+		refresh:                refresh,
+		projects:               deps.Projects,
+		creatorRequests:        creatorRequests,
+		creatorRequestsEnabled: creatorRequestsEnabled,
+	}
 }
 
 // LegacyUpdateTarget carries only the store mode already selected by the
@@ -108,6 +130,11 @@ func (u *PreparedLegacyUpdate) Update(command LegacyUpdateCommand) (LegacyUpdate
 		return LegacyUpdateResult{}, err
 	}
 
+	if u.service.creatorRequestsEnabled && u.service.projects != nil && shouldRequestCreatorNotification(u.ctx, updated) {
+		if project, projectErr := u.service.projects.GetProject(u.ctx, updated.ProjectID); projectErr == nil {
+			publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated)
+		}
+	}
 	if !updated.AssignmentChanged {
 		u.service.refresh.PublishBoardRefresh(u.ctx, updated.ProjectID, RefreshReasonTodoUpdated)
 	}

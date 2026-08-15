@@ -28,6 +28,14 @@ import (
 	"scrumboy/internal/version"
 )
 
+// MCPHandler is the MCP HTTP surface plus its startup-only creator-request
+// dependency hook. NewServer binds the hook before returning, so production
+// serving cannot begin with an incompletely configured MCP adapter.
+type MCPHandler interface {
+	http.Handler
+	BindCreatorNotificationRequestPublisher(todoapp.CreatorNotificationRequestPublisher)
+}
+
 type Options struct {
 	Logger              *log.Logger
 	MaxRequestBody      int64
@@ -39,7 +47,7 @@ type Options struct {
 	AuthRateLimit       *ratelimit.Limiter
 	OAuthDCRRateLimit   *ratelimit.Limiter
 	OAuthTokenRateLimit *ratelimit.Limiter
-	MCPHandler          http.Handler
+	MCPHandler          MCPHandler
 	AgoraHandler        http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
@@ -595,6 +603,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
 		server.emitRefreshNeeded(ctx, projectID, reason)
 	})
+	creatorRequestPublisher := todoapp.CreatorNotificationRequestPublisher(server)
 	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
 		Create:  st,
 		Refresh: boardRefreshPublisher,
@@ -604,12 +613,14 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh: boardRefreshPublisher,
 	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
-		Move:    st,
-		Refresh: boardRefreshPublisher,
+		Move:            st,
+		Refresh:         boardRefreshPublisher,
+		CreatorRequests: creatorRequestPublisher,
 	})
 	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
-		Update:  st,
-		Refresh: boardRefreshPublisher,
+		Update:          st,
+		Refresh:         boardRefreshPublisher,
+		CreatorRequests: creatorRequestPublisher,
 	})
 	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
 		Projects: st,
@@ -617,12 +628,16 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh:  boardRefreshPublisher,
 	})
 	server.todoLegacyMoves = todoapp.NewLegacyMoveService(todoapp.LegacyMoveServiceDependencies{
-		Move:    st,
-		Refresh: boardRefreshPublisher,
+		Move:            st,
+		Refresh:         boardRefreshPublisher,
+		Projects:        st,
+		CreatorRequests: creatorRequestPublisher,
 	})
 	server.todoLegacyUpdates = todoapp.NewLegacyUpdateService(todoapp.LegacyUpdateServiceDependencies{
-		Update:  st,
-		Refresh: boardRefreshPublisher,
+		Update:          st,
+		Refresh:         boardRefreshPublisher,
+		Projects:        st,
+		CreatorRequests: creatorRequestPublisher,
 	})
 	server.todoLinkMutations = todolinkapp.NewRESTMutationService(todolinkapp.RESTMutationServiceDependencies{
 		Sources:   st,
@@ -664,6 +679,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Members:   st,
 		Publisher: membershipMutationPublisher{server: server},
 	})
+	if opts.MCPHandler != nil {
+		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)
+	}
 	return server
 }
 
@@ -825,6 +843,30 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 		return
 	}
 	_ = s.fanout.Publish(ctx, e)
+}
+
+// PublishCreatorNotificationRequest publishes an internal request to consider
+// a historical todo creator. No Phase 2 consumer delivers this event through
+// SSE, email, push, or webhooks.
+func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request todoapp.CreatorNotificationRequest) {
+	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
+		ProjectID:       request.ProjectID,
+		ProjectSlug:     request.ProjectSlug,
+		TodoID:          request.TodoID,
+		LocalID:         request.LocalID,
+		Title:           request.Title,
+		ActivityReason:  request.ActivityReason,
+		CreatedByUserID: request.CreatedByUserID,
+		ActorUserID:     request.ActorUserID,
+	})
+	if err != nil {
+		return
+	}
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      eventbus.TodoCreatorNotificationRequestedEventType,
+		ProjectID: request.ProjectID,
+		Payload:   payload,
+	})
 }
 
 // PublishTodoAssigned emits a "todo.assigned" event through the event bus.

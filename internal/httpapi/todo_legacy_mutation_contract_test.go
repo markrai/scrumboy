@@ -200,6 +200,32 @@ func legacyTodoAssertOneRefresh(t *testing.T, fixture *legacyTodoMutationFixture
 	}
 }
 
+func legacyTodoAssertRefreshAndCreatorRequest(
+	t *testing.T,
+	fixture *legacyTodoMutationFixture,
+	projectID int64,
+	reason string,
+	refreshActorID int64,
+) eventbus.TodoCreatorNotificationRequestedPayload {
+	t.Helper()
+	events := legacyTodoEventsForProject(fixture, projectID)
+	if len(events) != 2 || events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType || events[1].Type != "board.refresh_needed" {
+		t.Fatalf("events=%+v, want creator request then one board.refresh_needed", events)
+	}
+	var request eventbus.TodoCreatorNotificationRequestedPayload
+	if err := json.Unmarshal(events[0].Payload, &request); err != nil {
+		t.Fatalf("decode creator request payload: %v", err)
+	}
+	var refresh legacyTodoRefreshPayload
+	if err := json.Unmarshal(events[1].Payload, &refresh); err != nil {
+		t.Fatalf("decode refresh payload: %v", err)
+	}
+	if refresh.Reason != reason || refresh.ActorUserID != refreshActorID {
+		t.Fatalf("refresh payload=%+v, want reason=%q actor=%d", refresh, reason, refreshActorID)
+	}
+	return request
+}
+
 func legacyTodoAssertNoEvents(t *testing.T, fixture *legacyTodoMutationFixture, projectID int64) {
 	t.Helper()
 	if events := legacyTodoEventsForProject(fixture, projectID); len(events) != 0 {

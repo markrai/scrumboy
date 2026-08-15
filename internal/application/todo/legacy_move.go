@@ -39,16 +39,21 @@ type LegacyMoveResult struct {
 // LegacyMoveServiceDependencies names the global move and REST refresh
 // capabilities used by the numeric MOVE compatibility use case.
 type LegacyMoveServiceDependencies struct {
-	Move    LegacyMoveStore
-	Refresh BoardRefreshPublisher
+	Move            LegacyMoveStore
+	Refresh         BoardRefreshPublisher
+	Projects        CreatorNotificationProjectStore
+	CreatorRequests CreatorNotificationRequestPublisher
 }
 
 // LegacyMoveService owns global-ID move persistence and post-commit refresh
 // sequencing. Validation, authorization, anchor resolution, and projection
 // remain in the HTTP adapter or store.
 type LegacyMoveService struct {
-	move    LegacyMoveStore
-	refresh BoardRefreshPublisher
+	move                   LegacyMoveStore
+	refresh                BoardRefreshPublisher
+	projects               CreatorNotificationProjectStore
+	creatorRequests        CreatorNotificationRequestPublisher
+	creatorRequestsEnabled bool
 }
 
 func NewLegacyMoveService(deps LegacyMoveServiceDependencies) *LegacyMoveService {
@@ -56,7 +61,18 @@ func NewLegacyMoveService(deps LegacyMoveServiceDependencies) *LegacyMoveService
 	if refresh == nil {
 		refresh = nopBoardRefreshPublisher{}
 	}
-	return &LegacyMoveService{move: deps.Move, refresh: refresh}
+	creatorRequests := deps.CreatorRequests
+	creatorRequestsEnabled := creatorRequests != nil
+	if creatorRequests == nil {
+		creatorRequests = nopCreatorNotificationRequestPublisher{}
+	}
+	return &LegacyMoveService{
+		move:                   deps.Move,
+		refresh:                refresh,
+		projects:               deps.Projects,
+		creatorRequests:        creatorRequests,
+		creatorRequestsEnabled: creatorRequestsEnabled,
+	}
 }
 
 // LegacyMoveTarget carries only the store mode already selected by the
@@ -98,6 +114,11 @@ func (m *PreparedLegacyMove) Move(command LegacyMoveCommand) (LegacyMoveResult, 
 		return LegacyMoveResult{}, err
 	}
 
+	if m.service.creatorRequestsEnabled && m.service.projects != nil && shouldRequestCreatorNotification(m.ctx, moved) {
+		if project, projectErr := m.service.projects.GetProject(m.ctx, moved.ProjectID); projectErr == nil {
+			publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, moved, RefreshReasonTodoMoved)
+		}
+	}
 	m.service.refresh.PublishBoardRefresh(m.ctx, moved.ProjectID, RefreshReasonTodoMoved)
 	return LegacyMoveResult{Todo: moved}, nil
 }
