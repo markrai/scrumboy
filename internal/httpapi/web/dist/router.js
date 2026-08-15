@@ -36,6 +36,8 @@ function parseRoute() {
     const assignee = assigneeRaw === "" ? null : (assigneeRaw || null);
     const sortRaw = url.searchParams.get("sort");
     const sort = sortRaw === "" ? null : (sortRaw || null);
+    const priorityRaw = url.searchParams.get("priority");
+    const priority = priorityRaw === "" ? null : (priorityRaw || null);
     const openTodoId = url.searchParams.get("openTodoId") || undefined;
     if (path === "/")
         return { name: "projects" };
@@ -45,11 +47,11 @@ function parseRoute() {
         return { name: "reset-password", token: url.searchParams.get("token") || undefined };
     const tm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/t\/(\d+)\/?$/);
     if (tm && !tm[1].includes("--"))
-        return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, assignee, sort, openTodoSegment: tm[2] };
+        return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, assignee, sort, priority, openTodoSegment: tm[2] };
     // Canonical: /{slug} only (lowercase, digits, hyphens; max 32; no leading/trailing hyphen; no consecutive hyphens).
     const sm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/?$/);
     if (sm && !sm[1].includes("--"))
-        return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, assignee, sort, openTodoId };
+        return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, assignee, sort, priority, openTodoId };
     return { name: "notfound" };
 }
 function normalize(v) {
@@ -64,12 +66,14 @@ function shouldDoLightweightBoardUpdate(r) {
     const rSprintId = r.sprintId ?? null;
     const rAssignee = r.assignee ?? null;
     const rSort = r.sort ?? null;
+    const rPriority = r.priority ?? null;
     return (lastHandledBoardRoute.slug === r.slug &&
         normalize(lastHandledBoardRoute.tag) === normalize(r.tag) &&
         normalize(lastHandledBoardRoute.search) === normalize(r.search) &&
         (lastHandledBoardRoute.sprintId ?? null) === rSprintId &&
         (lastHandledBoardRoute.assignee ?? null) === rAssignee &&
         (lastHandledBoardRoute.sort ?? null) === rSort &&
+        (lastHandledBoardRoute.priority ?? null) === rPriority &&
         lastHandledBoardRoute.openTodoSegment !== openSeg);
 }
 async function routeOnce() {
@@ -298,10 +302,10 @@ async function routeOnceBody() {
         const isLightweight = shouldDoLightweightBoardUpdate(r);
         try {
             if (isLightweight) {
-                await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
+                await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
             }
             else {
-                await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.openTodoId || null, r.openTodoSegment || null, {
+                await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, {
                     skipLoad: false,
                     prefetchedBoard: prefetchedBoard?.project && prefetchedBoard?.columns ? prefetchedBoard : undefined,
                 });
@@ -313,6 +317,7 @@ async function routeOnceBody() {
                 sprintId: r.sprintId ?? null,
                 assignee: r.assignee ?? null,
                 sort: r.sort ?? null,
+                priority: r.priority ?? null,
                 openTodoSegment: r.openTodoSegment || null,
             };
             console.log("Router: board rendered successfully");

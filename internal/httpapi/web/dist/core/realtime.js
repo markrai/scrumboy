@@ -1,6 +1,7 @@
 /**
  * Global EventSource for logged-in users: GET /api/me/realtime
- * Emits deduplicated `realtime:event` on the app bus; handles assignment side effects here (not in board.ts).
+ * Emits deduplicated `realtime:event` on the app bus; handles assignment and
+ * creator-activity toast side effects here (not in board.ts).
  */
 import { emit } from '../events.js';
 import { getAuthStatusAvailable, getProjectId, getUser } from '../state/selectors.js';
@@ -48,6 +49,7 @@ function handleIncomingMessage(ev) {
     }
     emit('realtime:event', parsed);
     handleTodoAssignedSideEffects(parsed);
+    handleCreatorActivitySideEffects(parsed);
 }
 /**
  * Single slot updated by board.ts: the callback reads the current anonymous EventSource manager
@@ -156,4 +158,29 @@ function handleTodoAssignedSideEffects(parsed) {
         return;
     }
     incrementUnread();
+}
+function handleCreatorActivitySideEffects(parsed) {
+    if (parsed.type !== 'todo.creator_activity')
+        return;
+    if (!getAuthStatusAvailable() || !getUser())
+        return;
+    if (typeof parsed.projectId !== 'number' || parsed.projectId <= 0)
+        return;
+    if (typeof parsed.projectSlug !== 'string' || parsed.projectSlug === '')
+        return;
+    const inner = parsed.payload;
+    if (!inner || typeof inner.todoId !== 'number' || inner.todoId <= 0)
+        return;
+    if (typeof inner.localId !== 'number' || inner.localId <= 0)
+        return;
+    if (inner.activityReason !== 'todo_updated' && inner.activityReason !== 'todo_moved')
+        return;
+    const title = typeof inner.title === 'string' ? inner.title : '';
+    showToast(t('realtime.creatorActivity', { title: title || t('realtime.todoFallback') }));
+}
+export function __handleIncomingRealtimeMessageForTest(data) {
+    handleIncomingMessage(new MessageEvent('message', { data }));
+}
+export function __resetRealtimeSeenEventIdsForTest() {
+    seenEventIds.clear();
 }

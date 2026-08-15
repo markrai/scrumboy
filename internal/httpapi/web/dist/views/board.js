@@ -6,13 +6,14 @@ import { navigate } from '../router.js';
 import { escapeHTML, showToast, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
-import { getAssigneeFromUrl, getBoard, getMobileTab, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getBoard, getMobileTab, getPriorityFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
 import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
 import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
+import { NO_PRIORITY_FILTER_VALUE } from '../types.js';
 import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, mobileLaneTabStyleAttrForHtml, } from './mobile-lane-tabs.js';
 import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
@@ -106,7 +107,7 @@ function bindVoiceCommandButton() {
                     const context = getVoiceCommandContext();
                     if (!context || context.projectId !== initialProjectId || context.projectSlug !== initialProjectSlug)
                         return;
-                    await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+                    await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
                 },
                 openTodo: async (localId) => {
                     const context = getVoiceCommandContext();
@@ -209,6 +210,7 @@ let lastUpdateBoardContentSearch = "";
 let lastUpdateBoardContentSprintId = null;
 let lastUpdateBoardContentAssignee = null;
 let lastUpdateBoardContentSort = null;
+let lastUpdateBoardContentPriority = null;
 let lastBoardRenderProjectId = null;
 let lastBoardRenderOptions = {};
 let boardI18nBound = false;
@@ -241,7 +243,7 @@ function rerenderBoardForLocaleChange() {
         return;
     resetBoardFilterUiState();
     lastUpdateBoardContentBoard = null;
-    renderBoardFromData(board, projectId, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), {
+    renderBoardFromData(board, projectId, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), {
         ...lastBoardRenderOptions,
         forceFullRender: true,
     });
@@ -413,6 +415,7 @@ async function handleLoadMore(status) {
     const sprintId = getSprintIdFromUrl();
     const assignee = getAssigneeFromUrl();
     const sort = getSortFromUrl();
+    const priority = getPriorityFromUrl();
     if (!slug)
         return;
     const meta = getBoardLaneMeta()[status];
@@ -434,6 +437,8 @@ async function handleLoadMore(status) {
             params.set("assignee", assignee);
         if (sort)
             params.set("sort", sort);
+        if (priority)
+            params.set("priority", priority);
         const qs = params.toString();
         const res = await apiFetch(`/api/board/${slug}/lanes/${status}${qs ? `?${qs}` : ""}`);
         const items = res?.items ?? [];
@@ -675,7 +680,7 @@ async function handleProjectImageUpload(projectId) {
             });
             syncTopbarFromBoard({ project: { image: finalDataUrl } });
             if (getSlug()) {
-                await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+                await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
             }
             else {
                 const renderProjects = await getRenderProjects();
@@ -714,14 +719,15 @@ function syncTopbarFromBoard(board) {
 }
 // Full board + filters update. Use for SSE refresh, filter change, search.
 // For chips-only updates (e.g. deferred sprints load), use updateChipsOnly instead.
-function updateBoardContent(board, tag, search, sprintId, assignee, sort) {
-    // Skip full rebuild when render signature matches (board + tag + search + sprintId + assignee + sort)
+function updateBoardContent(board, tag, search, sprintId, assignee, sort, priority) {
+    // Skip full rebuild when render signature matches (board + tag + search + sprintId + assignee + sort + priority)
     if (board === lastUpdateBoardContentBoard &&
         tag === lastUpdateBoardContentTag &&
         search === lastUpdateBoardContentSearch &&
         sprintId === lastUpdateBoardContentSprintId &&
         assignee === lastUpdateBoardContentAssignee &&
-        sort === lastUpdateBoardContentSort) {
+        sort === lastUpdateBoardContentSort &&
+        priority === lastUpdateBoardContentPriority) {
         return;
     }
     setBoard(board);
@@ -797,8 +803,9 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort) {
     lastUpdateBoardContentSprintId = sprintId;
     lastUpdateBoardContentAssignee = assignee;
     lastUpdateBoardContentSort = sort;
+    lastUpdateBoardContentPriority = priority;
 }
-function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, sort, opts = {}) {
+function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, sort, priority = null, opts = {}) {
     lastBoardRenderProjectId = projectId;
     lastBoardRenderOptions = {
         backLabel: opts.backLabel,
@@ -842,7 +849,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     // We check for the board container, not just the topbar, because projects page also has a topbar
     const existingBoardContainer = document.querySelector(".board");
     if (existingBoardContainer && !opts.forceFullRender) {
-        updateBoardContent(board, tag, search, sprintId, assignee, sort);
+        updateBoardContent(board, tag, search, sprintId, assignee, sort, priority);
         syncTopbarFromBoard(board);
         return;
     }
@@ -875,6 +882,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
         wallEnabled: getWallEnabled(),
         assignee,
         sort,
+        priority,
         boardMembers: getBoardMembers(),
     });
     const membersByUserId = getMembersByUserId();
@@ -1506,8 +1514,13 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     // Initialize mobile tabs display
     updateMobileTabs();
 }
+function priorityFilterExistsOnBoard(board, priority) {
+    if (!priority || priority === NO_PRIORITY_FILTER_VALUE)
+        return true;
+    return (board.priorityOrder ?? []).some((tier) => tier.key === priority);
+}
 // Load board by slug
-export async function loadBoardBySlug(slug, tag, search, sprintId = null, assignee = null, sort = null) {
+export async function loadBoardBySlug(slug, tag, search, sprintId = null, assignee = null, sort = null, priority = null) {
     ensureBoardI18nBinding();
     if (!slug) {
         throw new Error("Slug is required");
@@ -1521,6 +1534,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     const requestSprintId = sprintId ?? null;
     const requestAssignee = assignee ?? null;
     const requestSort = sort ?? null;
+    const requestPriority = priority ?? null;
     // Clear stale members from prior board immediately; prevents stale data if fetch fails early.
     setBoardMembers([]);
     resetBoardFilterUiState();
@@ -1537,6 +1551,8 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
         params.set("assignee", requestAssignee);
     if (requestSort)
         params.set("sort", requestSort);
+    if (requestPriority)
+        params.set("priority", requestPriority);
     const qs = params.toString() ? `?${params.toString()}` : "";
     let board;
     try {
@@ -1549,7 +1565,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
             url.searchParams.delete("sprintId");
             const newUrl = url.pathname + (url.search ? url.search : "");
             history.replaceState({}, "", newUrl);
-            await loadBoardBySlug(slug, tag, search, null, assignee, sort);
+            await loadBoardBySlug(slug, tag, search, null, assignee, sort, priority);
             return;
         }
         throw err;
@@ -1564,8 +1580,15 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     const currentSprintId = currentUrl.searchParams.get("sprintId") || null;
     const currentAssignee = currentUrl.searchParams.get("assignee") || null;
     const currentSort = currentUrl.searchParams.get("sort") || null;
-    if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null) || (currentSort || null) !== (requestSort || null))
+    const currentPriority = currentUrl.searchParams.get("priority") || null;
+    if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null) || (currentSort || null) !== (requestSort || null) || (currentPriority || null) !== (requestPriority || null))
         return;
+    if (!priorityFilterExistsOnBoard(board, requestPriority)) {
+        currentUrl.searchParams.delete("priority");
+        history.replaceState({}, "", currentUrl.pathname + currentUrl.search + currentUrl.hash);
+        await loadBoardBySlug(slug, requestTag, requestSearch, requestSprintId, requestAssignee, requestSort, null);
+        return;
+    }
     resetBoardLimitPerLaneFloor();
     // Defer sprints — render board first, then load in background
     clearSprintChipDataIfSlugChanged(slug);
@@ -1583,7 +1606,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
             lastFetchedProjectId = projectId;
         },
         renderLoadedBoard: (renderOpts) => {
-            renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", effectiveSprintId, requestAssignee, requestSort, renderOpts);
+            renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", effectiveSprintId, requestAssignee, requestSort, requestPriority, renderOpts);
         },
         markLoadSuccess: (loadedSlug) => {
             markBoardLoadSucceeded(loadedSlug);
@@ -1619,8 +1642,8 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     }
 }
 // Register board refresher with orchestration layer
-registerBoardRefresher(async (slug, tag, search, sprintId, assignee, sort) => {
-    await loadBoardBySlug(slug, tag || null, search || null, sprintId ?? null, assignee ?? null, sort ?? null);
+registerBoardRefresher(async (slug, tag, search, sprintId, assignee, sort, priority) => {
+    await loadBoardBySlug(slug, tag || null, search || null, sprintId ?? null, assignee ?? null, sort ?? null, priority ?? null);
 });
 // Register sprints-only refresher (chips update without full board reload)
 registerSprintsRefresher(async (slug) => {
@@ -1705,7 +1728,7 @@ async function openTodoFromPath(slug, openTodoSegment) {
     }
 }
 // Main render function for board view
-export async function renderBoard(slug, tag, search, sprintId, assignee = null, sort = null, openTodoId = null, openTodoSegment = null, opts = {}) {
+export async function renderBoard(slug, tag, search, sprintId, assignee = null, sort = null, priority = null, openTodoId = null, openTodoSegment = null, opts = {}) {
     ensureBoardI18nBinding();
     if (!slug)
         throw new Error("Slug is required");
@@ -1733,7 +1756,7 @@ export async function renderBoard(slug, tag, search, sprintId, assignee = null, 
                 lastFetchedProjectId = projectId;
             },
             renderLoadedBoard: (renderOpts) => {
-                renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", sprintId, assignee, sort, renderOpts);
+                renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", sprintId, assignee, sort, priority, renderOpts);
             },
             markLoadSuccess: (loadedSlug) => {
                 markBoardLoadSucceeded(loadedSlug);
@@ -1772,7 +1795,7 @@ export async function renderBoard(slug, tag, search, sprintId, assignee = null, 
     else if (!opts.skipLoad) {
         setInitialBoardLoadInFlight(slug);
         try {
-            await loadBoardBySlug(slug, tag, search || null, sprintId, assignee, sort);
+            await loadBoardBySlug(slug, tag, search || null, sprintId, assignee, sort, priority);
         }
         finally {
             setInitialBoardLoadInFlight(null);
