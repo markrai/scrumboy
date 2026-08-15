@@ -129,6 +129,9 @@ func TestTodoCreateRESTRealtimeContracts(t *testing.T) {
 		stream := subscribeTodoUpdateEvents(t, client, ts.URL+"/api/board/"+project.Slug+"/events")
 
 		created := createTodoThroughREST(t, client, ts.URL, project.Slug, todoCreateRESTPayload("unassigned create"))
+		if created.CreatedByUserId == nil || *created.CreatedByUserId != ownerID {
+			t.Fatalf("createdByUserId=%v want authenticated creator %d", created.CreatedByUserId, ownerID)
+		}
 		events := collectTodoUpdateEvents(t, stream)
 		assertTodoCreateRESTEvents(t, events, project.ID, "todo_created", 0)
 		if got := countTodoCreateAudits(t, db, created.ID); got != 1 {
@@ -416,7 +419,7 @@ func TestTodoCreateRESTAccessLaneRoleAndModeContracts(t *testing.T) {
 		ownerClient := newCookieClient(t)
 		owner := bootstrapUserClient(t, ownerClient, ts.URL, "Owner", "rest-create-temp-owner@example.com", "password123")
 		ownerID := int64(owner["id"].(float64))
-		_, outsider := createUserAPI(t, ownerClient, ts.URL, "Outsider", "rest-create-temp-outsider@example.com", "password123")
+		outsiderID, outsider := createUserAPI(t, ownerClient, ts.URL, "Outsider", "rest-create-temp-outsider@example.com", "password123")
 		ctx := store.WithUserID(context.Background(), ownerID)
 		project, err := st.CreateAnonymousBoard(ctx)
 		if err != nil {
@@ -431,6 +434,9 @@ func TestTodoCreateRESTAccessLaneRoleAndModeContracts(t *testing.T) {
 		created := createTodoThroughREST(t, outsider, ts.URL, project.Slug, todoCreateRESTPayload("Temporary link-holder create"))
 		if created.ProjectID != project.ID {
 			t.Fatalf("Temporary Board result=%+v", created)
+		}
+		if created.CreatedByUserId == nil || *created.CreatedByUserId != outsiderID {
+			t.Fatalf("temporary-board createdByUserId=%v want authenticated link holder %d", created.CreatedByUserId, outsiderID)
 		}
 		var activityAfter, expiresAfter int64
 		if err := db.QueryRow(`SELECT last_activity_at, expires_at FROM projects WHERE id = ?`, project.ID).Scan(&activityAfter, &expiresAfter); err != nil {
@@ -452,6 +458,9 @@ func TestTodoCreateRESTAccessLaneRoleAndModeContracts(t *testing.T) {
 		created := createTodoThroughREST(t, ts.Client(), ts.URL, project.Slug, todoCreateRESTPayload("anonymous create"))
 		if created.AssigneeUserId != nil {
 			t.Fatalf("anonymous create assignee=%v", *created.AssigneeUserId)
+		}
+		if created.CreatedByUserId != nil {
+			t.Fatalf("anonymous create creator=%v, want nil", *created.CreatedByUserId)
 		}
 
 		payload := todoCreateRESTPayload("anonymous assigned")

@@ -489,6 +489,13 @@ and a string assigns that project-local tier. Unknown and cross-project keys
 return `VALIDATION_ERROR`. Priority filtering and priority-based sorting are
 not supported in this release.
 
+Todo objects also include `createdByUserId`, the immutable historical ID of the
+authenticated user present when the todo was created. It is not proof of
+current project membership or notification eligibility. MCP todo shapes keep
+the field present with JSON `null` for unauthenticated, pre-migration, imported,
+or deleted-user attribution. The field is read-only; todo mutation inputs cannot
+set or clear it.
+
 **Linked stories:** this is the same "Linked Stories" relation shown on the todo detail page in the
 web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]`). `todos_linkAdd`
 self-links (`targetLocalId == localId`) and links to a nonexistent todo both fail validation/not-found
@@ -686,6 +693,12 @@ Clients can obtain a project's numeric `id` and canonical `slug` together from `
 To reproduce the numeric endpoint's unpaged `columns` result, pass the same `tag`, `search`, `assignee`, `priority`, `sprintId`, and `sort` values to the initial slug request and every lane request. For each lane in `columnOrder`, append its initial items, then request lane pages with `afterCursor=columnsMeta[status].nextCursor` until `hasMore` is false. Preserve page order and do not parse cursor values. Clients may then discard the pagination metadata or adopt the paged contract directly.
 
 The numeric compatibility route is available only in Full Mode and remains hidden in Anonymous Mode. Slug board routes retain their existing Durable, active Temporary Board, and Anonymous Board access behavior.
+
+Modern slug and legacy numeric REST todo projections both expose the read-only
+`createdByUserId` field when attribution exists. They omit the field when the
+stored value is `NULL`; this is intentionally different from MCP's explicit
+`null`. Route access is resolved before todo projection, and the identifier does
+not grant membership or additional access.
 
 ---
 

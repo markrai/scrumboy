@@ -14,21 +14,19 @@ type EmailNotifyPref struct {
 	V               int  `json:"v"`
 	Enabled         bool `json:"enabled"`         // master opt-in; no category fires unless this is true
 	Assigned        bool `json:"assigned"`        // a card is assigned to me
-	CreatedByMe     bool `json:"createdByMe"`     // a card I created was updated by someone else
 	CardActivity    bool `json:"cardActivity"`    // card created/updated/moved/deleted/links changed
 	SprintActivity  bool `json:"sprintActivity"`  // sprint created/updated/deleted/activated/closed
 	ProjectActivity bool `json:"projectActivity"` // project/workflow/tag changes
 	AddedToProject  bool `json:"addedToProject"`  // I was added to a project
 }
 
-// DefaultEmailNotifyPref matches the opt-in defaults surfaced in Settings: the
-// "about me" categories default on, broader project activity defaults off.
+// DefaultEmailNotifyPref matches the opt-in defaults surfaced in Settings:
+// recipient-specific categories default on, broader activity defaults off.
 func DefaultEmailNotifyPref() EmailNotifyPref {
 	return EmailNotifyPref{
 		V:              EmailNotifyPrefVersion,
 		Enabled:        false,
 		Assigned:       true,
-		CreatedByMe:    true,
 		AddedToProject: true,
 	}
 }
@@ -44,7 +42,7 @@ func ParseEmailNotifyPref(raw string) (EmailNotifyPref, error) {
 		return EmailNotifyPref{}, fmt.Errorf("%w: email notification preference JSON", ErrValidation)
 	}
 	allowed := map[string]bool{
-		"v": true, "enabled": true, "assigned": true, "createdByMe": true, "cardActivity": true,
+		"v": true, "enabled": true, "assigned": true, "cardActivity": true,
 		"sprintActivity": true, "projectActivity": true, "addedToProject": true,
 	}
 	for key := range fields {
@@ -60,7 +58,7 @@ func ParseEmailNotifyPref(raw string) (EmailNotifyPref, error) {
 	}
 	p := DefaultEmailNotifyPref()
 	for key, target := range map[string]*bool{
-		"enabled": &p.Enabled, "assigned": &p.Assigned, "createdByMe": &p.CreatedByMe, "cardActivity": &p.CardActivity,
+		"enabled": &p.Enabled, "assigned": &p.Assigned, "cardActivity": &p.CardActivity,
 		"sprintActivity": &p.SprintActivity, "projectActivity": &p.ProjectActivity,
 		"addedToProject": &p.AddedToProject,
 	} {

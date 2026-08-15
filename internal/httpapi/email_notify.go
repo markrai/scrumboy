@@ -59,7 +59,6 @@ type emailCategory string
 
 const (
 	emailCategoryAssigned        emailCategory = "assigned"
-	emailCategoryCreatedByMe     emailCategory = "createdByMe"
 	emailCategoryCardActivity    emailCategory = "cardActivity"
 	emailCategorySprintActivity  emailCategory = "sprintActivity"
 	emailCategoryProjectActivity emailCategory = "projectActivity"
@@ -105,7 +104,7 @@ func (n *emailNotifier) OnEvent(_ context.Context, e eventbus.Event) {
 		return
 	}
 	switch e.Type {
-	case "todo.assigned", "todo.creator_notified", "board.refresh_needed", "project.membership":
+	case "todo.assigned", "board.refresh_needed", "project.membership":
 		// Never block the fanout / SSE path — same pattern as pushNotifier and the webhook dispatcher.
 		go n.handle(context.Background(), e)
 	}
@@ -115,8 +114,6 @@ func (n *emailNotifier) handle(ctx context.Context, e eventbus.Event) {
 	switch e.Type {
 	case "todo.assigned":
 		n.handleTodoAssigned(ctx, e)
-	case "todo.creator_notified":
-		n.handleTodoCreatorNotified(ctx, e)
 	case "board.refresh_needed":
 		n.handleRefreshNeeded(ctx, e)
 	case "project.membership":
@@ -170,39 +167,6 @@ func (n *emailNotifier) handleAssignment(ctx context.Context, projectID int64, d
 		proj.Name, domain.Title, n.projectURL(proj.Slug),
 	)
 	n.send(user.Email, subject, body, fmt.Sprintf("email-notify category=%s user=%d", emailCategoryAssigned, assigneeID))
-}
-
-func (n *emailNotifier) handleTodoCreatorNotified(ctx context.Context, e eventbus.Event) {
-	var domain eventbus.TodoCreatorNotifiedPayload
-	if err := json.Unmarshal(e.Payload, &domain); err != nil {
-		return
-	}
-	n.handleCreatorNotified(ctx, e.ProjectID, domain)
-}
-
-func (n *emailNotifier) handleCreatorNotified(ctx context.Context, projectID int64, domain eventbus.TodoCreatorNotifiedPayload) {
-	// Emitted only when actorUserId != createdByUserId (checked at the store layer), so no
-	// self-notification guard is needed here.
-	pref, err := n.getPref(ctx, domain.CreatedByUID)
-	if err != nil || !pref.Enabled || !pref.CreatedByMe {
-		return
-	}
-
-	proj, err := n.store.GetProject(ctx, projectID)
-	if err != nil {
-		return
-	}
-	user, err := n.store.GetUser(ctx, domain.CreatedByUID)
-	if err != nil || user.Email == "" {
-		return
-	}
-
-	subject := fmt.Sprintf("Your task was updated: %s", domain.Title)
-	body := fmt.Sprintf(
-		"A task you opened was updated in %s.\n\n%s\n\nView the board:\n%s\n",
-		proj.Name, domain.Title, n.projectURL(proj.Slug),
-	)
-	n.send(user.Email, subject, body, fmt.Sprintf("email-notify category=%s user=%d", emailCategoryCreatedByMe, domain.CreatedByUID))
 }
 
 func (n *emailNotifier) handleRefreshNeeded(ctx context.Context, e eventbus.Event) {

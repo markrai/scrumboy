@@ -81,18 +81,12 @@ func resolveImportAssignee(ctx context.Context, tx *sql.Tx, projectID int64, ass
 	return assigneeUserID
 }
 
-// resolveImportCreatedBy returns createdByUserID if that user exists in the target DB; otherwise nil.
-// Unlike resolveImportAssignee, project membership is not required — a todo's creator may have
-// since left the project, the same "unknown/former member" gap the UI already tolerates.
-func resolveImportCreatedBy(ctx context.Context, tx *sql.Tx, createdByUserID *int64) *int64 {
-	if createdByUserID == nil {
-		return nil
-	}
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id = ?`, *createdByUserID).Scan(&exists); err != nil || !exists {
-		return nil
-	}
-	return createdByUserID
+// resolveImportCreatedBy deliberately clears raw numeric creator IDs on import.
+// User IDs are database-local and a coincidental target row is not proof of
+// identity continuity. Export retains the additive field, but restoring it
+// requires a future portable-identity mapping contract.
+func resolveImportCreatedBy(_ context.Context, _ *sql.Tx, _ *int64) *int64 {
+	return nil
 }
 
 // generateUUID generates a simple UUID-like string for batch IDs.

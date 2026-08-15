@@ -25,7 +25,7 @@ import { getBoard, getBoardMembers, getMarkdownNotesEnabled, getMermaidNotesEnab
 import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } from '../state/mutations.js';
 import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../utils.js';
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
-import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, t } from '../i18n/index.js';
+import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import {
   bindShareTodoButton,
@@ -76,6 +76,7 @@ let todoDialogCloseGuardsBound = false;
 let todoTooltipsApplied = false;
 let todoDialogBaseline: TodoDialogSnapshot | null = null;
 let todoDialogClosePromptOpen = false;
+let todoCreatorLocaleAbort: AbortController | null = null;
 
 function sprintStateLabel(state: string): string {
   const key = `todo.sprint.state.${state}`;
@@ -302,6 +303,8 @@ function isTodoDialogDirty(): boolean {
 function resetTodoDialogCloseState(): void {
   todoDialogBaseline = null;
   todoDialogClosePromptOpen = false;
+  todoCreatorLocaleAbort?.abort();
+  todoCreatorLocaleAbort = null;
 }
 
 async function closeTodoDialogInternal(
@@ -611,6 +614,14 @@ export async function openTodoDialog(opts: {
     const name = member?.name || member?.email || "";
     createdByEl.textContent = name ? t("todo.dialog.openedBy", { name }) : "";
   };
+
+  todoCreatorLocaleAbort?.abort();
+  todoCreatorLocaleAbort = new AbortController();
+  document.addEventListener(
+    I18N_LOCALE_CHANGED,
+    () => setCreatedBy(mode === "edit" ? todo?.createdByUserId : undefined),
+    { signal: todoCreatorLocaleAbort.signal },
+  );
 
   if (mode === "create") {
     setTodoDialogTitleKey("todo.dialog.title.new");

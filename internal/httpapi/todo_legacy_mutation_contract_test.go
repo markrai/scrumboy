@@ -395,6 +395,9 @@ func legacyTodoAssertProjectionIdentity(t *testing.T, got todoJSON, want store.T
 	if got.ID != want.ID || got.ProjectID != want.ProjectID || got.LocalID != want.LocalID {
 		t.Fatalf("projection identity=%+v, want global=%d project=%d local=%d", got, want.ID, want.ProjectID, want.LocalID)
 	}
+	if (got.CreatedByUserId == nil) != (want.CreatedByUserID == nil) || (got.CreatedByUserId != nil && *got.CreatedByUserId != *want.CreatedByUserID) {
+		t.Fatalf("projection createdByUserId=%v, want %v", got.CreatedByUserId, want.CreatedByUserID)
+	}
 }
 
 func legacyTodoAssertAnonymousAuditActor(t *testing.T, fixture *legacyTodoMutationFixture, action string, todoID int64) {

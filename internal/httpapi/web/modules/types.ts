@@ -197,7 +197,6 @@ export interface EmailNotifyPref {
   v: 1;
   enabled: boolean;
   assigned: boolean;
-  createdByMe: boolean;
   cardActivity: boolean;
   sprintActivity: boolean;
   projectActivity: boolean;

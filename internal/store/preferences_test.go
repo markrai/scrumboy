@@ -110,7 +110,7 @@ func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if raw != `{"v":1,"enabled":true,"assigned":true,"createdByMe":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
+	if raw != `{"v":1,"enabled":true,"assigned":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
 		t.Fatalf("expected canonical stored preference, got %s", raw)
 	}
 

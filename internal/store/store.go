@@ -9,17 +9,11 @@ import (
 // projectSlug comes from the project row already loaded in the same write transaction (no extra slug query).
 type TodoAssignedFunc func(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64)
 
-// TodoCreatorNotifiedFunc is called after a successful commit when a todo is updated by someone
-// other than the user recorded in its CreatedByUserID. Fires independent of TodoAssignedFunc/
-// assignmentChanged, so the creator hears about any update to their own card.
-type TodoCreatorNotifiedFunc func(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, createdByUserID, actorUserID int64)
-
 type Store struct {
-	db                      *sql.DB
-	encryptionKey           []byte // 32-byte key for TOTP secret encryption; nil if 2FA encryption disabled
-	configuredOIDCIssuer    string
-	todoAssignedPublisher   TodoAssignedFunc
-	todoCreatorNotifiedFunc TodoCreatorNotifiedFunc
+	db                    *sql.DB
+	encryptionKey         []byte // 32-byte key for TOTP secret encryption; nil if 2FA encryption disabled
+	configuredOIDCIssuer  string
+	todoAssignedPublisher TodoAssignedFunc
 }
 
 type StoreOptions struct {
@@ -40,10 +34,6 @@ func New(db *sql.DB, opts *StoreOptions) *Store {
 
 func (s *Store) SetTodoAssignedPublisher(fn TodoAssignedFunc) {
 	s.todoAssignedPublisher = fn
-}
-
-func (s *Store) SetTodoCreatorNotifiedPublisher(fn TodoCreatorNotifiedFunc) {
-	s.todoCreatorNotifiedFunc = fn
 }
 
 func (s *Store) Health(ctx context.Context) error {
