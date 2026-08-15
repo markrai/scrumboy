@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Khóa cột phải là snake_case (chữ, số, gạch dưới).",
   "projects.workflow.validation.minLanes": "Workflow phải có ít nhất 2 cột.",
   "realtime.assigned": "Đã giao: {title}",
+  "realtime.creatorActivity": "Đã cập nhật: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Thông báo",
   "notifications.panel.markAllRead": "Đánh dấu tất cả đã đọc",

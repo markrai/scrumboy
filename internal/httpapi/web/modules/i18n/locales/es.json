@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Las claves de columna deben ser snake_case (letras, números, guion bajo).",
   "projects.workflow.validation.minLanes": "El flujo de trabajo debe tener al menos 2 columnas.",
   "realtime.assigned": "Asignado: {title}",
+  "realtime.creatorActivity": "Actualizado: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Notificaciones",
   "notifications.panel.markAllRead": "Marcar todo como leído",

@@ -67,9 +67,25 @@ or lookup failure produces no recipient. Membership is evaluated in its current 
 instant, so membership added before authorization permits the decision and membership removed
 before authorization denies it.
 
-Neither internal event is a preference or delivery decision. Both are excluded from webhooks and
-currently have no SSE, email, Web Push, frontend, or preference consumer; there is no
-creator-notification category yet.
+Neither internal event is a preference or delivery decision, and neither is exposed to browsers or
+webhooks. The SSE bridge treats the authorized-recipient event only as a candidate and freshly
+loads the durable project and the recipient's current role again immediately before disclosure. If
+the creator is no longer a viewer-or-higher member, the project or user is unavailable, the project
+is temporary, the event is malformed or self-directed, the lookup fails, or the fanout context is
+cancelled, delivery fails closed. The earlier authorization is not a durable entitlement. The
+delivery check uses the current project slug rather than the slug carried by the internal event.
+
+After that delivery-time check succeeds, the bridge emits `todo.creator_activity` only on the
+creator's private user SSE channel. Its minimum-disclosure payload contains the current project
+identity, todo identity, committed title, and activity reason; actor and recipient user IDs remain
+internal. The authenticated frontend shows one localized toast using the committed todo title, or
+the existing todo-title fallback. It does not reload the board, navigate, change notification
+counters, play a sound, or create a desktop notification. Creator SSE is best-effort; cancellation
+or a missing connection can drop it without changing the successful todo mutation.
+
+Creator email, Web Push, and webhook delivery remain disabled. There is no `createdByMe` email
+preference or creator-notification category yet, and the existing email category table above is
+unchanged.
 
 ---
 

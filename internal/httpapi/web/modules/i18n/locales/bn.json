@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "কলাম key snake_case (অক্ষর, সংখ্যা, underscore) হতে হবে।",
   "projects.workflow.validation.minLanes": "Workflow-এ কমপক্ষে ২টি কলাম থাকতে হবে।",
   "realtime.assigned": "বরাদ্দ: {title}",
+  "realtime.creatorActivity": "আপডেট করা হয়েছে: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "বিজ্ঞপ্তি",
   "notifications.panel.markAllRead": "সব পড়া চিহ্নিত",

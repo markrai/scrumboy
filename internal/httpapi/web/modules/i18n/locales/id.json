@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Kunci lane harus snake_case (huruf, angka, garis bawah).",
   "projects.workflow.validation.minLanes": "Workflow harus memiliki minimal 2 lane.",
   "realtime.assigned": "Ditugaskan: {title}",
+  "realtime.creatorActivity": "Diperbarui: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Notifikasi",
   "notifications.panel.markAllRead": "Tandai semua sudah dibaca",

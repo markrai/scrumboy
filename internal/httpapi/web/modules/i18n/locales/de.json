@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Spaltenschlüssel müssen snake_case verwenden (Buchstaben, Zahlen, Unterstrich).",
   "projects.workflow.validation.minLanes": "Der Workflow muss mindestens 2 Spalten haben.",
   "realtime.assigned": "Zugewiesen: {title}",
+  "realtime.creatorActivity": "Aktualisiert: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Benachrichtigungen",
   "notifications.panel.markAllRead": "Alle als gelesen markieren",

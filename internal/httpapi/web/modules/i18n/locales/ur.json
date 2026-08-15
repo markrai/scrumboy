@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "کالم کی کلیدیں snake_case میں ہونی چاہئیں (حروف، ہندسے، underscore)۔",
   "projects.workflow.validation.minLanes": "ورک فلو میں کم از کم 2 کالم ہونے چاہئیں۔",
   "realtime.assigned": "تفویض: {title}",
+  "realtime.creatorActivity": "اپ ڈیٹ ہوا: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "اطلاعات",
   "notifications.panel.markAllRead": "سب پڑھا ہوا نشان زد",

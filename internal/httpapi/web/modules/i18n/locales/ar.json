@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "يجب أن تكون مفاتيح المسارات snake_case (حروف، أرقام، شرطة سفلية).",
   "projects.workflow.validation.minLanes": "يجب أن يحتوي سير العمل على مسارين على الأقل.",
   "realtime.assigned": "مُسند: {title}",
+  "realtime.creatorActivity": "تم التحديث: {title}",
   "realtime.todoFallback": "مهمة",
   "notifications.panel.title": "الإشعارات",
   "notifications.panel.markAllRead": "تعليم الكل كمقروء",

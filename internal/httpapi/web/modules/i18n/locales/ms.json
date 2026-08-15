@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Kunci lajur mestilah snake_case (huruf, angka, garis bawah).",
   "projects.workflow.validation.minLanes": "Workflow mesti mempunyai sekurang-kurangnya 2 lajur.",
   "realtime.assigned": "Ditugaskan: {title}",
+  "realtime.creatorActivity": "Dikemas kini: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Notifikasi",
   "notifications.panel.markAllRead": "Tandai semua sudah dibaca",

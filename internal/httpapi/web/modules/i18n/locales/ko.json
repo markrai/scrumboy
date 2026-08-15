@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "레인 키는 snake_case(문자, 숫자, 밑줄)여야 합니다.",
   "projects.workflow.validation.minLanes": "워크플로에는 최소 2개의 레인이 있어야 합니다.",
   "realtime.assigned": "할당됨: {title}",
+  "realtime.creatorActivity": "업데이트됨: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "알림",
   "notifications.panel.markAllRead": "모두 읽음으로 표시",

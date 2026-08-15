@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "レーンキーは snake_case（英字、数字、アンダースコア）である必要があります。",
   "projects.workflow.validation.minLanes": "ワークフローには少なくとも2つのレーンが必要です。",
   "realtime.assigned": "割り当て: {title}",
+  "realtime.creatorActivity": "更新されました：{title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "通知",
   "notifications.panel.markAllRead": "すべて既読にする",

@@ -51,15 +51,44 @@ func (s *CreatorNotificationAuthorizationService) Authorize(
 		return AuthorizedCreatorNotification{}, false, nil
 	}
 
-	project, err := s.store.GetProject(ctx, request.ProjectID)
+	return s.authorizeCurrentRecipient(ctx, AuthorizedCreatorNotification{
+		ProjectID:       request.ProjectID,
+		ProjectSlug:     request.ProjectSlug,
+		TodoID:          request.TodoID,
+		LocalID:         request.LocalID,
+		Title:           request.Title,
+		ActivityReason:  request.ActivityReason,
+		RecipientUserID: request.CreatedByUserID,
+		ActorUserID:     request.ActorUserID,
+	})
+}
+
+// ReauthorizeRecipient performs the fresh access check required immediately
+// before creator-directed disclosure. An earlier AuthorizedCreatorNotification
+// is only a point-in-time fact and is never treated as a durable entitlement.
+func (s *CreatorNotificationAuthorizationService) ReauthorizeRecipient(
+	ctx context.Context,
+	authorized AuthorizedCreatorNotification,
+) (AuthorizedCreatorNotification, bool, error) {
+	if s == nil || s.store == nil || !validAuthorizedCreatorNotification(authorized) {
+		return AuthorizedCreatorNotification{}, false, nil
+	}
+	return s.authorizeCurrentRecipient(ctx, authorized)
+}
+
+func (s *CreatorNotificationAuthorizationService) authorizeCurrentRecipient(
+	ctx context.Context,
+	candidate AuthorizedCreatorNotification,
+) (AuthorizedCreatorNotification, bool, error) {
+	project, err := s.store.GetProject(ctx, candidate.ProjectID)
 	if err != nil {
 		return AuthorizedCreatorNotification{}, false, err
 	}
-	if project.ID != request.ProjectID || project.ExpiresAt != nil || project.Slug == "" {
+	if project.ID != candidate.ProjectID || project.ExpiresAt != nil || project.Slug == "" {
 		return AuthorizedCreatorNotification{}, false, nil
 	}
 
-	role, err := s.store.GetProjectRole(ctx, project.ID, request.CreatedByUserID)
+	role, err := s.store.GetProjectRole(ctx, project.ID, candidate.RecipientUserID)
 	if err != nil {
 		return AuthorizedCreatorNotification{}, false, err
 	}
@@ -70,12 +99,12 @@ func (s *CreatorNotificationAuthorizationService) Authorize(
 	return AuthorizedCreatorNotification{
 		ProjectID:       project.ID,
 		ProjectSlug:     project.Slug,
-		TodoID:          request.TodoID,
-		LocalID:         request.LocalID,
-		Title:           request.Title,
-		ActivityReason:  request.ActivityReason,
-		RecipientUserID: request.CreatedByUserID,
-		ActorUserID:     request.ActorUserID,
+		TodoID:          candidate.TodoID,
+		LocalID:         candidate.LocalID,
+		Title:           candidate.Title,
+		ActivityReason:  candidate.ActivityReason,
+		RecipientUserID: candidate.RecipientUserID,
+		ActorUserID:     candidate.ActorUserID,
 	}, true, nil
 }
 
@@ -86,4 +115,13 @@ func validCreatorNotificationAuthorizationRequest(request CreatorNotificationReq
 		return false
 	}
 	return request.ActivityReason == RefreshReasonTodoUpdated || request.ActivityReason == RefreshReasonTodoMoved
+}
+
+func validAuthorizedCreatorNotification(authorized AuthorizedCreatorNotification) bool {
+	if authorized.ProjectID <= 0 || authorized.TodoID <= 0 || authorized.LocalID <= 0 ||
+		authorized.RecipientUserID <= 0 || authorized.ActorUserID <= 0 ||
+		authorized.RecipientUserID == authorized.ActorUserID {
+		return false
+	}
+	return authorized.ActivityReason == RefreshReasonTodoUpdated || authorized.ActivityReason == RefreshReasonTodoMoved
 }

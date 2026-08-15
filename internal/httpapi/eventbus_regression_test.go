@@ -53,7 +53,7 @@ func newTestServerWithCollector(t *testing.T) (*Server, *store.Store, *collectin
 	st := newTestStore(t)
 	collector := &collectingConsumer{}
 	hub := NewHub(defaultSubscriberBuffer)
-	bridge := newSSEBridge(hub)
+	bridge := newSSEBridge(hub, nil)
 	fanout := eventbus.NewFanout(bridge, collector)
 	srv := &Server{
 		store:  st,
@@ -227,7 +227,7 @@ func TestProjectDeletionExternalConsumersFilterRecipientSnapshot(t *testing.T) {
 	hub := NewHub(defaultSubscriberBuffer)
 	hubEvents, unsubscribe := hub.Subscribe(7)
 	defer unsubscribe()
-	newSSEBridge(hub).OnEvent(context.Background(), event)
+	newSSEBridge(hub, nil).OnEvent(context.Background(), event)
 	select {
 	case message := <-hubEvents:
 		if bytes.Contains(message, []byte("recipientUserIds")) || bytes.Contains(message, []byte("812345")) || bytes.Contains(message, []byte("Sensitive Project")) {
@@ -648,7 +648,7 @@ func TestWebhookDispatcher_UsesBackgroundContext(t *testing.T) {
 
 	collector := &collectingConsumer{}
 	hub := NewHub(4)
-	bridge := newSSEBridge(hub)
+	bridge := newSSEBridge(hub, nil)
 	fanout := eventbus.NewFanout(bridge, collector)
 
 	e := eventbus.Event{

@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Ключи колонок должны быть в snake_case (буквы, цифры, подчёркивание).",
   "projects.workflow.validation.minLanes": "В рабочем процессе должно быть не менее 2 колонок.",
   "realtime.assigned": "Назначено: {title}",
+  "realtime.creatorActivity": "Обновлено: {title}",
   "realtime.todoFallback": "Задача",
   "notifications.panel.title": "Уведомления",
   "notifications.panel.markAllRead": "Отметить все как прочитанные",

@@ -464,7 +464,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		oauthTokenRateLimit = ratelimit.New(60, time.Minute)
 	}
 	hub := NewHub(defaultSubscriberBuffer)
-	sseBridgeConsumer := newSSEBridge(hub)
+	creatorNotificationAuthorizer := todoapp.NewCreatorNotificationAuthorizationService(st)
+	sseBridgeConsumer := newSSEBridge(hub, creatorNotificationAuthorizer)
 	whQueue := newWebhookQueue(logger)
 	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
 	pushDebug := opts.PushDebug
@@ -537,7 +538,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 
 	server := &Server{
 		store:                         st,
-		creatorNotificationAuthorizer: todoapp.NewCreatorNotificationAuthorizationService(st),
+		creatorNotificationAuthorizer: creatorNotificationAuthorizer,
 		boardReads: boardapp.NewReadService(boardapp.ReadServiceDependencies{
 			Initial:      st,
 			Lane:         st,
@@ -848,9 +849,10 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 }
 
 // PublishCreatorNotificationRequest records the internal consideration request,
-// then performs the Phase 3 fresh-access check. Neither the request nor a
-// resulting authorized-recipient decision is delivered through SSE, email,
-// push, or webhooks.
+// then performs the Phase 3 fresh-access check. Neither internal event is
+// exposed verbatim. The authorized-recipient event may only become private SSE
+// after the bridge performs the independent Phase 4 delivery-time access check;
+// email, push, and webhooks remain excluded.
 func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request todoapp.CreatorNotificationRequest) {
 	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
 		ProjectID:       request.ProjectID,

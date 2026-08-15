@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,15 +19,18 @@ import (
 )
 
 type creatorRequestTransportFixture struct {
-	server    *Server
-	store     *store.Store
-	test      *httptest.Server
-	collector *collectingConsumer
-	actor     store.User
-	creator   store.User
-	project   store.Project
-	todo      store.Todo
-	client    *http.Client
+	server     *Server
+	store      *store.Store
+	test       *httptest.Server
+	collector  *collectingConsumer
+	actor      store.User
+	creator    store.User
+	project    store.Project
+	todo       store.Todo
+	client     *http.Client
+	projectHub <-chan []byte
+	creatorHub <-chan []byte
+	otherHub   <-chan []byte
 }
 
 func newCreatorRequestTransportFixture(t *testing.T) *creatorRequestTransportFixture {
@@ -40,7 +44,7 @@ func newCreatorRequestTransportFixture(t *testing.T) *creatorRequestTransportFix
 		AgoraHandler:   agora.New(adapter, agora.Options{MaxRequestBytes: 1 << 20}),
 	})
 	collector := &collectingConsumer{}
-	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
+	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, srv.creatorNotificationAuthorizer), collector)
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(func() {
@@ -78,6 +82,12 @@ func newCreatorRequestTransportFixture(t *testing.T) *creatorRequestTransportFix
 	if todo.CreatedByUserID == nil || *todo.CreatedByUserID != creator.ID {
 		t.Fatalf("createdByUserID=%v, want %d", todo.CreatedByUserID, creator.ID)
 	}
+	projectHub, unsubscribeProject := srv.hub.Subscribe(project.ID)
+	t.Cleanup(unsubscribeProject)
+	creatorHub, unsubscribeCreator := srv.hub.SubscribeUser(creator.ID)
+	t.Cleanup(unsubscribeCreator)
+	otherHub, unsubscribeOther := srv.hub.SubscribeUser(creator.ID + 1000)
+	t.Cleanup(unsubscribeOther)
 
 	client := newCookieClient(t)
 	token, expiresAt, err := st.CreateSession(context.Background(), actor.ID, time.Hour)
@@ -94,11 +104,15 @@ func newCreatorRequestTransportFixture(t *testing.T) *creatorRequestTransportFix
 	return &creatorRequestTransportFixture{
 		server: srv, store: st, test: ts, collector: collector,
 		actor: actor, creator: creator, project: project, todo: todo, client: client,
+		projectHub: projectHub, creatorHub: creatorHub, otherHub: otherHub,
 	}
 }
 
 func (f *creatorRequestTransportFixture) resetEvents() {
 	f.collector.events = nil
+	drainHub(f.projectHub)
+	drainHub(f.creatorHub)
+	drainHub(f.otherHub)
 }
 
 func assertCreatorRequestEvent(t *testing.T, event eventbus.Event, fixture *creatorRequestTransportFixture, reason string) eventbus.TodoCreatorNotificationRequestedPayload {
@@ -172,6 +186,72 @@ func assertCreatorRequestOnly(t *testing.T, fixture *creatorRequestTransportFixt
 	assertCreatorRequestEvent(t, fixture.collector.events[0], fixture, reason)
 }
 
+func assertCreatorActivityDelivery(
+	t *testing.T,
+	fixture *creatorRequestTransportFixture,
+	reason string,
+	wantProjectRefreshes int,
+	wantProjectAssignments int,
+) {
+	t.Helper()
+	select {
+	case message := <-fixture.creatorHub:
+		var wire creatorActivityWireEvent
+		if err := json.Unmarshal(message, &wire); err != nil {
+			t.Fatalf("decode creator activity: %v", err)
+		}
+		if wire.ID == "" || wire.Type != "todo.creator_activity" ||
+			wire.ProjectID != fixture.project.ID || wire.ProjectSlug != fixture.project.Slug ||
+			wire.Payload.TodoID != fixture.todo.ID || wire.Payload.LocalID != fixture.todo.LocalID ||
+			wire.Payload.Title != fixture.todo.Title || wire.Payload.ActivityReason != reason {
+			t.Fatalf("creator activity=%+v", wire)
+		}
+		if bytes.Contains(message, []byte("actorUserId")) || bytes.Contains(message, []byte("recipientUserId")) {
+			t.Fatalf("creator activity exposes internal user identifiers: %s", message)
+		}
+	default:
+		t.Fatal("eligible creator received no private activity SSE")
+	}
+	assertNoCreatorActivityHubMessage(t, fixture.creatorHub, "duplicate creator")
+	assertNoCreatorActivityHubMessage(t, fixture.otherHub, "other user")
+
+	refreshes := 0
+	assignments := 0
+	for {
+		select {
+		case message := <-fixture.projectHub:
+			var wire struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(message, &wire); err != nil {
+				t.Fatalf("decode project SSE: %v", err)
+			}
+			switch wire.Type {
+			case "refresh_needed":
+				refreshes++
+			case "todo.assigned":
+				assignments++
+			case "todo.creator_activity":
+				t.Fatalf("creator activity leaked to project SSE: %s", message)
+			default:
+				t.Fatalf("unexpected project SSE type %q: %s", wire.Type, message)
+			}
+		default:
+			if refreshes != wantProjectRefreshes || assignments != wantProjectAssignments {
+				t.Fatalf("project SSE refreshes/assignments=%d/%d, want %d/%d", refreshes, assignments, wantProjectRefreshes, wantProjectAssignments)
+			}
+			return
+		}
+	}
+}
+
+func assertCreatorActivityDenied(t *testing.T, fixture *creatorRequestTransportFixture) {
+	t.Helper()
+	assertNoCreatorActivityHubMessage(t, fixture.creatorHub, "creator")
+	assertNoCreatorActivityHubMessage(t, fixture.otherHub, "other user")
+	assertNoCreatorActivityHubMessage(t, fixture.projectHub, "project")
+}
+
 func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 	fixture := newCreatorRequestTransportFixture(t)
 	base := fixture.test.URL
@@ -189,6 +269,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("modern update status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_updated")
+		assertCreatorActivityDelivery(t, fixture, "todo_updated", 1, 0)
 	})
 
 	t.Run("modern REST move", func(t *testing.T) {
@@ -200,6 +281,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("modern move status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_moved")
+		assertCreatorActivityDelivery(t, fixture, "todo_moved", 1, 0)
 	})
 
 	t.Run("legacy numeric update", func(t *testing.T) {
@@ -214,6 +296,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("legacy update status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_updated")
+		assertCreatorActivityDelivery(t, fixture, "todo_updated", 1, 0)
 	})
 
 	t.Run("legacy numeric move", func(t *testing.T) {
@@ -225,6 +308,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("legacy move status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationThenRefresh(t, fixture, "todo_moved")
+		assertCreatorActivityDelivery(t, fixture, "todo_moved", 1, 0)
 	})
 
 	t.Run("assignment change preserves store event and suppresses direct refresh", func(t *testing.T) {
@@ -244,14 +328,10 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 		}
 		assertCreatorRequestEvent(t, events[1], fixture, "todo_updated")
 		assertAuthorizedCreatorNotificationEvent(t, events[2], fixture, "todo_updated")
+		assertCreatorActivityDelivery(t, fixture, "todo_updated", 1, 1)
 	})
 
-	projectHub, unsubscribeProject := fixture.server.hub.Subscribe(fixture.project.ID)
-	defer unsubscribeProject()
-	creatorHub, unsubscribeCreator := fixture.server.hub.SubscribeUser(fixture.creator.ID)
-	defer unsubscribeCreator()
-
-	t.Run("MCP update is explicitly bound and remains delivery silent", func(t *testing.T) {
+	t.Run("MCP update delivers privately and retains zero board refresh", func(t *testing.T) {
 		fixture.resetEvents()
 		response, body := doJSON(t, fixture.client, http.MethodPost, base+"/mcp", map[string]any{
 			"tool": "todos_update",
@@ -265,10 +345,10 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("MCP update status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_updated")
-		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
+		assertCreatorActivityDelivery(t, fixture, "todo_updated", 0, 0)
 	})
 
-	t.Run("MCP move is explicitly bound and remains delivery silent", func(t *testing.T) {
+	t.Run("MCP move delivers privately and retains zero board refresh", func(t *testing.T) {
 		fixture.resetEvents()
 		response, body := doJSON(t, fixture.client, http.MethodPost, base+"/mcp", map[string]any{
 			"tool": "todos_move",
@@ -282,10 +362,10 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("MCP move status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_moved")
-		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
+		assertCreatorActivityDelivery(t, fixture, "todo_moved", 0, 0)
 	})
 
-	t.Run("Agora uses the same bound MCP adapter and remains delivery silent", func(t *testing.T) {
+	t.Run("Agora uses the same bound MCP adapter and delivers privately", func(t *testing.T) {
 		fixture.resetEvents()
 		response, body := doJSON(t, fixture.client, http.MethodPost, base+"/agora/v1/invoke", map[string]any{
 			"tool": "todos_update",
@@ -299,7 +379,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("Agora update status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorAuthorizationWithoutRefresh(t, fixture, "todo_updated")
-		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
+		assertCreatorActivityDelivery(t, fixture, "todo_updated", 0, 0)
 	})
 
 	t.Run("removed historical creator still only produces internal consideration", func(t *testing.T) {
@@ -320,7 +400,7 @@ func TestTodoCreatorRequestAdapterAndCardinalityContracts(t *testing.T) {
 			t.Fatalf("removed-creator MCP update status=%d body=%s", response.StatusCode, body)
 		}
 		assertCreatorRequestOnly(t, fixture, "todo_updated")
-		assertNoCreatorRequestHubDelivery(t, projectHub, creatorHub)
+		assertCreatorActivityDenied(t, fixture)
 	})
 }
 
@@ -342,15 +422,4 @@ func TestMCPAdapterCreatorRequestBindingIsOneShot(t *testing.T) {
 	adapter.BindCreatorNotificationRequestPublisher(todoapp.CreatorNotificationRequestPublisherFunc(
 		func(context.Context, todoapp.CreatorNotificationRequest) {},
 	))
-}
-
-func assertNoCreatorRequestHubDelivery(t *testing.T, projectHub, creatorHub <-chan []byte) {
-	t.Helper()
-	select {
-	case message := <-projectHub:
-		t.Fatalf("creator request leaked to project SSE: %s", message)
-	case message := <-creatorHub:
-		t.Fatalf("creator request leaked to creator SSE: %s", message)
-	case <-time.After(100 * time.Millisecond):
-	}
 }

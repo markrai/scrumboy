@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Sütun anahtarları snake_case olmalıdır (harfler, rakamlar, alt çizgi).",
   "projects.workflow.validation.minLanes": "İş akışında en az 2 sütun olmalıdır.",
   "realtime.assigned": "Atanan: {title}",
+  "realtime.creatorActivity": "Güncellendi: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Bildirimler",
   "notifications.panel.markAllRead": "Tümünü okundu işaretle",

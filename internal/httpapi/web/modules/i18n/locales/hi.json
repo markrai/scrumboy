@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "कॉलम कुंजियाँ snake_case (अक्षर, संख्या, अंडरस्कोर) होनी चाहिए।",
   "projects.workflow.validation.minLanes": "वर्कफ़्लो में कम से कम 2 कॉलम होने चाहिए।",
   "realtime.assigned": "नियत: {title}",
+  "realtime.creatorActivity": "अपडेट किया गया: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "सूचनाएँ",
   "notifications.panel.markAllRead": "सभी पढ़ा हुआ चिह्नित करें",

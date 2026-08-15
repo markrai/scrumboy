@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Ключі колонок мають бути snake_case (літери, цифри, підкреслення).",
   "projects.workflow.validation.minLanes": "Workflow має мати щонайменше 2 колонки.",
   "realtime.assigned": "Призначено: {title}",
+  "realtime.creatorActivity": "Оновлено: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Сповіщення",
   "notifications.panel.markAllRead": "Позначити все прочитаним",

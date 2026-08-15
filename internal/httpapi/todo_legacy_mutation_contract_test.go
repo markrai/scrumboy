@@ -47,7 +47,7 @@ func newLegacyTodoMutationFixture(t *testing.T, mode string) *legacyTodoMutation
 	st := store.New(sqlDB, nil)
 	collector := &collectingConsumer{}
 	srv := NewServer(st, Options{MaxRequestBody: 1 << 20, ScrumboyMode: mode})
-	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
+	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, srv.creatorNotificationAuthorizer), collector)
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 	ts := httptest.NewServer(srv)
 

@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "คีย์คอลัมน์ต้องเป็น snake_case (ตัวอักษร ตัวเลข ขีดล่าง)",
   "projects.workflow.validation.minLanes": "เวิร์กโฟลว์ต้องมีอย่างน้อย 2 คอลัมน์",
   "realtime.assigned": "มอบหมายแล้ว: {title}",
+  "realtime.creatorActivity": "อัปเดตแล้ว: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "การแจ้งเตือน",
   "notifications.panel.markAllRead": "ทำเครื่องหมายว่าอ่านทั้งหมด",

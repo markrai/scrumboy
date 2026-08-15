@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Funguo za safu lazima ziwe snake_case (herufi, nambari, underscore).",
   "projects.workflow.validation.minLanes": "Workflow lazima iwe na angalau safu 2.",
   "realtime.assigned": "Imepangiwa: {title}",
+  "realtime.creatorActivity": "Imesasishwa: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Arifa",
   "notifications.panel.markAllRead": "Weka zote kama zimesomwa",

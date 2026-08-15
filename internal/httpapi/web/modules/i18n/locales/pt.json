@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "As chaves das colunas devem usar snake_case (letras, números, underline).",
   "projects.workflow.validation.minLanes": "O workflow deve ter pelo menos 2 colunas.",
   "realtime.assigned": "Atribuído: {title}",
+  "realtime.creatorActivity": "Atualizado: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Notificações",
   "notifications.panel.markAllRead": "Marcar todas como lidas",

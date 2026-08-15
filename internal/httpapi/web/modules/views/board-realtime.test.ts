@@ -210,4 +210,27 @@ describe("board-realtime drag refresh guards", () => {
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
     expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
   });
+
+  it("does not turn a private creator activity toast into a board refresh", async () => {
+    const mod = await loadBoardRealtimeModule();
+    selectorState.authStatusAvailable = true;
+    selectorState.user = { id: 11 };
+    selectorState.projectId = 7;
+    mod.connectBoardEvents("alpha");
+
+    mod.__handleBoardRealtimeEventForTest({
+      type: "todo.creator_activity",
+      projectId: 7,
+      projectSlug: "alpha",
+      payload: {
+        todoId: 81,
+        localId: 5,
+        title: "Committed title",
+        activityReason: "todo_updated",
+      },
+    });
+    vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest() + 100);
+
+    expect(invalidateBoardMock).not.toHaveBeenCalled();
+  });
 });

@@ -5,7 +5,8 @@ const TodoCreatorNotificationRecipientAuthorizedEventType = "todo.creator_notifi
 // TodoCreatorNotificationRecipientAuthorizedPayload records that a fresh,
 // point-in-time project access check resolved the historical creator as a
 // current recipient. It does not assert preferences, queueing, sending, or
-// delivery, and remains internal until a later delivery-policy phase.
+// delivery. It remains internal; channel adapters must freshly reauthorize
+// before any disclosure rather than exposing this event directly.
 type TodoCreatorNotificationRecipientAuthorizedPayload struct {
 	ProjectID       int64  `json:"projectId"`
 	ProjectSlug     string `json:"projectSlug"`

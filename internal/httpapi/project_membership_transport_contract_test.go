@@ -68,7 +68,7 @@ func newMembershipRESTFixture(t *testing.T, name string) *membershipRESTFixture 
 	collector := &membershipEventCollector{}
 	// Keep the production fanout and SSE translation in the route contract while
 	// adding an in-process observer for the structured membership event.
-	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
+	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, nil), collector)
 
 	return &membershipRESTFixture{
 		ts: ts, db: sqlDB, st: st, client: client, ctx: ctx,
@@ -356,7 +356,7 @@ func newMembershipListFailureRESTServer(t *testing.T) (*httptest.Server, *sql.DB
 	wrapper := &membershipListFailureStore{Store: store.New(sqlDB, nil), err: errors.New(membershipPostReadFailureMessage)}
 	srv := NewServer(wrapper, Options{MaxRequestBody: 1 << 20, ScrumboyMode: "full"})
 	collector := &membershipEventCollector{}
-	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
+	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, nil), collector)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(func() {
 		ts.Close()
@@ -551,7 +551,7 @@ func TestProjectMembershipMCPMutationsAreStructurallyEventSilent(t *testing.T) {
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 	collector := &membershipEventCollector{}
-	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
+	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, nil), collector)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(func() {
 		ts.Close()

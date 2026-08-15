@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "کلید ستون باید snake_case باشد: حروف، عدد و underscore.",
   "projects.workflow.validation.minLanes": "Workflow باید حداقل ۲ ستون داشته باشد.",
   "realtime.assigned": "محول‌شده: {title}",
+  "realtime.creatorActivity": "به‌روزرسانی شد: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "اعلان‌ها",
   "notifications.panel.markAllRead": "همه را خوانده‌شده علامت بزن",

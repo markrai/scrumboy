@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"testing"
@@ -12,7 +13,7 @@ import (
 	"scrumboy/internal/store"
 )
 
-func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
+func TestCreatorNotificationPipelineContainmentAndPrivateSSE(t *testing.T) {
 	st := newTestStore(t)
 	owner, err := st.BootstrapUser(context.Background(), "containment-owner@example.com", "password123", "Owner")
 	if err != nil {
@@ -53,8 +54,9 @@ func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
 	webhookQueue := newWebhookQueue(logger)
 	mailQueue := newMailQueue(logger)
 	collector := &collectingConsumer{}
+	authorizer := todoapp.NewCreatorNotificationAuthorizationService(st)
 	fanout := eventbus.NewFanout(
-		newSSEBridge(hub),
+		newSSEBridge(hub, authorizer),
 		newWebhookDispatcher(st, webhookQueue, logger),
 		newPushNotifier(st, logger, "public", "private", "mailto:test@example.com", true, false),
 		newEmailNotifier(st, mailQueue, "https://scrumboy.example.com", true, logger),
@@ -62,7 +64,7 @@ func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
 	)
 	server := &Server{
 		fanout:                        fanout,
-		creatorNotificationAuthorizer: todoapp.NewCreatorNotificationAuthorizationService(st),
+		creatorNotificationAuthorizer: authorizer,
 	}
 	request := todoapp.CreatorNotificationRequest{
 		ProjectID:       project.ID,
@@ -83,10 +85,10 @@ func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
 		if len(collector.events) != 1 || collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType {
 			t.Fatalf("internal collector events=%+v, want request only", collector.events)
 		}
-		assertCreatorAuthorizationNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
+		assertCreatorPipelineNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
 	})
 
-	t.Run("current member produces contained authorized decision", func(t *testing.T) {
+	t.Run("current member produces one private SSE and no other delivery", func(t *testing.T) {
 		collector.events = nil
 		server.PublishCreatorNotificationRequest(context.Background(), request)
 		if len(collector.events) != 2 ||
@@ -99,7 +101,21 @@ func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
 				t.Fatalf("internal event lacks fanout identity/time: %+v", event)
 			}
 		}
-		assertCreatorAuthorizationNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
+		select {
+		case message := <-creatorEvents:
+			var wire creatorActivityWireEvent
+			if err := json.Unmarshal(message, &wire); err != nil {
+				t.Fatalf("decode creator activity: %v", err)
+			}
+			if wire.Type != "todo.creator_activity" || wire.ProjectID != project.ID ||
+				wire.ProjectSlug != project.Slug || wire.Payload.Title != request.Title {
+				t.Fatalf("creator activity=%+v", wire)
+			}
+		default:
+			t.Fatal("current creator received no private SSE")
+		}
+		assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue)
+		assertNoCreatorActivityHubMessage(t, creatorEvents, "duplicate creator")
 	})
 
 	t.Run("removed member produces no recipient", func(t *testing.T) {
@@ -111,11 +127,11 @@ func TestCreatorNotificationAuthorizationEventsRemainInternal(t *testing.T) {
 		if len(collector.events) != 1 || collector.events[0].Type != eventbus.TodoCreatorNotificationRequestedEventType {
 			t.Fatalf("internal collector events=%+v, want denied request only", collector.events)
 		}
-		assertCreatorAuthorizationNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
+		assertCreatorPipelineNoDelivery(t, projectEvents, creatorEvents, webhookQueue, mailQueue)
 	})
 }
 
-func assertCreatorAuthorizationNoDelivery(
+func assertCreatorPipelineNoDelivery(
 	t *testing.T,
 	projectEvents <-chan []byte,
 	creatorEvents <-chan []byte,
@@ -123,17 +139,30 @@ func assertCreatorAuthorizationNoDelivery(
 	mailQueue *mailQueue,
 ) {
 	t.Helper()
+	assertCreatorPipelineNoNonSSEDelivery(t, projectEvents, webhookQueue, mailQueue)
 	select {
-	case message := <-projectEvents:
-		t.Fatalf("creator authorization leaked to project SSE: %s", message)
 	case message := <-creatorEvents:
-		t.Fatalf("creator authorization leaked to creator SSE: %s", message)
+		t.Fatalf("denied creator pipeline leaked to creator SSE: %s", message)
 	case <-time.After(100 * time.Millisecond):
 	}
+}
+
+func assertCreatorPipelineNoNonSSEDelivery(
+	t *testing.T,
+	projectEvents <-chan []byte,
+	webhookQueue *webhookQueue,
+	mailQueue *mailQueue,
+) {
+	t.Helper()
+	select {
+	case message := <-projectEvents:
+		t.Fatalf("creator pipeline leaked to project SSE: %s", message)
+	default:
+	}
 	if deliveries := webhookQueue.Drain(); len(deliveries) != 0 {
-		t.Fatalf("exact/wildcard webhooks received creator authorization events: %+v", deliveries)
+		t.Fatalf("exact/wildcard webhooks received creator internal events: %+v", deliveries)
 	}
 	if deliveries := mailQueue.Drain(); len(deliveries) != 0 {
-		t.Fatalf("email queue received creator authorization events: %+v", deliveries)
+		t.Fatalf("email queue received creator pipeline events: %+v", deliveries)
 	}
 }

@@ -2,7 +2,9 @@
 
 Most domain events are published by prepared application services or HTTP adapters after successful store operations (`emitRefreshNeeded`, `emitMembersUpdated`, `emitWallRefreshNeeded`, `emitWallTransient` → `Server.PublishEvent`). Store mutations do not generally publish. Exception: todo assignee changes call `store.TodoAssignedFunc` set via `SetTodoAssignedPublisher(srv.PublishTodoAssigned)` in `main.go`.
 
-Prepared REST, legacy numeric REST, and MCP todo update/move services may also publish `todo.creator_notification_requested` after a committed mutation. This internal request nominates the historical creator but does not authorize or deliver anything. A creator-specific service then re-reads the durable project and the creator's current project role. Only a viewer-or-higher current member produces `todo.creator_notification_recipient_authorized`, a point-in-time internal decision that still does not represent preferences, queueing, sending, or delivery. Both events are excluded from webhooks and have no SSE, email, Web Push, or frontend consumer. MCP still publishes no `board.refresh_needed`; these internal creator steps are separate, explicit application capabilities.
+Prepared REST, legacy numeric REST, and MCP todo update/move services may also publish `todo.creator_notification_requested` after a committed mutation. This internal request nominates the historical creator but does not authorize or deliver anything. A creator-specific service then re-reads the durable project and the creator's current project role. Only a viewer-or-higher current member produces `todo.creator_notification_recipient_authorized`, a point-in-time internal decision that still does not represent preferences, queueing, sending, or delivery. Both internal events are excluded from webhooks and are never emitted verbatim to browsers.
+
+The SSE bridge consumes the authorized-recipient event as a candidate, repeats the durable-project and current-role lookup with the fanout context, and fails closed if access changed or lookup was cancelled/failed. Only that second check can emit the factual `todo.creator_activity` wire event, and it is emitted exclusively to the recipient's private user channel. Its minimum-disclosure payload omits both actor and recipient user IDs. The frontend turns it into a localized toast only. Creator email, Web Push, webhook delivery, desktop notifications, notification counters, and a `createdByMe` preference do not exist. MCP still publishes no `board.refresh_needed`; these creator steps are separate, explicit application capabilities.
 
 ```mermaid
 flowchart TB
@@ -11,6 +13,8 @@ flowchart TB
   CreatorRequest[Internal creator consideration request]
   CreatorAuth[Fresh durable-project and current-role check]
   AuthorizedCreator[Internal authorized creator recipient]
+  SSEReauth[Fresh SSE delivery authorization]
+  CreatorWire[Private todo.creator_activity wire event]
   Emit["emitRefreshNeeded emitMembersUpdated emitWall"]
   Pub[Server.PublishEvent]
   Fan[eventbus.Fanout]
@@ -31,8 +35,10 @@ flowchart TB
   Fan --> PushN[push notifier]
 
   Bridge --> Hub[Hub project and user channels]
+  Bridge --> SSEReauth --> CreatorWire --> CreatorUserHub[Hub private user channel]
   Hub --> BoardSSE["GET /api/board/slug/events"]
   Hub --> UserSSE["GET /api/me/realtime"]
+  CreatorUserHub --> UserSSE
   BoardSSE --> BoardClient[board-realtime.ts unauthenticated board stream]
   UserSSE --> LoggedClient[core/realtime.ts authenticated merged stream]
   BoardClient --> Refresh[orchestration/board-refresh.ts]
@@ -60,6 +66,7 @@ Both paths share `sse-client.ts` for the EventSource connection.
 | `board.members_updated` | SSE plus membership UI refresh |
 | `todo.assigned` | Push notification to assignee; also on merged user stream |
 | `todo.creator_notification_requested` | Internal consideration only; excluded from SSE, email, push, and webhooks |
-| `todo.creator_notification_recipient_authorized` | Point-in-time current-access decision only; excluded from SSE, email, push, and webhooks |
+| `todo.creator_notification_recipient_authorized` | Internal point-in-time decision consumed by the fresh SSE delivery gate; never emitted verbatim and excluded from email, push, and webhooks |
+| `todo.creator_activity` | Private user-channel SSE wire event after delivery-time reauthorization; localized toast only |
 | `wall.refresh_needed` | Wall canvas full refetch |
 | `wall.transient` | Ephemeral drag/move only (`emitWallTransient`); not a durable store mutation; SSE wire only |

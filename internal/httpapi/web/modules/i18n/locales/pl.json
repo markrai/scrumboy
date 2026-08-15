@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "Klucze kolumn muszą być w snake_case (litery, cyfry, podkreślenie).",
   "projects.workflow.validation.minLanes": "Workflow musi mieć co najmniej 2 kolumny.",
   "realtime.assigned": "Przypisano: {title}",
+  "realtime.creatorActivity": "Zaktualizowano: {title}",
   "realtime.todoFallback": "Todo",
   "notifications.panel.title": "Powiadomienia",
   "notifications.panel.markAllRead": "Oznacz wszystkie jako przeczytane",

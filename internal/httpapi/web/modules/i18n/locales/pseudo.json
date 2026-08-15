@@ -404,6 +404,7 @@
   "projects.workflow.validation.invalidKey": "[!! Lane keys must be snake_case (letters, numbers, underscore). !!]",
   "projects.workflow.validation.minLanes": "[!! Workflow must have at least 2 lanes. !!]",
   "realtime.assigned": "[!! Assigned: {title} !!]",
+  "realtime.creatorActivity": "[!! Updated: {title} !!]",
   "realtime.todoFallback": "[!! Todo !!]",
   "notifications.panel.title": "[!! Notifications !!]",
   "notifications.panel.markAllRead": "[!! Mark all as read !!]",
