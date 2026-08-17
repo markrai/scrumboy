@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Board, PriorityTier } from '../types.js';
 import { NO_PRIORITY_FILTER_VALUE } from '../types.js';
+import { BOARD_TODO_SORT_STORAGE_KEY, getBoardTodoSortPreference } from '../core/board-sort-preferences.js';
 import { buildFilterPanelHtml, isBoardFilterActive } from './board-rendering.js';
 import type { BoardMember } from '../state/state.js';
 import enCatalog from '../i18n/locales/en.json';
@@ -12,12 +13,14 @@ const selectorState: {
   tag: string;
   search: string;
   tagColors: Record<string, string>;
+  user: { id: number; name: string; email: string } | null;
 } = {
   board: null,
   slug: null,
   tag: '',
   search: '',
   tagColors: {},
+  user: { id: 1, name: 'Me', email: 'me@example.com' },
 };
 
 const toastMock = vi.fn();
@@ -32,6 +35,7 @@ vi.mock('../state/selectors.js', () => ({
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
   getTag: () => selectorState.tag,
   getTagColors: () => selectorState.tagColors,
+  getUser: () => selectorState.user,
 }));
 
 vi.mock('../utils.js', () => ({
@@ -55,6 +59,7 @@ vi.mock('../utils.js', () => ({
 
 function makeMembers(): BoardMember[] {
   return [
+    { userId: 1, name: 'Me', email: 'me@example.com', role: 'contributor' },
     { userId: 5, name: 'Alice Example', email: 'alice@example.com', role: 'maintainer' },
     { userId: 9, name: '', email: 'noname@example.com', role: 'contributor' },
   ];
@@ -98,6 +103,9 @@ async function setupState(url: string, opts?: { tag?: string; search?: string; a
 
 describe('board filter panel (assignee + sort)', () => {
   beforeEach(async () => {
+    localStorage.clear();
+    selectorState.user = { id: 1, name: 'Me', email: 'me@example.com' };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({
       locale: 'en',
@@ -109,12 +117,15 @@ describe('board filter panel (assignee + sort)', () => {
     const i18n = await import('../i18n/index.js');
     i18n.resetI18nForTests();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     document.body.innerHTML = '';
     window.history.replaceState({}, '', '/');
+    localStorage.clear();
     selectorState.board = null;
     selectorState.slug = null;
     selectorState.tag = '';
     selectorState.search = '';
+    selectorState.user = { id: 1, name: 'Me', email: 'me@example.com' };
   });
 
   describe('buildFilterPanelHtml', () => {
@@ -126,6 +137,7 @@ describe('board filter panel (assignee + sort)', () => {
       expect(html).toContain('data-assignee-option=""');
       expect(html).toContain('data-assignee-option="unassigned"');
       expect(html).toContain('data-assignee-option="me"');
+      expect(html).not.toContain('data-assignee-option="1"');
       expect(html).toContain('data-assignee-option="5"');
       expect(html).toContain('>Alice Example<');
       // Falls back to email when name is blank.
@@ -138,6 +150,23 @@ describe('board filter panel (assignee + sort)', () => {
     it('omits the "Assigned to me" option when there is no logged-in user (anonymous/temp boards)', () => {
       const html = buildFilterPanelHtml(null, null, makeMembers(), null);
       expect(html).not.toContain('data-assignee-option="me"');
+      expect(html).toContain('data-assignee-option="1"');
+      expect(html).toContain('data-assignee-option="5"');
+      expect(html).toContain('data-assignee-option="9"');
+    });
+
+    it('omits the logged-in user\'s named member option while keeping Assigned to me and other members', () => {
+      const html = buildFilterPanelHtml(null, null, makeMembers(), { id: 1, name: 'Me', email: 'me@example.com' });
+      expect(html).toContain('data-assignee-option="me"');
+      expect(html).not.toContain('data-assignee-option="1"');
+      expect(html).toContain('data-assignee-option="5"');
+      expect(html).toContain('data-assignee-option="9"');
+    });
+
+    it('marks Assigned to me as active for a legacy numeric current-user assignee value', () => {
+      const html = buildFilterPanelHtml('1', null, makeMembers(), { id: 1, name: 'Me', email: 'me@example.com' });
+      expect(html).toContain('class="search-filter-option is-active" data-assignee-option="me"');
+      expect(html).not.toContain('data-assignee-option="1"');
     });
 
     it('marks the option matching the current assignee/sort value as active', () => {
@@ -335,6 +364,57 @@ describe('board filter panel (assignee + sort)', () => {
       expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
       expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
+    });
+
+    it('persists newest, oldest, and default board sort preferences when signed in', async () => {
+      const { boardFilters } = await setupState('/alpha');
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+      (document.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
+      expect(getBoardTodoSortPreference()).toBe('newest');
+      expect(localStorage.getItem(BOARD_TODO_SORT_STORAGE_KEY)).toBe('newest');
+      expect(fetch).toHaveBeenCalledWith('/api/user/preferences', expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ key: 'boardTodoSort', value: 'newest' }),
+      }));
+
+      (document.querySelector('[data-sort-option="oldest"]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sort')).toBe('oldest');
+      expect(getBoardTodoSortPreference()).toBe('oldest');
+      expect(fetch).toHaveBeenCalledWith('/api/user/preferences', expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ key: 'boardTodoSort', value: 'oldest' }),
+      }));
+
+      toastMock.mockClear();
+      (document.querySelector('[data-sort-option=""]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
+      expect(getBoardTodoSortPreference()).toBe('default');
+      expect(fetch).toHaveBeenCalledWith('/api/user/preferences', expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ key: 'boardTodoSort', value: 'default' }),
+      }));
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(toastMock).not.toHaveBeenCalled();
+    });
+
+    it('does not PUT a board sort preference when there is no signed-in user', async () => {
+      selectorState.user = null;
+      const { boardFilters } = await setupState('/alpha', { user: null });
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      fetchMock.mockClear();
+
+      (document.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
+
+      expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(localStorage.getItem(BOARD_TODO_SORT_STORAGE_KEY)).toBeNull();
+      expect(getBoardTodoSortPreference()).toBe('default');
     });
 
     it('toggles the --active pulse class on the toggle button as filters are applied/cleared', async () => {

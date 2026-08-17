@@ -11,6 +11,7 @@ import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmatio
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
 import { loadWrapLanesPreferenceFromServer, WRAP_LANES_PREFERENCE_KEY, } from './core/wrap-lanes-preferences.js';
+import { BOARD_TODO_SORT_PREFERENCE_KEY, boardTodoSortUrlParam, getBoardTodoSortPreference, isBoardTodoSortUrlParam, loadBoardTodoSortPreferenceFromServer, } from './core/board-sort-preferences.js';
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
 let isRouting = false;
@@ -209,6 +210,7 @@ async function routeOnceBody() {
                 // Ignore errors
             }
             await loadWrapLanesPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`));
+            await loadBoardTodoSortPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${BOARD_TODO_SORT_PREFERENCE_KEY}`));
             // Load email notification preferences
             await loadUserEmailNotifyPref();
         }
@@ -238,13 +240,22 @@ async function routeOnceBody() {
             hydrateNotificationsForUser(null);
         }
     }
-    const r = parseRoute();
+    let r = parseRoute();
     const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
     if (authMethodReturn && getUser()) {
         const cleanURL = new URL(window.location.href);
         cleanURL.searchParams.delete("auth_method");
         window.history.replaceState({}, "", cleanURL.pathname + cleanURL.search + cleanURL.hash);
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("scrumboy:auth-method-return", { detail: authMethodReturn })), 0);
+    }
+    if (r.name === "boardBySlug" && getUser() && !isBoardTodoSortUrlParam(r.sort)) {
+        const applied = boardTodoSortUrlParam(getBoardTodoSortPreference());
+        if (applied) {
+            const url = new URL(window.location.href);
+            url.searchParams.set("sort", applied);
+            history.replaceState({}, "", url.pathname + url.search + url.hash);
+            r = parseRoute();
+        }
     }
     console.log("Router: parsed route:", r);
     setRoute(r.name);

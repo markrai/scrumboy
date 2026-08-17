@@ -1,6 +1,7 @@
 import { on } from '../events.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
-import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag, getTagColors, } from '../state/selectors.js';
+import { normalizeBoardTodoSort, setBoardTodoSortPreference } from '../core/board-sort-preferences.js';
+import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag, getTagColors, getUser, } from '../state/selectors.js';
 import { boardSprintsEnabled } from '../sprints.js';
 import { isAnonymousBoard, showToast } from '../utils.js';
 import { buildChipsHTML, getCombinedChipData, isBoardFilterActive, } from './board-rendering.js';
@@ -244,6 +245,9 @@ function handleFilterPanelDocumentClick(e) {
         }
         else if (kind === "sort") {
             setSortParam(value);
+            if (getUser()) {
+                setBoardTodoSortPreference(normalizeBoardTodoSort(value));
+            }
             panel.querySelectorAll("[data-sort-option]").forEach((el) => el.classList.remove("is-active"));
         }
         else {

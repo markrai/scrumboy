@@ -23,6 +23,13 @@ import {
   loadWrapLanesPreferenceFromServer,
   WRAP_LANES_PREFERENCE_KEY,
 } from './core/wrap-lanes-preferences.js';
+import {
+  BOARD_TODO_SORT_PREFERENCE_KEY,
+  boardTodoSortUrlParam,
+  getBoardTodoSortPreference,
+  isBoardTodoSortUrlParam,
+  loadBoardTodoSortPreferenceFromServer,
+} from './core/board-sort-preferences.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -243,6 +250,10 @@ async function routeOnceBody(): Promise<void> {
         apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`),
       );
 
+      await loadBoardTodoSortPreferenceFromServer(() =>
+        apiFetch<{ value: string }>(`/api/user/preferences?key=${BOARD_TODO_SORT_PREFERENCE_KEY}`),
+      );
+
       // Load email notification preferences
       await loadUserEmailNotifyPref();
     }
@@ -272,7 +283,7 @@ async function routeOnceBody(): Promise<void> {
     }
   }
 
-  const r = parseRoute();
+  let r = parseRoute();
 	const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
 	if (authMethodReturn && getUser()) {
 		const cleanURL = new URL(window.location.href);
@@ -280,6 +291,15 @@ async function routeOnceBody(): Promise<void> {
 		window.history.replaceState({}, "", cleanURL.pathname + cleanURL.search + cleanURL.hash);
 		window.setTimeout(() => window.dispatchEvent(new CustomEvent("scrumboy:auth-method-return", { detail: authMethodReturn })), 0);
 	}
+  if (r.name === "boardBySlug" && getUser() && !isBoardTodoSortUrlParam(r.sort)) {
+    const applied = boardTodoSortUrlParam(getBoardTodoSortPreference());
+    if (applied) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("sort", applied);
+      history.replaceState({}, "", url.pathname + url.search + url.hash);
+      r = parseRoute();
+    }
+  }
   console.log("Router: parsed route:", r);
   setRoute(r.name);
   setTag(r.tag || "");

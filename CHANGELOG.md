@@ -2,6 +2,22 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
+## [3.32.2] - 2026-08-17
+
+### Changed
+
+- **Board filter assignee list** - When signed in, **Assigned to me** is the
+  canonical current-user option; the duplicate named member entry is omitted.
+  Bookmarked numeric assignee IDs still highlight **Assigned to me**. Anonymous
+  boards are unchanged.
+
+### Added
+
+- **Remembered board sort** - Signed-in users persist Default / Newest / Oldest
+  through the existing user-preferences API. Entering a board without `?sort=`
+  applies the saved preference; an explicit `?sort=newest` or `?sort=oldest`
+  still wins for that navigation and does not overwrite the stored preference.
+
 ## [3.32.1] - 2026-08-15
 
 ### Fixed
