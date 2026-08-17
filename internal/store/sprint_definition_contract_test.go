@@ -96,8 +96,8 @@ func TestSprintDefinitionStoreOwnsDefinitionValidationByState(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateSprint: %v", err)
 		}
-		if err := st.ActivateSprint(ctx, project.ID, active.ID); err != nil {
-			t.Fatalf("ActivateSprint: %v", err)
+		if _, err := st.db.ExecContext(ctx, `UPDATE sprints SET state = ?, started_at = ? WHERE id = ?`, SprintStateActive, start.UnixMilli(), active.ID); err != nil {
+			t.Fatalf("set active fixture state: %v", err)
 		}
 		newName := "renamed active"
 		if err := st.UpdateSprint(ctx, active.ID, UpdateSprintInput{Name: &newName}); err == nil || !strings.Contains(err.Error(), "only endAt") {
