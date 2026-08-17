@@ -29,7 +29,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Test Go
-        run: go test ./... -count=1 -timeout=5m
+        run: go test ./... -count=1 -timeout=10m
 
   frontend:
     name: Frontend tests

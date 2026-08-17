@@ -77,6 +77,7 @@ type todoItem struct {
 	Tags             []string   `json:"tags"`
 	EstimationPoints *int64     `json:"estimationPoints"`
 	AssigneeUserId   *int64     `json:"assigneeUserId"`
+	CreatedByUserId  *int64     `json:"createdByUserId"`
 	SprintId         *int64     `json:"sprintId"`
 	PriorityKey      *string    `json:"priorityKey"`
 	CreatedAt        time.Time  `json:"createdAt"`

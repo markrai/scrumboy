@@ -45,7 +45,7 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
 import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
 import type { BoardMember } from '../state/state.js';
-import { Board, Todo, MobileTab, TodoStatus, LanePageResponse } from '../types.js';
+import { Board, Todo, MobileTab, NO_PRIORITY_FILTER_VALUE, TodoStatus, LanePageResponse } from '../types.js';
 import {
   applyMobileLaneTabStyles,
   buildMobileTabsInnerHtml,
@@ -1652,6 +1652,11 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   updateMobileTabs();
 }
 
+function priorityFilterExistsOnBoard(board: Board, priority: string | null): boolean {
+  if (!priority || priority === NO_PRIORITY_FILTER_VALUE) return true;
+  return (board.priorityOrder ?? []).some((tier) => tier.key === priority);
+}
+
 // Load board by slug
 export async function loadBoardBySlug(slug: string | null, tag: string | null, search: string | null, sprintId: string | null = null, assignee: string | null = null, sort: string | null = null, priority: string | null = null): Promise<void> {
   ensureBoardI18nBinding();
@@ -1707,6 +1712,12 @@ export async function loadBoardBySlug(slug: string | null, tag: string | null, s
   const currentSort = currentUrl.searchParams.get("sort") || null;
   const currentPriority = currentUrl.searchParams.get("priority") || null;
   if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null) || (currentSort || null) !== (requestSort || null) || (currentPriority || null) !== (requestPriority || null)) return;
+  if (!priorityFilterExistsOnBoard(board, requestPriority)) {
+    currentUrl.searchParams.delete("priority");
+    history.replaceState({}, "", currentUrl.pathname + currentUrl.search + currentUrl.hash);
+    await loadBoardBySlug(slug, requestTag, requestSearch, requestSprintId, requestAssignee, requestSort, null);
+    return;
+  }
   resetBoardLimitPerLaneFloor();
   // Defer sprints — render board first, then load in background
   clearSprintChipDataIfSlugChanged(slug);

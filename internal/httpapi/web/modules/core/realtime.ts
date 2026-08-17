@@ -1,6 +1,7 @@
 /**
  * Global EventSource for logged-in users: GET /api/me/realtime
- * Emits deduplicated `realtime:event` on the app bus; handles assignment side effects here (not in board.ts).
+ * Emits deduplicated `realtime:event` on the app bus; handles assignment and
+ * creator-activity toast side effects here (not in board.ts).
  */
 
 import { emit } from '../events.js';
@@ -38,7 +39,14 @@ type RealtimePayload = {
   type?: string;
   projectId?: number;
   projectSlug?: string | null;
-  payload?: { todoId?: number; title?: string; assigneeId?: number; actorUserId?: number };
+  payload?: {
+    todoId?: number;
+    localId?: number;
+    title?: string;
+    activityReason?: string;
+    assigneeId?: number;
+    actorUserId?: number;
+  };
 };
 
 function handleIncomingMessage(ev: MessageEvent): void {
@@ -63,6 +71,7 @@ function handleIncomingMessage(ev: MessageEvent): void {
 
   emit('realtime:event', parsed);
   handleTodoAssignedSideEffects(parsed);
+  handleCreatorActivitySideEffects(parsed);
 }
 
 /**
@@ -183,4 +192,26 @@ function handleTodoAssignedSideEffects(parsed: RealtimePayload): void {
     return;
   }
   incrementUnread();
+}
+
+function handleCreatorActivitySideEffects(parsed: RealtimePayload): void {
+  if (parsed.type !== 'todo.creator_activity') return;
+  if (!getAuthStatusAvailable() || !getUser()) return;
+  if (typeof parsed.projectId !== 'number' || parsed.projectId <= 0) return;
+  if (typeof parsed.projectSlug !== 'string' || parsed.projectSlug === '') return;
+  const inner = parsed.payload;
+  if (!inner || typeof inner.todoId !== 'number' || inner.todoId <= 0) return;
+  if (typeof inner.localId !== 'number' || inner.localId <= 0) return;
+  if (inner.activityReason !== 'todo_updated' && inner.activityReason !== 'todo_moved') return;
+
+  const title = typeof inner.title === 'string' ? inner.title : '';
+  showToast(t('realtime.creatorActivity', { title: title || t('realtime.todoFallback') }));
+}
+
+export function __handleIncomingRealtimeMessageForTest(data: string): void {
+  handleIncomingMessage(new MessageEvent('message', { data }));
+}
+
+export function __resetRealtimeSeenEventIdsForTest(): void {
+  seenEventIds.clear();
 }

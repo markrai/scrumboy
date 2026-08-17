@@ -95,6 +95,7 @@ type TodoExport struct {
 	SprintNumber     *int64    `json:"sprintNumber,omitempty"` // project-local sprint number; nil = backlog
 	EstimationPoints *int64    `json:"estimationPoints,omitempty"`
 	AssigneeUserId   *int64    `json:"assigneeUserId,omitempty"`
+	CreatedByUserId  *int64    `json:"createdByUserId,omitempty"`
 	Tags             []string  `json:"tags"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
@@ -442,6 +443,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 				SprintNumber:       sprintNumber,
 				EstimationPoints:   cloneInt64Ptr(t.EstimationPoints),
 				AssigneeUserId:     cloneInt64Ptr(t.AssigneeUserID),
+				CreatedByUserId:    cloneInt64Ptr(t.CreatedByUserID),
 				Tags:               t.Tags,
 				CreatedAt:          t.CreatedAt,
 				UpdatedAt:          t.UpdatedAt,
@@ -746,7 +748,7 @@ LIMIT 1`, projectID).Scan(&localID, &key)
 func (s *Store) exportAllTodosForProject(ctx context.Context, projectID int64, mode Mode) ([]Todo, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
-		  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
+		  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
 		  COALESCE(GROUP_CONCAT(g.name, ','), '') AS tags_csv
 		FROM todos t
 		LEFT JOIN todo_tags tt ON tt.todo_id = t.id
@@ -768,11 +770,12 @@ func (s *Store) exportAllTodosForProject(ctx context.Context, projectID int64, m
 		var localID sql.NullInt64
 		var estimationPoints sql.NullInt64
 		var assigneeUserID sql.NullInt64
+		var createdByUserID sql.NullInt64
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
 		var tagsCSV string
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &tagsCSV); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &tagsCSV); err != nil {
 			return nil, fmt.Errorf("scan todo: %w", err)
 		}
 		if sprintID.Valid {
@@ -795,6 +798,10 @@ func (s *Store) exportAllTodosForProject(ctx context.Context, projectID int64, m
 		if assigneeUserID.Valid {
 			v := assigneeUserID.Int64
 			t.AssigneeUserID = &v
+		}
+		if createdByUserID.Valid {
+			v := createdByUserID.Int64
+			t.CreatedByUserID = &v
 		}
 		t.CreatedAt = time.UnixMilli(createdAtMs).UTC()
 		t.UpdatedAt = time.UnixMilli(updatedAtMs).UTC()
@@ -1281,6 +1288,11 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 			if assigneeVal != nil {
 				assigneeForSQL = *assigneeVal
 			}
+			createdByVal := resolveImportCreatedBy(ctx, tx, tExport.CreatedByUserId)
+			var createdByForSQL any
+			if createdByVal != nil {
+				createdByForSQL = *createdByVal
+			}
 			priorityForSQL := priorityKeyForInsert(tExport)
 			if key, ok := priorityForSQL.(string); ok {
 				if _, err := validateProjectPriorityKeyTx(ctx, tx, targetProject.ID, key); err != nil {
@@ -1289,9 +1301,9 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 			}
 
 			res, err := tx.ExecContext(ctx, `
-				INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, priority_key, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				targetProject.ID, newLocalID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQL, priorityForSQL, createdAtMs, updatedAtMs)
+				INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, priority_key, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				targetProject.ID, newLocalID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQL, createdByForSQL, priorityForSQL, createdAtMs, updatedAtMs)
 			if err != nil {
 				return nil, fmt.Errorf("insert todo: %w", err)
 			}
@@ -1938,6 +1950,11 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 				if assigneeValNew != nil {
 					assigneeForSQLNew = *assigneeValNew
 				}
+				createdByValNew := resolveImportCreatedBy(ctx, tx, tExport.CreatedByUserId)
+				var createdByForSQLNew any
+				if createdByValNew != nil {
+					createdByForSQLNew = *createdByValNew
+				}
 
 				// Check for local_id collision
 				var maxLocalID int64
@@ -1953,9 +1970,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 
 				doneAtForInsert := resolveImportDoneAt(tExport.DoneAt, status, updatedAtMs)
 				_, err = tx.ExecContext(ctx, `
-					INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					projectID, tExport.LocalID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQLNew, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
+					INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					projectID, tExport.LocalID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQLNew, createdByForSQLNew, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
 				if err != nil {
 					if strings.Contains(err.Error(), "UNIQUE constraint failed: todos.project_id, todos.local_id") {
 						// Still collided, regenerate
@@ -1963,9 +1980,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 						tExport.LocalID = maxLocalID
 						result.Warnings = append(result.Warnings, fmt.Sprintf("Todo localId collided again, regenerated to %d", tExport.LocalID))
 						_, err = tx.ExecContext(ctx, `
-							INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-							VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-							projectID, tExport.LocalID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQLNew, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
+							INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
+							VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+							projectID, tExport.LocalID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQLNew, createdByForSQLNew, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
 						if err != nil {
 							return nil, fmt.Errorf("insert todo with regenerated local_id: %w", err)
 						}
@@ -2243,6 +2260,11 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 			if assigneeVal != nil {
 				assigneeForSQL = *assigneeVal
 			}
+			createdByVal := resolveImportCreatedBy(ctx, tx, tExport.CreatedByUserId)
+			var createdByForSQL any
+			if createdByVal != nil {
+				createdByForSQL = *createdByVal
+			}
 			doneAtForInsert := resolveImportDoneAt(tExport.DoneAt, status, updatedAtMs)
 
 			var sprintIDForSQL any
@@ -2260,9 +2282,9 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 
 			// Insert todo with remapped project_id, preserving localId (schema uses column_key, not status)
 			_, err = tx.ExecContext(ctx, `
-				INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				newProjectID, localID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQL, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
+				INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				newProjectID, localID, tExport.Title, tExport.Body, columnKey, tExport.Rank, estimationPoints, assigneeForSQL, createdByForSQL, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
 			if err != nil {
 				return nil, fmt.Errorf("insert todo: %w", err)
 			}

@@ -2,7 +2,7 @@
  * Debounced + cooldown-scoped resync after foreground resume (missed SSE events).
  */
 import { invalidateBoard } from "../orchestration/board-refresh.js";
-import { getAssigneeFromUrl, getSortFromUrl, getAuthStatusAvailable, getSlug, getTag, getSearch, getSprintIdFromUrl, getUser, } from "../state/selectors.js";
+import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getAuthStatusAvailable, getSlug, getTag, getSearch, getSprintIdFromUrl, getUser, } from "../state/selectors.js";
 import { hydrateNotificationsForUser } from "./notifications.js";
 const RESUME_DEBOUNCE_MS = 400;
 const RESUME_COOLDOWN_MS = 15000;
@@ -32,7 +32,7 @@ async function runResumeResync(reason) {
     const slug = getSlug();
     if (slug) {
         try {
-            await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+            await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         }
         catch (err) {
             console.warn("Resume board resync failed:", err);

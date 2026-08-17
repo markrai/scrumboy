@@ -59,16 +59,18 @@ func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, stri
 // MoveServiceDependencies names the persistence and ancillary capabilities
 // used by the canonical REST move use case.
 type MoveServiceDependencies struct {
-	Move    MoveStore
-	Refresh BoardRefreshPublisher
+	Move            MoveStore
+	Refresh         BoardRefreshPublisher
+	CreatorRequests CreatorNotificationRequestPublisher
 }
 
 // MoveService owns REST move persistence and post-commit refresh sequencing.
 // Slug access remains in the shared REST board router so the route can reuse
 // its already-authorized ProjectContext without a second lookup.
 type MoveService struct {
-	move    MoveStore
-	refresh BoardRefreshPublisher
+	move            MoveStore
+	refresh         BoardRefreshPublisher
+	creatorRequests CreatorNotificationRequestPublisher
 }
 
 func NewMoveService(deps MoveServiceDependencies) *MoveService {
@@ -76,7 +78,11 @@ func NewMoveService(deps MoveServiceDependencies) *MoveService {
 	if refresh == nil {
 		refresh = nopBoardRefreshPublisher{}
 	}
-	return &MoveService{move: deps.Move, refresh: refresh}
+	creatorRequests := deps.CreatorRequests
+	if creatorRequests == nil {
+		creatorRequests = nopCreatorNotificationRequestPublisher{}
+	}
+	return &MoveService{move: deps.Move, refresh: refresh, creatorRequests: creatorRequests}
 }
 
 // ResolvedMoveTarget carries the project context already authorized by the
@@ -124,6 +130,7 @@ func (m *PreparedMove) Move(command MoveCommand) (MoveResult, error) {
 		return MoveResult{}, err
 	}
 
-	m.service.refresh.PublishBoardRefresh(m.ctx, project.ID, RefreshReasonTodoMoved)
+	effectCtx := publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved, true)
+	m.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoMoved)
 	return MoveResult{Project: project, Todo: todo}, nil
 }

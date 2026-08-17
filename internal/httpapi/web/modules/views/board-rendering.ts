@@ -1,6 +1,6 @@
 import { columnsSpec } from '../features/drag-drop.js';
 import type { BoardMember } from '../state/state.js';
-import { Board, PriorityTier, Todo } from '../types.js';
+import { Board, NO_PRIORITY_FILTER_VALUE, PriorityTier, Todo } from '../types.js';
 import {
   escapeHTML,
   isTemporaryBoard,
@@ -422,11 +422,14 @@ function assigneeFilterOptionsHtml(assignee: string | null, boardMembers: BoardM
   const allAssigneesLabel = escapeHTML(t("board.filters.allAssignees"));
   const unassignedLabel = escapeHTML(t("board.filters.unassigned"));
   const assignedToMeLabel = escapeHTML(t("board.filters.assignedToMe"));
-  const optionClass = (value: string) => `search-filter-option${current === value ? " is-active" : ""}`;
+  const currentUserId = user && typeof user.id === "number" ? user.id : null;
+  const meIsActive = current === "me" || (currentUserId != null && current === String(currentUserId));
+  const optionClass = (value: string, active = current === value) => `search-filter-option${active ? " is-active" : ""}`;
   const meOption = user
-    ? `<button type="button" class="${optionClass("me")}" data-assignee-option="me" data-i18n-text="board.filters.assignedToMe">${assignedToMeLabel}</button>`
+    ? `<button type="button" class="${optionClass("me", meIsActive)}" data-assignee-option="me" data-i18n-text="board.filters.assignedToMe">${assignedToMeLabel}</button>`
     : "";
   const memberOptions = boardMembers
+    .filter((m) => currentUserId == null || m.userId !== currentUserId)
     .map((m) => {
       const value = String(m.userId);
       return `<button type="button" class="${optionClass(value)}" data-assignee-option="${escapeHTML(value)}">${escapeHTML(memberDisplayName(m))}</button>`;
@@ -467,7 +470,7 @@ function priorityFilterOptionsHtml(priority: string | null, tiers: PriorityTier[
     .join("");
   return `
       <button type="button" class="${optionClass("")}" data-priority-option="" data-i18n-text="board.filters.allPriorities">${allPrioritiesLabel}</button>
-      <button type="button" class="${optionClass("none")}" data-priority-option="none" data-i18n-text="board.filters.noPriority">${noPriorityLabel}</button>
+      <button type="button" class="${optionClass(NO_PRIORITY_FILTER_VALUE)}" data-priority-option="${NO_PRIORITY_FILTER_VALUE}" data-i18n-text="board.filters.noPriority">${noPriorityLabel}</button>
       ${tierOptions}
   `;
 }

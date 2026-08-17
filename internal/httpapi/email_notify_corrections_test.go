@@ -24,6 +24,7 @@ type emailNotifyFakeStore struct {
 	projectCalls int
 	memberCalls  int
 	userCalls    int
+	roles        map[int64]store.ProjectRole
 }
 
 func (s *emailNotifyFakeStore) GetEmailNotifyPref(_ context.Context, userID int64) (store.EmailNotifyPref, error) {
@@ -54,6 +55,16 @@ func (s *emailNotifyFakeStore) GetUser(_ context.Context, userID int64) (store.U
 		return store.User{}, store.ErrNotFound
 	}
 	return u, nil
+}
+
+func (s *emailNotifyFakeStore) GetProjectRole(_ context.Context, _ int64, userID int64) (store.ProjectRole, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	role, ok := s.roles[userID]
+	if !ok {
+		return "", store.ErrNotFound
+	}
+	return role, nil
 }
 
 func (s *emailNotifyFakeStore) ListProjectMembers(_ context.Context, _ int64, _ int64) ([]store.ProjectMember, error) {
@@ -91,6 +102,7 @@ func newEmailNotifyFake() *emailNotifyFakeStore {
 		},
 		prefs:    map[int64]store.EmailNotifyPref{1: pref, 2: pref, 3: pref},
 		prefErrs: make(map[int64]error),
+		roles:    map[int64]store.ProjectRole{1: store.RoleViewer, 2: store.RoleViewer, 3: store.RoleViewer},
 	}
 }
 

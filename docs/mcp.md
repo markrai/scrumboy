@@ -367,6 +367,13 @@ including non-string JSON values, return `VALIDATION_ERROR` with
 `details.field: "assignee"` instead of silently returning an unfiltered board.
 A valid unknown or non-member user ID returns an empty board.
 
+`board_get` accepts an optional string `priority` filter. Omit it or send an
+empty string for all priorities, use `"**none**"` for todos without a priority,
+or pass a literal priority-tier key. Priority keys use lowercase letters,
+digits, and underscores, so the `*` characters keep the sentinel outside that
+grammar and a real tier key such as `"none"` remains filterable. An unknown tier
+key returns an empty board.
+
 `board_get` also accepts an optional string `sort`: `"newest"` or `"oldest"`
 orders items within each lane by creation time with a stable ID tie-break.
 Omit `sort` to preserve manual drag-rank order.
@@ -627,7 +634,7 @@ curl -sS -X POST 'https://YOUR_HOST/mcp' \
   }'
 ```
 
-Minimal input requires at least `projectSlug` and `title`. Success includes `data.todo` as in the schema section above.
+Minimal input requires at least `projectSlug` and `title`. Success includes `data.todo` as in the schema section above. Todo results include read-only `createdByUserId`: the authenticated creation actor's historical user ID, or explicit JSON `null` when no safe attribution exists. The value does not imply current project membership or notification eligibility and cannot be supplied in create/update inputs. Successful MCP update/move mutations may publish an internal creator-consideration request through their prepared application services, while still publishing no `board.refresh_needed`. The request nominates only the historical creator; a separate fresh project/member check may produce an internal point-in-time authorized-recipient decision. The SSE bridge then repeats that access check before it may emit one private `todo.creator_activity` event to the current creator. Separately, a material mutation may create a creator-email candidate; the mail worker freshly reauthorizes access and rechecks the email-only `createdByMe` preference immediately before rendering each send attempt. MCP/Agora do not gain card-activity fallback because they still emit no board refresh. The internal events are never exposed verbatim, and creator Web Push and webhooks remain absent.
 
 ### Example Workflow
 

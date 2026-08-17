@@ -110,7 +110,7 @@ func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if raw != `{"v":1,"enabled":true,"assigned":true,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
+	if raw != `{"v":2,"enabled":true,"assigned":true,"createdByMe":false,"cardActivity":true,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
 		t.Fatalf("expected canonical stored preference, got %s", raw)
 	}
 
@@ -131,7 +131,7 @@ func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *test
 	if !errors.Is(err, ErrValidation) {
 		t.Errorf("expected ErrValidation, got: %v", err)
 	}
-	if _, err := st.db.ExecContext(ctx, `UPDATE user_preferences SET value = ? WHERE user_id = ? AND key = ?`, `{"v":2}`, user.ID, "emailNotifications"); err != nil {
+	if _, err := st.db.ExecContext(ctx, `UPDATE user_preferences SET value = ? WHERE user_id = ? AND key = ?`, `{"v":3}`, user.ID, "emailNotifications"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.GetEmailNotifyPref(ctx, user.ID); !errors.Is(err, ErrValidation) {

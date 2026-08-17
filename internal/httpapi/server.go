@@ -28,6 +28,14 @@ import (
 	"scrumboy/internal/version"
 )
 
+// MCPHandler is the MCP HTTP surface plus its startup-only creator-request
+// dependency hook. NewServer binds the hook before returning, so production
+// serving cannot begin with an incompletely configured MCP adapter.
+type MCPHandler interface {
+	http.Handler
+	BindCreatorNotificationRequestPublisher(todoapp.CreatorNotificationRequestPublisher)
+}
+
 type Options struct {
 	Logger              *log.Logger
 	MaxRequestBody      int64
@@ -39,7 +47,7 @@ type Options struct {
 	AuthRateLimit       *ratelimit.Limiter
 	OAuthDCRRateLimit   *ratelimit.Limiter
 	OAuthTokenRateLimit *ratelimit.Limiter
-	MCPHandler          http.Handler
+	MCPHandler          MCPHandler
 	AgoraHandler        http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
@@ -98,19 +106,23 @@ type Options struct {
 }
 
 type Server struct {
-	store               storeAPI
-	boardReads          *boardapp.ReadService
-	todoCreates         *todoapp.CreateService
-	todoDeletes         *todoapp.DeleteService
-	todoMoves           *todoapp.MoveService
-	todoUpdates         *todoapp.UpdateService
-	todoLinkMutations   *todolinkapp.RESTMutationService
-	sprintDefinitions   *sprintapp.RESTDefinitionService
-	sprintLifecycle     *sprintapp.RESTLifecycleService
-	sprintDeletions     *sprintapp.RESTDeletionService
-	workflowMutations   *workflowapp.RESTMutationService
-	priorityMutations   *priorityapp.RESTMutationService
-	membershipMutations *membershipapp.RESTMutationService
+	store                         storeAPI
+	boardReads                    *boardapp.ReadService
+	todoCreates                   *todoapp.CreateService
+	todoDeletes                   *todoapp.DeleteService
+	todoMoves                     *todoapp.MoveService
+	todoUpdates                   *todoapp.UpdateService
+	todoLegacyDeletes             *todoapp.LegacyDeleteService
+	todoLegacyMoves               *todoapp.LegacyMoveService
+	todoLegacyUpdates             *todoapp.LegacyUpdateService
+	creatorNotificationAuthorizer *todoapp.CreatorNotificationAuthorizationService
+	todoLinkMutations             *todolinkapp.RESTMutationService
+	sprintDefinitions             *sprintapp.RESTDefinitionService
+	sprintLifecycle               *sprintapp.RESTLifecycleService
+	sprintDeletions               *sprintapp.RESTDeletionService
+	workflowMutations             *workflowapp.RESTMutationService
+	priorityMutations             *priorityapp.RESTMutationService
+	membershipMutations           *membershipapp.RESTMutationService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -452,7 +464,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		oauthTokenRateLimit = ratelimit.New(60, time.Minute)
 	}
 	hub := NewHub(defaultSubscriberBuffer)
-	sseBridgeConsumer := newSSEBridge(hub)
+	creatorNotificationAuthorizer := todoapp.NewCreatorNotificationAuthorizationService(st)
+	sseBridgeConsumer := newSSEBridge(hub, creatorNotificationAuthorizer)
 	whQueue := newWebhookQueue(logger)
 	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
 	pushDebug := opts.PushDebug
@@ -524,7 +537,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 	}
 
 	server := &Server{
-		store: st,
+		store:                         st,
+		creatorNotificationAuthorizer: creatorNotificationAuthorizer,
 		boardReads: boardapp.NewReadService(boardapp.ReadServiceDependencies{
 			Initial:      st,
 			Lane:         st,
@@ -592,6 +606,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
 		server.emitRefreshNeeded(ctx, projectID, reason)
 	})
+	creatorRequestPublisher := todoapp.CreatorNotificationRequestPublisher(server)
 	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
 		Create:  st,
 		Refresh: boardRefreshPublisher,
@@ -601,12 +616,31 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh: boardRefreshPublisher,
 	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
-		Move:    st,
-		Refresh: boardRefreshPublisher,
+		Move:            st,
+		Refresh:         boardRefreshPublisher,
+		CreatorRequests: creatorRequestPublisher,
 	})
 	server.todoUpdates = todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
-		Update:  st,
-		Refresh: boardRefreshPublisher,
+		Update:          st,
+		Refresh:         boardRefreshPublisher,
+		CreatorRequests: creatorRequestPublisher,
+	})
+	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
+		Projects: st,
+		Delete:   st,
+		Refresh:  boardRefreshPublisher,
+	})
+	server.todoLegacyMoves = todoapp.NewLegacyMoveService(todoapp.LegacyMoveServiceDependencies{
+		Move:            st,
+		Refresh:         boardRefreshPublisher,
+		Projects:        st,
+		CreatorRequests: creatorRequestPublisher,
+	})
+	server.todoLegacyUpdates = todoapp.NewLegacyUpdateService(todoapp.LegacyUpdateServiceDependencies{
+		Update:          st,
+		Refresh:         boardRefreshPublisher,
+		Projects:        st,
+		CreatorRequests: creatorRequestPublisher,
 	})
 	server.todoLinkMutations = todolinkapp.NewRESTMutationService(todolinkapp.RESTMutationServiceDependencies{
 		Sources:   st,
@@ -648,6 +682,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Members:   st,
 		Publisher: membershipMutationPublisher{server: server},
 	})
+	if opts.MCPHandler != nil {
+		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)
+	}
 	return server
 }
 
@@ -811,9 +848,81 @@ func (s *Server) PublishEvent(ctx context.Context, e eventbus.Event) {
 	_ = s.fanout.Publish(ctx, e)
 }
 
+// PublishCreatorNotificationRequest records the internal consideration request,
+// then performs the Phase 3 fresh-access check. Neither internal event is
+// exposed verbatim. SSE and creator email independently treat the authorized
+// event as a candidate and repeat current-access checks at their delivery
+// boundaries; push and webhooks remain excluded.
+func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request todoapp.CreatorNotificationRequest) {
+	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRequestedPayload{
+		ProjectID:             request.ProjectID,
+		ProjectSlug:           request.ProjectSlug,
+		TodoID:                request.TodoID,
+		LocalID:               request.LocalID,
+		Title:                 request.Title,
+		ActivityReason:        request.ActivityReason,
+		CreatedByUserID:       request.CreatedByUserID,
+		ActorUserID:           request.ActorUserID,
+		MaterialChanged:       request.MaterialChanged,
+		AssignmentChanged:     request.AssignmentChanged,
+		ToAssigneeUserID:      request.ToAssigneeUserID,
+		CardActivityCandidate: request.CardActivityCandidate,
+	})
+	if err != nil {
+		return
+	}
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      eventbus.TodoCreatorNotificationRequestedEventType,
+		ProjectID: request.ProjectID,
+		Payload:   payload,
+	})
+
+	authorized, ok, err := s.creatorNotificationAuthorizer.Authorize(ctx, request)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Printf(
+				"creator notification authorization lookup failed project_id=%d recipient_user_id=%d: %v",
+				request.ProjectID,
+				request.CreatedByUserID,
+				err,
+			)
+		}
+		return
+	}
+	if !ok {
+		return
+	}
+	s.publishAuthorizedCreatorNotification(ctx, authorized)
+}
+
+func (s *Server) publishAuthorizedCreatorNotification(ctx context.Context, authorized todoapp.AuthorizedCreatorNotification) {
+	payload, err := json.Marshal(eventbus.TodoCreatorNotificationRecipientAuthorizedPayload{
+		ProjectID:             authorized.ProjectID,
+		ProjectSlug:           authorized.ProjectSlug,
+		TodoID:                authorized.TodoID,
+		LocalID:               authorized.LocalID,
+		Title:                 authorized.Title,
+		ActivityReason:        authorized.ActivityReason,
+		RecipientUserID:       authorized.RecipientUserID,
+		ActorUserID:           authorized.ActorUserID,
+		MaterialChanged:       authorized.MaterialChanged,
+		AssignmentChanged:     authorized.AssignmentChanged,
+		ToAssigneeUserID:      authorized.ToAssigneeUserID,
+		CardActivityCandidate: authorized.CardActivityCandidate,
+	})
+	if err != nil {
+		return
+	}
+	s.PublishEvent(ctx, eventbus.Event{
+		Type:      eventbus.TodoCreatorNotificationRecipientAuthorizedEventType,
+		ProjectID: authorized.ProjectID,
+		Payload:   payload,
+	})
+}
+
 // PublishTodoAssigned emits a "todo.assigned" event through the event bus.
 // Designed to be passed to store.SetTodoAssignedPublisher.
-func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64) {
+func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64, facts store.TodoAssignedMutationFacts) {
 	payload, _ := json.Marshal(eventbus.TodoAssignedPayload{
 		ProjectID:       projectID,
 		ProjectSlug:     projectSlug,
@@ -826,7 +935,7 @@ func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, loc
 		ToAssigneeUID:   to,
 		ActorUserID:     actorUserID,
 	})
-	s.PublishEvent(ctx, eventbus.Event{
+	s.PublishEvent(withTodoAssignedMutationFacts(ctx, facts), eventbus.Event{
 		Type:      "todo.assigned",
 		ProjectID: projectID,
 		Payload:   payload,

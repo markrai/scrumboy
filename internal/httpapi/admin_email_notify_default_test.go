@@ -24,7 +24,7 @@ func TestAdminEmailNotifyDefault_GetDefaultsToHardcodedFallback(t *testing.T) {
 	if out["customized"] != false {
 		t.Fatalf("expected customized=false, got %v", out["customized"])
 	}
-	if out["value"] != `{"v":1,"enabled":false,"assigned":true,"cardActivity":false,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
+	if out["value"] != `{"v":2,"enabled":false,"assigned":true,"createdByMe":false,"cardActivity":false,"sprintActivity":false,"projectActivity":false,"addedToProject":true}` {
 		t.Fatalf("unexpected default value: %v", out["value"])
 	}
 }
@@ -92,7 +92,7 @@ func TestAdminEmailNotifyDefault_PutRequiresAdminOrOwnerAndSeedsNewUsers(t *test
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("get new user preferences: expected 200, got %d", resp.StatusCode)
 	}
-	if pref["value"] != `{"v":1,"enabled":true,"assigned":true,"cardActivity":false,"sprintActivity":false,"projectActivity":true,"addedToProject":true}` {
+	if pref["value"] != `{"v":2,"enabled":true,"assigned":true,"createdByMe":false,"cardActivity":false,"sprintActivity":false,"projectActivity":true,"addedToProject":true}` {
 		t.Fatalf("new user should have inherited org default, got %v", pref["value"])
 	}
 
@@ -253,7 +253,7 @@ func TestAdminEmailNotifyDefault_DeleteResetsToUnset(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("before user prefs: expected 200, got %d", resp.StatusCode)
 	}
-	if beforePref["value"] != `{"v":1,"enabled":true,"assigned":true,"cardActivity":false,"sprintActivity":false,"projectActivity":true,"addedToProject":true}` {
+	if beforePref["value"] != `{"v":2,"enabled":true,"assigned":true,"createdByMe":false,"cardActivity":false,"sprintActivity":false,"projectActivity":true,"addedToProject":true}` {
 		t.Fatalf("before user's inherited preference should be unchanged, got %v", beforePref["value"])
 	}
 

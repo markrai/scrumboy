@@ -56,9 +56,10 @@ sequenceDiagram
 ```
 
 As of this tree the highest embedded file is
-`063_add_todos_priority_key.sql`. Migration 061 adds the reversible
+`064_add_todo_created_by_user_id.sql`. Migration 061 adds the reversible
 `projects.sprints_enabled` capability, 062 creates and seeds
-`project_priorities`, and 063 adds nullable `todos.priority_key`. New files
+`project_priorities`, 063 adds nullable `todos.priority_key`, and 064 adds
+nullable `todos.created_by_user_id`. New files
 under `internal/migrate/migrations/` are applied automatically; do not encode a
 fixed upper bound in the migration runner.
 
@@ -67,5 +68,14 @@ fixed upper bound in the migration runner.
 `priority_key` is valid only when the same project owns that tier. Supported
 CRUD and import paths enforce this membership invariant; tier deletion is
 blocked while in use.
+
+`todos.created_by_user_id` records immutable historical attribution at create
+time when an authenticated actor exists. It is not a membership or
+authorization grant. Removing a creator from a project leaves the attribution
+intact; deleting the user sets it to `NULL`. `NULL` also represents
+unauthenticated creation and rows that predate migration 064. The todo dialog
+shows the creator only when that identifier currently resolves through the
+board's authorized member projection; storage can therefore retain attribution
+that the UI intentionally does not display.
 
 Authorization checks live in store methods (`CheckProjectRole`, system roles), not only in HTTP handlers.

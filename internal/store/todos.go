@@ -237,10 +237,14 @@ func (s *Store) CreateTodo(ctx context.Context, projectID int64, in CreateTodoIn
 		if in.PriorityKey != nil {
 			priorityKeyArg = *in.PriorityKey
 		}
+		var createdByArg any = nil
+		if userIDPtr != nil {
+			createdByArg = *userIDPtr
+		}
 		res, err := tx.ExecContext(ctx, `
-INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			projectID, localID, in.Title, in.Body, in.ColumnKey, newRank, estimationPoints, assigneeArg, sprintIDArg, priorityKeyArg, nowMs, nowMs, doneAtArg,
+INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_by_user_id, created_at, updated_at, done_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			projectID, localID, in.Title, in.Body, in.ColumnKey, newRank, estimationPoints, assigneeArg, sprintIDArg, priorityKeyArg, createdByArg, nowMs, nowMs, doneAtArg,
 		)
 		if err != nil {
 			// Retry on unique collision for (project_id, local_id).
@@ -299,6 +303,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			Rank:             newRank,
 			EstimationPoints: cloneInt64Ptr(in.EstimationPoints),
 			AssigneeUserID:   cloneInt64Ptr(in.AssigneeUserID),
+			CreatedByUserID:  cloneInt64Ptr(userIDPtr),
 			SprintID:         cloneInt64Ptr(in.SprintID),
 			PriorityKey:      cloneStringPtr(in.PriorityKey),
 			Tags:             tags,
@@ -313,7 +318,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		todo.AssignmentChanged = hadAssignee
 		if s.todoAssignedPublisher != nil && hadAssignee {
 			actorID, _ := UserIDFromContext(ctx)
-			s.todoAssignedPublisher(ctx, projectID, todoID, localID, in.Title, p.Slug, "todo_created", nil, in.AssigneeUserID, actorID)
+			s.todoAssignedPublisher(ctx, projectID, todoID, localID, in.Title, p.Slug, "todo_created", nil, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
+				CreatedByUserID: cloneInt64Ptr(todo.CreatedByUserID),
+				DurableProject:  p.ExpiresAt == nil,
+			})
 		}
 		return todo, nil
 	}
@@ -349,6 +357,18 @@ func containsString(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, value := range a {
+		if !containsString(b, value) {
+			return false
+		}
+	}
+	return true
 }
 
 func sameInt64Ptr(a, b *int64) bool {
@@ -463,6 +483,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 				if err := tx.Commit(); err != nil {
 					return Todo{}, fmt.Errorf("commit update todo: %w", err)
 				}
+				existing.MaterialChanged = existing.Body != in.Body
 				existing.Body = in.Body
 				existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 				if err := s.UpdateBoardActivity(ctx, existing.ProjectID); err != nil {
@@ -569,6 +590,21 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			return Todo{}, err
 		}
 	}
+	var effectiveSprint *int64
+	if in.ClearSprint {
+		effectiveSprint = nil
+	} else if in.SprintID != nil {
+		effectiveSprint = in.SprintID
+	} else {
+		effectiveSprint = existing.SprintID
+	}
+	materialChanged := existing.Title != in.Title ||
+		existing.Body != in.Body ||
+		assignmentChanged ||
+		!sameInt64Ptr(existing.EstimationPoints, in.EstimationPoints) ||
+		!sameInt64Ptr(existing.SprintID, effectiveSprint) ||
+		!sameStringPtr(existing.PriorityKey, effectivePriorityKey) ||
+		!sameStringSet(existing.Tags, tags)
 
 	var userIDPtr *int64
 	if !ok && len(tags) > 0 {
@@ -675,14 +711,6 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 
 	// Audit todo_updated: diff title, body, sprint, estimation, tags; emit only if changed
-	var effectiveSprint *int64
-	if in.ClearSprint {
-		effectiveSprint = nil
-	} else if in.SprintID != nil {
-		effectiveSprint = in.SprintID
-	} else {
-		effectiveSprint = existing.SprintID
-	}
 	var changedFields []string
 	if existing.Title != in.Title {
 		changedFields = append(changedFields, "title")
@@ -788,11 +816,15 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.AssignmentChanged = assignmentChanged
+	existing.MaterialChanged = materialChanged
 
 	if s.todoAssignedPublisher != nil && assignmentChanged && !isAnonymousBoard {
 		actorID, _ := UserIDFromContext(ctx)
 		// Use committed title (existing.Title), not in.Title — partial PATCH may omit title.
-		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID)
+		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
+			CreatedByUserID: cloneInt64Ptr(existing.CreatedByUserID),
+			DurableProject:  p.ExpiresAt == nil,
+		})
 	}
 
 	return existing, nil
@@ -973,28 +1005,32 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 		_ = err // Log but don't fail
 	}
 
+	materialChanged := existing.ColumnKey != toColumnKey || existing.Rank != newRank
 	existing.ColumnKey = toColumnKey
 	existing.Rank = newRank
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
+	existing.MaterialChanged = materialChanged
 	if doneAtMs != nil {
 		t := time.UnixMilli(*doneAtMs).UTC()
 		existing.DoneAt = &t
 	}
+
 	return existing, nil
 }
 
 func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at FROM todos WHERE id=?`, todoID)
+	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at FROM todos WHERE id=?`, todoID)
 	var t Todo
 	var columnKey string
 	var createdAtMs, updatedAtMs int64
 	var localID sql.NullInt64
 	var estimationPoints sql.NullInt64
 	var assigneeUserID sql.NullInt64
+	var createdByUserID sql.NullInt64
 	var sprintID sql.NullInt64
 	var priorityKey sql.NullString
 	var doneAtMs sql.NullInt64
-	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Todo{}, ErrNotFound
 		}
@@ -1014,6 +1050,12 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 		t.AssigneeUserID = &v
 	} else {
 		t.AssigneeUserID = nil
+	}
+	if createdByUserID.Valid {
+		v := createdByUserID.Int64
+		t.CreatedByUserID = &v
+	} else {
+		t.CreatedByUserID = nil
 	}
 	if sprintID.Valid {
 		v := sprintID.Int64

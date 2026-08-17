@@ -7,7 +7,7 @@ import { getBoard, getBoardMembers, getMarkdownNotesEnabled, getMermaidNotesEnab
 import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } from '../state/mutations.js';
 import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../utils.js';
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
-import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, t } from '../i18n/index.js';
+import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
@@ -20,6 +20,7 @@ let todoDialogCloseGuardsBound = false;
 let todoTooltipsApplied = false;
 let todoDialogBaseline = null;
 let todoDialogClosePromptOpen = false;
+let todoCreatorLocaleAbort = null;
 function sprintStateLabel(state) {
     const key = `todo.sprint.state.${state}`;
     return state && hasI18nKey(key) ? t(key) : state;
@@ -221,6 +222,8 @@ function isTodoDialogDirty() {
 function resetTodoDialogCloseState() {
     todoDialogBaseline = null;
     todoDialogClosePromptOpen = false;
+    todoCreatorLocaleAbort?.abort();
+    todoCreatorLocaleAbort = null;
 }
 async function closeTodoDialogInternal(options = {}) {
     const dialog = todoDialog;
@@ -466,6 +469,7 @@ export async function openTodoDialog(opts) {
         }
     }
     const createdEl = document.getElementById("todoDialogCreated");
+    const createdByEl = document.getElementById("todoDialogCreatedBy");
     const updatedEl = document.getElementById("todoDialogUpdated");
     const formatDialogDate = (d) => formatLocalizedDate(d, {
         year: "2-digit",
@@ -502,6 +506,16 @@ export async function openTodoDialog(opts) {
             }
         }
     };
+    const setCreatedBy = (createdByUserId) => {
+        if (!createdByEl)
+            return;
+        const member = createdByUserId != null ? getBoardMembers().find((m) => m.userId === createdByUserId) : null;
+        const name = member?.name || member?.email || "";
+        createdByEl.textContent = name ? t("todo.dialog.openedBy", { name }) : "";
+    };
+    todoCreatorLocaleAbort?.abort();
+    todoCreatorLocaleAbort = new AbortController();
+    document.addEventListener(I18N_LOCALE_CHANGED, () => setCreatedBy(mode === "edit" ? todo?.createdByUserId : undefined), { signal: todoCreatorLocaleAbort.signal });
     if (mode === "create") {
         setTodoDialogTitleKey("todo.dialog.title.new");
         todoTitle.value = normalizeSeedTitle(opts.initialTitle);
@@ -515,6 +529,7 @@ export async function openTodoDialog(opts) {
         if (shareTodoBtn)
             shareTodoBtn.style.display = "none";
         setDates(undefined, undefined);
+        setCreatedBy(undefined);
     }
     else {
         setTodoDialogTitleKey(permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
@@ -529,6 +544,7 @@ export async function openTodoDialog(opts) {
         if (shareTodoBtn)
             shareTodoBtn.style.display = "";
         setDates(todo.createdAt, todo.updatedAt);
+        setCreatedBy(todo.createdByUserId);
     }
     setTodoNotesMode("markdown");
     const tagInputEl = document.getElementById("todoTags");

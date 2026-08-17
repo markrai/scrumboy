@@ -188,7 +188,7 @@ func TestTodoAssignee_MaintainerCanAssignOthersAndViewerAssignable(t *testing.T)
 
 	ctxMaintainer := WithUserID(ctx, maintainer.ID)
 	todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
-		Title:  "Assign viewer",
+		Title:     "Assign viewer",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -244,7 +244,7 @@ func TestTodoAssignee_AuditAndMemberRemovalUnassign(t *testing.T) {
 
 	ctxMaintainer := WithUserID(ctx, maintainer.ID)
 	todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
-		Title:  "Audit me",
+		Title:     "Audit me",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -268,6 +268,27 @@ func TestTodoAssignee_AuditAndMemberRemovalUnassign(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 audit row after first assignment, got %d", count)
+	}
+
+	// The assigned contributor path commits body-only updates through its
+	// dedicated branch, but must still return the authoritative material-change
+	// fact used by creator email policy.
+	ctxContributor := WithUserID(ctx, contributor.ID)
+	contributorUpdated, err := st.UpdateTodo(ctxContributor, todo.ID, UpdateTodoInput{
+		Title: "ignored title", Body: "contributor body", Tags: []string{"ignored"}, AssigneeUserID: ptrInt64(contributor.ID),
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("assigned contributor body-only update: %v", err)
+	}
+	if !contributorUpdated.MaterialChanged || contributorUpdated.Title != todo.Title || contributorUpdated.Body != "contributor body" {
+		t.Fatalf("assigned contributor material facts/result=%+v", contributorUpdated)
+	}
+	contributorNoOp, err := st.UpdateTodo(ctxContributor, todo.ID, UpdateTodoInput{Body: "contributor body"}, ModeFull)
+	if err != nil {
+		t.Fatalf("assigned contributor body-only no-op: %v", err)
+	}
+	if contributorNoOp.MaterialChanged {
+		t.Fatal("assigned contributor semantic body no-op must not be material")
 	}
 
 	// Unchanged assignee must not create a new audit row.
@@ -324,7 +345,7 @@ func TestTodoAssignee_AssignNonMemberRejected(t *testing.T) {
 
 	ctxMaintainer := WithUserID(ctx, maintainer.ID)
 	todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
-		Title:  "Assign outsider",
+		Title:     "Assign outsider",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -351,7 +372,7 @@ func TestTodoAssignee_AssignNonexistentUserRejected(t *testing.T) {
 
 	ctxMaintainer := WithUserID(ctx, maintainer.ID)
 	todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
-		Title:  "Assign ghost",
+		Title:     "Assign ghost",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -420,7 +441,7 @@ func TestTodoAssignee_ViewerCannotAssignSelf(t *testing.T) {
 	ctxViewer := WithUserID(ctx, viewer.ID)
 
 	todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
-		Title:  "Viewer claim",
+		Title:     "Viewer claim",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -448,7 +469,7 @@ func TestTodoAssignee_UnauthenticatedAssignmentChangeRejected(t *testing.T) {
 
 	ctxMaintainer := WithUserID(ctx, maintainer.ID)
 	todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
-		Title:  "No actor",
+		Title:     "No actor",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {

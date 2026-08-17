@@ -81,6 +81,14 @@ func resolveImportAssignee(ctx context.Context, tx *sql.Tx, projectID int64, ass
 	return assigneeUserID
 }
 
+// resolveImportCreatedBy deliberately clears raw numeric creator IDs on import.
+// User IDs are database-local and a coincidental target row is not proof of
+// identity continuity. Export retains the additive field, but restoring it
+// requires a future portable-identity mapping contract.
+func resolveImportCreatedBy(_ context.Context, _ *sql.Tx, _ *int64) *int64 {
+	return nil
+}
+
 // generateUUID generates a simple UUID-like string for batch IDs.
 func generateUUID() string {
 	b := make([]byte, 16)
@@ -361,6 +369,11 @@ func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []T
 		if assigneeVal != nil {
 			assigneeForSQL = *assigneeVal
 		}
+		createdByVal := resolveImportCreatedBy(ctx, tx, tExport.CreatedByUserId)
+		var createdByForSQL any
+		if createdByVal != nil {
+			createdByForSQL = *createdByVal
+		}
 		doneAtForInsert := resolveImportDoneAt(tExport.DoneAt, status, updatedAtMs)
 
 		var sprintIDForSQL any
@@ -380,9 +393,9 @@ func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []T
 
 		// Insert todo (schema uses column_key, not status)
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			projectID, tExport.LocalID, tExport.Title, tExport.Body, columnKey, rank, estimationPoints, assigneeForSQL, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
+			INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			projectID, tExport.LocalID, tExport.Title, tExport.Body, columnKey, rank, estimationPoints, assigneeForSQL, createdByForSQL, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
 		if err != nil {
 			if strict {
 				return nil, fmt.Errorf("insert todo (strict mode): %w", err)
@@ -395,9 +408,9 @@ func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []T
 				}
 				newLocalID := maxLocalID + 1
 				res, err = tx.ExecContext(ctx, `
-					INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
-					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					projectID, newLocalID, tExport.Title, tExport.Body, columnKey, rank, estimationPoints, assigneeForSQL, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
+					INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at)
+					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					projectID, newLocalID, tExport.Title, tExport.Body, columnKey, rank, estimationPoints, assigneeForSQL, createdByForSQL, sprintIDForSQL, priorityForSQL, createdAtMs, updatedAtMs, doneAtForInsert)
 				if err != nil {
 					return nil, fmt.Errorf("insert todo with regenerated local_id: %w", err)
 				}

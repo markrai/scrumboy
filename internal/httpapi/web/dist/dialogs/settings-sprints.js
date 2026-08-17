@@ -234,7 +234,7 @@ export function bindSprintsTabInteractions(options) {
             url.searchParams.delete('sprintId');
             history.replaceState({}, '', url.pathname + url.search);
             showToast(nextEnabled ? t('settings.sprints.toast.enabled') : t('settings.sprints.toast.disabled'));
-            await invalidateBoard(slug, url.searchParams.get('tag') ?? undefined, url.searchParams.get('search') ?? undefined, null, url.searchParams.get('assignee'), url.searchParams.get('sort'), true).catch(() => { });
+            await invalidateBoard(slug, url.searchParams.get('tag') ?? undefined, url.searchParams.get('search') ?? undefined, null, url.searchParams.get('assignee'), url.searchParams.get('sort'), url.searchParams.get('priority'), true).catch(() => { });
             if (nextEnabled) {
                 await refreshSprintsAndChips(slug).catch(() => { });
             }

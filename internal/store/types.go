@@ -289,16 +289,22 @@ type Todo struct {
 	Rank             int64
 	EstimationPoints *int64
 	AssigneeUserID   *int64
-	SprintID         *int64 // NULL = backlog; non-NULL = in that sprint
-	PriorityKey      *string
-	Tags             []string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	DoneAt           *time.Time // Last completion time (Unix ms). Set on transition into DONE; never cleared on reopen.
+	// CreatedByUserID is immutable historical attribution, not current membership or authorization.
+	// It is NULL for unauthenticated creation, pre-migration rows, and deleted creators.
+	CreatedByUserID *int64
+	SprintID        *int64 // NULL = backlog; non-NULL = in that sprint
+	PriorityKey     *string
+	Tags            []string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	DoneAt          *time.Time // Last completion time (Unix ms). Set on transition into DONE; never cleared on reopen.
 
 	// AssignmentChanged is set when this mutation changed assignee handling: CreateTodo (initial assignee on create)
 	// or UpdateTodo (assignee field changed). Not persisted; used by callers to gate SSE emissions.
 	AssignmentChanged bool `json:"-"`
+	// MaterialChanged is transaction-authoritative mutation metadata. It ignores
+	// bookkeeping timestamps and is not persisted or projected to clients.
+	MaterialChanged bool `json:"-"`
 }
 
 // Sprint time terminology (see Sprint struct in sprints.go):

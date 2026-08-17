@@ -74,7 +74,7 @@ func subscribeTodoMoveEvents(
 	return cancel, events, errorsCh
 }
 
-func TestMCPTodosMoveDottedAliasOverJSONRPCPreservesRefreshSilence(t *testing.T) {
+func TestMCPTodosMoveDottedAliasOverJSONRPCPreservesBoardRefreshSilence(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()
 

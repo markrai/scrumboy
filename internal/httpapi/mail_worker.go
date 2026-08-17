@@ -21,10 +21,21 @@ func newMailWorker(queue *mailQueue, sender mailSender, logger *log.Logger) *mai
 }
 
 func newMailWorkerWithKind(queue *mailQueue, sender mailSender, logger *log.Logger, kind string) *mailWorker {
+	var worker *retryWorker[mailDelivery]
 	send := func(d mailDelivery) error {
+		if d.Prepare != nil {
+			prepared, ok, err := d.Prepare(worker.retryCtx)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return nil
+			}
+			d = prepared
+		}
 		return sender.Send(mailer.Message{To: d.To, Subject: d.Subject, Body: d.Body})
 	}
-	worker := newRetryWorker(queue, logger, kind, send)
+	worker = newRetryWorker(queue, logger, kind, send)
 	worker.isPermanent = mailer.IsPermanent
 	return &mailWorker{retryWorker: worker}
 }
