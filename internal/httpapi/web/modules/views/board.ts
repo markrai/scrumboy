@@ -69,7 +69,7 @@ import {
   type RenderTodoCardOpts,
   type SprintChipData,
 } from './board-rendering.js';
-import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import {
   clearTodoMultiSelection,
   ensureBulkEditUi,
@@ -262,9 +262,9 @@ function resolveMobileTabKeyFromStorage(
   return null;
 }
 
-function agendaMobileTab(board: Board): { key: string; title: string } | null {
+function agendaMobileTab(board: Board): { key: string; title: string; color: string } | null {
   if (!isAgendaEnabled(board)) return null;
-  return { key: AGENDA_COLUMN_KEY, title: agendaLaneTitle(board) };
+  return { key: AGENDA_COLUMN_KEY, title: agendaLaneTitle(board), color: agendaLaneColor(board) };
 }
 
 export function getRequestedBoardLimitPerLane(forSlug?: string | null): number {
@@ -732,6 +732,7 @@ function syncMobileLaneTabsStrip(board: Board): void {
   if (extra) {
     const tab = tabByKey.get(extra.key);
     if (tab) {
+      applyMobileLaneTabStyles(tab, extra, "tab");
       const textSpan = tab.querySelector(".mobile-tab__text");
       const label = `${extra.title} ${agendaEvents(board).length}`;
       if (textSpan) textSpan.textContent = label;

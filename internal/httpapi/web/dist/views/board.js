@@ -20,7 +20,7 @@ import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
 import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, visibleBoardLaneCount, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
-import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
 import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
@@ -178,7 +178,7 @@ function resolveMobileTabKeyFromStorage(saved, cols, extraKeys = []) {
 function agendaMobileTab(board) {
     if (!isAgendaEnabled(board))
         return null;
-    return { key: AGENDA_COLUMN_KEY, title: agendaLaneTitle(board) };
+    return { key: AGENDA_COLUMN_KEY, title: agendaLaneTitle(board), color: agendaLaneColor(board) };
 }
 export function getRequestedBoardLimitPerLane(forSlug) {
     // Preserve the current on-screen lane size (e.g. cards revealed via "Load more")
@@ -637,6 +637,7 @@ function syncMobileLaneTabsStrip(board) {
     if (extra) {
         const tab = tabByKey.get(extra.key);
         if (tab) {
+            applyMobileLaneTabStyles(tab, extra, "tab");
             const textSpan = tab.querySelector(".mobile-tab__text");
             const label = `${extra.title} ${agendaEvents(board).length}`;
             if (textSpan)

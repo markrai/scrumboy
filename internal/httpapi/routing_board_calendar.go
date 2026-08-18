@@ -61,6 +61,7 @@ type calendarSourcesJSON struct {
 	AgendaEnabled  bool                 `json:"agendaEnabled"`
 	AgendaTimezone string               `json:"agendaTimezone"`
 	AgendaTitle    string               `json:"agendaTitle"`
+	AgendaColor    string               `json:"agendaColor"`
 	Sources        []calendarSourceJSON `json:"sources"`
 }
 
@@ -84,6 +85,7 @@ func calendarSourcesToJSON(view calendarapp.AgendaSettingsView) calendarSourcesJ
 		AgendaEnabled:  view.Enabled,
 		AgendaTimezone: view.Timezone,
 		AgendaTitle:    view.Title,
+		AgendaColor:    view.Color,
 		Sources:        sources,
 	}
 }

@@ -172,6 +172,7 @@ var validationReasonByMessage = map[string]string{
 	"calendar source limit reached":                         "calendar_source_limit_reached",
 	"invalid agenda timezone":                               "invalid_agenda_timezone",
 	"invalid agenda title":                                  "invalid_agenda_title",
+	"invalid agenda color":                                  "invalid_agenda_color",
 	"cannot delete done workflow column":                    "cannot_delete_done_workflow_column",
 	"estimation points must be one of 1,2,3,5,8,13,20,40":   "invalid_estimation_points",
 	"assignment is not allowed in anonymous mode":           "assignment_not_allowed_anonymous",

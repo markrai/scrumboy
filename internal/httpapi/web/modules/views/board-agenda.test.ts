@@ -3,12 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgendaEvent, Board } from '../types.js';
 import {
   AGENDA_COLUMN_KEY,
+  AGENDA_DEFAULT_LANE_COLOR,
+  APPLE_CALENDAR_URL,
+  GOOGLE_CALENDAR_URL,
   AGENDA_HOUR_HEIGHT_MOBILE_PX,
   AGENDA_HOUR_HEIGHT_PX,
+  AGENDA_SMART_NOW_OFFSET_FRACTION,
   agendaDayWindow,
   agendaHourHeightPx,
   agendaInitialFocusMinute,
+  agendaLaneColor,
   agendaNowMinute,
+  agendaSmartFocusMinute,
   applyAgendaScrollAfterRender,
   bindAgendaLaneScrollInteractions,
   bindAgendaNowLine,
@@ -18,11 +24,13 @@ import {
   layoutAgendaTimedEvents,
   renderAgendaEventCard,
   syncAgendaNowLine,
+  syncOpenBoardAgendaLayout,
 } from './board-agenda.js';
 import { getBoardColumns, visibleBoardLaneCount } from './board-rendering.js';
 import { setAgendaStartOfDayPreference } from '../core/agenda-start-of-day-preferences.js';
 import { setAgendaNowLinePreference } from '../core/agenda-now-line-preferences.js';
 import { setBoard } from '../state/mutations.js';
+import { buildMobileTabsInnerHtml } from './mobile-lane-tabs.js';
 import enCatalog from '../i18n/locales/en.json';
 
 function agendaBoard(): Board {
@@ -73,7 +81,7 @@ describe('agenda virtual lane', () => {
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     const html = buildAgendaColumnHtml(agendaBoard(), null);
     expect(html).toContain('col--agenda');
-    expect(html).toContain('class="col__count"');
+    expect(html).not.toContain('class="col__count"');
     expect(html).toContain('card--agenda');
     expect(html).toContain('Pickup');
     expect(html).toContain('data-agenda-event-id="3:pickup:1"');
@@ -81,7 +89,7 @@ describe('agenda virtual lane', () => {
     const start = new Date('2026-08-17T20:00:00Z').toLocaleTimeString(undefined, timeOpts);
     const end = new Date('2026-08-17T20:30:00Z').toLocaleTimeString(undefined, timeOpts);
     expect(html).toContain(`${start} - ${end}`);
-    expect(html).not.toContain('Family');
+    expect(html).not.toContain('>Family<');
     expect(html).not.toContain('data-todo-id');
     expect(html).not.toContain('data-todo-local-id');
     expect(html).not.toContain('card__drag-handle');
@@ -92,6 +100,46 @@ describe('agenda virtual lane', () => {
     expect(html).not.toContain('data-i18n-text="board.agenda.title"');
   });
 
+  it('applies the saved agenda lane color to the header, cards, and CSS variable', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = { ...board.agenda!, color: '#aabbcc' };
+    const html = buildAgendaColumnHtml(board, null);
+    expect(html).toContain('--agenda-lane-color:#aabbcc');
+    expect(html).toContain('style="background:#aabbcc;"');
+    expect(html).not.toContain(`style="background:${AGENDA_DEFAULT_LANE_COLOR};"`);
+  });
+
+  it('falls back to the default indigo when agenda color is missing or invalid', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const missing = buildAgendaColumnHtml(agendaBoard(), null);
+    expect(missing).toContain(`--agenda-lane-color:${AGENDA_DEFAULT_LANE_COLOR}`);
+    expect(missing).toContain(`style="background:${AGENDA_DEFAULT_LANE_COLOR};"`);
+
+    const board = agendaBoard();
+    board.agenda = { ...board.agenda!, color: 'indigo' };
+    const invalid = buildAgendaColumnHtml(board, null);
+    expect(invalid).toContain(`--agenda-lane-color:${AGENDA_DEFAULT_LANE_COLOR}`);
+    expect(invalid).not.toContain('background:indigo');
+  });
+
+  it('uses the saved agenda color on the extra mobile tab', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = { ...board.agenda!, color: '#aabbcc' };
+    const html = buildMobileTabsInnerHtml([], {
+      activeTabKey: AGENDA_COLUMN_KEY,
+      extraTabs: [{ key: AGENDA_COLUMN_KEY, title: 'Agenda', color: agendaLaneColor(board) }],
+      laneLabel: () => 'Agenda 1',
+    });
+    expect(html).toContain('data-tab="agenda"');
+    expect(html).toContain('background:#aabbcc');
+    expect(html).not.toContain(`background:${AGENDA_DEFAULT_LANE_COLOR}`);
+  });
+
   it('uses a custom agenda lane title instead of the default', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
@@ -100,7 +148,7 @@ describe('agenda virtual lane', () => {
     const html = buildAgendaColumnHtml(board, null);
     expect(html).toContain('Team calendar');
     expect(html).not.toContain('>Agenda<');
-    expect(html).not.toContain('Family');
+    expect(html).not.toContain('>Family<');
   });
 
   it('does not treat agenda as a workflow column', () => {
@@ -132,6 +180,7 @@ describe('agenda virtual lane', () => {
     expect(html).toContain('card__title');
     expect(html).toContain('card__agenda-meta');
     expect(html).not.toContain('Family');
+    expect(html).not.toContain('card__agenda-badge');
     expect(html).not.toContain(' - ');
     expect(html).not.toContain('card--selected');
     expect(html).not.toContain('checkbox');
@@ -189,87 +238,100 @@ describe('agenda virtual lane', () => {
     expect(html).not.toContain('No events today.');
   });
 
-  it('renders Google and Apple host badges and omits a badge for other', async () => {
+  it('renders Google and Apple host chips in the lane header, not on cards', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
-    const google = renderAgendaEventCard(
-      {
-        id: '3:pickup:1',
-        sourceId: 3,
-        calendarName: 'Family',
-        title: 'Pickup',
-        startsAt: '2026-08-17T20:00:00Z',
-        endsAt: '2026-08-17T20:30:00Z',
-        allDay: false,
-        location: '',
-        provider: 'ics_feed',
-        hostKind: 'google',
-      },
-      'UTC',
-    );
-    expect(google).toContain('/assets/calendar/google.webp');
-    expect(google).toContain('card__agenda-badge--google');
-    expect(google).toContain('role="img"');
-    expect(google).toContain('alt=""');
-    expect(google).toContain(`aria-label="${enCatalog['board.agenda.badge.google']}"`);
-    expect(google).not.toContain('/assets/calendar/apple.webp');
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      events: [
+        timedEvent('3:google-a:1', '2026-08-17T20:00:00Z', '2026-08-17T20:30:00Z', {
+          sourceId: 3,
+          calendarName: 'Family',
+          hostKind: 'google',
+          title: 'Pickup',
+        }),
+        timedEvent('3:google-b:1', '2026-08-17T21:00:00Z', '2026-08-17T21:30:00Z', {
+          sourceId: 3,
+          calendarName: 'Family',
+          hostKind: 'google',
+          title: 'Dinner',
+        }),
+        timedEvent('4:apple-a:1', '2026-08-17T18:00:00Z', '2026-08-17T18:30:00Z', {
+          sourceId: 4,
+          calendarName: 'Work',
+          hostKind: 'apple',
+          title: 'Standup',
+        }),
+        timedEvent('4:apple-b:1', '2026-08-17T19:00:00Z', '2026-08-17T19:30:00Z', {
+          sourceId: 4,
+          calendarName: 'Work',
+          hostKind: 'apple',
+          title: 'Retro',
+        }),
+        timedEvent('5:other-a:1', '2026-08-17T22:00:00Z', '2026-08-17T22:30:00Z', {
+          sourceId: 5,
+          calendarName: 'Outlook',
+          hostKind: 'other',
+          title: 'Doctor',
+        }),
+        timedEvent('6:missing-a:1', '2026-08-17T23:00:00Z', '2026-08-17T23:30:00Z', {
+          sourceId: 6,
+          calendarName: 'ICS',
+          title: 'Flight',
+        }),
+        timedEvent('7:apple-c:1', '2026-08-17T17:00:00Z', '2026-08-17T17:30:00Z', {
+          sourceId: 7,
+          calendarName: 'Personal',
+          hostKind: 'apple',
+          title: 'Gym',
+        }),
+      ],
+    };
+    const html = buildAgendaColumnHtml(board, null);
+    const headStart = html.indexOf('col__head--agenda');
+    const listStart = html.indexOf('col__list');
+    const head = html.slice(headStart, listStart === -1 ? undefined : listStart);
+    expect(head).toContain('col__agenda-hosts');
+    expect(head).toContain('/assets/calendar/google.webp');
+    expect(head).toContain('col__agenda-host--google');
+    expect(head).toContain(`href="${GOOGLE_CALENDAR_URL}"`);
+    expect(head).toContain('/assets/calendar/apple.webp');
+    expect(head).toContain('col__agenda-host--apple');
+    expect(head).toContain(`href="${APPLE_CALENDAR_URL}"`);
+    expect(head).toContain('target="_blank"');
+    expect(head).toContain('rel="noopener noreferrer"');
+    expect(head).not.toContain('role="img"');
+    expect(head).toContain('alt=""');
+    expect(head).toContain('aria-label="Family"');
+    expect(head).toContain('aria-label="Work"');
+    expect(head).toContain('aria-label="Outlook"');
+    expect(head).toContain('lucide-calendar-days');
+    expect(head).toContain('<span class="col__agenda-host col__agenda-host--other"');
+    expect(head).not.toContain('col__agenda-host--other" href=');
+    expect(head.match(/col__agenda-host--apple/g)?.length).toBe(2);
+    expect(head.match(/col__agenda-host--google/g)?.length).toBe(1);
+    expect(head.match(/col__agenda-host--other/g)?.length).toBe(2);
+    expect(head).toContain('>2</span>');
+    expect(head).toContain('>1</span>');
+    expect(html).not.toContain('data-count-for="agenda"');
+    expect(html).not.toContain('class="col__count"');
+    expect(html).not.toContain('card__agenda-badge');
+    const cardSlice = html.slice(html.indexOf('card--agenda'));
+    expect(cardSlice).not.toContain('/assets/calendar/');
+    expect(cardSlice).not.toContain('col__agenda-host');
+  });
 
-    const apple = renderAgendaEventCard(
-      {
-        id: '3:pickup:1',
-        sourceId: 3,
-        calendarName: 'Family',
-        title: 'Pickup',
-        startsAt: '2026-08-17T20:00:00Z',
-        endsAt: '2026-08-17T20:30:00Z',
-        allDay: false,
-        location: '',
-        provider: 'ics_feed',
-        hostKind: 'apple',
-      },
-      'UTC',
-    );
-    expect(apple).toContain('/assets/calendar/apple.webp');
-    expect(apple).toContain('card__agenda-badge--apple');
-    expect(apple).toContain('role="img"');
-    expect(apple).toContain('alt=""');
-    expect(apple).toContain(`aria-label="${enCatalog['board.agenda.badge.apple']}"`);
-    expect(apple).not.toContain('/assets/calendar/google.webp');
-
-    const other = renderAgendaEventCard(
-      {
-        id: '3:pickup:1',
-        sourceId: 3,
-        calendarName: 'Family',
-        title: 'Pickup',
-        startsAt: '2026-08-17T20:00:00Z',
-        endsAt: '2026-08-17T20:30:00Z',
-        allDay: false,
-        location: '',
-        provider: 'ics_feed',
-        hostKind: 'other',
-      },
-      'UTC',
-    );
-    expect(other).not.toContain('card__agenda-badge');
-    expect(other).not.toContain('/assets/calendar/');
-
-    const missing = renderAgendaEventCard(
-      {
-        id: '3:pickup:1',
-        sourceId: 3,
-        calendarName: 'Family',
-        title: 'Pickup',
-        startsAt: '2026-08-17T20:00:00Z',
-        endsAt: '2026-08-17T20:30:00Z',
-        allDay: false,
-        location: '',
-        provider: 'ics_feed',
-      },
-      'UTC',
-    );
-    expect(missing).not.toContain('card__agenda-badge');
-    expect(missing).not.toContain('/assets/calendar/');
+  it('omits host chips when there are no events today', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = { ...board.agenda!, events: [] };
+    const html = buildAgendaColumnHtml(board, null);
+    expect(html).toContain('col__agenda-hosts');
+    expect(html).not.toContain('col__agenda-host--');
+    expect(html).not.toContain('data-count-for="agenda"');
+    expect(html).not.toContain('class="col__count"');
   });
 });
 
@@ -338,6 +400,96 @@ describe('agenda day window, focus, and timed layout', () => {
   it('maps the current wall clock to a fractional minute of day', () => {
     expect(agendaNowMinute('UTC', new Date('2026-08-17T12:00:00Z'))).toBe(720);
     expect(agendaNowMinute('UTC', new Date('2026-08-17T12:00:30Z'))).toBe(720.5);
+  });
+
+  describe('smart temporal focus', () => {
+    const viewportMinutes = 360;
+
+    it('keeps an early event as the floor before Start of day', () => {
+      const events = [timedEvent('early', '2026-08-17T06:00:00Z', '2026-08-17T06:30:00Z')];
+      const baseline = agendaInitialFocusMinute(events, 'UTC', 480, new Date('2026-08-17T06:30:00Z'));
+      expect(baseline).toBe(360);
+      expect(agendaSmartFocusMinute({
+        baselineMinute: baseline,
+        nowMinute: 390,
+        viewportMinutes,
+        isToday: true,
+      })).toBe(360);
+    });
+
+    it('keeps Start of day when the first event is later and now is still before it', () => {
+      const events = [timedEvent('late', '2026-08-17T10:00:00Z', '2026-08-17T11:00:00Z')];
+      const baseline = agendaInitialFocusMinute(events, 'UTC', 480, new Date('2026-08-17T09:00:00Z'));
+      expect(baseline).toBe(480);
+      expect(agendaSmartFocusMinute({
+        baselineMinute: baseline,
+        nowMinute: 540,
+        viewportMinutes,
+        isToday: true,
+      })).toBe(480);
+    });
+
+    it('advances in the afternoon so now sits one-third down the viewport', () => {
+      const focus = agendaSmartFocusMinute({
+        baselineMinute: 480,
+        nowMinute: 840,
+        viewportMinutes,
+        isToday: true,
+      });
+      expect(focus).toBeGreaterThan(480);
+      expect(focus).toBe(840 - viewportMinutes * AGENDA_SMART_NOW_OFFSET_FRACTION);
+      expect(focus + viewportMinutes * AGENDA_SMART_NOW_OFFSET_FRACTION).toBe(840);
+    });
+
+    it('still follows current time in the afternoon when there are no events', () => {
+      const baseline = agendaInitialFocusMinute([], 'UTC', 480, new Date('2026-08-17T16:00:00Z'));
+      expect(baseline).toBe(480);
+      expect(agendaSmartFocusMinute({
+        baselineMinute: baseline,
+        nowMinute: 960,
+        viewportMinutes,
+        isToday: true,
+      })).toBe(960 - viewportMinutes * AGENDA_SMART_NOW_OFFSET_FRACTION);
+    });
+
+    it('clamps late-day focus to the bottom of the 24-hour canvas', () => {
+      expect(agendaSmartFocusMinute({
+        baselineMinute: 480,
+        nowMinute: 1380,
+        viewportMinutes,
+        isToday: true,
+      })).toBe(1440 - viewportMinutes);
+    });
+
+    it('uses the board timezone current minute, not a UTC wall clock', () => {
+      const now = new Date('2026-08-17T18:00:00Z');
+      expect(agendaNowMinute('America/New_York', now)).toBe(840);
+      expect(agendaNowMinute('UTC', now)).toBe(1080);
+      const boardTz = agendaSmartFocusMinute({
+        baselineMinute: 480,
+        nowMinute: agendaNowMinute('America/New_York', now),
+        viewportMinutes,
+        isToday: true,
+      });
+      const utcClock = agendaSmartFocusMinute({
+        baselineMinute: 480,
+        nowMinute: agendaNowMinute('UTC', now),
+        viewportMinutes,
+        isToday: true,
+      });
+      expect(boardTz).toBe(720);
+      expect(utcClock).toBe(960);
+      expect(boardTz).not.toBe(utcClock);
+    });
+
+    it('uses baseline focus when the rendered grid is not today', () => {
+      expect(agendaSmartFocusMinute({
+        baselineMinute: 480,
+        nowMinute: 840,
+        viewportMinutes,
+        isToday: false,
+      })).toBe(480);
+    });
   });
 
   it('places overlapping events in two columns and a later cluster at full width', () => {
@@ -477,6 +629,38 @@ describe('agenda day grid HTML', () => {
       configurable: true,
       get: () => height,
     });
+  }
+
+  function trackScrollTop(list: HTMLElement): { get assigned(): number } {
+    let assigned = -1;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => assigned,
+      set: (value: number) => {
+        assigned = Number(value);
+      },
+    });
+    return {
+      get assigned() {
+        return assigned;
+      },
+    };
+  }
+
+  function expectedSmartScrollTop(opts: {
+    baselineMinute: number;
+    nowMinute: number | null;
+    viewportPx: number;
+    hourPx: number;
+    isToday?: boolean;
+  }): number {
+    const focus = agendaSmartFocusMinute({
+      baselineMinute: opts.baselineMinute,
+      nowMinute: opts.nowMinute,
+      viewportMinutes: (opts.viewportPx / opts.hourPx) * 60,
+      isToday: opts.isToday ?? true,
+    });
+    return (focus / 60) * opts.hourPx;
   }
 
   function stubComputedHourVar(px: number): void {
@@ -626,26 +810,21 @@ describe('agenda day grid HTML', () => {
   it('auto-focuses the timed list to the initial focus minute', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const morning = new Date('2026-08-17T09:00:00Z');
     const board = agendaBoard();
     board.agenda = {
       ...board.agenda!,
       stale: false,
       error: null,
-      events: [timedEvent('Pickup', '2026-08-17T20:00:00Z', '2026-08-17T20:30:00Z', { title: 'Pickup' })],
+      events: [timedEvent('Pickup', '2026-08-17T10:00:00Z', '2026-08-17T10:30:00Z', { title: 'Pickup' })],
     };
     setBoard(board);
-    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, morning);
     const list = document.getElementById('list_agenda') as HTMLElement;
-    let assigned = -1;
-    Object.defineProperty(list, 'scrollTop', {
-      configurable: true,
-      get: () => assigned,
-      set: (value: number) => {
-        assigned = Number(value);
-      },
-    });
-    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now });
-    expect(assigned).toBe((480 / 60) * AGENDA_HOUR_HEIGHT_PX);
+    const scroll = trackScrollTop(list);
+    stubListClientHeight(list, 288);
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now: morning });
+    expect(scroll.assigned).toBe((480 / 60) * AGENDA_HOUR_HEIGHT_PX);
   });
 
   it('auto-focuses using painted 96px hours even if the CSS variable still reads 48px', async () => {
@@ -653,6 +832,7 @@ describe('agenda day grid HTML', () => {
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     stubHourHeightMedia(false);
     stubComputedHourVar(AGENDA_HOUR_HEIGHT_PX);
+    const earlyMorning = new Date('2026-08-17T06:30:00Z');
     const board = agendaBoard();
     board.agenda = {
       ...board.agenda!,
@@ -662,22 +842,15 @@ describe('agenda day grid HTML', () => {
     };
     setBoard(board);
     setAgendaStartOfDayPreference('08:00');
-    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, earlyMorning);
     stubLaidOutHourHeight(AGENDA_HOUR_HEIGHT_MOBILE_PX);
     expect(agendaHourHeightPx()).toBe(AGENDA_HOUR_HEIGHT_MOBILE_PX);
     const list = document.getElementById('list_agenda') as HTMLElement;
-    let assigned = -1;
-    Object.defineProperty(list, 'scrollTop', {
-      configurable: true,
-      get: () => assigned,
-      set: (value: number) => {
-        assigned = Number(value);
-      },
-    });
+    const scroll = trackScrollTop(list);
     stubListClientHeight(list, 400);
-    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now });
-    expect(assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_MOBILE_PX);
-    expect(assigned).not.toBe((360 / 60) * AGENDA_HOUR_HEIGHT_PX);
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now: earlyMorning });
+    expect(scroll.assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_MOBILE_PX);
+    expect(scroll.assigned).not.toBe((360 / 60) * AGENDA_HOUR_HEIGHT_PX);
   });
 
   it('does not capture timed-list scroll when the lane is not laid out', async () => {
@@ -712,6 +885,7 @@ describe('agenda day grid HTML', () => {
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     stubHourHeightMedia(false);
     stubComputedHourVar(AGENDA_HOUR_HEIGHT_PX);
+    const earlyMorning = new Date('2026-08-17T06:30:00Z');
     const board = agendaBoard();
     board.agenda = {
       ...board.agenda!,
@@ -721,28 +895,22 @@ describe('agenda day grid HTML', () => {
     };
     setBoard(board);
     setAgendaStartOfDayPreference('08:00');
-    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, earlyMorning);
     const list = document.getElementById('list_agenda') as HTMLElement;
-    let assigned = -1;
-    Object.defineProperty(list, 'scrollTop', {
-      configurable: true,
-      get: () => assigned,
-      set: (value: number) => {
-        assigned = Number(value);
-      },
-    });
+    const scroll = trackScrollTop(list);
     stubListClientHeight(list, 0);
-    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now });
-    expect(assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_PX);
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now: earlyMorning });
+    expect(scroll.assigned).toBe(-1);
     stubLaidOutHourHeight(AGENDA_HOUR_HEIGHT_MOBILE_PX);
     stubListClientHeight(list, 400);
     flushAgendaInitialScroll();
-    expect(assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_MOBILE_PX);
+    expect(scroll.assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_MOBILE_PX);
   });
 
   it('scrolls to the new focus after a start-of-day change', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const morning = new Date('2026-08-17T07:00:00Z');
     const board = agendaBoard();
     board.agenda = {
       ...board.agenda!,
@@ -752,18 +920,102 @@ describe('agenda day grid HTML', () => {
     };
     setBoard(board);
     setAgendaStartOfDayPreference('06:00');
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, morning);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    const scroll = trackScrollTop(list);
+    stubListClientHeight(list, 288);
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now: morning });
+    expect(scroll.assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_PX);
+  });
+
+  it('recalculates start-of-day force-focus with afternoon smart current time', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const afternoon = new Date('2026-08-17T14:00:00Z');
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('Pickup', '2026-08-17T20:00:00Z', '2026-08-17T20:30:00Z', { title: 'Pickup' })],
+    };
+    setBoard(board);
+    setAgendaStartOfDayPreference('08:00');
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, afternoon);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    const scroll = trackScrollTop(list);
+    stubListClientHeight(list, 288);
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now: afternoon });
+    expect(scroll.assigned).toBe(expectedSmartScrollTop({
+      baselineMinute: 480,
+      nowMinute: 840,
+      viewportPx: 288,
+      hourPx: AGENDA_HOUR_HEIGHT_PX,
+    }));
+    expect(scroll.assigned).toBeGreaterThan((480 / 60) * AGENDA_HOUR_HEIGHT_PX);
+  });
+
+  it('uses baseline focus when the rendered grid is not today', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const gridDay = new Date('2026-08-17T12:00:00Z');
+    const nextDayAfternoon = new Date('2026-08-18T14:00:00Z');
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('Pickup', '2026-08-17T20:00:00Z', '2026-08-17T20:30:00Z', { title: 'Pickup' })],
+    };
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, gridDay);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    const scroll = trackScrollTop(list);
+    stubListClientHeight(list, 288);
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now: nextDayAfternoon });
+    expect(scroll.assigned).toBe((480 / 60) * AGENDA_HOUR_HEIGHT_PX);
+    expect(scroll.assigned).not.toBe(expectedSmartScrollTop({
+      baselineMinute: 480,
+      nowMinute: 840,
+      viewportPx: 288,
+      hourPx: AGENDA_HOUR_HEIGHT_PX,
+    }));
+  });
+
+  it('keeps a manual scroll position across an ordinary board refresh', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    setBoard(board);
     document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
     const list = document.getElementById('list_agenda') as HTMLElement;
-    let assigned = -1;
-    Object.defineProperty(list, 'scrollTop', {
-      configurable: true,
-      get: () => assigned,
-      set: (value: number) => {
-        assigned = Number(value);
-      },
-    });
-    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now });
-    expect(assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_PX);
+    stubListClientHeight(list, 400);
+    list.scrollTop = 999;
+    const saved = captureAgendaListScroll();
+    expect(saved).toBe(999);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: saved, board, now: new Date('2026-08-17T16:00:00Z') });
+    expect((document.getElementById('list_agenda') as HTMLElement).scrollTop).toBe(999);
+  });
+
+  it('preserves scroll when syncing the open Agenda layout without forceAutoFocus', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = { ...board.agenda!, color: '#6366F1' };
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    stubListClientHeight(list, 400);
+    list.scrollTop = 240;
+    board.agenda = { ...board.agenda!, color: '#aabbcc' };
+    setBoard(board);
+    syncOpenBoardAgendaLayout();
+    const nextList = document.getElementById('list_agenda') as HTMLElement;
+    expect(nextList).toBeTruthy();
+    expect(nextList.scrollTop).toBe(240);
+    expect(document.querySelector('.col--agenda')?.getAttribute('style')).toContain('--agenda-lane-color:#aabbcc');
+    expect(document.querySelector('.col__head--agenda')?.getAttribute('style')).toContain('background:#aabbcc');
   });
 
   it('mouse drag pans the timed list and marks the lane as panning', async () => {
@@ -803,6 +1055,85 @@ describe('agenda day grid HTML', () => {
       pointerType: 'mouse',
     }));
     expect(document.querySelector('.col--agenda')?.classList.contains('is-agenda-panning')).toBe(false);
+  });
+
+  it('does not start mouse pan from a header host link', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      events: [{ ...board.agenda!.events![0], hostKind: 'google' }],
+    };
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: 100, board });
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let top = 100;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = Number(value);
+      },
+    });
+    const badge = document.querySelector('a.col__agenda-host--google') as HTMLAnchorElement | null;
+    expect(badge).toBeTruthy();
+    expect(list.contains(badge)).toBe(false);
+    badge!.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      clientY: 80,
+    }));
+    expect(document.querySelector('.col--agenda')?.classList.contains('is-agenda-panning')).toBe(false);
+    list.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientY: 50,
+    }));
+    expect(top).toBe(100);
+  });
+
+  it('does not start mouse pan from an img nested inside an in-list anchor', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: 100, board });
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let top = 100;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = Number(value);
+      },
+    });
+    const link = document.createElement('a');
+    link.href = GOOGLE_CALENDAR_URL;
+    const img = document.createElement('img');
+    img.alt = '';
+    link.appendChild(img);
+    list.prepend(link);
+    img.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      clientY: 80,
+    }));
+    expect(document.querySelector('.col--agenda')?.classList.contains('is-agenda-panning')).toBe(false);
+    list.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientY: 50,
+    }));
+    expect(top).toBe(100);
   });
 
   it('does not pan the timed list from a touch pointer', async () => {
@@ -907,6 +1238,24 @@ describe('agenda day grid HTML', () => {
       4,
     );
     expect(line.style.getPropertyValue('--agenda-now-min')).not.toBe('720');
+  });
+
+  it('does not mutate list scrollTop when the now-line ticks', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-17T12:00:00Z'));
+    const board = agendaBoard();
+    setBoard(board);
+    const clock = new Date();
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, clock);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    const scroll = trackScrollTop(list);
+    stubListClientHeight(list, 400);
+    applyAgendaScrollAfterRender({ restoreScrollTop: 240, board, now: clock });
+    expect(scroll.assigned).toBe(240);
+    vi.advanceTimersByTime(5000);
+    expect(scroll.assigned).toBe(240);
   });
 
   it('applies the prominent now-line class from the user preference', async () => {

@@ -27,7 +27,8 @@ func TestBackupExportsAgendaFlagsAndOmitsCalendarSources(t *testing.T) {
 	}
 	tz := "America/New_York"
 	title := "Family calendar"
-	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, boolPtr(true), &tz, &title); err != nil {
+	color := "#aabbcc"
+	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, boolPtr(true), &tz, &title, &color); err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings: %v", err)
 	}
 	secretURL := "https://calendar.example.com/private/super-secret-token.ics"
@@ -60,6 +61,9 @@ func TestBackupExportsAgendaFlagsAndOmitsCalendarSources(t *testing.T) {
 	}
 	if exported.AgendaTitle != "Family calendar" {
 		t.Fatalf("exported agendaTitle=%q", exported.AgendaTitle)
+	}
+	if exported.AgendaColor != "#aabbcc" {
+		t.Fatalf("exported agendaColor=%q", exported.AgendaColor)
 	}
 
 	raw, err := json.Marshal(data)
@@ -96,7 +100,7 @@ func TestBackupExportsAgendaFlagsAndOmitsCalendarSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectAgendaSettings: %v", err)
 	}
-	if !settings.Enabled || settings.Timezone != "America/New_York" || settings.Title != "Family calendar" {
+	if !settings.Enabled || settings.Timezone != "America/New_York" || settings.Title != "Family calendar" || settings.Color != "#aabbcc" {
 		t.Fatalf("imported settings = %+v", settings)
 	}
 	count, err := st2.CountCalendarSources(importCtx, imported.ID)
@@ -131,6 +135,91 @@ func TestBackupRejectsInvalidAgendaTimezone(t *testing.T) {
 			EstimationMode: EstimationModeModifiedFibonacci,
 			AgendaEnabled:  &enabled,
 			AgendaTimezone: "Not/A_Zone",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			WorkflowColumns: []WorkflowColumnExport{
+				{Key: "todo", Name: "To Do", Color: "#94a3b8", Position: 0, IsDone: false},
+				{Key: "done", Name: "Done", Color: "#ef4444", Position: 1, IsDone: true},
+			},
+		}},
+	}
+	if _, err := st.ImportProjects(ownerCtx, data, ModeFull, "replace"); err == nil || !errors.Is(err, ErrValidation) {
+		t.Fatalf("import err=%v, want ErrValidation", err)
+	}
+}
+
+func TestBackupMissingAgendaColorKeepsDefault(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "backup-default-color@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	enabled := true
+	now := time.Now().UTC()
+	data := &ExportData{
+		Version:    version.ExportFormatVersion,
+		Mode:       ModeFull.String(),
+		Scope:      "full",
+		ExportedAt: now,
+		Projects: []ProjectExport{{
+			Slug:           "legacy-agenda-color",
+			Name:           "Legacy Color",
+			EstimationMode: EstimationModeModifiedFibonacci,
+			AgendaEnabled:  &enabled,
+			AgendaTimezone: "UTC",
+			AgendaTitle:    "Team calendar",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			WorkflowColumns: []WorkflowColumnExport{
+				{Key: "todo", Name: "To Do", Color: "#94a3b8", Position: 0, IsDone: false},
+				{Key: "done", Name: "Done", Color: "#ef4444", Position: 1, IsDone: true},
+			},
+		}},
+	}
+	if _, err := st.ImportProjects(ownerCtx, data, ModeFull, "replace"); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	imported, err := st.GetProjectBySlug(ownerCtx, "legacy-agenda-color")
+	if err != nil {
+		t.Fatalf("GetProjectBySlug: %v", err)
+	}
+	settings, err := st.GetProjectAgendaSettings(ownerCtx, imported.ID)
+	if err != nil {
+		t.Fatalf("GetProjectAgendaSettings: %v", err)
+	}
+	if settings.Color != DefaultAgendaColor || settings.Title != "Team calendar" {
+		t.Fatalf("legacy import settings = %+v", settings)
+	}
+}
+
+func TestBackupRejectsInvalidAgendaColor(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "backup-bad-color@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	enabled := true
+	now := time.Now().UTC()
+	data := &ExportData{
+		Version:    version.ExportFormatVersion,
+		Mode:       ModeFull.String(),
+		Scope:      "full",
+		ExportedAt: now,
+		Projects: []ProjectExport{{
+			Slug:           "bad-color",
+			Name:           "Bad Color",
+			EstimationMode: EstimationModeModifiedFibonacci,
+			AgendaEnabled:  &enabled,
+			AgendaTimezone: "UTC",
+			AgendaColor:    "indigo",
 			CreatedAt:      now,
 			UpdatedAt:      now,
 			WorkflowColumns: []WorkflowColumnExport{

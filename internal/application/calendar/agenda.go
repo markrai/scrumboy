@@ -47,6 +47,7 @@ type AgendaView struct {
 	Enabled   bool
 	Timezone  string
 	Title     string
+	Color     string
 	Stale     bool
 	FetchedAt *time.Time
 	Error     string
@@ -130,6 +131,7 @@ func (s *AgendaService) ReadAgenda(ctx context.Context, projectID int64) (Agenda
 			Enabled:  true,
 			Timezone: settings.Timezone,
 			Title:    settings.Title,
+			Color:    settings.Color,
 			Stale:    true,
 			Error:    "unsupported calendar timezone",
 			Events:   []AgendaEvent{},
@@ -155,6 +157,7 @@ func (s *AgendaService) ReadAgenda(ctx context.Context, projectID int64) (Agenda
 		Enabled:  true,
 		Timezone: settings.Timezone,
 		Title:    settings.Title,
+		Color:    settings.Color,
 		Events:   []AgendaEvent{},
 	}
 	var latestFetched time.Time

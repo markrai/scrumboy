@@ -2076,6 +2076,31 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   margin-bottom: var(--s-24);
 }
 
+.settings-agenda-name-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-12);
+}
+
+.settings-agenda-name-field {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 67%;
+  min-width: 0;
+}
+
+.settings-agenda-color-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.settings-agenda-color-field .field__label {
+  text-align: center;
+}
+
 .settings-section__title {
   font-weight: 800;
   font-size: var(--fs-16);
@@ -3842,6 +3867,11 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     color: #ffffff;
   }
 
+  .mobile-tab[data-tab="agenda"] {
+    background: #6366F1;
+    color: #ffffff;
+  }
+
   .mobile-tab:hover {
     opacity: 0.7;
     /* Slightly brighter on hover, but still dimmed */
@@ -4092,8 +4122,44 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   color: #ffffff;
 }
 
-.col__head--agenda .col__count {
-  color: #ffffff;
+.col__head--agenda .col__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col__head--agenda .col__agenda-hosts {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex-shrink: 0;
+}
+
+.col__agenda-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.col__agenda-host img,
+.col__agenda-host svg {
+  width: var(--s-16);
+  height: var(--s-16);
+  flex-shrink: 0;
+}
+
+.col__agenda-host img {
+  object-fit: contain;
+}
+
+.col__agenda-host--apple img {
+  filter: invert(1);
 }
 
 .col--agenda .col__list {
@@ -4218,12 +4284,11 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .card--agenda {
   cursor: default;
-  border-color: #6366F1;
-  padding-bottom: var(--s-28);
+  border-color: var(--agenda-lane-color, #6366F1);
 }
 
 .card--agenda:hover {
-  border-color: #6366F1;
+  border-color: var(--agenda-lane-color, #6366F1);
 }
 
 .card--agenda-timed {
@@ -4258,31 +4323,6 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   font-size: var(--fs-12);
   margin-top: var(--s-4);
   white-space: nowrap;
-}
-
-.card__agenda-badge {
-  position: absolute;
-  right: var(--s-8);
-  bottom: var(--s-8);
-  display: inline-flex;
-  width: var(--s-16);
-  height: var(--s-16);
-  pointer-events: none;
-  opacity: 0.55;
-}
-
-.card__agenda-badge img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.card__agenda-badge--apple {
-  filter: invert(1);
-}
-
-[data-theme="light"] .card__agenda-badge--apple {
-  filter: none;
 }
 
 .card:focus {

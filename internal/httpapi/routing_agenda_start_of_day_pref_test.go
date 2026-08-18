@@ -27,7 +27,7 @@ func TestAgendaStartOfDayPreference_DoesNotModifyProjectAgendaSettings(t *testin
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if _, err := st.UpdateProjectAgendaSettings(ctxOwner, project.ID, boolPtr(true), strPtr("America/New_York"), strPtr("Team calendar")); err != nil {
+	if _, err := st.UpdateProjectAgendaSettings(ctxOwner, project.ID, boolPtr(true), strPtr("America/New_York"), strPtr("Team calendar"), nil); err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings: %v", err)
 	}
 	before, err := st.GetProjectAgendaSettings(ctxOwner, project.ID)
@@ -139,7 +139,7 @@ func TestAgendaNowLinePreference_DoesNotModifyProjectAgendaSettings(t *testing.T
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if _, err := st.UpdateProjectAgendaSettings(ctxOwner, project.ID, boolPtr(true), strPtr("America/New_York"), strPtr("Team calendar")); err != nil {
+	if _, err := st.UpdateProjectAgendaSettings(ctxOwner, project.ID, boolPtr(true), strPtr("America/New_York"), strPtr("Team calendar"), nil); err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings: %v", err)
 	}
 	before, err := st.GetProjectAgendaSettings(ctxOwner, project.ID)

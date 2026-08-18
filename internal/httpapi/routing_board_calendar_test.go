@@ -70,6 +70,7 @@ func TestCalendarSources_MaintainerCRUDRedactsURL(t *testing.T) {
 		AgendaEnabled  bool   `json:"agendaEnabled"`
 		AgendaTimezone string `json:"agendaTimezone"`
 		AgendaTitle    string `json:"agendaTitle"`
+		AgendaColor    string `json:"agendaColor"`
 		Sources        []struct {
 			ID         int64  `json:"id"`
 			URLPreview string `json:"urlPreview"`
@@ -79,7 +80,7 @@ func TestCalendarSources_MaintainerCRUDRedactsURL(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("list sources: status=%d body=%s", resp.StatusCode, string(body))
 	}
-	if !listed.AgendaEnabled || listed.AgendaTimezone != "America/New_York" || listed.AgendaTitle != "Agenda" || len(listed.Sources) != 1 {
+	if !listed.AgendaEnabled || listed.AgendaTimezone != "America/New_York" || listed.AgendaTitle != "Agenda" || listed.AgendaColor != store.DefaultAgendaColor || len(listed.Sources) != 1 {
 		t.Fatalf("listed = %+v", listed)
 	}
 	if strings.Contains(string(body), "super-secret-token") {
@@ -95,6 +96,21 @@ func TestCalendarSources_MaintainerCRUDRedactsURL(t *testing.T) {
 	}
 	if patched["agendaTitle"] != "Team calendar" {
 		t.Fatalf("patched=%v", patched)
+	}
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/settings", map[string]any{
+		"agendaColor": "#aabbcc",
+	}, &patched)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("patch color: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if patched["agendaColor"] != "#aabbcc" {
+		t.Fatalf("patched color=%v", patched)
+	}
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/settings", map[string]any{
+		"agendaColor": "indigo",
+	}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid color: status=%d body=%s", resp.StatusCode, string(body))
 	}
 	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/settings", map[string]any{
 		"agendaTitle": "  ",

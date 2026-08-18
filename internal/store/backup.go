@@ -73,6 +73,7 @@ type ProjectExport struct {
 	AgendaEnabled   *bool                  `json:"agendaEnabled,omitempty"`
 	AgendaTimezone  string                 `json:"agendaTimezone,omitempty"`
 	AgendaTitle     string                 `json:"agendaTitle,omitempty"`
+	AgendaColor     string                 `json:"agendaColor,omitempty"`
 	ExpiresAt       *time.Time             `json:"expiresAt"`
 	CreatedAt       time.Time              `json:"createdAt"`
 	UpdatedAt       time.Time              `json:"updatedAt"`
@@ -557,6 +558,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			AgendaEnabled:        &agendaEnabled,
 			AgendaTimezone:       agendaSettings.Timezone,
 			AgendaTitle:          agendaSettings.Title,
+			AgendaColor:          agendaSettings.Color,
 			ExpiresAt:            p.ExpiresAt,
 			CreatedAt:            p.CreatedAt,
 			UpdatedAt:            p.UpdatedAt,
@@ -595,7 +597,8 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 func applyAgendaFlagsExec(ctx context.Context, tx *sql.Tx, projectID int64, pExport ProjectExport) error {
 	title := strings.TrimSpace(pExport.AgendaTitle)
 	tz := strings.TrimSpace(pExport.AgendaTimezone)
-	if pExport.AgendaEnabled == nil && tz == "" && title == "" {
+	color := strings.TrimSpace(pExport.AgendaColor)
+	if pExport.AgendaEnabled == nil && tz == "" && title == "" && color == "" {
 		return nil
 	}
 	if tz != "" {
@@ -605,6 +608,11 @@ func applyAgendaFlagsExec(ctx context.Context, tx *sql.Tx, projectID int64, pExp
 	}
 	if title != "" {
 		if _, err := validateAgendaTitle(title); err != nil {
+			return err
+		}
+	}
+	if color != "" {
+		if _, err := validateAgendaColor(color); err != nil {
 			return err
 		}
 	}
@@ -630,6 +638,16 @@ func applyAgendaFlagsExec(ctx context.Context, tx *sql.Tx, projectID int64, pExp
 		_, err := tx.ExecContext(ctx, `UPDATE projects SET agenda_title = ? WHERE id = ?`, title, projectID)
 		if err != nil {
 			return fmt.Errorf("update agenda title: %w", err)
+		}
+	}
+	if color != "" {
+		normalized, err := validateAgendaColor(color)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE projects SET agenda_color = ? WHERE id = ?`, normalized, projectID)
+		if err != nil {
+			return fmt.Errorf("update agenda color: %w", err)
 		}
 	}
 	return nil

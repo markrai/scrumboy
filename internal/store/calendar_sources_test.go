@@ -92,16 +92,16 @@ func TestCalendarSourceEncryptDecryptAndUniqueness(t *testing.T) {
 		t.Fatalf("listed = %d, want %d", len(listed), MaxCalendarSources)
 	}
 
-	settings, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, boolPtr(true), strPtr("America/New_York"), nil)
+	settings, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, boolPtr(true), strPtr("America/New_York"), nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings: %v", err)
 	}
-	if !settings.Enabled || settings.Timezone != "America/New_York" || settings.Title != DefaultAgendaTitle {
+	if !settings.Enabled || settings.Timezone != "America/New_York" || settings.Title != DefaultAgendaTitle || settings.Color != DefaultAgendaColor {
 		t.Fatalf("settings = %+v", settings)
 	}
 
 	custom := "Family calendar"
-	settings, err = st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, &custom)
+	settings, err = st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, &custom, nil)
 	if err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings title: %v", err)
 	}
@@ -109,10 +109,10 @@ func TestCalendarSourceEncryptDecryptAndUniqueness(t *testing.T) {
 		t.Fatalf("after title update = %+v", settings)
 	}
 	empty := "   "
-	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, &empty); err == nil || !errors.Is(err, ErrValidation) {
+	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, &empty, nil); err == nil || !errors.Is(err, ErrValidation) {
 		t.Fatalf("empty title error = %v, want ErrValidation", err)
 	}
-	settings, err = st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, strPtr("UTC"), nil)
+	settings, err = st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, strPtr("UTC"), nil, nil)
 	if err != nil {
 		t.Fatalf("timezone-only update: %v", err)
 	}
@@ -229,6 +229,62 @@ func TestCalendarSourceEncryptSecretUsesAESGCMFraming(t *testing.T) {
 	}
 	if string(plain) != "ics-url" {
 		t.Fatalf("plain = %q", plain)
+	}
+}
+
+func TestProjectAgendaColorPersistsAndValidates(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "agenda-color@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Agenda Color")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	settings, err := st.GetProjectAgendaSettings(ownerCtx, project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectAgendaSettings: %v", err)
+	}
+	if settings.Color != DefaultAgendaColor {
+		t.Fatalf("default color = %q, want %q", settings.Color, DefaultAgendaColor)
+	}
+
+	custom := "#aabbcc"
+	settings, err = st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, nil, &custom)
+	if err != nil {
+		t.Fatalf("UpdateProjectAgendaSettings color: %v", err)
+	}
+	if settings.Color != custom {
+		t.Fatalf("after color update = %+v", settings)
+	}
+
+	title := "Kept"
+	settings, err = st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, &title, nil)
+	if err != nil {
+		t.Fatalf("title-only update: %v", err)
+	}
+	if settings.Color != custom || settings.Title != title {
+		t.Fatalf("title-only mutated color = %+v", settings)
+	}
+
+	for _, bad := range []string{"indigo", "  ", "#fff", "#GGGGGG"} {
+		if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, nil, nil, strPtr(bad)); err == nil || !errors.Is(err, ErrValidation) {
+			t.Fatalf("invalid color %q error = %v, want ErrValidation", bad, err)
+		}
+	}
+
+	got, err := st.GetProjectAgendaSettings(ownerCtx, project.ID)
+	if err != nil {
+		t.Fatalf("Get after invalid: %v", err)
+	}
+	if got.Color != custom {
+		t.Fatalf("invalid color mutated stored value = %+v", got)
 	}
 }
 

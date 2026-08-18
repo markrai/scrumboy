@@ -30,6 +30,7 @@ type AgendaSettingsView struct {
 	Enabled  bool
 	Timezone string
 	Title    string
+	Color    string
 	Sources  []SourceView
 }
 
@@ -51,6 +52,7 @@ type PatchSettingsCommand struct {
 	Enabled  *bool
 	Timezone *string
 	Title    *string
+	Color    *string
 }
 
 type ProjectLookup interface {
@@ -68,7 +70,7 @@ type SecretCipher interface {
 
 type SourceStore interface {
 	GetProjectAgendaSettings(ctx context.Context, projectID int64) (store.ProjectAgendaSettings, error)
-	UpdateProjectAgendaSettings(ctx context.Context, projectID int64, enabled *bool, timezone *string, title *string) (store.ProjectAgendaSettings, error)
+	UpdateProjectAgendaSettings(ctx context.Context, projectID int64, enabled *bool, timezone *string, title *string, color *string) (store.ProjectAgendaSettings, error)
 	ListCalendarSources(ctx context.Context, projectID int64) ([]store.CalendarSource, error)
 	CountCalendarSources(ctx context.Context, projectID int64) (int, error)
 	GetCalendarSource(ctx context.Context, projectID, sourceID int64) (store.CalendarSource, error)
@@ -168,7 +170,7 @@ func (p *PreparedREST) PatchSettings(command PatchSettingsCommand) (AgendaSettin
 	if err != nil {
 		return AgendaSettingsView{}, err
 	}
-	updated, err := p.service.sources.UpdateProjectAgendaSettings(p.ctx, p.projectID, command.Enabled, command.Timezone, command.Title)
+	updated, err := p.service.sources.UpdateProjectAgendaSettings(p.ctx, p.projectID, command.Enabled, command.Timezone, command.Title, command.Color)
 	if err != nil {
 		return AgendaSettingsView{}, err
 	}
@@ -202,6 +204,7 @@ func (p *PreparedREST) List() (AgendaSettingsView, error) {
 		Enabled:  settings.Enabled,
 		Timezone: settings.Timezone,
 		Title:    settings.Title,
+		Color:    settings.Color,
 		Sources:  views,
 	}, nil
 }

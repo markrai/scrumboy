@@ -181,13 +181,10 @@ func TestWebAssets_CalendarHostBadgesAreEmbedded(t *testing.T) {
 		t.Fatalf("read embedded styles.css: %v", err)
 	}
 	s := string(css)
-	if !strings.Contains(s, "opacity: 0.55") {
-		t.Fatal("expected faded agenda host badges")
+	if !strings.Contains(s, ".col__agenda-host--apple") || !strings.Contains(s, "filter: invert(1)") {
+		t.Fatal("expected Apple header host invert")
 	}
-	if !strings.Contains(s, ".card__agenda-badge--apple") || !strings.Contains(s, "filter: invert(1)") {
-		t.Fatal("expected Apple badge dark-mode invert")
-	}
-	if !strings.Contains(s, `[data-theme="light"] .card__agenda-badge--apple`) {
-		t.Fatal("expected Apple badge light-mode invert reset")
+	if !strings.Contains(s, ".col__agenda-hosts") {
+		t.Fatal("expected agenda header host chips")
 	}
 }

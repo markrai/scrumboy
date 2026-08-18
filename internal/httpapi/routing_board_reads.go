@@ -142,6 +142,7 @@ func agendaViewToJSON(view calendarapp.AgendaView) *agendaJSON {
 		Enabled:  true,
 		Timezone: view.Timezone,
 		Title:    view.Title,
+		Color:    view.Color,
 		Stale:    view.Stale,
 		Events:   make([]agendaEventJSON, 0, len(view.Events)),
 	}

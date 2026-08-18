@@ -8,7 +8,7 @@ function emptyAgendaBoard() {
     tags: [],
     columnOrder: [{ key: 'backlog', name: 'Backlog', isDone: false }],
     columns: { backlog: [] },
-    agenda: { enabled: true, timezone: 'UTC', stale: false, error: null, events: [] },
+    agenda: { enabled: true, timezone: 'UTC', stale: false, error: null, events: [], color: '#6366F1' },
   };
 }
 
@@ -38,12 +38,17 @@ vi.mock('../utils.js', () => ({
       .replaceAll('"', '&quot;'),
   confirmDelete: vi.fn(),
   showToast: vi.fn(),
+  sanitizeHexColor: (color?: string | null, fallback?: string | null) => {
+    if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color.trim())) return color.trim();
+    return fallback ?? null;
+  },
 }));
 
 const calendarPayload = {
   agendaEnabled: true,
   agendaTimezone: 'UTC',
   agendaTitle: 'Agenda',
+  agendaColor: '#6366F1',
   sources: [
     {
       id: 3,
@@ -65,6 +70,8 @@ describe('settings calendar tab', () => {
   beforeEach(async () => {
     selectorState.slug = 'alpha';
     selectorState.board = null;
+    calendarPayload.agendaTitle = 'Agenda';
+    calendarPayload.agendaColor = '#6366F1';
     apiFetchMock.mockReset();
     localStorage.clear();
     const i18n = await import('../i18n/index.js');
@@ -97,6 +104,13 @@ describe('settings calendar tab', () => {
     expect(html).toContain('id="agendaEnabledToggle"');
     expect(html).toContain('id="agendaTitleInput"');
     expect(html).toContain('for="agendaTitleInput"');
+    expect(html).toContain('class="field settings-agenda-name-field"');
+    expect(html).toContain('id="agendaColorInput"');
+    expect(html).toContain('class="field settings-agenda-color-field"');
+    expect(html).toContain('settings-agenda-name-row');
+    expect(html).toContain('type="color"');
+    expect(html).toContain('settings-color-picker');
+    expect(html).toContain('value="#6366F1"');
     expect(html).toContain('id="agendaTimezoneInput"');
     expect(html).toContain('<select class="input" id="agendaTimezoneInput">');
     expect(html).toContain('for="agendaTimezoneInput"');
@@ -319,6 +333,118 @@ describe('settings calendar tab', () => {
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 
+  it('saves the lane color on change', async () => {
+    selectorState.board = emptyAgendaBoard();
+    apiFetchMock.mockResolvedValue(calendarPayload);
+    const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
+    document.body.innerHTML = await loadCalendarTabContent();
+    const { showToast } = await import('../utils.js');
+    const rerender = vi.fn(async () => {
+      document.body.innerHTML = await loadCalendarTabContent();
+    });
+    bindCalendarTabInteractions({ signal: new AbortController().signal, rerender });
+
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValueOnce({});
+    apiFetchMock.mockResolvedValueOnce({
+      ...calendarPayload,
+      agendaColor: '#aabbcc',
+    });
+
+    const input = document.getElementById('agendaColorInput') as HTMLInputElement;
+    input.value = '#aabbcc';
+    input.dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/board/alpha/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ agendaColor: '#aabbcc' }),
+    });
+    expect(showToast).toHaveBeenCalledWith(enCatalog['settings.calendar.toast.colorUpdated']);
+    expect(selectorState.board?.agenda?.color).toBe('#aabbcc');
+    expect(rerender).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores the picker and open lane color when the color PATCH fails', async () => {
+    selectorState.board = emptyAgendaBoard();
+    apiFetchMock.mockResolvedValue(calendarPayload);
+    const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
+    const { buildAgendaColumnHtml } = await import('../views/board-agenda.js');
+    document.body.innerHTML = `${await loadCalendarTabContent()}${buildAgendaColumnHtml(selectorState.board, null)}`;
+    const { showToast } = await import('../utils.js');
+    bindCalendarTabInteractions({ signal: new AbortController().signal, rerender: async () => {} });
+
+    apiFetchMock.mockReset();
+    const err = Object.assign(new Error('invalid agenda color'), {
+      status: 400,
+      data: { error: { code: 'VALIDATION', message: 'invalid agenda color' } },
+    });
+    apiFetchMock.mockRejectedValueOnce(err);
+
+    const input = document.getElementById('agendaColorInput') as HTMLInputElement;
+    input.value = '#aabbcc';
+    input.dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(input.value.toLowerCase()).toBe('#6366f1');
+    expect(selectorState.board?.agenda?.color).toBe('#6366F1');
+    expect(document.querySelector('.col--agenda')?.getAttribute('style')).toContain('--agenda-lane-color:#6366F1');
+    expect(showToast).toHaveBeenCalled();
+    const messages = vi.mocked(showToast).mock.calls.map((call) => call[0]);
+    expect(
+      messages.some(
+        (msg) =>
+          String(msg).includes('invalid agenda color') ||
+          msg === enCatalog['settings.calendar.toast.colorFailed'],
+      ),
+    ).toBe(true);
+  });
+
+  it('does not reset a manually scrolled Agenda lane when color saves', async () => {
+    selectorState.board = emptyAgendaBoard();
+    apiFetchMock.mockResolvedValue(calendarPayload);
+    const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
+    const { buildAgendaColumnHtml, applyAgendaScrollAfterRender } = await import('../views/board-agenda.js');
+    document.body.innerHTML = `${await loadCalendarTabContent()}${buildAgendaColumnHtml(selectorState.board, null)}`;
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 400 });
+    list.scrollTop = 240;
+    applyAgendaScrollAfterRender({ restoreScrollTop: 240, board: selectorState.board });
+    bindCalendarTabInteractions({ signal: new AbortController().signal, rerender: async () => {} });
+
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValueOnce({});
+
+    const input = document.getElementById('agendaColorInput') as HTMLInputElement;
+    input.value = '#aabbcc';
+    input.dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const nextList = document.getElementById('list_agenda') as HTMLElement;
+    expect(nextList.scrollTop).toBe(240);
+    expect(selectorState.board?.agenda?.color).toBe('#aabbcc');
+    expect(document.querySelector('.col--agenda')?.getAttribute('style')).toContain('--agenda-lane-color:#aabbcc');
+  });
+
+  it('does not PATCH the lane color when it is unchanged', async () => {
+    apiFetchMock.mockResolvedValue(calendarPayload);
+    const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
+    document.body.innerHTML = await loadCalendarTabContent();
+    bindCalendarTabInteractions({ signal: new AbortController().signal, rerender: async () => {} });
+    apiFetchMock.mockReset();
+
+    const input = document.getElementById('agendaColorInput') as HTMLInputElement;
+    input.value = '#6366F1';
+    input.dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
   it('saves Start of day through user preferences and does not PATCH board settings', async () => {
     apiFetchMock.mockResolvedValue(calendarPayload);
     const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
@@ -456,6 +582,8 @@ describe('settings calendar tab', () => {
     expect(html).toContain(enCatalog['settings.calendar.nowLine.label']);
     expect(html).not.toContain('id="agendaEnabledToggle"');
     expect(html).not.toContain('id="agendaTimezoneInput"');
+    expect(html).not.toContain('id="agendaTitleInput"');
+    expect(html).not.toContain('id="agendaColorInput"');
     expect(html).not.toContain('id="calendarSourceAdd"');
     expect(apiFetchMock).not.toHaveBeenCalled();
   });

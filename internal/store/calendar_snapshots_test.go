@@ -276,7 +276,7 @@ func TestCalendarFeedSnapshotWritesRequireCurrentConfig(t *testing.T) {
 	}
 
 	chicago := "America/Chicago"
-	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, &chicago, nil); err != nil {
+	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, &chicago, nil, nil); err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings: %v", err)
 	}
 	if err := st.TouchCalendarFeedSnapshotIfCurrent(ownerCtx, src.ID, fetched.Add(time.Minute), `"b"`, "", "hash-b", "UTC"); !errors.Is(err, ErrSnapshotSuperseded) {

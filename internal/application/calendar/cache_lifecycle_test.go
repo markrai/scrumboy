@@ -236,3 +236,57 @@ func TestAgendaEnabledOnlyDoesNotInvalidateSnapshot(t *testing.T) {
 		t.Fatalf("enabled-only mutated snapshot: %+v", got)
 	}
 }
+
+func TestAgendaColorOnlyDoesNotInvalidateSnapshot(t *testing.T) {
+	assertAgendaPresentationPatchKeepsSnapshot(t, PatchSettingsCommand{Color: strPtr("#aabbcc")})
+}
+
+func TestAgendaTitleOnlyDoesNotInvalidateSnapshot(t *testing.T) {
+	assertAgendaPresentationPatchKeepsSnapshot(t, PatchSettingsCommand{Title: strPtr("Team calendar")})
+}
+
+func TestAgendaTitleAndColorDoNotInvalidateSnapshot(t *testing.T) {
+	assertAgendaPresentationPatchKeepsSnapshot(t, PatchSettingsCommand{
+		Title: strPtr("Team calendar"),
+		Color: strPtr("#aabbcc"),
+	})
+}
+
+func assertAgendaPresentationPatchKeepsSnapshot(t *testing.T, command PatchSettingsCommand) {
+	t.Helper()
+	now := time.Date(2026, 8, 17, 14, 0, 0, 0, time.UTC)
+	sources := &calendarSourceStoreFake{
+		settings: store.ProjectAgendaSettings{
+			Enabled:  true,
+			Timezone: "America/New_York",
+			Title:    store.DefaultAgendaTitle,
+			Color:    store.DefaultAgendaColor,
+		},
+		sources: []store.CalendarSource{{
+			ID:      3,
+			Name:    "Family",
+			Enabled: true,
+		}},
+	}
+	seed := store.CalendarFeedSnapshot{
+		SourceID:     3,
+		ETag:         `"keep"`,
+		LastModified: "Mon, 17 Aug 2026 12:00:00 GMT",
+		FetchedAt:    now.Add(-time.Minute),
+		Status:       store.CalendarSnapshotStatusOK,
+		EventsJSON:   `[{"uid":"pickup","title":"Pickup","startsAt":"2026-08-17T15:00:00Z","endsAt":"2026-08-17T16:00:00Z","allDay":false,"location":""}]`,
+	}
+	snaps := &snapshotStoreFake{snaps: map[int64]store.CalendarFeedSnapshot{3: seed}}
+	if _, err := preparedCalendarWithSnapshots(t, sources, snaps).PatchSettings(command); err != nil {
+		t.Fatalf("PatchSettings: %v", err)
+	}
+	got, ok := snaps.lookup(3)
+	if !ok {
+		t.Fatal("presentation-only patch dropped snapshot")
+	}
+	if got.ETag != seed.ETag || got.LastModified != seed.LastModified || got.EventsJSON != seed.EventsJSON {
+		t.Fatalf("presentation-only mutated snapshot: %+v", got)
+	}
+}
+
+func strPtr(v string) *string { return &v }

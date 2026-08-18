@@ -76,10 +76,13 @@ func (f *calendarSourceStoreFake) GetProjectAgendaSettings(context.Context, int6
 	if settings.Title == "" {
 		settings.Title = store.DefaultAgendaTitle
 	}
+	if settings.Color == "" {
+		settings.Color = store.DefaultAgendaColor
+	}
 	return settings, nil
 }
 
-func (f *calendarSourceStoreFake) UpdateProjectAgendaSettings(_ context.Context, _ int64, enabled *bool, timezone *string, title *string) (store.ProjectAgendaSettings, error) {
+func (f *calendarSourceStoreFake) UpdateProjectAgendaSettings(_ context.Context, _ int64, enabled *bool, timezone *string, title *string, color *string) (store.ProjectAgendaSettings, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if enabled != nil {
@@ -91,11 +94,17 @@ func (f *calendarSourceStoreFake) UpdateProjectAgendaSettings(_ context.Context,
 	if title != nil {
 		f.settings.Title = *title
 	}
+	if color != nil {
+		f.settings.Color = *color
+	}
 	if f.settings.Timezone == "" {
 		f.settings.Timezone = "UTC"
 	}
 	if f.settings.Title == "" {
 		f.settings.Title = store.DefaultAgendaTitle
+	}
+	if f.settings.Color == "" {
+		f.settings.Color = store.DefaultAgendaColor
 	}
 	return f.settings, nil
 }
@@ -390,6 +399,23 @@ func TestPatchSettingsPersistsTitleWithoutChangingTimezone(t *testing.T) {
 		t.Fatalf("PatchSettings title: %v", err)
 	}
 	if view.Title != title || view.Timezone != "America/Chicago" {
+		t.Fatalf("view = %+v", view)
+	}
+}
+
+func TestPatchSettingsPersistsColorWithoutChangingTitle(t *testing.T) {
+	prepared := preparedCalendar(t, RESTServiceDependencies{
+		Projects: &calendarProjectFake{project: store.Project{ID: 9}},
+		Roles:    &calendarRoleFake{role: store.RoleMaintainer},
+		Cipher:   &calendarCipherFake{},
+		Sources:  &calendarSourceStoreFake{settings: store.ProjectAgendaSettings{Timezone: "America/Chicago", Title: store.DefaultAgendaTitle, Color: store.DefaultAgendaColor}},
+	})
+	color := "#aabbcc"
+	view, err := prepared.PatchSettings(PatchSettingsCommand{Color: &color})
+	if err != nil {
+		t.Fatalf("PatchSettings color: %v", err)
+	}
+	if view.Color != color || view.Title != store.DefaultAgendaTitle || view.Timezone != "America/Chicago" {
 		t.Fatalf("view = %+v", view)
 	}
 }

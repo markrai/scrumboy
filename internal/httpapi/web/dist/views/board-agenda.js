@@ -1,4 +1,4 @@
-import { escapeHTML } from '../utils.js';
+import { escapeHTML, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { getBoard, getMobileTab } from '../state/selectors.js';
 import { AGENDA_START_OF_DAY_MAX_MINUTE, agendaStartOfDayMinutes, } from '../core/agenda-start-of-day-preferences.js';
@@ -9,6 +9,37 @@ export const AGENDA_HOUR_HEIGHT_MOBILE_PX = 96;
 export const AGENDA_HOUR_HEIGHT_MOBILE_MQ = '(max-width: 767px)';
 export const AGENDA_MIN_VISIBLE_MINUTES = 15;
 export const AGENDA_DAY_MINUTES = 1440;
+/** Place "now" this far down the initial viewport (presentation constant, not a preference). */
+export const AGENDA_SMART_NOW_OFFSET_FRACTION = 1 / 3;
+export const AGENDA_DEFAULT_LANE_COLOR = '#6366F1';
+export const GOOGLE_CALENDAR_URL = 'https://calendar.google.com';
+export const APPLE_CALENDAR_URL = 'https://www.icloud.com/calendar';
+const AGENDA_OTHER_CALENDAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>`;
+function agendaHostKind(raw) {
+    if (raw === 'google' || raw === 'apple')
+        return raw;
+    return 'other';
+}
+export function agendaSourceChips(events) {
+    const chips = [];
+    const indexBySource = new Map();
+    for (const event of events) {
+        const existing = indexBySource.get(event.sourceId);
+        if (existing == null) {
+            indexBySource.set(event.sourceId, chips.length);
+            chips.push({
+                sourceId: event.sourceId,
+                calendarName: event.calendarName,
+                hostKind: agendaHostKind(event.hostKind),
+                count: 1,
+            });
+        }
+        else {
+            chips[existing].count += 1;
+        }
+    }
+    return chips;
+}
 function measureLaidOutAgendaHourHeightPx() {
     if (typeof document === 'undefined')
         return null;
@@ -52,10 +83,12 @@ export function agendaLaneTitle(board) {
     const custom = typeof board.agenda?.title === 'string' ? board.agenda.title.trim() : '';
     return custom || t('board.agenda.title');
 }
+export function agendaLaneColor(board) {
+    return sanitizeHexColor(board.agenda?.color, AGENDA_DEFAULT_LANE_COLOR) || AGENDA_DEFAULT_LANE_COLOR;
+}
 export function renderAgendaEventCard(event, timezone, options) {
     const timeLabel = formatAgendaEventTime(event, timezone);
     const location = event.location ? `<div class="muted">${escapeHTML(event.location)}</div>` : '';
-    const badge = renderAgendaHostBadge(event.hostKind);
     const extraClass = options?.extraClass ? ` ${options.extraClass}` : '';
     const styleAttr = options?.style ? ` style="${escapeHTML(options.style)}"` : '';
     return `
@@ -65,20 +98,42 @@ export function renderAgendaEventCard(event, timezone, options) {
         ${timeLabel ? `<div class="muted card__agenda-meta">${escapeHTML(timeLabel)}</div>` : ''}
       </div>
       ${location}
-      ${badge}
     </article>
   `;
 }
-function renderAgendaHostBadge(hostKind) {
-    if (hostKind === 'google') {
-        const label = escapeHTML(t('board.agenda.badge.google'));
-        return `<span class="card__agenda-badge card__agenda-badge--google" role="img" aria-label="${label}"><img src="/assets/calendar/google.webp" alt=""></span>`;
+function agendaHostLabel(chip) {
+    const named = typeof chip.calendarName === 'string' ? chip.calendarName.trim() : '';
+    if (named)
+        return named;
+    const kind = agendaHostKind(chip.hostKind);
+    if (kind === 'google')
+        return t('board.agenda.badge.google');
+    if (kind === 'apple')
+        return t('board.agenda.badge.apple');
+    return t('board.agenda.badge.other');
+}
+function renderAgendaHeaderHost(chip) {
+    const kind = agendaHostKind(chip.hostKind);
+    const label = escapeHTML(agendaHostLabel(chip));
+    const icon = kind === 'google'
+        ? `<img src="/assets/calendar/google.webp" alt="">`
+        : kind === 'apple'
+            ? `<img src="/assets/calendar/apple.webp" alt="">`
+            : AGENDA_OTHER_CALENDAR_SVG;
+    const inner = `${icon}<span class="col__agenda-host-count">${chip.count}</span>`;
+    if (kind === 'google') {
+        return `<a class="col__agenda-host col__agenda-host--google" href="${GOOGLE_CALENDAR_URL}" target="_blank" rel="noopener noreferrer" aria-label="${label}">${inner}</a>`;
     }
-    if (hostKind === 'apple') {
-        const label = escapeHTML(t('board.agenda.badge.apple'));
-        return `<span class="card__agenda-badge card__agenda-badge--apple" role="img" aria-label="${label}"><img src="/assets/calendar/apple.webp" alt=""></span>`;
+    if (kind === 'apple') {
+        return `<a class="col__agenda-host col__agenda-host--apple" href="${APPLE_CALENDAR_URL}" target="_blank" rel="noopener noreferrer" aria-label="${label}">${inner}</a>`;
     }
-    return '';
+    return `<span class="col__agenda-host col__agenda-host--other" aria-label="${label}">${inner}</span>`;
+}
+export function renderAgendaHeaderHosts(events) {
+    const chips = agendaSourceChips(events)
+        .map((chip) => renderAgendaHeaderHost(chip))
+        .join('');
+    return `<span class="col__agenda-hosts">${chips}</span>`;
 }
 function civilPartsFromDate(date, timezone) {
     if (Number.isNaN(date.getTime()))
@@ -194,9 +249,9 @@ function clampRangeToWindow(startMinute, endMinute, window) {
 export function agendaDayWindow() {
     return { startMinute: 0, endMinute: AGENDA_DAY_MINUTES };
 }
-export function agendaInitialFocusMinute(events, timezone, preferredStartMinutes, now = new Date()) {
+export function agendaInitialFocusMinute(events, timezone, preferredStartMinutes, now = new Date(), dayKey) {
     const preferred = Math.min(AGENDA_START_OF_DAY_MAX_MINUTE, Math.max(0, preferredStartMinutes));
-    const todayKey = agendaCivilTodayKey(timezone, now);
+    const todayKey = dayKey || agendaCivilTodayKey(timezone, now);
     let earliest = Number.POSITIVE_INFINITY;
     for (const event of events) {
         const range = timedRangeOnDay(event, timezone, todayKey);
@@ -208,6 +263,20 @@ export function agendaInitialFocusMinute(events, timezone, preferredStartMinutes
     if (!Number.isFinite(earliest))
         return preferred;
     return Math.min(preferred, Math.min(AGENDA_START_OF_DAY_MAX_MINUTE, Math.max(0, earliest)));
+}
+export function agendaNowContextTopMinute(nowMinute, viewportMinutes) {
+    return nowMinute - viewportMinutes * AGENDA_SMART_NOW_OFFSET_FRACTION;
+}
+export function agendaSmartFocusMinute(input) {
+    const viewportMinutes = Number.isFinite(input.viewportMinutes) ? Math.max(0, input.viewportMinutes) : 0;
+    const maxTopMinute = Math.max(0, AGENDA_DAY_MINUTES - viewportMinutes);
+    const baseline = Math.min(maxTopMinute, Math.max(0, input.baselineMinute));
+    const nowMinute = input.nowMinute;
+    const canUseNow = input.isToday && nowMinute != null && Number.isFinite(nowMinute) && viewportMinutes > 0;
+    if (!canUseNow)
+        return baseline;
+    const smartTop = Math.max(baseline, agendaNowContextTopMinute(nowMinute, viewportMinutes));
+    return Math.min(maxTopMinute, Math.max(0, smartTop));
 }
 export function layoutAgendaTimedEvents(events, timezone, window, now = new Date()) {
     const todayKey = agendaCivilTodayKey(timezone, now);
@@ -330,11 +399,12 @@ export function buildAgendaColumnHtml(board, activeMobileTab, now = new Date()) 
     const timedLayouts = layoutAgendaTimedEvents(events, timezone, window, now);
     const timedHtml = renderDayGrid(window, timedLayouts, timezone, now);
     const title = escapeHTML(agendaLaneTitle(board));
+    const color = escapeHTML(agendaLaneColor(board));
     return `
-    <section class="col col--agenda${isMobileActive ? ' col--mobile-active' : ''}" data-column="${AGENDA_COLUMN_KEY}" tabindex="-1">
-      <div class="col__head col__head--agenda">
+    <section class="col col--agenda${isMobileActive ? ' col--mobile-active' : ''}" data-column="${AGENDA_COLUMN_KEY}" tabindex="-1" style="--agenda-lane-color:${color};">
+      <div class="col__head col__head--agenda" style="background:${color};">
         <span class="col__title">${title}</span>
-        <span class="col__count" data-count-for="${AGENDA_COLUMN_KEY}">${events.length}</span>
+        ${renderAgendaHeaderHosts(events)}
       </div>
       ${status}
       ${allDayHtml}
@@ -363,10 +433,27 @@ function clearPendingInitialFocus() {
     pendingFocusRaf = 0;
 }
 function applyInitialFocusToList(list, board, now) {
+    if (!agendaListIsLaidOut(list))
+        return false;
+    const hourHeight = agendaHourHeightPx();
+    if (!(hourHeight > 0))
+        return false;
+    const clock = now ?? new Date();
     const events = agendaEvents(board);
     const timezone = board.agenda?.timezone || 'UTC';
-    const focus = agendaInitialFocusMinute(events, timezone, agendaStartOfDayMinutes(), now);
-    list.scrollTop = (focus / 60) * agendaHourHeightPx();
+    const day = list.querySelector('.agenda-day');
+    const gridDay = day instanceof HTMLElement ? day.getAttribute('data-agenda-day') : null;
+    const todayKey = agendaCivilTodayKey(timezone, clock);
+    const baseline = agendaInitialFocusMinute(events, timezone, agendaStartOfDayMinutes(), clock, gridDay || todayKey);
+    const viewportMinutes = (list.clientHeight / hourHeight) * 60;
+    const focus = agendaSmartFocusMinute({
+        baselineMinute: baseline,
+        nowMinute: agendaNowMinute(timezone, clock),
+        viewportMinutes,
+        isToday: !!gridDay && gridDay === todayKey,
+    });
+    list.scrollTop = (focus / 60) * hourHeight;
+    return true;
 }
 function schedulePendingInitialFocus() {
     if (pendingFocusRaf || !pendingInitialFocus)
@@ -396,7 +483,8 @@ export function flushAgendaInitialScroll() {
         clearPendingInitialFocus();
         return;
     }
-    applyInitialFocusToList(list, board, pendingInitialFocus.now);
+    if (!applyInitialFocusToList(list, board, pendingInitialFocus.now))
+        return;
     clearPendingInitialFocus();
 }
 export function captureAgendaListScroll() {
@@ -430,6 +518,8 @@ export function bindAgendaLaneScrollInteractions(list) {
     };
     el.addEventListener('pointerdown', (event) => {
         if (event.pointerType !== 'mouse' || event.button !== 0)
+            return;
+        if (event.target instanceof Element && event.target.closest('a'))
             return;
         const gutter = 10;
         if (el.clientWidth > gutter && event.offsetX >= el.clientWidth - gutter)
@@ -504,24 +594,24 @@ export function applyAgendaScrollAfterRender(opts = {}) {
     else {
         const board = opts.board ?? getBoard();
         if (board) {
-            applyInitialFocusToList(list, board, opts.now);
-            if (!agendaListIsLaidOut(list)) {
-                pendingInitialFocus = { board, now: opts.now };
-                schedulePendingInitialFocus();
+            if (applyInitialFocusToList(list, board, opts.now)) {
+                clearPendingInitialFocus();
             }
             else {
-                clearPendingInitialFocus();
+                pendingInitialFocus = { board, now: opts.now };
+                schedulePendingInitialFocus();
             }
         }
     }
     bindAgendaLaneScrollInteractions(list);
     bindAgendaNowLine({ board: opts.board, now: opts.now });
 }
-export function syncOpenBoardAgendaLayout() {
+export function syncOpenBoardAgendaLayout(opts = {}) {
     const board = getBoard();
     const col = document.querySelector('.col--agenda');
     if (!board || !col)
         return;
+    const restoreScrollTop = captureAgendaListScroll();
     const html = buildAgendaColumnHtml(board, getMobileTab());
     if (!html) {
         agendaScrollBind?.abort();
@@ -531,7 +621,11 @@ export function syncOpenBoardAgendaLayout() {
         return;
     }
     col.outerHTML = html;
-    applyAgendaScrollAfterRender({ forceAutoFocus: true, board });
+    applyAgendaScrollAfterRender({
+        forceAutoFocus: opts.forceAutoFocus,
+        restoreScrollTop: opts.forceAutoFocus ? null : (restoreScrollTop ?? 0),
+        board,
+    });
 }
 function formatAgendaEventTime(event, timezone) {
     if (event.allDay) {

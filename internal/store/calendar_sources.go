@@ -17,6 +17,7 @@ const (
 	maxCalendarSourceNameLen  = 200
 	maxAgendaTitleLen         = 200
 	DefaultAgendaTitle        = "Agenda"
+	DefaultAgendaColor        = "#6366F1"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 	ReasonCalendarSourceLimit       = "calendar_source_limit_reached"
 	ReasonInvalidAgendaTimezone     = "invalid_agenda_timezone"
 	ReasonInvalidAgendaTitle        = "invalid_agenda_title"
+	ReasonInvalidAgendaColor        = "invalid_agenda_color"
 )
 
 // CalendarSource is a persisted ICS feed configuration. SecretEnc is ciphertext
@@ -47,6 +49,7 @@ type ProjectAgendaSettings struct {
 	Enabled  bool
 	Timezone string
 	Title    string
+	Color    string
 }
 
 type CreateCalendarSourceInput struct {
@@ -68,11 +71,11 @@ type UpdateCalendarSourceInput struct {
 
 func (s *Store) GetProjectAgendaSettings(ctx context.Context, projectID int64) (ProjectAgendaSettings, error) {
 	var enabledInt int
-	var timezone, title string
+	var timezone, title, color string
 	err := s.db.QueryRowContext(ctx, `
-SELECT agenda_enabled, agenda_timezone, agenda_title
+SELECT agenda_enabled, agenda_timezone, agenda_title, agenda_color
 FROM projects
-WHERE id = ? AND import_batch_id IS NULL`, projectID).Scan(&enabledInt, &timezone, &title)
+WHERE id = ? AND import_batch_id IS NULL`, projectID).Scan(&enabledInt, &timezone, &title, &color)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ProjectAgendaSettings{}, ErrNotFound
@@ -83,11 +86,12 @@ WHERE id = ? AND import_batch_id IS NULL`, projectID).Scan(&enabledInt, &timezon
 		Enabled:  enabledInt == 1,
 		Timezone: timezone,
 		Title:    normalizeAgendaTitle(title),
+		Color:    normalizeAgendaColor(color),
 	}, nil
 }
 
-func (s *Store) UpdateProjectAgendaSettings(ctx context.Context, projectID int64, enabled *bool, timezone *string, title *string) (ProjectAgendaSettings, error) {
-	if enabled == nil && timezone == nil && title == nil {
+func (s *Store) UpdateProjectAgendaSettings(ctx context.Context, projectID int64, enabled *bool, timezone *string, title *string, color *string) (ProjectAgendaSettings, error) {
+	if enabled == nil && timezone == nil && title == nil && color == nil {
 		return s.GetProjectAgendaSettings(ctx, projectID)
 	}
 	existing, err := s.GetProjectAgendaSettings(ctx, projectID)
@@ -114,12 +118,20 @@ func (s *Store) UpdateProjectAgendaSettings(ctx context.Context, projectID int64
 		}
 		titleVal = normalized
 	}
+	colorVal := existing.Color
+	if color != nil {
+		normalized, err := validateAgendaColor(*color)
+		if err != nil {
+			return ProjectAgendaSettings{}, err
+		}
+		colorVal = normalized
+	}
 
 	nowMs := time.Now().UTC().UnixMilli()
 	_, err = s.db.ExecContext(ctx, `
 UPDATE projects
-SET agenda_enabled = ?, agenda_timezone = ?, agenda_title = ?, updated_at = ?
-WHERE id = ? AND import_batch_id IS NULL`, boolToInt(enabledVal), tzVal, titleVal, nowMs, projectID)
+SET agenda_enabled = ?, agenda_timezone = ?, agenda_title = ?, agenda_color = ?, updated_at = ?
+WHERE id = ? AND import_batch_id IS NULL`, boolToInt(enabledVal), tzVal, titleVal, colorVal, nowMs, projectID)
 	if err != nil {
 		return ProjectAgendaSettings{}, fmt.Errorf("update project agenda settings: %w", err)
 	}
@@ -140,6 +152,22 @@ func normalizeAgendaTitle(raw string) string {
 		return DefaultAgendaTitle
 	}
 	return name
+}
+
+func validateAgendaColor(raw string) (string, error) {
+	color := strings.TrimSpace(raw)
+	if !ValidWorkflowColumnColor(color) {
+		return "", priorityError(ErrValidation, ReasonInvalidAgendaColor, "invalid agenda color")
+	}
+	return color, nil
+}
+
+func normalizeAgendaColor(raw string) string {
+	color := strings.TrimSpace(raw)
+	if !ValidWorkflowColumnColor(color) {
+		return DefaultAgendaColor
+	}
+	return color
 }
 
 func (s *Store) ListCalendarSources(ctx context.Context, projectID int64) ([]CalendarSource, error) {

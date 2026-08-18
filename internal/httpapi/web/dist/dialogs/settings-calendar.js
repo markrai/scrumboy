@@ -1,10 +1,10 @@
 import { apiFetch } from '../api.js';
-import { getSlug } from '../state/selectors.js';
-import { confirmDelete, escapeHTML, showToast } from '../utils.js';
+import { getBoard, getSlug } from '../state/selectors.js';
+import { confirmDelete, escapeHTML, sanitizeHexColor, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
 import { getAgendaStartOfDayPreference, saveAgendaStartOfDayPreference, } from '../core/agenda-start-of-day-preferences.js';
 import { AGENDA_NOW_LINE_PROMINENT, AGENDA_NOW_LINE_SUBTLE, isAgendaNowLineProminent, saveAgendaNowLinePreference, } from '../core/agenda-now-line-preferences.js';
-import { applyAgendaNowLineAppearance, syncOpenBoardAgendaLayout } from '../views/board-agenda.js';
+import { AGENDA_DEFAULT_LANE_COLOR, applyAgendaNowLineAppearance, syncOpenBoardAgendaLayout } from '../views/board-agenda.js';
 const DEFAULT_AGENDA_TIMEZONE = 'UTC';
 let cachedCalendar = null;
 export function clearCalendarSettingsCache() {
@@ -17,6 +17,9 @@ export function resolveAgendaTimezone(raw) {
 export function resolveAgendaTitle(raw) {
     const title = typeof raw === 'string' ? raw.trim() : '';
     return title || t('board.agenda.title');
+}
+export function resolveAgendaColor(raw) {
+    return sanitizeHexColor(raw, AGENDA_DEFAULT_LANE_COLOR) || AGENDA_DEFAULT_LANE_COLOR;
 }
 export function listAgendaTimezones(savedTimezone) {
     const zones = new Set([DEFAULT_AGENDA_TIMEZONE]);
@@ -117,11 +120,18 @@ function renderCalendarTabHTML(data) {
       <p class="muted" data-i18n-text="settings.calendar.enableHint">Today's events from ICS feeds appear in a read-only Agenda lane. All members see the same Agenda.</p>
     </div>
     <div class="settings-section">
-      <label class="field" for="agendaTitleInput">
-        <span class="field__label" data-i18n-text="settings.calendar.title.label">Lane name</span>
-        <input class="input" id="agendaTitleInput" autocomplete="off" maxlength="200" value="${escapeHTML(resolveAgendaTitle(data.agendaTitle))}" />
-      </label>
+      <div class="settings-agenda-name-row">
+        <label class="field settings-agenda-name-field" for="agendaTitleInput">
+          <span class="field__label" data-i18n-text="settings.calendar.title.label">Lane name</span>
+          <input class="input" id="agendaTitleInput" autocomplete="off" maxlength="200" value="${escapeHTML(resolveAgendaTitle(data.agendaTitle))}" />
+        </label>
+        <label class="field settings-agenda-color-field" for="agendaColorInput">
+          <span class="field__label" data-i18n-text="settings.calendar.color.label">Lane color</span>
+          <input type="color" class="settings-color-picker" id="agendaColorInput" value="${escapeHTML(resolveAgendaColor(data.agendaColor))}" aria-label="${escapeHTML(t('settings.calendar.color.label'))}" />
+        </label>
+      </div>
       <p class="muted" data-i18n-text="settings.calendar.title.hint">Shown as the Agenda lane title for all members.</p>
+      <p class="muted" data-i18n-text="settings.calendar.color.hint">Shown as the Agenda lane color for all members.</p>
     </div>
     <div class="settings-section">
       <label class="field" for="agendaTimezoneInput">
@@ -160,13 +170,13 @@ export function bindCalendarTabInteractions(options) {
         const next = startOfDayInput.value;
         startOfDayInput.disabled = true;
         const saving = saveAgendaStartOfDayPreference(next);
-        syncOpenBoardAgendaLayout();
+        syncOpenBoardAgendaLayout({ forceAutoFocus: true });
         try {
             await saving;
         }
         catch (err) {
             startOfDayInput.value = previous;
-            syncOpenBoardAgendaLayout();
+            syncOpenBoardAgendaLayout({ forceAutoFocus: true });
             showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.calendar.toast.timelineFailed' }));
         }
         finally {
@@ -243,6 +253,37 @@ export function bindCalendarTabInteractions(options) {
             return;
         event.preventDefault();
         titleInput.blur();
+    }, { signal });
+    const colorInput = document.getElementById('agendaColorInput');
+    colorInput?.addEventListener('change', async () => {
+        const previous = resolveAgendaColor(cachedCalendar?.agendaColor);
+        const color = resolveAgendaColor(colorInput.value);
+        if (color.toLowerCase() === previous.toLowerCase()) {
+            return;
+        }
+        try {
+            await apiFetch(`/api/board/${slug}/settings`, {
+                method: 'PATCH',
+                body: JSON.stringify({ agendaColor: color }),
+            });
+            showToast(t('settings.calendar.toast.colorUpdated'));
+            const board = getBoard();
+            if (board?.agenda)
+                board.agenda.color = color;
+            syncOpenBoardAgendaLayout();
+            clearCalendarSettingsCache();
+            await rerender();
+        }
+        catch (err) {
+            colorInput.value = previous;
+            const board = getBoard();
+            if (board?.agenda) {
+                board.agenda.color = previous;
+                syncOpenBoardAgendaLayout();
+            }
+            showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.calendar.toast.colorFailed' }));
+            await rerender();
+        }
     }, { signal });
     const timezoneSelect = document.getElementById('agendaTimezoneInput');
     timezoneSelect?.addEventListener('change', async () => {
