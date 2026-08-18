@@ -1313,6 +1313,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     console.error("Settings dialog content element not found");
     return;
   }
+  const dialogWasOpen = !!(settingsDialog as HTMLDialogElement | null)?.open;
 
   // Full mode only: show Profile tab (auth status endpoint exists only in full mode).
   const showProfileTab = !!getAuthStatusAvailable();
@@ -1905,6 +1906,9 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
     </div>
   `;
+  if (!dialogWasOpen) {
+    (contentEl as HTMLElement).scrollTop = 0;
+  }
 
   if (getLocale() !== "en") {
     applySettingsLocaleToOpenDialog();

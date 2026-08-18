@@ -654,4 +654,46 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     ).toBe(deCatalog['settings.backup.trello.title']);
     expect(apiFetchMock).not.toHaveBeenCalled();
   });
+
+  it('resets settings content scroll when rendering while the dialog is closed', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    const { settings } = await setupSettingsView({
+      activeTab: 'customization',
+      slug: 'alpha',
+      board: { project: {} },
+      open: false,
+    });
+    const contentEl = document.querySelector('#settingsDialog .dialog__content') as HTMLElement;
+    contentEl.scrollTop = 240;
+
+    await settings.renderSettingsModal();
+    await flushPromises();
+
+    expect(contentEl.scrollTop).toBe(0);
+  });
+
+  it('preserves settings content scroll when re-rendering an already open dialog', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    const { settings } = await setupSettingsView({
+      activeTab: 'customization',
+      slug: 'alpha',
+      board: { project: {} },
+      open: true,
+    });
+    const contentEl = document.querySelector('#settingsDialog .dialog__content') as HTMLElement;
+    contentEl.scrollTop = 240;
+
+    await settings.renderSettingsModal();
+    await flushPromises();
+
+    expect(contentEl.scrollTop).toBe(240);
+  });
 });
