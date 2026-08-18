@@ -20,7 +20,7 @@ export const AGENDA_DEFAULT_LANE_COLOR = '#6366F1';
 export const GOOGLE_CALENDAR_URL = 'https://calendar.google.com';
 export const APPLE_CALENDAR_URL = 'https://www.icloud.com/calendar';
 
-const AGENDA_OTHER_CALENDAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>`;
+export const AGENDA_CALENDAR_DAYS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>`;
 
 type AgendaSourceChip = {
   sourceId: number;
@@ -121,6 +121,16 @@ export function agendaLaneTitle(board: Board): string {
   return custom || t('board.agenda.title');
 }
 
+/** Accessible mobile-tab name; the visible label is an icon plus the day's event total. */
+export function agendaMobileTabAriaLabel(board: Board): string {
+  return `${agendaLaneTitle(board)} ${agendaEvents(board).length}`;
+}
+
+/** Icon and a single count of today's events across every calendar, matching other lane tabs. */
+export function agendaMobileTabInnerHtml(eventCount: number): string {
+  return `${AGENDA_CALENDAR_DAYS_SVG} <span class="mobile-tab__count">${escapeHTML(String(eventCount))}</span>`;
+}
+
 export function agendaLaneColor(board: Board): string {
   return sanitizeHexColor(board.agenda?.color, AGENDA_DEFAULT_LANE_COLOR) || AGENDA_DEFAULT_LANE_COLOR;
 }
@@ -162,7 +172,7 @@ function renderAgendaHeaderHost(chip: AgendaSourceChip): string {
       ? `<img src="/assets/calendar/google.webp" alt="">`
       : kind === 'apple'
         ? `<img src="/assets/calendar/apple.webp" alt="">`
-        : AGENDA_OTHER_CALENDAR_SVG;
+        : AGENDA_CALENDAR_DAYS_SVG;
   const inner = `${icon}<span class="col__agenda-host-count">${chip.count}</span>`;
   if (kind === 'google') {
     return `<a class="col__agenda-host col__agenda-host--google" href="${GOOGLE_CALENDAR_URL}" target="_blank" rel="noopener noreferrer" aria-label="${label}">${inner}</a>`;

@@ -69,7 +69,7 @@ import {
   type RenderTodoCardOpts,
   type SprintChipData,
 } from './board-rendering.js';
-import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, agendaMobileTabAriaLabel, agendaMobileTabInnerHtml, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import {
   clearTodoMultiSelection,
   ensureBulkEditUi,
@@ -262,9 +262,14 @@ function resolveMobileTabKeyFromStorage(
   return null;
 }
 
-function agendaMobileTab(board: Board): { key: string; title: string; color: string } | null {
+function agendaMobileTab(board: Board): { key: string; title: string; color: string; count: number } | null {
   if (!isAgendaEnabled(board)) return null;
-  return { key: AGENDA_COLUMN_KEY, title: agendaLaneTitle(board), color: agendaLaneColor(board) };
+  return {
+    key: AGENDA_COLUMN_KEY,
+    title: agendaLaneTitle(board),
+    color: agendaLaneColor(board),
+    count: agendaEvents(board).length,
+  };
 }
 
 export function getRequestedBoardLimitPerLane(forSlug?: string | null): number {
@@ -704,7 +709,7 @@ function syncMobileLaneTabsStrip(board: Board): void {
       extraTabs,
       laneLabel: (key) => {
         if (key === AGENDA_COLUMN_KEY) {
-          return `${agendaLaneTitle(board)} ${agendaEvents(board).length}`;
+          return agendaMobileTabAriaLabel(board);
         }
         const col = boardCols.find((c) => c.key === key);
         const title = col?.title ?? "";
@@ -733,10 +738,12 @@ function syncMobileLaneTabsStrip(board: Board): void {
     const tab = tabByKey.get(extra.key);
     if (tab) {
       applyMobileLaneTabStyles(tab, extra, "tab");
+      const count = extra.count ?? agendaEvents(board).length;
+      tab.setAttribute("aria-label", `${extra.title} ${count}`);
       const textSpan = tab.querySelector(".mobile-tab__text");
-      const label = `${extra.title} ${agendaEvents(board).length}`;
-      if (textSpan) textSpan.textContent = label;
-      else tab.textContent = label;
+      const inner = agendaMobileTabInnerHtml(count);
+      if (textSpan) textSpan.innerHTML = inner;
+      else tab.innerHTML = `<span class="mobile-tab__text">${inner}</span>`;
     }
   }
 
@@ -1065,7 +1072,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
               extraTabs: agendaMobileTab(board) ? [agendaMobileTab(board)!] : [],
               laneLabel: (key) => {
                 if (key === AGENDA_COLUMN_KEY) {
-                  return `${agendaLaneTitle(board)} ${agendaEvents(board).length}`;
+                  return agendaMobileTabAriaLabel(board);
                 }
                 const col = boardCols.find((c) => c.key === key);
                 const title = col?.title ?? "";

@@ -132,12 +132,61 @@ describe('agenda virtual lane', () => {
     board.agenda = { ...board.agenda!, color: '#aabbcc' };
     const html = buildMobileTabsInnerHtml([], {
       activeTabKey: AGENDA_COLUMN_KEY,
-      extraTabs: [{ key: AGENDA_COLUMN_KEY, title: 'Agenda', color: agendaLaneColor(board) }],
+      extraTabs: [{ key: AGENDA_COLUMN_KEY, title: 'Agenda', color: agendaLaneColor(board), count: 1 }],
       laneLabel: () => 'Agenda 1',
     });
     expect(html).toContain('data-tab="agenda"');
     expect(html).toContain('background:#aabbcc');
     expect(html).not.toContain(`background:${AGENDA_DEFAULT_LANE_COLOR}`);
+    expect(html).toContain('lucide-calendar-days');
+    expect(html).toContain('aria-label="Agenda 1"');
+    expect(html).toContain('</svg> <span class="mobile-tab__count">1</span>');
+    expect(html).not.toMatch(/mobile-tab__text">Agenda/);
+  });
+
+  it('shows one mobile-tab count for all calendars that day', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      events: [
+        { ...board.agenda!.events![0], id: '3:a:1', sourceId: 3, calendarName: 'Family' },
+        {
+          id: '4:b:1',
+          sourceId: 4,
+          calendarName: 'Work',
+          title: 'Standup',
+          startsAt: '2026-08-17T14:00:00Z',
+          endsAt: '2026-08-17T14:30:00Z',
+          allDay: false,
+          location: '',
+          provider: 'ics_feed',
+        },
+        {
+          id: '4:c:1',
+          sourceId: 4,
+          calendarName: 'Work',
+          title: 'Review',
+          startsAt: '2026-08-17T16:00:00Z',
+          endsAt: '2026-08-17T16:30:00Z',
+          allDay: false,
+          location: '',
+          provider: 'ics_feed',
+        },
+      ],
+    };
+    const count = board.agenda.events!.length;
+    const html = buildMobileTabsInnerHtml([], {
+      activeTabKey: AGENDA_COLUMN_KEY,
+      extraTabs: [{ key: AGENDA_COLUMN_KEY, title: 'Agenda', color: agendaLaneColor(board), count }],
+      laneLabel: () => `Agenda ${count}`,
+    });
+    expect(count).toBe(3);
+    expect(html).toContain('class="mobile-tab__count">3</span>');
+    expect(html.match(/mobile-tab__count/g)?.length).toBe(1);
+    expect(html).not.toContain('class="mobile-tab__count">1</span>');
+    expect(html).not.toContain('class="mobile-tab__count">2</span>');
   });
 
   it('uses a custom agenda lane title instead of the default', async () => {

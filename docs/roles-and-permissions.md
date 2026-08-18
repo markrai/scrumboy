@@ -42,6 +42,7 @@
 | Add/remove members             | Maintainer+   | Last maintainer cannot be removed      |
 | List available users (add UI)  | Maintainer+   |                                        |
 | Sprints CRUD (create/activate/close) | Maintainer+ | Via board settings                      |
+| Configure Agenda / ICS feeds   | Maintainer+   | Durable projects; URLs stored encrypted |
 | List priority tiers              | Viewer+       | Same definitions shown on the board     |
 | Create/update/delete priority tiers | Maintainer+ | Last and in-use tiers cannot be deleted |
 | Assign/clear todo priority       | Maintainer    | Key must belong to the todo's project   |

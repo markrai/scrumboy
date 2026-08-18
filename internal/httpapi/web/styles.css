@@ -3840,6 +3840,15 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     /* Remove any default margins */
   }
 
+  .mobile-tab[data-tab="agenda"] .mobile-tab__text svg {
+    width: 1em;
+    height: 1em;
+    display: inline-block;
+    vertical-align: -0.15em;
+    transform: rotate(90deg);
+    transform-origin: center;
+  }
+
   /* Default lane tab colors when workflow has no inline color: keys match store/API column_key
      (see DefaultColumn* in internal/store/types.go, defaultWorkflowColumns in workflows.go). */
   .mobile-tab[data-tab="backlog"] {

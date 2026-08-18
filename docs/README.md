@@ -39,6 +39,7 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 |-----|----------|-----------------|--------|
 | [wall.md](wall.md) | Users / contributors | wall modules + API | current |
 | [voiceflow.md](voiceflow.md) | Users / contributors | VoiceFlow parser / UI | current |
+| [calendar.md](calendar.md) | Users / operators | Agenda ICS feeds (`internal/application/calendar`) | current |
 | [markdown-and-mermaid.md](markdown-and-mermaid.md) | Users / contributors | `internal/httpapi/web` markdown/mermaid deps | current |
 
 ---

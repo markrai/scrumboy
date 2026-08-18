@@ -1,6 +1,18 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+
+## [3.33.0] - 2026-08-18
+
+### Added
+
+- **Agenda lane** - Durable boards can show today's events from subscribed
+  HTTPS iCalendar feeds in a read-only Agenda lane (timezone, lane name, and
+  color are project-wide). Maintainers add up to eight feeds; URLs are stored
+  encrypted and never shown again after save. Board loads reuse a snapshot
+  newer than 15 minutes and background-refresh older ones; snapshots older
+  than 30 minutes are marked stale. JSON backup copies Agenda flags only, not
+  feed URLs. See [docs/calendar.md](docs/calendar.md).
 
 ## [3.32.3] - 2026-08-17
 

@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.32.3-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.33.0-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -159,6 +159,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
 - VoiceFlow - deterministic voice commands (see [docs/voiceflow.md](docs/voiceflow.md)).
 - Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see [docs/wall.md](docs/wall.md)).
+- Agenda - today's events from subscribed ICS feeds on durable boards (see [docs/calendar.md](docs/calendar.md)). Requires `SCRUMBOY_ENCRYPTION_KEY`.
 - Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ````mermaid`blocks in preview only (see`[FAQ.md](FAQ.md)`,` [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)`).
 
 ---
@@ -197,7 +198,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 | Variable                  | Default                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA and password reset.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503 and password-reset tokens cannot be issued. Back this key up with the instance `DATA_DIR` (including `data/app.db`); do not replace it casually once encrypted auth/security data exists. |
+| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA, password reset, and ICS calendar feeds.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503, password-reset tokens cannot be issued, and Agenda feeds cannot be stored. Back this key up with the instance `DATA_DIR` (including `data/app.db`); do not replace it casually once encrypted auth/security or calendar data exists. |
 | `SCRUMBOY_TLS_CERT`       | `./cert.pem` - TLS cert for HTTPS                                                                                                                                                                                                                                                                                                                   |
 | `SCRUMBOY_TLS_KEY`        | `./key.pem` - TLS key for HTTPS                                                                                                                                                                                                                                                                                                                     |
 
@@ -265,13 +266,14 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 ### Encryption key for 2FA/password reset
 
 - `SCRUMBOY_ENCRYPTION_KEY` is **not** required for basic startup.
-- It becomes required for encrypted auth/security features, including:
+- It becomes required for encrypted auth/security and calendar features, including:
   - 2FA
   - Password reset flows
-- If an existing database already has 2FA-enabled users, startup fails without this key.
+  - ICS calendar feed URLs (Agenda)
+- If an existing database already has 2FA-enabled users or stored calendar feeds, startup fails without this key.
 - The key is part of the same backup/restore unit as the instance `DATA_DIR` (including `data/app.db`). Back them up together.
-- Do **not** regenerate or replace the key casually after encrypted auth/security data exists, or you can break access to 2FA/password-reset data.
-- If a bad key is configured before any encrypted auth/security data exists, Scrumboy may warn and continue with 2FA setup/password reset disabled until you configure a valid key.
+- Do **not** regenerate or replace the key casually after encrypted auth/security or calendar data exists, or you can break access to 2FA/password-reset data and Agenda feeds.
+- If a bad key is configured before any encrypted auth/security or calendar data exists, Scrumboy may warn and continue with 2FA setup, password reset, and calendar URL encryption disabled until you configure a valid key.
 
 Generate a key with: `openssl rand -base64 32`
 
