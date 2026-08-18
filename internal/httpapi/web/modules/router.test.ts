@@ -471,7 +471,7 @@ describe('router wrap lanes hydration', () => {
   });
 });
 
-describe('router agenda full day hydration', () => {
+describe('router agenda start of day hydration', () => {
   function userBob() {
     return {
       id: 8,
@@ -483,7 +483,7 @@ describe('router agenda full day hydration', () => {
     };
   }
 
-  function installSignedInAuth(user: ReturnType<typeof userStatus>, agendaFullDayValue: string): void {
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, agendaStartOfDayValue: string): void {
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/auth/status') {
         return {
@@ -502,8 +502,8 @@ describe('router agenda full day hydration', () => {
       if (url === '/api/me') {
         return user;
       }
-      if (url.includes('key=agendaFullDay')) {
-        return { value: agendaFullDayValue };
+      if (url.includes('key=agendaStartOfDay')) {
+        return { value: agendaStartOfDayValue };
       }
       if (url.startsWith('/api/user/preferences?key=')) {
         return { value: '' };
@@ -530,39 +530,39 @@ describe('router agenda full day hydration', () => {
     vi.restoreAllMocks();
   });
 
-  it('defaults missing server preference to fit', async () => {
-    const prefs = await import('./core/agenda-full-day-preferences.js');
-    localStorage.setItem(prefs.AGENDA_FULL_DAY_STORAGE_KEY, 'true');
+  it('defaults missing server preference to 08:00', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY, '06:00');
     installSignedInAuth(userBob(), '');
     const mod = await loadRouterModule();
 
     await mod.router();
 
-    expect(prefs.getAgendaTimelineMode()).toBe('fit');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
   });
 
-  it('does not carry full_day from user A to user B on login', async () => {
-    const prefs = await import('./core/agenda-full-day-preferences.js');
-    localStorage.setItem(prefs.AGENDA_FULL_DAY_STORAGE_KEY, 'true');
-    installSignedInAuth(userStatus(), 'true');
+  it('does not carry start of day from user A to user B on login', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY, '06:00');
+    installSignedInAuth(userStatus(), '06:00');
     const mod = await loadRouterModule();
     await mod.router();
-    expect(prefs.getAgendaTimelineMode()).toBe('full_day');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
 
     const mutations = await import('./state/mutations.js');
     mutations.setAuthStatusChecked(false);
     installSignedInAuth(userBob(), '');
     await mod.router();
 
-    expect(prefs.getAgendaTimelineMode()).toBe('fit');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
   });
 
-  it('keeps the same user full_day when preference hydration fails', async () => {
-    const prefs = await import('./core/agenda-full-day-preferences.js');
-    installSignedInAuth(userStatus(), 'true');
+  it('keeps the same user start of day when preference hydration fails', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    installSignedInAuth(userStatus(), '06:00');
     const mod = await loadRouterModule();
     await mod.router();
-    expect(prefs.getAgendaTimelineMode()).toBe('full_day');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
 
     const mutations = await import('./state/mutations.js');
     mutations.setAuthStatusChecked(false);
@@ -584,7 +584,7 @@ describe('router agenda full day hydration', () => {
       if (url === '/api/me') {
         return userStatus();
       }
-      if (url.includes('key=agendaFullDay')) {
+      if (url.includes('key=agendaStartOfDay')) {
         throw new Error('network');
       }
       if (url.startsWith('/api/user/preferences?key=')) {
@@ -594,14 +594,14 @@ describe('router agenda full day hydration', () => {
     });
     await mod.router();
 
-    expect(prefs.getAgendaTimelineMode()).toBe('full_day');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
   });
 
-  it('preserves same-user full_day on cold reload when hydration fails', async () => {
-    const prefs = await import('./core/agenda-full-day-preferences.js');
+  it('preserves same-user start of day on cold reload when hydration fails', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
     const user = userStatus();
-    localStorage.setItem(prefs.AGENDA_FULL_DAY_STORAGE_KEY, 'true');
-    localStorage.setItem(prefs.AGENDA_FULL_DAY_OWNER_KEY, String(user.id));
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY, '06:00');
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_OWNER_KEY, String(user.id));
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/auth/status') {
         return {
@@ -620,7 +620,7 @@ describe('router agenda full day hydration', () => {
       if (url === '/api/me') {
         return user;
       }
-      if (url.includes('key=agendaFullDay')) {
+      if (url.includes('key=agendaStartOfDay')) {
         throw new Error('network');
       }
       if (url.startsWith('/api/user/preferences?key=')) {
@@ -632,17 +632,17 @@ describe('router agenda full day hydration', () => {
 
     await mod.router();
 
-    expect(prefs.getAgendaTimelineMode()).toBe('full_day');
-    expect(localStorage.getItem(prefs.AGENDA_FULL_DAY_STORAGE_KEY)).toBe('true');
-    expect(localStorage.getItem(prefs.AGENDA_FULL_DAY_OWNER_KEY)).toBe(String(user.id));
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+    expect(localStorage.getItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY)).toBe('06:00');
+    expect(localStorage.getItem(prefs.AGENDA_START_OF_DAY_OWNER_KEY)).toBe(String(user.id));
   });
 
-  it('does not leak full_day to another user when their hydration fails', async () => {
-    const prefs = await import('./core/agenda-full-day-preferences.js');
-    installSignedInAuth(userStatus(), 'true');
+  it('does not leak start of day to another user when their hydration fails', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    installSignedInAuth(userStatus(), '06:00');
     const mod = await loadRouterModule();
     await mod.router();
-    expect(prefs.getAgendaTimelineMode()).toBe('full_day');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
 
     const mutations = await import('./state/mutations.js');
     mutations.setAuthStatusChecked(false);
@@ -664,7 +664,7 @@ describe('router agenda full day hydration', () => {
       if (url === '/api/me') {
         return userBob();
       }
-      if (url.includes('key=agendaFullDay')) {
+      if (url.includes('key=agendaStartOfDay')) {
         throw new Error('network');
       }
       if (url.startsWith('/api/user/preferences?key=')) {
@@ -674,7 +674,7 @@ describe('router agenda full day hydration', () => {
     });
     await mod.router();
 
-    expect(prefs.getAgendaTimelineMode()).toBe('fit');
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
   });
 });
 

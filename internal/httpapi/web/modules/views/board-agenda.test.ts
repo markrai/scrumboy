@@ -3,13 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgendaEvent, Board } from '../types.js';
 import {
   AGENDA_COLUMN_KEY,
+  AGENDA_HOUR_HEIGHT_MOBILE_PX,
+  AGENDA_HOUR_HEIGHT_PX,
   agendaDayWindow,
+  agendaHourHeightPx,
+  agendaInitialFocusMinute,
+  applyAgendaScrollAfterRender,
+  bindAgendaLaneScrollInteractions,
   buildAgendaColumnHtml,
+  captureAgendaListScroll,
   layoutAgendaTimedEvents,
   renderAgendaEventCard,
 } from './board-agenda.js';
 import { getBoardColumns, visibleBoardLaneCount } from './board-rendering.js';
-import { setAgendaFullDayPreference } from '../core/agenda-full-day-preferences.js';
+import { setAgendaStartOfDayPreference } from '../core/agenda-start-of-day-preferences.js';
+import { setBoard } from '../state/mutations.js';
 import enCatalog from '../i18n/locales/en.json';
 
 function agendaBoard(): Board {
@@ -46,10 +54,11 @@ function agendaBoard(): Board {
 describe('agenda virtual lane', () => {
   beforeEach(() => {
     localStorage.clear();
-    setAgendaFullDayPreference(false);
+    setAgendaStartOfDayPreference('08:00');
   });
 
   afterEach(async () => {
+    setBoard(null);
     const i18n = await import('../i18n/index.js');
     i18n.resetI18nForTests();
   });
@@ -59,6 +68,7 @@ describe('agenda virtual lane', () => {
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     const html = buildAgendaColumnHtml(agendaBoard(), null);
     expect(html).toContain('col--agenda');
+    expect(html).toContain('class="col__count"');
     expect(html).toContain('card--agenda');
     expect(html).toContain('Pickup');
     expect(html).toContain('data-agenda-event-id="3:pickup:1"');
@@ -113,6 +123,9 @@ describe('agenda virtual lane', () => {
     );
     expect(html).toContain('Holiday');
     expect(html).toContain('All day');
+    expect(html).toContain('card__agenda-copy');
+    expect(html).toContain('card__title');
+    expect(html).toContain('card__agenda-meta');
     expect(html).not.toContain('Family');
     expect(html).not.toContain(' - ');
     expect(html).not.toContain('card--selected');
@@ -137,7 +150,7 @@ describe('agenda virtual lane', () => {
     expect(html).not.toContain('col__agenda-empty');
   });
 
-  it('shows empty copy when a successful snapshot has no events today', async () => {
+  it('renders a 24-hour grid when a successful snapshot has no events today', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     const board = agendaBoard();
@@ -149,8 +162,10 @@ describe('agenda virtual lane', () => {
       events: [],
     };
     const html = buildAgendaColumnHtml(board, null);
-    expect(html).toContain('No events today.');
-    expect(html).toContain('col__agenda-empty');
+    expect(html).toContain('agenda-day');
+    expect(html.match(/class="agenda-hour"/g)?.length).toBe(24);
+    expect(html).not.toContain('No events today.');
+    expect(html).not.toContain('col__agenda-empty');
     expect(html).not.toContain('col__agenda-status');
   });
 
@@ -268,25 +283,51 @@ function timedEvent(id: string, startsAt: string, endsAt: string, extras: Partia
   };
 }
 
-describe('agenda day window and timed layout', () => {
+describe('agenda day window, focus, and timed layout', () => {
   const utcNoon = new Date('2026-08-17T12:00:00Z');
 
-  it('uses a fit window from first timed hour to last timed hour and ignores all-day events', () => {
-    const events = [
-      timedEvent('a', '2026-08-17T09:15:00Z', '2026-08-17T09:45:00Z'),
-      timedEvent('b', '2026-08-17T15:00:00Z', '2026-08-17T16:00:00Z'),
-      {
-        ...timedEvent('holiday', '2026-08-17T00:00:00Z', '2026-08-18T00:00:00Z'),
-        allDay: true,
-        title: 'Holiday',
-      },
-    ];
-    expect(agendaDayWindow(events, 'UTC', 'fit', utcNoon)).toEqual({ startMinute: 540, endMinute: 960 });
-    expect(agendaDayWindow(events.filter((event) => event.allDay), 'UTC', 'fit', utcNoon)).toBeNull();
+  it('always uses a 00:00-24:00 window', () => {
+    expect(agendaDayWindow()).toEqual({ startMinute: 0, endMinute: 1440 });
   });
 
-  it('full_day is always 00:00-24:00 even with no events', () => {
-    expect(agendaDayWindow([], 'UTC', 'full_day', utcNoon)).toEqual({ startMinute: 0, endMinute: 1440 });
+  it('focuses 08:00 when there are no timed events, including all-day only', () => {
+    expect(agendaInitialFocusMinute([], 'UTC', 480, utcNoon)).toBe(480);
+    const allDay = [{
+      ...timedEvent('holiday', '2026-08-17T00:00:00Z', '2026-08-18T00:00:00Z'),
+      allDay: true,
+      title: 'Holiday',
+    }];
+    expect(agendaInitialFocusMinute(allDay, 'UTC', 480, utcNoon)).toBe(480);
+  });
+
+  it('opens at an earlier event than the preferred start', () => {
+    const events = [timedEvent('early', '2026-08-17T06:00:00Z', '2026-08-17T06:30:00Z')];
+    expect(agendaInitialFocusMinute(events, 'UTC', 480, utcNoon)).toBe(360);
+  });
+
+  it('opens at 07:30 when that is the earliest event before 08:00', () => {
+    const events = [timedEvent('early', '2026-08-17T07:30:00Z', '2026-08-17T08:00:00Z')];
+    expect(agendaInitialFocusMinute(events, 'UTC', 480, utcNoon)).toBe(450);
+  });
+
+  it('keeps the preferred start when the first event is later', () => {
+    const events = [timedEvent('late', '2026-08-17T10:00:00Z', '2026-08-17T11:00:00Z')];
+    expect(agendaInitialFocusMinute(events, 'UTC', 480, utcNoon)).toBe(480);
+  });
+
+  it('uses a custom preferred start when the first event is later', () => {
+    const events = [timedEvent('late', '2026-08-17T10:00:00Z', '2026-08-17T11:00:00Z')];
+    expect(agendaInitialFocusMinute(events, 'UTC', 540, utcNoon)).toBe(540);
+  });
+
+  it('uses a custom preferred start only until an earlier event exists', () => {
+    const events = [timedEvent('early', '2026-08-17T07:00:00Z', '2026-08-17T07:30:00Z')];
+    expect(agendaInitialFocusMinute(events, 'UTC', 540, utcNoon)).toBe(420);
+  });
+
+  it('treats an overnight leftover as beginning at 00:00', () => {
+    const events = [timedEvent('night', '2026-08-16T22:00:00Z', '2026-08-17T02:00:00Z')];
+    expect(agendaInitialFocusMinute(events, 'UTC', 480, utcNoon)).toBe(0);
   });
 
   it('places overlapping events in two columns and a later cluster at full width', () => {
@@ -295,7 +336,7 @@ describe('agenda day window and timed layout', () => {
       timedEvent('B', '2026-08-17T09:30:00Z', '2026-08-17T10:30:00Z'),
       timedEvent('C', '2026-08-17T15:00:00Z', '2026-08-17T16:00:00Z'),
     ];
-    const window = agendaDayWindow(events, 'UTC', 'fit', utcNoon)!;
+    const window = agendaDayWindow();
     const layout = layoutAgendaTimedEvents(events, 'UTC', window, utcNoon);
     const byId = Object.fromEntries(layout.map((item) => [item.event.id, item]));
     expect(byId.A.columnCount).toBe(2);
@@ -383,13 +424,35 @@ describe('agenda day window and timed layout', () => {
 
 describe('agenda day grid HTML', () => {
   const now = new Date('2026-08-17T12:00:00Z');
+  const originalMatchMedia = window.matchMedia;
+
+  function stubHourHeightMedia(mobile: boolean): void {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => ({
+        matches: mobile && query.includes('max-width: 767px'),
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    });
+  }
 
   beforeEach(() => {
     localStorage.clear();
-    setAgendaFullDayPreference(false);
+    setAgendaStartOfDayPreference('08:00');
   });
 
   afterEach(async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: originalMatchMedia,
+    });
+    setBoard(null);
     const i18n = await import('../i18n/index.js');
     i18n.resetI18nForTests();
   });
@@ -418,16 +481,53 @@ describe('agenda day grid HTML', () => {
     expect(html).toContain('agenda-day');
     expect(html).toContain('agenda-hour');
     expect(html).toContain('card--agenda-timed');
+    expect(html).toContain('card__agenda-copy');
+    expect(html).toContain('card__title');
+    expect(html).toContain('card__agenda-meta');
     expect(html).toMatch(/style="top:\d/);
     expect(html).not.toContain("card.replace");
     expect(html).toContain('Pickup');
     expect(html).not.toContain('col__agenda-empty');
   });
 
-  it('renders hour rows for an empty full_day grid and omits empty copy', async () => {
+  it('keeps a 1-hour timed card to one 48px desktop hour', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
-    setAgendaFullDayPreference(true);
+    stubHourHeightMedia(false);
+    expect(agendaHourHeightPx()).toBe(AGENDA_HOUR_HEIGHT_PX);
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('Standup', '2026-08-17T06:00:00Z', '2026-08-17T07:00:00Z', { title: 'Standup' })],
+    };
+    const html = buildAgendaColumnHtml(board, null, now);
+    expect(html).toContain(`style="height:${24 * AGENDA_HOUR_HEIGHT_PX}px"`);
+    expect(html).toContain(`height:${AGENDA_HOUR_HEIGHT_PX}px`);
+  });
+
+  it('uses 96px hour rows on mobile so a 1-hour card fills one hour', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    stubHourHeightMedia(true);
+    expect(agendaHourHeightPx()).toBe(AGENDA_HOUR_HEIGHT_MOBILE_PX);
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('Standup', '2026-08-17T06:00:00Z', '2026-08-17T07:00:00Z', { title: 'Standup' })],
+    };
+    const html = buildAgendaColumnHtml(board, null, now);
+    expect(html).toContain(`style="height:${24 * AGENDA_HOUR_HEIGHT_MOBILE_PX}px"`);
+    expect(html).toContain(`height:${AGENDA_HOUR_HEIGHT_MOBILE_PX}px`);
+    expect(html).not.toContain(`height:${AGENDA_HOUR_HEIGHT_PX}px`);
+  });
+
+  it('renders hour rows for an empty day grid and omits empty copy', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     const board = agendaBoard();
     board.agenda = { enabled: true, timezone: 'UTC', stale: false, error: null, events: [] };
     const html = buildAgendaColumnHtml(board, null, now);
@@ -437,7 +537,7 @@ describe('agenda day grid HTML', () => {
     expect(html).not.toContain('col__agenda-empty');
   });
 
-  it('does not render a 24-hour grid in fit mode with no timed events', async () => {
+  it('still renders a 24-hour grid with all-day events and no timed events', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
     const board = agendaBoard();
@@ -457,7 +557,179 @@ describe('agenda day grid HTML', () => {
     const html = buildAgendaColumnHtml(board, null, now);
     expect(html).toContain('Holiday');
     expect(html).toContain('agenda-allday');
-    expect(html).not.toContain('agenda-day');
+    expect(html).toContain('agenda-day');
+    expect(html.match(/class="agenda-hour"/g)?.length).toBe(24);
     expect(html).not.toContain('No events today.');
+  });
+
+  it('auto-focuses the timed list to the initial focus minute', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('Pickup', '2026-08-17T20:00:00Z', '2026-08-17T20:30:00Z', { title: 'Pickup' })],
+    };
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let assigned = -1;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => assigned,
+      set: (value: number) => {
+        assigned = Number(value);
+      },
+    });
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now });
+    expect(assigned).toBe((480 / 60) * AGENDA_HOUR_HEIGHT_PX);
+  });
+
+  it('restores a previous timed-list scroll position after a rebuild', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    list.scrollTop = 240;
+    const saved = captureAgendaListScroll();
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: saved });
+    expect((document.getElementById('list_agenda') as HTMLElement).scrollTop).toBe(240);
+  });
+
+  it('scrolls to the new focus after a start-of-day change', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('Pickup', '2026-08-17T20:00:00Z', '2026-08-17T20:30:00Z', { title: 'Pickup' })],
+    };
+    setBoard(board);
+    setAgendaStartOfDayPreference('06:00');
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let assigned = -1;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => assigned,
+      set: (value: number) => {
+        assigned = Number(value);
+      },
+    });
+    applyAgendaScrollAfterRender({ forceAutoFocus: true, board, now });
+    expect(assigned).toBe((360 / 60) * AGENDA_HOUR_HEIGHT_PX);
+  });
+
+  it('mouse drag pans the timed list and marks the lane as panning', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: 100, board });
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let top = 100;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = Number(value);
+      },
+    });
+    list.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      clientY: 80,
+    }));
+    expect(document.querySelector('.col--agenda')?.classList.contains('is-agenda-panning')).toBe(true);
+    list.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientY: 50,
+    }));
+    expect(top).toBe(130);
+    list.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+    }));
+    expect(document.querySelector('.col--agenda')?.classList.contains('is-agenda-panning')).toBe(false);
+  });
+
+  it('does not pan the timed list from a touch pointer', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: 100, board });
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let top = 100;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = Number(value);
+      },
+    });
+    list.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      pointerId: 2,
+      pointerType: 'touch',
+      button: 0,
+      clientY: 80,
+    }));
+    list.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerId: 2,
+      pointerType: 'touch',
+      clientY: 50,
+    }));
+    expect(top).toBe(100);
+    expect(document.querySelector('.col--agenda')?.classList.contains('is-agenda-panning')).toBe(false);
+  });
+
+  it('does not stack drag listeners across Agenda rebuilds', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    setBoard(board);
+    document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
+    applyAgendaScrollAfterRender({ restoreScrollTop: 100, board });
+    bindAgendaLaneScrollInteractions();
+    bindAgendaLaneScrollInteractions();
+    const list = document.getElementById('list_agenda') as HTMLElement;
+    let top = 100;
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => {
+        top = Number(value);
+      },
+    });
+    list.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      button: 0,
+      clientY: 80,
+    }));
+    list.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'mouse',
+      clientY: 50,
+    }));
+    expect(top).toBe(130);
   });
 });

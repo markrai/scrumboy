@@ -2,7 +2,7 @@ import { apiFetch } from '../api.js';
 import { getSlug } from '../state/selectors.js';
 import { confirmDelete, escapeHTML, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
-import { getAgendaFullDayPreference, saveAgendaFullDayPreference, } from '../core/agenda-full-day-preferences.js';
+import { getAgendaStartOfDayPreference, saveAgendaStartOfDayPreference, } from '../core/agenda-start-of-day-preferences.js';
 import { syncOpenBoardAgendaLayout } from '../views/board-agenda.js';
 const DEFAULT_AGENDA_TIMEZONE = 'UTC';
 let cachedCalendar = null;
@@ -72,11 +72,11 @@ export async function loadCalendarTabContent(options = {}) {
 function renderTimelinePreferenceHTML() {
     return `
     <div class="settings-section">
-      <label class="field" style="display: flex; align-items: center; gap: 8px;">
-        <input type="checkbox" id="agendaFullDayToggle" ${getAgendaFullDayPreference() ? 'checked' : ''} />
-        <span data-i18n-text="settings.calendar.timeline.label">Show full day</span>
+      <label class="field" for="agendaStartOfDay">
+        <span class="field__label" data-i18n-text="settings.calendar.timeline.label">Start of day</span>
+        <input class="input" type="time" id="agendaStartOfDay" value="${escapeHTML(getAgendaStartOfDayPreference())}" />
       </label>
-      <p class="muted" data-i18n-text="settings.calendar.timeline.hint">Only your Agenda layout. Other members keep their own choice.</p>
+      <p class="muted" data-i18n-text="settings.calendar.timeline.hint">Agenda initially scrolls here unless an earlier event exists.</p>
     </div>`;
 }
 function renderCalendarTabHTML(data) {
@@ -146,23 +146,23 @@ export function bindCalendarTabInteractions(options) {
     if (!slug)
         return;
     const { signal, rerender } = options;
-    const fullDayToggle = document.getElementById('agendaFullDayToggle');
-    fullDayToggle?.addEventListener('change', async () => {
-        const previous = getAgendaFullDayPreference();
-        const next = fullDayToggle.checked;
-        fullDayToggle.disabled = true;
-        const saving = saveAgendaFullDayPreference(next);
+    const startOfDayInput = document.getElementById('agendaStartOfDay');
+    startOfDayInput?.addEventListener('change', async () => {
+        const previous = getAgendaStartOfDayPreference();
+        const next = startOfDayInput.value;
+        startOfDayInput.disabled = true;
+        const saving = saveAgendaStartOfDayPreference(next);
         syncOpenBoardAgendaLayout();
         try {
             await saving;
         }
         catch (err) {
-            fullDayToggle.checked = previous;
+            startOfDayInput.value = previous;
             syncOpenBoardAgendaLayout();
             showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.calendar.toast.timelineFailed' }));
         }
         finally {
-            fullDayToggle.disabled = false;
+            startOfDayInput.disabled = false;
         }
     }, { signal });
     const enabledToggle = document.getElementById('agendaEnabledToggle');

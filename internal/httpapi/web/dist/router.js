@@ -11,7 +11,7 @@ import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmatio
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
 import { loadWrapLanesPreferenceFromServer, WRAP_LANES_PREFERENCE_KEY, } from './core/wrap-lanes-preferences.js';
-import { AGENDA_FULL_DAY_PREFERENCE_KEY, loadAgendaFullDayPreferenceFromServer, onAgendaFullDayAuthUserChanged, } from './core/agenda-full-day-preferences.js';
+import { AGENDA_START_OF_DAY_PREFERENCE_KEY, loadAgendaStartOfDayPreferenceFromServer, onAgendaStartOfDayAuthUserChanged, } from './core/agenda-start-of-day-preferences.js';
 import { BOARD_TODO_SORT_PREFERENCE_KEY, boardTodoSortUrlParam, getBoardTodoSortPreference, isBoardTodoSortUrlParam, loadBoardTodoSortPreferenceFromServer, } from './core/board-sort-preferences.js';
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -111,7 +111,7 @@ async function routeOnceBody() {
         }
         setUser(newUser);
         if (oldUserId !== newUserId) {
-            onAgendaFullDayAuthUserChanged(newUserId);
+            onAgendaStartOfDayAuthUserChanged(newUserId);
         }
         setBootstrapAvailable(!!(st && st.bootstrapAvailable));
         setPushConfigured(!!(st && st.pushConfigured));
@@ -214,7 +214,7 @@ async function routeOnceBody() {
                 // Ignore errors
             }
             await loadWrapLanesPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`));
-            await loadAgendaFullDayPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${AGENDA_FULL_DAY_PREFERENCE_KEY}`));
+            await loadAgendaStartOfDayPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${AGENDA_START_OF_DAY_PREFERENCE_KEY}`));
             await loadBoardTodoSortPreferenceFromServer(() => apiFetch(`/api/user/preferences?key=${BOARD_TODO_SORT_PREFERENCE_KEY}`));
             // Load email notification preferences
             await loadUserEmailNotifyPref();

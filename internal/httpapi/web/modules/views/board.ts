@@ -69,7 +69,7 @@ import {
   type RenderTodoCardOpts,
   type SprintChipData,
 } from './board-rendering.js';
-import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, buildAgendaColumnHtml, isAgendaEnabled } from './board-agenda.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, isAgendaEnabled } from './board-agenda.js';
 import {
   clearTodoMultiSelection,
   ensureBulkEditUi,
@@ -907,6 +907,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
       selectedIds: getSelectedTodoIds(),
       priorityTiers: buildPriorityTierMap(board),
     };
+    const savedAgendaScroll = captureAgendaListScroll();
     boardEl.innerHTML =
       buildAgendaColumnHtml(board, getMobileTab()) +
       buildBoardColumnsHtml({
@@ -918,6 +919,7 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
       membersByUserId,
       cardOpts,
     });
+    applyAgendaScrollAfterRender({ restoreScrollTop: savedAgendaScroll, board });
     applyWrapLanesClass(boardEl, visibleBoardLaneCount(board));
 
     // Add "No results" state if search is active and no todos match
@@ -997,6 +999,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
   // Check if we're already on a board page - if so, only update board content
   // We check for the board container, not just the topbar, because projects page also has a topbar
   const existingBoardContainer = document.querySelector(".board");
+  const savedAgendaScroll = captureAgendaListScroll();
   if (existingBoardContainer && !opts.forceFullRender) {
     updateBoardContent(board, tag, search, sprintId, assignee, sort, priority);
     syncTopbarFromBoard(board);
@@ -1088,6 +1091,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
 
   const boardRoot = document.querySelector(".board");
   if (boardRoot) applyWrapLanesClass(boardRoot, visibleBoardLaneCount(board));
+  applyAgendaScrollAfterRender({ restoreScrollTop: savedAgendaScroll, board });
 
   // Only attach event listeners for elements that exist (anonymous mode omits some)
   const brandLink = document.getElementById("brandLink");

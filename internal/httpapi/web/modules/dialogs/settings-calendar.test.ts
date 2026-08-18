@@ -101,7 +101,7 @@ describe('settings calendar tab', () => {
     expect(html).toContain('<select class="input" id="agendaTimezoneInput">');
     expect(html).toContain('for="agendaTimezoneInput"');
     expect(html).not.toContain('id="agendaTimezoneSave"');
-    expect(html).toContain('id="agendaFullDayToggle"');
+    expect(html).toContain('id="agendaStartOfDay"');
     expect(html).toContain('data-calendar-source-refresh');
   });
 
@@ -318,43 +318,44 @@ describe('settings calendar tab', () => {
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 
-  it('saves Show full day through user preferences and does not PATCH board settings', async () => {
+  it('saves Start of day through user preferences and does not PATCH board settings', async () => {
     apiFetchMock.mockResolvedValue(calendarPayload);
     const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
-    const prefs = await import('../core/agenda-full-day-preferences.js');
+    const prefs = await import('../core/agenda-start-of-day-preferences.js');
     document.body.innerHTML = await loadCalendarTabContent();
     bindCalendarTabInteractions({ signal: new AbortController().signal, rerender: async () => {} });
     apiFetchMock.mockReset();
     apiFetchMock.mockResolvedValue({});
 
-    const toggle = document.getElementById('agendaFullDayToggle') as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change'));
+    const input = document.getElementById('agendaStartOfDay') as HTMLInputElement;
+    expect(input.value).toBe('08:00');
+    input.value = '06:00';
+    input.dispatchEvent(new Event('change'));
     await flushMicrotasks();
     await flushMicrotasks();
 
     expect(apiFetchMock).toHaveBeenCalledWith('/api/user/preferences', {
       method: 'PUT',
-      body: JSON.stringify({ key: 'agendaFullDay', value: 'true' }),
+      body: JSON.stringify({ key: 'agendaStartOfDay', value: '06:00' }),
     });
     expect(apiFetchMock).not.toHaveBeenCalledWith(
       '/api/board/alpha/settings',
       expect.anything(),
     );
-    expect(prefs.getAgendaTimelineMode()).toBe('full_day');
-    expect(toggle.checked).toBe(true);
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+    expect(input.value).toBe('06:00');
   });
 
-  it('rolls back Show full day when remote save fails', async () => {
+  it('rolls back Start of day when remote save fails', async () => {
     apiFetchMock.mockResolvedValue(calendarPayload);
     const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
-    const prefs = await import('../core/agenda-full-day-preferences.js');
+    const prefs = await import('../core/agenda-start-of-day-preferences.js');
     const { buildAgendaColumnHtml } = await import('../views/board-agenda.js');
     selectorState.board = emptyAgendaBoard();
     const settingsHtml = await loadCalendarTabContent();
     document.body.innerHTML = `${settingsHtml}${buildAgendaColumnHtml(selectorState.board, null)}`;
-    expect(document.querySelector('.agenda-day')).toBeNull();
+    expect(document.querySelector('.agenda-day')).not.toBeNull();
+    expect(document.querySelectorAll('.agenda-hour')).toHaveLength(24);
     bindCalendarTabInteractions({ signal: new AbortController().signal, rerender: async () => {} });
     apiFetchMock.mockReset();
     const err = Object.assign(new Error('could not save preference'), {
@@ -364,15 +365,15 @@ describe('settings calendar tab', () => {
     apiFetchMock.mockRejectedValueOnce(err);
     const { showToast } = await import('../utils.js');
 
-    const toggle = document.getElementById('agendaFullDayToggle') as HTMLInputElement;
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change'));
+    const input = document.getElementById('agendaStartOfDay') as HTMLInputElement;
+    input.value = '06:00';
+    input.dispatchEvent(new Event('change'));
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(prefs.getAgendaTimelineMode()).toBe('fit');
-    expect(toggle.checked).toBe(false);
-    expect(document.querySelector('.agenda-day')).toBeNull();
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
+    expect(input.value).toBe('08:00');
+    expect(document.querySelector('.agenda-day')).not.toBeNull();
     expect(showToast).toHaveBeenCalled();
     const messages = vi.mocked(showToast).mock.calls.map((call) => call[0]);
     expect(
@@ -388,7 +389,7 @@ describe('settings calendar tab', () => {
     );
   });
 
-  it('disables Show full day while its save is pending', async () => {
+  it('disables Start of day while its save is pending', async () => {
     apiFetchMock.mockResolvedValue(calendarPayload);
     const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
     document.body.innerHTML = await loadCalendarTabContent();
@@ -400,23 +401,23 @@ describe('settings calendar tab', () => {
     apiFetchMock.mockReset();
     apiFetchMock.mockImplementation(() => pending);
 
-    const toggle = document.getElementById('agendaFullDayToggle') as HTMLInputElement;
-    toggle.checked = true;
-    toggle.dispatchEvent(new Event('change'));
+    const input = document.getElementById('agendaStartOfDay') as HTMLInputElement;
+    input.value = '06:00';
+    input.dispatchEvent(new Event('change'));
     await flushMicrotasks();
 
-    expect(toggle.disabled).toBe(true);
+    expect(input.disabled).toBe(true);
     resolveSave({});
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(toggle.disabled).toBe(false);
-    expect(toggle.checked).toBe(true);
+    expect(input.disabled).toBe(false);
+    expect(input.value).toBe('06:00');
   });
 
-  it('renders only the Show full day toggle for non-maintainers without fetching calendar sources', async () => {
+  it('renders only the Start of day input for non-maintainers without fetching calendar sources', async () => {
     const { loadCalendarTabContent } = await import('./settings-calendar.js');
     const html = await loadCalendarTabContent({ canManageCalendar: false });
-    expect(html).toContain('id="agendaFullDayToggle"');
+    expect(html).toContain('id="agendaStartOfDay"');
     expect(html).toContain(enCatalog['settings.calendar.timeline.label']);
     expect(html).not.toContain('id="agendaEnabledToggle"');
     expect(html).not.toContain('id="agendaTimezoneInput"');

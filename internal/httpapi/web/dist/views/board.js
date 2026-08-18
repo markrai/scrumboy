@@ -20,7 +20,7 @@ import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
 import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, visibleBoardLaneCount, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
-import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, buildAgendaColumnHtml, isAgendaEnabled } from './board-agenda.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, isAgendaEnabled } from './board-agenda.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
 import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
@@ -805,6 +805,7 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort, priori
             selectedIds: getSelectedTodoIds(),
             priorityTiers: buildPriorityTierMap(board),
         };
+        const savedAgendaScroll = captureAgendaListScroll();
         boardEl.innerHTML =
             buildAgendaColumnHtml(board, getMobileTab()) +
                 buildBoardColumnsHtml({
@@ -816,6 +817,7 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort, priori
                     membersByUserId,
                     cardOpts,
                 });
+        applyAgendaScrollAfterRender({ restoreScrollTop: savedAgendaScroll, board });
         applyWrapLanesClass(boardEl, visibleBoardLaneCount(board));
         // Add "No results" state if search is active and no todos match
         if (search && search.trim() !== "") {
@@ -883,6 +885,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     // Check if we're already on a board page - if so, only update board content
     // We check for the board container, not just the topbar, because projects page also has a topbar
     const existingBoardContainer = document.querySelector(".board");
+    const savedAgendaScroll = captureAgendaListScroll();
     if (existingBoardContainer && !opts.forceFullRender) {
         updateBoardContent(board, tag, search, sprintId, assignee, sort, priority);
         syncTopbarFromBoard(board);
@@ -970,6 +973,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     const boardRoot = document.querySelector(".board");
     if (boardRoot)
         applyWrapLanesClass(boardRoot, visibleBoardLaneCount(board));
+    applyAgendaScrollAfterRender({ restoreScrollTop: savedAgendaScroll, board });
     // Only attach event listeners for elements that exist (anonymous mode omits some)
     const brandLink = document.getElementById("brandLink");
     if (brandLink && !brandLink[BOUND_FLAG]) {
