@@ -69,7 +69,7 @@ import {
   type RenderTodoCardOpts,
   type SprintChipData,
 } from './board-rendering.js';
-import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, isAgendaEnabled } from './board-agenda.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneTitle, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import {
   clearTodoMultiSelection,
   ensureBulkEditUi,
@@ -789,6 +789,7 @@ function updateMobileTabs(): void {
     }
   });
   checkMobileLoadMoreVisibility();
+  flushAgendaInitialScroll();
 }
 
 // Handle project image upload

@@ -678,6 +678,93 @@ describe('router agenda start of day hydration', () => {
   });
 });
 
+describe('router agenda now-line hydration', () => {
+  function userBob() {
+    return {
+      id: 8,
+      email: 'bob@example.com',
+      name: 'Bob',
+      isBootstrap: false,
+      systemRole: 'user',
+      twoFactorEnabled: false,
+    };
+  }
+
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, agendaNowLineValue: string): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=agendaNowLine')) {
+        return { value: agendaNowLineValue };
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('defaults missing server preference to subtle', async () => {
+    const prefs = await import('./core/agenda-now-line-preferences.js');
+    localStorage.setItem(prefs.AGENDA_NOW_LINE_STORAGE_KEY, 'prominent');
+    installSignedInAuth(userBob(), '');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(prefs.getAgendaNowLinePreference()).toBe('subtle');
+  });
+
+  it('does not carry prominent now line from user A to user B on login', async () => {
+    const prefs = await import('./core/agenda-now-line-preferences.js');
+    localStorage.setItem(prefs.AGENDA_NOW_LINE_STORAGE_KEY, 'prominent');
+    installSignedInAuth(userStatus(), 'prominent');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getAgendaNowLinePreference()).toBe('prominent');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userBob(), '');
+    await mod.router();
+
+    expect(prefs.getAgendaNowLinePreference()).toBe('subtle');
+  });
+});
+
 describe('router board todo sort hydration', () => {
   function userBob() {
     return {

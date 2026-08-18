@@ -3,7 +3,8 @@ import { getSlug } from '../state/selectors.js';
 import { confirmDelete, escapeHTML, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
 import { getAgendaStartOfDayPreference, saveAgendaStartOfDayPreference, } from '../core/agenda-start-of-day-preferences.js';
-import { syncOpenBoardAgendaLayout } from '../views/board-agenda.js';
+import { AGENDA_NOW_LINE_PROMINENT, AGENDA_NOW_LINE_SUBTLE, isAgendaNowLineProminent, saveAgendaNowLinePreference, } from '../core/agenda-now-line-preferences.js';
+import { applyAgendaNowLineAppearance, syncOpenBoardAgendaLayout } from '../views/board-agenda.js';
 const DEFAULT_AGENDA_TIMEZONE = 'UTC';
 let cachedCalendar = null;
 export function clearCalendarSettingsCache() {
@@ -77,6 +78,13 @@ function renderTimelinePreferenceHTML() {
         <input class="input" type="time" id="agendaStartOfDay" value="${escapeHTML(getAgendaStartOfDayPreference())}" />
       </label>
       <p class="muted" data-i18n-text="settings.calendar.timeline.hint">Agenda initially scrolls here unless an earlier event exists.</p>
+    </div>
+    <div class="settings-section">
+      <label class="field" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="agendaNowLineProminent" ${isAgendaNowLineProminent() ? 'checked' : ''} />
+        <span data-i18n-text="settings.calendar.nowLine.label">Prominent now line</span>
+      </label>
+      <p class="muted" data-i18n-text="settings.calendar.nowLine.hint">Use a solid red current-time line instead of the quieter dotted line.</p>
     </div>`;
 }
 function renderCalendarTabHTML(data) {
@@ -163,6 +171,25 @@ export function bindCalendarTabInteractions(options) {
         }
         finally {
             startOfDayInput.disabled = false;
+        }
+    }, { signal });
+    const nowLineInput = document.getElementById('agendaNowLineProminent');
+    nowLineInput?.addEventListener('change', async () => {
+        const previous = isAgendaNowLineProminent();
+        const next = nowLineInput.checked ? AGENDA_NOW_LINE_PROMINENT : AGENDA_NOW_LINE_SUBTLE;
+        nowLineInput.disabled = true;
+        const saving = saveAgendaNowLinePreference(next);
+        applyAgendaNowLineAppearance();
+        try {
+            await saving;
+        }
+        catch (err) {
+            nowLineInput.checked = previous;
+            applyAgendaNowLineAppearance();
+            showToast(apiErrorMessageOrRaw(err, { fallbackKey: 'settings.calendar.toast.nowLineFailed' }));
+        }
+        finally {
+            nowLineInput.disabled = false;
         }
     }, { signal });
     const enabledToggle = document.getElementById('agendaEnabledToggle');

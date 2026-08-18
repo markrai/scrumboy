@@ -102,6 +102,7 @@ describe('settings calendar tab', () => {
     expect(html).toContain('for="agendaTimezoneInput"');
     expect(html).not.toContain('id="agendaTimezoneSave"');
     expect(html).toContain('id="agendaStartOfDay"');
+    expect(html).toContain('id="agendaNowLineProminent"');
     expect(html).toContain('data-calendar-source-refresh');
   });
 
@@ -346,6 +347,38 @@ describe('settings calendar tab', () => {
     expect(input.value).toBe('06:00');
   });
 
+  it('saves prominent now line through user preferences and does not PATCH board settings', async () => {
+    apiFetchMock.mockResolvedValue(calendarPayload);
+    const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
+    const prefs = await import('../core/agenda-now-line-preferences.js');
+    const { buildAgendaColumnHtml, applyAgendaScrollAfterRender } = await import('../views/board-agenda.js');
+    selectorState.board = emptyAgendaBoard();
+    document.body.innerHTML = `${await loadCalendarTabContent()}${buildAgendaColumnHtml(selectorState.board, null)}`;
+    applyAgendaScrollAfterRender({ restoreScrollTop: 0, board: selectorState.board });
+    bindCalendarTabInteractions({ signal: new AbortController().signal, rerender: async () => {} });
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValue({});
+
+    const input = document.getElementById('agendaNowLineProminent') as HTMLInputElement;
+    expect(input.checked).toBe(false);
+    expect(document.querySelector('.agenda-now-line')?.classList.contains('agenda-now-line--prominent')).toBe(false);
+    input.checked = true;
+    input.dispatchEvent(new Event('change'));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/user/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ key: 'agendaNowLine', value: 'prominent' }),
+    });
+    expect(apiFetchMock).not.toHaveBeenCalledWith(
+      '/api/board/alpha/settings',
+      expect.anything(),
+    );
+    expect(prefs.isAgendaNowLineProminent()).toBe(true);
+    expect(document.querySelector('.agenda-now-line')?.classList.contains('agenda-now-line--prominent')).toBe(true);
+  });
+
   it('rolls back Start of day when remote save fails', async () => {
     apiFetchMock.mockResolvedValue(calendarPayload);
     const { loadCalendarTabContent, bindCalendarTabInteractions } = await import('./settings-calendar.js');
@@ -418,7 +451,9 @@ describe('settings calendar tab', () => {
     const { loadCalendarTabContent } = await import('./settings-calendar.js');
     const html = await loadCalendarTabContent({ canManageCalendar: false });
     expect(html).toContain('id="agendaStartOfDay"');
+    expect(html).toContain('id="agendaNowLineProminent"');
     expect(html).toContain(enCatalog['settings.calendar.timeline.label']);
+    expect(html).toContain(enCatalog['settings.calendar.nowLine.label']);
     expect(html).not.toContain('id="agendaEnabledToggle"');
     expect(html).not.toContain('id="agendaTimezoneInput"');
     expect(html).not.toContain('id="calendarSourceAdd"');

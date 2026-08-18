@@ -4169,6 +4169,7 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   --agenda-hour-height: 48px;
   --agenda-hour-gutter: 3.75rem;
   position: relative;
+  height: calc(24 * var(--agenda-hour-height));
 }
 
 .agenda-hour {
@@ -4196,6 +4197,25 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   left: var(--agenda-hour-gutter);
 }
 
+.agenda-now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--agenda-now-min, 0) / 60 * var(--agenda-hour-height));
+  height: 0;
+  margin-top: -1px;
+  border-top: 2px dotted color-mix(in srgb, var(--danger) 45%, transparent);
+  background: none;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.agenda-now-line--prominent {
+  height: 2px;
+  border-top: none;
+  background: var(--danger);
+}
+
 .card--agenda {
   cursor: default;
   border-color: #6366F1;
@@ -4212,25 +4232,21 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   box-sizing: border-box;
   margin: 0;
   padding: 4px 8px;
-  justify-content: center;
+  justify-content: flex-start;
+  top: calc(var(--agenda-start-min) / 60 * var(--agenda-hour-height));
+  height: max(8px, calc(var(--agenda-span-min) / 60 * var(--agenda-hour-height)));
 }
 
 @media (max-width: 767px) {
   .agenda-day {
     --agenda-hour-height: 96px;
   }
-
-  .card--agenda-timed {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-  }
 }
 
 .card--agenda-timed .card__agenda-copy {
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -4557,6 +4573,14 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     grid-row: 2;
     justify-self: end;
     align-self: end;
+  }
+}
+
+@media (max-width: 767px) {
+  .card.card--agenda-timed {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 }
 

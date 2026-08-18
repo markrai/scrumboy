@@ -458,6 +458,7 @@
   "settings.calendar.timezone.hint": "Used for today's events. All members see Agenda in this timezone.",
   "settings.calendar.timeline.label": "Start of day",
   "settings.calendar.timeline.hint": "Agenda initially scrolls here unless an earlier event exists.",
+  "settings.calendar.nowLine.label": "Prominent now line",
   "settings.calendar.title.label": "Lane name",
   "settings.calendar.title.hint": "Shown as the Agenda lane title for all members.",
   "settings.calendar.add.title": "Add ICS feed",
@@ -476,6 +477,7 @@
   "settings.calendar.toast.timezoneUpdated": "Timezone saved.",
   "settings.calendar.toast.timezoneFailed": "Could not save timezone.",
   "settings.calendar.toast.timelineFailed": "Could not save Agenda layout.",
+  "settings.calendar.toast.nowLineFailed": "Could not save now-line style.",
   "settings.calendar.toast.titleUpdated": "Lane name saved.",
   "settings.calendar.toast.titleFailed": "Could not save lane name.",
   "settings.calendar.toast.titleRequired": "Lane name is required.",
@@ -1157,5 +1159,6 @@
   "settings.sprints.disabledHint": "이 보드는 스프린트가 비활성화되어 있습니다. 스프린트를 생성 및 관리하려면 위에서 활성화하세요.",
   "settings.sprints.toast.enabled": "스프린트가 활성화되었습니다",
   "settings.sprints.toast.disabled": "스프린트가 비활성화되었습니다",
-  "settings.sprints.toast.toggleFailed": "스프린트 설정을 업데이트하지 못했습니다"
+  "settings.sprints.toast.toggleFailed": "스프린트 설정을 업데이트하지 못했습니다",
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
 }

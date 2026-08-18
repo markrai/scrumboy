@@ -458,6 +458,7 @@
   "settings.calendar.timezone.hint": "Used for today's events. All members see Agenda in this timezone.",
   "settings.calendar.timeline.label": "Start of day",
   "settings.calendar.timeline.hint": "Agenda initially scrolls here unless an earlier event exists.",
+  "settings.calendar.nowLine.label": "Prominent now line",
   "settings.calendar.title.label": "Lane name",
   "settings.calendar.title.hint": "Shown as the Agenda lane title for all members.",
   "settings.calendar.add.title": "Add ICS feed",
@@ -476,6 +477,7 @@
   "settings.calendar.toast.timezoneUpdated": "Timezone saved.",
   "settings.calendar.toast.timezoneFailed": "Could not save timezone.",
   "settings.calendar.toast.timelineFailed": "Could not save Agenda layout.",
+  "settings.calendar.toast.nowLineFailed": "Could not save now-line style.",
   "settings.calendar.toast.titleUpdated": "Lane name saved.",
   "settings.calendar.toast.titleFailed": "Could not save lane name.",
   "settings.calendar.toast.titleRequired": "Lane name is required.",
@@ -1157,5 +1159,6 @@
   "settings.sprints.disabledHint": "اس بورڈ کے لیے سپرنٹس غیر فعال ہیں۔ سپرنٹس بنانے اور منظم کرنے کے لیے اوپر فعال کریں۔",
   "settings.sprints.toast.enabled": "سپرنٹس فعال کر دیے گئے",
   "settings.sprints.toast.disabled": "سپرنٹس غیر فعال کر دیے گئے",
-  "settings.sprints.toast.toggleFailed": "سپرنٹ کی ترتیب اپ ڈیٹ کرنے میں ناکامی"
+  "settings.sprints.toast.toggleFailed": "سپرنٹ کی ترتیب اپ ڈیٹ کرنے میں ناکامی",
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
 }
