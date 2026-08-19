@@ -7,21 +7,23 @@ import (
 	"strings"
 )
 
-const EmailNotifyPrefVersion = 1
+const EmailNotifyPrefVersion = 2
 
 // EmailNotifyPref is stored as JSON in user_preferences.key = "emailNotifications".
 type EmailNotifyPref struct {
 	V               int  `json:"v"`
 	Enabled         bool `json:"enabled"`         // master opt-in; no category fires unless this is true
 	Assigned        bool `json:"assigned"`        // a card is assigned to me
+	CreatedByMe     bool `json:"createdByMe"`     // a card I created is updated or moved
 	CardActivity    bool `json:"cardActivity"`    // card created/updated/moved/deleted/links changed
 	SprintActivity  bool `json:"sprintActivity"`  // sprint created/updated/deleted/activated/closed
 	ProjectActivity bool `json:"projectActivity"` // project/workflow/tag changes
 	AddedToProject  bool `json:"addedToProject"`  // I was added to a project
 }
 
-// DefaultEmailNotifyPref matches the opt-in defaults surfaced in Settings: the
-// two "about me" categories default on, broader project activity defaults off.
+// DefaultEmailNotifyPref matches the opt-in defaults surfaced in Settings.
+// Existing targeted categories retain their defaults; creator email is an
+// explicit opt-in so legacy or absent preferences never enable it silently.
 func DefaultEmailNotifyPref() EmailNotifyPref {
 	return EmailNotifyPref{
 		V:              EmailNotifyPrefVersion,
@@ -42,7 +44,7 @@ func ParseEmailNotifyPref(raw string) (EmailNotifyPref, error) {
 		return EmailNotifyPref{}, fmt.Errorf("%w: email notification preference JSON", ErrValidation)
 	}
 	allowed := map[string]bool{
-		"v": true, "enabled": true, "assigned": true, "cardActivity": true,
+		"v": true, "enabled": true, "assigned": true, "createdByMe": true, "cardActivity": true,
 		"sprintActivity": true, "projectActivity": true, "addedToProject": true,
 	}
 	for key := range fields {
@@ -50,15 +52,24 @@ func ParseEmailNotifyPref(raw string) (EmailNotifyPref, error) {
 			return EmailNotifyPref{}, fmt.Errorf("%w: unknown email notification preference field", ErrValidation)
 		}
 	}
+	version := 1 // Missing versions are legacy v1 values.
 	if value, ok := fields["v"]; ok {
-		var version float64
-		if err := json.Unmarshal(value, &version); err != nil || version != EmailNotifyPrefVersion {
+		var decoded float64
+		if err := json.Unmarshal(value, &decoded); err != nil || (decoded != 1 && decoded != EmailNotifyPrefVersion) {
 			return EmailNotifyPref{}, fmt.Errorf("%w: unsupported email notification preference version", ErrValidation)
 		}
+		version = int(decoded)
+	}
+	if version == 1 {
+		if _, ok := fields["createdByMe"]; ok {
+			return EmailNotifyPref{}, fmt.Errorf("%w: createdByMe requires email notification preference version 2", ErrValidation)
+		}
+	} else if version != EmailNotifyPrefVersion {
+		return EmailNotifyPref{}, fmt.Errorf("%w: unsupported email notification preference version", ErrValidation)
 	}
 	p := DefaultEmailNotifyPref()
 	for key, target := range map[string]*bool{
-		"enabled": &p.Enabled, "assigned": &p.Assigned, "cardActivity": &p.CardActivity,
+		"enabled": &p.Enabled, "assigned": &p.Assigned, "createdByMe": &p.CreatedByMe, "cardActivity": &p.CardActivity,
 		"sprintActivity": &p.SprintActivity, "projectActivity": &p.ProjectActivity,
 		"addedToProject": &p.AddedToProject,
 	} {

@@ -23,8 +23,9 @@ type boardReadContractResponse struct {
 		Name string `json:"name"`
 	} `json:"tags"`
 	Columns map[string][]struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
+		ID              int64  `json:"id"`
+		Title           string `json:"title"`
+		CreatedByUserID *int64 `json:"createdByUserId"`
 	} `json:"columns"`
 	ColumnsMeta map[string]struct {
 		HasMore    bool    `json:"hasMore"`
@@ -35,8 +36,9 @@ type boardReadContractResponse struct {
 
 type boardLaneReadContractResponse struct {
 	Items []struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
+		ID              int64  `json:"id"`
+		Title           string `json:"title"`
+		CreatedByUserID *int64 `json:"createdByUserId"`
 	} `json:"items"`
 	NextCursor *string `json:"nextCursor"`
 	HasMore    bool    `json:"hasMore"`
@@ -144,6 +146,9 @@ func TestBoardRead_RESTCombinedFiltersAndPaginationContract(t *testing.T) {
 	backlog := board.Columns[store.DefaultColumnBacklog]
 	if len(backlog) != 1 || backlog[0].Title != "Newer matching" {
 		t.Fatalf("unexpected filtered backlog: %+v", backlog)
+	}
+	if backlog[0].CreatedByUserID == nil || *backlog[0].CreatedByUserID != ownerID {
+		t.Fatalf("createdByUserId=%v want=%d", backlog[0].CreatedByUserID, ownerID)
 	}
 
 	meta := board.ColumnsMeta[store.DefaultColumnBacklog]

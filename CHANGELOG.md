@@ -1,6 +1,99 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.31.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+
+## [3.32.4] - 2026-08-18
+
+### Security
+
+- **Go 1.25.13 toolchain** - Bump the `go.mod` toolchain from `go1.25.12` to
+  `go1.25.13` and pin the Docker build image to `golang:1.25.13-alpine` by
+  multi-platform manifest digest so the standard-library vulnerabilities
+  fixed in that patch are no longer reported by OSV Scanner. The `go 1.25.0`
+  language-version directive is unchanged.
+
+## [3.32.3] - 2026-08-17
+
+### Changed
+
+- **Frontend dependency upgrades** - Bump `@playwright/test` to `1.62.1` and
+  `happy-dom` to `20.11.1`.
+
+### Security
+
+- **Transitive NanoID pin** - Raise the PostCSS `nanoid` override from `3.3.17`
+  to `3.3.18` so the frontend lockfile resolves the newer patched release.
+
+## [3.32.2] - 2026-08-17
+
+### Changed
+
+- **Board filter assignee list** - When signed in, **Assigned to me** is the
+  canonical current-user option; the duplicate named member entry is omitted.
+  Bookmarked numeric assignee IDs still highlight **Assigned to me**. Anonymous
+  boards are unchanged.
+
+### Added
+
+- **Remembered board sort** - Signed-in users persist Default / Newest / Oldest
+  through the existing user-preferences API. Entering a board without `?sort=`
+  applies the saved preference; an explicit `?sort=newest` or `?sort=oldest`
+  still wins for that navigation and does not overwrite the stored preference.
+
+### Fixed
+
+- **Sprint definition contract fixture** - The ACTIVE subtest in
+  `TestSprintDefinitionStoreOwnsDefinitionValidationByState` no longer depends
+  on `ActivateSprint`'s wall-clock eligibility. It constructs the ACTIVE row
+  directly (like the CLOSED fixture), so the suite no longer expires when the
+  hardcoded planned end passes.
+
+## [3.32.1] - 2026-08-15
+
+### Fixed
+
+- **Post-mutation board refresh keeps filter context** - Todo save and delete
+  refreshes now pass assignee, sort, and priority from the URL into
+  `loadBoardBySlug`, so those board filters are no longer dropped after a
+  dialog mutation. Coverage locks the refresh argument wiring.
+
+## [3.32.0] - 2026-08-15
+
+### Added
+
+- **Todo creator attribution** - Authenticated creates store a nullable
+  `created_by_user_id` (left null for anonymous/legacy todos). The identity is
+  carried through board reads, REST/MCP DTOs, backup export/import/restore, and
+  project duplication, and the todo dialog shows an “Opened by” line beside the
+  existing timestamps.
+- **Creator update notifications** - When someone else updates or moves a todo,
+  prepared application services can request a creator-facing notification after
+  commit. Delivery is authorized (creator still on the project, actor ≠ creator),
+  emailed under a new `createdByMe` preference (defaults on, like assigned), and
+  pushed in-app over the creator’s private SSE user channel rather than a board
+  broadcast. MCP keeps board-refresh silence but still requests creator notify;
+  deletes and creates do not.
+
+## [3.31.5] - 2026-08-13
+
+### Changed
+
+- **Legacy todo mutations move behind application services** - Numeric
+  compatibility REST routes for todo update, move, and delete now share
+  `internal/application/todo` command boundaries (`LegacyUpdateService`,
+  `LegacyMoveService`, `LegacyDeleteService`) instead of owning call logic in
+  the HTTP transport. Adapters stay thin wrappers; permissions, validation,
+  response shapes, and board-refresh side effects are preserved. Contract tests
+  lock the migrated legacy mutation paths.
+
+## [3.31.4] - 2026-08-12
+
+### Fixed
+
+- **Priority filter no-priority sentinel** - Board/MCP `priority` filters now use
+  `**none**` for unset priority so a real tier key named `none` stays filterable.
+  Docs and contract tests cover the disambiguated grammar; the SPA clears unknown
+  priority query values when the selected tier is not on the board.
 
 ## [3.31.3] - 2026-08-12
 

@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,7 +17,9 @@ import (
 type boardGetTransportFixture struct {
 	serverURL string
 	client    *http.Client
+	db        *sql.DB
 	slug      string
+	creatorID int64
 }
 
 func newBoardGetTransportFixture(t *testing.T) boardGetTransportFixture {
@@ -35,7 +38,8 @@ func newBoardGetTransportFixture(t *testing.T) boardGetTransportFixture {
 	slug := projectSlugByName(t, sqlDB, "Phase 7 Transport Board")
 	projectID := projectIDBySlug(t, sqlDB, slug)
 	st := store.New(sqlDB, nil)
-	ctx := store.WithUserID(t.Context(), firstUserID(t, sqlDB))
+	creatorID := firstUserID(t, sqlDB)
+	ctx := store.WithUserID(t.Context(), creatorID)
 	for i := 0; i < 3; i++ {
 		if _, err := st.CreateTodo(ctx, projectID, store.CreateTodoInput{
 			Title:     "Phase 7 paged todo",
@@ -47,7 +51,9 @@ func newBoardGetTransportFixture(t *testing.T) boardGetTransportFixture {
 	return boardGetTransportFixture{
 		serverURL: ts.URL,
 		client:    client,
+		db:        sqlDB,
 		slug:      slug,
+		creatorID: creatorID,
 	}
 }
 
@@ -102,6 +108,7 @@ func TestMCPBoardGetTransportContract_LegacySuccessEnvelope(t *testing.T) {
 		"body",
 		"columnKey",
 		"createdAt",
+		"createdByUserId",
 		"doneAt",
 		"estimationPoints",
 		"localId",
@@ -113,6 +120,9 @@ func TestMCPBoardGetTransportContract_LegacySuccessEnvelope(t *testing.T) {
 		"updatedAt",
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("todo keys = %v, want %v", got, want)
+	}
+	if got := items[0].(map[string]any)["createdByUserId"]; got != float64(fixture.creatorID) {
+		t.Fatalf("createdByUserId = %#v, want %d", got, fixture.creatorID)
 	}
 	meta := out["meta"].(map[string]any)
 	if got, want := sortedMapKeys(meta), []string{"hasMoreByColumn", "nextCursorByColumn", "totalCountByColumn"}; !reflect.DeepEqual(got, want) {
@@ -126,6 +136,40 @@ func TestMCPBoardGetTransportContract_LegacySuccessEnvelope(t *testing.T) {
 	}
 	if meta["totalCountByColumn"].(map[string]any)[store.DefaultColumnBacklog] != float64(3) {
 		t.Fatalf("backlog total = %#v", meta["totalCountByColumn"])
+	}
+}
+
+func TestMCPBoardGetTransportContract_NullCreatorIsExplicitNull(t *testing.T) {
+	fixture := newBoardGetTransportFixture(t)
+	if _, err := fixture.db.Exec(`UPDATE todos SET created_by_user_id = NULL WHERE project_id = (SELECT id FROM projects WHERE slug = ?) AND local_id = 1`, fixture.slug); err != nil {
+		t.Fatalf("clear creator attribution: %v", err)
+	}
+
+	resp, out := doMCP(t, fixture.client, fixture.serverURL+"/mcp", map[string]any{
+		"tool": "board_get",
+		"input": map[string]any{
+			"projectSlug": fixture.slug,
+			"limit":       3,
+		},
+	})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body=%#v", resp.StatusCode, out)
+	}
+	items := boardColumnByKey(t, out["data"].(map[string]any)["columns"].([]any), store.DefaultColumnBacklog)["items"].([]any)
+	var first map[string]any
+	for _, item := range items {
+		candidate := item.(map[string]any)
+		if candidate["localId"] == float64(1) {
+			first = candidate
+			break
+		}
+	}
+	if first == nil {
+		t.Fatalf("localId 1 missing from items: %#v", items)
+	}
+	value, exists := first["createdByUserId"]
+	if !exists || value != nil {
+		t.Fatalf("createdByUserId = %#v (exists=%v), want explicit null", value, exists)
 	}
 }
 

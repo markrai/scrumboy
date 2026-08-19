@@ -40,28 +40,35 @@ type MCPMoveLaneStore interface {
 }
 
 type MCPMoveServiceDependencies struct {
-	Access MCPMoveAccessStore
-	Lookup MCPMoveLookupStore
-	Lanes  MCPMoveLaneStore
-	Move   MoveStore
+	Access          MCPMoveAccessStore
+	Lookup          MCPMoveLookupStore
+	Lanes           MCPMoveLaneStore
+	Move            MoveStore
+	CreatorRequests CreatorNotificationRequestPublisher
 }
 
 // MCPMoveService owns the stricter one-sided anchor policy specific to MCP.
-// It deliberately has no board-refresh dependency, preserving current MCP
-// move silence.
+// It deliberately has no board-refresh dependency. Optional creator
+// consideration is an explicit application-owned request.
 type MCPMoveService struct {
-	access MCPMoveAccessStore
-	lookup MCPMoveLookupStore
-	lanes  MCPMoveLaneStore
-	move   MoveStore
+	access          MCPMoveAccessStore
+	lookup          MCPMoveLookupStore
+	lanes           MCPMoveLaneStore
+	move            MoveStore
+	creatorRequests CreatorNotificationRequestPublisher
 }
 
 func NewMCPMoveService(deps MCPMoveServiceDependencies) *MCPMoveService {
+	creatorRequests := deps.CreatorRequests
+	if creatorRequests == nil {
+		creatorRequests = nopCreatorNotificationRequestPublisher{}
+	}
 	return &MCPMoveService{
-		access: deps.Access,
-		lookup: deps.Lookup,
-		lanes:  deps.Lanes,
-		move:   deps.Move,
+		access:          deps.Access,
+		lookup:          deps.Lookup,
+		lanes:           deps.Lanes,
+		move:            deps.Move,
+		creatorRequests: creatorRequests,
 	}
 }
 
@@ -128,6 +135,7 @@ func (m *PreparedMCPMove) Move(command MoveCommand) (MoveResult, error) {
 		return MoveResult{}, err
 	}
 
+	publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved, false)
 	return MoveResult{Project: project, Todo: todo}, nil
 }
 

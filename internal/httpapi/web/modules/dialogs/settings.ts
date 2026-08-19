@@ -1728,6 +1728,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   const emailNotifyInteractive = emailNotifyAvailable && emailNotifyReady;
   const emailCategoryRows: Array<{ key: EmailNotifyCategory; labelKey: string; label: string }> = [
     { key: "assigned", labelKey: "settings.customization.emailNotify.category.assigned", label: "When a card is assigned to me" },
+    { key: "createdByMe", labelKey: "settings.customization.emailNotify.category.createdByMe", label: "When a card I opened is updated or moved" },
     { key: "cardActivity", labelKey: "settings.customization.emailNotify.category.cardActivity", label: "Card created, moved, or deleted" },
     { key: "sprintActivity", labelKey: "settings.customization.emailNotify.category.sprintActivity", label: "Sprint activity" },
     { key: "projectActivity", labelKey: "settings.customization.emailNotify.category.projectActivity", label: "Project, workflow, or tag changes" },

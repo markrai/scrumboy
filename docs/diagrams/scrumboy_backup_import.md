@@ -41,6 +41,16 @@ explicit arrays replace definitions, explicit todo `null` clears, and a string
 assigns. Replacement and merge run under project-writer serialization and
 abort if any effective non-null todo key would not resolve in the project.
 
+Todo exports may include `createdByUserId` as additive historical metadata;
+`NULL` attribution is omitted. This value is a database-local user row ID, not
+a portable identity. Native replace, merge-new, and copy imports therefore do
+not bind the raw number to a user in the destination database, even when a user
+with the same numeric ID happens to exist. Imported/newly copied todos receive
+`NULL` creator attribution. A merge that updates an already matched todo leaves
+that target todo's existing attribution unchanged. Portable creator restoration
+is deferred until the backup format carries an identity that can be mapped
+without confusing unrelated users.
+
 Trello import uses dedicated `ImportTrelloProject` (not the generic `ImportProjects` path). Preview and import both use `trelloimport.BuildImportBundle`. Import rejects when preview `hardErrors` is non-empty. Body size is capped separately (`MaxTrelloImportBody`).
 
 ## Trello transform

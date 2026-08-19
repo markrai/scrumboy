@@ -185,6 +185,7 @@ func TestPreparedMCPUpdatePrepareTodoCopiesExistingAndEmptyPatchSkipsUpdate(t *t
 	lookup.todo.Tags[0] = "mutated tag"
 	*lookup.todo.EstimationPoints = 101
 	*lookup.todo.AssigneeUserID = 102
+	*lookup.todo.CreatedByUserID = 104
 	*lookup.todo.SprintID = 103
 	*lookup.todo.DoneAt = lookup.todo.DoneAt.Add(time.Hour)
 
@@ -249,6 +250,7 @@ func TestPreparedMCPTodoUpdateSparsePatchMaterializesBoundExisting(t *testing.T)
 	lookup.todo.Tags[0] = "mutated source"
 	*lookup.todo.EstimationPoints = 101
 	*lookup.todo.AssigneeUserID = 102
+	*lookup.todo.CreatedByUserID = 104
 	*lookup.todo.SprintID = 103
 	result, err := preparedTodo.Update(UpdatePatch{Body: Field[string]{Present: true, Value: "new body"}})
 	if err != nil {
@@ -452,6 +454,7 @@ func TestMCPUpdateServiceCancellationAfterTodoPreparationUsesBoundContext(t *tes
 func fullyPopulatedMCPUpdateTodo() store.Todo {
 	estimation := int64(3)
 	assignee := int64(21)
+	creator := int64(22)
 	sprint := int64(5)
 	doneAt := time.Unix(1700000000, 0)
 	return store.Todo{
@@ -463,6 +466,7 @@ func fullyPopulatedMCPUpdateTodo() store.Todo {
 		Tags:             []string{"existing-tag"},
 		EstimationPoints: &estimation,
 		AssigneeUserID:   &assignee,
+		CreatedByUserID:  &creator,
 		SprintID:         &sprint,
 		DoneAt:           &doneAt,
 	}
@@ -475,6 +479,7 @@ func assertMCPUpdateBoundTodoValues(t *testing.T, todo store.Todo) {
 	}
 	assertMCPUpdatePointerValue(t, "estimation", todo.EstimationPoints, 3)
 	assertMCPUpdatePointerValue(t, "assignee", todo.AssigneeUserID, 21)
+	assertMCPUpdatePointerValue(t, "creator", todo.CreatedByUserID, 22)
 	assertMCPUpdatePointerValue(t, "sprint", todo.SprintID, 5)
 	if todo.DoneAt == nil || !todo.DoneAt.Equal(time.Unix(1700000000, 0)) {
 		t.Fatalf("doneAt = %v, want original value", todo.DoneAt)
@@ -486,7 +491,7 @@ func assertMCPUpdateTodoDoesNotAlias(t *testing.T, got, source store.Todo) {
 	if len(got.Tags) > 0 && len(source.Tags) > 0 && &got.Tags[0] == &source.Tags[0] {
 		t.Fatal("tags alias source todo")
 	}
-	if got.EstimationPoints == source.EstimationPoints || got.AssigneeUserID == source.AssigneeUserID || got.SprintID == source.SprintID || got.DoneAt == source.DoneAt {
+	if got.EstimationPoints == source.EstimationPoints || got.AssigneeUserID == source.AssigneeUserID || got.CreatedByUserID == source.CreatedByUserID || got.SprintID == source.SprintID || got.DoneAt == source.DoneAt {
 		t.Fatal("pointer field aliases source todo")
 	}
 }

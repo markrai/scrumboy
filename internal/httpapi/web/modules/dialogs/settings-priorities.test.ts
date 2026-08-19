@@ -440,11 +440,12 @@ describe('settings-priorities', () => {
     expect(showToastMock).toHaveBeenNthCalledWith(2, enCatalog['settings.priorities.toast.reloadRequired']);
   });
 
-  it('deletes an empty priority tier through the priorities delete route', async () => {
+  it('reloads a deleted selected priority through the authoritative board loader', async () => {
     const rerender = vi.fn().mockResolvedValue(undefined);
     const mod = await loadPriorityModule();
     await primeOkPriorityState(mod, rerender);
     showConfirmDialogMock.mockResolvedValue(true);
+    window.history.replaceState({}, '', '/alpha?sprintId=42&assignee=me&sort=newest&priority=low');
 
     render(mod.loadPriorityTabContent({ slug: 'alpha', rerender }));
     mod.bindPriorityTabInteractions({
@@ -464,7 +465,7 @@ describe('settings-priorities', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/board/alpha/priorities/low', {
       method: 'DELETE',
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', 'me', 'newest', 'low');
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 

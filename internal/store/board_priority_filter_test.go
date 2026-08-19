@@ -24,8 +24,9 @@ func TestParsePriorityFilter(t *testing.T) {
 	}{
 		{name: "empty", raw: "", wantMode: priorityFilterNone},
 		{name: "whitespace only", raw: " \t ", wantMode: priorityFilterNone},
-		{name: "none", raw: "none", wantMode: priorityFilterNoPriority},
-		{name: "none trims whitespace", raw: " none ", wantMode: priorityFilterNoPriority},
+		{name: "no priority sentinel", raw: PriorityFilterNoPriorityValue, wantMode: priorityFilterNoPriority},
+		{name: "no priority sentinel trims whitespace", raw: " " + PriorityFilterNoPriorityValue + " ", wantMode: priorityFilterNoPriority},
+		{name: "old sentinel is a literal key", raw: "none", wantMode: priorityFilterKey, wantKey: "none"},
 		{name: "known key", raw: "urgent", wantMode: priorityFilterKey, wantKey: "urgent"},
 		{name: "unknown key is not validated", raw: "not-a-real-key", wantMode: priorityFilterKey, wantKey: "not-a-real-key"},
 		{name: "uppercase none is a literal key", raw: "None", wantMode: priorityFilterKey, wantKey: "None"},
@@ -70,9 +71,17 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
+	noneTier, err := st.AddPriorityTier(ctxOwner, p.ID, "None")
+	if err != nil {
+		t.Fatalf("AddPriorityTier None: %v", err)
+	}
+	if noneTier.Key != "none" {
+		t.Fatalf("None tier key = %q, want none", noneTier.Key)
+	}
 
 	urgent := "urgent"
 	high := "high"
+	none := noneTier.Key
 	if _, err := st.CreateTodo(ctxOwner, p.ID, CreateTodoInput{Title: "Urgent todo", Tags: []string{"focus"}, PriorityKey: &urgent}, ModeFull); err != nil {
 		t.Fatalf("CreateTodo urgent: %v", err)
 	}
@@ -81,6 +90,9 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 	}
 	if _, err := st.CreateTodo(ctxOwner, p.ID, CreateTodoInput{Title: "No priority"}, ModeFull); err != nil {
 		t.Fatalf("CreateTodo no priority: %v", err)
+	}
+	if _, err := st.CreateTodo(ctxOwner, p.ID, CreateTodoInput{Title: "None tier todo", PriorityKey: &none}, ModeFull); err != nil {
+		t.Fatalf("CreateTodo none tier: %v", err)
 	}
 
 	pc, err := st.GetProjectContextForRead(ctxOwner, p.ID, ModeFull)
@@ -100,8 +112,20 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 		}
 	})
 
-	t.Run("filters no-priority", func(t *testing.T) {
+	t.Run("filters real tier whose key is none", func(t *testing.T) {
 		filter := mustPriorityFilter(t, "none")
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+		if err != nil {
+			t.Fatalf("GetBoard: %v", err)
+		}
+		todos := cols[DefaultColumnBacklog]
+		if len(todos) != 1 || todos[0].Title != "None tier todo" {
+			t.Fatalf("expected only 'None tier todo', got %+v", todos)
+		}
+	})
+
+	t.Run("filters no-priority", func(t *testing.T) {
+		filter := mustPriorityFilter(t, PriorityFilterNoPriorityValue)
 		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
@@ -128,8 +152,8 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
-		if len(cols[DefaultColumnBacklog]) != 3 {
-			t.Fatalf("expected 3 todos, got %d", len(cols[DefaultColumnBacklog]))
+		if len(cols[DefaultColumnBacklog]) != 4 {
+			t.Fatalf("expected 4 todos, got %d", len(cols[DefaultColumnBacklog]))
 		}
 	})
 
@@ -150,7 +174,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 	})
 
 	t.Run("paged path filters no-priority", func(t *testing.T) {
-		filter := mustPriorityFilter(t, "none")
+		filter := mustPriorityFilter(t, PriorityFilterNoPriorityValue)
 		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
@@ -217,7 +241,7 @@ func TestListTodosForBoardLane_PriorityFilter(t *testing.T) {
 		t.Fatalf("expected 3 urgent todos, got %d", count)
 	}
 
-	noPriorityFilter := mustPriorityFilter(t, "none")
+	noPriorityFilter := mustPriorityFilter(t, PriorityFilterNoPriorityValue)
 	count, err = st.CountTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, "", "", AssigneeFilter{}, noPriorityFilter, SprintFilter{Mode: "none"})
 	if err != nil {
 		t.Fatalf("CountTodosForBoardLane: %v", err)

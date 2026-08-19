@@ -1,7 +1,7 @@
 import { apiFetch } from '../api.js';
 import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
-import { getAssigneeFromUrl, getSortFromUrl, getSearch, getSettingsProjectId, getSlug, getSprintIdFromUrl, getTag, getTagColors, getUser, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getSearch, getSettingsProjectId, getSlug, getSprintIdFromUrl, getTag, getTagColors, getUser, } from '../state/selectors.js';
 import { setTagColors } from '../state/mutations.js';
 import { escapeHTML, sanitizeHexColor, showConfirmDialog, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
@@ -41,7 +41,7 @@ async function applyTagColorSuccess(tagName, color) {
         }
         invalidateTagsCache();
         if (getSlug()) {
-            await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+            await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         }
         showToast(t('settings.tagColors.toast.colorUpdated'));
     }
@@ -148,7 +148,7 @@ async function deleteTag(tagName, tagId, rerender) {
         invalidateTagsCache();
         await rerender();
         if (getSlug()) {
-            await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+            await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         }
         showToast(t('settings.tagColors.toast.deleted', { name: tagName }));
     }

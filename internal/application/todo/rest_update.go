@@ -11,15 +11,17 @@ const RefreshReasonTodoUpdated = "todo_updated"
 // UpdateServiceDependencies names the persistence and ancillary capabilities
 // used by the canonical REST update use case.
 type UpdateServiceDependencies struct {
-	Update  UpdateStore
-	Refresh BoardRefreshPublisher
+	Update          UpdateStore
+	Refresh         BoardRefreshPublisher
+	CreatorRequests CreatorNotificationRequestPublisher
 }
 
 // UpdateService owns REST update persistence and post-commit direct-refresh
 // gating. Assignment-event publication remains owned by the store.
 type UpdateService struct {
-	update  UpdateStore
-	refresh BoardRefreshPublisher
+	update          UpdateStore
+	refresh         BoardRefreshPublisher
+	creatorRequests CreatorNotificationRequestPublisher
 }
 
 func NewUpdateService(deps UpdateServiceDependencies) *UpdateService {
@@ -27,7 +29,11 @@ func NewUpdateService(deps UpdateServiceDependencies) *UpdateService {
 	if refresh == nil {
 		refresh = nopBoardRefreshPublisher{}
 	}
-	return &UpdateService{update: deps.Update, refresh: refresh}
+	creatorRequests := deps.CreatorRequests
+	if creatorRequests == nil {
+		creatorRequests = nopCreatorNotificationRequestPublisher{}
+	}
+	return &UpdateService{update: deps.Update, refresh: refresh, creatorRequests: creatorRequests}
 }
 
 // ResolvedUpdateTarget carries the project context already authorized by the
@@ -75,8 +81,9 @@ func (u *PreparedUpdate) Update(command UpdateCommand) (UpdateResult, error) {
 		return UpdateResult{}, err
 	}
 
+	effectCtx := publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated, true)
 	if !updated.AssignmentChanged {
-		u.service.refresh.PublishBoardRefresh(u.ctx, project.ID, RefreshReasonTodoUpdated)
+		u.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoUpdated)
 	}
 
 	return UpdateResult{Project: project, Todo: updated}, nil

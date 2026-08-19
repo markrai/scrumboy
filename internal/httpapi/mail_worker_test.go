@@ -84,6 +84,43 @@ func TestMailWorker_RetriesThenSucceeds(t *testing.T) {
 	}
 }
 
+func TestMailWorker_PreparesDeferredDeliveryOnEveryTransportAttempt(t *testing.T) {
+	sender := &fakeMailSender{failUntil: 1}
+	q := newMailQueue(discardLogger())
+	w := newMailWorker(q, sender, discardLogger())
+	prepareCalls := 0
+	w.deliver(mailDelivery{
+		LogRef: "deferred",
+		Prepare: func(ctx context.Context) (mailDelivery, bool, error) {
+			if ctx.Err() != nil {
+				t.Fatalf("prepare received cancelled worker context: %v", ctx.Err())
+			}
+			prepareCalls++
+			return mailDelivery{To: "fresh@example.com", Subject: "fresh", Body: "fresh", LogRef: "prepared"}, true, nil
+		},
+	})
+	if prepareCalls != 2 || sender.callCount() != 2 {
+		t.Fatalf("prepare calls=%d sends=%d, want 2 each", prepareCalls, sender.callCount())
+	}
+}
+
+func TestMailWorker_DeferredDropDoesNotCallTransportOrRetry(t *testing.T) {
+	sender := &fakeMailSender{}
+	q := newMailQueue(discardLogger())
+	w := newMailWorker(q, sender, discardLogger())
+	prepareCalls := 0
+	w.deliver(mailDelivery{
+		LogRef: "revoked",
+		Prepare: func(context.Context) (mailDelivery, bool, error) {
+			prepareCalls++
+			return mailDelivery{}, false, nil
+		},
+	})
+	if prepareCalls != 1 || sender.callCount() != 0 {
+		t.Fatalf("prepare calls=%d sends=%d, want one check and no transport", prepareCalls, sender.callCount())
+	}
+}
+
 func TestMailWorker_AlwaysFails_LogsAfterThreeAttempts(t *testing.T) {
 	sender := &fakeMailSender{alwaysErr: true}
 	var buf bytes.Buffer

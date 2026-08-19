@@ -311,6 +311,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"tag":         jsonProp("string", "Filter by tag"),
 				"search":      jsonProp("string", "Filter by search text"),
 				"assignee":    jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
+				"priority":    jsonProp("string", "Filter by a priority tier key, or \"**none**\" for todos without a priority; omit for all priorities"),
 				"sort":        jsonStringEnumProp("Sort items within each lane by creation time: newest or oldest; omit for manual drag-rank order", []string{"newest", "oldest"}),
 				"sprintId":    jsonPropWithNull("integer", "Filter by the stored sprint row ID returned as sprintId by sprints_list; this is not the project-local sprint number returned as number"),
 				"columnKey":   jsonProp("string", "Restrict the response to a single workflow column key (as returned by workflow_list); other columns are omitted entirely instead of being queried and paginated"),

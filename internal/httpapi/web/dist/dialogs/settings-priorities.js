@@ -1,7 +1,7 @@
 import { apiFetch } from '../api.js';
 import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
-import { getAssigneeFromUrl, getSortFromUrl, getBoard, getSearch, getSettingsActiveTab, getSlug, getSprintIdFromUrl, getTag, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getBoard, getSearch, getSettingsActiveTab, getSlug, getSprintIdFromUrl, getTag, } from '../state/selectors.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
@@ -210,7 +210,7 @@ async function addPriorityTier(name, rerender) {
             body: JSON.stringify({ name: trimmed }),
         });
         invalidatePriorityTierCountsCache();
-        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         syncPriorityDraftFromBoardAfterMutation();
         await rerender();
         showToast(t('settings.priorities.toast.tierAdded'));
@@ -246,7 +246,7 @@ async function savePriorityDraftChanges(rerender) {
                 body: JSON.stringify({ name, color }),
             });
         }
-        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         syncPriorityDraftFromBoardAfterMutation();
         await rerender();
         showToast(t('settings.priorities.toast.updated'));
@@ -255,7 +255,7 @@ async function savePriorityDraftChanges(rerender) {
         const originalMessage = apiErrorMessageOrRaw(err, { fallbackKey: 'settings.priorities.toast.updateFailed' });
         invalidatePriorityTierCountsCache();
         try {
-            await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), true);
+            await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), true);
             syncPriorityDraftFromBoardAfterMutation();
             await rerender();
             showToast(originalMessage);
@@ -287,7 +287,7 @@ async function deletePriorityTier(key, rerender) {
             method: 'DELETE',
         });
         invalidatePriorityTierCountsCache();
-        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+        await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         syncPriorityDraftFromBoardAfterMutation();
         await rerender();
         showToast(t('settings.priorities.toast.tierDeleted'));

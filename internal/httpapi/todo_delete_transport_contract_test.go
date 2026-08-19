@@ -43,7 +43,7 @@ func newTodoDeleteRESTFixture(t *testing.T, mode string) *todoDeleteRESTFixture 
 	st := store.New(sqlDB, nil)
 	collector := &collectingConsumer{}
 	srv := NewServer(st, Options{MaxRequestBody: 1 << 20, ScrumboyMode: mode})
-	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub), collector)
+	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, nil), collector)
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 	ts := httptest.NewServer(srv)
 	fixture := &todoDeleteRESTFixture{ts: ts, db: sqlDB, store: st, collector: collector}

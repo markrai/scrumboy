@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"scrumboy/internal/agora"
+	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
 	"scrumboy/internal/mcp"
@@ -24,6 +25,15 @@ import (
 )
 
 var agoraTestBearerTokens sync.Map
+
+type bindingMCPHandler struct {
+	http.Handler
+	bind func(todoapp.CreatorNotificationRequestPublisher)
+}
+
+func (h *bindingMCPHandler) BindCreatorNotificationRequestPublisher(publisher todoapp.CreatorNotificationRequestPublisher) {
+	h.bind(publisher)
+}
 
 func newAgoraTestServer(t *testing.T, mode string, withAgora bool) (*httptest.Server, *sql.DB, func()) {
 	t.Helper()
@@ -724,10 +734,13 @@ func TestAgora_CookiePassthroughParity(t *testing.T) {
 	}
 	mcpH := mcp.New(st, mcp.Options{Mode: "full"})
 	var seen []string
-	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Header.Get("Cookie"))
-		mcpH.ServeHTTP(w, r)
-	})
+	wrapped := &bindingMCPHandler{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = append(seen, r.Header.Get("Cookie"))
+			mcpH.ServeHTTP(w, r)
+		}),
+		bind: mcpH.BindCreatorNotificationRequestPublisher,
+	}
 	srv := httpapi.NewServer(st, httpapi.Options{
 		MaxRequestBody: 1 << 20,
 		ScrumboyMode:   "full",

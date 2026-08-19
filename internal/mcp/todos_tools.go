@@ -583,6 +583,7 @@ func todoToItem(projectSlug string, todo store.Todo) todoItem {
 		Tags:             todo.Tags,
 		EstimationPoints: todo.EstimationPoints,
 		AssigneeUserId:   todo.AssigneeUserID,
+		CreatedByUserId:  todo.CreatedByUserID,
 		SprintId:         todo.SprintID,
 		PriorityKey:      todo.PriorityKey,
 		CreatedAt:        todo.CreatedAt,

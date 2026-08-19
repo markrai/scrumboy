@@ -470,3 +470,194 @@ describe('router wrap lanes hydration', () => {
     expect(prefs.getWrapLanesPreference()).toBe(false);
   });
 });
+
+describe('router board todo sort hydration', () => {
+  function userBob() {
+    return {
+      id: 8,
+      email: 'bob@example.com',
+      name: 'Bob',
+      isBootstrap: false,
+      systemRole: 'user',
+      twoFactorEnabled: false,
+    };
+  }
+
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, boardTodoSortValue: string): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=boardTodoSort')) {
+        return { value: boardTodoSortValue };
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  function installAnonymousAuth(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: null,
+          bootstrapAvailable: false,
+          mode: 'anonymous',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    renderBoardMock.mockReset();
+    renderBoardMock.mockResolvedValue(undefined);
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('applies saved newest to a board URL with no sort before render', async () => {
+    window.history.replaceState({}, '', '/alpha');
+    installSignedInAuth(userStatus(), 'newest');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    expect(renderBoardMock.mock.calls[0][5]).toBe('newest');
+  });
+
+  it('applies saved oldest to a board URL with no sort before render', async () => {
+    window.history.replaceState({}, '', '/alpha');
+    installSignedInAuth(userStatus(), 'oldest');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(new URL(window.location.href).searchParams.get('sort')).toBe('oldest');
+    expect(renderBoardMock.mock.calls[0][5]).toBe('oldest');
+  });
+
+  it('leaves a board URL without sort when the saved preference is default', async () => {
+    window.history.replaceState({}, '', '/alpha');
+    installSignedInAuth(userStatus(), 'default');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
+    expect(renderBoardMock.mock.calls[0][5]).toBeNull();
+  });
+
+  it('lets an explicit sort=oldest override a saved newest without overwriting the preference', async () => {
+    window.history.replaceState({}, '', '/alpha?sort=oldest');
+    installSignedInAuth(userStatus(), 'newest');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    const prefs = await import('./core/board-sort-preferences.js');
+    expect(new URL(window.location.href).searchParams.get('sort')).toBe('oldest');
+    expect(renderBoardMock.mock.calls[0][5]).toBe('oldest');
+    expect(prefs.getBoardTodoSortPreference()).toBe('newest');
+    expect(apiFetchMock.mock.calls.some((call) => call[0] === '/api/user/preferences' && call[1]?.method === 'PUT')).toBe(false);
+  });
+
+  it('does not let an invalid sort query override a saved newest preference', async () => {
+    window.history.replaceState({}, '', '/alpha?sort=bogus');
+    installSignedInAuth(userStatus(), 'newest');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    const prefs = await import('./core/board-sort-preferences.js');
+    expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
+    expect(renderBoardMock.mock.calls[0][5]).toBe('newest');
+    expect(prefs.getBoardTodoSortPreference()).toBe('newest');
+    expect(apiFetchMock.mock.calls.some((call) => call[0] === '/api/user/preferences' && call[1]?.method === 'PUT')).toBe(false);
+  });
+
+  it('leaves an invalid sort query alone when the saved preference is default', async () => {
+    window.history.replaceState({}, '', '/alpha?sort=bogus');
+    installSignedInAuth(userStatus(), 'default');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    const prefs = await import('./core/board-sort-preferences.js');
+    expect(new URL(window.location.href).searchParams.get('sort')).toBe('bogus');
+    expect(renderBoardMock.mock.calls[0][5]).toBe('bogus');
+    expect(prefs.getBoardTodoSortPreference()).toBe('default');
+    expect(apiFetchMock.mock.calls.some((call) => call[0] === '/api/user/preferences' && call[1]?.method === 'PUT')).toBe(false);
+  });
+
+  it('keeps URL-only sort behavior when there is no authenticated user', async () => {
+    const prefs = await import('./core/board-sort-preferences.js');
+    localStorage.setItem(prefs.BOARD_TODO_SORT_STORAGE_KEY, 'newest');
+    window.history.replaceState({}, '', '/alpha');
+    installAnonymousAuth();
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
+    expect(renderBoardMock.mock.calls[0][5]).toBeNull();
+    expect(apiFetchMock.mock.calls.some((call) => typeof call[0] === 'string' && call[0].includes('key=boardTodoSort'))).toBe(false);
+  });
+
+  it('does not carry board todo sort from user A to user B on login', async () => {
+    const prefs = await import('./core/board-sort-preferences.js');
+    localStorage.setItem(prefs.BOARD_TODO_SORT_STORAGE_KEY, 'newest');
+    installSignedInAuth(userStatus(), 'newest');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getBoardTodoSortPreference()).toBe('newest');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userBob(), '');
+    window.history.replaceState({}, '', '/alpha');
+    await mod.router();
+
+    expect(prefs.getBoardTodoSortPreference()).toBe('default');
+    expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
+    expect(renderBoardMock.mock.calls.at(-1)?.[5]).toBeNull();
+  });
+});

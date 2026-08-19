@@ -53,7 +53,7 @@ func newTestServerWithCollector(t *testing.T) (*Server, *store.Store, *collectin
 	st := newTestStore(t)
 	collector := &collectingConsumer{}
 	hub := NewHub(defaultSubscriberBuffer)
-	bridge := newSSEBridge(hub)
+	bridge := newSSEBridge(hub, nil)
 	fanout := eventbus.NewFanout(bridge, collector)
 	srv := &Server{
 		store:  st,
@@ -227,7 +227,7 @@ func TestProjectDeletionExternalConsumersFilterRecipientSnapshot(t *testing.T) {
 	hub := NewHub(defaultSubscriberBuffer)
 	hubEvents, unsubscribe := hub.Subscribe(7)
 	defer unsubscribe()
-	newSSEBridge(hub).OnEvent(context.Background(), event)
+	newSSEBridge(hub, nil).OnEvent(context.Background(), event)
 	select {
 	case message := <-hubEvents:
 		if bytes.Contains(message, []byte("recipientUserIds")) || bytes.Contains(message, []byte("812345")) || bytes.Contains(message, []byte("Sensitive Project")) {
@@ -416,6 +416,61 @@ func TestEventbus_UpdateWithoutAssigneeChange_SingleRefresh(t *testing.T) {
 	}
 }
 
+func TestStoreMutationsWithHistoricalCreator_HaveNoCreatorDeliveryEffect(t *testing.T) {
+	srv, st, collector := newTestServerWithCollector(t)
+
+	creatorCtx, creator, project := setupAuthenticatedProject(t, st)
+	todo, err := st.CreateTodo(creatorCtx, project.ID, store.CreateTodoInput{
+		Title:     "creator attribution only",
+		ColumnKey: store.DefaultColumnBacklog,
+	}, store.ModeFull)
+	if err != nil {
+		t.Fatalf("create todo: %v", err)
+	}
+	if todo.CreatedByUserID == nil || *todo.CreatedByUserID != creator.ID {
+		t.Fatalf("expected creator attribution %d, got %v", creator.ID, todo.CreatedByUserID)
+	}
+
+	actor, err := st.CreateUser(context.Background(), "actor@example.com", "pass1234A!", "Actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(creatorCtx, creator.ID, project.ID, actor.ID, store.RoleMaintainer); err != nil {
+		t.Fatal(err)
+	}
+	creatorEvents, unsubscribe := srv.hub.SubscribeUser(creator.ID)
+	defer unsubscribe()
+	collector.events = nil
+
+	if _, err := st.UpdateTodo(store.WithUserID(context.Background(), actor.ID), todo.ID, store.UpdateTodoInput{
+		Title: "updated by another member",
+	}, store.ModeFull); err != nil {
+		t.Fatalf("update todo: %v", err)
+	}
+
+	if len(collector.events) != 0 {
+		t.Fatalf("creator attribution unexpectedly produced an application event: %+v", collector.events)
+	}
+	select {
+	case message := <-creatorEvents:
+		t.Fatalf("creator attribution unexpectedly produced private SSE: %s", message)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	collector.events = nil
+	if _, err := st.MoveTodo(store.WithUserID(context.Background(), actor.ID), todo.ID, store.DefaultColumnDoing, nil, nil, store.ModeFull); err != nil {
+		t.Fatalf("move todo: %v", err)
+	}
+	if len(collector.events) != 0 {
+		t.Fatalf("creator attribution unexpectedly produced an application event on move: %+v", collector.events)
+	}
+	select {
+	case message := <-creatorEvents:
+		t.Fatalf("creator attribution unexpectedly produced private SSE on move: %s", message)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 // --- Test 4: update todo with assignee change => refresh_needed + todo.assigned (no duplicate refresh via fanout) ---
 
 func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
@@ -593,7 +648,7 @@ func TestWebhookDispatcher_UsesBackgroundContext(t *testing.T) {
 
 	collector := &collectingConsumer{}
 	hub := NewHub(4)
-	bridge := newSSEBridge(hub)
+	bridge := newSSEBridge(hub, nil)
 	fanout := eventbus.NewFanout(bridge, collector)
 
 	e := eventbus.Event{

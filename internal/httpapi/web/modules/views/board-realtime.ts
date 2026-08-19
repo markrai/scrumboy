@@ -83,6 +83,7 @@ function useMergedGlobalRealtime(): boolean {
 // classification aligned with the anonymous board SSE path below:
 // - todo.assigned: no board reload here; assignment refresh arrives via the
 //   synthetic refresh_needed line emitted by the SSE bridge
+// - todo.creator_activity: private toast-only event; never reload the board
 // - members_updated: invalidate members cache only
 // - refresh_needed and other non-ping project-scoped events: queue a board refetch
 function onBoardRealtimeEvent(_payload: unknown): void {
@@ -95,6 +96,9 @@ function onBoardRealtimeEvent(_payload: unknown): void {
   }
   // Assignment toast/sound/unread are handled in core/realtime.ts (after id dedupe).
   if (payload.type === 'todo.assigned') {
+    return;
+  }
+  if (payload.type === 'todo.creator_activity') {
     return;
   }
   try {
@@ -482,4 +486,8 @@ export function __resetRealtimeRefreshStateForTest(): void {
   todoDialogOpeningInProgress = false;
   boardEventsSlug = null;
   boardRealtimeBound = false;
+}
+
+export function __handleBoardRealtimeEventForTest(payload: unknown): void {
+  onBoardRealtimeEvent(payload);
 }

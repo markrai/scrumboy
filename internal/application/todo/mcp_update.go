@@ -19,25 +19,32 @@ type MCPUpdateLookupStore interface {
 }
 
 type MCPUpdateServiceDependencies struct {
-	Access MCPUpdateAccessStore
-	Lookup MCPUpdateLookupStore
-	Update UpdateStore
+	Access          MCPUpdateAccessStore
+	Lookup          MCPUpdateLookupStore
+	Update          UpdateStore
+	CreatorRequests CreatorNotificationRequestPublisher
 }
 
 // MCPUpdateService owns access, existing-todo binding, and sparse update
-// persistence. It deliberately has no refresh dependency; MCP realtime
-// behavior remains limited to effects published by the store.
+// persistence. It deliberately has no board-refresh dependency. Optional
+// creator consideration is an explicit application-owned request.
 type MCPUpdateService struct {
-	access MCPUpdateAccessStore
-	lookup MCPUpdateLookupStore
-	update UpdateStore
+	access          MCPUpdateAccessStore
+	lookup          MCPUpdateLookupStore
+	update          UpdateStore
+	creatorRequests CreatorNotificationRequestPublisher
 }
 
 func NewMCPUpdateService(deps MCPUpdateServiceDependencies) *MCPUpdateService {
+	creatorRequests := deps.CreatorRequests
+	if creatorRequests == nil {
+		creatorRequests = nopCreatorNotificationRequestPublisher{}
+	}
 	return &MCPUpdateService{
-		access: deps.Access,
-		lookup: deps.Lookup,
-		update: deps.Update,
+		access:          deps.Access,
+		lookup:          deps.Lookup,
+		update:          deps.Update,
+		creatorRequests: creatorRequests,
 	}
 }
 
@@ -121,6 +128,7 @@ func (u *PreparedMCPTodoUpdate) Update(patch UpdatePatch) (UpdateResult, error) 
 	if err != nil {
 		return UpdateResult{}, err
 	}
+	publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated, updated.AssignmentChanged)
 	return UpdateResult{Project: project, Todo: updated}, nil
 }
 
@@ -128,6 +136,7 @@ func cloneMCPUpdateTodo(todo store.Todo) store.Todo {
 	todo.Tags = cloneUpdateStrings(todo.Tags)
 	todo.EstimationPoints = cloneUpdateInt64Ptr(todo.EstimationPoints)
 	todo.AssigneeUserID = cloneUpdateInt64Ptr(todo.AssigneeUserID)
+	todo.CreatedByUserID = cloneUpdateInt64Ptr(todo.CreatedByUserID)
 	todo.SprintID = cloneUpdateInt64Ptr(todo.SprintID)
 	todo.PriorityKey = cloneUpdateStringPtr(todo.PriorityKey)
 	if todo.DoneAt != nil {

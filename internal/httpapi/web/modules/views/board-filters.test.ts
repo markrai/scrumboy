@@ -26,6 +26,7 @@ vi.mock('../state/selectors.js', () => ({
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
   getTag: () => selectorState.tag,
   getTagColors: () => selectorState.tagColors,
+  getUser: () => null,
 }));
 
 vi.mock('../utils.js', () => ({

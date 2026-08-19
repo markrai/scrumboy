@@ -148,11 +148,14 @@ func TestTodoCreateMCPTransportAliasMatrix(t *testing.T) {
 			if returned["title"] != title || returned["columnKey"] != store.DefaultColumnBacklog {
 				t.Fatalf("matrix result=%+v", returned)
 			}
+			if returned["createdByUserId"] != float64(ownerID) {
+				t.Fatalf("matrix createdByUserId=%v want=%d", returned["createdByUserId"], ownerID)
+			}
 			persisted, err := st.GetTodoByLocalID(ctx, project.ID, 1, store.ModeFull)
 			if err != nil {
 				t.Fatalf("read created todo: %v", err)
 			}
-			if persisted.Title != title || todoCreateMCPAuditCount(t, db, persisted.ID) != 1 {
+			if persisted.Title != title || persisted.CreatedByUserID == nil || *persisted.CreatedByUserID != ownerID || todoCreateMCPAuditCount(t, db, persisted.ID) != 1 {
 				t.Fatalf("matrix persistence=%+v audits=%d index=%d", persisted, todoCreateMCPAuditCount(t, db, persisted.ID), index)
 			}
 		})

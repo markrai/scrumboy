@@ -286,6 +286,7 @@ type todoJSON struct {
 	Rank             int64      `json:"rank"`
 	EstimationPoints *int64     `json:"estimationPoints,omitempty"`
 	AssigneeUserId   *int64     `json:"assigneeUserId,omitempty"`
+	CreatedByUserId  *int64     `json:"createdByUserId,omitempty"`
 	SprintId         *int64     `json:"sprintId,omitempty"`
 	PriorityKey      *string    `json:"priorityKey,omitempty"`
 	Tags             []string   `json:"tags"`
@@ -306,6 +307,7 @@ func todoToJSON(t store.Todo) todoJSON {
 		Rank:             t.Rank,
 		EstimationPoints: t.EstimationPoints,
 		AssigneeUserId:   t.AssigneeUserID,
+		CreatedByUserId:  t.CreatedByUserID,
 		SprintId:         t.SprintID,
 		PriorityKey:      t.PriorityKey,
 		Tags:             t.Tags,

@@ -22,8 +22,11 @@ func newWebhookDispatcher(store storeAPI, queue *webhookQueue, logger *log.Logge
 }
 
 func (d *webhookDispatcher) OnEvent(_ context.Context, e eventbus.Event) {
-	// Internal SSE bridge events are not delivered as webhooks.
-	if e.Type == "board.refresh_needed" || e.Type == "board.members_updated" {
+	// Internal routing events are not delivered as webhooks.
+	if e.Type == "board.refresh_needed" ||
+		e.Type == "board.members_updated" ||
+		e.Type == eventbus.TodoCreatorNotificationRequestedEventType ||
+		e.Type == eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
 		return
 	}
 	// Fanout calls consumers synchronously in order (SSE bridge first). Do not block this path on

@@ -324,7 +324,7 @@ func TestCreateUser_ExplicitColumnTrigger_OverrideWins(t *testing.T) {
 	if !exists {
 		t.Fatalf("expected a row after creation")
 	}
-	want := `{"v":1,"enabled":true,"assigned":true,"cardActivity":false,"sprintActivity":false,"projectActivity":true,"addedToProject":true}`
+	want := `{"v":2,"enabled":true,"assigned":true,"createdByMe":false,"cardActivity":false,"sprintActivity":false,"projectActivity":true,"addedToProject":true}`
 	if value != want {
 		t.Fatalf("expected org override to win over trigger value: got %q, want %q", value, want)
 	}

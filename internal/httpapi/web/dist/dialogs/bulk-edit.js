@@ -3,7 +3,7 @@ import { apiFetch } from "../api.js";
 import { showToast, escapeHTML, isAnonymousBoard, sanitizeHexColor } from "../utils.js";
 import { applyFieldTooltips, BULK_EDIT_TOOLTIPS } from "../field-tooltips.js";
 import { hasI18nKey, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
-import { getAssigneeFromUrl, getSortFromUrl, getBoard, getSlug, getTag, getSearch, getSprintIdFromUrl, getBoardMembers, } from "../state/selectors.js";
+import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getBoard, getSlug, getTag, getSearch, getSprintIdFromUrl, getBoardMembers, } from "../state/selectors.js";
 import { invalidateBoard } from "../orchestration/board-refresh.js";
 import { setBulkUpdating } from "../realtime/guard.js";
 import { boardSprintsEnabled, normalizeSprints } from "../sprints.js";
@@ -354,7 +354,7 @@ async function runBulkApply(todoIds) {
     if (anyTagsAdded) {
         invalidateTagsCache();
     }
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl());
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             window.scrollTo(scrollX, scrollY);

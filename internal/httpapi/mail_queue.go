@@ -1,6 +1,9 @@
 package httpapi
 
-import "log"
+import (
+	"context"
+	"log"
+)
 
 const defaultMailQueueCapacity = 1024
 
@@ -12,6 +15,10 @@ type mailDelivery struct {
 	// LogRef is a non-sensitive identifier for log correlation (e.g.
 	// "password-reset user=123"), never the email address or token.
 	LogRef string
+	// Prepare defers recipient authorization, preference selection, address
+	// lookup, and sensitive rendering until each actual send attempt. A false
+	// result drops the best-effort notification without retrying.
+	Prepare func(context.Context) (mailDelivery, bool, error)
 }
 
 func (d mailDelivery) logRef() string { return d.LogRef }

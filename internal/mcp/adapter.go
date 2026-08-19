@@ -87,23 +87,24 @@ type Options struct {
 }
 
 type Adapter struct {
-	store               storeAPI
-	boardReads          *boardapp.MCPBoardReadService
-	todoCreates         *todoapp.MCPCreateService
-	todoDeletes         *todoapp.MCPDeleteService
-	todoMoves           *todoapp.MCPMoveService
-	todoUpdates         *todoapp.MCPUpdateService
-	todoLinkMutations   *todolinkapp.MCPMutationService
-	workflowMutations   *workflowapp.MCPMutationService
-	priorityMutations   *priorityapp.MCPMutationService
-	membershipMutations *membershipapp.MCPMutationService
-	sprintDefinitions   *sprintapp.MCPDefinitionService
-	sprintLifecycle     *sprintapp.MCPLifecycleService
-	sprintDeletions     *sprintapp.MCPDeletionService
-	mode                string
-	tools               toolRegistry
-	publicOrigin        *publicorigin.Resolver
-	logger              *log.Logger
+	store                storeAPI
+	boardReads           *boardapp.MCPBoardReadService
+	todoCreates          *todoapp.MCPCreateService
+	todoDeletes          *todoapp.MCPDeleteService
+	todoMoves            *todoapp.MCPMoveService
+	todoUpdates          *todoapp.MCPUpdateService
+	todoLinkMutations    *todolinkapp.MCPMutationService
+	workflowMutations    *workflowapp.MCPMutationService
+	priorityMutations    *priorityapp.MCPMutationService
+	membershipMutations  *membershipapp.MCPMutationService
+	sprintDefinitions    *sprintapp.MCPDefinitionService
+	sprintLifecycle      *sprintapp.MCPLifecycleService
+	sprintDeletions      *sprintapp.MCPDeletionService
+	mode                 string
+	tools                toolRegistry
+	publicOrigin         *publicorigin.Resolver
+	logger               *log.Logger
+	creatorRequestsBound bool
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -140,17 +141,6 @@ func New(st storeAPI, opts Options) *Adapter {
 		todoDeletes: todoapp.NewMCPDeleteService(todoapp.MCPDeleteServiceDependencies{
 			Access: st,
 			Delete: st,
-		}),
-		todoMoves: todoapp.NewMCPMoveService(todoapp.MCPMoveServiceDependencies{
-			Access: st,
-			Lookup: st,
-			Lanes:  st,
-			Move:   st,
-		}),
-		todoUpdates: todoapp.NewMCPUpdateService(todoapp.MCPUpdateServiceDependencies{
-			Access: st,
-			Lookup: st,
-			Update: st,
 		}),
 		todoLinkMutations: todolinkapp.NewMCPMutationService(todolinkapp.MCPMutationServiceDependencies{
 			Access:    st,
@@ -194,8 +184,39 @@ func New(st storeAPI, opts Options) *Adapter {
 		publicOrigin: resolver,
 		logger:       logger,
 	}
+	a.configureTodoMutationServices(nil)
 	a.registerTools()
 	return a
+}
+
+// BindCreatorNotificationRequestPublisher completes the MCP todo-mutation
+// composition before serving begins. httpapi.NewServer calls it exactly once
+// before returning. It is intentionally not a runtime reconfiguration API.
+func (a *Adapter) BindCreatorNotificationRequestPublisher(publisher todoapp.CreatorNotificationRequestPublisher) {
+	if publisher == nil {
+		panic("mcp: nil creator notification request publisher")
+	}
+	if a.creatorRequestsBound {
+		panic("mcp: creator notification request publisher already bound")
+	}
+	a.configureTodoMutationServices(publisher)
+	a.creatorRequestsBound = true
+}
+
+func (a *Adapter) configureTodoMutationServices(publisher todoapp.CreatorNotificationRequestPublisher) {
+	a.todoMoves = todoapp.NewMCPMoveService(todoapp.MCPMoveServiceDependencies{
+		Access:          a.store,
+		Lookup:          a.store,
+		Lanes:           a.store,
+		Move:            a.store,
+		CreatorRequests: publisher,
+	})
+	a.todoUpdates = todoapp.NewMCPUpdateService(todoapp.MCPUpdateServiceDependencies{
+		Access:          a.store,
+		Lookup:          a.store,
+		Update:          a.store,
+		CreatorRequests: publisher,
+	})
 }
 
 func (a *Adapter) logAdapterError(transport, tool string, err *adapterError) {

@@ -25,8 +25,9 @@ type boardLegacyReadContractResponse struct {
 		Name string `json:"name"`
 	} `json:"tags"`
 	Columns map[string][]struct {
-		ID    int64  `json:"id"`
-		Title string `json:"title"`
+		ID              int64  `json:"id"`
+		Title           string `json:"title"`
+		CreatedByUserID *int64 `json:"createdByUserId"`
 	} `json:"columns"`
 }
 
@@ -158,6 +159,9 @@ func TestBoardLegacyRead_RESTCombinedFiltersUnpagedResponseContract(t *testing.T
 	gotBacklogIDs := make([]int64, 0, len(backlog))
 	for _, todo := range backlog {
 		gotBacklogIDs = append(gotBacklogIDs, todo.ID)
+		if todo.CreatedByUserID == nil || *todo.CreatedByUserID != ownerID {
+			t.Fatalf("legacy todo %d createdByUserId=%v want=%d", todo.ID, todo.CreatedByUserID, ownerID)
+		}
 	}
 	if !slices.Equal(gotBacklogIDs, wantNewestIDs) {
 		t.Fatalf("backlog IDs = %v, want exact newest-first IDs %v", gotBacklogIDs, wantNewestIDs)

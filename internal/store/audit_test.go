@@ -43,7 +43,7 @@ func TestAuditEvent_InsertAndQuery(t *testing.T) {
 		t.Fatalf("expected todo_created audit event, got %d", count)
 	}
 
-	_, err = st.UpdateTodo(ctxOwner, todo.ID, UpdateTodoInput{
+	updated, err := st.UpdateTodo(ctxOwner, todo.ID, UpdateTodoInput{
 		Title:          todo.Title,
 		Body:           "updated body",
 		Tags:           todo.Tags,
@@ -51,6 +51,9 @@ func TestAuditEvent_InsertAndQuery(t *testing.T) {
 	}, ModeFull)
 	if err != nil {
 		t.Fatalf("UpdateTodo: %v", err)
+	}
+	if !updated.MaterialChanged {
+		t.Fatal("actual body change must return MaterialChanged=true")
 	}
 	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_events WHERE project_id = ? AND action = 'todo_updated'`, project.ID).Scan(&count); err != nil {
 		t.Fatalf("count todo_updated: %v", err)
@@ -154,7 +157,7 @@ func TestAuditEvent_TodoUpdated_NoOpGuard(t *testing.T) {
 		t.Fatalf("CreateTodo: %v", err)
 	}
 
-	_, err = st.UpdateTodo(ctxOwner, todo.ID, UpdateTodoInput{
+	updated, err := st.UpdateTodo(ctxOwner, todo.ID, UpdateTodoInput{
 		Title:          todo.Title,
 		Body:           todo.Body,
 		Tags:           todo.Tags,
@@ -163,6 +166,9 @@ func TestAuditEvent_TodoUpdated_NoOpGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateTodo: %v", err)
 	}
+	if updated.MaterialChanged {
+		t.Fatal("semantic no-op must return MaterialChanged=false")
+	}
 
 	var count int
 	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_events WHERE action = 'todo_updated' AND target_id = ?`, todo.ID).Scan(&count); err != nil {
@@ -170,6 +176,16 @@ func TestAuditEvent_TodoUpdated_NoOpGuard(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected 0 todo_updated for no-op PATCH, got %d", count)
+	}
+
+	updated, err = st.UpdateTodo(ctxOwner, todo.ID, UpdateTodoInput{
+		Title: todo.Title, Body: "changed body", Tags: todo.Tags, AssigneeUserID: todo.AssigneeUserID,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("UpdateTodo material change: %v", err)
+	}
+	if !updated.MaterialChanged {
+		t.Fatal("actual body change must return MaterialChanged=true")
 	}
 }
 
@@ -196,9 +212,12 @@ func TestAuditEvent_TodoMoved(t *testing.T) {
 		t.Fatalf("CreateTodo: %v", err)
 	}
 
-	_, err = st.MoveTodo(ctxOwner, todo.ID, DefaultColumnDoing, nil, nil, ModeFull)
+	moved, err := st.MoveTodo(ctxOwner, todo.ID, DefaultColumnDoing, nil, nil, ModeFull)
 	if err != nil {
 		t.Fatalf("MoveTodo: %v", err)
+	}
+	if !moved.MaterialChanged {
+		t.Fatal("lane move must return MaterialChanged=true")
 	}
 
 	var metadata string

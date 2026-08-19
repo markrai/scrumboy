@@ -3,11 +3,12 @@ import { setEmailNotifyPreferenceState } from '../state/mutations.js';
 import { getEmailNotifyPreferenceState, getUser } from '../state/selectors.js';
 export const EMAIL_NOTIFY_PREF_KEY = 'emailNotifications';
 const EMAIL_NOTIFY_STORAGE_KEY = 'scrumboy_emailNotifications';
-const EMAIL_NOTIFY_PREF_VERSION = 1;
+const EMAIL_NOTIFY_PREF_VERSION = 2;
 const EMAIL_NOTIFY_FIELDS = new Set([
     'v',
     'enabled',
     'assigned',
+    'createdByMe',
     'cardActivity',
     'sprintActivity',
     'projectActivity',
@@ -18,6 +19,7 @@ export function defaultEmailNotifyPref() {
         v: EMAIL_NOTIFY_PREF_VERSION,
         enabled: false,
         assigned: true,
+        createdByMe: false,
         cardActivity: false,
         sprintActivity: false,
         projectActivity: false,
@@ -44,11 +46,15 @@ export function parseEmailNotifyPref(raw) {
             throw new Error('invalid email notification preference');
         }
     }
-    if ('v' in fields && fields.v !== EMAIL_NOTIFY_PREF_VERSION) {
+    const version = 'v' in fields ? fields.v : 1;
+    if (version !== 1 && version !== EMAIL_NOTIFY_PREF_VERSION) {
+        throw new Error('invalid email notification preference');
+    }
+    if (version === 1 && 'createdByMe' in fields) {
         throw new Error('invalid email notification preference');
     }
     const pref = defaultEmailNotifyPref();
-    for (const key of ['enabled', 'assigned', 'cardActivity', 'sprintActivity', 'projectActivity', 'addedToProject']) {
+    for (const key of ['enabled', 'assigned', 'createdByMe', 'cardActivity', 'sprintActivity', 'projectActivity', 'addedToProject']) {
         if (!(key in fields))
             continue;
         if (typeof fields[key] !== 'boolean') {
@@ -63,6 +69,7 @@ function canonicalEmailNotifyPref(pref) {
         v: EMAIL_NOTIFY_PREF_VERSION,
         enabled: pref.enabled,
         assigned: pref.assigned,
+        createdByMe: pref.createdByMe,
         cardActivity: pref.cardActivity,
         sprintActivity: pref.sprintActivity,
         projectActivity: pref.projectActivity,

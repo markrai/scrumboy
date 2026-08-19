@@ -44,7 +44,7 @@ export function getSortFromUrl(): string | null {
   return v === "" ? null : (v || null);
 }
 
-/** Priority filter from URL: null = "All priorities" (omit param), "none" = no priority set, or a priority tier key. */
+/** Priority filter from URL: null = "All priorities" (omit param), "**none**" = no priority set, or a priority tier key. */
 export function getPriorityFromUrl(): string | null {
   const v = typeof window !== "undefined" ? new URL(window.location.href).searchParams.get("priority") : null;
   return v === "" ? null : (v || null);
