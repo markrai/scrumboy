@@ -2,6 +2,16 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
+## [3.32.4] - 2026-08-18
+
+### Security
+
+- **Go 1.25.13 toolchain** - Bump the `go.mod` toolchain from `go1.25.12` to
+  `go1.25.13` and pin the Docker build image to `golang:1.25.13-alpine` by
+  multi-platform manifest digest so the standard-library vulnerabilities
+  fixed in that patch are no longer reported by OSV Scanner. The `go 1.25.0`
+  language-version directive is unchanged.
+
 ## [3.32.3] - 2026-08-17
 
 ### Changed
