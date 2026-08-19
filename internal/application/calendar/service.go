@@ -97,21 +97,21 @@ type nopBoardRefreshPublisher struct{}
 func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string) {}
 
 type RESTServiceDependencies struct {
-	Projects  ProjectLookup
-	Roles     RoleStore
-	Cipher    SecretCipher
-	Sources   SourceStore
-	Snapshots SnapshotInvalidator
-	Refresh   BoardRefreshPublisher
+	Projects      ProjectLookup
+	Roles         RoleStore
+	Cipher        SecretCipher
+	Sources       SourceStore
+	Refresh       BoardRefreshPublisher
+	AllowLoopback bool
 }
 
 type RESTService struct {
-	projects  ProjectLookup
-	roles     RoleStore
-	cipher    SecretCipher
-	sources   SourceStore
-	snapshots SnapshotInvalidator
-	refresh   BoardRefreshPublisher
+	projects      ProjectLookup
+	roles         RoleStore
+	cipher        SecretCipher
+	sources       SourceStore
+	refresh       BoardRefreshPublisher
+	allowLoopback bool
 }
 
 func NewRESTService(deps RESTServiceDependencies) *RESTService {
@@ -120,12 +120,12 @@ func NewRESTService(deps RESTServiceDependencies) *RESTService {
 		refresh = nopBoardRefreshPublisher{}
 	}
 	return &RESTService{
-		projects:  deps.Projects,
-		roles:     deps.Roles,
-		cipher:    deps.Cipher,
-		sources:   deps.Sources,
-		snapshots: deps.Snapshots,
-		refresh:   refresh,
+		projects:      deps.Projects,
+		roles:         deps.Roles,
+		cipher:        deps.Cipher,
+		sources:       deps.Sources,
+		refresh:       refresh,
+		allowLoopback: deps.AllowLoopback,
 	}
 }
 
@@ -166,18 +166,8 @@ func (p *PreparedREST) PatchSettings(command PatchSettingsCommand) (AgendaSettin
 		}
 		command.Timezone = &tz
 	}
-	previous, err := p.service.sources.GetProjectAgendaSettings(p.ctx, p.projectID)
-	if err != nil {
+	if _, err := p.service.sources.UpdateProjectAgendaSettings(p.ctx, p.projectID, command.Enabled, command.Timezone, command.Title, command.Color); err != nil {
 		return AgendaSettingsView{}, err
-	}
-	updated, err := p.service.sources.UpdateProjectAgendaSettings(p.ctx, p.projectID, command.Enabled, command.Timezone, command.Title, command.Color)
-	if err != nil {
-		return AgendaSettingsView{}, err
-	}
-	if command.Timezone != nil && previous.Timezone != updated.Timezone {
-		if err := p.invalidateProjectSnapshots(); err != nil {
-			return AgendaSettingsView{}, err
-		}
 	}
 	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
 	return p.List()
@@ -221,7 +211,7 @@ func (p *PreparedREST) Create(command CreateSourceCommand) (SourceView, error) {
 	if srcType != SourceTypeICSFeed {
 		return SourceView{}, fmt.Errorf("%w: invalid calendar source type", store.ErrValidation)
 	}
-	canonical, err := canonicalCalendarURL(command.URL)
+	canonical, err := canonicalCalendarURL(command.URL, p.service.allowLoopback)
 	if err != nil {
 		return SourceView{}, fmt.Errorf("%w: invalid calendar URL", store.ErrValidation)
 	}
@@ -229,7 +219,7 @@ func (p *PreparedREST) Create(command CreateSourceCommand) (SourceView, error) {
 	if err != nil {
 		return SourceView{}, err
 	}
-	if count >= maxSources {
+	if count >= store.MaxCalendarSources {
 		return SourceView{}, fmt.Errorf("%w: calendar source limit reached", store.ErrValidation)
 	}
 	secretEnc, err := p.service.cipher.EncryptSecret([]byte(canonical))
@@ -256,16 +246,12 @@ func (p *PreparedREST) Create(command CreateSourceCommand) (SourceView, error) {
 }
 
 func (p *PreparedREST) Update(command UpdateSourceCommand) (SourceView, error) {
-	existing, err := p.service.sources.GetCalendarSource(p.ctx, p.projectID, command.SourceID)
-	if err != nil {
-		return SourceView{}, err
-	}
 	in := store.UpdateCalendarSourceInput{
 		Name:    command.Name,
 		Enabled: command.Enabled,
 	}
 	if command.URL != nil {
-		canonical, err := canonicalCalendarURL(*command.URL)
+		canonical, err := canonicalCalendarURL(*command.URL, p.service.allowLoopback)
 		if err != nil {
 			return SourceView{}, fmt.Errorf("%w: invalid calendar URL", store.ErrValidation)
 		}
@@ -283,11 +269,6 @@ func (p *PreparedREST) Update(command UpdateSourceCommand) (SourceView, error) {
 	if err != nil {
 		return SourceView{}, err
 	}
-	if command.URL != nil && existing.URLHash != updated.URLHash {
-		if err := p.invalidateSourceSnapshot(command.SourceID); err != nil {
-			return SourceView{}, err
-		}
-	}
 	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
 	return p.service.toSourceView(updated)
 }
@@ -298,20 +279,6 @@ func (p *PreparedREST) Delete(sourceID int64) error {
 	}
 	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
 	return nil
-}
-
-func (p *PreparedREST) invalidateSourceSnapshot(sourceID int64) error {
-	if p.service.snapshots == nil {
-		return nil
-	}
-	return p.service.snapshots.DeleteCalendarFeedSnapshot(p.ctx, sourceID)
-}
-
-func (p *PreparedREST) invalidateProjectSnapshots() error {
-	if p.service.snapshots == nil {
-		return nil
-	}
-	return p.service.snapshots.DeleteCalendarFeedSnapshotsForProject(p.ctx, p.projectID)
 }
 
 func (s *RESTService) toSourceView(src store.CalendarSource) (SourceView, error) {

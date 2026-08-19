@@ -125,14 +125,22 @@ WHERE EXISTS (
 }
 
 func (s *Store) DeleteCalendarFeedSnapshot(ctx context.Context, sourceID int64) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM calendar_feed_snapshots WHERE source_id = ?`, sourceID); err != nil {
+	return deleteCalendarFeedSnapshotExec(ctx, s.db, sourceID)
+}
+
+func (s *Store) DeleteCalendarFeedSnapshotsForProject(ctx context.Context, projectID int64) error {
+	return deleteCalendarFeedSnapshotsForProjectExec(ctx, s.db, projectID)
+}
+
+func deleteCalendarFeedSnapshotExec(ctx context.Context, exec sqlExecer, sourceID int64) error {
+	if _, err := exec.ExecContext(ctx, `DELETE FROM calendar_feed_snapshots WHERE source_id = ?`, sourceID); err != nil {
 		return fmt.Errorf("delete calendar snapshot: %w", err)
 	}
 	return nil
 }
 
-func (s *Store) DeleteCalendarFeedSnapshotsForProject(ctx context.Context, projectID int64) error {
-	if _, err := s.db.ExecContext(ctx, `
+func deleteCalendarFeedSnapshotsForProjectExec(ctx context.Context, exec sqlExecer, projectID int64) error {
+	if _, err := exec.ExecContext(ctx, `
 DELETE FROM calendar_feed_snapshots
 WHERE source_id IN (
   SELECT id FROM calendar_sources WHERE project_id = ?

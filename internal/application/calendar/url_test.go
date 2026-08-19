@@ -32,7 +32,7 @@ func TestCalendarHostKindExactHostsAndSpoofs(t *testing.T) {
 
 func TestCalendarHostKindUsesCanonicalHostCasing(t *testing.T) {
 	t.Parallel()
-	canonical, err := canonicalCalendarURL("https://CALENDAR.GOOGLE.COM/calendar/ical/X/basic.ics")
+	canonical, err := canonicalCalendarURL("https://CALENDAR.GOOGLE.COM/calendar/ical/X/basic.ics", false)
 	if err != nil {
 		t.Fatalf("canonicalCalendarURL: %v", err)
 	}

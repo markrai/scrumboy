@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	calendarapp "scrumboy/internal/application/calendar"
 	priorityapp "scrumboy/internal/application/priority"
+	projectsettingsapp "scrumboy/internal/application/projectsettings"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -126,6 +126,17 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 }
 
+func writeBoardSettingsPrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, projectsettingsapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, projectsettingsapp.ErrDurableRequired):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+	default:
+		writeStoreErr(w, err, true)
+	}
+}
+
 func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
 	project := pc.Project
 
@@ -168,45 +179,36 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 			return true
 		}
 
+		prepared, err := s.boardSettings.Prepare(ctx, projectsettingsapp.ResolvedRESTTarget{ProjectID: project.ID})
+		if err != nil {
+			writeBoardSettingsPrepareError(w, err)
+			return true
+		}
+		view, err := prepared.Patch(projectsettingsapp.PatchCommand{
+			DefaultSprintWeeks: in.DefaultSprintWeeks,
+			SprintsEnabled:     in.SprintsEnabled,
+			AgendaEnabled:      in.AgendaEnabled,
+			AgendaTimezone:     in.AgendaTimezone,
+			AgendaTitle:        in.AgendaTitle,
+			AgendaColor:        in.AgendaColor,
+		})
+		if err != nil {
+			writeBoardSettingsPrepareError(w, err)
+			return true
+		}
 		resp := map[string]any{}
 		if in.AgendaEnabled != nil || in.AgendaTimezone != nil || in.AgendaTitle != nil || in.AgendaColor != nil {
-			prepared, err := s.calendarSources.Prepare(ctx, calendarapp.ResolvedRESTTarget{ProjectID: project.ID})
-			if err != nil {
-				writeCalendarPrepareError(w, err)
-				return true
-			}
-			view, err := prepared.PatchSettings(calendarapp.PatchSettingsCommand{
-				Enabled:  in.AgendaEnabled,
-				Timezone: in.AgendaTimezone,
-				Title:    in.AgendaTitle,
-				Color:    in.AgendaColor,
-			})
-			if err != nil {
-				writeStoreErr(w, err, true)
-				return true
-			}
-			resp["agendaEnabled"] = view.Enabled
-			resp["agendaTimezone"] = view.Timezone
-			resp["agendaTitle"] = view.Title
-			resp["agendaColor"] = view.Color
+			resp["agendaEnabled"] = view.AgendaEnabled
+			resp["agendaTimezone"] = view.AgendaTimezone
+			resp["agendaTitle"] = view.AgendaTitle
+			resp["agendaColor"] = view.AgendaColor
 		}
 		if in.DefaultSprintWeeks != nil {
-			if project.DefaultSprintWeeks != *in.DefaultSprintWeeks {
-				if err := s.store.UpdateProjectDefaultSprintWeeks(ctx, project.ID, userID, *in.DefaultSprintWeeks); err != nil {
-					writeStoreErr(w, err, true)
-					return true
-				}
-			}
-			resp["defaultSprintWeeks"] = *in.DefaultSprintWeeks
+			resp["defaultSprintWeeks"] = view.DefaultSprintWeeks
 		}
 		if in.SprintsEnabled != nil {
-			if err := s.store.UpdateProjectSprintsEnabled(ctx, project.ID, userID, *in.SprintsEnabled); err != nil {
-				writeStoreErr(w, err, true)
-				return true
-			}
-			resp["sprintsEnabled"] = *in.SprintsEnabled
+			resp["sprintsEnabled"] = view.SprintsEnabled
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "project_settings_updated")
 		writeJSON(w, http.StatusOK, resp)
 		return true
 	}

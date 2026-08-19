@@ -34,7 +34,7 @@ Paste the provider’s **secret or published ICS address**, not a calendar webpa
 | Outlook | Calendar settings → **Publish a calendar** → ICS link |
 | Apple / iCloud | An `https://` calendar URL. `webcal://` is rejected. |
 
-Only `https` is accepted, except `http` to loopback (`localhost` / `127.0.0.1`) for local testing. Userinfo in the URL (`https://user:pass@…`) is rejected. Private/link-local destinations are blocked when the server fetches the feed.
+Only `https` is accepted. Userinfo in the URL (`https://user:pass@…`) is rejected. Loopback, private, and link-local destinations are blocked when the server stores or fetches a feed.
 
 ## Using the lane
 
@@ -93,6 +93,6 @@ A full disaster-recovery restore is the instance `DATA_DIR` (SQLite) **together 
 - 8 ICS feeds per project
 - 32 MiB feed body
 - 5,000 expanded event instances in the fetch window
-- HTTPS only (plus loopback HTTP)
+- HTTPS only
 
 Scrumboy is not affiliated with, endorsed by, or sponsored by Google LLC, Apple Inc., or Microsoft. Google Calendar, Apple Calendar / iCloud, Outlook, and their logos and marks are trademarks of their respective owners. Host badges in the Agenda lane identify the calendar provider only.

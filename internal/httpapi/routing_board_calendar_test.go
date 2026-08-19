@@ -308,3 +308,69 @@ func TestBoardSettings_SprintOnlyPatchStillWorksWithoutAgendaFields(t *testing.T
 		t.Fatalf("sprint-only response included agenda fields: %s", raw)
 	}
 }
+
+func TestCalendarSources_LoopbackURLRejectedByDefault(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Owner", "calendar-loopback@example.com", "password123")
+	var project struct {
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Loopback URL"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var envelope apiErrorEnvelope
+	resp, body = doJSON(t, client, http.MethodPost, ts.URL+"/api/board/"+project.Slug+"/calendar-sources", map[string]any{
+		"name": "Local",
+		"url":  "http://127.0.0.1/feed.ics",
+	}, &envelope)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertAPIError(t, envelope, "VALIDATION_ERROR", "", "invalid_calendar_url")
+}
+
+func TestBoardSettings_MixedInvalidTimezoneLeavesSprintWeeksUnchanged(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServerWithOptions(t, Options{
+		MaxRequestBody: 1 << 20,
+		ScrumboyMode:   "full",
+		EncryptionKey:  testEncryptionKey,
+	})
+	defer cleanup()
+
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Owner", "calendar-mixed-settings@example.com", "password123")
+	var project struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/projects", map[string]any{"name": "Mixed Settings"}, &project)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var envelope apiErrorEnvelope
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+project.Slug+"/settings", map[string]any{
+		"defaultSprintWeeks": 1,
+		"agendaTimezone":     "Not/A_Zone",
+	}, &envelope)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("mixed patch: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var weeks int
+	if err := sqlDB.QueryRow(`SELECT default_sprint_weeks FROM projects WHERE id = ?`, project.ID).Scan(&weeks); err != nil {
+		t.Fatalf("read default_sprint_weeks: %v", err)
+	}
+	if weeks != 2 {
+		t.Fatalf("default_sprint_weeks=%d, want 2", weeks)
+	}
+}

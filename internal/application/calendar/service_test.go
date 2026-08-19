@@ -64,6 +64,7 @@ type calendarSourceStoreFake struct {
 	createErr   error
 	updateErr   error
 	createCalls int
+	invalidator SnapshotInvalidator
 }
 
 func (f *calendarSourceStoreFake) GetProjectAgendaSettings(context.Context, int64) (store.ProjectAgendaSettings, error) {
@@ -82,9 +83,9 @@ func (f *calendarSourceStoreFake) GetProjectAgendaSettings(context.Context, int6
 	return settings, nil
 }
 
-func (f *calendarSourceStoreFake) UpdateProjectAgendaSettings(_ context.Context, _ int64, enabled *bool, timezone *string, title *string, color *string) (store.ProjectAgendaSettings, error) {
+func (f *calendarSourceStoreFake) UpdateProjectAgendaSettings(ctx context.Context, projectID int64, enabled *bool, timezone *string, title *string, color *string) (store.ProjectAgendaSettings, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
+	previousTZ := f.settings.Timezone
 	if enabled != nil {
 		f.settings.Enabled = *enabled
 	}
@@ -106,7 +107,16 @@ func (f *calendarSourceStoreFake) UpdateProjectAgendaSettings(_ context.Context,
 	if f.settings.Color == "" {
 		f.settings.Color = store.DefaultAgendaColor
 	}
-	return f.settings, nil
+	settings := f.settings
+	inv := f.invalidator
+	tzChanged := timezone != nil && previousTZ != settings.Timezone
+	f.mu.Unlock()
+	if tzChanged && inv != nil {
+		if err := inv.DeleteCalendarFeedSnapshotsForProject(ctx, projectID); err != nil {
+			return store.ProjectAgendaSettings{}, err
+		}
+	}
+	return settings, nil
 }
 
 func (f *calendarSourceStoreFake) ListCalendarSources(context.Context, int64) ([]store.CalendarSource, error) {
@@ -154,16 +164,18 @@ func (f *calendarSourceStoreFake) CreateCalendarSource(_ context.Context, projec
 	return src, nil
 }
 
-func (f *calendarSourceStoreFake) UpdateCalendarSource(_ context.Context, projectID int64, sourceID int64, in store.UpdateCalendarSourceInput) (store.CalendarSource, error) {
+func (f *calendarSourceStoreFake) UpdateCalendarSource(ctx context.Context, projectID int64, sourceID int64, in store.UpdateCalendarSourceInput) (store.CalendarSource, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	if f.updateErr != nil {
-		return store.CalendarSource{}, f.updateErr
+		err := f.updateErr
+		f.mu.Unlock()
+		return store.CalendarSource{}, err
 	}
 	for i, src := range f.sources {
 		if src.ID != sourceID || src.ProjectID != projectID {
 			continue
 		}
+		previousHash := src.URLHash
 		if in.Name != nil {
 			src.Name = *in.Name
 		}
@@ -180,8 +192,17 @@ func (f *calendarSourceStoreFake) UpdateCalendarSource(_ context.Context, projec
 			src.HostKind = *in.HostKind
 		}
 		f.sources[i] = src
+		inv := f.invalidator
+		hashChanged := previousHash != src.URLHash
+		f.mu.Unlock()
+		if hashChanged && inv != nil {
+			if err := inv.DeleteCalendarFeedSnapshot(ctx, sourceID); err != nil {
+				return store.CalendarSource{}, err
+			}
+		}
 		return src, nil
 	}
+	f.mu.Unlock()
 	return store.CalendarSource{}, store.ErrNotFound
 }
 
@@ -268,13 +289,19 @@ func preparedCalendar(t *testing.T, deps RESTServiceDependencies) *PreparedREST 
 }
 
 func TestCanonicalCalendarURLRejectsUserinfoAndNonHTTPS(t *testing.T) {
-	if _, err := canonicalCalendarURL("https://user:pass@example.com/feed.ics"); err == nil {
+	if _, err := canonicalCalendarURL("https://user:pass@example.com/feed.ics", false); err == nil {
 		t.Fatal("expected userinfo rejection")
 	}
-	if _, err := canonicalCalendarURL("http://example.com/feed.ics"); err == nil {
+	if _, err := canonicalCalendarURL("http://example.com/feed.ics", false); err == nil {
 		t.Fatal("expected non-loopback http rejection")
 	}
-	got, err := canonicalCalendarURL("http://127.0.0.1/feed.ics")
+	if _, err := canonicalCalendarURL("http://127.0.0.1/feed.ics", false); err == nil {
+		t.Fatal("expected loopback http rejection when disallowed")
+	}
+	if _, err := canonicalCalendarURL("https://127.0.0.1/feed.ics", false); err == nil {
+		t.Fatal("expected loopback https rejection when disallowed")
+	}
+	got, err := canonicalCalendarURL("http://127.0.0.1/feed.ics", true)
 	if err != nil {
 		t.Fatalf("loopback http: %v", err)
 	}
@@ -327,7 +354,7 @@ func TestCreateRejectsMissingEncryptionKey(t *testing.T) {
 }
 
 func TestCreateEnforcesSourceCapAndRedactsPreview(t *testing.T) {
-	existing := make([]store.CalendarSource, maxSources)
+	existing := make([]store.CalendarSource, store.MaxCalendarSources)
 	for i := range existing {
 		existing[i] = store.CalendarSource{ID: int64(i + 1), Name: "Feed", SecretEnc: "v1:x"}
 	}

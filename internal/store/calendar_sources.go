@@ -70,9 +70,13 @@ type UpdateCalendarSourceInput struct {
 }
 
 func (s *Store) GetProjectAgendaSettings(ctx context.Context, projectID int64) (ProjectAgendaSettings, error) {
+	return getProjectAgendaSettingsQueryer(ctx, s.db, projectID)
+}
+
+func getProjectAgendaSettingsQueryer(ctx context.Context, q sqlRowQueryer, projectID int64) (ProjectAgendaSettings, error) {
 	var enabledInt int
 	var timezone, title, color string
-	err := s.db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 SELECT agenda_enabled, agenda_timezone, agenda_title, agenda_color
 FROM projects
 WHERE id = ? AND import_batch_id IS NULL`, projectID).Scan(&enabledInt, &timezone, &title, &color)
@@ -94,7 +98,29 @@ func (s *Store) UpdateProjectAgendaSettings(ctx context.Context, projectID int64
 	if enabled == nil && timezone == nil && title == nil && color == nil {
 		return s.GetProjectAgendaSettings(ctx, projectID)
 	}
-	existing, err := s.GetProjectAgendaSettings(ctx, projectID)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return ProjectAgendaSettings{}, fmt.Errorf("begin update project agenda settings: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
+		return ProjectAgendaSettings{}, err
+	}
+	updated, err := applyProjectAgendaSettingsTx(ctx, tx, projectID, enabled, timezone, title, color)
+	if err != nil {
+		return ProjectAgendaSettings{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ProjectAgendaSettings{}, fmt.Errorf("commit update project agenda settings: %w", err)
+	}
+	return updated, nil
+}
+
+func applyProjectAgendaSettingsTx(ctx context.Context, tx *sql.Tx, projectID int64, enabled *bool, timezone *string, title *string, color *string) (ProjectAgendaSettings, error) {
+	if enabled == nil && timezone == nil && title == nil && color == nil {
+		return getProjectAgendaSettingsQueryer(ctx, tx, projectID)
+	}
+	existing, err := getProjectAgendaSettingsQueryer(ctx, tx, projectID)
 	if err != nil {
 		return ProjectAgendaSettings{}, err
 	}
@@ -104,9 +130,9 @@ func (s *Store) UpdateProjectAgendaSettings(ctx context.Context, projectID int64
 	}
 	tzVal := existing.Timezone
 	if timezone != nil {
-		tz := strings.TrimSpace(*timezone)
-		if tz == "" {
-			return ProjectAgendaSettings{}, priorityError(ErrValidation, ReasonInvalidAgendaTimezone, "invalid agenda timezone")
+		tz, err := validateAgendaTimezone(*timezone)
+		if err != nil {
+			return ProjectAgendaSettings{}, err
 		}
 		tzVal = tz
 	}
@@ -128,14 +154,30 @@ func (s *Store) UpdateProjectAgendaSettings(ctx context.Context, projectID int64
 	}
 
 	nowMs := time.Now().UTC().UnixMilli()
-	_, err = s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 UPDATE projects
 SET agenda_enabled = ?, agenda_timezone = ?, agenda_title = ?, agenda_color = ?, updated_at = ?
 WHERE id = ? AND import_batch_id IS NULL`, boolToInt(enabledVal), tzVal, titleVal, colorVal, nowMs, projectID)
 	if err != nil {
 		return ProjectAgendaSettings{}, fmt.Errorf("update project agenda settings: %w", err)
 	}
-	return s.GetProjectAgendaSettings(ctx, projectID)
+	if timezone != nil && existing.Timezone != tzVal {
+		if err := deleteCalendarFeedSnapshotsForProjectExec(ctx, tx, projectID); err != nil {
+			return ProjectAgendaSettings{}, err
+		}
+	}
+	return getProjectAgendaSettingsQueryer(ctx, tx, projectID)
+}
+
+func validateAgendaTimezone(raw string) (string, error) {
+	tz := strings.TrimSpace(raw)
+	if tz == "" {
+		return "", priorityError(ErrValidation, ReasonInvalidAgendaTimezone, "invalid agenda timezone")
+	}
+	if _, err := time.LoadLocation(tz); err != nil {
+		return "", priorityError(ErrValidation, ReasonInvalidAgendaTimezone, "invalid agenda timezone")
+	}
+	return tz, nil
 }
 
 func validateAgendaTitle(raw string) (string, error) {
@@ -196,15 +238,23 @@ ORDER BY id ASC`, projectID)
 }
 
 func (s *Store) CountCalendarSources(ctx context.Context, projectID int64) (int, error) {
+	return countCalendarSourcesQueryer(ctx, s.db, projectID)
+}
+
+func countCalendarSourcesQueryer(ctx context.Context, q sqlRowQueryer, projectID int64) (int, error) {
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM calendar_sources WHERE project_id = ?`, projectID).Scan(&n); err != nil {
+	if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM calendar_sources WHERE project_id = ?`, projectID).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count calendar sources: %w", err)
 	}
 	return n, nil
 }
 
 func (s *Store) GetCalendarSource(ctx context.Context, projectID, sourceID int64) (CalendarSource, error) {
-	row := s.db.QueryRowContext(ctx, `
+	return getCalendarSourceQueryer(ctx, s.db, projectID, sourceID)
+}
+
+func getCalendarSourceQueryer(ctx context.Context, q sqlRowQueryer, projectID, sourceID int64) (CalendarSource, error) {
+	row := q.QueryRowContext(ctx, `
 SELECT id, project_id, type, name, enabled, secret_enc, url_hash, host_kind, created_at, updated_at
 FROM calendar_sources
 WHERE id = ? AND project_id = ?`, sourceID, projectID)
@@ -231,8 +281,24 @@ func (s *Store) CreateCalendarSource(ctx context.Context, projectID int64, in Cr
 		return CalendarSource{}, fmt.Errorf("%w: calendar source secret required", ErrValidation)
 	}
 
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return CalendarSource{}, fmt.Errorf("begin create calendar source: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
+		return CalendarSource{}, err
+	}
+	count, err := countCalendarSourcesQueryer(ctx, tx, projectID)
+	if err != nil {
+		return CalendarSource{}, err
+	}
+	if count >= MaxCalendarSources {
+		return CalendarSource{}, priorityError(ErrValidation, ReasonCalendarSourceLimit, "calendar source limit reached")
+	}
+
 	nowMs := time.Now().UTC().UnixMilli()
-	res, err := s.db.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 INSERT INTO calendar_sources(project_id, type, name, enabled, secret_enc, url_hash, host_kind, created_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		projectID, srcType, name, boolToInt(in.Enabled), in.SecretEnc, in.URLHash, normalizeCalendarHostKind(in.HostKind), nowMs, nowMs)
@@ -246,11 +312,26 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	if err != nil {
 		return CalendarSource{}, fmt.Errorf("calendar source id: %w", err)
 	}
-	return s.GetCalendarSource(ctx, projectID, id)
+	src, err := getCalendarSourceQueryer(ctx, tx, projectID, id)
+	if err != nil {
+		return CalendarSource{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CalendarSource{}, fmt.Errorf("commit create calendar source: %w", err)
+	}
+	return src, nil
 }
 
 func (s *Store) UpdateCalendarSource(ctx context.Context, projectID, sourceID int64, in UpdateCalendarSourceInput) (CalendarSource, error) {
-	existing, err := s.GetCalendarSource(ctx, projectID, sourceID)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return CalendarSource{}, fmt.Errorf("begin update calendar source: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
+		return CalendarSource{}, err
+	}
+	existing, err := getCalendarSourceQueryer(ctx, tx, projectID, sourceID)
 	if err != nil {
 		return CalendarSource{}, err
 	}
@@ -280,7 +361,7 @@ func (s *Store) UpdateCalendarSource(ctx context.Context, projectID, sourceID in
 	}
 
 	nowMs := time.Now().UTC().UnixMilli()
-	_, err = s.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 UPDATE calendar_sources
 SET name = ?, enabled = ?, secret_enc = ?, url_hash = ?, host_kind = ?, updated_at = ?
 WHERE id = ? AND project_id = ?`,
@@ -291,7 +372,19 @@ WHERE id = ? AND project_id = ?`,
 		}
 		return CalendarSource{}, fmt.Errorf("update calendar source: %w", err)
 	}
-	return s.GetCalendarSource(ctx, projectID, sourceID)
+	if existing.URLHash != urlHash {
+		if err := deleteCalendarFeedSnapshotExec(ctx, tx, sourceID); err != nil {
+			return CalendarSource{}, err
+		}
+	}
+	updated, err := getCalendarSourceQueryer(ctx, tx, projectID, sourceID)
+	if err != nil {
+		return CalendarSource{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return CalendarSource{}, fmt.Errorf("commit update calendar source: %w", err)
+	}
+	return updated, nil
 }
 
 func (s *Store) DeleteCalendarSource(ctx context.Context, projectID, sourceID int64) error {

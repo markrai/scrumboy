@@ -15,6 +15,7 @@ import (
 	calendarapp "scrumboy/internal/application/calendar"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
+	projectsettingsapp "scrumboy/internal/application/projectsettings"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -108,6 +109,11 @@ type Options struct {
 	// CalendarFeedFetcher overrides ICS feed HTTP fetches. Tests inject fakes
 	// so board GET and refresh can assert zero or controlled network use.
 	CalendarFeedFetcher calendarapp.FeedFetcher
+
+	// AllowLoopbackCalendarFeeds permits configuring and fetching ICS URLs on
+	// loopback hosts. Production must leave this false so URL acceptance matches
+	// the default fetcher SSRF policy.
+	AllowLoopbackCalendarFeeds bool
 }
 
 type Server struct {
@@ -128,6 +134,7 @@ type Server struct {
 	workflowMutations             *workflowapp.RESTMutationService
 	priorityMutations             *priorityapp.RESTMutationService
 	calendarSources               *calendarapp.RESTService
+	boardSettings                 *projectsettingsapp.RESTService
 	agenda                        *calendarapp.AgendaService
 	membershipMutations           *membershipapp.RESTMutationService
 
@@ -253,6 +260,7 @@ type storeAPI interface {
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
+	UpdateProjectBoardSettings(ctx context.Context, projectID, userID int64, patch store.ProjectBoardSettingsPatch) (store.ProjectBoardSettings, error)
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	calendarapp.SourceStore
@@ -692,16 +700,22 @@ func NewServer(st storeAPI, opts Options) *Server {
 		server.emitRefreshNeeded(ctx, projectID, reason)
 	})
 	server.calendarSources = calendarapp.NewRESTService(calendarapp.RESTServiceDependencies{
-		Projects:  st,
-		Roles:     st,
-		Cipher:    st,
-		Sources:   st,
-		Snapshots: st,
-		Refresh:   refreshPublisher,
+		Projects:      st,
+		Roles:         st,
+		Cipher:        st,
+		Sources:       st,
+		Refresh:       refreshPublisher,
+		AllowLoopback: opts.AllowLoopbackCalendarFeeds,
+	})
+	server.boardSettings = projectsettingsapp.NewRESTService(projectsettingsapp.RESTServiceDependencies{
+		Mutations: st,
+		Refresh: projectsettingsapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+			server.emitRefreshNeeded(ctx, projectID, reason)
+		}),
 	})
 	fetcher := opts.CalendarFeedFetcher
 	if fetcher == nil {
-		fetcher = calendarapp.NewHTTPFetcher(false)
+		fetcher = calendarapp.NewHTTPFetcher(opts.AllowLoopbackCalendarFeeds)
 	}
 	server.agenda = calendarapp.NewAgendaService(calendarapp.AgendaServiceDependencies{
 		Sources:   st,

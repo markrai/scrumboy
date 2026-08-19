@@ -12,7 +12,6 @@ import (
 
 const (
 	SourceTypeICSFeed = "ics_feed"
-	maxSources        = 8
 )
 
 type CalendarHostKind string
@@ -55,7 +54,7 @@ func calendarHostKind(canonicalURL string) CalendarHostKind {
 	return CalendarHostKindOther
 }
 
-func canonicalCalendarURL(raw string) (string, error) {
+func canonicalCalendarURL(raw string, allowLoopback bool) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return "", fmt.Errorf("invalid calendar URL")
@@ -72,10 +71,13 @@ func canonicalCalendarURL(raw string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("invalid calendar URL")
 	}
+	if isLoopbackHost(host) && !allowLoopback {
+		return "", fmt.Errorf("invalid calendar URL")
+	}
 	switch scheme {
 	case "https":
 	case "http":
-		if !isLoopbackHost(host) {
+		if !allowLoopback || !isLoopbackHost(host) {
 			return "", fmt.Errorf("invalid calendar URL")
 		}
 	default:

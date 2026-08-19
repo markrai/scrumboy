@@ -10,12 +10,12 @@ import (
 
 func preparedCalendarWithSnapshots(t *testing.T, sources *calendarSourceStoreFake, snaps *snapshotStoreFake) *PreparedREST {
 	t.Helper()
+	sources.invalidator = snaps
 	return preparedCalendar(t, RESTServiceDependencies{
-		Projects:  &calendarProjectFake{project: store.Project{ID: 9}},
-		Roles:     &calendarRoleFake{role: store.RoleMaintainer},
-		Cipher:    &calendarCipherFake{},
-		Sources:   sources,
-		Snapshots: snaps,
+		Projects: &calendarProjectFake{project: store.Project{ID: 9}},
+		Roles:    &calendarRoleFake{role: store.RoleMaintainer},
+		Cipher:   &calendarCipherFake{},
+		Sources:  sources,
 	})
 }
 

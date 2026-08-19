@@ -92,6 +92,22 @@ func TestCalendarSourceEncryptDecryptAndUniqueness(t *testing.T) {
 		t.Fatalf("listed = %d, want %d", len(listed), MaxCalendarSources)
 	}
 
+	if _, err := st.CreateCalendarSource(ownerCtx, project.ID, CreateCalendarSourceInput{
+		Name:      "Overflow",
+		Enabled:   true,
+		SecretEnc: enc,
+		URLHash:   "hash-overflow",
+	}); !errors.Is(err, ErrValidation) || ErrorReason(err) != ReasonCalendarSourceLimit {
+		t.Fatalf("ninth create error = %v, want ErrValidation/%s", err, ReasonCalendarSourceLimit)
+	}
+	count, err = st.CountCalendarSources(ownerCtx, project.ID)
+	if err != nil {
+		t.Fatalf("CountCalendarSources after overflow: %v", err)
+	}
+	if count != MaxCalendarSources {
+		t.Fatalf("count after overflow = %d, want %d", count, MaxCalendarSources)
+	}
+
 	settings, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, boolPtr(true), strPtr("America/New_York"), nil, nil)
 	if err != nil {
 		t.Fatalf("UpdateProjectAgendaSettings: %v", err)
@@ -285,6 +301,33 @@ func TestProjectAgendaColorPersistsAndValidates(t *testing.T) {
 	}
 	if got.Color != custom {
 		t.Fatalf("invalid color mutated stored value = %+v", got)
+	}
+}
+
+func TestUpdateProjectAgendaSettingsRejectsInvalidIANATimezone(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "agenda-tz@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Agenda TZ")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	if _, err := st.UpdateProjectAgendaSettings(ownerCtx, project.ID, nil, strPtr("Not/A_Zone"), nil, nil); !errors.Is(err, ErrValidation) || ErrorReason(err) != ReasonInvalidAgendaTimezone {
+		t.Fatalf("invalid timezone error = %v, want ErrValidation/%s", err, ReasonInvalidAgendaTimezone)
+	}
+	got, err := st.GetProjectAgendaSettings(ownerCtx, project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectAgendaSettings: %v", err)
+	}
+	if got.Timezone != "UTC" {
+		t.Fatalf("invalid timezone mutated stored value = %+v", got)
 	}
 }
 

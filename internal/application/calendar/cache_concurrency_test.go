@@ -126,13 +126,13 @@ func TestInFlightURLRefreshDoesNotResurrectInvalidatedSnapshot(t *testing.T) {
 		settings: store.ProjectAgendaSettings{Enabled: true, Timezone: "UTC"},
 	}
 	snaps := &snapshotStoreFake{sources: sources}
+	sources.invalidator = snaps
 	cipher := passthroughCipher{}
 	prepared := preparedCalendar(t, RESTServiceDependencies{
-		Projects:  &calendarProjectFake{project: store.Project{ID: 9}},
-		Roles:     &calendarRoleFake{role: store.RoleMaintainer},
-		Cipher:    cipher,
-		Sources:   sources,
-		Snapshots: snaps,
+		Projects: &calendarProjectFake{project: store.Project{ID: 9}},
+		Roles:    &calendarRoleFake{role: store.RoleMaintainer},
+		Cipher:   cipher,
+		Sources:  sources,
 	})
 	created, err := prepared.Create(CreateSourceCommand{Name: "Family", URL: urlA})
 	if err != nil {
@@ -228,13 +228,13 @@ func TestInFlightTimezoneRefreshDoesNotResurrectInvalidatedSnapshot(t *testing.T
 		settings: store.ProjectAgendaSettings{Enabled: true, Timezone: "America/New_York"},
 	}
 	snaps := &snapshotStoreFake{sources: sources}
+	sources.invalidator = snaps
 	cipher := passthroughCipher{}
 	prepared := preparedCalendar(t, RESTServiceDependencies{
-		Projects:  &calendarProjectFake{project: store.Project{ID: 9}},
-		Roles:     &calendarRoleFake{role: store.RoleMaintainer},
-		Cipher:    cipher,
-		Sources:   sources,
-		Snapshots: snaps,
+		Projects: &calendarProjectFake{project: store.Project{ID: 9}},
+		Roles:    &calendarRoleFake{role: store.RoleMaintainer},
+		Cipher:   cipher,
+		Sources:  sources,
 	})
 	created, err := prepared.Create(CreateSourceCommand{Name: "Family", URL: "https://calendar.example.com/float.ics"})
 	if err != nil {
@@ -316,13 +316,13 @@ func TestObsoleteFailingRefreshDoesNotRecreateErrorSnapshot(t *testing.T) {
 		settings: store.ProjectAgendaSettings{Enabled: true, Timezone: "UTC"},
 	}
 	snaps := &snapshotStoreFake{sources: sources}
+	sources.invalidator = snaps
 	cipher := passthroughCipher{}
 	prepared := preparedCalendar(t, RESTServiceDependencies{
-		Projects:  &calendarProjectFake{project: store.Project{ID: 9}},
-		Roles:     &calendarRoleFake{role: store.RoleMaintainer},
-		Cipher:    cipher,
-		Sources:   sources,
-		Snapshots: snaps,
+		Projects: &calendarProjectFake{project: store.Project{ID: 9}},
+		Roles:    &calendarRoleFake{role: store.RoleMaintainer},
+		Cipher:   cipher,
+		Sources:  sources,
 	})
 	created, err := prepared.Create(CreateSourceCommand{Name: "Family", URL: urlA})
 	if err != nil {
