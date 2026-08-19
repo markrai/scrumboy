@@ -149,13 +149,9 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 	// PATCH /api/board/{slug}/settings - update board/project-level settings.
 	if len(rest) == 2 && rest[1] == "settings" && r.Method == http.MethodPatch {
 		ctx := s.requestContext(r)
-		userID, ok := store.UserIDFromContext(ctx)
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-			return true
-		}
-		if err := s.store.CheckCanManageProject(ctx, project.ID, userID); err != nil {
-			writeStoreErr(w, err, true)
+		prepared, err := s.boardSettings.Prepare(ctx, projectsettingsapp.ResolvedRESTTarget{ProjectID: project.ID})
+		if err != nil {
+			writeBoardSettingsPrepareError(w, err)
 			return true
 		}
 
@@ -176,12 +172,6 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 		}
 		if in.DefaultSprintWeeks != nil && *in.DefaultSprintWeeks != 1 && *in.DefaultSprintWeeks != 2 {
 			writeValidationError(w, "defaultSprintWeeks must be 1 or 2", "invalid_default_sprint_weeks", map[string]any{"field": "defaultSprintWeeks"})
-			return true
-		}
-
-		prepared, err := s.boardSettings.Prepare(ctx, projectsettingsapp.ResolvedRESTTarget{ProjectID: project.ID})
-		if err != nil {
-			writeBoardSettingsPrepareError(w, err)
 			return true
 		}
 		view, err := prepared.Patch(projectsettingsapp.PatchCommand{
