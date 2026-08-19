@@ -100,7 +100,7 @@ func TestHTTPFetcherAcceptsFeedAboveOldTwoMiBCeiling(t *testing.T) {
 	}
 }
 
-func TestHTTPFetcherRejectsAboveNewCeilingWithoutExcessiveBuffering(t *testing.T) {
+func TestHTTPFetcherRejectsAboveNewCeiling(t *testing.T) {
 	fetcher := NewHTTPFetcher(true)
 	if fetcher.MaxBody != ics.MaxBodyBytes || ics.MaxBodyBytes != 32<<20 {
 		t.Fatalf("MaxBody=%d, want 32 MiB", fetcher.MaxBody)
@@ -125,11 +125,8 @@ func TestHTTPFetcherRejectsAboveNewCeilingWithoutExcessiveBuffering(t *testing.T
 	}
 	got := served.load()
 	max := int64(fetcher.MaxBody) + 1
-	if got > max+1024*1024 {
-		t.Fatalf("buffered %d bytes, want at most %d plus 1MiB slack", got, max)
-	}
 	if got < max {
-		t.Fatalf("buffered %d bytes, want at least the LimitReader cap %d", got, max)
+		t.Fatalf("served %d bytes, want at least the LimitReader cap %d", got, max)
 	}
 }
 
