@@ -2,6 +2,18 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
 
+## [3.32.5] - 2026-08-18
+
+### Changed
+
+- **Frontend dist CI gate** - The frontend job now clean-rebuilds
+  `internal/httpapi/web/dist` from TypeScript (`rm -rf dist && npm run build`)
+  and fails if the result differs from what is committed, including orphaned
+  files `tsc` would otherwise leave behind. TypeScript emit is type-checked as
+  a side effect. Eight stale `dist/dialogs/` copies left by an earlier source
+  refactor are removed; they were unused and are not recreated by a clean
+  build.
+
 ## [3.32.4] - 2026-08-18
 
 ### Security
