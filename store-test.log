@@ -1,0 +1,1574 @@
+=== RUN   TestCreateUserAPITokenAndGetUserByAPIToken
+2026/08/19 07:53:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUserAPITokenAndGetUserByAPIToken (0.15s)
+=== RUN   TestAuditEvent_InsertAndQuery
+2026/08/19 07:53:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_InsertAndQuery (0.19s)
+=== RUN   TestAuditEvent_AppendOnly
+2026/08/19 07:53:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_AppendOnly (0.15s)
+=== RUN   TestAuditEvent_TodoCreated
+2026/08/19 07:53:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_TodoCreated (0.18s)
+=== RUN   TestAuditEvent_TodoUpdated_NoOpGuard
+2026/08/19 07:53:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_TodoUpdated_NoOpGuard (0.16s)
+=== RUN   TestAuditEvent_TodoMoved
+2026/08/19 07:53:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_TodoMoved (0.15s)
+=== RUN   TestAuditEvent_MemberAdded
+2026/08/19 07:53:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_MemberAdded (0.21s)
+=== RUN   TestAuditEvent_AnonymousActor
+2026/08/19 07:53:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuditEvent_AnonymousActor (0.16s)
+=== RUN   TestCreateAndGetLogin2FAPending
+2026/08/19 07:53:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateAndGetLogin2FAPending (0.15s)
+=== RUN   TestIncrementAttemptRevokesAfterMax
+2026/08/19 07:53:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestIncrementAttemptRevokesAfterMax (0.13s)
+=== RUN   TestRecoveryCodesAndConsume
+2026/08/19 07:53:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRecoveryCodesAndConsume (0.42s)
+=== RUN   TestRecoveryCodeConcurrentConsumptionIsSingleUse
+2026/08/19 07:53:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRecoveryCodeConcurrentConsumptionIsSingleUse (0.27s)
+=== RUN   TestUserIsTwoFactorActive
+--- PASS: TestUserIsTwoFactorActive (0.00s)
+=== RUN   TestDerivedAuthenticationMethodsUseConfiguredIssuer
+2026/08/19 07:53:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDerivedAuthenticationMethodsUseConfiguredIssuer (0.27s)
+=== RUN   TestPasswordHashEligibilityAndFirstPasswordCAS
+=== RUN   TestPasswordHashEligibilityAndFirstPasswordCAS/null
+2026/08/19 07:53:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestPasswordHashEligibilityAndFirstPasswordCAS/empty
+2026/08/19 07:53:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestPasswordHashEligibilityAndFirstPasswordCAS/malformed
+2026/08/19 07:53:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestPasswordHashEligibilityAndFirstPasswordCAS (0.90s)
+    --- PASS: TestPasswordHashEligibilityAndFirstPasswordCAS/null (0.23s)
+    --- PASS: TestPasswordHashEligibilityAndFirstPasswordCAS/empty (0.21s)
+    --- PASS: TestPasswordHashEligibilityAndFirstPasswordCAS/malformed (0.24s)
+=== RUN   TestOwnerRecoveryPostureUsesEffectiveMethods
+2026/08/19 07:53:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestOwnerRecoveryPostureUsesEffectiveMethods (0.15s)
+=== RUN   TestOIDCLoginMetadataDoesNotChangeCanonicalOwnership
+2026/08/19 07:53:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestOIDCLoginMetadataDoesNotChangeCanonicalOwnership (0.26s)
+=== RUN   TestResetLocalPasswordRevokesSessionsAndPreservesOIDC
+2026/08/19 07:53:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResetLocalPasswordRevokesSessionsAndPreservesOIDC (0.28s)
+=== RUN   TestFirstPasswordGrantBindingExpiryAndSingleUse
+2026/08/19 07:53:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestFirstPasswordGrantBindingExpiryAndSingleUse (0.33s)
+=== RUN   TestFirstPasswordFailureDoesNotConsumeRecoveryCode
+2026/08/19 07:53:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestFirstPasswordFailureDoesNotConsumeRecoveryCode (0.42s)
+=== RUN   TestBackupExportsAgendaFlagsAndOmitsCalendarSources
+2026/08/19 07:53:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupExportsAgendaFlagsAndOmitsCalendarSources (0.35s)
+=== RUN   TestBackupRejectsInvalidAgendaTimezone
+2026/08/19 07:53:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupRejectsInvalidAgendaTimezone (0.19s)
+=== RUN   TestBackupMissingAgendaColorKeepsDefault
+2026/08/19 07:53:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupMissingAgendaColorKeepsDefault (0.17s)
+=== RUN   TestBackupRejectsInvalidAgendaColor
+2026/08/19 07:53:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupRejectsInvalidAgendaColor (0.18s)
+=== RUN   TestImportMergeUpdate_AnonymousMode_NoHang
+2026/08/19 07:53:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMergeUpdate_AnonymousMode_NoHang (0.11s)
+=== RUN   TestImportMergeUpdate_PreservesExistingAssignee
+2026/08/19 07:53:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMergeUpdate_PreservesExistingAssignee (0.21s)
+=== RUN   TestImportCopy_PreservesAssigneeWhenMember
+2026/08/19 07:53:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportCopy_PreservesAssigneeWhenMember (0.16s)
+=== RUN   TestBackupAuth_ViewerCannotExport
+2026/08/19 07:53:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupAuth_ViewerCannotExport (0.28s)
+=== RUN   TestBackupAuth_ContributorCannotExport
+2026/08/19 07:53:14 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupAuth_ContributorCannotExport (0.30s)
+=== RUN   TestBackupAuth_MaintainerCanExport
+2026/08/19 07:53:14 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupAuth_MaintainerCanExport (0.29s)
+=== RUN   TestBackupAuth_ViewerCannotMerge
+2026/08/19 07:53:14 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupAuth_ViewerCannotMerge (0.30s)
+=== RUN   TestBackupAuth_MaintainerCanMerge
+2026/08/19 07:53:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupAuth_MaintainerCanMerge (0.30s)
+=== RUN   TestBackupExportsTodoCreatorAttribution
+2026/08/19 07:53:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupExportsTodoCreatorAttribution (0.15s)
+=== RUN   TestBackupTodoCreatorNullIsOmitted
+--- PASS: TestBackupTodoCreatorNullIsOmitted (0.00s)
+=== RUN   TestBackupImportDoesNotTrustRawNumericCreatorID
+2026/08/19 07:53:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupImportDoesNotTrustRawNumericCreatorID (0.19s)
+=== RUN   TestBackupMergePreservesMatchedTodoCreator
+2026/08/19 07:53:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupMergePreservesMatchedTodoCreator (0.24s)
+=== RUN   TestResolveImportCreatedByNeverTreatsNumericEqualityAsIdentity
+--- PASS: TestResolveImportCreatedByNeverTreatsNumericEqualityAsIdentity (0.00s)
+=== RUN   TestBackupExportReplace_FullIntegrity
+2026/08/19 07:53:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupExportReplace_FullIntegrity (0.16s)
+=== RUN   TestImportMergeUpdate_MigratedSchema
+2026/08/19 07:53:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMergeUpdate_MigratedSchema (0.17s)
+=== RUN   TestImportCreateCopy_MigratedSchema
+2026/08/19 07:53:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportCreateCopy_MigratedSchema (0.16s)
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites
+2026/08/19 07:53:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/missing_project_name
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/duplicate_slug
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/duplicate_slug_case_insensitive
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/todo_missing_localId
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/invalid_link_reference
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/self-link
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/merge_missing_slug
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/custom_workflow_todo_with_unknown_column
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/workflow_columns_fewer_than_2
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/workflow_duplicate_keys
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/workflow_no_done_column
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/workflow_invalid_color
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/sprint_invalid_state
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/sprint_duplicate_number
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/sprint_plannedEndAt_before_plannedStartAt
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/todo_SprintNumber_not_in_sprints
+=== RUN   TestImportPreflight_MalformedRejectedBeforeWrites/todo_SprintNumber_but_no_sprints
+--- PASS: TestImportPreflight_MalformedRejectedBeforeWrites (0.16s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/missing_project_name (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/duplicate_slug (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/duplicate_slug_case_insensitive (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/todo_missing_localId (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/invalid_link_reference (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/self-link (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/merge_missing_slug (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/custom_workflow_todo_with_unknown_column (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/workflow_columns_fewer_than_2 (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/workflow_duplicate_keys (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/workflow_no_done_column (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/workflow_invalid_color (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/sprint_invalid_state (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/sprint_duplicate_number (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/sprint_plannedEndAt_before_plannedStartAt (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/todo_SprintNumber_not_in_sprints (0.00s)
+    --- PASS: TestImportPreflight_MalformedRejectedBeforeWrites/todo_SprintNumber_but_no_sprints (0.00s)
+=== RUN   TestImportPreflight_UnauthorizedRejectedBeforeWrites
+2026/08/19 07:53:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportPreflight_UnauthorizedRejectedBeforeWrites (0.20s)
+=== RUN   TestPreviewImport_SurfacesUnknownStatusWarnings
+2026/08/19 07:53:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:16 PreviewImport: mode=full, importMode=copy, projects=1
+2026/08/19 07:53:16 PreviewImport: Counting 1 projects
+2026/08/19 07:53:16 PreviewImport: Counted 2 todos
+2026/08/19 07:53:16 PreviewImport: Counted 0 unique tags
+2026/08/19 07:53:16 PreviewImport: Processing copy mode
+2026/08/19 07:53:16 PreviewImport: Copy mode - will create 3 items
+2026/08/19 07:53:16 PreviewImport: Returning preview - Projects:1 Todos:2 Tags:0 WillCreate:3 WillUpdate:0 WillDelete:0
+--- PASS: TestPreviewImport_SurfacesUnknownStatusWarnings (0.18s)
+=== RUN   TestPreviewImport_ValidCustomWorkflowColumn_NoWarning
+2026/08/19 07:53:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:17 PreviewImport: mode=full, importMode=copy, projects=1
+2026/08/19 07:53:17 PreviewImport: Counting 1 projects
+2026/08/19 07:53:17 PreviewImport: Counted 2 todos
+2026/08/19 07:53:17 PreviewImport: Counted 0 unique tags
+2026/08/19 07:53:17 PreviewImport: Processing copy mode
+2026/08/19 07:53:17 PreviewImport: Copy mode - will create 3 items
+2026/08/19 07:53:17 PreviewImport: Returning preview - Projects:1 Todos:2 Tags:0 WillCreate:3 WillUpdate:0 WillDelete:0
+--- PASS: TestPreviewImport_ValidCustomWorkflowColumn_NoWarning (0.16s)
+=== RUN   TestPreviewImport_InvalidColumn_Warning
+2026/08/19 07:53:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:17 PreviewImport: mode=full, importMode=copy, projects=1
+2026/08/19 07:53:17 PreviewImport: Counting 1 projects
+2026/08/19 07:53:17 PreviewImport: Counted 1 todos
+2026/08/19 07:53:17 PreviewImport: Counted 0 unique tags
+2026/08/19 07:53:17 PreviewImport: Processing copy mode
+2026/08/19 07:53:17 PreviewImport: Copy mode - will create 2 items
+2026/08/19 07:53:17 PreviewImport: Returning preview - Projects:1 Todos:1 Tags:0 WillCreate:2 WillUpdate:0 WillDelete:0
+--- PASS: TestPreviewImport_InvalidColumn_Warning (0.15s)
+=== RUN   TestImportPreflight_InvalidReferencesRejectedBeforeWrites
+2026/08/19 07:53:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportPreflight_InvalidReferencesRejectedBeforeWrites (0.18s)
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected
+2026/08/19 07:53:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/workflow_fewer_than_2_columns
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/workflow_duplicate_keys
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/workflow_no_done_column
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/workflow_invalid_color
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/sprint_duplicate_number
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/sprint_plannedEndAt_before_plannedStartAt
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/sprint_invalid_state
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/todo_SprintNumber_not_in_sprints
+=== RUN   TestImportPreflight_InvalidWorkflowSprintRejected/todo_SprintNumber_but_no_sprints
+--- PASS: TestImportPreflight_InvalidWorkflowSprintRejected (0.17s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/workflow_fewer_than_2_columns (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/workflow_duplicate_keys (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/workflow_no_done_column (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/workflow_invalid_color (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/sprint_duplicate_number (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/sprint_plannedEndAt_before_plannedStartAt (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/sprint_invalid_state (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/todo_SprintNumber_not_in_sprints (0.00s)
+    --- PASS: TestImportPreflight_InvalidWorkflowSprintRejected/todo_SprintNumber_but_no_sprints (0.00s)
+=== RUN   TestExportImportRoundTrip_DefaultSprintWeeks
+2026/08/19 07:53:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_DefaultSprintWeeks (0.16s)
+=== RUN   TestExportImportRoundTrip_WorkflowColumns
+2026/08/19 07:53:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_WorkflowColumns (0.18s)
+=== RUN   TestExportImportRoundTrip_Sprints
+2026/08/19 07:53:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_Sprints (0.18s)
+=== RUN   TestImportMerge_ExistingCustomWorkflow
+2026/08/19 07:53:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMerge_ExistingCustomWorkflow (0.17s)
+=== RUN   TestImportMerge_WorkflowReplacementRejectedWhenStrandedTodos
+2026/08/19 07:53:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMerge_WorkflowReplacementRejectedWhenStrandedTodos (0.16s)
+=== RUN   TestImportMerge_WorkflowReplacementAllowedWhenAllTodosInBackup
+2026/08/19 07:53:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMerge_WorkflowReplacementAllowedWhenAllTodosInBackup (0.17s)
+=== RUN   TestImportMerge_SprintNumberConflictUpdatesExisting
+2026/08/19 07:53:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMerge_SprintNumberConflictUpdatesExisting (0.17s)
+=== RUN   TestImportMerge_SprintNumberConflict_AddsNewAndLeavesExisting
+2026/08/19 07:53:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMerge_SprintNumberConflict_AddsNewAndLeavesExisting (0.17s)
+=== RUN   TestExportImportRoundTrip_Wall_Replace
+2026/08/19 07:53:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_Wall_Replace (0.16s)
+=== RUN   TestExportImportRoundTrip_Wall_Merge_ReplacesWithBackup
+2026/08/19 07:53:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_Wall_Merge_ReplacesWithBackup (0.18s)
+=== RUN   TestExportImportRoundTrip_Wall_Merge_PreservesWhenBackupHasNoWall
+2026/08/19 07:53:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_Wall_Merge_PreservesWhenBackupHasNoWall (0.16s)
+=== RUN   TestExportImportRoundTrip_Wall_Copy
+2026/08/19 07:53:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImportRoundTrip_Wall_Copy (0.15s)
+=== RUN   TestExportImport_Wall_EmptyWallOmitsField
+2026/08/19 07:53:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportImport_Wall_EmptyWallOmitsField (0.19s)
+=== RUN   TestMigration012_OnlyOneUniqueSlugIndex
+    backup_migration_test.go:23: Requires test database setup with migrations - implement when needed
+--- SKIP: TestMigration012_OnlyOneUniqueSlugIndex (0.00s)
+=== RUN   TestPriorityExportPresenceWireContract
+--- PASS: TestPriorityExportPresenceWireContract (0.00s)
+=== RUN   TestExportEmitsExplicitPriorityPresenceAndRejectsMissingDefinitions
+2026/08/19 07:53:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExportEmitsExplicitPriorityPresenceAndRejectsMissingDefinitions (0.16s)
+=== RUN   TestPriorityImportDefinitionValidationParity
+--- PASS: TestPriorityImportDefinitionValidationParity (0.00s)
+=== RUN   TestImportMergePriorityReplacementIntegrity
+=== RUN   TestImportMergePriorityReplacementIntegrity/explicit_null_clears_before_tier_removal
+2026/08/19 07:53:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestImportMergePriorityReplacementIntegrity/absent_field_preserves_and_rejects_tier_removal
+2026/08/19 07:53:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestImportMergePriorityReplacementIntegrity/unrepresented_todo_preserves_and_rejects_tier_removal
+2026/08/19 07:53:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportMergePriorityReplacementIntegrity (0.51s)
+    --- PASS: TestImportMergePriorityReplacementIntegrity/explicit_null_clears_before_tier_removal (0.16s)
+    --- PASS: TestImportMergePriorityReplacementIntegrity/absent_field_preserves_and_rejects_tier_removal (0.18s)
+    --- PASS: TestImportMergePriorityReplacementIntegrity/unrepresented_todo_preserves_and_rejects_tier_removal (0.17s)
+=== RUN   TestBackupPreservesSprintsEnabledAndOlderPayloadDefaultsEnabled
+2026/08/19 07:53:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupPreservesSprintsEnabledAndOlderPayloadDefaultsEnabled (0.16s)
+=== RUN   TestBackupExport_OneEntryPerCanonicalName
+2026/08/19 07:53:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupExport_OneEntryPerCanonicalName (0.21s)
+=== RUN   TestBulkUpsertTags_DedupesLegacyDuplicateNames
+2026/08/19 07:53:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBulkUpsertTags_DedupesLegacyDuplicateNames (0.16s)
+=== RUN   TestBulkUpsertTags_RejectsInvalidTagName
+2026/08/19 07:53:21 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBulkUpsertTags_RejectsInvalidTagName (0.18s)
+=== RUN   TestBackupExport_RejectsUncanonicalizableTagName
+2026/08/19 07:53:21 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBackupExport_RejectsUncanonicalizableTagName (0.16s)
+=== RUN   TestDurableBoardRead_DoesNotRefreshLastActivityAt
+2026/08/19 07:53:21 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDurableBoardRead_DoesNotRefreshLastActivityAt (0.16s)
+=== RUN   TestUpdateBoardActivity_ExtendsExpiresAt90DaysFromNow
+2026/08/19 07:53:21 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateBoardActivity_ExtendsExpiresAt90DaysFromNow (0.17s)
+=== RUN   TestExpiringBoardRead_RefreshesLastActivityWhenStale
+2026/08/19 07:53:21 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExpiringBoardRead_RefreshesLastActivityWhenStale (0.14s)
+=== RUN   TestParseAssigneeFilter
+=== RUN   TestParseAssigneeFilter/empty
+=== RUN   TestParseAssigneeFilter/whitespace_only
+=== RUN   TestParseAssigneeFilter/unassigned
+=== RUN   TestParseAssigneeFilter/unassigned_trims_whitespace
+=== RUN   TestParseAssigneeFilter/me
+=== RUN   TestParseAssigneeFilter/me_without_actor
+=== RUN   TestParseAssigneeFilter/positive_user_id
+=== RUN   TestParseAssigneeFilter/uppercase_unassigned
+=== RUN   TestParseAssigneeFilter/uppercase_me
+=== RUN   TestParseAssigneeFilter/zero
+=== RUN   TestParseAssigneeFilter/negative
+=== RUN   TestParseAssigneeFilter/unknown_sentinel
+=== RUN   TestParseAssigneeFilter/overflow
+--- PASS: TestParseAssigneeFilter (0.00s)
+    --- PASS: TestParseAssigneeFilter/empty (0.00s)
+    --- PASS: TestParseAssigneeFilter/whitespace_only (0.00s)
+    --- PASS: TestParseAssigneeFilter/unassigned (0.00s)
+    --- PASS: TestParseAssigneeFilter/unassigned_trims_whitespace (0.00s)
+    --- PASS: TestParseAssigneeFilter/me (0.00s)
+    --- PASS: TestParseAssigneeFilter/me_without_actor (0.00s)
+    --- PASS: TestParseAssigneeFilter/positive_user_id (0.00s)
+    --- PASS: TestParseAssigneeFilter/uppercase_unassigned (0.00s)
+    --- PASS: TestParseAssigneeFilter/uppercase_me (0.00s)
+    --- PASS: TestParseAssigneeFilter/zero (0.00s)
+    --- PASS: TestParseAssigneeFilter/negative (0.00s)
+    --- PASS: TestParseAssigneeFilter/unknown_sentinel (0.00s)
+    --- PASS: TestParseAssigneeFilter/overflow (0.00s)
+=== RUN   TestAssigneeFilterArgs_InvalidInternalStateFailsClosed
+--- PASS: TestAssigneeFilterArgs_InvalidInternalStateFailsClosed (0.00s)
+=== RUN   TestGetBoard_AssigneeFilter
+2026/08/19 07:53:21 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestGetBoard_AssigneeFilter/filters_by_specific_assignee
+=== RUN   TestGetBoard_AssigneeFilter/filters_unassigned
+=== RUN   TestGetBoard_AssigneeFilter/no_filter_returns_all
+=== RUN   TestGetBoard_AssigneeFilter/paged_path_combines_assignee_tag_and_search
+=== RUN   TestGetBoard_AssigneeFilter/paged_path_filters_unassigned
+=== RUN   TestGetBoard_AssigneeFilter/unknown_positive_user_id_returns_empty_board
+--- PASS: TestGetBoard_AssigneeFilter (0.25s)
+    --- PASS: TestGetBoard_AssigneeFilter/filters_by_specific_assignee (0.00s)
+    --- PASS: TestGetBoard_AssigneeFilter/filters_unassigned (0.00s)
+    --- PASS: TestGetBoard_AssigneeFilter/no_filter_returns_all (0.00s)
+    --- PASS: TestGetBoard_AssigneeFilter/paged_path_combines_assignee_tag_and_search (0.00s)
+    --- PASS: TestGetBoard_AssigneeFilter/paged_path_filters_unassigned (0.00s)
+    --- PASS: TestGetBoard_AssigneeFilter/unknown_positive_user_id_returns_empty_board (0.00s)
+=== RUN   TestListTodosForBoardLane_AssigneeFilter
+2026/08/19 07:53:22 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListTodosForBoardLane_AssigneeFilter (0.21s)
+=== RUN   TestGetBoardPaged_AssigneeFilterSoftCapFallback
+2026/08/19 07:53:22 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoardPaged_AssigneeFilterSoftCapFallback (0.27s)
+=== RUN   TestGetBoardPaged_AssigneeSprintTagSearchComposition
+2026/08/19 07:53:22 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoardPaged_AssigneeSprintTagSearchComposition (0.26s)
+=== RUN   TestParsePriorityFilter
+=== RUN   TestParsePriorityFilter/empty
+=== RUN   TestParsePriorityFilter/whitespace_only
+=== RUN   TestParsePriorityFilter/no_priority_sentinel
+=== RUN   TestParsePriorityFilter/no_priority_sentinel_trims_whitespace
+=== RUN   TestParsePriorityFilter/old_sentinel_is_a_literal_key
+=== RUN   TestParsePriorityFilter/known_key
+=== RUN   TestParsePriorityFilter/unknown_key_is_not_validated
+=== RUN   TestParsePriorityFilter/uppercase_none_is_a_literal_key
+--- PASS: TestParsePriorityFilter (0.00s)
+    --- PASS: TestParsePriorityFilter/empty (0.00s)
+    --- PASS: TestParsePriorityFilter/whitespace_only (0.00s)
+    --- PASS: TestParsePriorityFilter/no_priority_sentinel (0.00s)
+    --- PASS: TestParsePriorityFilter/no_priority_sentinel_trims_whitespace (0.00s)
+    --- PASS: TestParsePriorityFilter/old_sentinel_is_a_literal_key (0.00s)
+    --- PASS: TestParsePriorityFilter/known_key (0.00s)
+    --- PASS: TestParsePriorityFilter/unknown_key_is_not_validated (0.00s)
+    --- PASS: TestParsePriorityFilter/uppercase_none_is_a_literal_key (0.00s)
+=== RUN   TestPriorityFilterArgs_InvalidInternalStateFailsClosed
+--- PASS: TestPriorityFilterArgs_InvalidInternalStateFailsClosed (0.00s)
+=== RUN   TestGetBoard_PriorityFilter
+2026/08/19 07:53:22 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestGetBoard_PriorityFilter/filters_by_specific_priority_key
+=== RUN   TestGetBoard_PriorityFilter/filters_real_tier_whose_key_is_none
+=== RUN   TestGetBoard_PriorityFilter/filters_no-priority
+=== RUN   TestGetBoard_PriorityFilter/unmatched_key_returns_empty_board
+=== RUN   TestGetBoard_PriorityFilter/no_filter_returns_all
+=== RUN   TestGetBoard_PriorityFilter/paged_path_combines_priority_tag_and_search
+=== RUN   TestGetBoard_PriorityFilter/paged_path_filters_no-priority
+--- PASS: TestGetBoard_PriorityFilter (0.17s)
+    --- PASS: TestGetBoard_PriorityFilter/filters_by_specific_priority_key (0.00s)
+    --- PASS: TestGetBoard_PriorityFilter/filters_real_tier_whose_key_is_none (0.00s)
+    --- PASS: TestGetBoard_PriorityFilter/filters_no-priority (0.00s)
+    --- PASS: TestGetBoard_PriorityFilter/unmatched_key_returns_empty_board (0.00s)
+    --- PASS: TestGetBoard_PriorityFilter/no_filter_returns_all (0.00s)
+    --- PASS: TestGetBoard_PriorityFilter/paged_path_combines_priority_tag_and_search (0.00s)
+    --- PASS: TestGetBoard_PriorityFilter/paged_path_filters_no-priority (0.00s)
+=== RUN   TestListTodosForBoardLane_PriorityFilter
+2026/08/19 07:53:22 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListTodosForBoardLane_PriorityFilter (0.17s)
+=== RUN   TestGetBoard_NoHang
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_NoHang (0.12s)
+=== RUN   TestParseSortOrder
+=== RUN   TestParseSortOrder/empty
+=== RUN   TestParseSortOrder/whitespace_only
+=== RUN   TestParseSortOrder/newest
+=== RUN   TestParseSortOrder/newest_trims_whitespace
+=== RUN   TestParseSortOrder/oldest
+=== RUN   TestParseSortOrder/uppercase_newest_rejected
+=== RUN   TestParseSortOrder/unknown_value_rejected
+--- PASS: TestParseSortOrder (0.00s)
+    --- PASS: TestParseSortOrder/empty (0.00s)
+    --- PASS: TestParseSortOrder/whitespace_only (0.00s)
+    --- PASS: TestParseSortOrder/newest (0.00s)
+    --- PASS: TestParseSortOrder/newest_trims_whitespace (0.00s)
+    --- PASS: TestParseSortOrder/oldest (0.00s)
+    --- PASS: TestParseSortOrder/uppercase_newest_rejected (0.00s)
+    --- PASS: TestParseSortOrder/unknown_value_rejected (0.00s)
+=== RUN   TestGetBoard_SortOrder
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestGetBoard_SortOrder/default_preserves_manual_rank_order
+=== RUN   TestGetBoard_SortOrder/newest_first_orders_by_created_at_desc
+=== RUN   TestGetBoard_SortOrder/oldest_first_orders_by_created_at_asc
+=== RUN   TestGetBoard_SortOrder/paged_fast_path_matches_sort_order
+--- PASS: TestGetBoard_SortOrder (0.17s)
+    --- PASS: TestGetBoard_SortOrder/default_preserves_manual_rank_order (0.00s)
+    --- PASS: TestGetBoard_SortOrder/newest_first_orders_by_created_at_desc (0.00s)
+    --- PASS: TestGetBoard_SortOrder/oldest_first_orders_by_created_at_asc (0.00s)
+    --- PASS: TestGetBoard_SortOrder/paged_fast_path_matches_sort_order (0.00s)
+=== RUN   TestListTodosForBoardLane_SortOrderPagination
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestListTodosForBoardLane_SortOrderPagination/newest_first_paginates_without_dup/gap
+=== RUN   TestListTodosForBoardLane_SortOrderPagination/oldest_first_paginates_without_dup/gap
+=== RUN   TestListTodosForBoardLane_SortOrderPagination/default_rank_order_paginates_without_dup/gap
+--- PASS: TestListTodosForBoardLane_SortOrderPagination (0.16s)
+    --- PASS: TestListTodosForBoardLane_SortOrderPagination/newest_first_paginates_without_dup/gap (0.00s)
+    --- PASS: TestListTodosForBoardLane_SortOrderPagination/oldest_first_paginates_without_dup/gap (0.00s)
+    --- PASS: TestListTodosForBoardLane_SortOrderPagination/default_rank_order_paginates_without_dup/gap (0.00s)
+=== RUN   TestGetBoard_SearchMatchesTitle
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_SearchMatchesTitle (0.13s)
+=== RUN   TestGetBoard_SearchMatchesBody
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_SearchMatchesBody (0.11s)
+=== RUN   TestGetBoard_SearchCaseInsensitive
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_SearchCaseInsensitive (0.13s)
+=== RUN   TestGetBoard_SearchSubstringOnly
+2026/08/19 07:53:23 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_SearchSubstringOnly (0.12s)
+=== RUN   TestGetBoard_TagAndSearchAND
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_TagAndSearchAND (0.17s)
+=== RUN   TestParseLaneCursor
+--- PASS: TestParseLaneCursor (0.00s)
+=== RUN   TestListTodosForBoardLane_Pagination
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListTodosForBoardLane_Pagination (0.14s)
+=== RUN   TestListTodosForBoardLane_PaginationBoundaryContract
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListTodosForBoardLane_PaginationBoundaryContract (0.13s)
+=== RUN   TestListTodosForBoardLane_TagFilterPaginationInvariants
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListTodosForBoardLane_TagFilterPaginationInvariants (0.17s)
+=== RUN   TestListTodosForBoardLane_TagFilter
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListTodosForBoardLane_TagFilter (0.17s)
+=== RUN   TestGetBoardPaged_ReturnsColumnsMeta
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoardPaged_ReturnsColumnsMeta (0.15s)
+=== RUN   TestUpdateProjectAgendaSettingsTimezoneChangeDeletesSnapshot
+2026/08/19 07:53:24 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectAgendaSettingsTimezoneChangeDeletesSnapshot (0.16s)
+=== RUN   TestUpdateProjectAgendaSettingsTimezoneChangeRollsBackWhenSnapshotDeleteFails
+2026/08/19 07:53:25 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectAgendaSettingsTimezoneChangeRollsBackWhenSnapshotDeleteFails (0.17s)
+=== RUN   TestUpdateCalendarSourceURLChangeDeletesSnapshot
+2026/08/19 07:53:25 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateCalendarSourceURLChangeDeletesSnapshot (0.16s)
+=== RUN   TestUpdateCalendarSourceURLChangeRollsBackWhenSnapshotDeleteFails
+2026/08/19 07:53:25 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateCalendarSourceURLChangeRollsBackWhenSnapshotDeleteFails (0.16s)
+=== RUN   TestUpdateProjectBoardSettingsInvalidTimezoneLeavesSprintFieldsUnchanged
+2026/08/19 07:53:25 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectBoardSettingsInvalidTimezoneLeavesSprintFieldsUnchanged (0.17s)
+=== RUN   TestUpdateProjectBoardSettingsUnchangedSprintSkipsAudit
+2026/08/19 07:53:25 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectBoardSettingsUnchangedSprintSkipsAudit (0.16s)
+=== RUN   TestUpdateProjectBoardSettingsTimezoneChangeDeletesSnapshot
+2026/08/19 07:53:25 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectBoardSettingsTimezoneChangeDeletesSnapshot (0.16s)
+=== RUN   TestCalendarFeedSnapshotUpsertTouchAndLastGood
+2026/08/19 07:53:26 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCalendarFeedSnapshotUpsertTouchAndLastGood (0.18s)
+=== RUN   TestDeleteCalendarFeedSnapshotsSourceAndProject
+2026/08/19 07:53:26 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteCalendarFeedSnapshotsSourceAndProject (0.18s)
+=== RUN   TestCalendarFeedSnapshotWritesRequireCurrentConfig
+2026/08/19 07:53:26 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCalendarFeedSnapshotWritesRequireCurrentConfig (0.16s)
+=== RUN   TestConcurrentCalendarSourceCreateAtLimitReturnsDomainError
+2026/08/19 07:53:26 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:26 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentCalendarSourceCreateAtLimitReturnsDomainError (0.21s)
+=== RUN   TestCalendarSourceEncryptDecryptAndUniqueness
+2026/08/19 07:53:26 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCalendarSourceEncryptDecryptAndUniqueness (0.20s)
+=== RUN   TestCalendarSourceHostKindFenceDoesNotBumpUpdatedAt
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCalendarSourceHostKindFenceDoesNotBumpUpdatedAt (0.19s)
+=== RUN   TestEncryptSecretWithoutKey
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestEncryptSecretWithoutKey (0.11s)
+=== RUN   TestCalendarSourceEncryptSecretUsesAESGCMFraming
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCalendarSourceEncryptSecretUsesAESGCMFraming (0.12s)
+=== RUN   TestProjectAgendaColorPersistsAndValidates
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectAgendaColorPersistsAndValidates (0.15s)
+=== RUN   TestUpdateProjectAgendaSettingsRejectsInvalidIANATimezone
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectAgendaSettingsRejectsInvalidIANATimezone (0.18s)
+=== RUN   TestClaimTemporaryBoard_ExpiredNotClaimable_StoreEnforcesCondition
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestClaimTemporaryBoard_ExpiredNotClaimable_StoreEnforcesCondition (0.17s)
+=== RUN   TestClaimTemporaryBoard_PromotesExistingMembershipToMaintainer
+2026/08/19 07:53:27 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestClaimTemporaryBoard_PromotesExistingMembershipToMaintainer (0.16s)
+=== RUN   TestCountTodosByColumnKey_EmptyProject
+2026/08/19 07:53:28 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCountTodosByColumnKey_EmptyProject (0.13s)
+=== RUN   TestCountTodosByColumnKey_MultipleLanes
+2026/08/19 07:53:28 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCountTodosByColumnKey_MultipleLanes (0.12s)
+=== RUN   TestCountTodosByColumnKey_MissingKeyMeansZero
+2026/08/19 07:53:28 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCountTodosByColumnKey_MissingKeyMeansZero (0.12s)
+=== RUN   TestDashboardSummary_CustomDoneKey
+2026/08/19 07:53:28 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDashboardSummary_CustomDoneKey (0.19s)
+=== RUN   TestDashboardSummary_CustomWIPKeys_AllNonDoneCountAsWipWithoutLegacySplit
+2026/08/19 07:53:28 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDashboardSummary_CustomWIPKeys_AllNonDoneCountAsWipWithoutLegacySplit (0.15s)
+=== RUN   TestDashboardSummary_DefaultWIPKeys_PreserveLegacySplit
+2026/08/19 07:53:28 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDashboardSummary_DefaultWIPKeys_PreserveLegacySplit (0.16s)
+=== RUN   TestDashboardSummary_UnassignedTodoExcludedEvenInActiveSprint
+2026/08/19 07:53:29 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDashboardSummary_UnassignedTodoExcludedEvenInActiveSprint (0.19s)
+=== RUN   TestDashboardSummary_AssignedTodoInActiveSprintCountsAsSprint
+2026/08/19 07:53:29 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDashboardSummary_AssignedTodoInActiveSprintCountsAsSprint (0.15s)
+=== RUN   TestDashboardSummary_AssignedTodoInPlannedSprintCountsAsBacklog
+2026/08/19 07:53:29 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDashboardSummary_AssignedTodoInPlannedSprintCountsAsBacklog (0.16s)
+=== RUN   TestListDashboardTodos_CustomDoneKeyExcludesDone
+2026/08/19 07:53:29 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListDashboardTodos_CustomDoneKeyExcludesDone (0.23s)
+=== RUN   TestListDashboardTodos_BoardOrderByProjectID
+2026/08/19 07:53:29 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListDashboardTodos_BoardOrderByProjectID (0.15s)
+=== RUN   TestListDashboardTodos_BoardOrderLanesAndRankTiebreaker
+2026/08/19 07:53:29 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListDashboardTodos_BoardOrderLanesAndRankTiebreaker (0.17s)
+=== RUN   TestListDashboardTodos_BoardCursorRoundTrip
+2026/08/19 07:53:30 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListDashboardTodos_BoardCursorRoundTrip (0.19s)
+=== RUN   TestListDashboardTodos_CursorSortMismatch
+2026/08/19 07:53:30 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListDashboardTodos_CursorSortMismatch (0.17s)
+=== RUN   TestGetDefaultBoardOrgSetting_UnsetIsNotCustomized
+2026/08/19 07:53:30 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetDefaultBoardOrgSetting_UnsetIsNotCustomized (0.12s)
+=== RUN   TestSetDefaultBoardOrgSetting_RequiresAdminOrOwner
+2026/08/19 07:53:30 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_RequiresAdminOrOwner (0.21s)
+=== RUN   TestSetDefaultBoardOrgSetting_AdminWithoutProjectMembershipRejected
+2026/08/19 07:53:30 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_AdminWithoutProjectMembershipRejected (0.22s)
+=== RUN   TestSetDefaultBoardOrgSetting_AdminWhoIsMaintainerSucceeds
+2026/08/19 07:53:30 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_AdminWhoIsMaintainerSucceeds (0.21s)
+=== RUN   TestSetDefaultBoardOrgSetting_RejectsMissingProject
+2026/08/19 07:53:31 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_RejectsMissingProject (0.15s)
+=== RUN   TestSetDefaultBoardOrgSetting_RejectsTemporaryBoard
+2026/08/19 07:53:31 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_RejectsTemporaryBoard (0.17s)
+=== RUN   TestSetDefaultBoardOrgSetting_RejectsAnonymousBoard
+2026/08/19 07:53:31 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_RejectsAnonymousBoard (0.22s)
+=== RUN   TestCreateUser_SeedsDefaultBoardMembership
+2026/08/19 07:53:31 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_SeedsDefaultBoardMembership (0.19s)
+=== RUN   TestCreateUser_NoDefaultBoardConfiguredSeedsNothing
+2026/08/19 07:53:31 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_NoDefaultBoardConfiguredSeedsNothing (0.21s)
+=== RUN   TestCreateUser_ExistingUsersUnaffectedByLaterDefaultBoardChange
+2026/08/19 07:53:32 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_ExistingUsersUnaffectedByLaterDefaultBoardChange (0.28s)
+=== RUN   TestCreateUserOIDC_SeedsDefaultBoardMembership
+2026/08/19 07:53:32 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUserOIDC_SeedsDefaultBoardMembership (0.16s)
+=== RUN   TestCreateUserOIDC_SeedsDefaultBoardMembershipAtConfiguredRole
+2026/08/19 07:53:32 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUserOIDC_SeedsDefaultBoardMembershipAtConfiguredRole (0.22s)
+=== RUN   TestBootstrapUser_NotSeededIntoDefaultBoard
+2026/08/19 07:53:32 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBootstrapUser_NotSeededIntoDefaultBoard (0.16s)
+=== RUN   TestCreateUser_DeletedDefaultBoardProjectSkipsSeedingWithoutFailingCreation
+2026/08/19 07:53:32 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_DeletedDefaultBoardProjectSkipsSeedingWithoutFailingCreation (0.21s)
+=== RUN   TestCreateUser_StaleNonDurableDefaultBoardSkipsSeeding
+2026/08/19 07:53:33 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_StaleNonDurableDefaultBoardSkipsSeeding (0.21s)
+=== RUN   TestCreateUser_SeedsDefaultBoardMembershipAtConfiguredRole
+2026/08/19 07:53:33 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_SeedsDefaultBoardMembershipAtConfiguredRole (0.20s)
+=== RUN   TestSetDefaultBoardOrgSetting_RejectsInvalidRole
+2026/08/19 07:53:33 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_RejectsInvalidRole (0.17s)
+=== RUN   TestSetDefaultBoardOrgSetting_RejectsDeprecatedRoles
+2026/08/19 07:53:33 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetDefaultBoardOrgSetting_RejectsDeprecatedRoles (0.14s)
+=== RUN   TestClearDefaultBoardOrgSetting_ResetsRoleToViewerFallback
+2026/08/19 07:53:33 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestClearDefaultBoardOrgSetting_ResetsRoleToViewerFallback (0.18s)
+=== RUN   TestDoneAt_MoveTodo_IntoDONE
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDoneAt_MoveTodo_IntoDONE (0.11s)
+=== RUN   TestDoneAt_MoveTodo_DONEtoDONE_NoChange
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDoneAt_MoveTodo_DONEtoDONE_NoChange (0.13s)
+=== RUN   TestDoneAt_MoveTodo_ReopenPreserves
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDoneAt_MoveTodo_ReopenPreserves (0.14s)
+=== RUN   TestDoneAt_CreateTodo_StatusDone
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDoneAt_CreateTodo_StatusDone (0.13s)
+=== RUN   TestParseEmailNotifyPref
+=== RUN   TestParseEmailNotifyPref/unset
+=== RUN   TestParseEmailNotifyPref/empty_object
+=== RUN   TestParseEmailNotifyPref/missing_version_migrates_without_creator_opt_in
+=== RUN   TestParseEmailNotifyPref/partial_v1_migrates_without_creator_opt_in
+=== RUN   TestParseEmailNotifyPref/numeric_v1
+=== RUN   TestParseEmailNotifyPref/explicit_false
+=== RUN   TestParseEmailNotifyPref/complete_v1_migrates
+=== RUN   TestParseEmailNotifyPref/v2_explicit_creator_opt_in
+=== RUN   TestParseEmailNotifyPref/v2_absent_creator_remains_disabled
+--- PASS: TestParseEmailNotifyPref (0.00s)
+    --- PASS: TestParseEmailNotifyPref/unset (0.00s)
+    --- PASS: TestParseEmailNotifyPref/empty_object (0.00s)
+    --- PASS: TestParseEmailNotifyPref/missing_version_migrates_without_creator_opt_in (0.00s)
+    --- PASS: TestParseEmailNotifyPref/partial_v1_migrates_without_creator_opt_in (0.00s)
+    --- PASS: TestParseEmailNotifyPref/numeric_v1 (0.00s)
+    --- PASS: TestParseEmailNotifyPref/explicit_false (0.00s)
+    --- PASS: TestParseEmailNotifyPref/complete_v1_migrates (0.00s)
+    --- PASS: TestParseEmailNotifyPref/v2_explicit_creator_opt_in (0.00s)
+    --- PASS: TestParseEmailNotifyPref/v2_absent_creator_remains_disabled (0.00s)
+=== RUN   TestParseEmailNotifyPrefRejectsInvalidJSON
+--- PASS: TestParseEmailNotifyPrefRejectsInvalidJSON (0.00s)
+=== RUN   TestEmailNotifyPrefCanonicalJSON
+--- PASS: TestEmailNotifyPrefCanonicalJSON (0.00s)
+=== RUN   TestValidateEmailNotifyPrefJSON
+--- PASS: TestValidateEmailNotifyPrefJSON (0.00s)
+=== RUN   TestListProjects_IncludesAuthenticatedTemporaryBoardForInvitedMember
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListProjects_IncludesAuthenticatedTemporaryBoardForInvitedMember (0.21s)
+=== RUN   TestListProjects_ExcludesAnonymousTemporaryBoardEvenWithOrphanMembership
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestListProjects_ExcludesAnonymousTemporaryBoardEvenWithOrphanMembership (0.22s)
+=== RUN   TestUpdateProjectMemberRole_MaintainerPromotesContributor
+2026/08/19 07:53:34 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_MaintainerPromotesContributor (0.24s)
+=== RUN   TestUpdateProjectMemberRole_MaintainerDemotesOtherMaintainer
+2026/08/19 07:53:35 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_MaintainerDemotesOtherMaintainer (0.26s)
+=== RUN   TestUpdateProjectMemberRole_CannotDemoteSelf
+2026/08/19 07:53:35 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_CannotDemoteSelf (0.25s)
+=== RUN   TestUpdateProjectMemberRole_ContributorUnauthorized
+2026/08/19 07:53:35 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_ContributorUnauthorized (0.26s)
+=== RUN   TestUpdateProjectMemberRole_TargetNotMember
+2026/08/19 07:53:35 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_TargetNotMember (0.30s)
+=== RUN   TestUpdateProjectMemberRole_InvalidRole
+2026/08/19 07:53:36 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_InvalidRole (0.22s)
+=== RUN   TestUpdateProjectMemberRole_DemoteToViewer
+2026/08/19 07:53:36 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_DemoteToViewer (0.22s)
+=== RUN   TestUpdateProjectMemberRole_LastMaintainerCannotDemoteToViewer
+2026/08/19 07:53:36 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_LastMaintainerCannotDemoteToViewer (0.23s)
+=== RUN   TestUpdateProjectMemberRole_NoOpUnchanged
+2026/08/19 07:53:36 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectMemberRole_NoOpUnchanged (0.23s)
+=== RUN   TestRedeemOAuthAuthCodeFailedValidationDoesNotBurnGrant
+2026/08/19 07:53:37 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRedeemOAuthAuthCodeFailedValidationDoesNotBurnGrant (0.14s)
+=== RUN   TestConsumeOAuthRefreshTokenFailedValidationDoesNotBurnGrant
+2026/08/19 07:53:37 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConsumeOAuthRefreshTokenFailedValidationDoesNotBurnGrant (0.13s)
+=== RUN   TestOAuthAccessTokenRequiresExpectedResource
+2026/08/19 07:53:37 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestOAuthAccessTokenRequiresExpectedResource (0.15s)
+=== RUN   TestConcurrentOAuthRedemptionAllowsExactlyOneSuccess
+2026/08/19 07:53:37 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestConcurrentOAuthRedemptionAllowsExactlyOneSuccess/authorization_code
+=== RUN   TestConcurrentOAuthRedemptionAllowsExactlyOneSuccess/refresh_token
+--- PASS: TestConcurrentOAuthRedemptionAllowsExactlyOneSuccess (0.15s)
+    --- PASS: TestConcurrentOAuthRedemptionAllowsExactlyOneSuccess/authorization_code (0.00s)
+    --- PASS: TestConcurrentOAuthRedemptionAllowsExactlyOneSuccess/refresh_token (0.00s)
+=== RUN   TestRedeemOAuthAuthCodeAndIssueRollsBackWhenTokenInsertFails
+2026/08/19 07:53:37 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRedeemOAuthAuthCodeAndIssueRollsBackWhenTokenInsertFails (0.14s)
+=== RUN   TestConsumeOAuthRefreshTokenAndIssueRollsBackWhenTokenInsertFails
+2026/08/19 07:53:37 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConsumeOAuthRefreshTokenAndIssueRollsBackWhenTokenInsertFails (0.15s)
+=== RUN   TestDeleteExpiredOAuthArtifacts
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteExpiredOAuthArtifacts (0.16s)
+=== RUN   TestMoveTodo_ReorderWithinColumn
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_ReorderWithinColumn (0.15s)
+=== RUN   TestMoveTodo_MoveAcrossColumns
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_MoveAcrossColumns (0.11s)
+=== RUN   TestMoveTodo_RebalanceWhenGapTooSmall
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_RebalanceWhenGapTooSmall (0.12s)
+=== RUN   TestMoveTodo_MoveToTopRepeatedly_NoNegativeRank
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_MoveToTopRepeatedly_NoNegativeRank (0.11s)
+=== RUN   TestMoveTodo_MoveToTopProducesPositiveRank
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_MoveToTopProducesPositiveRank (0.10s)
+=== RUN   TestMoveTodo_FilteredVisibleSameColumn
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_FilteredVisibleSameColumn (0.11s)
+=== RUN   TestMoveTodo_FilteredTopBoundaryAcrossColumns
+2026/08/19 07:53:38 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_FilteredTopBoundaryAcrossColumns (0.13s)
+=== RUN   TestMoveTodo_FilteredBottomBoundaryWithinColumn
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_FilteredBottomBoundaryWithinColumn (0.13s)
+=== RUN   TestMoveTodo_FilteredBottomBoundaryAcrossColumns
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_FilteredBottomBoundaryAcrossColumns (0.12s)
+=== RUN   TestMoveTodo_FilteredMoveToEmptyTargetColumn
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_FilteredMoveToEmptyTargetColumn (0.12s)
+=== RUN   TestCreateUser_UnsetOrgDefault_CreatesNoRow
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_UnsetOrgDefault_CreatesNoRow (0.20s)
+=== RUN   TestCreateUser_OrgDefaultSet_SeedsOrgDefaultProvenance
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_OrgDefaultSet_SeedsOrgDefaultProvenance (0.18s)
+=== RUN   TestSetUserPreference_FlipsInheritedRowToUser
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetUserPreference_FlipsInheritedRowToUser (0.22s)
+=== RUN   TestClearEmailNotifyOrgDefault_ResetsAndLeavesUsersUntouched
+2026/08/19 07:53:39 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestClearEmailNotifyOrgDefault_ResetsAndLeavesUsersUntouched (0.22s)
+=== RUN   TestBootstrapUser_CreatesNoRow
+2026/08/19 07:53:40 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBootstrapUser_CreatesNoRow (0.19s)
+=== RUN   TestCreateUserOIDC_UnsetOrgDefault_CreatesNoRow
+2026/08/19 07:53:40 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUserOIDC_UnsetOrgDefault_CreatesNoRow (0.16s)
+=== RUN   TestCreateUser_CorruptOrgDefault_SkipsSeedingWithoutFailing
+2026/08/19 07:53:40 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_CorruptOrgDefault_SkipsSeedingWithoutFailing (0.21s)
+=== RUN   TestCreateUser_ExplicitColumnTrigger_NoOverrideSucceeds
+2026/08/19 07:53:40 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_ExplicitColumnTrigger_NoOverrideSucceeds (0.20s)
+=== RUN   TestCreateUser_ExplicitColumnTrigger_OverrideWins
+2026/08/19 07:53:40 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_ExplicitColumnTrigger_OverrideWins (0.19s)
+=== RUN   TestCreateUser_OrgDefaultQueryErrorIsReturned
+2026/08/19 07:53:41 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_OrgDefaultQueryErrorIsReturned (0.21s)
+=== RUN   TestOrgDefaultChange_LeavesUserAndLegacyRowsUntouched
+2026/08/19 07:53:41 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestOrgDefaultChange_LeavesUserAndLegacyRowsUntouched (0.23s)
+=== RUN   TestGetEmailNotifyOrgDefault_UnsetFallsBackToHardcodedDefault
+2026/08/19 07:53:41 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetEmailNotifyOrgDefault_UnsetFallsBackToHardcodedDefault (0.13s)
+=== RUN   TestSetEmailNotifyOrgDefault_RequiresAdminOrOwner
+2026/08/19 07:53:41 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetEmailNotifyOrgDefault_RequiresAdminOrOwner (0.20s)
+=== RUN   TestSetEmailNotifyOrgDefault_RejectsInvalidJSON
+2026/08/19 07:53:41 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetEmailNotifyOrgDefault_RejectsInvalidJSON (0.15s)
+=== RUN   TestCreateUser_SeedsCurrentOrgDefault
+2026/08/19 07:53:42 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_SeedsCurrentOrgDefault (0.22s)
+=== RUN   TestCreateUser_ExistingUsersUnaffectedByLaterOrgDefaultChange
+2026/08/19 07:53:42 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUser_ExistingUsersUnaffectedByLaterOrgDefaultChange (0.24s)
+=== RUN   TestCreateUserOIDC_SeedsCurrentOrgDefault
+2026/08/19 07:53:42 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateUserOIDC_SeedsCurrentOrgDefault (0.16s)
+=== RUN   TestBootstrapUser_NotSeededFromOrgDefault
+2026/08/19 07:53:42 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBootstrapUser_NotSeededFromOrgDefault (0.15s)
+=== RUN   TestSetUserPreference_TagColors_RejectsInvalid
+2026/08/19 07:53:42 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetUserPreference_TagColors_RejectsInvalid (0.16s)
+=== RUN   TestSetUserPreference_CardsPerLane_AllowlistOnly
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetUserPreference_CardsPerLane_AllowlistOnly (0.15s)
+=== RUN   TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid (0.16s)
+=== RUN   TestConcurrentPriorityCreateAllocatesDistinctKeysAndPositions
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentPriorityCreateAllocatesDistinctKeysAndPositions (0.18s)
+=== RUN   TestConcurrentPriorityCreateAtLimitReturnsDomainError
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentPriorityCreateAtLimitReturnsDomainError (0.17s)
+=== RUN   TestConcurrentPriorityDeleteVersusTodoAssignmentIsLinear
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentPriorityDeleteVersusTodoAssignmentIsLinear (0.19s)
+=== RUN   TestConcurrentPriorityDeleteVersusUpdateIsLinear
+2026/08/19 07:53:43 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentPriorityDeleteVersusUpdateIsLinear (0.22s)
+=== RUN   TestConcurrentPriorityDeletesRemainContiguous
+=== RUN   TestConcurrentPriorityDeletesRemainContiguous/same_tier
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestConcurrentPriorityDeletesRemainContiguous/different_tiers
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentPriorityDeletesRemainContiguous (0.35s)
+    --- PASS: TestConcurrentPriorityDeletesRemainContiguous/same_tier (0.17s)
+    --- PASS: TestConcurrentPriorityDeletesRemainContiguous/different_tiers (0.17s)
+=== RUN   TestImportPriorityConcurrentAssignmentIsLinear
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportPriorityConcurrentAssignmentIsLinear (0.18s)
+=== RUN   TestCreateProject_SeedsDefaultPriorities
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateProject_SeedsDefaultPriorities (0.09s)
+=== RUN   TestCreateAnonymousBoardPrioritySeedFailureRollsBackProjectAndAudit
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateAnonymousBoardPrioritySeedFailureRollsBackProjectAndAudit (0.11s)
+=== RUN   TestPriorityTierValidationLimits
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestPriorityTierValidationLimits (0.15s)
+=== RUN   TestGetProjectPriorities_IsReadOnlyWhenDefinitionsAreMissing
+2026/08/19 07:53:44 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetProjectPriorities_IsReadOnlyWhenDefinitionsAreMissing (0.12s)
+=== RUN   TestAddPriorityTier_AppendsAtEnd
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddPriorityTier_AppendsAtEnd (0.11s)
+=== RUN   TestAddPriorityTier_RejectsEmptyName
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddPriorityTier_RejectsEmptyName (0.12s)
+=== RUN   TestUpdatePriorityTier_ChangesNameAndColor
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdatePriorityTier_ChangesNameAndColor (0.14s)
+=== RUN   TestUpdatePriorityTier_RejectsInvalidColor
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdatePriorityTier_RejectsInvalidColor (0.12s)
+=== RUN   TestUpdatePriorityTier_NotFound
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdatePriorityTier_NotFound (0.11s)
+=== RUN   TestDeletePriorityTier_ResequencesPositions
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeletePriorityTier_ResequencesPositions (0.12s)
+=== RUN   TestDeletePriorityTier_BlockedWhenInUse
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeletePriorityTier_BlockedWhenInUse (0.13s)
+=== RUN   TestDeletePriorityTier_BlockedWhenLastTier
+2026/08/19 07:53:45 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeletePriorityTier_BlockedWhenLastTier (0.13s)
+=== RUN   TestDeletePriorityTier_NotFound
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeletePriorityTier_NotFound (0.11s)
+=== RUN   TestCreateTodo_ValidatesPriorityKey
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateTodo_ValidatesPriorityKey (0.13s)
+=== RUN   TestUpdateTodoByLocalID_ChangesPriorityKey
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateTodoByLocalID_ChangesPriorityKey (0.14s)
+=== RUN   TestUpdateTodo_ValidatesPriorityKey
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateTodo_ValidatesPriorityKey (0.12s)
+=== RUN   TestCreateAnonymousBoard_InitialExpiresAt90Days
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateAnonymousBoard_InitialExpiresAt90Days (0.14s)
+=== RUN   TestDeleteProject_AnonymousTempBoard_Blocked
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteProject_AnonymousTempBoard_Blocked (0.17s)
+=== RUN   TestDeleteProject_ReturnsCommittedNotificationSnapshot
+2026/08/19 07:53:46 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteProject_ReturnsCommittedNotificationSnapshot (0.22s)
+=== RUN   TestExpiredTemporaryProject_BoardReadDenied
+2026/08/19 07:53:47 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExpiredTemporaryProject_BoardReadDenied (0.14s)
+=== RUN   TestExpiredTemporaryProject_TodoCreateDenied
+2026/08/19 07:53:47 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestExpiredTemporaryProject_TodoCreateDenied (0.18s)
+=== RUN   TestDeleteExpiredProjects_AuthenticatedTempBoard
+2026/08/19 07:53:47 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteExpiredProjects_AuthenticatedTempBoard (0.16s)
+=== RUN   TestDeleteExpiredProjects_AuditEventsMayRemain
+2026/08/19 07:53:47 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteExpiredProjects_AuditEventsMayRemain (0.15s)
+=== RUN   TestDeleteExpiredProjects_CascadesTodos
+2026/08/19 07:53:47 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteExpiredProjects_CascadesTodos (0.17s)
+=== RUN   TestImportReplace_ForbiddenInAnonymousMode
+2026/08/19 07:53:47 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportReplace_ForbiddenInAnonymousMode (0.12s)
+=== RUN   TestCheckCanManageProject_durableMaintainerAllowed
+2026/08/19 07:53:48 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCheckCanManageProject_durableMaintainerAllowed (0.16s)
+=== RUN   TestCheckCanManageProject_durableViewerForbidden
+2026/08/19 07:53:48 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCheckCanManageProject_durableViewerForbidden (0.22s)
+=== RUN   TestCheckCanManageProject_durableNonMemberNotFound
+2026/08/19 07:53:48 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCheckCanManageProject_durableNonMemberNotFound (0.20s)
+=== RUN   TestCheckCanManageProject_temporaryBoardOwnerAllowed
+2026/08/19 07:53:48 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCheckCanManageProject_temporaryBoardOwnerAllowed (0.19s)
+=== RUN   TestCheckCanManageProject_temporaryBoardOtherUserForbidden
+2026/08/19 07:53:48 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCheckCanManageProject_temporaryBoardOtherUserForbidden (0.26s)
+=== RUN   TestCheckCanManageProject_anonymousBoardNotFound
+2026/08/19 07:53:49 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCheckCanManageProject_anonymousBoardNotFound (0.19s)
+=== RUN   TestUpdateProjectPatch_temporaryBoardOwnerSuccess
+2026/08/19 07:53:49 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectPatch_temporaryBoardOwnerSuccess (0.18s)
+=== RUN   TestDeleteProject_temporaryBoardOwnerSuccess
+2026/08/19 07:53:49 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteProject_temporaryBoardOwnerSuccess (0.16s)
+=== RUN   TestUpdateProjectName_temporaryBoardOwnerSuccess
+2026/08/19 07:53:49 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectName_temporaryBoardOwnerSuccess (0.19s)
+=== RUN   TestUpdateProjectName_temporaryBoardNonOwnerForbidden
+2026/08/19 07:53:49 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectName_temporaryBoardNonOwnerForbidden (0.21s)
+=== RUN   TestUpdateProjectName_anonymousBoardRenameUnchanged
+2026/08/19 07:53:49 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectName_anonymousBoardRenameUnchanged (0.14s)
+=== RUN   TestUpdateProjectImage_temporaryBoardOwnerSuccess
+2026/08/19 07:53:50 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectImage_temporaryBoardOwnerSuccess (0.18s)
+=== RUN   TestUpdateProjectImage_temporaryBoardNonOwnerForbidden
+2026/08/19 07:53:50 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectImage_temporaryBoardNonOwnerForbidden (0.20s)
+=== RUN   TestUpdateProjectImage_anonymousBoardNotFound
+2026/08/19 07:53:50 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectImage_anonymousBoardNotFound (0.15s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_temporaryBoardOwnerSuccess
+2026/08/19 07:53:50 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_temporaryBoardOwnerSuccess (0.18s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_temporaryBoardNonOwnerForbidden
+2026/08/19 07:53:50 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_temporaryBoardNonOwnerForbidden (0.21s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_anonymousBoardNotFound
+2026/08/19 07:53:51 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_anonymousBoardNotFound (0.16s)
+=== RUN   TestUpdateProjectName_durableViewerForbidden
+2026/08/19 07:53:51 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectName_durableViewerForbidden (0.21s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_temporaryBoardNonOwnerInvalidWeeksForbidden
+2026/08/19 07:53:51 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_temporaryBoardNonOwnerInvalidWeeksForbidden (0.21s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_durableNonMemberInvalidWeeksNotFound
+2026/08/19 07:53:51 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_durableNonMemberInvalidWeeksNotFound (0.19s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_temporaryBoardOwnerInvalidWeeksValidation
+2026/08/19 07:53:51 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_temporaryBoardOwnerInvalidWeeksValidation (0.15s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_durableMaintainerInvalidWeeksValidation
+2026/08/19 07:53:51 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_durableMaintainerInvalidWeeksValidation (0.16s)
+=== RUN   TestUpdateProjectDefaultSprintWeeks_durableMaintainerValidWeeksSuccess
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectDefaultSprintWeeks_durableMaintainerValidWeeksSuccess (0.16s)
+=== RUN   TestUpdateProjectPatch_twoFieldsSuccess
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectPatch_twoFieldsSuccess (0.15s)
+=== RUN   TestUpdateProjectPatch_invalidWeeksLeavesNameUnchanged
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateProjectPatch_invalidWeeksLeavesNameUnchanged (0.16s)
+=== RUN   TestGenerateSlugFromName
+=== PAUSE TestGenerateSlugFromName
+=== RUN   TestCreateProject_SlugCollisionAddsSuffix
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateProject_SlugCollisionAddsSuffix (0.11s)
+=== RUN   TestRewriteDurableProjectSlugs_RewritesFromLegacyRandom
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRewriteDurableProjectSlugs_RewritesFromLegacyRandom (0.11s)
+=== RUN   TestSprintDefinitionCreate_InsertRemainsCommittedWhenReturnReadFails
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintDefinitionCreate_InsertRemainsCommittedWhenReturnReadFails (0.11s)
+=== RUN   TestSprintDefinitionStoreOwnsDefinitionValidationByState
+2026/08/19 07:53:52 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintDefinitionStoreOwnsDefinitionValidationByState/create_trims_names_and_rejects_duplicates_and_reversed_dates
+=== RUN   TestSprintDefinitionStoreOwnsDefinitionValidationByState/active_allows_only_planned_end
+=== RUN   TestSprintDefinitionStoreOwnsDefinitionValidationByState/closed_allows_only_name
+--- PASS: TestSprintDefinitionStoreOwnsDefinitionValidationByState (0.12s)
+    --- PASS: TestSprintDefinitionStoreOwnsDefinitionValidationByState/create_trims_names_and_rejects_duplicates_and_reversed_dates (0.00s)
+    --- PASS: TestSprintDefinitionStoreOwnsDefinitionValidationByState/active_allows_only_planned_end (0.00s)
+    --- PASS: TestSprintDefinitionStoreOwnsDefinitionValidationByState/closed_allows_only_name (0.00s)
+=== RUN   TestSprintLifecycleStoreActivateContract
+=== RUN   TestSprintLifecycleStoreActivateContract/planned_future_succeeds
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreActivateContract/planned_safely_past_fails
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreActivateContract/already_active_is_idempotent
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreActivateContract/closed_and_missing_fail
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreActivateContract/foreign_project_is_validation_and_leaves_target_unchanged
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreActivateContract (0.61s)
+    --- PASS: TestSprintLifecycleStoreActivateContract/planned_future_succeeds (0.13s)
+    --- PASS: TestSprintLifecycleStoreActivateContract/planned_safely_past_fails (0.10s)
+    --- PASS: TestSprintLifecycleStoreActivateContract/already_active_is_idempotent (0.13s)
+    --- PASS: TestSprintLifecycleStoreActivateContract/closed_and_missing_fail (0.13s)
+    --- PASS: TestSprintLifecycleStoreActivateContract/foreign_project_is_validation_and_leaves_target_unchanged (0.12s)
+=== RUN   TestSprintLifecycleStoreActivateReplacesCurrentAtomically
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreActivateReplacesCurrentAtomically (0.12s)
+=== RUN   TestSprintLifecycleStoreActivateRollbackRestoresPriorActive
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreActivateRollbackRestoresPriorActive (0.15s)
+=== RUN   TestSprintLifecycleStoreCloseCurrentContract
+=== RUN   TestSprintLifecycleStoreCloseCurrentContract/active_closes_and_repeat_is_not_found
+2026/08/19 07:53:53 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreCloseCurrentContract/planned_and_missing_are_not_found
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreCloseCurrentContract/foreign_project_is_rejected_by_durable_mutation_authority
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreCloseCurrentContract (0.31s)
+    --- PASS: TestSprintLifecycleStoreCloseCurrentContract/active_closes_and_repeat_is_not_found (0.11s)
+    --- PASS: TestSprintLifecycleStoreCloseCurrentContract/planned_and_missing_are_not_found (0.10s)
+    --- PASS: TestSprintLifecycleStoreCloseCurrentContract/foreign_project_is_rejected_by_durable_mutation_authority (0.10s)
+=== RUN   TestSprintLifecycleStoreDeleteContract
+=== RUN   TestSprintLifecycleStoreDeleteContract/planned
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreDeleteContract/active
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreDeleteContract/closed
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintLifecycleStoreDeleteContract/foreign_and_missing_preserve_target
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreDeleteContract (0.53s)
+    --- PASS: TestSprintLifecycleStoreDeleteContract/planned (0.13s)
+    --- PASS: TestSprintLifecycleStoreDeleteContract/active (0.16s)
+    --- PASS: TestSprintLifecycleStoreDeleteContract/closed (0.11s)
+    --- PASS: TestSprintLifecycleStoreDeleteContract/foreign_and_missing_preserve_target (0.13s)
+=== RUN   TestSprintLifecycleStoreDeleteDetachesTodos
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreDeleteDetachesTodos (0.13s)
+=== RUN   TestSprintLifecycleStoreCanceledActivationDoesNotPartiallyTransition
+2026/08/19 07:53:54 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintLifecycleStoreCanceledActivationDoesNotPartiallyTransition (0.11s)
+=== RUN   TestSprintCapabilitySerializationDisableFirstRejectsSprintMutations
+=== RUN   TestSprintCapabilitySerializationDisableFirstRejectsSprintMutations/create
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintCapabilitySerializationDisableFirstRejectsSprintMutations/update_existing
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintCapabilitySerializationDisableFirstRejectsSprintMutations (0.34s)
+    --- PASS: TestSprintCapabilitySerializationDisableFirstRejectsSprintMutations/create (0.17s)
+    --- PASS: TestSprintCapabilitySerializationDisableFirstRejectsSprintMutations/update_existing (0.17s)
+=== RUN   TestSprintCapabilitySerializationMutationFirstCommitsBeforeDisable
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintCapabilitySerializationMutationFirstCommitsBeforeDisable (0.17s)
+=== RUN   TestSprintCapabilitySerializationDisableFirstRejectsTodoSprintAssignment
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSprintCapabilitySerializationDisableFirstRejectsTodoSprintAssignment (0.14s)
+=== RUN   TestConcurrentSprintCreationAllocatesDistinctNumbers
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestConcurrentSprintCreationAllocatesDistinctNumbers (0.21s)
+=== RUN   TestSprintsDisabledCapabilityIsReversibleAndNonDestructive
+2026/08/19 07:53:55 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_update
+=== RUN   TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_activate
+=== RUN   TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_close
+=== RUN   TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_delete
+=== RUN   TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_create
+--- PASS: TestSprintsDisabledCapabilityIsReversibleAndNonDestructive (0.25s)
+    --- PASS: TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_update (0.00s)
+    --- PASS: TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_activate (0.00s)
+    --- PASS: TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_close (0.00s)
+    --- PASS: TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_delete (0.00s)
+    --- PASS: TestSprintsDisabledCapabilityIsReversibleAndNonDestructive/reject_create (0.00s)
+=== RUN   TestResolveStartupEncryptionKey_InvalidNoUsersAllowed
+2026/08/19 07:53:56 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_InvalidNoUsersAllowed (0.14s)
+=== RUN   TestResolveStartupEncryptionKey_InvalidNormalUserAllowed
+2026/08/19 07:53:56 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_InvalidNormalUserAllowed (0.14s)
+=== RUN   TestResolveStartupEncryptionKey_InvalidWithTwoFactorEnabledFails
+2026/08/19 07:53:56 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_InvalidWithTwoFactorEnabledFails (0.15s)
+=== RUN   TestResolveStartupEncryptionKey_InvalidWithUserSecretFails
+2026/08/19 07:53:56 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_InvalidWithUserSecretFails (0.15s)
+=== RUN   TestResolveStartupEncryptionKey_InvalidWithEnrollmentSecretFails
+2026/08/19 07:53:56 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_InvalidWithEnrollmentSecretFails (0.14s)
+=== RUN   TestResolveStartupEncryptionKey_EmptyWithEncryptedStateFails
+2026/08/19 07:53:56 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_EmptyWithEncryptedStateFails (0.15s)
+=== RUN   TestResolveStartupEncryptionKey_ValidNoEncryptedStateReturned
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_ValidNoEncryptedStateReturned (0.12s)
+=== RUN   TestResolveStartupEncryptionKey_ValidWithEncryptedStateReturned
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_ValidWithEncryptedStateReturned (0.15s)
+=== RUN   TestResolveStartupEncryptionKey_EmptyWithCalendarCiphertextFails
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_EmptyWithCalendarCiphertextFails (0.15s)
+=== RUN   TestResolveStartupEncryptionKey_InvalidWithCalendarCiphertextFails
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_InvalidWithCalendarCiphertextFails (0.17s)
+=== RUN   TestResolveStartupEncryptionKey_EmptyNormalUserAllowed
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestResolveStartupEncryptionKey_EmptyNormalUserAllowed (0.15s)
+=== RUN   TestBurndown_TestingIsIncomplete
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBurndown_TestingIsIncomplete (0.13s)
+=== RUN   TestMoveTodo_ToTesting
+2026/08/19 07:53:57 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestMoveTodo_ToTesting/Backlog_to_Testing
+=== RUN   TestMoveTodo_ToTesting/InProgress_to_Testing
+=== RUN   TestMoveTodo_ToTesting/Testing_to_Done
+--- PASS: TestMoveTodo_ToTesting (0.15s)
+    --- PASS: TestMoveTodo_ToTesting/Backlog_to_Testing (0.01s)
+    --- PASS: TestMoveTodo_ToTesting/InProgress_to_Testing (0.00s)
+    --- PASS: TestMoveTodo_ToTesting/Testing_to_Done (0.00s)
+=== RUN   TestParseStatus_Testing
+--- PASS: TestParseStatus_Testing (0.00s)
+=== RUN   TestGetBoard_IncludesTestingColumn
+2026/08/19 07:53:58 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestGetBoard_IncludesTestingColumn (0.13s)
+=== RUN   TestBurndown_TestingCompletedAfterDay
+2026/08/19 07:53:58 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestBurndown_TestingCompletedAfterDay (0.12s)
+=== RUN   TestStatus_OrderingIsUIOnly
+    status_test.go:344: Status ordering is UI-only, not logical
+    status_test.go:345: ONLY StatusDone means completed
+    status_test.go:346: Use explicit checks: status == StatusDone (not status >= StatusDone)
+--- PASS: TestStatus_OrderingIsUIOnly (0.00s)
+=== RUN   TestSystemRoles_RequireOwner
+2026/08/19 07:53:58 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_RequireOwner (0.20s)
+=== RUN   TestSystemRoles_RequireAdmin
+2026/08/19 07:53:58 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_RequireAdmin (0.24s)
+=== RUN   TestSystemRoles_ListUsers_RequiresAdmin
+2026/08/19 07:53:58 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_ListUsers_RequiresAdmin (0.24s)
+=== RUN   TestSystemRoles_DeleteUser_OwnerOnly
+2026/08/19 07:53:58 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_DeleteUser_OwnerOnly (0.27s)
+=== RUN   TestSystemRoles_DeleteUser_PreventsLastOwnerDeletion
+2026/08/19 07:53:59 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_DeleteUser_PreventsLastOwnerDeletion (0.18s)
+=== RUN   TestSystemRoles_UpdateUserRole_OwnerOnly
+2026/08/19 07:53:59 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_UpdateUserRole_OwnerOnly (0.28s)
+=== RUN   TestSystemRoles_UpdateUserRole_PreventsLastOwnerDemotion
+2026/08/19 07:53:59 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_UpdateUserRole_PreventsLastOwnerDemotion (0.21s)
+=== RUN   TestSystemRoles_CannotDeleteSelf
+2026/08/19 07:53:59 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_CannotDeleteSelf (0.15s)
+=== RUN   TestSystemRoles_Invariant_AlwaysAtLeastOneOwner
+2026/08/19 07:54:00 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestSystemRoles_Invariant_AlwaysAtLeastOneOwner (0.39s)
+=== RUN   TestAnonymousBoard_CreateTodoWithTags
+2026/08/19 07:54:00 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_CreateTodoWithTags (0.11s)
+=== RUN   TestAnonymousBoard_UpdateTodoTags
+2026/08/19 07:54:00 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_UpdateTodoTags (0.16s)
+=== RUN   TestAnonymousBoard_TagIsolation
+2026/08/19 07:54:00 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_TagIsolation (0.15s)
+=== RUN   TestAnonymousBoard_TagColors
+2026/08/19 07:54:00 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_TagColors (0.13s)
+=== RUN   TestUpdateTagColor_RejectsInvalidColor
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateTagColor_RejectsInvalidColor (0.13s)
+=== RUN   TestAnonymousBoard_UpdateUserOwnedTagColorFails
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_UpdateUserOwnedTagColorFails (0.18s)
+=== RUN   TestCreatorOwnedTempBoard_AnonymousUpdatesUserOwnedTagDisplayColor
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreatorOwnedTempBoard_AnonymousUpdatesUserOwnedTagDisplayColor (0.15s)
+=== RUN   TestAnonymousBoard_TagDeletion
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_TagDeletion (0.15s)
+=== RUN   TestDurableBoard_TagsRequireAuth
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDurableBoard_TagsRequireAuth (0.16s)
+=== RUN   TestAuthenticatedUser_ViewsAnonymousBoard
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuthenticatedUser_ViewsAnonymousBoard (0.19s)
+=== RUN   TestTagColorResolution
+2026/08/19 07:54:01 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTagColorResolution (0.20s)
+=== RUN   TestDurableBoard_UserOwnedTagsUnchanged
+2026/08/19 07:54:02 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDurableBoard_UserOwnedTagsUnchanged (0.16s)
+=== RUN   TestAnonymousBoard_DefaultTagsAutoPopulated
+2026/08/19 07:54:02 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAnonymousBoard_DefaultTagsAutoPopulated (0.12s)
+=== RUN   TestAuthenticatedProject_NoDefaultTags
+2026/08/19 07:54:02 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAuthenticatedProject_NoDefaultTags (0.17s)
+=== RUN   TestDeleteTagForDurableProjectByID_RejectsCrossProjectPersonal
+2026/08/19 07:54:02 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_RejectsCrossProjectPersonal (0.16s)
+=== RUN   TestDeleteTagForDurableProjectByID_RejectsForeignBoardScoped
+2026/08/19 07:54:02 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_RejectsForeignBoardScoped (0.17s)
+=== RUN   TestDeleteTagForDurableProjectByID_RejectsNonMember
+2026/08/19 07:54:02 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_RejectsNonMember (0.23s)
+=== RUN   TestDeleteTagForDurableProjectByID_ViewerCannotDeleteBoardScoped
+2026/08/19 07:54:03 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_ViewerCannotDeleteBoardScoped (0.22s)
+=== RUN   TestDeleteTagForDurableProjectByID_MaintainerDeletesBoardScoped
+2026/08/19 07:54:03 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_MaintainerDeletesBoardScoped (0.14s)
+=== RUN   TestDeleteTagForDurableProjectByID_CannotDeleteOthersPersonal
+2026/08/19 07:54:03 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_CannotDeleteOthersPersonal (0.19s)
+=== RUN   TestDeleteTagForDurableProjectByID_OwnCrossProjectPersonalReturnsAllAffected
+2026/08/19 07:54:03 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTagForDurableProjectByID_OwnCrossProjectPersonalReturnsAllAffected (0.15s)
+=== RUN   TestDeleteMyTagByID_ReturnsAllAffectedProjects
+2026/08/19 07:54:03 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteMyTagByID_ReturnsAllAffectedProjects (0.16s)
+=== RUN   TestDeleteMyTagByID_RejectsNonOwner
+2026/08/19 07:54:04 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteMyTagByID_RejectsNonOwner (0.19s)
+=== RUN   TestUpdateMyTagColor_OwnerOnly
+2026/08/19 07:54:04 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateMyTagColor_OwnerOnly (0.18s)
+=== RUN   TestProjectLabels_TwoUsersBugCollapseToOneEntry
+2026/08/19 07:54:04 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_TwoUsersBugCollapseToOneEntry (0.21s)
+=== RUN   TestProjectLabels_LegacyConflictingViewerColorsResolveDeterministically
+2026/08/19 07:54:04 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_LegacyConflictingViewerColorsResolveDeterministically (0.18s)
+=== RUN   TestProjectLabels_ViewerColorSurvivesBackingRowRotation
+2026/08/19 07:54:04 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_ViewerColorSurvivesBackingRowRotation (0.24s)
+=== RUN   TestProjectLabels_ViewerColorIgnoresUnrelatedProjectRows
+2026/08/19 07:54:05 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_ViewerColorIgnoresUnrelatedProjectRows (0.24s)
+=== RUN   TestProjectLabels_HistoricalPersonalColorDoesNotOverridePureBoardGroup
+2026/08/19 07:54:05 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_HistoricalPersonalColorDoesNotOverridePureBoardGroup (0.17s)
+=== RUN   TestProjectLabels_NonOwnerCanSetColorByNameWithoutAffectingOthers
+2026/08/19 07:54:05 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_NonOwnerCanSetColorByNameWithoutAffectingOthers (0.19s)
+=== RUN   TestProjectLabels_DeleteScopeByViewer
+2026/08/19 07:54:05 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_DeleteScopeByViewer (0.19s)
+=== RUN   TestProjectLabels_DeleteMineIsCrossProject
+2026/08/19 07:54:05 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_DeleteMineIsCrossProject (0.17s)
+=== RUN   TestProjectLabels_DeleteMineLeavesGroupWhenAnotherMemberUsesName
+2026/08/19 07:54:06 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_DeleteMineLeavesGroupWhenAnotherMemberUsesName (0.20s)
+=== RUN   TestProjectLabels_BoardScopedAndMixedGroups
+2026/08/19 07:54:06 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_BoardScopedAndMixedGroups (0.16s)
+=== RUN   TestProjectLabels_CrossOwnerCanonicalEquivalence
+2026/08/19 07:54:06 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_CrossOwnerCanonicalEquivalence (0.21s)
+=== RUN   TestProjectLabels_TemporaryBoardKeepsRowLevelProjection
+2026/08/19 07:54:06 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_TemporaryBoardKeepsRowLevelProjection (0.19s)
+=== RUN   TestProjectLabels_NameWritesRequireMembership
+2026/08/19 07:54:06 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_NameWritesRequireMembership (0.20s)
+=== RUN   TestProjectLabels_ReadInclusionUnchanged
+2026/08/19 07:54:06 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_ReadInclusionUnchanged (0.17s)
+=== RUN   TestProjectLabels_CanonicalFilterMatchesGroupedCount
+2026/08/19 07:54:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_CanonicalFilterMatchesGroupedCount (0.25s)
+=== RUN   TestProjectLabels_TemporaryBoardFilterStaysRowLevel
+2026/08/19 07:54:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_TemporaryBoardFilterStaysRowLevel (0.19s)
+=== RUN   TestProjectLabels_UncanonicalizableRowStaysAddressable
+2026/08/19 07:54:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestProjectLabels_UncanonicalizableRowStaysAddressable (0.16s)
+=== RUN   TestUserOwnedTags_CreationRequiresUserAccess
+2026/08/19 07:54:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_CreationRequiresUserAccess (0.15s)
+=== RUN   TestUserOwnedTags_NamesNormalizedToLowercase
+2026/08/19 07:54:07 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_NamesNormalizedToLowercase (0.14s)
+=== RUN   TestUserOwnedTags_UniqueConstraintPreventsDuplicates
+2026/08/19 07:54:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_UniqueConstraintPreventsDuplicates (0.16s)
+=== RUN   TestUserOwnedTags_CanAttachToMultipleProjects
+2026/08/19 07:54:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_CanAttachToMultipleProjects (0.15s)
+=== RUN   TestUserOwnedTags_BoardShowsAllTags
+2026/08/19 07:54:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_BoardShowsAllTags (0.18s)
+=== RUN   TestUserOwnedTags_AutocompleteShowsUserTagsOnly
+2026/08/19 07:54:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_AutocompleteShowsUserTagsOnly (0.21s)
+=== RUN   TestUserOwnedTags_ColorPerViewer
+2026/08/19 07:54:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_ColorPerViewer (0.20s)
+=== RUN   TestUserOwnedTags_DeleteRequiresZeroReferences
+2026/08/19 07:54:08 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_DeleteRequiresZeroReferences (0.15s)
+=== RUN   TestUserOwnedTags_OwnershipPermanent
+2026/08/19 07:54:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_OwnershipPermanent (0.16s)
+=== RUN   TestUserOwnedTags_UsersCanOnlyAttachOwnTags
+2026/08/19 07:54:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_UsersCanOnlyAttachOwnTags (0.18s)
+=== RUN   TestUserOwnedTags_FilteringMatchesByNameAcrossOwners
+2026/08/19 07:54:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_FilteringMatchesByNameAcrossOwners (0.21s)
+=== RUN   TestUserOwnedTags_ProjectTagsIsProjectWide
+2026/08/19 07:54:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_ProjectTagsIsProjectWide (0.18s)
+=== RUN   TestUserOwnedTags_CannotDeleteOtherUsersTags
+2026/08/19 07:54:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_CannotDeleteOtherUsersTags (0.19s)
+=== RUN   TestUserOwnedTags_MaintainerOverrideRequiresAll
+2026/08/19 07:54:09 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_MaintainerOverrideRequiresAll (0.19s)
+=== RUN   TestUserOwnedTags_ListUserTags
+2026/08/19 07:54:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUserOwnedTags_ListUserTags (0.14s)
+=== RUN   TestTodoCreatorAttributionCreationSemantics
+2026/08/19 07:54:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestTodoCreatorAttributionCreationSemantics/authenticated_durable_creation_records_actor
+=== RUN   TestTodoCreatorAttributionCreationSemantics/authenticated_temporary_creation_records_actor
+=== RUN   TestTodoCreatorAttributionCreationSemantics/unauthenticated_temporary_link_holder_has_no_creator
+=== RUN   TestTodoCreatorAttributionCreationSemantics/anonymous_board_creation_has_no_creator
+--- PASS: TestTodoCreatorAttributionCreationSemantics (0.19s)
+    --- PASS: TestTodoCreatorAttributionCreationSemantics/authenticated_durable_creation_records_actor (0.00s)
+    --- PASS: TestTodoCreatorAttributionCreationSemantics/authenticated_temporary_creation_records_actor (0.01s)
+    --- PASS: TestTodoCreatorAttributionCreationSemantics/unauthenticated_temporary_link_holder_has_no_creator (0.01s)
+    --- PASS: TestTodoCreatorAttributionCreationSemantics/anonymous_board_creation_has_no_creator (0.02s)
+=== RUN   TestTodoCreatorAttributionIsHistoricalNotMembership
+2026/08/19 07:54:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoCreatorAttributionIsHistoricalNotMembership (0.18s)
+=== RUN   TestTodoCreatorAttributionNullsWhenUserIsDeleted
+2026/08/19 07:54:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoCreatorAttributionNullsWhenUserIsDeleted (0.26s)
+=== RUN   TestTodoCreatorAttributionAllowsHistoricalNull
+2026/08/19 07:54:10 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoCreatorAttributionAllowsHistoricalNull (0.14s)
+=== RUN   TestDeleteTodoByLocalID_PersistenceContract
+2026/08/19 07:54:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTodoByLocalID_PersistenceContract (0.19s)
+=== RUN   TestDeleteTodoByLocalID_RollsBackOnDeleteFailure
+2026/08/19 07:54:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTodoByLocalID_RollsBackOnDeleteFailure (0.16s)
+=== RUN   TestDeleteTodo_ActivityFailureDoesNotReverseCommittedDelete
+2026/08/19 07:54:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTodo_ActivityFailureDoesNotReverseCommittedDelete (0.14s)
+=== RUN   TestCreateTodo_AnonymousTempBoard_WithAuthEnabled_AllowsCreateWithoutUser
+2026/08/19 07:54:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateTodo_AnonymousTempBoard_WithAuthEnabled_AllowsCreateWithoutUser (0.17s)
+=== RUN   TestCreateTodo_CreatorOwnedTempBoard_WithAuthEnabled_AllowsCreateWithoutUser
+2026/08/19 07:54:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateTodo_CreatorOwnedTempBoard_WithAuthEnabled_AllowsCreateWithoutUser (0.15s)
+=== RUN   TestCreateTodo_DurableProject_WithAuthEnabled_DeniesCreateWithoutUser
+2026/08/19 07:54:11 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestCreateTodo_DurableProject_WithAuthEnabled_DeniesCreateWithoutUser (0.13s)
+=== RUN   TestMoveTodo_CreatorOwnedTempBoard_WithAuthEnabled_AllowsAnonymous
+2026/08/19 07:54:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_CreatorOwnedTempBoard_WithAuthEnabled_AllowsAnonymous (0.15s)
+=== RUN   TestDeleteTodo_CreatorOwnedTempBoard_WithAuthEnabled_AllowsAnonymous
+2026/08/19 07:54:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteTodo_CreatorOwnedTempBoard_WithAuthEnabled_AllowsAnonymous (0.15s)
+=== RUN   TestMoveTodo_DurableProject_WithAuthEnabled_DeniesAnonymous
+2026/08/19 07:54:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestMoveTodo_DurableProject_WithAuthEnabled_DeniesAnonymous (0.13s)
+=== RUN   TestTodoAssignee_ContributorCanEditBodyWhenAssigned
+2026/08/19 07:54:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCanEditBodyWhenAssigned (0.27s)
+=== RUN   TestTodoAssignee_ContributorCannotAssignOthers
+2026/08/19 07:54:12 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotAssignOthers (0.27s)
+=== RUN   TestTodoAssignee_ContributorCannotSelfAssign
+2026/08/19 07:54:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotSelfAssign (0.28s)
+=== RUN   TestTodoAssignee_MaintainerCanAssignOthersAndViewerAssignable
+2026/08/19 07:54:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_MaintainerCanAssignOthersAndViewerAssignable (0.27s)
+=== RUN   TestTodoAssignee_AnonymousModeRejectsAssignment
+2026/08/19 07:54:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_AnonymousModeRejectsAssignment (0.12s)
+=== RUN   TestTodoAssignee_AuditAndMemberRemovalUnassign
+2026/08/19 07:54:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_AuditAndMemberRemovalUnassign (0.26s)
+=== RUN   TestTodoAssignee_AssignNonMemberRejected
+2026/08/19 07:54:13 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_AssignNonMemberRejected (0.30s)
+=== RUN   TestTodoAssignee_AssignNonexistentUserRejected
+2026/08/19 07:54:14 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_AssignNonexistentUserRejected (0.29s)
+=== RUN   TestTodoAssignee_ContributorCannotUnassign
+2026/08/19 07:54:14 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotUnassign (0.27s)
+=== RUN   TestTodoAssignee_ViewerCannotAssignSelf
+2026/08/19 07:54:14 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ViewerCannotAssignSelf (0.27s)
+=== RUN   TestTodoAssignee_UnauthenticatedAssignmentChangeRejected
+2026/08/19 07:54:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_UnauthenticatedAssignmentChangeRejected (0.28s)
+=== RUN   TestTodoAssignee_ContributorCannotCreate
+2026/08/19 07:54:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotCreate (0.27s)
+=== RUN   TestTodoAssignee_ContributorCannotDelete
+2026/08/19 07:54:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotDelete (0.28s)
+=== RUN   TestTodoAssignee_ContributorCannotMove
+2026/08/19 07:54:15 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotMove (0.27s)
+=== RUN   TestTodoAssignee_ContributorCannotEditUnassignedTodo
+2026/08/19 07:54:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotEditUnassignedTodo (0.27s)
+=== RUN   TestTodoAssignee_ContributorCannotModifyTitle
+2026/08/19 07:54:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_ContributorCannotModifyTitle (0.29s)
+=== RUN   TestTodoAssignee_MaintainerFullAccess
+2026/08/19 07:54:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoAssignee_MaintainerFullAccess (0.26s)
+=== RUN   TestTodoLocalID_ConcurrentCreatesAreUniqueAndContiguous
+2026/08/19 07:54:16 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestTodoLocalID_ConcurrentCreatesAreUniqueAndContiguous (0.13s)
+=== RUN   TestWallGetIsSideEffectFree
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallGetIsSideEffectFree (0.09s)
+=== RUN   TestWallCreateMaterializesRow
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallCreateMaterializesRow (0.08s)
+=== RUN   TestWallPatchConflictsOnVersionMismatch
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallPatchConflictsOnVersionMismatch (0.13s)
+=== RUN   TestWallPatchOnDifferentNotesDoesNotConflict
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallPatchOnDifferentNotesDoesNotConflict (0.10s)
+=== RUN   TestWallDeleteNote
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallDeleteNote (0.10s)
+=== RUN   TestWallEdgeCreateRejectsSelfLoopAndUnknownNote
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallEdgeCreateRejectsSelfLoopAndUnknownNote (0.09s)
+=== RUN   TestWallEdgeCreateIsIdempotent
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallEdgeCreateIsIdempotent (0.11s)
+=== RUN   TestWallDeleteEdgeAndCascadeOnNoteDelete
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallDeleteEdgeAndCascadeOnNoteDelete (0.12s)
+=== RUN   TestWallRejectsInvalidColor
+2026/08/19 07:54:17 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestWallRejectsInvalidColor (0.10s)
+=== RUN   TestParseWallpaperPref
+--- PASS: TestParseWallpaperPref (0.00s)
+=== RUN   TestAddLane_InsertsBeforeDone
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddLane_InsertsBeforeDone (0.09s)
+=== RUN   TestAddLane_StoredNameIsTrimmed
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddLane_StoredNameIsTrimmed (0.09s)
+=== RUN   TestAddLane_ServerGeneratedKeyUniqueWhenNamesCollide
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddLane_ServerGeneratedKeyUniqueWhenNamesCollide (0.12s)
+=== RUN   TestAddLane_InvalidNameRejected
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+=== RUN   TestAddLane_InvalidNameRejected/WhitespaceOnly
+=== RUN   TestAddLane_InvalidNameRejected/TooLong
+--- PASS: TestAddLane_InvalidNameRejected (0.10s)
+    --- PASS: TestAddLane_InvalidNameRejected/WhitespaceOnly (0.00s)
+    --- PASS: TestAddLane_InvalidNameRejected/TooLong (0.00s)
+=== RUN   TestAddLane_MaxLanesEnforced
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddLane_MaxLanesEnforced (0.09s)
+=== RUN   TestAddLane_IsDoneFalseEnforced
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddLane_IsDoneFalseEnforced (0.09s)
+=== RUN   TestAddLane_PreservesSingleDoneLane
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestAddLane_PreservesSingleDoneLane (0.11s)
+=== RUN   TestDeleteLane_EmptyNonDoneLaneRemoved
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteLane_EmptyNonDoneLaneRemoved (0.11s)
+=== RUN   TestDeleteLane_NonEmptyLaneRejected
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteLane_NonEmptyLaneRejected (0.10s)
+=== RUN   TestDeleteLane_DoneLaneRejected
+2026/08/19 07:54:18 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteLane_DoneLaneRejected (0.08s)
+=== RUN   TestDeleteLane_MinLanesEnforced
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteLane_MinLanesEnforced (0.09s)
+=== RUN   TestDeleteLane_PositionsReindexed
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteLane_PositionsReindexed (0.12s)
+=== RUN   TestDeleteLane_PreservesSingleDoneLane
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestDeleteLane_PreservesSingleDoneLane (0.11s)
+=== RUN   TestRenameLane_UpdatesNamePreservesKey
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRenameLane_UpdatesNamePreservesKey (0.09s)
+=== RUN   TestRenameLane_BurndownUnaffected
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestRenameLane_BurndownUnaffected (0.09s)
+=== RUN   TestUpdateWorkflowColumn_ValidNameAndColor
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateWorkflowColumn_ValidNameAndColor (0.12s)
+=== RUN   TestUpdateWorkflowColumn_InvalidColorRejected
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateWorkflowColumn_InvalidColorRejected (0.10s)
+=== RUN   TestUpdateWorkflowColumn_NonexistentKey
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateWorkflowColumn_NonexistentKey (0.10s)
+=== RUN   TestUpdateWorkflowColumn_OtherFieldsUnchanged
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestUpdateWorkflowColumn_OtherFieldsUnchanged (0.09s)
+=== RUN   TestImportTrelloProject_CreatesDistinctSlugOnDuplicateImport
+2026/08/19 07:54:19 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportTrelloProject_CreatesDistinctSlugOnDuplicateImport (0.10s)
+=== RUN   TestImportTrelloProject_PersistsImportMetadata
+2026/08/19 07:54:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportTrelloProject_PersistsImportMetadata (0.11s)
+=== RUN   TestImportTrelloProject_RollsBackOnMetadataMismatch
+2026/08/19 07:54:20 SQLite connection opened: busy_timeout=5000ms journal_mode=WAL synchronous=FULL
+--- PASS: TestImportTrelloProject_RollsBackOnMetadataMismatch (0.10s)
+=== CONT  TestGenerateSlugFromName
+=== RUN   TestGenerateSlugFromName/VO2_Max_Coach
+=== RUN   TestGenerateSlugFromName/My___Project!!
+=== RUN   TestGenerateSlugFromName/__A__
+=== RUN   TestGenerateSlugFromName/___
+=== RUN   TestGenerateSlugFromName/___#01
+=== RUN   TestGenerateSlugFromName/Café
+--- PASS: TestGenerateSlugFromName (0.00s)
+    --- PASS: TestGenerateSlugFromName/VO2_Max_Coach (0.00s)
+    --- PASS: TestGenerateSlugFromName/My___Project!! (0.00s)
+    --- PASS: TestGenerateSlugFromName/__A__ (0.00s)
+    --- PASS: TestGenerateSlugFromName/___ (0.00s)
+    --- PASS: TestGenerateSlugFromName/___#01 (0.00s)
+    --- PASS: TestGenerateSlugFromName/Café (0.00s)
+PASS
+ok  	scrumboy/internal/store	72.762s

@@ -14,7 +14,6 @@
   than 30 minutes are marked stale. JSON backup copies Agenda flags only, not
   feed URLs. See [docs/calendar.md](docs/calendar.md).
 
-
 ## [3.32.5] - 2026-08-18
 
 ### Changed

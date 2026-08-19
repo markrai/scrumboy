@@ -39,12 +39,12 @@ func TestStaleRefreshDoesNotOverwriteHostKindAfterURLChange(t *testing.T) {
 		settings: store.ProjectAgendaSettings{Enabled: true, Timezone: "UTC"},
 	}
 	snaps := &snapshotStoreFake{sources: sources}
+	sources.invalidator = snaps
 	prepared := preparedCalendar(t, RESTServiceDependencies{
-		Projects:  &calendarProjectFake{project: store.Project{ID: 9}},
-		Roles:     &calendarRoleFake{role: store.RoleMaintainer},
-		Cipher:    passthroughCipher{},
-		Sources:   sources,
-		Snapshots: snaps,
+		Projects: &calendarProjectFake{project: store.Project{ID: 9}},
+		Roles:    &calendarRoleFake{role: store.RoleMaintainer},
+		Cipher:   passthroughCipher{},
+		Sources:  sources,
 	})
 	created, err := prepared.Create(CreateSourceCommand{Name: "Family", URL: urlGoogle})
 	if err != nil {

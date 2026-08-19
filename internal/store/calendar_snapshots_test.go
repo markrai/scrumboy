@@ -251,12 +251,8 @@ func TestCalendarFeedSnapshotWritesRequireCurrentConfig(t *testing.T) {
 	if err := st.UpsertCalendarFeedSnapshotIfCurrent(ownerCtx, stale, "hash-a", "UTC"); !errors.Is(err, ErrSnapshotSuperseded) {
 		t.Fatalf("stale hash upsert err=%v, want ErrSnapshotSuperseded", err)
 	}
-	got, err := st.GetCalendarFeedSnapshot(ownerCtx, src.ID)
-	if err != nil {
-		t.Fatalf("Get after stale hash upsert: %v", err)
-	}
-	if got.EventsJSON != okSnap.EventsJSON || got.ETag != `"a"` {
-		t.Fatalf("stale writer overwrote snapshot: %+v", got)
+	if _, err := st.GetCalendarFeedSnapshot(ownerCtx, src.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale writer recreated snapshot: %v", err)
 	}
 
 	if err := st.DeleteCalendarFeedSnapshot(ownerCtx, src.ID); err != nil {
@@ -282,17 +278,20 @@ func TestCalendarFeedSnapshotWritesRequireCurrentConfig(t *testing.T) {
 	if err := st.TouchCalendarFeedSnapshotIfCurrent(ownerCtx, src.ID, fetched.Add(time.Minute), `"b"`, "", "hash-b", "UTC"); !errors.Is(err, ErrSnapshotSuperseded) {
 		t.Fatalf("stale tz touch err=%v, want ErrSnapshotSuperseded", err)
 	}
-	got, err = st.GetCalendarFeedSnapshot(ownerCtx, src.ID)
-	if err != nil {
-		t.Fatalf("Get after stale tz touch: %v", err)
+	if _, err := st.GetCalendarFeedSnapshot(ownerCtx, src.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale tz touch recreated snapshot: %v", err)
 	}
-	if !got.FetchedAt.Equal(fetched) {
-		t.Fatalf("stale tz touch mutated fetched_at: %s", got.FetchedAt)
+
+	// Snapshot was invalidated by timezone change, so Touch cannot update until
+	// a current snapshot exists again.
+	if err := st.UpsertCalendarFeedSnapshotIfCurrent(ownerCtx, okSnap, "hash-b", chicago); err != nil {
+		t.Fatalf("current tz upsert: %v", err)
 	}
+
 	if err := st.TouchCalendarFeedSnapshotIfCurrent(ownerCtx, src.ID, fetched.Add(time.Minute), `"b2"`, "", "hash-b", "America/Chicago"); err != nil {
 		t.Fatalf("current tz touch: %v", err)
 	}
-	got, err = st.GetCalendarFeedSnapshot(ownerCtx, src.ID)
+	got, err := st.GetCalendarFeedSnapshot(ownerCtx, src.ID)
 	if err != nil {
 		t.Fatalf("Get after current tz touch: %v", err)
 	}

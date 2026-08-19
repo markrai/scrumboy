@@ -93,4 +93,4 @@ Viewer: `cd docs/diagrams` then `python serve.py` (or `serve-diagrams.bat`), ope
 - [SECURITY.md](../SECURITY.md) — vulnerability disclosure policy
 - [docs/security.md](security.md) — technical security architecture and practices
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — build, DCO, docs-impact gate
-- [AGENTS.md](../AGENTS.md) — i18n localization rules (SoT for copy/plumbing constraints)
+- [AGENTS.md](../.agents/AGENTS.md) — i18n localization rules (SoT for copy/plumbing constraints)
