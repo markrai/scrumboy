@@ -53,3 +53,12 @@ jobs:
       - name: Test frontend
         working-directory: internal/httpapi/web
         run: npm test
+
+      - name: Rebuild frontend from sources
+        working-directory: internal/httpapi/web
+        run: rm -rf dist && npm run build
+
+      - name: Verify committed dist matches sources
+        run: |
+          git diff --exit-code -- internal/httpapi/web/dist
+          test -z "$(git status --porcelain internal/httpapi/web/dist)"

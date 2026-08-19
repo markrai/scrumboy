@@ -14,6 +14,28 @@
   than 30 minutes are marked stale. JSON backup copies Agenda flags only, not
   feed URLs. See [docs/calendar.md](docs/calendar.md).
 
+## [3.32.5] - 2026-08-18
+
+### Changed
+
+- **Frontend dist CI gate** - The frontend job now clean-rebuilds
+  `internal/httpapi/web/dist` from TypeScript (`rm -rf dist && npm run build`)
+  and fails if the result differs from what is committed, including orphaned
+  files `tsc` would otherwise leave behind. TypeScript emit is type-checked as
+  a side effect. Eight stale `dist/dialogs/` copies left by an earlier source
+  refactor are removed; they were unused and are not recreated by a clean
+  build.
+
+## [3.32.4] - 2026-08-18
+
+### Security
+
+- **Go 1.25.13 toolchain** - Bump the `go.mod` toolchain from `go1.25.12` to
+  `go1.25.13` and pin the Docker build image to `golang:1.25.13-alpine` by
+  multi-platform manifest digest so the standard-library vulnerabilities
+  fixed in that patch are no longer reported by OSV Scanner. The `go 1.25.0`
+  language-version directive is unchanged.
+
 ## [3.32.3] - 2026-08-17
 
 ### Changed
