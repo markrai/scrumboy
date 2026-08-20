@@ -18,6 +18,7 @@ type TransitionTarget struct {
 type DeletionTarget struct {
 	ProjectID int64
 	SprintID  int64
+	Name      string // already-read display name; not a new acquisition
 }
 
 // TransitionStore is the project-scoped persistence capability shared by the

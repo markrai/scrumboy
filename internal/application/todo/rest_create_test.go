@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -51,6 +52,7 @@ type restCreateRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type restCreateRefreshFake struct {
@@ -58,8 +60,8 @@ type restCreateRefreshFake struct {
 	trace *[]string
 }
 
-func (f *restCreateRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, restCreateRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *restCreateRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, restCreateRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 	if f.trace != nil {
 		*f.trace = append(*f.trace, "refresh")
 	}
@@ -150,8 +152,8 @@ func TestCreateServicePreparedCreateBindsTargetAndMaterializesAdapterPreparedCom
 	if len(refresh.calls) != 1 {
 		t.Fatalf("refresh calls = %d, want 1", len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx != ctx || got.projectID != 7 || got.reason != RefreshReasonTodoCreated {
-		t.Fatalf("refresh call = %+v, want bound context, project 7, reason %q", got, RefreshReasonTodoCreated)
+	if got := refresh.calls[0]; got.ctx != ctx || got.projectID != 7 || got.reason != RefreshReasonTodoCreated || got.entity != (apprefresh.Entity{LocalID: 4, Title: "create title"}) {
+		t.Fatalf("refresh call = %+v, want bound context, project 7, reason %q, entity #4 create title", got, RefreshReasonTodoCreated)
 	}
 	if !reflect.DeepEqual(trace, []string{"create", "refresh"}) {
 		t.Fatalf("call trace = %#v, want create then refresh", trace)

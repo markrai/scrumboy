@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -47,6 +48,7 @@ type restDeleteRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type restDeleteRefreshFake struct {
@@ -54,8 +56,8 @@ type restDeleteRefreshFake struct {
 	trace *[]string
 }
 
-func (f *restDeleteRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, restDeleteRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *restDeleteRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, restDeleteRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 	if f.trace != nil {
 		*f.trace = append(*f.trace, "refresh")
 	}
@@ -104,8 +106,8 @@ func TestDeleteServicePreparedDeleteBindsTargetAndPublishesOnce(t *testing.T) {
 	if len(refresh.calls) != 1 {
 		t.Fatalf("refresh calls = %d, want 1", len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != RefreshReasonTodoDeleted {
-		t.Fatalf("refresh call = %+v, want bound context, project 7, reason %q", got, RefreshReasonTodoDeleted)
+	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != RefreshReasonTodoDeleted || got.entity != (apprefresh.Entity{}) {
+		t.Fatalf("refresh = %+v, want bound context, project 7, reason %q, zero entity", got, RefreshReasonTodoDeleted)
 	}
 	if !reflect.DeepEqual(trace, []string{"delete", "refresh"}) {
 		t.Fatalf("call trace = %#v, want delete then refresh", trace)

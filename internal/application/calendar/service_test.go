@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -252,7 +253,7 @@ type calendarRefreshFake struct {
 	reasons    []string
 }
 
-func (f *calendarRefreshFake) PublishBoardRefresh(_ context.Context, _ int64, reason string) {
+func (f *calendarRefreshFake) PublishBoardRefresh(_ context.Context, _ int64, reason string, _ refresh.Entity) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++

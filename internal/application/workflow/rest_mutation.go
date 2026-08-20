@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -32,21 +33,21 @@ type RESTMutationRoleStore interface {
 // workflow mutations. Publishing is best-effort and cannot change mutation
 // success.
 type BoardRefreshPublisher interface {
-	PublishBoardRefresh(ctx context.Context, projectID int64, reason string)
+	PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 }
 
 // BoardRefreshPublisherFunc adapts a function to BoardRefreshPublisher.
-type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string)
+type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 
-func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
+func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 	if f != nil {
-		f(ctx, projectID, reason)
+		f(ctx, projectID, reason, entity)
 	}
 }
 
 type nopBoardRefreshPublisher struct{}
 
-func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string) {}
+func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string, refresh.Entity) {}
 
 // RESTMutationServiceDependencies names the authorization, persistence, and
 // ancillary capabilities used by canonical REST workflow mutations.
@@ -121,7 +122,7 @@ func (p *PreparedRESTMutation) Create(command CreateCommand) (store.WorkflowColu
 	if err != nil {
 		return store.WorkflowColumn{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonWorkflowColumnAdded)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonWorkflowColumnAdded, refresh.Entity{Name: column.Name})
 	return column, nil
 }
 
@@ -138,7 +139,7 @@ func (p *PreparedRESTMutation) Update(command UpdateCommand) error {
 	if err != nil {
 		return err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonWorkflowColumnUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonWorkflowColumnUpdated, refresh.Entity{Name: command.Name})
 	return nil
 }
 
@@ -148,6 +149,6 @@ func (p *PreparedRESTMutation) Delete(command DeleteCommand) error {
 	if err := p.service.mutations.DeleteWorkflowColumn(p.ctx, p.projectID, command.Key); err != nil {
 		return err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonWorkflowColumnDeleted)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonWorkflowColumnDeleted, refresh.Entity{})
 	return nil
 }

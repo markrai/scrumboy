@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 	"scrumboy/internal/version"
 )
@@ -63,7 +64,7 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request, rest []strin
 			return
 		}
 		for _, pid := range affected {
-			s.emitRefreshNeeded(ctx, pid, "tag_deleted")
+			s.emitRefreshNeeded(ctx, pid, "tag_deleted", refresh.Entity{})
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return

@@ -2,6 +2,18 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
 
+## [Unreleased]
+
+### Changed
+
+- **Activity email copy** - Card, sprint, workflow-column, and tag activity emails now include
+  the card number/title or entity display name when that identity is already available on the
+  successful mutation path. Missing identity keeps the previous generic wording. The public SSE
+  refresh event is unchanged.
+- **Activity email prose** - Enriched subjects and bodies use unquoted natural English (column, not
+  “workflow column”; “tag color changed”). Assigned and Cards I opened bodies put a valid card
+  identity in one sentence.
+
 ## [3.33.2] - 2026-08-19
 
 ### Fixed

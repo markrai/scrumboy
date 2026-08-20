@@ -9,6 +9,7 @@ import (
 
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
 )
@@ -208,7 +209,7 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		if in.Name != nil || in.Image != nil {
-			s.emitRefreshNeeded(s.requestContext(r), projectID, "project_updated")
+			s.emitRefreshNeeded(s.requestContext(r), projectID, "project_updated", refresh.Entity{})
 		}
 		writeJSON(w, http.StatusOK, projectToJSON(project))
 		return true
@@ -509,7 +510,7 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated", refresh.Entity{})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -542,7 +543,7 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated", refresh.Entity{Name: tagName})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -564,7 +565,7 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected)
+		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected, refresh.Entity{})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -586,7 +587,7 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected)
+		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected, refresh.Entity{Name: tagName})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

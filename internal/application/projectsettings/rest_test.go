@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -40,7 +41,7 @@ type refreshFake struct {
 	reasons []string
 }
 
-func (f *refreshFake) PublishBoardRefresh(_ context.Context, _ int64, reason string) {
+func (f *refreshFake) PublishBoardRefresh(_ context.Context, _ int64, reason string, _ refresh.Entity) {
 	f.calls++
 	f.reasons = append(f.reasons, reason)
 }

@@ -16,6 +16,7 @@ import (
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
+	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -622,8 +623,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
-	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-		server.emitRefreshNeeded(ctx, projectID, reason)
+	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+		server.emitRefreshNeeded(ctx, projectID, reason, entity)
 	})
 	creatorRequestPublisher := todoapp.CreatorNotificationRequestPublisher(server)
 	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
@@ -685,19 +686,19 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.workflowMutations = workflowapp.NewRESTMutationService(workflowapp.RESTMutationServiceDependencies{
 		Roles:     st,
 		Mutations: st,
-		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-			server.emitRefreshNeeded(ctx, projectID, reason)
+		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+			server.emitRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
 	server.priorityMutations = priorityapp.NewRESTMutationService(priorityapp.RESTMutationServiceDependencies{
 		Roles:     st,
 		Mutations: st,
-		Refresh: priorityapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-			server.emitRefreshNeeded(ctx, projectID, reason)
+		Refresh: priorityapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+			server.emitRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
-	refreshPublisher := calendarapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-		server.emitRefreshNeeded(ctx, projectID, reason)
+	refreshPublisher := calendarapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+		server.emitRefreshNeeded(ctx, projectID, reason, entity)
 	})
 	server.calendarSources = calendarapp.NewRESTService(calendarapp.RESTServiceDependencies{
 		Projects:      st,
@@ -709,8 +710,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.boardSettings = projectsettingsapp.NewRESTService(projectsettingsapp.RESTServiceDependencies{
 		Mutations: st,
-		Refresh: projectsettingsapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-			server.emitRefreshNeeded(ctx, projectID, reason)
+		Refresh: projectsettingsapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+			server.emitRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
 	fetcher := opts.CalendarFeedFetcher

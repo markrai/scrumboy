@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -59,6 +60,7 @@ type legacyMoveRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type legacyMoveRefreshFake struct {
@@ -66,8 +68,8 @@ type legacyMoveRefreshFake struct {
 	trace *[]string
 }
 
-func (f *legacyMoveRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, legacyMoveRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *legacyMoveRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, legacyMoveRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 	if f.trace != nil {
 		*f.trace = append(*f.trace, "refresh")
 	}
@@ -198,7 +200,7 @@ func TestLegacyMoveServiceSuccessSequencesMoveBeforeRefresh(t *testing.T) {
 	const key contextKey = "request"
 	ctx := context.WithValue(context.Background(), key, "bound")
 	trace := []string{}
-	moved := store.Todo{ID: 7001, ProjectID: 17, LocalID: 4, ColumnKey: "doing"}
+	moved := store.Todo{ID: 7001, ProjectID: 17, LocalID: 4, Title: "moved card", ColumnKey: "doing"}
 	moves := &legacyMoveStoreFake{todo: moved, trace: &trace}
 	refresh := &legacyMoveRefreshFake{trace: &trace}
 	prepared := NewLegacyMoveService(LegacyMoveServiceDependencies{Move: moves, Refresh: refresh}).Prepare(
@@ -216,8 +218,8 @@ func TestLegacyMoveServiceSuccessSequencesMoveBeforeRefresh(t *testing.T) {
 	if len(moves.calls) != 1 || len(refresh.calls) != 1 {
 		t.Fatalf("calls = move %d refresh %d, want 1 each", len(moves.calls), len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != moved.ProjectID || got.reason != RefreshReasonTodoMoved {
-		t.Fatalf("refresh call = %+v, want bound context, project %d, reason %q", got, moved.ProjectID, RefreshReasonTodoMoved)
+	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != moved.ProjectID || got.reason != RefreshReasonTodoMoved || got.entity != (apprefresh.Entity{LocalID: 4, Title: "moved card"}) {
+		t.Fatalf("refresh call = %+v, want bound context, project %d, reason %q, entity #4 moved card", got, moved.ProjectID, RefreshReasonTodoMoved)
 	}
 	if !reflect.DeepEqual(result, LegacyMoveResult{Todo: moved}) {
 		t.Fatalf("result = %+v, want moved Todo %+v", result, moved)

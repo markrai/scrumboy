@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -50,14 +51,15 @@ type restUpdateRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type restUpdateRefreshFake struct {
 	calls []restUpdateRefreshCall
 }
 
-func (f *restUpdateRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, restUpdateRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *restUpdateRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, restUpdateRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 }
 
 func TestUpdateServicePreparedUpdateBindsTargetAndMaterializesNormalizedPatch(t *testing.T) {
@@ -126,8 +128,8 @@ func TestUpdateServicePreparedUpdateBindsTargetAndMaterializesNormalizedPatch(t 
 	if len(refresh.calls) != 1 {
 		t.Fatalf("refresh calls = %d, want 1", len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx != ctx || got.projectID != 7 || got.reason != RefreshReasonTodoUpdated {
-		t.Fatalf("refresh call = %+v, want bound context, project 7, reason %q", got, RefreshReasonTodoUpdated)
+	if got := refresh.calls[0]; got.ctx != ctx || got.projectID != 7 || got.reason != RefreshReasonTodoUpdated || got.entity != (apprefresh.Entity{LocalID: 4, Title: "new title"}) {
+		t.Fatalf("refresh call = %+v, want bound context, project 7, reason %q, entity #4 new title", got, RefreshReasonTodoUpdated)
 	}
 }
 

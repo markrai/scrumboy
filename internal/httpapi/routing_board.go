@@ -11,6 +11,7 @@ import (
 
 	priorityapp "scrumboy/internal/application/priority"
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
+	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
@@ -516,7 +517,7 @@ func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, r
 		writeStoreErr(w, err, true)
 		return true
 	}
-	s.emitRefreshNeeded(s.requestContext(r), project.ID, "board_claimed")
+	s.emitRefreshNeeded(s.requestContext(r), project.ID, "board_claimed", refresh.Entity{})
 	w.WriteHeader(http.StatusNoContent)
 	return true
 }
@@ -1043,6 +1044,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			prepared, err := s.sprintDefinitions.PrepareUpdate(ctx, sprintapp.ResolvedRESTSprintTarget{
 				ProjectID: project.ID,
 				SprintID:  sp.ID,
+				Name:      sp.Name,
 			})
 			if err != nil {
 				writeSprintDefinitionPrepareError(w, err)
@@ -1077,6 +1079,7 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			prepared, err := s.sprintDeletions.PrepareDelete(ctx, sprintapp.DeletionTarget{
 				ProjectID: project.ID,
 				SprintID:  sprintID,
+				Name:      sp.Name,
 			})
 			if err != nil {
 				writeSprintLifecyclePrepareError(w, err)
@@ -1225,7 +1228,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, patchColorErr, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated", refresh.Entity{})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1257,7 +1260,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated", refresh.Entity{Name: tagName})
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
@@ -1272,7 +1275,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated", refresh.Entity{Name: tagName})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1293,7 +1296,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted", refresh.Entity{})
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
@@ -1307,7 +1310,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), project.ID, affected)
+		s.emitTagDeletedRefresh(s.requestContext(r), project.ID, affected, refresh.Entity{})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1329,7 +1332,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitTagDeletedRefresh(s.requestContext(r), project.ID, affected)
+			s.emitTagDeletedRefresh(s.requestContext(r), project.ID, affected, refresh.Entity{Name: rest[2]})
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
@@ -1347,7 +1350,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 				writeStoreErr(w, err, true)
 				return true
 			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
+			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted", refresh.Entity{Name: tagName})
 			w.WriteHeader(http.StatusNoContent)
 			return true
 		}
@@ -1369,7 +1372,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted")
+		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_deleted", refresh.Entity{Name: tagName})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

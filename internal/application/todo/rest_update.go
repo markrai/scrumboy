@@ -83,7 +83,7 @@ func (u *PreparedUpdate) Update(command UpdateCommand) (UpdateResult, error) {
 
 	effectCtx := publishCreatorNotificationRequest(u.ctx, u.service.creatorRequests, project, updated, RefreshReasonTodoUpdated, true)
 	if !updated.AssignmentChanged {
-		u.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoUpdated)
+		u.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoUpdated, todoRefreshEntity(updated))
 	}
 
 	return UpdateResult{Project: project, Todo: updated}, nil

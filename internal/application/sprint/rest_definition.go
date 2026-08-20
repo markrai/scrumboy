@@ -3,6 +3,7 @@ package sprint
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"scrumboy/internal/store"
 )
@@ -22,14 +23,14 @@ var (
 // successful canonical REST sprint-definition mutations. The HTTP adapter
 // remains responsible for translating them to runtime refresh reasons.
 type RESTDefinitionPublisher interface {
-	PublishSprintCreated(ctx context.Context, projectID int64)
-	PublishSprintUpdated(ctx context.Context, projectID int64)
+	PublishSprintCreated(ctx context.Context, projectID int64, name string)
+	PublishSprintUpdated(ctx context.Context, projectID int64, name string)
 }
 
 type nopRESTDefinitionPublisher struct{}
 
-func (nopRESTDefinitionPublisher) PublishSprintCreated(context.Context, int64) {}
-func (nopRESTDefinitionPublisher) PublishSprintUpdated(context.Context, int64) {}
+func (nopRESTDefinitionPublisher) PublishSprintCreated(context.Context, int64, string) {}
+func (nopRESTDefinitionPublisher) PublishSprintUpdated(context.Context, int64, string) {}
 
 // RESTDefinitionServiceDependencies names the fresh-role, definition-write,
 // and ancillary publication capabilities used by REST sprint definitions.
@@ -70,6 +71,7 @@ type ResolvedRESTProjectTarget struct {
 type ResolvedRESTSprintTarget struct {
 	ProjectID int64
 	SprintID  int64
+	Name      string // already-read display name; not a new acquisition
 }
 
 // PreparedRESTCreate binds the exact authorized context and project identity
@@ -87,6 +89,7 @@ type PreparedRESTUpdate struct {
 	service   *RESTDefinitionService
 	projectID int64
 	sprintID  int64
+	name      string
 }
 
 // PrepareCreate preserves the current REST authorization order after shared
@@ -119,6 +122,7 @@ func (s *RESTDefinitionService) PrepareUpdate(
 		service:   s,
 		projectID: target.ProjectID,
 		sprintID:  target.SprintID,
+		name:      target.Name,
 	}, nil
 }
 
@@ -151,7 +155,7 @@ func (p *PreparedRESTCreate) Create(command CreateCommand) (store.Sprint, error)
 		return store.Sprint{}, err
 	}
 
-	p.service.publisher.PublishSprintCreated(p.ctx, p.projectID)
+	p.service.publisher.PublishSprintCreated(p.ctx, p.projectID, sprint.Name)
 	return sprint, nil
 }
 
@@ -166,6 +170,13 @@ func (p *PreparedRESTUpdate) Update(command UpdateCommand) error {
 		return err
 	}
 
-	p.service.publisher.PublishSprintUpdated(p.ctx, p.projectID)
+	p.service.publisher.PublishSprintUpdated(p.ctx, p.projectID, publishedSprintUpdateName(p.name, command))
 	return nil
+}
+
+func publishedSprintUpdateName(retained string, command UpdateCommand) string {
+	if command.Name != nil {
+		return strings.TrimSpace(*command.Name)
+	}
+	return retained
 }

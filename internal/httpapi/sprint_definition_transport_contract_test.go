@@ -397,6 +397,7 @@ func TestSprintDefinitionRESTCreateAndUpdateContracts(t *testing.T) {
 			t.Fatalf("stored sprint=%+v", stored)
 		}
 		assertSprintDefinitionRESTRefresh(t, fx, "sprint_updated")
+		assertRefreshNeededName(t, fx.collector.snapshot()[0].Payload, newName)
 	})
 
 	t.Run("empty update still calls store and publishes without post-read", func(t *testing.T) {
@@ -416,6 +417,7 @@ func TestSprintDefinitionRESTCreateAndUpdateContracts(t *testing.T) {
 			t.Fatalf("empty update input=%+v", in)
 		}
 		assertSprintDefinitionRESTRefresh(t, fx, "sprint_updated")
+		assertRefreshNeededName(t, fx.collector.snapshot()[0].Payload, sp.Name)
 	})
 }
 

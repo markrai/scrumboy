@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -39,20 +40,20 @@ type MutationStore interface {
 }
 
 type BoardRefreshPublisher interface {
-	PublishBoardRefresh(ctx context.Context, projectID int64, reason string)
+	PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 }
 
-type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string)
+type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 
-func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
+func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 	if f != nil {
-		f(ctx, projectID, reason)
+		f(ctx, projectID, reason, entity)
 	}
 }
 
 type nopBoardRefreshPublisher struct{}
 
-func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string) {}
+func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string, refresh.Entity) {}
 
 type RESTServiceDependencies struct {
 	Mutations MutationStore
@@ -119,7 +120,7 @@ func (p *PreparedREST) Patch(command PatchCommand) (PatchResult, error) {
 	if err != nil {
 		return PatchResult{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{})
 	return PatchResult{
 		DefaultSprintWeeks: updated.DefaultSprintWeeks,
 		SprintsEnabled:     updated.SprintsEnabled,

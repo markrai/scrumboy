@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/calendar/ics"
 	"scrumboy/internal/store"
 )
@@ -339,7 +340,7 @@ func (s *AgendaService) doRefresh(ctx context.Context, projectID int64, src stor
 	}
 	publishKindChange := func() {
 		if kindChanged {
-			s.refresh.PublishBoardRefresh(ctx, projectID, refreshReasonAgendaUpdated)
+			s.refresh.PublishBoardRefresh(ctx, projectID, refreshReasonAgendaUpdated, refresh.Entity{})
 		}
 	}
 	if s.fetcher == nil {
@@ -404,7 +405,7 @@ func (s *AgendaService) doRefresh(ctx context.Context, projectID int64, src stor
 		return err
 	}
 	if changed || kindChanged {
-		s.refresh.PublishBoardRefresh(ctx, projectID, refreshReasonAgendaUpdated)
+		s.refresh.PublishBoardRefresh(ctx, projectID, refreshReasonAgendaUpdated, refresh.Entity{})
 	}
 	return nil
 }

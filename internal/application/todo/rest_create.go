@@ -69,7 +69,7 @@ func (c *PreparedCreate) Create(command CreateCommand) (CreateResult, error) {
 	}
 
 	if !created.AssignmentChanged {
-		c.service.refresh.PublishBoardRefresh(c.ctx, project.ID, RefreshReasonTodoCreated)
+		c.service.refresh.PublishBoardRefresh(c.ctx, project.ID, RefreshReasonTodoCreated, todoRefreshEntity(created))
 	}
 
 	return CreateResult{Project: project, Todo: created}, nil

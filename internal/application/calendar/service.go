@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -81,20 +82,20 @@ type SourceStore interface {
 }
 
 type BoardRefreshPublisher interface {
-	PublishBoardRefresh(ctx context.Context, projectID int64, reason string)
+	PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 }
 
-type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string)
+type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 
-func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
+func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 	if f != nil {
-		f(ctx, projectID, reason)
+		f(ctx, projectID, reason, entity)
 	}
 }
 
 type nopBoardRefreshPublisher struct{}
 
-func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string) {}
+func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string, refresh.Entity) {}
 
 type RESTServiceDependencies struct {
 	Projects      ProjectLookup
@@ -169,7 +170,7 @@ func (p *PreparedREST) PatchSettings(command PatchSettingsCommand) (AgendaSettin
 	if _, err := p.service.sources.UpdateProjectAgendaSettings(p.ctx, p.projectID, command.Enabled, command.Timezone, command.Title, command.Color); err != nil {
 		return AgendaSettingsView{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{})
 	return p.List()
 }
 
@@ -241,7 +242,7 @@ func (p *PreparedREST) Create(command CreateSourceCommand) (SourceView, error) {
 	if err != nil {
 		return SourceView{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{})
 	return p.service.toSourceView(created)
 }
 
@@ -269,7 +270,7 @@ func (p *PreparedREST) Update(command UpdateSourceCommand) (SourceView, error) {
 	if err != nil {
 		return SourceView{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{})
 	return p.service.toSourceView(updated)
 }
 
@@ -277,7 +278,7 @@ func (p *PreparedREST) Delete(sourceID int64) error {
 	if err := p.service.sources.DeleteCalendarSource(p.ctx, p.projectID, sourceID); err != nil {
 		return err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{})
 	return nil
 }
 

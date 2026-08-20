@@ -137,7 +137,7 @@ func (u *PreparedLegacyUpdate) Update(command LegacyUpdateCommand) (LegacyUpdate
 		}
 	}
 	if !updated.AssignmentChanged {
-		u.service.refresh.PublishBoardRefresh(effectCtx, updated.ProjectID, RefreshReasonTodoUpdated)
+		u.service.refresh.PublishBoardRefresh(effectCtx, updated.ProjectID, RefreshReasonTodoUpdated, todoRefreshEntity(updated))
 	}
 
 	return LegacyUpdateResult{Todo: updated}, nil

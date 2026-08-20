@@ -3,6 +3,7 @@ package todo
 import (
 	"context"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -71,6 +72,6 @@ func (d *PreparedDelete) Delete(command DeleteCommand) error {
 		return err
 	}
 
-	d.service.refresh.PublishBoardRefresh(d.ctx, project.ID, RefreshReasonTodoDeleted)
+	d.service.refresh.PublishBoardRefresh(d.ctx, project.ID, RefreshReasonTodoDeleted, refresh.Entity{})
 	return nil
 }
