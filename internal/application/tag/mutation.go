@@ -4,9 +4,14 @@ package tag
 
 import (
 	"context"
+	"errors"
 
 	"scrumboy/internal/store"
 )
+
+// ErrActorRequired reports that a prepared tag mutation requiring an
+// authenticated actor did not receive one.
+var ErrActorRequired = errors.New("tag mutation actor required")
 
 // ColorIntent preserves the adapter-prepared color value. A nil value means
 // clear; every non-nil value, including an empty or whitespace-only string, is
@@ -139,6 +144,15 @@ func cloneProjectIDs(projectIDs []int64) []int64 {
 	}
 
 	return append([]int64{}, projectIDs...)
+}
+
+func cloneInt64(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+
+	cloned := *value
+	return &cloned
 }
 
 // MineTagReadStore reads the caller-owned tag projection used by mine mutation
