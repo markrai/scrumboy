@@ -14,6 +14,7 @@ import (
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
 	sprintapp "scrumboy/internal/application/sprint"
+	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
@@ -100,6 +101,7 @@ type Adapter struct {
 	sprintDefinitions    *sprintapp.MCPDefinitionService
 	sprintLifecycle      *sprintapp.MCPLifecycleService
 	sprintDeletions      *sprintapp.MCPDeletionService
+	tagColors            *tagapp.MCPColorService
 	mode                 string
 	tools                toolRegistry
 	publicOrigin         *publicorigin.Resolver
@@ -178,6 +180,15 @@ func New(st storeAPI, opts Options) *Adapter {
 			Roles:     st,
 			Sprints:   st,
 			Deletions: st,
+		}),
+		tagColors: tagapp.NewMCPColorService(tagapp.MCPColorServiceDependencies{
+			Access:           st,
+			MineRead:         st,
+			ProjectRead:      st,
+			MineColor:        st,
+			DurableIDColor:   st,
+			TemporaryIDColor: st,
+			DurableNameColor: st,
 		}),
 		mode:         mode,
 		tools:        make(toolRegistry),
