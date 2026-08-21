@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"scrumboy/internal/application/refresh"
+	tagapp "scrumboy/internal/application/tag"
 	"scrumboy/internal/store"
 	"scrumboy/internal/version"
 )
@@ -42,7 +43,12 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request, rest []strin
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return
 		}
-		if err := s.store.UpdateMyTagColor(ctx, userID, tagID, in.Color); err != nil {
+		prepared := s.tagColors.PrepareMineID(ctx, tagapp.MineIDColorCommand{
+			ActorUserID: userID,
+			TagID:       tagID,
+			Color:       tagapp.NewColorIntent(in.Color),
+		})
+		if err := prepared.Update(); err != nil {
 			writeStoreErr(w, err, true)
 			return
 		}

@@ -10,6 +10,7 @@ import (
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
 	"scrumboy/internal/application/refresh"
+	tagapp "scrumboy/internal/application/tag"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
 )
@@ -506,11 +507,20 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		// Durable numeric project route: project-aware membership + role checks.
-		if err := s.store.UpdateTagColorForDurableProjectByID(ctx, projectID, userID, tagID, in.Color); err != nil {
+		prepared, err := s.tagColors.PrepareProjectID(ctx, tagapp.ProjectIDColorCommand{
+			Project:      tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ViewerUserID: &userID,
+			TagID:        tagID,
+			Color:        tagapp.NewColorIntent(in.Color),
+		})
+		if err != nil {
+			writeTagColorPrepareError(w, err)
+			return true
+		}
+		if err := prepared.Update(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated", refresh.Entity{})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -539,11 +549,20 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		if err := s.store.SetViewerTagColorByName(ctx, projectID, userID, tagName, in.Color); err != nil {
+		prepared, err := s.tagColors.PrepareProjectName(ctx, tagapp.ProjectNameColorCommand{
+			Project:      tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ViewerUserID: &userID,
+			Name:         tagName,
+			Color:        tagapp.NewColorIntent(in.Color),
+		})
+		if err != nil {
+			writeTagColorPrepareError(w, err)
+			return true
+		}
+		if err := prepared.Update(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated", refresh.Entity{Name: tagName})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

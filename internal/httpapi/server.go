@@ -18,6 +18,7 @@ import (
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
+	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
@@ -138,6 +139,7 @@ type Server struct {
 	boardSettings                 *projectsettingsapp.RESTService
 	agenda                        *calendarapp.AgendaService
 	membershipMutations           *membershipapp.RESTMutationService
+	tagColors                     *tagapp.RESTColorService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -729,6 +731,14 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Mutations: st,
 		Members:   st,
 		Publisher: membershipMutationPublisher{server: server},
+	})
+	server.tagColors = tagapp.NewRESTColorService(tagapp.RESTColorServiceDependencies{
+		MineColor:          st,
+		DurableIDColor:     st,
+		TemporaryIDColor:   st,
+		DurableNameColor:   st,
+		TemporaryNameColor: st,
+		Publisher:          tagColorPublisher{server: server},
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)

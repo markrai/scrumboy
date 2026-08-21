@@ -18,6 +18,7 @@ type tagMutationRESTFixture struct {
 	db        *sql.DB
 	client    *http.Client
 	ownerID   int64
+	server    *Server
 	collector *capturingEventConsumer
 }
 
@@ -31,7 +32,7 @@ func newTagMutationRESTFixture(t *testing.T) *tagMutationRESTFixture {
 	owner := bootstrapUserClient(t, client, ts.URL, "Tag Owner", "tag-mutation-owner@example.com", "password123")
 	return &tagMutationRESTFixture{
 		ts: ts.URL, db: sqlDB, client: client,
-		ownerID: int64(owner["id"].(float64)), collector: collector,
+		ownerID: int64(owner["id"].(float64)), server: ts.Config.Handler.(*Server), collector: collector,
 	}
 }
 

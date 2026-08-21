@@ -13,6 +13,7 @@ import (
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
+	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
@@ -39,6 +40,27 @@ func writePriorityMutationPrepareError(w http.ResponseWriter, err error) {
 	default:
 		writeInternal(w, err)
 	}
+}
+
+func writeTagColorPrepareError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, tagapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	default:
+		writeInternal(w, err)
+	}
+}
+
+func resolvedRESTTagProject(project store.Project) tagapp.ResolvedProject {
+	kind := tagapp.DurableProject
+	if project.ExpiresAt != nil {
+		kind = tagapp.AnonymousTemporaryBoard
+		if project.CreatorUserID != nil {
+			kind = tagapp.CreatorOwnedTemporaryBoard
+		}
+	}
+
+	return tagapp.ResolvedProject{ProjectID: project.ID, Kind: kind}
 }
 
 func writeSprintDefinitionPrepareError(w http.ResponseWriter, err error) {
@@ -1209,26 +1231,33 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		var patchColorErr error
+		var viewerUserID *int64
 		if project.ExpiresAt != nil {
-			var viewerUserID *int64
 			if userID, ok := store.UserIDFromContext(ctx); ok {
 				viewerUserID = &userID
 			}
-			patchColorErr = s.store.UpdateTagColorForTemporaryBoard(ctx, project.ID, viewerUserID, tagID, in.Color)
 		} else {
 			userID, ok := store.UserIDFromContext(ctx)
 			if !ok {
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 				return true
 			}
-			patchColorErr = s.store.UpdateTagColorForDurableProjectByID(ctx, project.ID, userID, tagID, in.Color)
+			viewerUserID = &userID
 		}
-		if patchColorErr != nil {
-			writeStoreErr(w, patchColorErr, true)
+		prepared, err := s.tagColors.PrepareProjectID(ctx, tagapp.ProjectIDColorCommand{
+			Project:      resolvedRESTTagProject(project),
+			ViewerUserID: viewerUserID,
+			TagID:        tagID,
+			Color:        tagapp.NewColorIntent(in.Color),
+		})
+		if err != nil {
+			writeTagColorPrepareError(w, err)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated", refresh.Entity{})
+		if err := prepared.Update(); err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -1246,6 +1275,7 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 			return true
 		}
 
+		var viewerUserID *int64
 		if project.ExpiresAt == nil {
 			// Durable project: name-based personal color for any authenticated member.
 			// SetViewerTagColorByName enforces membership. Same known limitation as the
@@ -1256,26 +1286,25 @@ func (s *Server) handleBoardTagRoutes(w http.ResponseWriter, r *http.Request, re
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 				return true
 			}
-			if err := s.store.SetViewerTagColorByName(ctx, project.ID, userID, tagName, in.Color); err != nil {
-				writeStoreErr(w, err, true)
-				return true
-			}
-			s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated", refresh.Entity{Name: tagName})
-			w.WriteHeader(http.StatusNoContent)
-			return true
-		}
-
-		linkTemporaryBoard := true
-		var viewerUserID *int64
-		if userID, ok := store.UserIDFromContext(ctx); ok {
+			viewerUserID = &userID
+		} else if userID, ok := store.UserIDFromContext(ctx); ok {
 			viewerUserID = &userID
 		}
 
-		if err := s.store.UpdateTagColorForProject(ctx, project.ID, viewerUserID, tagName, in.Color, linkTemporaryBoard); err != nil {
+		prepared, err := s.tagColors.PrepareProjectName(ctx, tagapp.ProjectNameColorCommand{
+			Project:      resolvedRESTTagProject(project),
+			ViewerUserID: viewerUserID,
+			Name:         tagName,
+			Color:        tagapp.NewColorIntent(in.Color),
+		})
+		if err != nil {
+			writeTagColorPrepareError(w, err)
+			return true
+		}
+		if err := prepared.Update(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), project.ID, "tag_color_updated", refresh.Entity{Name: tagName})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

@@ -7,6 +7,7 @@ import (
 	membershipapp "scrumboy/internal/application/membership"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
+	tagapp "scrumboy/internal/application/tag"
 	todolinkapp "scrumboy/internal/application/todolink"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
@@ -20,6 +21,16 @@ var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
 
 func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
 	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated", refresh.Entity{})
+}
+
+type tagColorPublisher struct {
+	server *Server
+}
+
+var _ tagapp.RESTColorPublisher = tagColorPublisher{}
+
+func (p tagColorPublisher) PublishTagColorUpdated(ctx context.Context, projectID int64, name string) {
+	p.server.emitRefreshNeeded(ctx, projectID, "tag_color_updated", refresh.Entity{Name: name})
 }
 
 type sprintDefinitionPublisher struct {
