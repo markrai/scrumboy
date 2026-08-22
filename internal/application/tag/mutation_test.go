@@ -10,6 +10,7 @@ import (
 var (
 	_ MineTagReadStore              = (*store.Store)(nil)
 	_ ProjectTagReadStore           = (*store.Store)(nil)
+	_ MCPProjectAccessStore         = (*store.Store)(nil)
 	_ ProjectScopedTagReadStore     = (*store.Store)(nil)
 	_ BoardScopedTagNameReadStore   = (*store.Store)(nil)
 	_ PersonalTagNameReadStore      = (*store.Store)(nil)

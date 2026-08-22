@@ -7,24 +7,9 @@ import (
 	"scrumboy/internal/store"
 )
 
-var (
-	// ErrMaintainerRequired reports that a durable MCP project-ID color target
-	// does not satisfy the characterized role precondition.
-	ErrMaintainerRequired = errors.New("tag color maintainer required")
-	// ErrColorProjectionMissing reports that a successful project color
-	// mutation is absent from the required post-write tag projection.
-	ErrColorProjectionMissing = errors.New("updated tag color missing from projection")
-)
-
-// MCPProjectAccessStore resolves the project-slug access boundary used by MCP
-// project color operations.
-type MCPProjectAccessStore interface {
-	GetProjectContextBySlug(
-		ctx context.Context,
-		slug string,
-		mode store.Mode,
-	) (store.ProjectContext, error)
-}
+// ErrColorProjectionMissing reports that a successful project color mutation
+// is absent from the required post-write tag projection.
+var ErrColorProjectionMissing = errors.New("updated tag color missing from projection")
 
 // MCPColorServiceDependencies contains only the access, read, and color
 // persistence capabilities required by MCP tag color operations.

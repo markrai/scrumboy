@@ -9,9 +9,14 @@ import (
 	"scrumboy/internal/store"
 )
 
-// ErrActorRequired reports that a prepared tag mutation requiring an
-// authenticated actor did not receive one.
-var ErrActorRequired = errors.New("tag mutation actor required")
+var (
+	// ErrActorRequired reports that a prepared tag mutation requiring an
+	// authenticated actor did not receive one.
+	ErrActorRequired = errors.New("tag mutation actor required")
+	// ErrMaintainerRequired reports that a prepared tag mutation requiring
+	// durable project authority did not receive it.
+	ErrMaintainerRequired = errors.New("tag mutation maintainer required")
+)
 
 // ColorIntent preserves the adapter-prepared color value. A nil value means
 // clear; every non-nil value, including an empty or whitespace-only string, is
@@ -165,6 +170,16 @@ type MineTagReadStore interface {
 // responses.
 type ProjectTagReadStore interface {
 	ListTagCounts(ctx context.Context, pc *store.ProjectContext) ([]store.TagCount, error)
+}
+
+// MCPProjectAccessStore resolves the project-slug access boundary used by MCP
+// project tag mutations.
+type MCPProjectAccessStore interface {
+	GetProjectContextBySlug(
+		ctx context.Context,
+		slug string,
+		mode store.Mode,
+	) (store.ProjectContext, error)
 }
 
 // ProjectScopedTagReadStore reads a project-scoped tag by ID without widening
