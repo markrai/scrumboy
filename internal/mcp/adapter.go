@@ -102,6 +102,7 @@ type Adapter struct {
 	sprintLifecycle      *sprintapp.MCPLifecycleService
 	sprintDeletions      *sprintapp.MCPDeletionService
 	tagColors            *tagapp.MCPColorService
+	tagDeletions         *tagapp.MCPDeletionService
 	mode                 string
 	tools                toolRegistry
 	publicOrigin         *publicorigin.Resolver
@@ -189,6 +190,12 @@ func New(st storeAPI, opts Options) *Adapter {
 			DurableIDColor:   st,
 			TemporaryIDColor: st,
 			DurableNameColor: st,
+		}),
+		tagDeletions: tagapp.NewMCPDeletionService(tagapp.MCPDeletionServiceDependencies{
+			Access:        st,
+			MineRead:      st,
+			ProjectScoped: st,
+			Rows:          st,
 		}),
 		mode:         mode,
 		tools:        make(toolRegistry),
