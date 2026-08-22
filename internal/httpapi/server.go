@@ -140,6 +140,7 @@ type Server struct {
 	agenda                        *calendarapp.AgendaService
 	membershipMutations           *membershipapp.RESTMutationService
 	tagColors                     *tagapp.RESTColorService
+	tagDeletions                  *tagapp.RESTDeletionService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -739,6 +740,15 @@ func NewServer(st storeAPI, opts Options) *Server {
 		DurableNameColor:   st,
 		TemporaryNameColor: st,
 		Publisher:          tagColorPublisher{server: server},
+	})
+	server.tagDeletions = tagapp.NewRESTDeletionService(tagapp.RESTDeletionServiceDependencies{
+		MineID:        st,
+		MineName:      st,
+		DurableID:     st,
+		Rows:          st,
+		BoardNames:    st,
+		PersonalNames: st,
+		Publisher:     tagDeletionPublisher{server: server},
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)

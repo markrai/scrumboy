@@ -579,12 +579,19 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid tagId", "invalid_tag_id", map[string]any{"field": "tagId"})
 			return true
 		}
-		affected, err := s.store.DeleteTagForDurableProjectByID(ctx, projectID, userID, tagID)
+		prepared, err := s.tagDeletions.PrepareProjectID(ctx, tagapp.ProjectIDDeleteCommand{
+			Project:     tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ActorUserID: &userID,
+			TagID:       tagID,
+		})
 		if err != nil {
-			writeStoreErr(w, err, true)
+			writeTagDeletionError(w, err)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected, refresh.Entity{})
+		if err := prepared.Delete(); err != nil {
+			writeTagDeletionError(w, err)
+			return true
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -601,12 +608,19 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		tagName := rest[2]
-		affected, err := s.store.DeleteMyTagByName(ctx, projectID, userID, tagName)
+		prepared, err := s.tagDeletions.PrepareProjectName(ctx, tagapp.ProjectNameDeleteCommand{
+			Project:     tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ActorUserID: &userID,
+			Name:        tagName,
+		})
 		if err != nil {
-			writeStoreErr(w, err, true)
+			writeTagDeletionError(w, err)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected, refresh.Entity{Name: tagName})
+		if err := prepared.Delete(); err != nil {
+			writeTagDeletionError(w, err)
+			return true
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

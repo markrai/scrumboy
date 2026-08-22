@@ -365,52 +365,44 @@ func (c *capturingEventConsumer) OnEvent(_ context.Context, e eventbus.Event) {
 	c.events = append(c.events, e)
 }
 
-func TestEmitTagDeletedRefreshFansSameEntityAndDedupesProjects(t *testing.T) {
+func TestTagDeletionPublisherPassesNameEntity(t *testing.T) {
 	cap := &capturingEventConsumer{}
 	s := &Server{fanout: eventbus.NewFanout(cap)}
-	s.emitTagDeletedRefresh(context.Background(), 7, []int64{7, 9, 9, 11}, refresh.Entity{Name: "blocked"})
-	if len(cap.events) != 3 {
-		t.Fatalf("events=%d, want 3 unique projects", len(cap.events))
+	tagDeletionPublisher{server: s}.PublishTagDeleted(context.Background(), 7, "blocked")
+	if len(cap.events) != 1 {
+		t.Fatalf("events=%d, want 1", len(cap.events))
 	}
-	seen := map[int64]bool{}
-	for _, e := range cap.events {
-		if e.Type != "board.refresh_needed" {
-			t.Fatalf("type=%q", e.Type)
-		}
-		if seen[e.ProjectID] {
-			t.Fatalf("duplicate project %d", e.ProjectID)
-		}
-		seen[e.ProjectID] = true
-		var p refreshNeededPayload
-		if err := json.Unmarshal(e.Payload, &p); err != nil {
-			t.Fatal(err)
-		}
-		if p.Reason != "tag_deleted" || p.Name != "blocked" {
-			t.Fatalf("payload=%+v, want tag_deleted name=blocked", p)
-		}
+	e := cap.events[0]
+	if e.Type != "board.refresh_needed" {
+		t.Fatalf("type=%q", e.Type)
 	}
-	if !seen[7] || !seen[9] || !seen[11] {
-		t.Fatalf("projects=%v, want 7,9,11", seen)
+	if e.ProjectID != 7 {
+		t.Fatalf("project=%d, want 7", e.ProjectID)
+	}
+	var p refreshNeededPayload
+	if err := json.Unmarshal(e.Payload, &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Reason != "tag_deleted" || p.Name != "blocked" {
+		t.Fatalf("payload=%+v, want tag_deleted name=blocked", p)
 	}
 }
 
-func TestEmitTagDeletedRefreshIDBasedPassesZeroEntity(t *testing.T) {
+func TestTagDeletionPublisherIDBasedPassesZeroEntity(t *testing.T) {
 	cap := &capturingEventConsumer{}
 	s := &Server{fanout: eventbus.NewFanout(cap)}
-	s.emitTagDeletedRefresh(context.Background(), 7, []int64{9}, refresh.Entity{})
-	if len(cap.events) != 2 {
-		t.Fatalf("events=%d, want 2", len(cap.events))
+	tagDeletionPublisher{server: s}.PublishTagDeleted(context.Background(), 7, "")
+	if len(cap.events) != 1 {
+		t.Fatalf("events=%d, want 1", len(cap.events))
 	}
-	for _, e := range cap.events {
-		var p refreshNeededPayload
-		if err := json.Unmarshal(e.Payload, &p); err != nil {
-			t.Fatal(err)
-		}
-		if p.Name != "" || p.LocalID != 0 || p.Title != "" {
-			t.Fatalf("expected zero entity, got %+v", p)
-		}
-		assertRefreshNeededEntityOmitted(t, e.Payload)
+	var p refreshNeededPayload
+	if err := json.Unmarshal(cap.events[0].Payload, &p); err != nil {
+		t.Fatal(err)
 	}
+	if p.Name != "" || p.LocalID != 0 || p.Title != "" {
+		t.Fatalf("expected zero entity, got %+v", p)
+	}
+	assertRefreshNeededEntityOmitted(t, cap.events[0].Payload)
 }
 
 func assertRefreshNeededEntityOmitted(t *testing.T, payload []byte) {
