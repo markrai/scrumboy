@@ -7,6 +7,7 @@ import (
 	membershipapp "scrumboy/internal/application/membership"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
+	tagapp "scrumboy/internal/application/tag"
 	todolinkapp "scrumboy/internal/application/todolink"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
@@ -20,6 +21,26 @@ var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
 
 func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
 	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated", refresh.Entity{})
+}
+
+type tagColorPublisher struct {
+	server *Server
+}
+
+var _ tagapp.RESTColorPublisher = tagColorPublisher{}
+
+func (p tagColorPublisher) PublishTagColorUpdated(ctx context.Context, projectID int64, name string) {
+	p.server.emitRefreshNeeded(ctx, projectID, "tag_color_updated", refresh.Entity{Name: name})
+}
+
+type tagDeletionPublisher struct {
+	server *Server
+}
+
+var _ tagapp.RESTDeletionPublisher = tagDeletionPublisher{}
+
+func (p tagDeletionPublisher) PublishTagDeleted(ctx context.Context, projectID int64, name string) {
+	p.server.emitRefreshNeeded(ctx, projectID, "tag_deleted", refresh.Entity{Name: name})
 }
 
 type sprintDefinitionPublisher struct {
@@ -129,23 +150,6 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 		ProjectID: projectID,
 		Payload:   payload,
 	})
-}
-
-// emitTagDeletedRefresh emits a "tag_deleted" refresh for the current project plus
-// every other project affected by a cross-project personal-tag deletion. Deleting a
-// personal tag row removes it from every project that reused it, so all their boards
-// must refresh, not only the one the request targeted.
-func (s *Server) emitTagDeletedRefresh(ctx context.Context, projectID int64, affectedProjectIDs []int64, entity refresh.Entity) {
-	emitted := make(map[int64]struct{}, len(affectedProjectIDs)+1)
-	s.emitRefreshNeeded(ctx, projectID, "tag_deleted", entity)
-	emitted[projectID] = struct{}{}
-	for _, pid := range affectedProjectIDs {
-		if _, ok := emitted[pid]; ok {
-			continue
-		}
-		emitted[pid] = struct{}{}
-		s.emitRefreshNeeded(ctx, pid, "tag_deleted", entity)
-	}
 }
 
 func (s *Server) emitProjectDeleted(ctx context.Context, deleted store.DeletedProjectSnapshot) {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	tagapp "scrumboy/internal/application/tag"
 	"scrumboy/internal/store"
 )
 
@@ -34,6 +35,53 @@ type updateProjectTagColorInput struct {
 type deleteProjectTagInput struct {
 	ProjectSlug string `json:"projectSlug"`
 	TagID       int64  `json:"tagId"`
+}
+
+func mapTagColorPrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, tagapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, tagapp.ErrMaintainerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapTagColorUpdateError(err error) *adapterError {
+	if errors.Is(err, tagapp.ErrColorProjectionMissing) {
+		return newAdapterError(
+			http.StatusInternalServerError,
+			CodeInternal,
+			"internal error",
+			map[string]any{"detail": "updated project tag not found in post-read"},
+		)
+	}
+	return mapStoreError(err)
+}
+
+func mapTagDeletionPrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, tagapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, tagapp.ErrMaintainerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapTagDeletionExecuteError(err error) *adapterError {
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
+	case errors.Is(err, store.ErrUnauthorized):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, err.Error(), nil)
+	case errors.Is(err, store.ErrConflict):
+		return newAdapterError(http.StatusConflict, CodeConflict, err.Error(), nil)
+	default:
+		return mapStoreError(err)
+	}
 }
 
 func (a *Adapter) handleTagsListProject(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -159,30 +207,18 @@ func (a *Adapter) handleTagsUpdateMineColor(ctx context.Context, input any) (any
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "color cannot be empty; use null to clear", map[string]any{"field": "color"})
 	}
 
-	userID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	prepared, prepareErr := a.tagColors.PrepareMineID(ctx, tagapp.MCPMineIDColorTarget{
+		TagID: in.TagID,
+		Color: tagapp.NewColorIntent(in.Color),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapTagColorPrepareError(prepareErr)
 	}
-
-	tags, tagsErr := a.store.ListUserTags(ctx, userID)
-	if tagsErr != nil {
-		return nil, nil, mapStoreError(tagsErr)
-	}
-	tag, found := findMineTag(tags, in.TagID)
-	if !found {
-		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-	}
-
-	updateErr := a.store.UpdateTagColor(ctx, &userID, in.TagID, in.Color)
+	tag, updateErr := prepared.Update()
 	if updateErr != nil {
-		// Clearing a color preference when none exists is a harmless no-op for this
-		// mine-scope MCP tool; normalize the store quirk into a successful clear.
-		if !(isColorClear(in.Color) && errors.Is(updateErr, store.ErrNotFound)) {
-			return nil, nil, mapStoreError(updateErr)
-		}
+		return nil, nil, mapTagColorUpdateError(updateErr)
 	}
 
-	tag.Color = normalizedMineColor(in.Color)
 	return map[string]any{
 		"tag": mineTagItem{
 			TagID:     tag.TagID,
@@ -216,30 +252,14 @@ func (a *Adapter) handleTagsDeleteMine(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tagId", map[string]any{"field": "tagId"})
 	}
 
-	userID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	prepared, prepareErr := a.tagDeletions.PrepareMineID(ctx, tagapp.MCPMineIDDeletionTarget{
+		TagID: in.TagID,
+	})
+	if prepareErr != nil {
+		return nil, nil, mapTagDeletionPrepareError(prepareErr)
 	}
-
-	tags, tagsErr := a.store.ListUserTags(ctx, userID)
-	if tagsErr != nil {
-		return nil, nil, mapStoreError(tagsErr)
-	}
-	if _, found := findMineTag(tags, in.TagID); !found {
-		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-	}
-
-	if err := a.store.DeleteTag(ctx, userID, in.TagID, false); err != nil {
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-		case errors.Is(err, store.ErrUnauthorized):
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, err.Error(), nil)
-		case errors.Is(err, store.ErrConflict):
-			return nil, nil, newAdapterError(http.StatusConflict, CodeConflict, err.Error(), nil)
-		default:
-			return nil, nil, mapStoreError(err)
-		}
+	if deleteErr := prepared.Delete(); deleteErr != nil {
+		return nil, nil, mapTagDeletionExecuteError(deleteErr)
 	}
 
 	return map[string]any{
@@ -290,80 +310,37 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "color cannot be empty; use null to clear", map[string]any{"field": "color"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
-	}
-	userID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-
-	// tagName targets a grouped personal label and changes only the caller's own
-	// display preference, so any authenticated project member may do it. tagId targets
-	// a board-scoped tag whose color is shared with everyone, so it stays maintainer+.
 	if suppliedName {
-		if err := a.store.SetViewerTagColorByName(ctx, pc.Project.ID, userID, *in.TagName, in.Color); err != nil {
-			return nil, nil, mapStoreError(err)
+		prepared, prepareErr := a.tagColors.PrepareProjectName(ctx, tagapp.MCPProjectNameColorTarget{
+			ProjectSlug: in.ProjectSlug,
+			Mode:        a.storeMode(),
+			Name:        *in.TagName,
+			Color:       tagapp.NewColorIntent(in.Color),
+		})
+		if prepareErr != nil {
+			return nil, nil, mapTagColorPrepareError(prepareErr)
 		}
-		projectTags, listErr := a.store.ListTagCounts(ctx, &pc)
-		if listErr != nil {
-			return nil, nil, mapStoreError(listErr)
+		tag, updateErr := prepared.Update()
+		if updateErr != nil {
+			return nil, nil, mapTagColorUpdateError(updateErr)
 		}
-		// The listing labels a group by its grouping key, which is the canonical name
-		// when one exists and the raw stored name otherwise; TagGroupKey mirrors that.
-		if tc, found := findProjectTagCountByName(projectTags, store.TagGroupKey(*in.TagName)); found {
-			return map[string]any{"tag": toProjectTagItem(tc)}, map[string]any{}, nil
-		}
-		return nil, nil, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": "updated project tag not found in post-read"})
+		return map[string]any{"tag": toProjectTagItem(tag)}, map[string]any{}, nil
 	}
 
-	tagID := *in.TagID
-
-	// On durable projects, grouped listProject exposes a real tagId only for
-	// board-scoped tags (personal groups report tagId 0), so a tagId lookup here
-	// naturally restricts this path to board-scoped tags; personal color updates must
-	// use tagName. Temporary boards keep the row-level projection, so every listed row
-	// remains addressable by tagId exactly as before.
-	projectTags, listErr := a.store.ListTagCounts(ctx, &pc)
-	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
+	prepared, prepareErr := a.tagColors.PrepareProjectID(ctx, tagapp.MCPProjectIDColorTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+		TagID:       *in.TagID,
+		Color:       tagapp.NewColorIntent(in.Color),
+	})
+	if prepareErr != nil {
+		return nil, nil, mapTagColorPrepareError(prepareErr)
 	}
-	if _, found := findProjectTagCount(projectTags, tagID); !found {
-		return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-	}
-
-	var updateErr error
-	if pc.Project.ExpiresAt != nil {
-		// Temporary boards are link-shareable: buildProjectContext leaves pc.Role empty
-		// on purpose, and REST uses UpdateTagColorForTemporaryBoard with no Maintainer
-		// gate. Match that for authenticated Full-mode MCP callers (anonymous MCP mode
-		// remains unavailable; pastebin visitors use REST).
-		updateErr = a.store.UpdateTagColorForTemporaryBoard(ctx, pc.Project.ID, &userID, tagID, in.Color)
-	} else {
-		// Durable board-scoped tagId: shared tags.color requires Maintainer+.
-		if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-		}
-		updateErr = a.store.UpdateTagColorForDurableProjectByID(ctx, pc.Project.ID, userID, tagID, in.Color)
-	}
+	tag, updateErr := prepared.Update()
 	if updateErr != nil {
-		if !(isColorClear(in.Color) && errors.Is(updateErr, store.ErrNotFound)) {
-			return nil, nil, mapStoreError(updateErr)
-		}
+		return nil, nil, mapTagColorUpdateError(updateErr)
 	}
-
-	projectTags, listErr = a.store.ListTagCounts(ctx, &pc)
-	if listErr != nil {
-		return nil, nil, mapStoreError(listErr)
-	}
-	if tc, found := findProjectTagCount(projectTags, tagID); found {
-		return map[string]any{"tag": toProjectTagItem(tc)}, map[string]any{}, nil
-	}
-
-	// Tag existence in project scope was already verified above; if it disappears
-	// here, treat it as an internal inconsistency rather than weakening the contract.
-	return nil, nil, newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": "updated project tag not found in post-read"})
+	return map[string]any{"tag": toProjectTagItem(tag)}, map[string]any{}, nil
 }
 
 func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -392,42 +369,19 @@ func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, 
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tagId", map[string]any{"field": "tagId"})
 	}
 
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if pcErr != nil {
-		return nil, nil, mapStoreError(pcErr)
+	// MCP project deletion deliberately remains board-scoped-only. The prepared
+	// service verifies the project-scoped row before performing the destructive
+	// operation, so personal rows continue to return not found.
+	prepared, prepareErr := a.tagDeletions.PrepareProjectID(ctx, tagapp.MCPProjectIDDeletionTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+		TagID:       in.TagID,
+	})
+	if prepareErr != nil {
+		return nil, nil, mapTagDeletionPrepareError(prepareErr)
 	}
-	userID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-
-	// Deliberately still board-scoped-only (unlike handleTagsUpdateProjectColor): DeleteTag on a
-	// user-owned tag deletes it across every project that user has used it in, not just this one,
-	// so tags.deleteProject intentionally 404s for user-owned tags (see
-	// TestMCPTagsDeleteProjectUserOwnedTagNotFound). tags.updateProjectColor is non-destructive
-	// and safely dispatches to a per-viewer color update for user-owned tags, so only that path
-	// was widened.
-	if _, tagErr := a.store.GetProjectScopedTagByID(ctx, pc.Project.ID, in.TagID); tagErr != nil {
-		return nil, nil, mapStoreError(tagErr)
-	}
-
-	p := pc.Project
-	isAnonymousBoard := p.ExpiresAt != nil && p.CreatorUserID == nil
-
-	if err := a.store.DeleteTag(ctx, userID, in.TagID, isAnonymousBoard); err != nil {
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			return nil, nil, newAdapterError(http.StatusNotFound, CodeNotFound, "not found", nil)
-		case errors.Is(err, store.ErrUnauthorized):
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, err.Error(), nil)
-		case errors.Is(err, store.ErrConflict):
-			return nil, nil, newAdapterError(http.StatusConflict, CodeConflict, err.Error(), nil)
-		default:
-			return nil, nil, mapStoreError(err)
-		}
+	if deleteErr := prepared.Delete(); deleteErr != nil {
+		return nil, nil, mapTagDeletionExecuteError(deleteErr)
 	}
 
 	return map[string]any{
@@ -436,42 +390,4 @@ func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, 
 			"tagId":       in.TagID,
 		},
 	}, map[string]any{}, nil
-}
-
-func findProjectTagCount(tags []store.TagCount, tagID int64) (store.TagCount, bool) {
-	for _, tag := range tags {
-		if tag.TagID == tagID {
-			return tag, true
-		}
-	}
-	return store.TagCount{}, false
-}
-
-func findProjectTagCountByName(tags []store.TagCount, canonicalName string) (store.TagCount, bool) {
-	for _, tag := range tags {
-		if tag.Name == canonicalName {
-			return tag, true
-		}
-	}
-	return store.TagCount{}, false
-}
-
-func findMineTag(tags []store.TagWithColor, tagID int64) (store.TagWithColor, bool) {
-	for _, tag := range tags {
-		if tag.TagID == tagID {
-			return tag, true
-		}
-	}
-	return store.TagWithColor{}, false
-}
-
-func isColorClear(color *string) bool {
-	return color == nil
-}
-
-func normalizedMineColor(color *string) *string {
-	if isColorClear(color) {
-		return nil
-	}
-	return color
 }
