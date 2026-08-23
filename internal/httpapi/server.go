@@ -15,6 +15,7 @@ import (
 	calendarapp "scrumboy/internal/application/calendar"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
+	projectapp "scrumboy/internal/application/project"
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
@@ -121,6 +122,11 @@ type Options struct {
 type Server struct {
 	store                         storeAPI
 	boardReads                    *boardapp.ReadService
+	projectCreations              *projectapp.RESTDurableCreationService
+	anonymousBoardCreations       *projectapp.AnonymousBoardCreationService
+	projectUpdates                *projectapp.RESTUpdateService
+	projectDeletions              *projectapp.RESTDeletionService
+	projectClaims                 *projectapp.RESTClaimService
 	todoCreates                   *todoapp.CreateService
 	todoDeletes                   *todoapp.DeleteService
 	todoMoves                     *todoapp.MoveService
@@ -626,6 +632,22 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
+	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
+	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)
+	server.projectUpdates = projectapp.NewRESTUpdateService(projectapp.RESTUpdateServiceDependencies{
+		Projects:  st,
+		Images:    st,
+		Names:     st,
+		Publisher: projectUpdatePublisher{server: server},
+	})
+	server.projectDeletions = projectapp.NewRESTDeletionService(projectapp.RESTDeletionServiceDependencies{
+		Projects:  st,
+		Publisher: projectDeletionPublisher{server: server},
+	})
+	server.projectClaims = projectapp.NewRESTClaimService(projectapp.RESTClaimServiceDependencies{
+		Claims:    st,
+		Publisher: projectClaimPublisher{server: server},
+	})
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 		server.emitRefreshNeeded(ctx, projectID, reason, entity)
 	})

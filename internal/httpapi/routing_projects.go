@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
-	"scrumboy/internal/application/refresh"
+	projectapp "scrumboy/internal/application/project"
 	tagapp "scrumboy/internal/application/tag"
-	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
 )
 
@@ -45,22 +43,6 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []s
 	if !ok {
 		writeValidationError(w, "invalid project id", "invalid_project_id", map[string]any{"field": "projectId"})
 		return
-	}
-
-	if s.mode == "anonymous" && len(rest) == 1 && r.Method == http.MethodPatch {
-		p, err := s.store.GetProject(s.requestContext(r), projectID)
-		if err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
-				return
-			}
-			writeStoreErr(w, err, true)
-			return
-		}
-		if p.ExpiresAt == nil || p.CreatorUserID != nil || !p.ExpiresAt.After(time.Now().UTC()) {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
-			return
-		}
 	}
 
 	if s.handleProjectsProjectItem(w, r, rest, projectID) {
@@ -136,7 +118,11 @@ func (s *Server) handleProjectsRoot(w http.ResponseWriter, r *http.Request, rest
 				})
 			}
 		}
-		p, err := s.store.CreateProjectWithWorkflow(s.requestContext(r), in.Name, workflow)
+		prepared := s.projectCreations.Prepare(s.requestContext(r), projectapp.RESTDurableCreationCommand{
+			Name:     in.Name,
+			Workflow: workflow,
+		})
+		p, err := prepared.Create()
 		if err != nil {
 			writeStoreErr(w, err, false)
 			return true
@@ -164,18 +150,27 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 			return true
 		}
-		deleted, err := s.store.DeleteProject(ctx, projectID, userID)
-		if err != nil {
+		prepared := s.projectDeletions.Prepare(ctx, projectapp.RESTDeletionCommand{
+			ProjectID:   projectID,
+			ActorUserID: userID,
+		})
+		if err := prepared.Delete(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitProjectDeleted(ctx, deleted)
 		w.WriteHeader(http.StatusNoContent)
 		return true
 
 	case http.MethodPatch:
 		ctx := s.requestContext(r)
-		userID, hasUser := store.UserIDFromContext(ctx)
+		prepared, err := s.projectUpdates.Prepare(ctx, projectapp.RESTUpdateTarget{
+			ProjectID: projectID,
+			Mode:      s.storeMode(),
+		})
+		if err != nil {
+			writeProjectUpdateError(w, err)
+			return true
+		}
 		var in struct {
 			Name  *string `json:"name"`
 			Image *string `json:"image"`
@@ -183,34 +178,13 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		if in.Image != nil {
-			if !hasUser {
-				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-				return true
-			}
-			color := projectcolor.ExtractFromDataURL(*in.Image)
-			if err := s.store.UpdateProjectImage(ctx, projectID, userID, in.Image, color); err != nil {
-				writeStoreErr(w, err, true)
-				return true
-			}
-		}
-		if in.Name != nil {
-			uid := int64(0)
-			if hasUser {
-				uid = userID
-			}
-			if err := s.store.UpdateProjectName(ctx, projectID, uid, *in.Name); err != nil {
-				writeStoreErr(w, err, true)
-				return true
-			}
-		}
-		project, err := s.store.GetProject(s.requestContext(r), projectID)
+		project, err := prepared.Update(projectapp.RESTUpdateCommand{
+			Name:  in.Name,
+			Image: in.Image,
+		})
 		if err != nil {
-			writeStoreErr(w, err, true)
+			writeProjectUpdateError(w, err)
 			return true
-		}
-		if in.Name != nil || in.Image != nil {
-			s.emitRefreshNeeded(s.requestContext(r), projectID, "project_updated", refresh.Entity{})
 		}
 		writeJSON(w, http.StatusOK, projectToJSON(project))
 		return true
@@ -219,6 +193,14 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return true
 	}
+}
+
+func writeProjectUpdateError(w http.ResponseWriter, err error) {
+	if errors.Is(err, projectapp.ErrActorRequired) {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+		return
+	}
+	writeStoreErr(w, err, true)
 }
 
 func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Request, rest []string, projectID int64) bool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	membershipapp "scrumboy/internal/application/membership"
+	projectapp "scrumboy/internal/application/project"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	tagapp "scrumboy/internal/application/tag"
@@ -21,6 +22,39 @@ var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
 
 func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
 	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated", refresh.Entity{})
+}
+
+type projectUpdatePublisher struct {
+	server *Server
+}
+
+var _ projectapp.RESTUpdatePublisher = projectUpdatePublisher{}
+
+func (p projectUpdatePublisher) PublishProjectUpdated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "project_updated", refresh.Entity{})
+}
+
+type projectDeletionPublisher struct {
+	server *Server
+}
+
+var _ projectapp.RESTDeletionPublisher = projectDeletionPublisher{}
+
+func (p projectDeletionPublisher) PublishProjectDeleted(
+	ctx context.Context,
+	snapshot store.DeletedProjectSnapshot,
+) {
+	p.server.emitProjectDeleted(ctx, snapshot)
+}
+
+type projectClaimPublisher struct {
+	server *Server
+}
+
+var _ projectapp.RESTClaimPublisher = projectClaimPublisher{}
+
+func (p projectClaimPublisher) PublishBoardClaimed(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "board_claimed", refresh.Entity{})
 }
 
 type tagColorPublisher struct {
