@@ -66,7 +66,7 @@ What lives where, what JSON export covers, and what a full restore needs. See al
 | SQLite | `SQLITE_PATH` (default under `DATA_DIR`) | scoped projects | yes |
 | WAL/SHM | beside DB | no | quiesce/copy with DB |
 | Wallpapers | `DATA_DIR/user-wallpapers/` | no | yes |
-| Encryption key | env/secret (`SCRUMBOY_ENCRYPTION_KEY`) | no | yes if encrypted auth data |
+| Encryption key | env/secret (`SCRUMBOY_ENCRYPTION_KEY`) | no | yes if encrypted auth or calendar data |
 | Mermaid override | `DATA_DIR/mermaid-semantic-edges.json` when used | no | only for that override |
 
 ## Backup, restore, and upgrade
@@ -76,7 +76,7 @@ flowchart TB
   subgraph backup [Backup]
     FileCopy[Quiesce then copy whole DATA_DIR]
     Export[GET api backup export JSON]
-    Key[SCRUMBOY_ENCRYPTION_KEY if 2FA enabled]
+    Key[SCRUMBOY_ENCRYPTION_KEY if 2FA or calendar feeds]
   end
 
   subgraph restore [Restore]
@@ -99,7 +99,7 @@ flowchart TB
 
 - **File backup:** Prefer stopping the process (or otherwise ensuring no concurrent writes), then copy the **entire** `DATA_DIR` (Docker `/data`). That includes `app.db`, any `-wal` / `-shm` sidecars, and `user-wallpapers/`. If you must copy a live database, copy `app.db` together with its WAL/SHM sidecars **and** the `user-wallpapers/` directory — copying only `app.db` is not sufficient. Restoring the database without the wallpaper files leaves image-mode preferences pointing at missing files.
 - **JSON backup:** Project-scoped logical export via API; import supports replace, merge, or copy-as-new (see `scrumboy_backup_import.md`). It does **not** include uploaded wallpaper files, general user preferences, or `audit_events`, and is not a substitute for a complete file-level `DATA_DIR` backup.
-- **2FA:** back up `SCRUMBOY_ENCRYPTION_KEY` with the database; rotating it breaks stored TOTP secrets. Once encrypted auth/security data exists, startup requires the original valid key. On a fresh install with no encrypted data yet, an invalid key is ignored with a warning (2FA and password-reset encryption stay off until a valid key is set).
+- **2FA and calendar feeds:** back up `SCRUMBOY_ENCRYPTION_KEY` with the database; rotating it breaks stored TOTP secrets and encrypted ICS URLs. Once encrypted security data exists, startup requires the original valid key. On a fresh install with no encrypted data yet, an invalid key is ignored with a warning (2FA, password-reset encryption, and calendar URL encryption stay off until a valid key is set).
 - **Owner recovery:** host-side `recover-owner` can establish or replace an owner local password without the IdP; see `docs/recovery.md` (stop the service and back up `DATA_DIR` first).
 - **Upgrade:** replace the binary or image, keep the data volume, restart; pending migrations apply automatically in `main.go`.
 

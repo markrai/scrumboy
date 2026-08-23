@@ -1,0 +1,2 @@
+ALTER TABLE projects
+  ADD COLUMN agenda_color TEXT NOT NULL DEFAULT '#6366F1';

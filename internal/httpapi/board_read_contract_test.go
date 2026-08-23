@@ -134,12 +134,37 @@ func TestBoardRead_RESTCombinedFiltersAndPaginationContract(t *testing.T) {
 		t.Fatal("expected tags")
 	}
 
+	workflow, err := st.GetProjectWorkflow(ctxOwner, project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectWorkflow: %v", err)
+	}
+	if len(board.ColumnOrder) != len(workflow) {
+		t.Fatalf("columnOrder len = %d, want workflow len %d", len(board.ColumnOrder), len(workflow))
+	}
+	workflowKeys := make(map[string]struct{}, len(workflow))
+	for i, col := range workflow {
+		workflowKeys[col.Key] = struct{}{}
+		if board.ColumnOrder[i].Key != col.Key {
+			t.Fatalf("columnOrder[%d] = %q, want workflow key %q", i, board.ColumnOrder[i].Key, col.Key)
+		}
+	}
+
 	for _, column := range board.ColumnOrder {
 		if _, ok := board.Columns[column.Key]; !ok {
 			t.Fatalf("columns missing workflow lane %q", column.Key)
 		}
 		if _, ok := board.ColumnsMeta[column.Key]; !ok {
 			t.Fatalf("columnsMeta missing workflow lane %q", column.Key)
+		}
+	}
+	for key := range board.Columns {
+		if _, ok := workflowKeys[key]; !ok {
+			t.Fatalf("columns contains non-workflow key %q", key)
+		}
+	}
+	for key := range board.ColumnsMeta {
+		if _, ok := workflowKeys[key]; !ok {
+			t.Fatalf("columnsMeta contains non-workflow key %q", key)
 		}
 	}
 

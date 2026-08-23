@@ -190,6 +190,50 @@ func TestResolveStartupEncryptionKey_ValidWithEncryptedStateReturned(t *testing.
 	}
 }
 
+func TestResolveStartupEncryptionKey_EmptyWithCalendarCiphertextFails(t *testing.T) {
+	sqlDB, cleanup := newStartupEncryptionTestDB(t)
+	defer cleanup()
+	u := bootstrapStartupEncryptionUser(t, sqlDB)
+	ownerCtx := WithUserID(context.Background(), u.ID)
+	st := New(sqlDB, nil)
+	project, err := st.CreateProject(ownerCtx, "Calendar Ciphertext")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO calendar_sources(project_id, type, name, enabled, secret_enc, url_hash, created_at, updated_at)
+VALUES (?, 'ics_feed', 'Family', 1, 'v1:ciphertext', 'hash-family', 1, 1)`, project.ID); err != nil {
+		t.Fatalf("seed calendar ciphertext: %v", err)
+	}
+
+	_, err = ResolveStartupEncryptionKey(context.Background(), sqlDB, "")
+	if !errors.Is(err, ErrStartupEncryptionKeyRequired) {
+		t.Fatalf("expected ErrStartupEncryptionKeyRequired, got %v", err)
+	}
+}
+
+func TestResolveStartupEncryptionKey_InvalidWithCalendarCiphertextFails(t *testing.T) {
+	sqlDB, cleanup := newStartupEncryptionTestDB(t)
+	defer cleanup()
+	u := bootstrapStartupEncryptionUser(t, sqlDB)
+	ownerCtx := WithUserID(context.Background(), u.ID)
+	st := New(sqlDB, nil)
+	project, err := st.CreateProject(ownerCtx, "Calendar Ciphertext Invalid")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := sqlDB.Exec(`
+INSERT INTO calendar_sources(project_id, type, name, enabled, secret_enc, url_hash, created_at, updated_at)
+VALUES (?, 'ics_feed', 'Family', 1, 'v1:ciphertext', 'hash-family', 1, 1)`, project.ID); err != nil {
+		t.Fatalf("seed calendar ciphertext: %v", err)
+	}
+
+	_, err = ResolveStartupEncryptionKey(context.Background(), sqlDB, startupEncryptionInvalidKey)
+	if !errors.Is(err, ErrStartupEncryptionKeyInvalid) {
+		t.Fatalf("expected ErrStartupEncryptionKeyInvalid, got %v", err)
+	}
+}
+
 func TestResolveStartupEncryptionKey_EmptyNormalUserAllowed(t *testing.T) {
 	sqlDB, cleanup := newStartupEncryptionTestDB(t)
 	defer cleanup()

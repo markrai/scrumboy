@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"scrumboy/internal/application/refresh"
 	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
@@ -116,10 +117,10 @@ var refreshReasonInfo = map[string]reasonInfo{
 	"project_deleted":          {emailCategoryProjectActivity, "project deleted", "deleted the project", "The project was deleted"},
 	"project_settings_updated": {emailCategoryProjectActivity, "project settings updated", "updated the project settings", "The project settings were updated"},
 	"board_claimed":            {emailCategoryProjectActivity, "board claimed", "claimed the board", "The board was claimed"},
-	"workflow_column_added":    {emailCategoryProjectActivity, "workflow column added", "added a workflow column", "A workflow column was added"},
-	"workflow_column_updated":  {emailCategoryProjectActivity, "workflow column updated", "updated a workflow column", "A workflow column was updated"},
-	"workflow_column_deleted":  {emailCategoryProjectActivity, "workflow column deleted", "deleted a workflow column", "A workflow column was deleted"},
-	"tag_color_updated":        {emailCategoryProjectActivity, "tag color updated", "updated a tag color", "A tag color was updated"},
+	"workflow_column_added":    {emailCategoryProjectActivity, "column added", "added a column", "A column was added"},
+	"workflow_column_updated":  {emailCategoryProjectActivity, "column updated", "updated a column", "A column was updated"},
+	"workflow_column_deleted":  {emailCategoryProjectActivity, "column deleted", "deleted a column", "A column was deleted"},
+	"tag_color_updated":        {emailCategoryProjectActivity, "tag color changed", "changed a tag color", "A tag color was changed"},
 	"tag_deleted":              {emailCategoryProjectActivity, "tag deleted", "deleted a tag", "A tag was deleted"},
 }
 
@@ -167,7 +168,10 @@ func (n *emailNotifier) handleTodoAssigned(ctx context.Context, e eventbus.Event
 	if domain.ToAssigneeUID != nil && assignmentSent {
 		excluded[*domain.ToAssigneeUID] = true
 	}
-	n.handleActivity(ctx, e.ProjectID, domain.ActivityReason, domain.ActorUserID, excluded)
+	n.handleActivity(ctx, e.ProjectID, domain.ActivityReason, domain.ActorUserID, refresh.Entity{
+		LocalID: domain.LocalID,
+		Title:   domain.Title,
+	}, excluded)
 }
 
 func (n *emailNotifier) handleAssignment(ctx context.Context, projectID int64, domain eventbus.TodoAssignedPayload) bool {
@@ -196,10 +200,19 @@ func (n *emailNotifier) handleAssignment(ctx context.Context, projectID int64, d
 	}
 
 	subject := fmt.Sprintf("Assigned to you: %s", domain.Title)
-	body := fmt.Sprintf(
-		"A card was assigned to you in %s.\n\n%s\n\nView the board:\n%s\n",
-		proj.Name, domain.Title, n.projectURL(proj.Slug),
-	)
+	card, ok := cardIdentity(domain.LocalID, domain.Title)
+	var body string
+	if ok {
+		body = fmt.Sprintf(
+			"Card %s was assigned to you in %s.\n\nView the board:\n%s\n",
+			card, proj.Name, n.projectURL(proj.Slug),
+		)
+	} else {
+		body = fmt.Sprintf(
+			"A card was assigned to you in %s.\n\n%s\n\nView the board:\n%s\n",
+			proj.Name, domain.Title, n.projectURL(proj.Slug),
+		)
+	}
 	return n.send(user.Email, subject, body, fmt.Sprintf("email-notify category=%s user=%d", emailCategoryAssigned, assigneeID))
 }
 
@@ -334,27 +347,60 @@ func selectCreatorEmailCategory(pref store.EmailNotifyPref, candidate todoapp.Au
 func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNotification, category emailCategory) (string, string, bool) {
 	switch category {
 	case emailCategoryAssigned:
-		return fmt.Sprintf("Assigned to you: %s", candidate.Title), fmt.Sprintf(
-			"A card was assigned to you in %s.\n\n%s\n\nView the board:\n%s\n",
-			candidate.ProjectName, candidate.Title, n.projectURL(candidate.ProjectSlug),
-		), true
+		subject := fmt.Sprintf("Assigned to you: %s", candidate.Title)
+		card, ok := cardIdentity(candidate.LocalID, candidate.Title)
+		var body string
+		if ok {
+			body = fmt.Sprintf(
+				"Card %s was assigned to you in %s.\n\nView the board:\n%s\n",
+				card, candidate.ProjectName, n.projectURL(candidate.ProjectSlug),
+			)
+		} else {
+			body = fmt.Sprintf(
+				"A card was assigned to you in %s.\n\n%s\n\nView the board:\n%s\n",
+				candidate.ProjectName, candidate.Title, n.projectURL(candidate.ProjectSlug),
+			)
+		}
+		return subject, body, true
 	case emailCategoryCreatedByMe:
 		action := "updated"
 		if candidate.ActivityReason == todoapp.RefreshReasonTodoMoved {
 			action = "moved"
 		}
-		return fmt.Sprintf("A card you opened was %s: %s", action, candidate.Title), fmt.Sprintf(
-			"A card you opened was %s in %s.\n\n%s\n\nView the board:\n%s\n",
-			action, candidate.ProjectName, candidate.Title, n.projectURL(candidate.ProjectSlug),
-		), true
+		subject := fmt.Sprintf("A card you opened was %s: %s", action, candidate.Title)
+		card, ok := cardIdentity(candidate.LocalID, candidate.Title)
+		var body string
+		if ok {
+			body = fmt.Sprintf(
+				"Card %s was %s in %s.\n\nView the board:\n%s\n",
+				card, action, candidate.ProjectName, n.projectURL(candidate.ProjectSlug),
+			)
+		} else {
+			body = fmt.Sprintf(
+				"A card you opened was %s in %s.\n\n%s\n\nView the board:\n%s\n",
+				action, candidate.ProjectName, candidate.Title, n.projectURL(candidate.ProjectSlug),
+			)
+		}
+		return subject, body, true
 	case emailCategoryCardActivity:
 		info, ok := refreshReasonInfo[candidate.ActivityReason]
 		if !ok || info.category != emailCategoryCardActivity {
 			return "", "", false
 		}
-		return fmt.Sprintf("%s: %s", candidate.ProjectName, info.subject), fmt.Sprintf(
+		action, suffix, enriched := enrichActivityCopy(candidate.ActivityReason, "", refresh.Entity{
+			LocalID: candidate.LocalID,
+			Title:   candidate.Title,
+		})
+		if !enriched {
+			action = info.passive
+		}
+		subject := fmt.Sprintf("%s: %s", candidate.ProjectName, info.subject)
+		if enriched && suffix != "" {
+			subject = fmt.Sprintf("%s: %s — %s", candidate.ProjectName, info.subject, suffix)
+		}
+		return subject, fmt.Sprintf(
 			"%s in %s.\n\nView the board:\n%s\n",
-			info.passive, candidate.ProjectName, n.projectURL(candidate.ProjectSlug),
+			action, candidate.ProjectName, n.projectURL(candidate.ProjectSlug),
 		), true
 	default:
 		return "", "", false
@@ -362,10 +408,7 @@ func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNo
 }
 
 func (n *emailNotifier) handleRefreshNeeded(ctx context.Context, e eventbus.Event) {
-	var p struct {
-		Reason      string `json:"reason"`
-		ActorUserID int64  `json:"actorUserId"`
-	}
+	var p refreshNeededPayload
 	if err := json.Unmarshal(e.Payload, &p); err != nil {
 		return
 	}
@@ -378,10 +421,14 @@ func (n *emailNotifier) handleRefreshNeeded(ctx context.Context, e eventbus.Even
 		request.ProjectID == e.ProjectID && request.ActivityReason == p.Reason {
 		excluded[request.CreatedByUserID] = true
 	}
-	n.handleActivity(ctx, e.ProjectID, p.Reason, p.ActorUserID, excluded)
+	n.handleActivity(ctx, e.ProjectID, p.Reason, p.ActorUserID, refresh.Entity{
+		LocalID: p.LocalID,
+		Title:   p.Title,
+		Name:    p.Name,
+	}, excluded)
 }
 
-func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, reason string, actorUserID int64, excluded map[int64]bool) {
+func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, reason string, actorUserID int64, entity refresh.Entity, excluded map[int64]bool) {
 	info, ok := refreshReasonInfo[reason]
 	if !ok {
 		return
@@ -423,6 +470,12 @@ func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, rea
 	}
 
 	subject := fmt.Sprintf("%s: %s", proj.Name, info.subject)
+	if enrichedAction, suffix, enriched := enrichActivityCopy(reason, actorName, entity); enriched {
+		action = enrichedAction
+		if suffix != "" {
+			subject = fmt.Sprintf("%s: %s — %s", proj.Name, info.subject, suffix)
+		}
+	}
 	body := fmt.Sprintf(
 		"%s in %s.\n\nView the board:\n%s\n",
 		action, proj.Name, n.projectURL(proj.Slug),
@@ -440,6 +493,117 @@ func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, rea
 			LogRef: fmt.Sprintf("email-notify category=%s user=%d", category, m.UserID),
 		})
 	}
+}
+
+func cardIdentity(localID int64, title string) (string, bool) {
+	title = strings.TrimSpace(title)
+	if localID <= 0 || title == "" {
+		return "", false
+	}
+	return fmt.Sprintf("#%d %s", localID, title), true
+}
+
+func enrichActivityCopy(reason, actorName string, entity refresh.Entity) (action, subjectSuffix string, ok bool) {
+	switch reason {
+	case "todo_created", "todo_updated", "todo_moved", "todo_deleted", "todo_links_updated":
+		card, ok := cardIdentity(entity.LocalID, entity.Title)
+		if !ok {
+			return "", "", false
+		}
+		label := "card " + card
+		passiveLabel := "Card " + card
+		switch reason {
+		case "todo_created":
+			if actorName != "" {
+				return actorName + " created " + label, card, true
+			}
+			return passiveLabel + " was created", card, true
+		case "todo_updated":
+			if actorName != "" {
+				return actorName + " updated " + label, card, true
+			}
+			return passiveLabel + " was updated", card, true
+		case "todo_moved":
+			if actorName != "" {
+				return actorName + " moved " + label, card, true
+			}
+			return passiveLabel + " was moved", card, true
+		case "todo_deleted":
+			if actorName != "" {
+				return actorName + " deleted " + label, card, true
+			}
+			return passiveLabel + " was deleted", card, true
+		case "todo_links_updated":
+			if actorName != "" {
+				return actorName + " updated links on " + label, card, true
+			}
+			return "Links on " + label + " were updated", card, true
+		}
+	case "sprint_created", "sprint_updated", "sprint_deleted", "sprint_closed":
+		name := strings.TrimSpace(entity.Name)
+		if name == "" {
+			return "", "", false
+		}
+		switch reason {
+		case "sprint_created":
+			if actorName != "" {
+				return actorName + " created " + name, name, true
+			}
+			return name + " was created", name, true
+		case "sprint_updated":
+			if actorName != "" {
+				return actorName + " updated " + name, name, true
+			}
+			return name + " was updated", name, true
+		case "sprint_deleted":
+			if actorName != "" {
+				return actorName + " deleted " + name, name, true
+			}
+			return name + " was deleted", name, true
+		case "sprint_closed":
+			if actorName != "" {
+				return actorName + " closed " + name, name, true
+			}
+			return name + " was closed", name, true
+		}
+	case "workflow_column_added", "workflow_column_updated":
+		name := strings.TrimSpace(entity.Name)
+		if name == "" {
+			return "", "", false
+		}
+		label := "column " + name
+		passiveLabel := "Column " + name
+		switch reason {
+		case "workflow_column_added":
+			if actorName != "" {
+				return actorName + " added " + label, name, true
+			}
+			return passiveLabel + " was added", name, true
+		case "workflow_column_updated":
+			if actorName != "" {
+				return actorName + " updated " + label, name, true
+			}
+			return passiveLabel + " was updated", name, true
+		}
+	case "tag_color_updated", "tag_deleted":
+		name := strings.TrimSpace(entity.Name)
+		if name == "" {
+			return "", "", false
+		}
+		switch reason {
+		case "tag_color_updated":
+			if actorName != "" {
+				return fmt.Sprintf("%s changed the color of tag %s", actorName, name), name, true
+			}
+			return fmt.Sprintf("The color of tag %s was changed", name), name, true
+		case "tag_deleted":
+			if actorName != "" {
+				return fmt.Sprintf("%s deleted tag %s", actorName, name), name, true
+			}
+			return fmt.Sprintf("Tag %s was deleted", name), name, true
+		}
+	}
+	return "", "", false
 }
 
 func (n *emailNotifier) OnProjectDeleted(deleted store.DeletedProjectSnapshot, actorUserID int64) {

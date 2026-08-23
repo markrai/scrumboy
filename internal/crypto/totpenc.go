@@ -22,9 +22,9 @@ var (
 	ErrInvalidInput = errors.New("invalid encrypted input format")
 )
 
-// EncryptTOTPSecret encrypts plaintext with AES-256-GCM. Key must be 32 bytes.
+// EncryptSecret encrypts plaintext with AES-256-GCM. Key must be 32 bytes.
 // Returns format: v1:<base64url(nonce|ciphertext)> (no padding).
-func EncryptTOTPSecret(key []byte, plaintext []byte) (string, error) {
+func EncryptSecret(key []byte, plaintext []byte) (string, error) {
 	if len(key) != keyLenBytes {
 		return "", ErrInvalidKey
 	}
@@ -46,8 +46,14 @@ func EncryptTOTPSecret(key []byte, plaintext []byte) (string, error) {
 	return version + ":" + encoded, nil
 }
 
-// DecryptTOTPSecret decrypts input in format v1:<base64url(nonce|ciphertext)>.
-func DecryptTOTPSecret(key []byte, encrypted string) ([]byte, error) {
+// EncryptTOTPSecret encrypts plaintext with AES-256-GCM. Key must be 32 bytes.
+// Returns format: v1:<base64url(nonce|ciphertext)> (no padding).
+func EncryptTOTPSecret(key []byte, plaintext []byte) (string, error) {
+	return EncryptSecret(key, plaintext)
+}
+
+// DecryptSecret decrypts input in format v1:<base64url(nonce|ciphertext)>.
+func DecryptSecret(key []byte, encrypted string) ([]byte, error) {
 	if len(key) != keyLenBytes {
 		return nil, ErrInvalidKey
 	}
@@ -77,6 +83,11 @@ func DecryptTOTPSecret(key []byte, encrypted string) ([]byte, error) {
 		return nil, ErrDecrypt
 	}
 	return plaintext, nil
+}
+
+// DecryptTOTPSecret decrypts input in format v1:<base64url(nonce|ciphertext)>.
+func DecryptTOTPSecret(key []byte, encrypted string) ([]byte, error) {
+	return DecryptSecret(key, encrypted)
 }
 
 // DecodeKey decodes a base64-encoded 32-byte key. Returns error if wrong length.

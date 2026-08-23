@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -48,6 +49,7 @@ type legacyUpdateRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type legacyUpdateRefreshFake struct {
@@ -55,8 +57,8 @@ type legacyUpdateRefreshFake struct {
 	trace *[]string
 }
 
-func (f *legacyUpdateRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, legacyUpdateRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *legacyUpdateRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, legacyUpdateRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 	if f.trace != nil {
 		*f.trace = append(*f.trace, "refresh")
 	}
@@ -198,7 +200,7 @@ func TestLegacyUpdateServiceSuccessSequencesUpdateBeforeRefresh(t *testing.T) {
 	const key contextKey = "request"
 	ctx := context.WithValue(context.Background(), key, "bound")
 	trace := []string{}
-	updated := store.Todo{ID: 80, ProjectID: 17, LocalID: 4}
+	updated := store.Todo{ID: 80, ProjectID: 17, LocalID: 4, Title: "updated"}
 	updates := &legacyUpdateStoreFake{todo: updated, trace: &trace}
 	refresh := &legacyUpdateRefreshFake{trace: &trace}
 	prepared := NewLegacyUpdateService(LegacyUpdateServiceDependencies{Update: updates, Refresh: refresh}).Prepare(
@@ -216,8 +218,8 @@ func TestLegacyUpdateServiceSuccessSequencesUpdateBeforeRefresh(t *testing.T) {
 	if len(updates.calls) != 1 || len(refresh.calls) != 1 {
 		t.Fatalf("calls = update %d refresh %d, want 1 each", len(updates.calls), len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != updated.ProjectID || got.reason != RefreshReasonTodoUpdated {
-		t.Fatalf("refresh call = %+v, want bound context, project %d, reason %q", got, updated.ProjectID, RefreshReasonTodoUpdated)
+	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != updated.ProjectID || got.reason != RefreshReasonTodoUpdated || got.entity != (apprefresh.Entity{LocalID: 4, Title: "updated"}) {
+		t.Fatalf("refresh call = %+v, want bound context, project %d, reason %q, entity #4 updated", got, updated.ProjectID, RefreshReasonTodoUpdated)
 	}
 	if result.Todo.ID != updated.ID {
 		t.Fatalf("result = %+v, want Todo %d", result, updated.ID)

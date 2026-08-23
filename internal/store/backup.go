@@ -70,6 +70,10 @@ type ProjectExport struct {
 	// SprintsEnabled is a pointer so absence (older exports predating this field) is
 	// distinguishable from an explicit false; nil is treated as enabled on import.
 	SprintsEnabled  *bool                  `json:"sprintsEnabled,omitempty"`
+	AgendaEnabled   *bool                  `json:"agendaEnabled,omitempty"`
+	AgendaTimezone  string                 `json:"agendaTimezone,omitempty"`
+	AgendaTitle     string                 `json:"agendaTitle,omitempty"`
+	AgendaColor     string                 `json:"agendaColor,omitempty"`
 	ExpiresAt       *time.Time             `json:"expiresAt"`
 	CreatedAt       time.Time              `json:"createdAt"`
 	UpdatedAt       time.Time              `json:"updatedAt"`
@@ -538,6 +542,11 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 		}
 
 		sprintsEnabled := p.SprintsEnabled
+		agendaSettings, err := s.GetProjectAgendaSettings(ctx, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get agenda settings: %w", err)
+		}
+		agendaEnabled := agendaSettings.Enabled
 		exportProjects = append(exportProjects, ProjectExport{
 			Slug:                 p.Slug,
 			Name:                 p.Name,
@@ -546,6 +555,10 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			DominantColor:        dominantColor,
 			DefaultSprintWeeks:   defaultSprintWeeks,
 			SprintsEnabled:       &sprintsEnabled,
+			AgendaEnabled:        &agendaEnabled,
+			AgendaTimezone:       agendaSettings.Timezone,
+			AgendaTitle:          agendaSettings.Title,
+			AgendaColor:          agendaSettings.Color,
 			ExpiresAt:            p.ExpiresAt,
 			CreatedAt:            p.CreatedAt,
 			UpdatedAt:            p.UpdatedAt,
@@ -579,6 +592,65 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 		ExportedBy: exportedBy,
 		Projects:   exportProjects,
 	}, nil
+}
+
+func applyAgendaFlagsExec(ctx context.Context, tx *sql.Tx, projectID int64, pExport ProjectExport) error {
+	title := strings.TrimSpace(pExport.AgendaTitle)
+	tz := strings.TrimSpace(pExport.AgendaTimezone)
+	color := strings.TrimSpace(pExport.AgendaColor)
+	if pExport.AgendaEnabled == nil && tz == "" && title == "" && color == "" {
+		return nil
+	}
+	if tz != "" {
+		if _, err := time.LoadLocation(tz); err != nil {
+			return fmt.Errorf("%w: invalid agenda timezone", ErrValidation)
+		}
+	}
+	if title != "" {
+		if _, err := validateAgendaTitle(title); err != nil {
+			return err
+		}
+	}
+	if color != "" {
+		if _, err := validateAgendaColor(color); err != nil {
+			return err
+		}
+	}
+	if pExport.AgendaEnabled != nil && tz != "" {
+		_, err := tx.ExecContext(ctx, `UPDATE projects SET agenda_enabled = ?, agenda_timezone = ? WHERE id = ?`,
+			boolToInt(*pExport.AgendaEnabled), tz, projectID)
+		if err != nil {
+			return fmt.Errorf("update agenda flags: %w", err)
+		}
+	} else if pExport.AgendaEnabled != nil {
+		_, err := tx.ExecContext(ctx, `UPDATE projects SET agenda_enabled = ? WHERE id = ?`,
+			boolToInt(*pExport.AgendaEnabled), projectID)
+		if err != nil {
+			return fmt.Errorf("update agenda enabled: %w", err)
+		}
+	} else if tz != "" {
+		_, err := tx.ExecContext(ctx, `UPDATE projects SET agenda_timezone = ? WHERE id = ?`, tz, projectID)
+		if err != nil {
+			return fmt.Errorf("update agenda timezone: %w", err)
+		}
+	}
+	if title != "" {
+		_, err := tx.ExecContext(ctx, `UPDATE projects SET agenda_title = ? WHERE id = ?`, title, projectID)
+		if err != nil {
+			return fmt.Errorf("update agenda title: %w", err)
+		}
+	}
+	if color != "" {
+		normalized, err := validateAgendaColor(color)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE projects SET agenda_color = ? WHERE id = ?`, normalized, projectID)
+		if err != nil {
+			return fmt.Errorf("update agenda color: %w", err)
+		}
+	}
+	return nil
 }
 
 // workflowMatchesDefault returns true if the project workflow matches the default columns.
@@ -1420,6 +1492,10 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 			tx.Rollback()
 			return nil, fmt.Errorf("insert project %q: %w", pExport.Name, err)
 		}
+		if err := applyAgendaFlagsExec(ctx, tx, projectID, pExport); err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("import agenda flags for project %q: %w", pExport.Name, err)
+		}
 
 		// Workflow columns: custom from export or default
 		if len(pExport.WorkflowColumns) >= 2 {
@@ -1695,6 +1771,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 			if err != nil {
 				return nil, fmt.Errorf("update project: %w", err)
 			}
+			if err := applyAgendaFlagsExec(ctx, tx, projectID, pExport); err != nil {
+				return nil, err
+			}
 
 			// Workflow columns: custom from export or leave as-is
 			if len(pExport.WorkflowColumns) >= 2 {
@@ -1825,6 +1904,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 			projectID, err = res.LastInsertId()
 			if err != nil {
 				return nil, fmt.Errorf("last insert id: %w", err)
+			}
+			if err := applyAgendaFlagsExec(ctx, tx, projectID, pExport); err != nil {
+				return nil, err
 			}
 
 			// So ListProjects returns this project immediately (it filters by project_members).
@@ -2172,6 +2254,9 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		newProjectID, err := res.LastInsertId()
 		if err != nil {
 			return nil, fmt.Errorf("last insert id: %w", err)
+		}
+		if err := applyAgendaFlagsExec(ctx, tx, newProjectID, pExport); err != nil {
+			return nil, err
 		}
 
 		// So ListProjects returns this project immediately (it filters by project_members).

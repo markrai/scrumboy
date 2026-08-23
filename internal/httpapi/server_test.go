@@ -42,6 +42,9 @@ func newTestHTTPServerWithOptions(t *testing.T, opts Options) (*httptest.Server,
 	}
 
 	st := store.New(sqlDB, nil)
+	if len(opts.EncryptionKey) == 32 {
+		st = store.New(sqlDB, &store.StoreOptions{EncryptionKey: opts.EncryptionKey})
+	}
 	if opts.MaxRequestBody == 0 {
 		opts.MaxRequestBody = 1 << 20
 	}

@@ -15,7 +15,9 @@ var (
 	ErrForbidden                  = errs.ErrForbidden
 	ErrTooManyAttempts            = errs.ErrTooManyAttempts
 	Err2FAEncryptionNotConfigured = errs.Err2FAEncryptionNotConfigured
+	ErrEncryptionNotConfigured    = errs.ErrEncryptionNotConfigured
 	ErrSprintsDisabled            = errors.New("sprints are disabled for this project")
+	ErrSnapshotSuperseded         = errors.New("calendar snapshot configuration changed")
 )
 
 const (

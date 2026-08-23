@@ -67,7 +67,7 @@ func TestRESTDeletionPrepareAuthorization(t *testing.T) {
 }
 
 func TestRESTDeletionBindsTargetAndPublishesAfterPersistence(t *testing.T) {
-	target := DeletionTarget{ProjectID: 89, SprintID: 983}
+	target := DeletionTarget{ProjectID: 89, SprintID: 983, Name: "Sprint 12"}
 	original := target
 	ctx := store.WithUserID(context.Background(), 59)
 	fake := &restLifecycleFake{role: store.RoleMaintainer}
@@ -85,8 +85,8 @@ func TestRESTDeletionBindsTargetAndPublishesAfterPersistence(t *testing.T) {
 	if len(fake.deletes) != 1 || fake.deletes[0].ctx != ctx || fake.deletes[0].projectID != original.ProjectID || fake.deletes[0].sprintID != original.SprintID {
 		t.Fatalf("delete calls = %+v, want exact bound context, project %d, sprint %d", fake.deletes, original.ProjectID, original.SprintID)
 	}
-	if len(fake.deleted) != 1 || fake.deleted[0].ctx != ctx || fake.deleted[0].projectID != original.ProjectID {
-		t.Fatalf("deletion publications = %+v, want exact bound context and project %d", fake.deleted, original.ProjectID)
+	if len(fake.deleted) != 1 || fake.deleted[0].ctx != ctx || fake.deleted[0].projectID != original.ProjectID || fake.deleted[0].name != "Sprint 12" {
+		t.Fatalf("deletion publications = %+v, want bound context, project %d, name Sprint 12", fake.deleted, original.ProjectID)
 	}
 	if len(fake.reads) != 0 || len(fake.activated) != 0 || len(fake.closed) != 0 {
 		t.Fatalf("deletion used unrelated capabilities: reads=%d activated=%d closed=%d", len(fake.reads), len(fake.activated), len(fake.closed))

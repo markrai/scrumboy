@@ -39,6 +39,7 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 |-----|----------|-----------------|--------|
 | [wall.md](wall.md) | Users / contributors | wall modules + API | current |
 | [voiceflow.md](voiceflow.md) | Users / contributors | VoiceFlow parser / UI | current |
+| [calendar.md](calendar.md) | Users / operators | Agenda ICS feeds (`internal/application/calendar`) | current |
 | [markdown-and-mermaid.md](markdown-and-mermaid.md) | Users / contributors | `internal/httpapi/web` markdown/mermaid deps | current |
 
 ---
@@ -92,4 +93,4 @@ Viewer: `cd docs/diagrams` then `python serve.py` (or `serve-diagrams.bat`), ope
 - [SECURITY.md](../SECURITY.md) — vulnerability disclosure policy
 - [docs/security.md](security.md) — technical security architecture and practices
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — build, DCO, docs-impact gate
-- [AGENTS.md](../AGENTS.md) — i18n localization rules (SoT for copy/plumbing constraints)
+- [AGENTS.md](../.agents/AGENTS.md) — i18n localization rules (SoT for copy/plumbing constraints)

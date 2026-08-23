@@ -11,19 +11,31 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 		t.Fatalf("decode key: %v", err)
 	}
 	plaintext := []byte("secret-totp-key-12345")
-	encrypted, err := EncryptTOTPSecret(key, plaintext)
+	encrypted, err := EncryptSecret(key, plaintext)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
 	if encrypted == "" || encrypted[:3] != "v1:" {
 		t.Fatalf("expected v1: prefix, got %q", encrypted)
 	}
-	decrypted, err := DecryptTOTPSecret(key, encrypted)
+	decrypted, err := DecryptSecret(key, encrypted)
 	if err != nil {
 		t.Fatalf("decrypt: %v", err)
 	}
 	if !bytes.Equal(decrypted, plaintext) {
 		t.Fatalf("decrypted %q != plaintext %q", decrypted, plaintext)
+	}
+
+	wrapped, err := EncryptTOTPSecret(key, plaintext)
+	if err != nil {
+		t.Fatalf("EncryptTOTPSecret: %v", err)
+	}
+	viaWrapper, err := DecryptTOTPSecret(key, wrapped)
+	if err != nil {
+		t.Fatalf("DecryptTOTPSecret: %v", err)
+	}
+	if !bytes.Equal(viaWrapper, plaintext) {
+		t.Fatalf("wrapper decrypted %q != plaintext %q", viaWrapper, plaintext)
 	}
 }
 

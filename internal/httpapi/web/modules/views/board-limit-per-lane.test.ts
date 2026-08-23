@@ -108,6 +108,7 @@ vi.mock("./board-rendering.js", () => ({
   buildNoResultsHtml: vi.fn(() => ""),
   buildTopbarHtml: vi.fn(() => ""),
   getBoardColumns: vi.fn(() => []),
+  visibleBoardLaneCount: vi.fn(() => 0),
   renderVoiceCommandTriggerHtml: vi.fn(() => ""),
   renderTodoCard: vi.fn(() => ""),
 }));

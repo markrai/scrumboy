@@ -146,6 +146,9 @@ const enCatalog = {
   'board.actions.renameProject': 'Rename',
   'board.actions.settings': 'Settings',
   'board.backToProjects': '\u2190 Projects',
+  'board.agenda.title': 'Agenda',
+  'board.agenda.empty': 'No events today.',
+  'board.agenda.stale': 'Calendar may be out of date.',
   'board.filters.all': 'All',
   'board.filters.allAssignees': 'All assignees',
   'board.filters.allPriorities': 'All priorities',
@@ -319,6 +322,43 @@ describe('board wrap lanes rendering', () => {
 
     expect(boardEl()?.classList.contains('board--wrapped')).toBe(true);
     expect((boardEl() as HTMLElement).style.getPropertyValue('--board-wrap-cols')).toBe('5');
+  });
+
+  it('counts an enabled Agenda lane toward wrap', async () => {
+    setWrapLanesPreference(true, { skipRemote: true });
+    const mod = await import('./board.js');
+    const board = boardWithLaneCount(5);
+    board.agenda = { enabled: true, timezone: 'UTC', events: [] };
+
+    await renderPrefetchedBoard(mod, board);
+
+    expect(boardEl()?.classList.contains('board--wrapped')).toBe(true);
+    expect((boardEl() as HTMLElement).style.getPropertyValue('--board-wrap-cols')).toBe('3');
+  });
+
+  it('does not default the mobile tab to Agenda', async () => {
+    const mutations = await import('../state/mutations.js');
+    mutations.setMobileTab('' as any);
+    localStorage.removeItem('mobileTab_alpha');
+    const board = boardWithLaneCount(3);
+    board.agenda = { enabled: true, timezone: 'UTC', events: [] };
+    const mod = await import('./board.js');
+    await renderPrefetchedBoard(mod, board);
+    const { getMobileTab } = await import('../state/selectors.js');
+    expect(getMobileTab()).not.toBe('agenda');
+    expect(getMobileTab()).toBe(board.columnOrder?.[0]?.key);
+  });
+
+  it('restores a saved Agenda mobile tab', async () => {
+    const mutations = await import('../state/mutations.js');
+    mutations.setMobileTab('backlog');
+    localStorage.setItem('mobileTab_alpha', 'agenda');
+    const board = boardWithLaneCount(3);
+    board.agenda = { enabled: true, timezone: 'UTC', events: [] };
+    const mod = await import('./board.js');
+    await renderPrefetchedBoard(mod, board);
+    const { getMobileTab } = await import('../state/selectors.js');
+    expect(getMobileTab()).toBe('agenda');
   });
 });
 

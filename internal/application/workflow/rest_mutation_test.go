@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -26,6 +27,7 @@ type restMutationRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type restMutationFake struct {
@@ -123,12 +125,14 @@ func (f *restMutationFake) PublishBoardRefresh(
 	ctx context.Context,
 	projectID int64,
 	reason string,
+	entity apprefresh.Entity,
 ) {
 	f.trace = append(f.trace, "refresh")
 	f.refreshCalls = append(f.refreshCalls, restMutationRefreshCall{
 		ctx:       ctx,
 		projectID: projectID,
 		reason:    reason,
+		entity:    entity,
 	})
 }
 
@@ -261,8 +265,8 @@ func TestPreparedRESTMutationBindsContextAndProjectIDByValue(t *testing.T) {
 		t.Fatalf("refresh calls=%d want=1", len(fake.refreshCalls))
 	}
 	refresh := fake.refreshCalls[0]
-	if refresh.ctx != ctx || refresh.projectID != 101 || refresh.reason != refreshReasonWorkflowColumnDeleted {
-		t.Fatalf("refresh=%+v", refresh)
+	if refresh.ctx != ctx || refresh.projectID != 101 || refresh.reason != refreshReasonWorkflowColumnDeleted || refresh.entity != (apprefresh.Entity{}) {
+		t.Fatalf("refresh=%+v, want zero entity", refresh)
 	}
 	assertRESTMutationTrace(t, fake.trace, "role", "delete", "refresh")
 }
@@ -305,8 +309,8 @@ func TestPreparedRESTMutationCreate(t *testing.T) {
 			t.Fatalf("refresh calls=%d want=1", len(fake.refreshCalls))
 		}
 		refresh := fake.refreshCalls[0]
-		if refresh.ctx != ctx || refresh.projectID != 71 || refresh.reason != refreshReasonWorkflowColumnAdded {
-			t.Fatalf("refresh=%+v", refresh)
+		if refresh.ctx != ctx || refresh.projectID != 71 || refresh.reason != refreshReasonWorkflowColumnAdded || refresh.entity != (apprefresh.Entity{Name: "Review Queue"}) {
+			t.Fatalf("refresh=%+v, want persisted column name", refresh)
 		}
 		assertRESTMutationTrace(t, fake.trace, "role", "create", "refresh")
 	})
@@ -368,7 +372,7 @@ func TestPreparedRESTMutationUpdate(t *testing.T) {
 
 		err = prepared.Update(UpdateCommand{
 			Key:   "  review_queue  ",
-			Name:  "  Ready for review  ",
+			Name:  "Ready for review",
 			Color: "  #A1B2C3  ",
 		})
 		if err != nil {
@@ -379,15 +383,15 @@ func TestPreparedRESTMutationUpdate(t *testing.T) {
 		}
 		call := fake.mutationCalls[0]
 		if call.operation != "update" || call.ctx != ctx || call.projectID != 81 ||
-			call.key != "  review_queue  " || call.name != "  Ready for review  " || call.color != "  #A1B2C3  " {
+			call.key != "  review_queue  " || call.name != "Ready for review" || call.color != "  #A1B2C3  " {
 			t.Fatalf("update call=%+v", call)
 		}
 		if len(fake.refreshCalls) != 1 {
 			t.Fatalf("refresh calls=%d want=1", len(fake.refreshCalls))
 		}
 		refresh := fake.refreshCalls[0]
-		if refresh.ctx != ctx || refresh.projectID != 81 || refresh.reason != refreshReasonWorkflowColumnUpdated {
-			t.Fatalf("refresh=%+v", refresh)
+		if refresh.ctx != ctx || refresh.projectID != 81 || refresh.reason != refreshReasonWorkflowColumnUpdated || refresh.entity != (apprefresh.Entity{Name: "Ready for review"}) {
+			t.Fatalf("refresh=%+v, want command display name", refresh)
 		}
 		assertRESTMutationTrace(t, fake.trace, "role", "update", "refresh")
 	})
@@ -453,5 +457,5 @@ func TestPreparedRESTMutationUsesCancelledBoundContext(t *testing.T) {
 
 func TestBoardRefreshPublisherFuncNilIsNoop(t *testing.T) {
 	var publish BoardRefreshPublisherFunc
-	publish.PublishBoardRefresh(context.Background(), 1, "ignored")
+	publish.PublishBoardRefresh(context.Background(), 1, "ignored", apprefresh.Entity{})
 }

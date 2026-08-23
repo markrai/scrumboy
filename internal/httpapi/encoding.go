@@ -88,6 +88,8 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "too many attempts; please sign in again", nil)
 	case errors.Is(err, store.Err2FAEncryptionNotConfigured):
 		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Two-factor authentication is not configured. Set SCRUMBOY_ENCRYPTION_KEY (e.g. openssl rand -base64 32) and restart.", nil)
+	case errors.Is(err, store.ErrEncryptionNotConfigured):
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Calendar feeds are not configured. Set SCRUMBOY_ENCRYPTION_KEY (e.g. openssl rand -base64 32) and restart.", nil)
 	default:
 		if strings.Contains(err.Error(), "too large") {
 			writeError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", err.Error(), nil)
@@ -164,6 +166,13 @@ var validationReasonByMessage = map[string]string{
 	"invalid workflow column name":                          "invalid_workflow_column_name",
 	"invalid workflow column color":                         "invalid_workflow_column_color",
 	"invalid columnKey":                                     "invalid_column_key",
+	"invalid calendar URL":                                  "invalid_calendar_url",
+	"invalid calendar source name":                          "invalid_calendar_source_name",
+	"invalid calendar source type":                          "invalid_calendar_source_type",
+	"calendar source limit reached":                         "calendar_source_limit_reached",
+	"invalid agenda timezone":                               "invalid_agenda_timezone",
+	"invalid agenda title":                                  "invalid_agenda_title",
+	"invalid agenda color":                                  "invalid_agenda_color",
 	"cannot delete done workflow column":                    "cannot_delete_done_workflow_column",
 	"estimation points must be one of 1,2,3,5,8,13,20,40":   "invalid_estimation_points",
 	"assignment is not allowed in anonymous mode":           "assignment_not_allowed_anonymous",

@@ -109,3 +109,48 @@ func TestTodoMove_RESTAllowsNonBoundaryOneSidedAnchorContract(t *testing.T) {
 		t.Fatalf("todo_moved audit rows = %d, want 1", auditCount)
 	}
 }
+
+func TestTodoMove_RESTRejectsAgendaColumnKeyLikeUnknownWorkflowKey(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := ts.Client()
+	var project struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	}
+	resp, body := doJSON(
+		t,
+		client,
+		http.MethodPost,
+		ts.URL+"/api/projects",
+		map[string]any{"name": "REST Move Agenda Isolation"},
+		&project,
+	)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create project: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	var todo struct {
+		LocalID int64 `json:"localId"`
+	}
+	resp, body = doJSON(
+		t,
+		client,
+		http.MethodPost,
+		ts.URL+"/api/board/"+project.Slug+"/todos",
+		map[string]any{"title": "Stay in backlog"},
+		&todo,
+	)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create todo: status=%d body=%s", resp.StatusCode, string(body))
+	}
+
+	moveURL := ts.URL + "/api/board/" + project.Slug + "/todos/" + strconv.FormatInt(todo.LocalID, 10) + "/move"
+	var envelope apiErrorEnvelope
+	resp, body = doJSON(t, client, http.MethodPost, moveURL, map[string]any{"toColumnKey": "agenda"}, &envelope)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("move to agenda: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	assertAPIError(t, envelope, "VALIDATION_ERROR", "", "invalid_column_key")
+}

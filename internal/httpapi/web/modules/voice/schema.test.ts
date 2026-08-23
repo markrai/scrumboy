@@ -55,4 +55,36 @@ describe('voice command schema validation', () => {
       entities: { localId: 56, title: 'wrong' },
     }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
   });
+
+  it('rejects a move onto agenda when agenda is not a workflow column', () => {
+    const result = validateCommandIR({
+      intent: 'todos.move',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 12, toColumnKey: 'agenda' },
+    }, { projectId: 1, projectSlug: 'alpha', board });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'unknown_status',
+    });
+  });
+
+  it('still rejects todos.move to agenda when Agenda is enabled', () => {
+    const withAgenda: Board = {
+      ...board,
+      agenda: { enabled: true, timezone: 'UTC', events: [] },
+    };
+    const result = validateCommandIR({
+      intent: 'todos.move',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 12, toColumnKey: 'agenda' },
+    }, { projectId: 1, projectSlug: 'alpha', board: withAgenda });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'unknown_status',
+    });
+  });
 });

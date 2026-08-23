@@ -412,6 +412,7 @@ func TestSprintLifecycleRESTActivateContract(t *testing.T) {
 			t.Fatalf("activated sprint=%+v", stored)
 		}
 		assertSprintLifecycleRESTRefresh(t, fx, fx.project.ID, "sprint_activated")
+		assertRefreshNeededEntityOmitted(t, fx.collector.snapshot()[0].Payload)
 	})
 
 	t.Run("replacement closes prior active and publishes only activation", func(t *testing.T) {
@@ -438,6 +439,7 @@ func TestSprintLifecycleRESTActivateContract(t *testing.T) {
 			t.Fatalf("active sprint=%+v err=%v, want target %d", active, err, target.ID)
 		}
 		assertSprintLifecycleRESTRefresh(t, fx, fx.project.ID, "sprint_activated")
+		assertRefreshNeededEntityOmitted(t, fx.collector.snapshot()[0].Payload)
 	})
 
 	t.Run("repeated activation remains idempotent success with another refresh", func(t *testing.T) {
@@ -459,6 +461,7 @@ func TestSprintLifecycleRESTActivateContract(t *testing.T) {
 			t.Fatalf("repeated activation changed timestamps before=%+v after=%+v", before, after)
 		}
 		assertSprintLifecycleRESTRefresh(t, fx, fx.project.ID, "sprint_activated")
+		assertRefreshNeededEntityOmitted(t, fx.collector.snapshot()[0].Payload)
 	})
 
 	for _, tc := range []struct {
@@ -553,6 +556,7 @@ func TestSprintLifecycleRESTCloseContract(t *testing.T) {
 			t.Fatalf("closed sprint before=%+v after=%+v", before, after)
 		}
 		assertSprintLifecycleRESTRefresh(t, fx, fx.project.ID, "sprint_closed")
+		assertRefreshNeededName(t, fx.collector.snapshot()[0].Payload, sp.Name)
 	})
 
 	for _, state := range []string{store.SprintStatePlanned, store.SprintStateClosed} {
@@ -658,6 +662,7 @@ func TestSprintLifecycleRESTDeleteContract(t *testing.T) {
 				}
 			}
 			assertSprintLifecycleRESTRefresh(t, fx, fx.project.ID, "sprint_deleted")
+			assertRefreshNeededName(t, fx.collector.snapshot()[0].Payload, sp.Name)
 		})
 	}
 }

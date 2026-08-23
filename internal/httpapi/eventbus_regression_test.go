@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/migrate"
@@ -109,7 +110,7 @@ func TestEventbus_CreateWithoutAssignee_SingleRefresh(t *testing.T) {
 	}
 
 	if !todo.AssignmentChanged {
-		srv.emitRefreshNeeded(context.Background(), p.ID, "todo_created")
+		srv.emitRefreshNeeded(context.Background(), p.ID, "todo_created", refresh.Entity{})
 	}
 
 	select {
@@ -277,7 +278,7 @@ func TestEventbus_CreateWithAssignee_SingleRefresh(t *testing.T) {
 
 	// Simulate handler gating: skip emitRefreshNeeded when AssignmentChanged
 	if !todo.AssignmentChanged {
-		srv.emitRefreshNeeded(userCtx, p.ID, "todo_created")
+		srv.emitRefreshNeeded(userCtx, p.ID, "todo_created", refresh.Entity{})
 	}
 
 	// The store publisher fired todo.assigned through the fanout.
@@ -387,7 +388,7 @@ func TestEventbus_UpdateWithoutAssigneeChange_SingleRefresh(t *testing.T) {
 	}
 
 	if !updated.AssignmentChanged {
-		srv.emitRefreshNeeded(userCtx, p.ID, "todo_updated")
+		srv.emitRefreshNeeded(userCtx, p.ID, "todo_updated", refresh.Entity{})
 	}
 
 	select {
@@ -507,7 +508,7 @@ func TestEventbus_UpdateWithAssigneeChange_SingleRefresh(t *testing.T) {
 
 	// Handler gating
 	if !updated.AssignmentChanged {
-		srv.emitRefreshNeeded(userCtx, p.ID, "todo_updated")
+		srv.emitRefreshNeeded(userCtx, p.ID, "todo_updated", refresh.Entity{})
 	}
 
 	assignedEvents := filterEvents(collector.events, "todo.assigned")

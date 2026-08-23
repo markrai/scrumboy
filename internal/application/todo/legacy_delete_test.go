@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -67,6 +68,7 @@ type legacyDeleteRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type legacyDeleteRefreshFake struct {
@@ -74,8 +76,8 @@ type legacyDeleteRefreshFake struct {
 	trace *[]string
 }
 
-func (f *legacyDeleteRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, legacyDeleteRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *legacyDeleteRefreshFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, legacyDeleteRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 	if f.trace != nil {
 		*f.trace = append(*f.trace, "refresh")
 	}
@@ -183,8 +185,8 @@ func TestLegacyDeleteServiceSuccessSequencesLookupDeleteRefresh(t *testing.T) {
 	if projects.calls[0].todoID != 7001 || deletes.calls[0].todoID != 7001 || deletes.calls[0].mode != store.ModeFull {
 		t.Fatalf("global identity/mode = lookup %+v delete %+v, want Todo 7001 mode %q", projects.calls[0], deletes.calls[0], store.ModeFull)
 	}
-	if got := refresh.calls[0]; got.ctx.Value(key) != "bound" || got.projectID != 17 || got.reason != RefreshReasonTodoDeleted {
-		t.Fatalf("refresh = %+v, want bound context, pre-read project 17, reason %q", got, RefreshReasonTodoDeleted)
+	if got := refresh.calls[0]; got.ctx.Value(key) != "bound" || got.projectID != 17 || got.reason != RefreshReasonTodoDeleted || got.entity != (apprefresh.Entity{}) {
+		t.Fatalf("refresh = %+v, want bound context, pre-read project 17, reason %q, zero entity", got, RefreshReasonTodoDeleted)
 	}
 }
 

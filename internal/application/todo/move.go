@@ -3,6 +3,7 @@ package todo
 import (
 	"context"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -40,21 +41,21 @@ type MoveStore interface {
 // BoardRefreshPublisher is the ancillary invalidation capability used by REST
 // moves. Publishing is best-effort and must not change command success.
 type BoardRefreshPublisher interface {
-	PublishBoardRefresh(ctx context.Context, projectID int64, reason string)
+	PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 }
 
 // BoardRefreshPublisherFunc adapts a function to BoardRefreshPublisher.
-type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string)
+type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 
-func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
+func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 	if f != nil {
-		f(ctx, projectID, reason)
+		f(ctx, projectID, reason, entity)
 	}
 }
 
 type nopBoardRefreshPublisher struct{}
 
-func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string) {}
+func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string, refresh.Entity) {}
 
 // MoveServiceDependencies names the persistence and ancillary capabilities
 // used by the canonical REST move use case.
@@ -131,6 +132,6 @@ func (m *PreparedMove) Move(command MoveCommand) (MoveResult, error) {
 	}
 
 	effectCtx := publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, todo, RefreshReasonTodoMoved, true)
-	m.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoMoved)
+	m.service.refresh.PublishBoardRefresh(effectCtx, project.ID, RefreshReasonTodoMoved, todoRefreshEntity(todo))
 	return MoveResult{Project: project, Todo: todo}, nil
 }

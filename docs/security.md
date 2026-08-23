@@ -159,11 +159,11 @@ Mutating `/api/*` generally requires header `X-Scrumboy: 1` (custom-header CSRF 
 | Mechanism                 | TOTP; recovery codes stored as bcrypt hashes                                                                                                                                                         |
 | When Scrumboy 2FA applies | Local password login (pending → `/api/auth/login/2fa`); sensitive method-change finishes when the user has 2FA active                                                                                |
 | When it does not          | Ordinary OIDC SSO login (IdP MFA only); `recover-owner` bypasses user 2FA and leaves 2FA configuration intact                                                                                        |
-| At-rest protection        | TOTP secrets encrypted with **AES-256-GCM** (`internal/crypto`, `v1:` framing) under `SCRUMBOY_ENCRYPTION_KEY`                                                                                       |
-| Key loss / rotation       | Once encrypted auth/security data exists, startup requires a valid key (`ResolveStartupEncryptionKey`). Rotating or losing the key breaks decrypting TOTP secrets and password-reset HMAC capability |
+| At-rest protection        | TOTP secrets and ICS calendar URLs encrypted with **AES-256-GCM** (`internal/crypto`, `v1:` framing) under `SCRUMBOY_ENCRYPTION_KEY`                                                                                       |
+| Key loss / rotation       | Once encrypted security data exists, startup requires a valid key (`ResolveStartupEncryptionKey`). Rotating or losing the key breaks decrypting TOTP secrets, calendar feed URLs, and password-reset HMAC capability |
 
 
-Encryption covers configured secrets such as TOTP material (and reset-token HMAC keying), **not** the whole SQLite file, board content, or session hashes.
+Encryption covers configured secrets such as TOTP material, ICS calendar feed URLs, and reset-token HMAC keying, **not** the whole SQLite file, board content, or session hashes.
 
 ---
 
@@ -254,11 +254,11 @@ This section is not a full API reference—see `[API.md](../API.md)` and `[docs/
 | Application DB            | `SQLITE_PATH` (default under `DATA_DIR`) | Board, auth, preferences, hashed secrets                |
 | WAL/SHM                   | Beside the DB file                       | Copy with the DB when backing up live/quiesced files    |
 | Wallpapers                | `DATA_DIR/user-wallpapers/<user-id>.jpg` | Preference JSON in SQLite; files are not in JSON export |
-| Encryption key            | Environment / secret store               | Required once encrypted auth data exists                |
+| Encryption key            | Environment / secret store               | Required once encrypted TOTP or calendar data exists |
 | Optional Mermaid override | `DATA_DIR/mermaid-semantic-edges.json`   | Only if operators deploy an override                    |
 
 
-SQLite is **not** the sole source of truth for a full restore. JSON project backup/export is scoped and **omits** uploaded wallpapers, general preferences as a disaster-recovery unit, and `audit_events`. Prefer whole-`DATA_DIR` backups plus the encryption key when 2FA/reset encryption is in use.
+SQLite is **not** the sole source of truth for a full restore. JSON project backup/export is scoped and **omits** uploaded wallpapers, general preferences as a disaster-recovery unit, `audit_events`, and calendar feed URLs (Agenda flags only). Prefer whole-`DATA_DIR` backups plus the encryption key when 2FA/reset encryption or calendar feeds are in use.
 
 See persistence matrix: `[docs/diagrams/scrumboy_deployment_ops.md](diagrams/scrumboy_deployment_ops.md#persistence-matrix)`, `[docs/recovery.md](recovery.md)`.
 
@@ -386,7 +386,7 @@ Operators should:
 
 1. Terminate **HTTPS** for production; set `SCRUMBOY_PUBLIC_BASE_URL` when required (mail links, OAuth discovery behind proxies).
 2. Enable `SCRUMBOY_TRUST_PROXY` **only** behind a correctly configured trusted proxy; spoofed `X-Forwarded-`* otherwise weakens IP limits and origin resolution.
-3. Protect `DATA_DIR` (DB, WAL/SHM, `user-wallpapers/`) with OS permissions and backups; include `SCRUMBOY_ENCRYPTION_KEY` in secret/backup planning when 2FA/reset encryption is used.
+3. Protect `DATA_DIR` (DB, WAL/SHM, `user-wallpapers/`) with OS permissions and backups; include `SCRUMBOY_ENCRYPTION_KEY` in secret/backup planning when 2FA/reset encryption or calendar feeds are used.
 4. Treat OIDC, SMTP, VAPID, and webhook secrets as credentials; rotate with an operational plan.
 5. Harden the IdP (MFA, client secrets, redirect URIs).
 6. Keep images/binaries and dependencies reasonably current; review Dependabot/OSV findings.

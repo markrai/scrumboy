@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -32,21 +33,21 @@ type RESTMutationRoleStore interface {
 // priority-tier mutations. Publishing is best-effort and cannot change
 // mutation success.
 type BoardRefreshPublisher interface {
-	PublishBoardRefresh(ctx context.Context, projectID int64, reason string)
+	PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 }
 
 // BoardRefreshPublisherFunc adapts a function to BoardRefreshPublisher.
-type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string)
+type BoardRefreshPublisherFunc func(ctx context.Context, projectID int64, reason string, entity refresh.Entity)
 
-func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
+func (f BoardRefreshPublisherFunc) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 	if f != nil {
-		f(ctx, projectID, reason)
+		f(ctx, projectID, reason, entity)
 	}
 }
 
 type nopBoardRefreshPublisher struct{}
 
-func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string) {}
+func (nopBoardRefreshPublisher) PublishBoardRefresh(context.Context, int64, string, refresh.Entity) {}
 
 // RESTMutationServiceDependencies names the authorization, persistence, and
 // ancillary capabilities used by canonical REST priority-tier mutations.
@@ -122,7 +123,7 @@ func (p *PreparedRESTMutation) Create(command CreateCommand) (store.PriorityTier
 	if err != nil {
 		return store.PriorityTier{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonPriorityTierAdded)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonPriorityTierAdded, refresh.Entity{})
 	return tier, nil
 }
 
@@ -139,7 +140,7 @@ func (p *PreparedRESTMutation) Update(command UpdateCommand) error {
 	if err != nil {
 		return err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonPriorityTierUpdated)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonPriorityTierUpdated, refresh.Entity{})
 	return nil
 }
 
@@ -149,6 +150,6 @@ func (p *PreparedRESTMutation) Delete(command DeleteCommand) error {
 	if err := p.service.mutations.DeletePriorityTier(p.ctx, p.projectID, command.Key); err != nil {
 		return err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonPriorityTierDeleted)
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonPriorityTierDeleted, refresh.Entity{})
 	return nil
 }

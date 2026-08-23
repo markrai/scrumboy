@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
-import { buildBoardColumnsHtml, buildTopbarHtml, renderTodoCard } from './board-rendering.js';
+import { buildBoardColumnsHtml, buildTopbarHtml, getBoardColumns, renderTodoCard } from './board-rendering.js';
 import {
   buildBoardColumnsHtml as buildBoardColumnsHtmlDist,
   buildTopbarHtml as buildTopbarHtmlDist,
@@ -134,6 +134,7 @@ describe('board topbar rendering', () => {
     expect(html).not.toContain('graph TD');
     expect(html).not.toContain('A--&gt;B');
     expect(html).not.toContain('todo-mermaid');
+    expect(html).not.toContain('card__agenda-badge');
   });
 
   it('always renders a drag handle, even under chronological sort where only cross-lane drag is allowed', () => {
@@ -247,5 +248,24 @@ describe('board topbar rendering', () => {
     expect(host.querySelector('[data-column="backlog"]')?.classList.contains('col--mobile-active')).toBe(true);
     expect(host.querySelector('[data-column="backlog"] .card__priority')?.textContent).toBe('High');
     expect(host.querySelector('[data-column="backlog"] .card')?.textContent).not.toContain('Normal');
+  });
+});
+
+describe('getBoardColumns workflow isolation', () => {
+  it('uses only columnOrder keys even when columns contains extra keys', () => {
+    const value = board();
+    value.columnOrder = [
+      { key: 'backlog', name: 'Backlog', isDone: false },
+      { key: 'doing', name: 'In Progress', isDone: false },
+      { key: 'done', name: 'Done', isDone: true },
+    ];
+    value.columns = {
+      backlog: [],
+      doing: [],
+      done: [],
+      agenda: [{ id: 99, localId: 99, title: 'Not a workflow lane', status: 'agenda' }],
+    };
+
+    expect(getBoardColumns(value).map((column) => column.key)).toEqual(['backlog', 'doing', 'done']);
   });
 });

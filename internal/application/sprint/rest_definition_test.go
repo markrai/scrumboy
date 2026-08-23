@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,6 +37,7 @@ type restDefinitionPublishCall struct {
 	kind      string
 	ctx       context.Context
 	projectID int64
+	name      string
 }
 
 type restDefinitionFake struct {
@@ -116,21 +118,23 @@ func (f *restDefinitionFake) UpdateSprint(
 	return f.updateErr
 }
 
-func (f *restDefinitionFake) PublishSprintCreated(ctx context.Context, projectID int64) {
+func (f *restDefinitionFake) PublishSprintCreated(ctx context.Context, projectID int64, name string) {
 	f.trace = append(f.trace, "publish-created")
 	f.publishCalls = append(f.publishCalls, restDefinitionPublishCall{
 		kind:      "created",
 		ctx:       ctx,
 		projectID: projectID,
+		name:      name,
 	})
 }
 
-func (f *restDefinitionFake) PublishSprintUpdated(ctx context.Context, projectID int64) {
+func (f *restDefinitionFake) PublishSprintUpdated(ctx context.Context, projectID int64, name string) {
 	f.trace = append(f.trace, "publish-updated")
 	f.publishCalls = append(f.publishCalls, restDefinitionPublishCall{
 		kind:      "updated",
 		ctx:       ctx,
 		projectID: projectID,
+		name:      name,
 	})
 }
 
@@ -372,8 +376,8 @@ func TestPreparedRESTCreateDelegatesAndPublishes(t *testing.T) {
 		t.Fatalf("create args = %#v", createCall)
 	}
 	publishCall := fake.publishCalls[0]
-	if publishCall.kind != "created" || publishCall.ctx != ctx || publishCall.projectID != 41 {
-		t.Fatalf("publish = %#v, want created with bound context/project", publishCall)
+	if publishCall.kind != "created" || publishCall.ctx != ctx || publishCall.projectID != 41 || publishCall.name != "Returned sprint" {
+		t.Fatalf("publish = %#v, want created with bound context/project and create-result name", publishCall)
 	}
 }
 
@@ -433,6 +437,7 @@ func TestPreparedRESTUpdateDelegatesAndPublishes(t *testing.T) {
 			prepared, err := newRESTDefinitionService(fake).PrepareUpdate(ctx, ResolvedRESTSprintTarget{
 				ProjectID: 41,
 				SprintID:  907,
+				Name:      "Existing",
 			})
 			if err != nil {
 				t.Fatalf("PrepareUpdate: %v", err)
@@ -462,8 +467,12 @@ func TestPreparedRESTUpdateDelegatesAndPublishes(t *testing.T) {
 				t.Fatal("materialized end pointer aliases command")
 			}
 			publishCall := fake.publishCalls[0]
-			if publishCall.kind != "updated" || publishCall.ctx != ctx || publishCall.projectID != 41 {
-				t.Fatalf("publish = %#v, want updated with bound context/project", publishCall)
+			wantName := "Existing"
+			if tt.command.Name != nil {
+				wantName = strings.TrimSpace(*tt.command.Name)
+			}
+			if publishCall.kind != "updated" || publishCall.ctx != ctx || publishCall.projectID != 41 || publishCall.name != wantName {
+				t.Fatalf("publish = %#v, want updated with bound context/project and name %q", publishCall, wantName)
 			}
 		})
 	}
@@ -592,6 +601,43 @@ func TestRESTDefinitionServiceNilPublisher(t *testing.T) {
 		}
 		if !reflect.DeepEqual(fake.trace, []string{"role", "update"}) || len(fake.updateCalls) != 1 {
 			t.Fatalf("trace = %v, update calls = %d", fake.trace, len(fake.updateCalls))
+		}
+	})
+}
+
+func TestPreparedRESTUpdatePublishesRenameCorrectName(t *testing.T) {
+	t.Run("omitted name keeps retained existing name", func(t *testing.T) {
+		fake := &restDefinitionFake{role: store.RoleMaintainer}
+		prepared, err := newRESTDefinitionService(fake).PrepareUpdate(
+			restDefinitionActorContext(73, "retain"),
+			ResolvedRESTSprintTarget{ProjectID: 41, SprintID: 907, Name: "Sprint 12"},
+		)
+		if err != nil {
+			t.Fatalf("PrepareUpdate: %v", err)
+		}
+		if err := prepared.Update(UpdateCommand{}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if got := fake.publishCalls[0].name; got != "Sprint 12" {
+			t.Fatalf("published name = %q, want retained Sprint 12", got)
+		}
+	})
+
+	t.Run("supplied name publishes trimmed new name", func(t *testing.T) {
+		fake := &restDefinitionFake{role: store.RoleMaintainer}
+		prepared, err := newRESTDefinitionService(fake).PrepareUpdate(
+			restDefinitionActorContext(73, "rename"),
+			ResolvedRESTSprintTarget{ProjectID: 41, SprintID: 907, Name: "Sprint 12"},
+		)
+		if err != nil {
+			t.Fatalf("PrepareUpdate: %v", err)
+		}
+		renamed := "  Sprint 13  "
+		if err := prepared.Update(UpdateCommand{Name: &renamed}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if got := fake.publishCalls[0].name; got != "Sprint 13" {
+			t.Fatalf("published name = %q, want trimmed Sprint 13", got)
 		}
 	})
 }

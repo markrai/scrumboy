@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/application/refresh"
 	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/store"
@@ -260,7 +261,7 @@ func TestCreatorEmailRESTActivityOverlapQueuesCreatorOnlyThroughCandidate(t *tes
 	service := todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
 		Update:          creatorEmailUpdateStore{todo: updated},
 		CreatorRequests: todoapp.CreatorNotificationRequestPublisherFunc(func(context.Context, todoapp.CreatorNotificationRequest) {}),
-		Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+		Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, _ refresh.Entity) {
 			payload, _ := json.Marshal(map[string]any{"reason": reason, "actorUserId": int64(1)})
 			n.handleRefreshNeeded(ctx, eventbus.Event{Type: "board.refresh_needed", ProjectID: projectID, Payload: payload})
 		}),
@@ -300,7 +301,7 @@ func TestCreatorEmailMutationFactsSurviveAsyncFanoutBoundary(t *testing.T) {
 		service := todoapp.NewUpdateService(todoapp.UpdateServiceDependencies{
 			Update:          creatorEmailUpdateStore{todo: updated},
 			CreatorRequests: todoapp.CreatorNotificationRequestPublisherFunc(func(context.Context, todoapp.CreatorNotificationRequest) {}),
-			Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+			Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, _ refresh.Entity) {
 				payload, _ := json.Marshal(map[string]any{"reason": reason, "actorUserId": int64(1)})
 				n.OnEvent(ctx, eventbus.Event{Type: "board.refresh_needed", ProjectID: projectID, Payload: payload})
 			}),
@@ -354,7 +355,7 @@ func TestCreatorEmailRESTSemanticNoOpSuppressesCreatorCategoryAndFallback(t *tes
 				t.Fatal("semantic no-op request was marked material")
 			}
 		}),
-		Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
+		Refresh: todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, _ refresh.Entity) {
 			payload, _ := json.Marshal(map[string]any{"reason": reason, "actorUserId": int64(1)})
 			n.handleRefreshNeeded(ctx, eventbus.Event{Type: "board.refresh_needed", ProjectID: projectID, Payload: payload})
 		}),

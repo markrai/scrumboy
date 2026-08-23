@@ -24,6 +24,16 @@ import {
   WRAP_LANES_PREFERENCE_KEY,
 } from './core/wrap-lanes-preferences.js';
 import {
+  AGENDA_START_OF_DAY_PREFERENCE_KEY,
+  loadAgendaStartOfDayPreferenceFromServer,
+  onAgendaStartOfDayAuthUserChanged,
+} from './core/agenda-start-of-day-preferences.js';
+import {
+  AGENDA_NOW_LINE_PREFERENCE_KEY,
+  loadAgendaNowLinePreferenceFromServer,
+  onAgendaNowLineAuthUserChanged,
+} from './core/agenda-now-line-preferences.js';
+import {
   BOARD_TODO_SORT_PREFERENCE_KEY,
   boardTodoSortUrlParam,
   getBoardTodoSortPreference,
@@ -148,6 +158,10 @@ async function routeOnceBody(): Promise<void> {
     }
 
     setUser(newUser);
+    if (oldUserId !== newUserId) {
+      onAgendaStartOfDayAuthUserChanged(newUserId);
+      onAgendaNowLineAuthUserChanged(newUserId);
+    }
     setBootstrapAvailable(!!(st && st.bootstrapAvailable));
     setPushConfigured(!!(st && st.pushConfigured));
     setPushStatus(newUser ? st.push : null);
@@ -248,6 +262,14 @@ async function routeOnceBody(): Promise<void> {
 
       await loadWrapLanesPreferenceFromServer(() =>
         apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`),
+      );
+
+      await loadAgendaStartOfDayPreferenceFromServer(() =>
+        apiFetch<{ value: string }>(`/api/user/preferences?key=${AGENDA_START_OF_DAY_PREFERENCE_KEY}`),
+      );
+
+      await loadAgendaNowLinePreferenceFromServer(() =>
+        apiFetch<{ value: string }>(`/api/user/preferences?key=${AGENDA_NOW_LINE_PREFERENCE_KEY}`),
       );
 
       await loadBoardTodoSortPreferenceFromServer(() =>

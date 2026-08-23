@@ -1208,12 +1208,28 @@ func (s *Store) UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID i
 		return fmt.Errorf("begin update project default sprint weeks: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := applyDefaultSprintWeeksIfChangedTx(ctx, tx, projectID, userID, weeks); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update project default sprint weeks: %w", err)
+	}
+	return nil
+}
+
+func applyDefaultSprintWeeksIfChangedTx(ctx context.Context, tx *sql.Tx, projectID int64, userID int64, weeks int) error {
+	if weeks != 1 && weeks != 2 {
+		return fmt.Errorf("%w: defaultSprintWeeks must be 1 or 2", ErrValidation)
+	}
 	var fromWeeks int
 	if err := tx.QueryRowContext(ctx, `SELECT default_sprint_weeks FROM projects WHERE id = ?`, projectID).Scan(&fromWeeks); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		return fmt.Errorf("get project default_sprint_weeks: %w", err)
+	}
+	if fromWeeks == weeks {
+		return nil
 	}
 	nowMs := time.Now().UTC().UnixMilli()
 	if _, err := tx.ExecContext(ctx, `UPDATE projects SET default_sprint_weeks = ?, updated_at = ? WHERE id = ?`, weeks, nowMs, projectID); err != nil {
@@ -1223,9 +1239,6 @@ func (s *Store) UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID i
 	meta := map[string]any{"from_weeks": fromWeeks, "to_weeks": weeks}
 	if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_default_sprint_weeks_updated", "project", &projectID, meta); err != nil {
 		return fmt.Errorf("audit project_default_sprint_weeks_updated: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit update project default sprint weeks: %w", err)
 	}
 	return nil
 }
@@ -1255,6 +1268,16 @@ func (s *Store) UpdateProjectSprintsEnabled(ctx context.Context, projectID int64
 	if err := s.checkProjectSettingsAuthTx(ctx, tx, p, userID); err != nil {
 		return err
 	}
+	if err := applySprintsEnabledIfChangedTx(ctx, tx, projectID, userID, enabled); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update project sprints enabled: %w", err)
+	}
+	return nil
+}
+
+func applySprintsEnabledIfChangedTx(ctx context.Context, tx *sql.Tx, projectID int64, userID int64, enabled bool) error {
 	var fromEnabledInt int
 	if err := tx.QueryRowContext(ctx, `SELECT sprints_enabled FROM projects WHERE id = ?`, projectID).Scan(&fromEnabledInt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1263,9 +1286,6 @@ func (s *Store) UpdateProjectSprintsEnabled(ctx context.Context, projectID int64
 		return fmt.Errorf("get project sprints_enabled: %w", err)
 	}
 	if (fromEnabledInt == 1) == enabled {
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit unchanged project sprints enabled: %w", err)
-		}
 		return nil
 	}
 	nowMs := time.Now().UTC().UnixMilli()
@@ -1276,9 +1296,6 @@ func (s *Store) UpdateProjectSprintsEnabled(ctx context.Context, projectID int64
 	meta := map[string]any{"from_enabled": fromEnabledInt == 1, "to_enabled": enabled}
 	if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_sprints_enabled_updated", "project", &projectID, meta); err != nil {
 		return fmt.Errorf("audit project_sprints_enabled_updated: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit update project sprints enabled: %w", err)
 	}
 	return nil
 }

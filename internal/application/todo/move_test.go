@@ -3,8 +3,10 @@ package todo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	apprefresh "scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -55,14 +57,15 @@ type refreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    apprefresh.Entity
 }
 
 type refreshPublisherFake struct {
 	calls []refreshCall
 }
 
-func (f *refreshPublisherFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
-	f.calls = append(f.calls, refreshCall{ctx: ctx, projectID: projectID, reason: reason})
+func (f *refreshPublisherFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity apprefresh.Entity) {
+	f.calls = append(f.calls, refreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 }
 
 func TestMoveServicePreparedMoveBindsContextAndPublishesOnce(t *testing.T) {
@@ -70,7 +73,7 @@ func TestMoveServicePreparedMoveBindsContextAndPublishesOnce(t *testing.T) {
 	const key contextKey = "request"
 	ctx := context.WithValue(context.Background(), key, "bound")
 
-	moves := &moveStoreFake{todo: store.Todo{ID: 71, ProjectID: 7, LocalID: 4, ColumnKey: "doing"}}
+	moves := &moveStoreFake{todo: store.Todo{ID: 71, ProjectID: 7, LocalID: 4, Title: "moved card", ColumnKey: "doing"}}
 	refresh := &refreshPublisherFake{}
 	service := NewMoveService(MoveServiceDependencies{Move: moves, Refresh: refresh})
 	pc := store.ProjectContext{Project: store.Project{ID: 7, Slug: "canonical"}}
@@ -103,8 +106,8 @@ func TestMoveServicePreparedMoveBindsContextAndPublishesOnce(t *testing.T) {
 	if len(refresh.calls) != 1 {
 		t.Fatalf("refresh calls = %d, want 1", len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != RefreshReasonTodoMoved {
-		t.Fatalf("refresh call = %+v, want project 7 reason %q", got, RefreshReasonTodoMoved)
+	if got := refresh.calls[0]; got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != RefreshReasonTodoMoved || got.entity != (apprefresh.Entity{LocalID: 4, Title: "moved card"}) {
+		t.Fatalf("refresh call = %+v, want project 7 reason %q entity #4 moved card", got, RefreshReasonTodoMoved)
 	}
 }
 
@@ -150,6 +153,26 @@ func TestMoveServiceStoreFailureAndCancellationSkipRefresh(t *testing.T) {
 				t.Fatalf("refresh calls = %d, want 0", len(refresh.calls))
 			}
 		})
+	}
+}
+
+func TestMoveServiceInvalidAgendaColumnKeyPropagatesWithoutRefresh(t *testing.T) {
+	moves := &moveStoreFake{err: fmt.Errorf("%w: invalid columnKey", store.ErrValidation)}
+	refresh := &refreshPublisherFake{}
+	prepared := NewMoveService(MoveServiceDependencies{Move: moves, Refresh: refresh}).Prepare(
+		context.Background(),
+		ResolvedMoveTarget{ProjectContext: store.ProjectContext{Project: store.Project{ID: 7}}, Mode: store.ModeFull},
+	)
+
+	_, err := prepared.Move(MoveCommand{LocalID: 1, ToColumnKey: "agenda"})
+	if !errors.Is(err, store.ErrValidation) {
+		t.Fatalf("Move error = %v, want ErrValidation", err)
+	}
+	if len(moves.calls) != 1 || moves.calls[0].toColumnKey != "agenda" {
+		t.Fatalf("move calls = %+v, want one agenda target", moves.calls)
+	}
+	if len(refresh.calls) != 0 {
+		t.Fatalf("refresh calls = %d, want 0", len(refresh.calls))
 	}
 }
 

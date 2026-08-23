@@ -14,12 +14,13 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
 import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
 import { NO_PRIORITY_FILTER_VALUE } from '../types.js';
-import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, mobileLaneTabStyleAttrForHtml, } from './mobile-lane-tabs.js';
+import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, } from './mobile-lane-tabs.js';
 import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
-import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
+import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, visibleBoardLaneCount, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
+import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, agendaMobileTabAriaLabel, agendaMobileTabInnerHtml, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
 import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
@@ -160,8 +161,12 @@ const LEGACY_MOBILE_TAB_KEYS = {
     TESTING: "testing",
     DONE: "done",
 };
-function resolveMobileTabKeyFromStorage(saved, cols) {
-    if (!saved || cols.length === 0)
+function resolveMobileTabKeyFromStorage(saved, cols, extraKeys = []) {
+    if (!saved)
+        return null;
+    if (extraKeys.includes(saved))
+        return saved;
+    if (cols.length === 0)
         return null;
     if (cols.some((c) => c.key === saved))
         return saved;
@@ -169,6 +174,16 @@ function resolveMobileTabKeyFromStorage(saved, cols) {
     if (mapped && cols.some((c) => c.key === mapped))
         return mapped;
     return null;
+}
+function agendaMobileTab(board) {
+    if (!isAgendaEnabled(board))
+        return null;
+    return {
+        key: AGENDA_COLUMN_KEY,
+        title: agendaLaneTitle(board),
+        color: agendaLaneColor(board),
+        count: agendaEvents(board).length,
+    };
 }
 export function getRequestedBoardLimitPerLane(forSlug) {
     // Preserve the current on-screen lane size (e.g. cards revealed via "Load more")
@@ -558,20 +573,25 @@ function bindMobileTabClickHandlersIfNeeded() {
         }
     });
 }
-/** If the active lane was removed or is unknown, fall back to the first column. */
+/** If the active lane was removed or is unknown, restore last-tab or the first workflow column. */
 function ensureMobileTabForBoard(board) {
     const cols = getBoardColumns(board);
     if (cols.length === 0)
         return;
     const keys = new Set(cols.map((c) => c.key));
+    if (isAgendaEnabled(board))
+        keys.add(AGENDA_COLUMN_KEY);
     const cur = getMobileTab();
-    if (!cur || !keys.has(cur)) {
-        const next = cols[0].key;
-        setMobileTab(next);
-        const slug = getSlug();
-        if (slug)
-            localStorage.setItem(`mobileTab_${slug}`, next);
-    }
+    if (cur && keys.has(cur))
+        return;
+    const slug = getSlug();
+    const raw = slug ? localStorage.getItem(`mobileTab_${slug}`) : null;
+    const extra = isAgendaEnabled(board) ? [AGENDA_COLUMN_KEY] : [];
+    const resolved = resolveMobileTabKeyFromStorage(raw, cols, extra);
+    const next = (resolved ?? cols[0].key);
+    setMobileTab(next);
+    if (slug && next !== raw)
+        localStorage.setItem(`mobileTab_${slug}`, next);
 }
 /**
  * Keeps mobile tab buttons and drop overlays in sync with workflow (colors, labels, counts).
@@ -582,13 +602,20 @@ function syncMobileLaneTabsStrip(board) {
     if (!mobileTabsEl)
         return;
     const boardCols = getBoardColumns(board);
+    const extra = agendaMobileTab(board);
+    const extraTabs = extra ? [extra] : [];
+    const tabKeys = [...extraTabs.map((c) => c.key), ...boardCols.map((c) => c.key)];
     const existingTabs = mobileTabsEl.querySelectorAll(":scope > .mobile-tab");
-    const orderMatch = existingTabs.length === boardCols.length &&
-        boardCols.every((c, i) => existingTabs[i]?.getAttribute("data-tab") === c.key);
+    const orderMatch = existingTabs.length === tabKeys.length &&
+        tabKeys.every((key, i) => existingTabs[i]?.getAttribute("data-tab") === key);
     if (!orderMatch) {
         mobileTabsEl.innerHTML = buildMobileTabsInnerHtml(boardCols, {
             activeTabKey: getMobileTab(),
+            extraTabs,
             laneLabel: (key) => {
+                if (key === AGENDA_COLUMN_KEY) {
+                    return agendaMobileTabAriaLabel(board);
+                }
                 const col = boardCols.find((c) => c.key === key);
                 const title = col?.title ?? "";
                 return `${title} ${getLaneDisplayCount(key)}`;
@@ -611,6 +638,20 @@ function syncMobileLaneTabsStrip(board) {
             if (k)
                 dropByKey.set(k, el);
         });
+    }
+    if (extra) {
+        const tab = tabByKey.get(extra.key);
+        if (tab) {
+            applyMobileLaneTabStyles(tab, extra, "tab");
+            const count = extra.count ?? agendaEvents(board).length;
+            tab.setAttribute("aria-label", `${extra.title} ${count}`);
+            const textSpan = tab.querySelector(".mobile-tab__text");
+            const inner = agendaMobileTabInnerHtml(count);
+            if (textSpan)
+                textSpan.innerHTML = inner;
+            else
+                tab.innerHTML = `<span class="mobile-tab__text">${inner}</span>`;
+        }
     }
     boardCols.forEach((c) => {
         const tab = tabByKey.get(c.key);
@@ -635,7 +676,7 @@ function updateMobileTabs() {
     const slug = getSlug();
     if (!getMobileTab()) {
         const raw = slug ? localStorage.getItem(`mobileTab_${slug}`) : null;
-        const resolved = resolveMobileTabKeyFromStorage(raw, boardCols);
+        const resolved = resolveMobileTabKeyFromStorage(raw, boardCols, board && isAgendaEnabled(board) ? [AGENDA_COLUMN_KEY] : []);
         setMobileTab((resolved ?? firstKey));
     }
     // Update tab active states
@@ -661,6 +702,7 @@ function updateMobileTabs() {
         }
     });
     checkMobileLoadMoreVisibility();
+    flushAgendaInitialScroll();
 }
 // Handle project image upload
 async function handleProjectImageUpload(projectId) {
@@ -772,16 +814,20 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort, priori
             selectedIds: getSelectedTodoIds(),
             priorityTiers: buildPriorityTierMap(board),
         };
-        boardEl.innerHTML = buildBoardColumnsHtml({
-            boardCols,
-            board,
-            activeMobileTab: getMobileTab(),
-            laneMetaByKey: getBoardLaneMeta(),
-            laneDisplayCount: (key) => getLaneDisplayCount(key),
-            membersByUserId,
-            cardOpts,
-        });
-        applyWrapLanesClass(boardEl, boardCols.length);
+        const savedAgendaScroll = captureAgendaListScroll();
+        boardEl.innerHTML =
+            buildAgendaColumnHtml(board, getMobileTab()) +
+                buildBoardColumnsHtml({
+                    boardCols,
+                    board,
+                    activeMobileTab: getMobileTab(),
+                    laneMetaByKey: getBoardLaneMeta(),
+                    laneDisplayCount: (key) => getLaneDisplayCount(key),
+                    membersByUserId,
+                    cardOpts,
+                });
+        applyAgendaScrollAfterRender({ restoreScrollTop: savedAgendaScroll, board });
+        applyWrapLanesClass(boardEl, visibleBoardLaneCount(board));
         // Add "No results" state if search is active and no todos match
         if (search && search.trim() !== "") {
             const totalTodos = Object.values(board.columns).reduce((sum, todos) => sum + todos.length, 0);
@@ -839,7 +885,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     const slug = getSlug();
     if (slug) {
         const raw = localStorage.getItem(`mobileTab_${slug}`);
-        const resolved = resolveMobileTabKeyFromStorage(raw, initialCols);
+        const resolved = resolveMobileTabKeyFromStorage(raw, initialCols, isAgendaEnabled(board) ? [AGENDA_COLUMN_KEY] : []);
         setMobileTab((resolved ?? firstColKey));
     }
     else {
@@ -848,6 +894,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     // Check if we're already on a board page - if so, only update board content
     // We check for the board container, not just the topbar, because projects page also has a topbar
     const existingBoardContainer = document.querySelector(".board");
+    const savedAgendaScroll = captureAgendaListScroll();
     if (existingBoardContainer && !opts.forceFullRender) {
         updateBoardContent(board, tag, search, sprintId, assignee, sort, priority);
         syncTopbarFromBoard(board);
@@ -902,23 +949,22 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">
-            ${boardCols.map((c) => {
-        const { tab: tabStyle } = mobileLaneTabStyleAttrForHtml(c);
-        const dk = escapeHTML(c.key);
-        return `
-            <button class="mobile-tab ${getMobileTab() === c.key ? "mobile-tab--active" : ""}" data-tab="${dk}"${tabStyle}><span class="mobile-tab__text">${escapeHTML(c.title)} ${getLaneDisplayCount(c.key)}</span></button>
-            `;
-    }).join("")}
-            <div id="mobileTabDropZones">
-              ${boardCols.map((c) => {
-        const { drop: dropStyle } = mobileLaneTabStyleAttrForHtml(c);
-        const dk = escapeHTML(c.key);
-        return `<div id="tab_drop_${c.key}" class="mobile-tab-drop" data-status="${dk}"${dropStyle}></div>`;
-    }).join("")}
-            </div>
+            ${buildMobileTabsInnerHtml(boardCols, {
+        activeTabKey: getMobileTab(),
+        extraTabs: agendaMobileTab(board) ? [agendaMobileTab(board)] : [],
+        laneLabel: (key) => {
+            if (key === AGENDA_COLUMN_KEY) {
+                return agendaMobileTabAriaLabel(board);
+            }
+            const col = boardCols.find((c) => c.key === key);
+            const title = col?.title ?? "";
+            return `${title} ${getLaneDisplayCount(key)}`;
+        },
+    })}
           </div>
 
           <div class="board">
+          ${buildAgendaColumnHtml(board, getMobileTab())}
           ${buildBoardColumnsHtml({
         boardCols,
         board,
@@ -935,7 +981,8 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
   `;
     const boardRoot = document.querySelector(".board");
     if (boardRoot)
-        applyWrapLanesClass(boardRoot, boardCols.length);
+        applyWrapLanesClass(boardRoot, visibleBoardLaneCount(board));
+    applyAgendaScrollAfterRender({ restoreScrollTop: savedAgendaScroll, board });
     // Only attach event listeners for elements that exist (anonymous mode omits some)
     const brandLink = document.getElementById("brandLink");
     if (brandLink && !brandLink[BOUND_FLAG]) {

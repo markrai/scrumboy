@@ -328,3 +328,37 @@ func TestRESTPatchBoardSettings_anonymousBoardNotFound(t *testing.T) {
 		t.Fatalf("expected NOT_FOUND, got %q", code)
 	}
 }
+
+func TestRESTPatchBoardSettings_unauthorizedAndForbiddenEvaluatesBeforeBody(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	_, _, tempBoard := setupRESTTemporaryBoardOwner(t, ts, sqlDB)
+
+	// 1. Unauthenticated request with empty body must fail with 401 UNAUTHORIZED (not validation error)
+	unauthClient := newCookieClient(t)
+	resp, body := doJSON(t, unauthClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug+"/settings", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated: expected 401, got %d body=%s", resp.StatusCode, string(body))
+	}
+	if code := apiErrorCode(t, body); code != "UNAUTHORIZED" {
+		t.Fatalf("unauthenticated: expected UNAUTHORIZED, got %q", code)
+	}
+
+	// 2. Non-owner request with empty body must fail with 403 FORBIDDEN (not validation error)
+	st := store.New(sqlDB, nil)
+	if _, err := st.CreateUser(context.Background(), "settings-prep-other@example.com", "password123", "Other"); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	otherClient := newCookieClient(t)
+	loginUserClient(t, otherClient, ts.URL, "settings-prep-other@example.com", "password123")
+
+	resp, body = doJSON(t, otherClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug+"/settings", map[string]any{}, nil)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("forbidden: expected 403, got %d body=%s", resp.StatusCode, string(body))
+	}
+	if code := apiErrorCode(t, body); code != "FORBIDDEN" {
+		t.Fatalf("forbidden: expected FORBIDDEN, got %q", code)
+	}
+}
+

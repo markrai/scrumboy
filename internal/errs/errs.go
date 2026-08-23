@@ -13,4 +13,5 @@ var (
 	ErrConflict                   = errors.New("conflict")
 	ErrTooManyAttempts            = errors.New("too many attempts")
 	Err2FAEncryptionNotConfigured = errors.New("2FA encryption not configured")
+	ErrEncryptionNotConfigured    = errors.New("encryption not configured")
 )

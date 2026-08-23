@@ -471,6 +471,300 @@ describe('router wrap lanes hydration', () => {
   });
 });
 
+describe('router agenda start of day hydration', () => {
+  function userBob() {
+    return {
+      id: 8,
+      email: 'bob@example.com',
+      name: 'Bob',
+      isBootstrap: false,
+      systemRole: 'user',
+      twoFactorEnabled: false,
+    };
+  }
+
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, agendaStartOfDayValue: string): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=agendaStartOfDay')) {
+        return { value: agendaStartOfDayValue };
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('defaults missing server preference to 08:00', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY, '06:00');
+    installSignedInAuth(userBob(), '');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
+  });
+
+  it('does not carry start of day from user A to user B on login', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY, '06:00');
+    installSignedInAuth(userStatus(), '06:00');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userBob(), '');
+    await mod.router();
+
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
+  });
+
+  it('keeps the same user start of day when preference hydration fails', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    installSignedInAuth(userStatus(), '06:00');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: userStatus(),
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return userStatus();
+      }
+      if (url.includes('key=agendaStartOfDay')) {
+        throw new Error('network');
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    await mod.router();
+
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+  });
+
+  it('preserves same-user start of day on cold reload when hydration fails', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    const user = userStatus();
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY, '06:00');
+    localStorage.setItem(prefs.AGENDA_START_OF_DAY_OWNER_KEY, String(user.id));
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=agendaStartOfDay')) {
+        throw new Error('network');
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+    expect(localStorage.getItem(prefs.AGENDA_START_OF_DAY_STORAGE_KEY)).toBe('06:00');
+    expect(localStorage.getItem(prefs.AGENDA_START_OF_DAY_OWNER_KEY)).toBe(String(user.id));
+  });
+
+  it('does not leak start of day to another user when their hydration fails', async () => {
+    const prefs = await import('./core/agenda-start-of-day-preferences.js');
+    installSignedInAuth(userStatus(), '06:00');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('06:00');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: userBob(),
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return userBob();
+      }
+      if (url.includes('key=agendaStartOfDay')) {
+        throw new Error('network');
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    await mod.router();
+
+    expect(prefs.getAgendaStartOfDayPreference()).toBe('08:00');
+  });
+});
+
+describe('router agenda now-line hydration', () => {
+  function userBob() {
+    return {
+      id: 8,
+      email: 'bob@example.com',
+      name: 'Bob',
+      isBootstrap: false,
+      systemRole: 'user',
+      twoFactorEnabled: false,
+    };
+  }
+
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, agendaNowLineValue: string): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return user;
+      }
+      if (url.includes('key=agendaNowLine')) {
+        return { value: agendaNowLineValue };
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return { value: '' };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('defaults missing server preference to subtle', async () => {
+    const prefs = await import('./core/agenda-now-line-preferences.js');
+    localStorage.setItem(prefs.AGENDA_NOW_LINE_STORAGE_KEY, 'prominent');
+    installSignedInAuth(userBob(), '');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(prefs.getAgendaNowLinePreference()).toBe('subtle');
+  });
+
+  it('does not carry prominent now line from user A to user B on login', async () => {
+    const prefs = await import('./core/agenda-now-line-preferences.js');
+    localStorage.setItem(prefs.AGENDA_NOW_LINE_STORAGE_KEY, 'prominent');
+    installSignedInAuth(userStatus(), 'prominent');
+    const mod = await loadRouterModule();
+    await mod.router();
+    expect(prefs.getAgendaNowLinePreference()).toBe('prominent');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userBob(), '');
+    await mod.router();
+
+    expect(prefs.getAgendaNowLinePreference()).toBe('subtle');
+  });
+});
+
 describe('router board todo sort hydration', () => {
   function userBob() {
     return {

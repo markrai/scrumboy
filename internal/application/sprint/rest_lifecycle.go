@@ -11,13 +11,13 @@ import (
 // responsible for translating them to runtime refresh reasons.
 type RESTTransitionPublisher interface {
 	PublishSprintActivated(ctx context.Context, projectID int64)
-	PublishSprintClosed(ctx context.Context, projectID int64)
+	PublishSprintClosed(ctx context.Context, projectID int64, name string)
 }
 
 type nopRESTTransitionPublisher struct{}
 
-func (nopRESTTransitionPublisher) PublishSprintActivated(context.Context, int64) {}
-func (nopRESTTransitionPublisher) PublishSprintClosed(context.Context, int64)    {}
+func (nopRESTTransitionPublisher) PublishSprintActivated(context.Context, int64)      {}
+func (nopRESTTransitionPublisher) PublishSprintClosed(context.Context, int64, string) {}
 
 // RESTLifecycleServiceDependencies names the fresh-role, close-target-read,
 // transition-write, and semantic publication capabilities used by canonical
@@ -69,6 +69,7 @@ type PreparedRESTClose struct {
 	service   *RESTLifecycleService
 	projectID int64
 	sprintID  int64
+	name      string
 }
 
 // PrepareActivate preserves REST's actor and fresh-role gate without adding a
@@ -112,6 +113,7 @@ func (s *RESTLifecycleService) PrepareClose(
 		service:   s,
 		projectID: target.ProjectID,
 		sprintID:  target.SprintID,
+		name:      sprint.Name,
 	}, nil
 }
 
@@ -147,6 +149,6 @@ func (p *PreparedRESTClose) Close() error {
 	if err := p.service.transitions.CloseSprint(p.ctx, p.projectID, p.sprintID); err != nil {
 		return err
 	}
-	p.service.publisher.PublishSprintClosed(p.ctx, p.projectID)
+	p.service.publisher.PublishSprintClosed(p.ctx, p.projectID, p.name)
 	return nil
 }

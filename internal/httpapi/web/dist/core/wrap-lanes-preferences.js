@@ -1,6 +1,6 @@
 import { apiFetch } from '../api.js';
 import { getBoard, getUser } from '../state/selectors.js';
-import { getBoardColumns } from '../views/board-rendering.js';
+import { visibleBoardLaneCount } from '../views/board-rendering.js';
 export const WRAP_LANES_DEFAULT = false;
 export const WRAP_LANES_STORAGE_KEY = 'scrumboy.wrapLanes';
 export const WRAP_LANES_PREFERENCE_KEY = 'wrapLanes';
@@ -64,7 +64,7 @@ export function applyWrapLanesClass(boardEl, laneCount) {
 }
 export function syncOpenBoardWrapLanesClass() {
     const board = getBoard();
-    const laneCount = board ? getBoardColumns(board).length : 0;
+    const laneCount = board ? visibleBoardLaneCount(board) : 0;
     const boardEl = document.querySelector('.board');
     if (boardEl)
         applyWrapLanesClass(boardEl, laneCount);

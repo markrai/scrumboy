@@ -9,6 +9,8 @@ import (
 
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
+	"scrumboy/internal/application/refresh"
+	tagapp "scrumboy/internal/application/tag"
 	"scrumboy/internal/projectcolor"
 	"scrumboy/internal/store"
 )
@@ -208,7 +210,7 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		if in.Name != nil || in.Image != nil {
-			s.emitRefreshNeeded(s.requestContext(r), projectID, "project_updated")
+			s.emitRefreshNeeded(s.requestContext(r), projectID, "project_updated", refresh.Entity{})
 		}
 		writeJSON(w, http.StatusOK, projectToJSON(project))
 		return true
@@ -505,11 +507,20 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		// Durable numeric project route: project-aware membership + role checks.
-		if err := s.store.UpdateTagColorForDurableProjectByID(ctx, projectID, userID, tagID, in.Color); err != nil {
+		prepared, err := s.tagColors.PrepareProjectID(ctx, tagapp.ProjectIDColorCommand{
+			Project:      tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ViewerUserID: &userID,
+			TagID:        tagID,
+			Color:        tagapp.NewColorIntent(in.Color),
+		})
+		if err != nil {
+			writeTagColorPrepareError(w, err)
+			return true
+		}
+		if err := prepared.Update(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -538,11 +549,20 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		if err := s.store.SetViewerTagColorByName(ctx, projectID, userID, tagName, in.Color); err != nil {
+		prepared, err := s.tagColors.PrepareProjectName(ctx, tagapp.ProjectNameColorCommand{
+			Project:      tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ViewerUserID: &userID,
+			Name:         tagName,
+			Color:        tagapp.NewColorIntent(in.Color),
+		})
+		if err != nil {
+			writeTagColorPrepareError(w, err)
+			return true
+		}
+		if err := prepared.Update(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
 		}
-		s.emitRefreshNeeded(s.requestContext(r), projectID, "tag_color_updated")
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -559,12 +579,19 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			writeValidationError(w, "invalid tagId", "invalid_tag_id", map[string]any{"field": "tagId"})
 			return true
 		}
-		affected, err := s.store.DeleteTagForDurableProjectByID(ctx, projectID, userID, tagID)
+		prepared, err := s.tagDeletions.PrepareProjectID(ctx, tagapp.ProjectIDDeleteCommand{
+			Project:     tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ActorUserID: &userID,
+			TagID:       tagID,
+		})
 		if err != nil {
-			writeStoreErr(w, err, true)
+			writeTagDeletionError(w, err)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected)
+		if err := prepared.Delete(); err != nil {
+			writeTagDeletionError(w, err)
+			return true
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -581,12 +608,19 @@ func (s *Server) handleProjectsProjectTags(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 		tagName := rest[2]
-		affected, err := s.store.DeleteMyTagByName(ctx, projectID, userID, tagName)
+		prepared, err := s.tagDeletions.PrepareProjectName(ctx, tagapp.ProjectNameDeleteCommand{
+			Project:     tagapp.ResolvedProject{ProjectID: projectID, Kind: tagapp.DurableProject},
+			ActorUserID: &userID,
+			Name:        tagName,
+		})
 		if err != nil {
-			writeStoreErr(w, err, true)
+			writeTagDeletionError(w, err)
 			return true
 		}
-		s.emitTagDeletedRefresh(s.requestContext(r), projectID, affected)
+		if err := prepared.Delete(); err != nil {
+			writeTagDeletionError(w, err)
+			return true
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}

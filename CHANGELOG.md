@@ -1,6 +1,69 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.32.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+
+## [3.33.4] - 2026-08-22
+
+### Changed
+
+- **Tag mutation application services** - REST and MCP tag color and deletion
+  flows now go through application-layer services instead of handler-side
+  orchestration. HTTP/MCP error mapping, validation, and public behavior are
+  unchanged.
+
+## [3.33.3] - 2026-08-20
+
+### Enhancements
+
+- **Activity email copy** - Card, sprint, workflow-column, and tag activity emails now include
+  the card number/title or entity display name when that identity is already available on the
+  successful mutation path. Missing identity keeps the previous generic wording. The public SSE
+  refresh event is unchanged.
+- **Activity email prose** - Enriched subjects and bodies use unquoted natural English (column, not
+  “workflow column”; “tag color changed”). Assigned and Cards I opened bodies put a valid card
+  identity in one sentence.
+
+## [3.33.2] - 2026-08-19
+
+### Fixed
+
+- **Agenda board timezone persistence in Docker** - Embed the IANA timezone
+  database in the Scrumboy binary so `time.LoadLocation` works in minimal
+  Alpine runtimes that ship without system tzdata. Without this, PATCH
+  `/api/board/{slug}/settings` with a named zone such as `America/New_York`
+  returned `invalid_agenda_timezone` and the Settings Agenda dropdown snapped
+  back to `UTC`.
+
+## [3.33.1] - 2026-08-19
+
+### Fixed
+
+- **Calendar feed fetcher test stability** - Remove the environment-dependent
+  upper-bound buffering assertion so CI is less brittle.
+
+## [3.33.0] - 2026-08-18
+
+### Added
+
+- **Agenda lane** - Durable boards can show today's events from subscribed
+  HTTPS iCalendar feeds in a read-only Agenda lane (timezone, lane name, and
+  color are project-wide). Maintainers add up to eight feeds; URLs are stored
+  encrypted and never shown again after save. Board loads reuse a snapshot
+  newer than 15 minutes and background-refresh older ones; snapshots older
+  than 30 minutes are marked stale. JSON backup copies Agenda flags only, not
+  feed URLs. See [docs/calendar.md](docs/calendar.md).
+
+## [3.32.5] - 2026-08-18
+
+### Changed
+
+- **Frontend dist CI gate** - The frontend job now clean-rebuilds
+  `internal/httpapi/web/dist` from TypeScript (`rm -rf dist && npm run build`)
+  and fails if the result differs from what is committed, including orphaned
+  files `tsc` would otherwise leave behind. TypeScript emit is type-checked as
+  a side effect. Eight stale `dist/dialogs/` copies left by an earlier source
+  refactor are removed; they were unused and are not recreated by a clean
+  build.
 
 ## [3.32.4] - 2026-08-18
 

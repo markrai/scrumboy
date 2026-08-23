@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/store"
 )
 
@@ -24,6 +25,7 @@ type restMutationRefreshCall struct {
 	ctx       context.Context
 	projectID int64
 	reason    string
+	entity    refresh.Entity
 }
 
 type restMutationFake struct {
@@ -72,9 +74,9 @@ func (f *restMutationFake) DeletePriorityTier(ctx context.Context, projectID int
 	return f.deleteErr
 }
 
-func (f *restMutationFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string) {
+func (f *restMutationFake) PublishBoardRefresh(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 	f.trace = append(f.trace, "refresh")
-	f.refreshCalls = append(f.refreshCalls, restMutationRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+	f.refreshCalls = append(f.refreshCalls, restMutationRefreshCall{ctx: ctx, projectID: projectID, reason: reason, entity: entity})
 }
 
 func newRESTMutationTestService(f *restMutationFake) *RESTMutationService {
@@ -235,5 +237,5 @@ func TestPreparedRESTMutationDeleteFailureSuppressesRefresh(t *testing.T) {
 
 func TestBoardRefreshPublisherFuncNilIsNoop(t *testing.T) {
 	var publish BoardRefreshPublisherFunc
-	publish.PublishBoardRefresh(context.Background(), 1, "ignored")
+	publish.PublishBoardRefresh(context.Background(), 1, "ignored", refresh.Entity{})
 }

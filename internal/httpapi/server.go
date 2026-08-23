@@ -12,9 +12,13 @@ import (
 	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	calendarapp "scrumboy/internal/application/calendar"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
+	projectsettingsapp "scrumboy/internal/application/projectsettings"
+	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
+	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
 	workflowapp "scrumboy/internal/application/workflow"
@@ -103,6 +107,15 @@ type Options struct {
 	// overwrites or strips client-supplied XFF. Without PublicBaseURL, OAuth
 	// discovery also requires forwarded HTTPS and an explicit X-Forwarded-Host.
 	TrustProxy bool
+
+	// CalendarFeedFetcher overrides ICS feed HTTP fetches. Tests inject fakes
+	// so board GET and refresh can assert zero or controlled network use.
+	CalendarFeedFetcher calendarapp.FeedFetcher
+
+	// AllowLoopbackCalendarFeeds permits configuring and fetching ICS URLs on
+	// loopback hosts. Production must leave this false so URL acceptance matches
+	// the default fetcher SSRF policy.
+	AllowLoopbackCalendarFeeds bool
 }
 
 type Server struct {
@@ -122,7 +135,12 @@ type Server struct {
 	sprintDeletions               *sprintapp.RESTDeletionService
 	workflowMutations             *workflowapp.RESTMutationService
 	priorityMutations             *priorityapp.RESTMutationService
+	calendarSources               *calendarapp.RESTService
+	boardSettings                 *projectsettingsapp.RESTService
+	agenda                        *calendarapp.AgendaService
 	membershipMutations           *membershipapp.RESTMutationService
+	tagColors                     *tagapp.RESTColorService
+	tagDeletions                  *tagapp.RESTDeletionService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -246,8 +264,11 @@ type storeAPI interface {
 	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
+	UpdateProjectBoardSettings(ctx context.Context, projectID, userID int64, patch store.ProjectBoardSettingsPatch) (store.ProjectBoardSettings, error)
 	workflowapp.MutationStore
 	priorityapp.MutationStore
+	calendarapp.SourceStore
+	calendarapp.SnapshotStore
 	membershipapp.MutationStore
 	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
@@ -347,6 +368,8 @@ type storeAPI interface {
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)
 	DecryptTOTPSecret(encrypted string) ([]byte, error)
+	EncryptSecret(plaintext []byte) (string, error)
+	DecryptSecret(encrypted string) ([]byte, error)
 
 	// Webhooks
 	CreateWebhook(ctx context.Context, userID int64, in store.CreateWebhookInput) (store.Webhook, error)
@@ -603,8 +626,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
-	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-		server.emitRefreshNeeded(ctx, projectID, reason)
+	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+		server.emitRefreshNeeded(ctx, projectID, reason, entity)
 	})
 	creatorRequestPublisher := todoapp.CreatorNotificationRequestPublisher(server)
 	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
@@ -666,21 +689,66 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.workflowMutations = workflowapp.NewRESTMutationService(workflowapp.RESTMutationServiceDependencies{
 		Roles:     st,
 		Mutations: st,
-		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-			server.emitRefreshNeeded(ctx, projectID, reason)
+		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+			server.emitRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
 	server.priorityMutations = priorityapp.NewRESTMutationService(priorityapp.RESTMutationServiceDependencies{
 		Roles:     st,
 		Mutations: st,
-		Refresh: priorityapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string) {
-			server.emitRefreshNeeded(ctx, projectID, reason)
+		Refresh: priorityapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+			server.emitRefreshNeeded(ctx, projectID, reason, entity)
 		}),
+	})
+	refreshPublisher := calendarapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+		server.emitRefreshNeeded(ctx, projectID, reason, entity)
+	})
+	server.calendarSources = calendarapp.NewRESTService(calendarapp.RESTServiceDependencies{
+		Projects:      st,
+		Roles:         st,
+		Cipher:        st,
+		Sources:       st,
+		Refresh:       refreshPublisher,
+		AllowLoopback: opts.AllowLoopbackCalendarFeeds,
+	})
+	server.boardSettings = projectsettingsapp.NewRESTService(projectsettingsapp.RESTServiceDependencies{
+		Mutations: st,
+		Refresh: projectsettingsapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+			server.emitRefreshNeeded(ctx, projectID, reason, entity)
+		}),
+	})
+	fetcher := opts.CalendarFeedFetcher
+	if fetcher == nil {
+		fetcher = calendarapp.NewHTTPFetcher(opts.AllowLoopbackCalendarFeeds)
+	}
+	server.agenda = calendarapp.NewAgendaService(calendarapp.AgendaServiceDependencies{
+		Sources:   st,
+		Snapshots: st,
+		Cipher:    st,
+		Fetcher:   fetcher,
+		Refresh:   refreshPublisher,
 	})
 	server.membershipMutations = membershipapp.NewRESTMutationService(membershipapp.RESTMutationServiceDependencies{
 		Mutations: st,
 		Members:   st,
 		Publisher: membershipMutationPublisher{server: server},
+	})
+	server.tagColors = tagapp.NewRESTColorService(tagapp.RESTColorServiceDependencies{
+		MineColor:          st,
+		DurableIDColor:     st,
+		TemporaryIDColor:   st,
+		DurableNameColor:   st,
+		TemporaryNameColor: st,
+		Publisher:          tagColorPublisher{server: server},
+	})
+	server.tagDeletions = tagapp.NewRESTDeletionService(tagapp.RESTDeletionServiceDependencies{
+		MineID:        st,
+		MineName:      st,
+		DurableID:     st,
+		Rows:          st,
+		BoardNames:    st,
+		PersonalNames: st,
+		Publisher:     tagDeletionPublisher{server: server},
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)

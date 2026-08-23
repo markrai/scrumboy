@@ -344,6 +344,20 @@ func TestBoardGetContract_UnknownColumnKeyFailsBeforeAnyLaneQuery(t *testing.T) 
 	requireOperationNames(t, h.Recording, "countUsers", "access", "workflow")
 }
 
+func TestBoardGetContract_AgendaColumnKeyFailsBeforeAnyLaneQuery(t *testing.T) {
+	h := newBoardGetContractHarness(t)
+
+	_, _, err := h.call(map[string]any{
+		"projectSlug": h.Project.Slug,
+		"columnKey":   "agenda",
+	})
+
+	requireBoardGetError(t, err, http.StatusBadRequest, CodeValidationError, "invalid columnKey", map[string]any{
+		"field": "columnKey",
+	})
+	requireOperationNames(t, h.Recording, "countUsers", "access", "workflow")
+}
+
 func TestBoardGetContract_ColumnKeyScopesLaneQueriesToOneColumn(t *testing.T) {
 	h := newBoardGetContractHarness(t)
 

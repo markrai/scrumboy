@@ -62,6 +62,30 @@ export interface Project {
   role?: string;
 }
 
+export interface AgendaEvent {
+  id: string;
+  sourceId: number;
+  calendarName: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  allDay: boolean;
+  location: string;
+  provider: string;
+  hostKind?: string;
+}
+
+export interface Agenda {
+  enabled: boolean;
+  timezone?: string;
+  title?: string;
+  color?: string;
+  stale?: boolean;
+  fetchedAt?: string | null;
+  error?: string | null;
+  events?: AgendaEvent[];
+}
+
 export interface Board {
   project: Project;
   tags: Tag[];
@@ -69,6 +93,7 @@ export interface Board {
   priorityOrder?: PriorityTier[];
   columns: Record<string, Todo[]>;
   columnsMeta?: Record<string, { hasMore: boolean; nextCursor: string | null; totalCount?: number }>;
+  agenda?: Agenda;
 }
 
 export interface LanePageResponse {

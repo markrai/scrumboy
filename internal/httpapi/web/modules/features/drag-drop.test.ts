@@ -465,4 +465,32 @@ describe("drag-drop", () => {
     expect(showToastMock).toHaveBeenCalledWith("[!! Failed to move todo !!]");
     expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
   });
+
+  it("does not attach Sortable to an agenda list or tab drop", async () => {
+    document.body.innerHTML = `
+      <div class="mobile-board-wrapper">
+        <div id="list_agenda"></div>
+        <div id="list_backlog" data-status="backlog"></div>
+        <div id="list_doing" data-status="doing"></div>
+        <div id="mobileTabDropZones">
+          <div id="tab_drop_agenda"></div>
+          <div id="tab_drop_backlog" data-status="backlog"></div>
+          <div id="tab_drop_doing" data-status="doing"></div>
+        </div>
+      </div>
+    `;
+    const dragDrop = await import("./drag-drop.js");
+    dragDrop.setDnDColumns([
+      { key: "backlog", title: "Backlog" },
+      { key: "doing", title: "Doing" },
+    ]);
+    dragDrop.initDnD();
+    const ids = sortableCreateMock.mock.calls.map(([element]) => (element as HTMLElement).id);
+    expect(ids).toContain("list_backlog");
+    expect(ids).toContain("list_doing");
+    expect(ids).toContain("tab_drop_backlog");
+    expect(ids).toContain("tab_drop_doing");
+    expect(ids).not.toContain("list_agenda");
+    expect(ids).not.toContain("tab_drop_agenda");
+  });
 });

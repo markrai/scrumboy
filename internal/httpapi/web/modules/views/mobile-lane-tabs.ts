@@ -1,7 +1,8 @@
 import { escapeHTML, sanitizeHexColor } from "../utils.js";
+import { AGENDA_COLUMN_KEY, agendaMobileTabInnerHtml } from "./board-agenda.js";
 
 /** One workflow lane as used for mobile tab strip rendering. */
-export type MobileLaneColumn = { key: string; title: string; color?: string };
+export type MobileLaneColumn = { key: string; title: string; color?: string; count?: number };
 
 /**
  * Inline `style` attribute fragments for mobile tab buttons and drop zones (matches board template).
@@ -35,6 +36,8 @@ export type BuildMobileTabsInnerHtmlOpts = {
   activeTabKey: string | null | undefined;
   /** Full visible label for the tab, e.g. "Doing 3". */
   laneLabel: (key: string) => string;
+  /** Extra tabs (e.g. Agenda) with no Sortable drop zone. */
+  extraTabs?: MobileLaneColumn[];
 };
 
 /**
@@ -42,12 +45,17 @@ export type BuildMobileTabsInnerHtmlOpts = {
  * Keys are escaped in attributes; `id="tab_drop_*"` uses raw keys (same as legacy template).
  */
 export function buildMobileTabsInnerHtml(boardCols: MobileLaneColumn[], opts: BuildMobileTabsInnerHtmlOpts): string {
-  const tabs = boardCols
+  const extra = opts.extraTabs ?? [];
+  const tabs = [...extra, ...boardCols]
     .map((c) => {
       const { tab } = mobileLaneTabStyleAttrForHtml(c);
       const active = opts.activeTabKey === c.key ? "mobile-tab--active" : "";
       const dk = escapeHTML(c.key);
-      return `<button class="mobile-tab ${active}" data-tab="${dk}"${tab}><span class="mobile-tab__text">${escapeHTML(opts.laneLabel(c.key))}</span></button>`;
+      const label = opts.laneLabel(c.key);
+      const isAgenda = c.key === AGENDA_COLUMN_KEY;
+      const inner = isAgenda ? agendaMobileTabInnerHtml(c.count ?? 0) : escapeHTML(label);
+      const aria = isAgenda ? ` aria-label="${escapeHTML(label)}"` : "";
+      return `<button class="mobile-tab ${active}" data-tab="${dk}"${tab}${aria}><span class="mobile-tab__text">${inner}</span></button>`;
     })
     .join("");
   const drops = boardCols

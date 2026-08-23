@@ -138,7 +138,21 @@ target a single recipient per event. This is repeat suppression, not a digest or
 When creator precedence selects `Card activity` as its fallback, its first send preparation claims
 this same window (the category is not known when the minimal candidate initially enters the queue).
 That creator work item retains its claim across SMTP retries, so retrying one delivery is not
-mistaken for a second activity event.
+mistaken for a second activity event. When the accepted event carries an entity name or card
+identity, that identity is from the event that was queued — not a digest of later mutations in the
+same window.
+
+**Activity copy.** Enriched subjects and bodies use natural English without quotes (for example
+`Alice moved card #42 Fix login`, `column added — Review`, not “workflow column”). Assignment and
+“cards I opened” emails put a valid card identity in one sentence (`Card #42 Fix login was assigned
+to you in Roadmap.`). Card, sprint, and project-activity emails are enriched **opportunistically**
+from data already present on the successful mutation path (card `#localId` + title, sprint/column/tag
+display name). There is no extra database read for notification prose. Missing or partial identity
+keeps the existing generic wording (`Alice updated a card`). Valid card identity requires both a
+positive local ID and a non-empty title; named entities require a non-empty display name. Card
+delete, sprint activate, workflow column delete, and ID-based tag mutations remain generic today
+because those publish paths do not carry an entity. Entity fields ride on the internal
+`board.refresh_needed` bus payload only; the public SSE refresh event still carries `reason` alone.
 
 ---
 

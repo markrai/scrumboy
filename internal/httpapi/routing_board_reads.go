@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	boardapp "scrumboy/internal/application/board"
+	calendarapp "scrumboy/internal/application/calendar"
 	"scrumboy/internal/store"
 )
 
@@ -112,14 +114,61 @@ func (s *Server) handlePreparedSlugBoardInitial(
 		writeStoreErr(w, err, true)
 		return
 	}
-	writeJSON(w, http.StatusOK, boardToJSONWithMeta(
+	payload := boardToJSONWithMeta(
 		result.Project,
 		result.Workflow,
 		result.Priorities,
 		result.Tags,
 		result.Columns,
 		result.ColumnsMeta,
-	))
+	)
+	if result.Project.ExpiresAt == nil && s.agenda != nil {
+		agenda, err := s.agenda.ReadAgenda(ctx, result.Project.ID)
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return
+		}
+		payload.Agenda = agendaViewToJSON(agenda)
+		s.agenda.MaybeRefresh(ctx, result.Project.ID)
+	}
+	writeJSON(w, http.StatusOK, payload)
+}
+
+func agendaViewToJSON(view calendarapp.AgendaView) *agendaJSON {
+	if !view.Enabled {
+		return &agendaJSON{Enabled: false}
+	}
+	out := &agendaJSON{
+		Enabled:  true,
+		Timezone: view.Timezone,
+		Title:    view.Title,
+		Color:    view.Color,
+		Stale:    view.Stale,
+		Events:   make([]agendaEventJSON, 0, len(view.Events)),
+	}
+	if view.FetchedAt != nil && !view.FetchedAt.IsZero() {
+		fetched := view.FetchedAt.UTC().Format(time.RFC3339)
+		out.FetchedAt = &fetched
+	}
+	if strings.TrimSpace(view.Error) != "" {
+		errMsg := view.Error
+		out.Error = &errMsg
+	}
+	for _, ev := range view.Events {
+		out.Events = append(out.Events, agendaEventJSON{
+			ID:           ev.ID,
+			SourceID:     ev.SourceID,
+			CalendarName: ev.CalendarName,
+			Title:        ev.Title,
+			StartsAt:     ev.StartsAt.UTC().Format(time.RFC3339),
+			EndsAt:       ev.EndsAt.UTC().Format(time.RFC3339),
+			AllDay:       ev.AllDay,
+			Location:     ev.Location,
+			Provider:     ev.Provider,
+			HostKind:     ev.HostKind,
+		})
+	}
+	return out
 }
 
 func (s *Server) handlePreparedSlugBoardLane(

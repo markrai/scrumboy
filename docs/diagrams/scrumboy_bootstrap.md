@@ -25,7 +25,7 @@ flowchart LR
   MailQ -. when SMTPConfigured .-> MailW
 ```
 
-`ResolveStartupEncryptionKey` runs after migrations and before `store.New`. If encrypted auth/security data already exists, an invalid or missing `SCRUMBOY_ENCRYPTION_KEY` fails startup. On a fresh database with no encrypted data, an invalid key is logged and ignored (2FA setup and password-reset encryption stay disabled until a valid key is configured).
+`ResolveStartupEncryptionKey` runs after migrations and before `store.New`. If encrypted security data already exists (TOTP secrets and/or encrypted calendar feed URLs), an invalid or missing `SCRUMBOY_ENCRYPTION_KEY` fails startup. On a fresh database with no encrypted data, an invalid key is logged and ignored (2FA setup, password-reset encryption, and calendar URL encryption stay disabled until a valid key is configured).
 
 `httpapi.NewServer` always creates `newMailQueue`. If `SMTPConfigured(host, port, from)`, it builds `mailer.New`, `newMailWorker`, and starts `mWorker.Run(mailCtx)`.
 

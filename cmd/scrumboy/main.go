@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "time/tzdata" // embed IANA zone database for minimal runtimes (e.g. Alpine) without system tzdata
+
 	"scrumboy/internal/agora"
 	"scrumboy/internal/config"
 	"scrumboy/internal/db"

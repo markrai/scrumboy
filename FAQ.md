@@ -256,7 +256,7 @@ For enablement validation, status/reason fields, key generation, and verificatio
 
 ## How do I generate SCRUMBOY_ENCRYPTION_KEY?
 
-`SCRUMBOY_ENCRYPTION_KEY` is a **base64-encoded 32-byte** secret you generate yourself. Scrumboy uses it for 2FA and password-reset tokens. It is **not** required for basic startup, but it **is** required for self-service password-reset email (with SMTP) and for setting up 2FA. Generate it **on your own machine** - do not use a random website to create production secrets.
+`SCRUMBOY_ENCRYPTION_KEY` is a **base64-encoded 32-byte** secret you generate yourself. Scrumboy uses it for 2FA, password-reset tokens, and encrypted ICS calendar feed URLs. It is **not** required for basic startup, but it **is** required for self-service password-reset email (with SMTP), setting up 2FA, and Agenda feeds. Generate it **on your own machine** - do not use a random website to create production secrets.
 
 ### Linux / macOS
 

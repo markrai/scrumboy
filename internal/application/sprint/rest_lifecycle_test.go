@@ -29,6 +29,7 @@ type restLifecycleMutationCall struct {
 type restLifecyclePublicationCall struct {
 	ctx       context.Context
 	projectID int64
+	name      string
 }
 
 type restLifecycleFake struct {
@@ -116,14 +117,14 @@ func (f *restLifecycleFake) PublishSprintActivated(ctx context.Context, projectI
 	f.activated = append(f.activated, restLifecyclePublicationCall{ctx: ctx, projectID: projectID})
 }
 
-func (f *restLifecycleFake) PublishSprintClosed(ctx context.Context, projectID int64) {
+func (f *restLifecycleFake) PublishSprintClosed(ctx context.Context, projectID int64, name string) {
 	f.trace = append(f.trace, "publish_closed")
-	f.closed = append(f.closed, restLifecyclePublicationCall{ctx: ctx, projectID: projectID})
+	f.closed = append(f.closed, restLifecyclePublicationCall{ctx: ctx, projectID: projectID, name: name})
 }
 
-func (f *restLifecycleFake) PublishSprintDeleted(ctx context.Context, projectID int64) {
+func (f *restLifecycleFake) PublishSprintDeleted(ctx context.Context, projectID int64, name string) {
 	f.trace = append(f.trace, "publish_deleted")
-	f.deleted = append(f.deleted, restLifecyclePublicationCall{ctx: ctx, projectID: projectID})
+	f.deleted = append(f.deleted, restLifecyclePublicationCall{ctx: ctx, projectID: projectID, name: name})
 }
 
 var _ RoleStore = (*restLifecycleFake)(nil)
@@ -224,7 +225,7 @@ func TestRESTLifecyclePrepareCloseTargetGateAndBinding(t *testing.T) {
 	ctx := store.WithUserID(context.Background(), actorID)
 	fake := &restLifecycleFake{
 		role:   store.RoleMaintainer,
-		sprint: store.Sprint{ID: target.SprintID, ProjectID: target.ProjectID},
+		sprint: store.Sprint{ID: target.SprintID, ProjectID: target.ProjectID, Name: "Sprint 12"},
 	}
 	prepared, err := newRESTLifecycleService(fake).PrepareClose(ctx, target)
 	if err != nil {
@@ -251,8 +252,8 @@ func TestRESTLifecyclePrepareCloseTargetGateAndBinding(t *testing.T) {
 	if len(fake.closes) != 1 || fake.closes[0].ctx != ctx || fake.closes[0].projectID != original.ProjectID || fake.closes[0].sprintID != original.SprintID {
 		t.Fatalf("close calls = %+v, want bound project %d sprint %d", fake.closes, original.ProjectID, original.SprintID)
 	}
-	if len(fake.closed) != 1 || fake.closed[0].ctx != ctx || fake.closed[0].projectID != original.ProjectID {
-		t.Fatalf("close publications = %+v, want exact bound context and project %d", fake.closed, original.ProjectID)
+	if len(fake.closed) != 1 || fake.closed[0].ctx != ctx || fake.closed[0].projectID != original.ProjectID || fake.closed[0].name != "Sprint 12" {
+		t.Fatalf("close publications = %+v, want bound context, project %d, name Sprint 12", fake.closed, original.ProjectID)
 	}
 }
 

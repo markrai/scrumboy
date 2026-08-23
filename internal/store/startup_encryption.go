@@ -24,7 +24,7 @@ type StartupEncryptionKeyResolution struct {
 func ResolveStartupEncryptionKey(ctx context.Context, db *sql.DB, rawKey string) (StartupEncryptionKeyResolution, error) {
 	res := StartupEncryptionKeyResolution{}
 
-	hasEncryptedState, err := EncryptedAuthSecurityStateExists(ctx, db)
+	hasEncryptedState, err := EncryptedSecurityStateExists(ctx, db)
 	if err != nil {
 		return res, err
 	}
@@ -51,7 +51,7 @@ func ResolveStartupEncryptionKey(ctx context.Context, db *sql.DB, rawKey string)
 	return res, nil
 }
 
-func EncryptedAuthSecurityStateExists(ctx context.Context, db *sql.DB) (bool, error) {
+func EncryptedSecurityStateExists(ctx context.Context, db *sql.DB) (bool, error) {
 	var exists int
 	err := db.QueryRowContext(ctx, `
 SELECT CASE WHEN
@@ -68,9 +68,21 @@ SELECT CASE WHEN
     WHERE secret_enc IS NOT NULL
       AND TRIM(secret_enc) <> ''
   )
+  OR EXISTS(
+    SELECT 1
+    FROM calendar_sources
+    WHERE secret_enc IS NOT NULL
+      AND TRIM(secret_enc) <> ''
+  )
 THEN 1 ELSE 0 END`).Scan(&exists)
 	if err != nil {
-		return false, fmt.Errorf("check encrypted auth/security state: %w", err)
+		return false, fmt.Errorf("check encrypted security state: %w", err)
 	}
 	return exists != 0, nil
+}
+
+// EncryptedAuthSecurityStateExists is a compatibility wrapper for
+// EncryptedSecurityStateExists. Prefer the security-state name for new code.
+func EncryptedAuthSecurityStateExists(ctx context.Context, db *sql.DB) (bool, error) {
+	return EncryptedSecurityStateExists(ctx, db)
 }

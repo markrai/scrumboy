@@ -305,12 +305,28 @@ func (s *Store) ClearUserTwoFactor(ctx context.Context, userID int64) error {
 	return nil
 }
 
+// EncryptSecret encrypts plaintext using the store's encryption key.
+func (s *Store) EncryptSecret(plaintext []byte) (string, error) {
+	if s.encryptionKey == nil {
+		return "", ErrEncryptionNotConfigured
+	}
+	return crypto.EncryptSecret(s.encryptionKey, plaintext)
+}
+
+// DecryptSecret decrypts encrypted data using the store's encryption key.
+func (s *Store) DecryptSecret(encrypted string) ([]byte, error) {
+	if s.encryptionKey == nil {
+		return nil, ErrEncryptionNotConfigured
+	}
+	return crypto.DecryptSecret(s.encryptionKey, encrypted)
+}
+
 // EncryptTOTPSecret encrypts plaintext using the store's encryption key.
 func (s *Store) EncryptTOTPSecret(plaintext []byte) (string, error) {
 	if s.encryptionKey == nil {
 		return "", Err2FAEncryptionNotConfigured
 	}
-	return crypto.EncryptTOTPSecret(s.encryptionKey, plaintext)
+	return crypto.EncryptSecret(s.encryptionKey, plaintext)
 }
 
 // DecryptTOTPSecret decrypts encrypted data using the store's encryption key.
@@ -318,7 +334,7 @@ func (s *Store) DecryptTOTPSecret(encrypted string) ([]byte, error) {
 	if s.encryptionKey == nil {
 		return nil, Err2FAEncryptionNotConfigured
 	}
-	return crypto.DecryptTOTPSecret(s.encryptionKey, encrypted)
+	return crypto.DecryptSecret(s.encryptionKey, encrypted)
 }
 
 // GenerateRecoveryCodes generates N recovery codes in Crockford base32 (8 chars, 4-4 split).

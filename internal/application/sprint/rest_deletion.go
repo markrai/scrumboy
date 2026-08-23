@@ -6,12 +6,12 @@ import "context"
 // successful canonical REST sprint deletion. The HTTP adapter remains
 // responsible for translating it to the runtime refresh reason.
 type RESTDeletionPublisher interface {
-	PublishSprintDeleted(ctx context.Context, projectID int64)
+	PublishSprintDeleted(ctx context.Context, projectID int64, name string)
 }
 
 type nopRESTDeletionPublisher struct{}
 
-func (nopRESTDeletionPublisher) PublishSprintDeleted(context.Context, int64) {}
+func (nopRESTDeletionPublisher) PublishSprintDeleted(context.Context, int64, string) {}
 
 // RESTDeletionServiceDependencies names the fresh-role, deletion-write, and
 // semantic publication capabilities used by canonical REST sprint deletion.
@@ -50,6 +50,7 @@ type PreparedRESTDelete struct {
 	service   *RESTDeletionService
 	projectID int64
 	sprintID  int64
+	name      string
 }
 
 // PrepareDelete preserves the DELETE-specific actor and fresh-role gate after
@@ -66,6 +67,7 @@ func (s *RESTDeletionService) PrepareDelete(
 		service:   s,
 		projectID: target.ProjectID,
 		sprintID:  target.SprintID,
+		name:      target.Name,
 	}, nil
 }
 
@@ -75,6 +77,6 @@ func (p *PreparedRESTDelete) Delete() error {
 	if err := p.service.deletions.DeleteSprint(p.ctx, p.projectID, p.sprintID); err != nil {
 		return err
 	}
-	p.service.publisher.PublishSprintDeleted(p.ctx, p.projectID)
+	p.service.publisher.PublishSprintDeleted(p.ctx, p.projectID, p.name)
 	return nil
 }

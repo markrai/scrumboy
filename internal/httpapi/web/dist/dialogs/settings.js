@@ -22,6 +22,7 @@ import { bindWorkflowTabInteractions, clearWorkflowDraftState, invalidateWorkflo
 import { bindPriorityTabInteractions, clearPriorityDraftState, invalidatePriorityTierCountsCache, isPriorityDraftDirty, loadPriorityTabContent, resetPriorityDraftToBaseline, syncPriorityLocaleState, } from './settings-priorities.js';
 import { bindTagTabInteractions, invalidateTagsCache as invalidateTagSettingsCache, loadTagSettingsContent, } from './settings-tags.js';
 import { bindSprintsTabInteractions, refreshSprintDateLabels, renderSprintsTabContent } from './settings-sprints.js';
+import { bindCalendarTabInteractions, loadCalendarTabContent, } from './settings-calendar.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 export { invalidateTagsCache } from './settings-tags.js';
@@ -342,6 +343,10 @@ function applySettingsLocaleToOpenDialog() {
     if (activeTab === "sprints") {
         hydrateI18n(tabContentEl);
         refreshSprintDateLabels(tabContentEl);
+        return;
+    }
+    if (activeTab === "calendar") {
+        hydrateI18n(tabContentEl);
         return;
     }
     if (activeTab === "profile") {
@@ -1123,6 +1128,7 @@ export async function renderSettingsModal(options) {
         console.error("Settings dialog content element not found");
         return;
     }
+    const dialogWasOpen = !!settingsDialog?.open;
     // Full mode only: show Profile tab (auth status endpoint exists only in full mode).
     const showProfileTab = !!getAuthStatusAvailable();
     // Show Users tab only if user has admin or owner role
@@ -1185,6 +1191,7 @@ export async function renderSettingsModal(options) {
     // Charts tab only applies in durable project board view (not Dashboard/Projects/Temporary Boards, not anonymous mode, not temporary boards)
     const board = getBoard();
     const isTemporaryBoard = !!(board?.project?.expiresAt);
+    const showCalendarTab = !!slug && hasProjectAccess && !!currentUser && !!myMember && !isTemporaryBoard;
     const sprintsEnabled = board?.project?.sprintsEnabled !== false;
     const showChartsTab = !!slug &&
         hasProjectAccess &&
@@ -1212,6 +1219,9 @@ export async function renderSettingsModal(options) {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (!showPrioritiesTab && getSettingsActiveTab() === "priorities") {
+        setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
+    }
+    else if (!showCalendarTab && getSettingsActiveTab() === "calendar") {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (getSettingsActiveTab() === "voiceflow") {
@@ -1670,6 +1680,10 @@ export async function renderSettingsModal(options) {
     if (showSprintsTab && getSettingsActiveTab() === "sprints") {
         sprintsHTML = await renderSprintsTabContent();
     }
+    let calendarHTML = "";
+    if (showCalendarTab && getSettingsActiveTab() === "calendar") {
+        calendarHTML = await loadCalendarTabContent({ canManageCalendar: myMember?.role === "maintainer" });
+    }
     let workflowHTML = "";
     if (showWorkflowTab && getSettingsActiveTab() === "workflow" && slug) {
         workflowHTML = loadWorkflowTabContent({ slug, rerender: () => renderSettingsModal() });
@@ -1686,15 +1700,19 @@ export async function renderSettingsModal(options) {
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
       ${showWorkflowTab ? `<button class="settings-tab ${activeSettingsTab === "workflow" ? "settings-tab--active" : ""}" data-tab="workflow" data-i18n-text="settings.tabs.workflow">Workflow</button>` : ``}
       ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
+      ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
       <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
       <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
       <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
     </div>
   `;
+    if (!dialogWasOpen) {
+        contentEl.scrollTop = 0;
+    }
     if (getLocale() !== "en") {
         applySettingsLocaleToOpenDialog();
     }
@@ -1784,6 +1802,12 @@ export async function renderSettingsModal(options) {
             signal,
             settingsDialog: settingsDlg,
             closeSettingsBtn,
+            rerender: () => renderSettingsModal(),
+        });
+    }
+    if (getSettingsActiveTab() === "calendar") {
+        bindCalendarTabInteractions({
+            signal,
             rerender: () => renderSettingsModal(),
         });
     }

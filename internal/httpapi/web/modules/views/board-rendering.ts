@@ -89,6 +89,10 @@ export function getBoardColumns(board: Board): BoardColumn[] {
   return columnsSpec().map((c) => ({ key: c.key, title: c.title, isDone: c.key === "done", color: undefined }));
 }
 
+export function visibleBoardLaneCount(board: Board): number {
+  return getBoardColumns(board).length + (board.agenda?.enabled ? 1 : 0);
+}
+
 export function laneColumnTintClassAndStyle(c: { color?: string }): { extraClass: string; styleAttr: string } {
   const safe = c.color ? sanitizeHexColor(c.color) : null;
   if (!safe) return { extraClass: "", styleAttr: "" };
