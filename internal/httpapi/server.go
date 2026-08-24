@@ -262,7 +262,6 @@ type storeAPI interface {
 	GetProjectBySlug(ctx context.Context, slug string) (store.Project, error)
 	GetProjectContextBySlug(ctx context.Context, slug string, mode store.Mode) (store.ProjectContext, error)
 	GetProjectContextForRead(ctx context.Context, projectID int64, mode store.Mode) (store.ProjectContext, error)
-	CreateProject(ctx context.Context, name string) (store.Project, error)
 	CreateProjectWithWorkflow(ctx context.Context, name string, workflow []store.WorkflowColumn) (store.Project, error)
 	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
 	CheckCanManageProject(ctx context.Context, projectID int64, userID int64) error
