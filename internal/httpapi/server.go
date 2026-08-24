@@ -22,6 +22,7 @@ import (
 	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
+	useradminapp "scrumboy/internal/application/useradmin"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
@@ -147,6 +148,7 @@ type Server struct {
 	membershipMutations           *membershipapp.RESTMutationService
 	tagColors                     *tagapp.RESTColorService
 	tagDeletions                  *tagapp.RESTDeletionService
+	userRoleMutations             *useradminapp.RESTRoleService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -226,7 +228,7 @@ type storeAPI interface {
 	AuthenticateUser(ctx context.Context, email, password string) (store.User, error)
 	CreateUser(ctx context.Context, email, password, name string) (store.User, error)
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
-	UpdateUserRole(ctx context.Context, requesterID, targetUserID int64, newRole store.SystemRole) error
+	useradminapp.UserRoleMutationStore
 	DeleteUser(ctx context.Context, requesterID, targetUserID int64) error
 	AssignUnownedDurableProjectsToUser(ctx context.Context, userID int64) error
 	ClaimTemporaryBoard(ctx context.Context, projectID, userID int64) error
@@ -770,6 +772,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 		BoardNames:    st,
 		PersonalNames: st,
 		Publisher:     tagDeletionPublisher{server: server},
+	})
+	server.userRoleMutations = useradminapp.NewRESTRoleService(useradminapp.RESTRoleServiceDependencies{
+		Mutations:      st,
+		ProjectionRead: st,
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)

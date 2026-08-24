@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
+	useradminapp "scrumboy/internal/application/useradmin"
 	"scrumboy/internal/auth/tokens"
 	"scrumboy/internal/store"
 )
@@ -52,7 +54,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 			s.handleAdminUsersListOrCreate(w, r, userID)
 		} else if len(rest) == 3 && rest[2] == "role" {
 			// PATCH /api/admin/users/{id}/role
-			s.handleAdminUsersUpdateRole(w, r, userID, rest[1])
+			s.handleAdminUsersUpdateRole(w, r, rest[1])
 		} else if len(rest) == 3 && rest[2] == "password-reset" {
 			// POST /api/admin/users/{id}/password-reset
 			s.handleAdminUsersPasswordReset(w, r, userID, rest[1])
@@ -121,7 +123,7 @@ func (s *Server) handleAdminUsersListOrCreate(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func (s *Server) handleAdminUsersUpdateRole(w http.ResponseWriter, r *http.Request, requesterID int64, targetIDStr string) {
+func (s *Server) handleAdminUsersUpdateRole(w http.ResponseWriter, r *http.Request, targetIDStr string) {
 	if r.Method != http.MethodPatch {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
@@ -153,13 +155,20 @@ func (s *Server) handleAdminUsersUpdateRole(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := s.store.UpdateUserRole(ctx, requesterID, targetID, newRole); err != nil {
-		writeStoreErr(w, err, false)
+	prepared, err := s.userRoleMutations.Prepare(ctx, useradminapp.RoleChangeCommand{
+		TargetUserID: targetID,
+		NewRole:      newRole,
+	})
+	if err != nil {
+		if errors.Is(err, useradminapp.ErrActorRequired) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return
+		}
+		writeInternal(w, err)
 		return
 	}
 
-	// Return updated user
-	u, err := s.store.GetUser(ctx, targetID)
+	u, err := prepared.Update()
 	if err != nil {
 		writeStoreErr(w, err, false)
 		return
