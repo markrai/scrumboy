@@ -18,6 +18,7 @@ import (
 	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
+	useradminapp "scrumboy/internal/application/useradmin"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
@@ -77,7 +78,7 @@ type storeAPI interface {
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
 	GetUser(ctx context.Context, userID int64) (store.User, error)
-	UpdateUserRole(ctx context.Context, requesterID, targetUserID int64, newRole store.SystemRole) error
+	useradminapp.UserRoleMutationStore
 	DeleteUser(ctx context.Context, requesterID, targetUserID int64) error
 }
 
@@ -106,6 +107,7 @@ type Adapter struct {
 	sprintDeletions      *sprintapp.MCPDeletionService
 	tagColors            *tagapp.MCPColorService
 	tagDeletions         *tagapp.MCPDeletionService
+	userRoleMutations    *useradminapp.MCPRoleService
 	mode                 string
 	tools                toolRegistry
 	publicOrigin         *publicorigin.Resolver
@@ -211,6 +213,11 @@ func New(st storeAPI, opts Options) *Adapter {
 			MineRead:      st,
 			ProjectScoped: st,
 			Rows:          st,
+		}),
+		userRoleMutations: useradminapp.NewMCPRoleService(useradminapp.MCPRoleServiceDependencies{
+			RequesterRead:  st,
+			Mutations:      st,
+			ProjectionRead: st,
 		}),
 		mode:         mode,
 		tools:        make(toolRegistry),

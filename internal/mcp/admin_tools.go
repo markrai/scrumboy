@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
+	useradminapp "scrumboy/internal/application/useradmin"
 	"scrumboy/internal/store"
 )
 
@@ -42,6 +44,28 @@ func parseAdminUpdatableSystemRole(role string) (store.SystemRole, *adapterError
 		return "", newAdapterError(http.StatusBadRequest, CodeValidationError, "unsupported role", map[string]any{"field": "role"})
 	}
 	return parsed, nil
+}
+
+func mapUserAdminRolePrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, useradminapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, useradminapp.ErrOwnerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapUserAdminRoleUpdateError(err error) *adapterError {
+	if errors.Is(err, useradminapp.ErrMCPRoleProjectionFailed) {
+		cause := errors.Unwrap(err)
+		if cause != nil {
+			return mapStoreError(cause)
+		}
+		return mapStoreError(err)
+	}
+	return mapPrivilegedStoreError(err)
 }
 
 func requesterHasAnySystemRole(u store.User, allowed ...store.SystemRole) bool {
@@ -142,22 +166,17 @@ func (a *Adapter) handleAdminUpdateUserRole(ctx context.Context, input any) (any
 		return nil, nil, roleErr
 	}
 
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	prepared, prepareErr := a.userRoleMutations.Prepare(ctx, useradminapp.RoleChangeCommand{
+		TargetUserID: in.UserId,
+		NewRole:      newRole,
+	})
+	if prepareErr != nil {
+		return nil, nil, mapUserAdminRolePrepareError(prepareErr)
 	}
 
-	if roleErr := a.requireRequesterOwner(ctx, requesterID); roleErr != nil {
-		return nil, nil, roleErr
-	}
-
-	if updErr := a.store.UpdateUserRole(ctx, requesterID, in.UserId, newRole); updErr != nil {
-		return nil, nil, mapPrivilegedStoreError(updErr)
-	}
-
-	updated, getErr := a.store.GetUser(ctx, in.UserId)
-	if getErr != nil {
-		return nil, nil, mapStoreError(getErr)
+	updated, updateErr := prepared.Update()
+	if updateErr != nil {
+		return nil, nil, mapUserAdminRoleUpdateError(updateErr)
 	}
 
 	return map[string]any{
