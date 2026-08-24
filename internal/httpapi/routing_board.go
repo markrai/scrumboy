@@ -10,8 +10,8 @@ import (
 	"time"
 
 	priorityapp "scrumboy/internal/application/priority"
+	projectapp "scrumboy/internal/application/project"
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
-	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
@@ -548,11 +548,14 @@ func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, r
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 		return true
 	}
-	if err := s.store.ClaimTemporaryBoard(ctx, project.ID, userID); err != nil {
+	prepared := s.projectClaims.Prepare(ctx, projectapp.ClaimCommand{
+		ProjectID:   project.ID,
+		ActorUserID: userID,
+	})
+	if err := prepared.Claim(); err != nil {
 		writeStoreErr(w, err, true)
 		return true
 	}
-	s.emitRefreshNeeded(s.requestContext(r), project.ID, "board_claimed", refresh.Entity{})
 	w.WriteHeader(http.StatusNoContent)
 	return true
 }

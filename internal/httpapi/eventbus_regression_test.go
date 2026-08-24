@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	projectapp "scrumboy/internal/application/project"
 	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
@@ -141,6 +142,10 @@ func TestEventbus_CreateWithoutAssignee_SingleRefresh(t *testing.T) {
 
 func TestEventbus_DeleteProjectPublishesCommittedSnapshotOnce(t *testing.T) {
 	srv, st, collector := newTestServerWithCollector(t)
+	srv.projectDeletions = projectapp.NewRESTDeletionService(projectapp.RESTDeletionServiceDependencies{
+		Projects:  st,
+		Publisher: projectDeletionPublisher{server: srv},
+	})
 	ctx, owner, project := setupAuthenticatedProject(t, st)
 	member, err := st.CreateUser(context.Background(), "delete-member@example.com", "pass1234A!", "Member")
 	if err != nil {

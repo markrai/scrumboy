@@ -13,6 +13,7 @@ import (
 	boardapp "scrumboy/internal/application/board"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
+	projectapp "scrumboy/internal/application/project"
 	sprintapp "scrumboy/internal/application/sprint"
 	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
@@ -28,6 +29,12 @@ type storeAPI interface {
 	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
 	GetUserByOAuthAccessToken(ctx context.Context, rawToken, expectedResource string) (store.User, error)
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
+	projectapp.ProjectCreationStore
+	projectapp.ProjectAccessStore
+	projectapp.ProjectManageAuthorizationStore
+	projectapp.ProjectPatchMutationStore
+	projectapp.ProjectByIDReadStore
+	projectapp.ProjectDeletionStore
 	todoapp.MCPMoveAccessStore
 	todoapp.CreateStore
 	todoapp.MCPMoveLookupStore
@@ -63,13 +70,6 @@ type storeAPI interface {
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilter string, searchFilter string, assigneeFilter store.AssigneeFilter, priorityFilter store.PriorityFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
-	CreateProject(ctx context.Context, name string) (store.Project, error)
-	GetProject(ctx context.Context, projectID int64) (store.Project, error)
-	UpdateProjectName(ctx context.Context, projectID int64, userID int64, name string) error
-	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
-	UpdateProjectPatch(ctx context.Context, projectID int64, userID int64, patch store.UpdateProjectPatch) error
-	CheckCanManageProject(ctx context.Context, projectID int64, userID int64) error
-	DeleteProject(ctx context.Context, projectID int64, userID int64) (store.DeletedProjectSnapshot, error)
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
 	ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]store.DashboardTodo, *string, error)
 	GetRealBurndown(ctx context.Context, projectID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
@@ -90,6 +90,9 @@ type Options struct {
 type Adapter struct {
 	store                storeAPI
 	boardReads           *boardapp.MCPBoardReadService
+	projectCreations     *projectapp.MCPDurableCreationService
+	projectUpdates       *projectapp.MCPUpdateService
+	projectDeletions     *projectapp.MCPDeletionService
 	todoCreates          *todoapp.MCPCreateService
 	todoDeletes          *todoapp.MCPDeleteService
 	todoMoves            *todoapp.MCPMoveService
@@ -135,6 +138,18 @@ func New(st storeAPI, opts Options) *Adapter {
 			ReportActivityRefreshFailure: func(_ context.Context, projectID int64, err error) {
 				logger.Printf("mcp: board activity refresh failed project_id=%d: %v", projectID, err)
 			},
+		}),
+		projectCreations: projectapp.NewMCPDurableCreationService(st),
+		projectUpdates: projectapp.NewMCPUpdateService(projectapp.MCPUpdateServiceDependencies{
+			Access:   st,
+			Manage:   st,
+			Patches:  st,
+			Projects: st,
+		}),
+		projectDeletions: projectapp.NewMCPDeletionService(projectapp.MCPDeletionServiceDependencies{
+			Access:   st,
+			Manage:   st,
+			Projects: st,
 		}),
 		todoCreates: todoapp.NewMCPCreateService(todoapp.MCPCreateServiceDependencies{
 			Access: st,
