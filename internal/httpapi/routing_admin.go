@@ -60,7 +60,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 			s.handleAdminUsersPasswordReset(w, r, userID, rest[1])
 		} else if len(rest) == 2 {
 			// DELETE /api/admin/users/{id}
-			s.handleAdminUsersDelete(w, r, userID, rest[1])
+			s.handleAdminUsersDelete(w, r, rest[1])
 		} else {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		}
@@ -177,7 +177,7 @@ func (s *Server) handleAdminUsersUpdateRole(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, userToJSON(u))
 }
 
-func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request, requesterID int64, targetIDStr string) {
+func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request, targetIDStr string) {
 	if r.Method != http.MethodDelete {
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 		return
@@ -190,7 +190,19 @@ func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request, 
 	}
 
 	ctx := s.requestContext(r)
-	if err := s.store.DeleteUser(ctx, requesterID, targetID); err != nil {
+	prepared, err := s.userDeletions.Prepare(ctx, useradminapp.DeleteCommand{
+		TargetUserID: targetID,
+	})
+	if err != nil {
+		if errors.Is(err, useradminapp.ErrActorRequired) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return
+		}
+		writeInternal(w, err)
+		return
+	}
+
+	if err := prepared.Delete(); err != nil {
 		writeStoreErr(w, err, false)
 		return
 	}

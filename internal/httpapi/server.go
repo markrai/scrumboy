@@ -149,6 +149,7 @@ type Server struct {
 	tagColors                     *tagapp.RESTColorService
 	tagDeletions                  *tagapp.RESTDeletionService
 	userRoleMutations             *useradminapp.RESTRoleService
+	userDeletions                 *useradminapp.RESTDeletionService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -229,7 +230,7 @@ type storeAPI interface {
 	CreateUser(ctx context.Context, email, password, name string) (store.User, error)
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
 	useradminapp.UserRoleMutationStore
-	DeleteUser(ctx context.Context, requesterID, targetUserID int64) error
+	useradminapp.UserDeletionStore
 	AssignUnownedDurableProjectsToUser(ctx context.Context, userID int64) error
 	ClaimTemporaryBoard(ctx context.Context, projectID, userID int64) error
 	CreateSession(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)
@@ -776,6 +777,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.userRoleMutations = useradminapp.NewRESTRoleService(useradminapp.RESTRoleServiceDependencies{
 		Mutations:      st,
 		ProjectionRead: st,
+	})
+	server.userDeletions = useradminapp.NewRESTDeletionService(useradminapp.RESTDeletionServiceDependencies{
+		Deletions: st,
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)
