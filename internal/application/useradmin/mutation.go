@@ -4,8 +4,19 @@ package useradmin
 
 import (
 	"context"
+	"errors"
 
 	"scrumboy/internal/store"
+)
+
+var (
+	// ErrActorRequired reports that the exact context supplied to role-mutation
+	// preparation does not contain a trusted authenticated user identity.
+	ErrActorRequired = errors.New("user administration actor required")
+
+	// ErrPreparedMutationAlreadyExecuted reports that execution has already
+	// begun for one prepared user-administration mutation.
+	ErrPreparedMutationAlreadyExecuted = errors.New("prepared user administration mutation already executed")
 )
 
 // CreateCommand contains the REST-decoded values supplied for creation of a
