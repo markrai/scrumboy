@@ -79,7 +79,7 @@ type storeAPI interface {
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	useradminapp.UserRoleMutationStore
-	DeleteUser(ctx context.Context, requesterID, targetUserID int64) error
+	useradminapp.UserDeletionStore
 }
 
 type Options struct {
@@ -108,6 +108,7 @@ type Adapter struct {
 	tagColors            *tagapp.MCPColorService
 	tagDeletions         *tagapp.MCPDeletionService
 	userRoleMutations    *useradminapp.MCPRoleService
+	userDeletions        *useradminapp.MCPDeletionService
 	mode                 string
 	tools                toolRegistry
 	publicOrigin         *publicorigin.Resolver
@@ -218,6 +219,10 @@ func New(st storeAPI, opts Options) *Adapter {
 			RequesterRead:  st,
 			Mutations:      st,
 			ProjectionRead: st,
+		}),
+		userDeletions: useradminapp.NewMCPDeletionService(useradminapp.MCPDeletionServiceDependencies{
+			RequesterRead: st,
+			Deletions:     st,
 		}),
 		mode:         mode,
 		tools:        make(toolRegistry),

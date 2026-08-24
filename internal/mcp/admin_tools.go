@@ -68,6 +68,17 @@ func mapUserAdminRoleUpdateError(err error) *adapterError {
 	return mapPrivilegedStoreError(err)
 }
 
+func mapUserAdminDeletionPrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, useradminapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, useradminapp.ErrOwnerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
 func requesterHasAnySystemRole(u store.User, allowed ...store.SystemRole) bool {
 	for _, role := range allowed {
 		if u.SystemRole == role {
@@ -83,17 +94,6 @@ func (a *Adapter) requireRequesterAdminOrOwner(ctx context.Context, requesterID 
 		return mapStoreError(err)
 	}
 	if !requesterHasAnySystemRole(u, store.SystemRoleOwner, store.SystemRoleAdmin) {
-		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-	}
-	return nil
-}
-
-func (a *Adapter) requireRequesterOwner(ctx context.Context, requesterID int64) *adapterError {
-	u, err := a.store.GetUser(ctx, requesterID)
-	if err != nil {
-		return mapStoreError(err)
-	}
-	if u.SystemRole != store.SystemRoleOwner {
 		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
 	}
 	return nil
@@ -207,16 +207,14 @@ func (a *Adapter) handleAdminDeleteUser(ctx context.Context, input any) (any, ma
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid userId", map[string]any{"field": "userId"})
 	}
 
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	prepared, prepareErr := a.userDeletions.Prepare(ctx, useradminapp.DeleteCommand{
+		TargetUserID: in.UserId,
+	})
+	if prepareErr != nil {
+		return nil, nil, mapUserAdminDeletionPrepareError(prepareErr)
 	}
 
-	if roleErr := a.requireRequesterOwner(ctx, requesterID); roleErr != nil {
-		return nil, nil, roleErr
-	}
-
-	if delErr := a.store.DeleteUser(ctx, requesterID, in.UserId); delErr != nil {
+	if delErr := prepared.Delete(); delErr != nil {
 		return nil, nil, mapPrivilegedStoreError(delErr)
 	}
 
