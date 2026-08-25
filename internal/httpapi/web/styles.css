@@ -1973,9 +1973,22 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   }
 
   /* Todo modal: header + footer fixed; fields scroll (same idea as Settings .dialog__content). */
+  /* Center without transform so Android Chrome can scroll #todoTitle to the caret. */
   #todoDialog.dialog {
+    top: 0;
+    right: 8px;
+    bottom: 0;
+    left: 8px;
+    width: auto;
+    margin: auto;
+    transform: none;
     min-height: 0;
     overflow: hidden;
+  }
+
+  #todoDialog #todoTitle {
+    touch-action: manipulation;
+    padding-inline-end: 1.25rem;
   }
 
   #todoDialog .dialog__form {

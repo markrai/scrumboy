@@ -52,4 +52,15 @@ describe("todo dialog mobile footer buttons", () => {
       /#todoDialog\s+\.dialog__footer\s+#saveTodoBtn\s*\{[^}]*margin-inline-start:\s*auto/,
     );
   });
+
+  it("centers the mobile todo dialog without transform so the title caret can scroll", () => {
+    const mobile = mediaBlockContaining(stylesSource, "max-width:\\s*620px", "#todoTitle");
+    expect(mobile).not.toBeNull();
+    expect(mobile!).toMatch(
+      /#todoDialog\.dialog\s*\{[^}]*transform:\s*none/,
+    );
+    expect(mobile!).toMatch(
+      /#todoDialog\s+#todoTitle\s*\{[^}]*touch-action:\s*manipulation/,
+    );
+  });
 });

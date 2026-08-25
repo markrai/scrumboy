@@ -22,6 +22,10 @@
   centers its label inside the fixed-height button.
 - **New todo Save alignment** - With Delete and created-date hidden, the
   New Todo Save button stays on the right, matching Edit Todo.
+- **Mobile todo title clipping** - On viewports below 620px the todo dialog
+  is centered without a CSS transform, and the title field accepts caret
+  gestures so a long title no longer clips the last characters on Android
+  Chrome.
 
 ### Enhancements
 
