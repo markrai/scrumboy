@@ -354,7 +354,8 @@ func eventEnd(event *ical.VEvent, start time.Time, allDay bool, boardLoc *time.L
 		}
 		return start.Add(d), nil
 	}
-	return start.Add(time.Hour), nil
+	// RFC 5545: DATE-TIME with neither DTEND nor DURATION ends at DTSTART.
+	return start, nil
 }
 
 func civilDaysBetween(start, end time.Time) int {

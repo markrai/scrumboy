@@ -4308,7 +4308,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   padding: 4px 8px;
   justify-content: flex-start;
   top: calc(var(--agenda-start-min) / 60 * var(--agenda-hour-height));
-  height: max(8px, calc(var(--agenda-span-min) / 60 * var(--agenda-hour-height)));
+  height: max(2.75rem, calc(var(--agenda-span-min) / 60 * var(--agenda-hour-height)));
+}
+
+.card--agenda-timed:hover,
+.card--agenda-timed:focus-within {
+  z-index: 2;
 }
 
 @media (max-width: 767px) {

@@ -2,6 +2,27 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
 
+## [3.33.7] - 2026-08-25
+
+### Fixed
+
+- **Agenda short timed cards** - Timed Agenda cards shorter than one hour
+  (including same-clock / missing-end events and 15-minute ranges) paint at a
+  1-hour height so title and time stay readable. Overlap packing still uses
+  the 15-minute span, so a later event 20 minutes after still sits full-width.
+  Events that last one hour or more keep their true span (a 2-hour card stays
+  two hours tall).
+- **Agenda missing end time** - Timed ICS events with a `DTSTART` but no
+  `DTEND` or `DURATION` are treated as point-in-time (end equals start), not
+  as a one-hour block. Agenda shows only the start clock, matching RFC 5545.
+
+### Enhancements
+
+- **Agenda event duration** - Ranged timed Agenda labels include a compact
+  duration in parentheses, such as `5:00 PM - 6:00 PM (1h)` and
+  `5:00 PM - 5:15 PM (15m)`. Same-clock events still show only the start time,
+  with no parentheses.
+
 ## [3.33.6] - 2026-08-24
 
 ### Changed
