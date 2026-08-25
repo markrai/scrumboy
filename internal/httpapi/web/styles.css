@@ -1919,6 +1919,10 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   flex-wrap: wrap;
 }
 
+#todoDialog .dialog__footer #saveTodoBtn {
+  margin-inline-start: auto;
+}
+
 /* Edit Todo modal: Created datetime, centered between Bottom and Save. */
 /* Hide when no datetime (e.g. New Todo before save); show after todo is saved. */
 .todo-dialog-dates[aria-hidden="true"] {
@@ -2014,6 +2018,15 @@ html[data-wallpaper-active] #settingsDialog.dialog {
     padding: var(--s-6) 6px;
     white-space: nowrap;
     flex: 0 0 auto;
+  }
+
+  #todoDialog .dialog__footer #deleteTodoBtn,
+  #todoDialog .dialog__footer #saveTodoBtn {
+    font-size: var(--fs-14);
+    font-weight: 700;
+    padding: var(--s-10) 14px;
+    min-height: 44px;
+    flex-shrink: 0;
   }
 
   .dialog__footer .btn--small {
@@ -2523,6 +2536,9 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   white-space: nowrap;
   padding: var(--s-8) 12px;
   height: var(--s-38);
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .tags-chips {

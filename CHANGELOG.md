@@ -15,6 +15,13 @@
 - **Agenda missing end time** - Timed ICS events with a `DTSTART` but no
   `DTEND` or `DURATION` are treated as point-in-time (end equals start), not
   as a one-hour block. Agenda shows only the start clock, matching RFC 5545.
+- **Mobile todo Save button** - In the card dialog footer below 620px, Save
+  and Delete use 14px type and a 44px minimum height so they stay tappable.
+  The share control stays compact.
+- **Mobile todo Add button label** - The Tags/Links Add control vertically
+  centers its label inside the fixed-height button.
+- **New todo Save alignment** - With Delete and created-date hidden, the
+  New Todo Save button stays on the right, matching Edit Todo.
 
 ### Enhancements
 
