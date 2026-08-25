@@ -16,6 +16,8 @@ type CreatorNotificationRequest struct {
 	LocalID               int64
 	Title                 string
 	ActivityReason        string
+	FromName              string
+	ToName                string
 	CreatedByUserID       int64
 	ActorUserID           int64
 	MaterialChanged       bool
@@ -82,6 +84,8 @@ func publishCreatorNotificationRequest(
 		LocalID:               todo.LocalID,
 		Title:                 todo.Title,
 		ActivityReason:        activityReason,
+		FromName:              todo.MoveFromColumnName,
+		ToName:                todo.MoveToColumnName,
 		CreatedByUserID:       *todo.CreatedByUserID,
 		ActorUserID:           actorUserID,
 		MaterialChanged:       todo.MaterialChanged,

@@ -14,6 +14,8 @@ type TodoCreatorNotificationRecipientAuthorizedPayload struct {
 	LocalID               int64  `json:"localId"`
 	Title                 string `json:"title"`
 	ActivityReason        string `json:"activityReason"`
+	FromName              string `json:"fromName,omitempty"`
+	ToName                string `json:"toName,omitempty"`
 	RecipientUserID       int64  `json:"recipientUserId"`
 	ActorUserID           int64  `json:"actorUserId"`
 	MaterialChanged       bool   `json:"materialChanged"`

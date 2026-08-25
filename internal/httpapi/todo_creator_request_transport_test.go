@@ -162,6 +162,7 @@ func assertCreatorAuthorizationThenRefresh(t *testing.T, fixture *creatorRequest
 	if !request.CardActivityCandidate || !authorized.CardActivityCandidate {
 		t.Fatalf("REST/legacy activity candidate facts request=%+v authorized=%+v", request, authorized)
 	}
+	assertMoveTransitionTransport(t, reason, request.FromName, request.ToName, authorized.FromName, authorized.ToName)
 	if events[2].Type != "board.refresh_needed" || events[2].ProjectID != fixture.project.ID {
 		t.Fatalf("third event=%+v, want board.refresh_needed", events[2])
 	}
@@ -187,7 +188,19 @@ func assertCreatorAuthorizationWithoutRefresh(t *testing.T, fixture *creatorRequ
 	if request.CardActivityCandidate || authorized.CardActivityCandidate {
 		t.Fatalf("MCP/Agora must not invent card-activity fallback: request=%+v authorized=%+v", request, authorized)
 	}
+	assertMoveTransitionTransport(t, reason, request.FromName, request.ToName, authorized.FromName, authorized.ToName)
 
+}
+
+func assertMoveTransitionTransport(t *testing.T, reason, requestFrom, requestTo, authorizedFrom, authorizedTo string) {
+	t.Helper()
+	if reason != todoapp.RefreshReasonTodoMoved {
+		return
+	}
+	if requestFrom == "" || requestTo == "" || requestFrom == requestTo ||
+		authorizedFrom != requestFrom || authorizedTo != requestTo {
+		t.Fatalf("move transition request=%q → %q authorized=%q → %q", requestFrom, requestTo, authorizedFrom, authorizedTo)
+	}
 }
 
 func assertCreatorRequestOnly(t *testing.T, fixture *creatorRequestTransportFixture, reason string) {

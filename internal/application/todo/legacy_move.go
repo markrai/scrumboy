@@ -120,6 +120,6 @@ func (m *PreparedLegacyMove) Move(command LegacyMoveCommand) (LegacyMoveResult, 
 			effectCtx = publishCreatorNotificationRequest(m.ctx, m.service.creatorRequests, project, moved, RefreshReasonTodoMoved, true)
 		}
 	}
-	m.service.refresh.PublishBoardRefresh(effectCtx, moved.ProjectID, RefreshReasonTodoMoved, todoRefreshEntity(moved))
+	m.service.refresh.PublishBoardRefresh(effectCtx, moved.ProjectID, RefreshReasonTodoMoved, todoMoveRefreshEntity(moved))
 	return LegacyMoveResult{Todo: moved}, nil
 }

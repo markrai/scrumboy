@@ -95,6 +95,34 @@ func TestCreatorNotificationAuthorizationUsesFreshCurrentProjectAccess(t *testin
 	}
 }
 
+func TestCreatorNotificationAuthorizationPreservesMoveTransitionSnapshot(t *testing.T) {
+	access := &creatorNotificationAuthorizationStoreFake{
+		project: store.Project{ID: 7, Name: "Roadmap", Slug: "current-slug"},
+		role:    store.RoleViewer,
+	}
+	request := creatorAuthorizationRequest()
+	request.ActivityReason = RefreshReasonTodoMoved
+	request.FromName = "Testing"
+	request.ToName = "Done"
+	service := NewCreatorNotificationAuthorizationService(access)
+
+	authorized, ok, err := service.Authorize(context.Background(), request)
+	if err != nil || !ok {
+		t.Fatalf("Authorize = (%+v, %v, %v), want authorized", authorized, ok, err)
+	}
+	if authorized.FromName != "Testing" || authorized.ToName != "Done" {
+		t.Fatalf("authorized move transition = %q → %q", authorized.FromName, authorized.ToName)
+	}
+
+	reauthorized, ok, err := service.ReauthorizeRecipient(context.Background(), authorized)
+	if err != nil || !ok {
+		t.Fatalf("ReauthorizeRecipient = (%+v, %v, %v), want authorized", reauthorized, ok, err)
+	}
+	if reauthorized.FromName != "Testing" || reauthorized.ToName != "Done" {
+		t.Fatalf("reauthorized move transition = %q → %q", reauthorized.FromName, reauthorized.ToName)
+	}
+}
+
 func TestCreatorNotificationAuthorizationFailsClosed(t *testing.T) {
 	expires := time.Now().UTC().Add(time.Hour)
 	lookupErr := errors.New("lookup failed")

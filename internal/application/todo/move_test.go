@@ -73,7 +73,10 @@ func TestMoveServicePreparedMoveBindsContextAndPublishesOnce(t *testing.T) {
 	const key contextKey = "request"
 	ctx := context.WithValue(context.Background(), key, "bound")
 
-	moves := &moveStoreFake{todo: store.Todo{ID: 71, ProjectID: 7, LocalID: 4, Title: "moved card", ColumnKey: "doing"}}
+	moves := &moveStoreFake{todo: store.Todo{
+		ID: 71, ProjectID: 7, LocalID: 4, Title: "moved card", ColumnKey: "doing",
+		MoveFromColumnName: "Testing", MoveToColumnName: "Done",
+	}}
 	refresh := &refreshPublisherFake{}
 	service := NewMoveService(MoveServiceDependencies{Move: moves, Refresh: refresh})
 	pc := store.ProjectContext{Project: store.Project{ID: 7, Slug: "canonical"}}
@@ -106,7 +109,7 @@ func TestMoveServicePreparedMoveBindsContextAndPublishesOnce(t *testing.T) {
 	if len(refresh.calls) != 1 {
 		t.Fatalf("refresh calls = %d, want 1", len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != RefreshReasonTodoMoved || got.entity != (apprefresh.Entity{LocalID: 4, Title: "moved card"}) {
+	if got := refresh.calls[0]; got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != RefreshReasonTodoMoved || got.entity != (apprefresh.Entity{LocalID: 4, Title: "moved card", FromName: "Testing", ToName: "Done"}) {
 		t.Fatalf("refresh call = %+v, want project 7 reason %q entity #4 moved card", got, RefreshReasonTodoMoved)
 	}
 }

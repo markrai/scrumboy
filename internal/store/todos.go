@@ -1010,6 +1010,8 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 	existing.Rank = newRank
 	existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
 	existing.MaterialChanged = materialChanged
+	existing.MoveFromColumnName = currentCol.Name
+	existing.MoveToColumnName = targetCol.Name
 	if doneAtMs != nil {
 		t := time.UnixMilli(*doneAtMs).UTC()
 		existing.DoneAt = &t

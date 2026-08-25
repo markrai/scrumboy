@@ -274,6 +274,15 @@ func TestEmailNotifier_ProjectDeletionUsesSnapshotOnly(t *testing.T) {
 	st.prefs[2] = optedOut
 	q := newMailQueue(discardLogger())
 	n := newEmailNotifier(st, q, "https://scrumboy.example.com", true, discardLogger())
+
+	n.handle(context.Background(), refreshEvent(t, 1, "project_deleted"))
+	if got := q.Drain(); len(got) != 0 {
+		t.Fatalf("generic project_deleted refresh produced SMTP delivery: %+v", got)
+	}
+	if st.projectCalls != 0 || st.memberCalls != 0 {
+		t.Fatalf("generic project_deleted refresh queried deleted state: project=%d members=%d", st.projectCalls, st.memberCalls)
+	}
+
 	n.handleProjectDeleted(context.Background(), store.DeletedProjectSnapshot{
 		ProjectID: 7, Name: "Roadmap", MemberUserIDs: []int64{1, 2, 3},
 	}, 1)
@@ -281,6 +290,9 @@ func TestEmailNotifier_ProjectDeletionUsesSnapshotOnly(t *testing.T) {
 	got := q.Drain()
 	if len(got) != 1 || got[0].To != "member@example.com" {
 		t.Fatalf("expected only opted-in non-actor deletion recipient, got %+v", got)
+	}
+	if got[0].Body != "Project deleted\n\nProject: Roadmap\n" {
+		t.Fatalf("unexpected deletion body: %q", got[0].Body)
 	}
 	if strings.Contains(got[0].Body, "http") {
 		t.Fatalf("deletion mail included a dead action link: %q", got[0].Body)
@@ -304,7 +316,7 @@ func TestEmailNotifier_ActivityActorNameFromMembersSkipsGetUser(t *testing.T) {
 		t.Fatalf("expected emails to non-actor members, got %+v", got)
 	}
 	for _, m := range got {
-		if !strings.Contains(m.Body, "Alex moved a card in Roadmap.") {
+		if !strings.Contains(m.Body, "Moved by: Alex") {
 			t.Fatalf("expected member-sourced actor name, got %q", m.Body)
 		}
 	}
@@ -331,7 +343,7 @@ func TestEmailNotifier_ActivityActorNameFallsBackToGetUser(t *testing.T) {
 		t.Fatalf("expected emails to members, got %+v", got)
 	}
 	for _, m := range got {
-		if !strings.Contains(m.Body, "Visitor moved a card in Roadmap.") {
+		if !strings.Contains(m.Body, "Moved by: Visitor") {
 			t.Fatalf("expected GetUser-sourced actor name, got %q", m.Body)
 		}
 	}
@@ -358,11 +370,12 @@ func TestEmailNotifier_ActivityPassiveCopyWhenActorNameUnavailable(t *testing.T)
 		if m.Subject != "Roadmap: sprint closed" {
 			t.Fatalf("unexpected subject: %q", m.Subject)
 		}
-		if !strings.Contains(m.Body, "A sprint was closed in Roadmap.") {
-			t.Fatalf("expected passive body, got %q", m.Body)
+		wantBody := "Sprint closed\n\nProject: Roadmap\n\nView project:\nhttps://scrumboy.example.com/roadmap\n"
+		if m.Body != wantBody {
+			t.Fatalf("expected actor-omitting structured body, got %q", m.Body)
 		}
-		if strings.Contains(m.Body, "closed a sprint") {
-			t.Fatalf("expected no actor-led phrasing, got %q", m.Body)
+		if strings.Contains(m.Body, "Closed by:") {
+			t.Fatalf("expected absent actor line, got %q", m.Body)
 		}
 	}
 }

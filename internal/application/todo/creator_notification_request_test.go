@@ -107,6 +107,8 @@ func TestPublishCreatorNotificationRequestCarriesEmailPolicyFactsInEffectContext
 	todo.MaterialChanged = true
 	todo.AssignmentChanged = true
 	todo.AssigneeUserID = &assigneeID
+	todo.MoveFromColumnName = "Testing"
+	todo.MoveToColumnName = "Done"
 	recorder := &creatorRequestRecorder{}
 
 	effectCtx := publishCreatorNotificationRequest(
@@ -114,7 +116,7 @@ func TestPublishCreatorNotificationRequestCarriesEmailPolicyFactsInEffectContext
 		recorder,
 		store.Project{ID: 7, Slug: "durable"},
 		todo,
-		RefreshReasonTodoUpdated,
+		RefreshReasonTodoMoved,
 		true,
 	)
 	request, ok := CreatorNotificationRequestFromContext(effectCtx)
@@ -122,7 +124,8 @@ func TestPublishCreatorNotificationRequestCarriesEmailPolicyFactsInEffectContext
 		t.Fatalf("effect context request=%+v ok=%v published=%+v", request, ok, recorder.requests)
 	}
 	if !request.MaterialChanged || !request.AssignmentChanged || !request.CardActivityCandidate ||
-		request.ToAssigneeUserID == nil || *request.ToAssigneeUserID != creatorID {
+		request.ToAssigneeUserID == nil || *request.ToAssigneeUserID != creatorID ||
+		request.FromName != "Testing" || request.ToName != "Done" {
 		t.Fatalf("email policy facts=%+v", request)
 	}
 	*request.ToAssigneeUserID = 999
