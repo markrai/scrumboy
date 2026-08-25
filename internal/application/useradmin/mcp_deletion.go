@@ -21,7 +21,7 @@ type MCPDeletionService struct {
 	deletions     UserDeletionStore
 }
 
-// NewMCPDeletionService constructs the additive, unwired MCP deletion service.
+// NewMCPDeletionService constructs the MCP deletion service.
 func NewMCPDeletionService(deps MCPDeletionServiceDependencies) *MCPDeletionService {
 	return &MCPDeletionService{
 		requesterRead: deps.RequesterRead,

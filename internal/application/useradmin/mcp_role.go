@@ -19,7 +19,7 @@ var (
 )
 
 // mcpRoleProjectionError preserves the original cause and its exact text while
-// marking the post-write projection stage for the future MCP adapter mapper.
+// marking the post-write projection stage for the MCP adapter mapper.
 type mcpRoleProjectionError struct {
 	cause error
 }
@@ -37,7 +37,7 @@ func (e *mcpRoleProjectionError) Is(target error) bool {
 }
 
 // MCPRoleServiceDependencies separates requester authority reads from target
-// projection reads even when production later supplies one concrete store.
+// projection reads even when production supplies one concrete store.
 type MCPRoleServiceDependencies struct {
 	RequesterRead  UserReadStore
 	Mutations      UserRoleMutationStore
@@ -52,7 +52,7 @@ type MCPRoleService struct {
 	projectionRead UserReadStore
 }
 
-// NewMCPRoleService constructs the additive, unwired MCP role service.
+// NewMCPRoleService constructs the MCP role service.
 func NewMCPRoleService(deps MCPRoleServiceDependencies) *MCPRoleService {
 	return &MCPRoleService{
 		requesterRead:  deps.RequesterRead,

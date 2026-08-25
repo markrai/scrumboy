@@ -23,8 +23,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 	// | Promote admin -> owner | ❌     | ❌     | ❌    |
 	// | Delete user           | ✅     | ❌     | ❌    |
 	// | Demote admin          | ✅     | ❌     | ❌    |
-	// Note: All authorization checks are enforced in store layer, not routing.
-	// Routing only wires requests to store methods.
+	// Store remains authoritative for mutation-time Owner and persistence
+	// invariants. Selected create, role, and deletion orchestration delegates
+	// through internal/application/useradmin after this shared transport gate.
 	ctx := s.requestContext(r)
 	userID, ok := store.UserIDFromContext(ctx)
 	if !ok {

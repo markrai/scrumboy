@@ -19,8 +19,7 @@ type RESTDeletionService struct {
 	deletions UserDeletionStore
 }
 
-// NewRESTDeletionService constructs the additive, unwired REST deletion
-// service.
+// NewRESTDeletionService constructs the REST deletion service.
 func NewRESTDeletionService(deps RESTDeletionServiceDependencies) *RESTDeletionService {
 	return &RESTDeletionService{deletions: deps.Deletions}
 }

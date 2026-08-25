@@ -21,7 +21,7 @@ type RESTRoleService struct {
 	projectionRead UserReadStore
 }
 
-// NewRESTRoleService constructs the additive, unwired REST role service.
+// NewRESTRoleService constructs the REST role service.
 func NewRESTRoleService(deps RESTRoleServiceDependencies) *RESTRoleService {
 	return &RESTRoleService{
 		mutations:      deps.Mutations,
