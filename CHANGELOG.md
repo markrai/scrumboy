@@ -2,6 +2,23 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
 
+## [3.33.9] - 2026-08-25
+
+### Enhancements
+
+- **Activity email layout** - SMTP activity bodies use a deterministic plain-text
+  hierarchy: event heading, actor, entity, project, event-specific details, then
+  CTA. Fields use action/domain labels such as `Moved by:`, `Card:`, `Sprint:`,
+  `Column:`, `Tag:`, `Project:`, and `Status:`; unavailable optional fields are
+  omitted.
+- **Activity email card links** - Live card notifications with a valid card
+  identity link to the canonical `/<project-slug>/t/<localId>` card route.
+  Deleted-card and project-level notifications link to the project when a live
+  destination exists, and deleted projects have no dead CTA.
+- **Move notification status** - Card move emails include a `Status:` line with
+  source → destination workflow column names when both trimmed names are
+  non-empty and differ. Same-column reorders omit `Status:`.
+
 ## [3.33.8] - 2026-08-25
 
 ### Fixed
