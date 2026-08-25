@@ -2,6 +2,15 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
 
+## [3.33.6] - 2026-08-24
+
+### Changed
+
+- **User administration application services** - REST user create, role-change,
+  and delete flows, plus MCP user role-change and delete, now go through
+  application-layer services instead of handler-side orchestration. HTTP/MCP
+  error mapping, validation, and public behavior are unchanged.
+
 ## [3.33.5] - 2026-08-23
 
 ### Changed
