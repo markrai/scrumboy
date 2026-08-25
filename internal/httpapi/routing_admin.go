@@ -110,7 +110,11 @@ func (s *Server) handleAdminUsersListOrCreate(w http.ResponseWriter, r *http.Req
 			return
 		}
 
-		u, err := s.store.CreateUser(ctx, in.Email, in.Password, in.Name)
+		u, err := s.userCreations.Create(ctx, useradminapp.CreateCommand{
+			Email:    in.Email,
+			Name:     in.Name,
+			Password: in.Password,
+		})
 		if err != nil {
 			writeStoreErr(w, err, false)
 			return

@@ -148,6 +148,7 @@ type Server struct {
 	membershipMutations           *membershipapp.RESTMutationService
 	tagColors                     *tagapp.RESTColorService
 	tagDeletions                  *tagapp.RESTDeletionService
+	userCreations                 *useradminapp.RESTCreationService
 	userRoleMutations             *useradminapp.RESTRoleService
 	userDeletions                 *useradminapp.RESTDeletionService
 
@@ -227,7 +228,7 @@ type storeAPI interface {
 	ResetLocalPassword(ctx context.Context, userID int64, expectedHash, password string) error
 	BootstrapUser(ctx context.Context, email, password, name string) (store.User, error)
 	AuthenticateUser(ctx context.Context, email, password string) (store.User, error)
-	CreateUser(ctx context.Context, email, password, name string) (store.User, error)
+	useradminapp.UserCreationStore
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
 	useradminapp.UserRoleMutationStore
 	useradminapp.UserDeletionStore
@@ -773,6 +774,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		BoardNames:    st,
 		PersonalNames: st,
 		Publisher:     tagDeletionPublisher{server: server},
+	})
+	server.userCreations = useradminapp.NewRESTCreationService(useradminapp.RESTCreationServiceDependencies{
+		Creations: st,
 	})
 	server.userRoleMutations = useradminapp.NewRESTRoleService(useradminapp.RESTRoleServiceDependencies{
 		Mutations:      st,
