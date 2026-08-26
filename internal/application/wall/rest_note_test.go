@@ -705,17 +705,67 @@ func TestPreparedRESTNoteConcurrentExecutionStartsOneMethod(t *testing.T) {
 	}
 }
 
+func TestPreparedRESTNoteConcurrentStoreFailureSuppressesRefresh(t *testing.T) {
+	storeFailure := errors.New("winning mutation failed")
+	fake := &restNoteFake{
+		role:      store.RoleContributor,
+		createErr: storeFailure,
+		patchErr:  storeFailure,
+		deleteErr: storeFailure,
+	}
+	prepared := mustPrepareRESTNote(t, fake, "concurrent-failure")
+	start := make(chan struct{})
+	errs := make(chan error, 3)
+	var wg sync.WaitGroup
+	for _, execute := range []func() error{
+		func() error { _, err := prepared.Create(CreateNoteCommand{}); return err },
+		func() error { _, err := prepared.Patch(PatchNoteCommand{}); return err },
+		func() error { return prepared.Delete(DeleteNoteCommand{}) },
+	} {
+		execute := execute
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- execute()
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	failures, repeats := 0, 0
+	for err := range errs {
+		switch {
+		case err == storeFailure:
+			failures++
+		case errors.Is(err, ErrPreparedMutationAlreadyExecuted):
+			repeats++
+		default:
+			t.Fatalf("unexpected concurrent error: %v", err)
+		}
+	}
+	snapshot := fake.snapshot()
+	mutationCalls := len(snapshot.createCalls) + len(snapshot.patchCalls) + len(snapshot.deleteCalls)
+	if failures != 1 || repeats != 2 || mutationCalls != 1 || len(snapshot.refreshCalls) != 0 || snapshot.roleCalls != 1 {
+		t.Fatalf("failure/repeat/mutation/refresh/role=%d/%d/%d/%d/%d snapshot=%+v", failures, repeats, mutationCalls, len(snapshot.refreshCalls), snapshot.roleCalls, snapshot)
+	}
+}
+
 func TestPreparedRESTNoteCanceledMutationContext(t *testing.T) {
 	effectCtx := context.WithValue(context.Background(), restNoteRawContextKey{}, "raw-not-canceled")
 	mutationBase, cancel := context.WithCancel(context.WithValue(context.Background(), restNoteMutationContextKey{}, "mutation-canceled"))
 	mutationCtx := store.WithUserID(mutationBase, restNoteTestActorID)
-	cancel()
 	fake := &restNoteFake{role: store.RoleContributor, honorMutationContextError: true}
 	service := newRESTNoteTestService(fake)
 	prepared, err := service.Prepare(mutationCtx, effectCtx, ResolvedRESTTarget{ProjectID: restNoteTestProjectID})
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
+	if mutationCtx.Err() != nil {
+		t.Fatalf("mutation context canceled during Prepare: %v", mutationCtx.Err())
+	}
+	cancel()
 
 	if _, err := prepared.Create(CreateNoteCommand{}); err != context.Canceled {
 		t.Fatalf("Create error=%v want context.Canceled", err)
