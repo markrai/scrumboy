@@ -155,6 +155,7 @@ type Server struct {
 	wallNoteMutations             *wallapp.RESTNoteService
 	wallReplacements              *wallapp.RESTReplacementService
 	wallEdgeMutations             *wallapp.RESTEdgeService
+	wallTransientMutations        *wallapp.RESTTransientService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -653,6 +654,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Roles:     st,
 		Mutations: st,
 		Refresh:   wallRefreshPublisher{server: server},
+	})
+	server.wallTransientMutations = wallapp.NewRESTTransientService(wallapp.RESTTransientServiceDependencies{
+		Roles:     st,
+		Publisher: wallTransientPublisher{server: server},
 	})
 	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
 	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)

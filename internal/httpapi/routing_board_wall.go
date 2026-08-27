@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -73,24 +72,6 @@ func (s *Server) handleBoardWallRoutes(w http.ResponseWriter, r *http.Request, r
 
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 	return true
-}
-
-// requireWallWriter ensures the caller has at least contributor access. On
-// durable projects, no authenticated user means no write. Returns true on
-// failure (response already written).
-func (s *Server) requireWallWriter(w http.ResponseWriter, r *http.Request, projectID int64) bool {
-	ctx := s.requestContext(r)
-	userID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
-		return true
-	}
-	role, err := s.store.GetProjectRole(ctx, projectID, userID)
-	if err != nil || !role.HasMinimumRole(store.RoleContributor) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "contributor or higher required", nil)
-		return true
-	}
-	return false
 }
 
 func writeWallMutationPreparationError(w http.ResponseWriter, err error) {
@@ -259,14 +240,22 @@ type wallTransientInputJSON struct {
 }
 
 // handleWallTransient publishes an ephemeral drag/move event. The payload is
-// never persisted; it only flows through the SSE hub to other connected
-// clients. Throttling is the caller's responsibility (~100ms coalesce).
+// never persisted; it flows through common event fanout. Throttling is the
+// caller's responsibility (~100ms coalesce).
 //
-// SSE payload shape: {noteId, x, y, by}. The `by` field is the authenticated
+// Transient payload shape: {noteId, x, y, by}. The `by` field is the authenticated
 // user id of the caller and exists solely so the originating client can
 // suppress its own echoes when applying transients.
 func (s *Server) handleWallTransient(w http.ResponseWriter, r *http.Request, projectID int64) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallTransientMutations.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	var in wallTransientInputJSON
@@ -277,20 +266,14 @@ func (s *Server) handleWallTransient(w http.ResponseWriter, r *http.Request, pro
 		writeValidationError(w, "noteId required", "note_id_required", map[string]any{"field": "noteId"})
 		return
 	}
-	// requireWallWriter already verified the caller has contributor+; re-read
-	// the user id so we can attribute the transient for echo suppression.
-	userID, _ := store.UserIDFromContext(s.requestContext(r))
-	payload, err := json.Marshal(map[string]any{
-		"noteId": in.NoteID,
-		"x":      in.X,
-		"y":      in.Y,
-		"by":     userID,
-	})
-	if err != nil {
+	if err := prepared.Publish(wallapp.TransientCommand{
+		NoteID: in.NoteID,
+		X:      in.X,
+		Y:      in.Y,
+	}); err != nil {
 		writeInternal(w, err)
 		return
 	}
-	s.emitWallTransient(r.Context(), projectID, payload)
 	w.WriteHeader(http.StatusNoContent)
 }
 
