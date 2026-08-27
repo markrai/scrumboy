@@ -222,26 +222,33 @@ type wallReplaceJSON struct {
 }
 
 func (s *Server) handleWallPut(w http.ResponseWriter, r *http.Request, projectID int64) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallReplacements.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	var in wallReplaceJSON
 	if err := readJSON(w, r, s.maxBody, &in); err != nil {
 		return
 	}
-	notes := make([]store.WallNote, 0, len(in.Notes))
+	notes := make([]wallapp.NoteDraft, 0, len(in.Notes))
 	for _, n := range in.Notes {
-		notes = append(notes, store.WallNote{
+		notes = append(notes, wallapp.NoteDraft{
 			X: n.X, Y: n.Y, Width: n.Width, Height: n.Height,
 			Color: n.Color, Text: n.Text,
 		})
 	}
-	wall, err := s.store.ReplaceWall(s.requestContext(r), projectID, notes)
+	wall, err := prepared.Replace(wallapp.ReplaceWallCommand{Notes: notes})
 	if err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
-	s.emitWallRefreshNeeded(r.Context(), projectID, "wall_replaced")
 	writeJSON(w, http.StatusOK, wallToJSON(wall))
 }
 
