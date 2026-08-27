@@ -300,11 +300,19 @@ type wallEdgeInputJSON struct {
 }
 
 // handleWallCreateEdge creates an undirected edge between two notes
-// (Postbaby-parity Shift+drag). Idempotent: if an edge already exists between
-// the same pair (in either direction) the existing edge is returned with
-// 200 OK and no realtime fanout.
+// (Postbaby-parity Shift+drag). CreateEdge is store-idempotent. HTTP
+// compatibility still returns 201 and refreshes after every nil store result,
+// including duplicate no-ops.
 func (s *Server) handleWallCreateEdge(w http.ResponseWriter, r *http.Request, projectID int64) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallEdgeMutations.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	var in wallEdgeInputJSON
@@ -317,27 +325,24 @@ func (s *Server) handleWallCreateEdge(w http.ResponseWriter, r *http.Request, pr
 		writeValidationError(w, "from and to required", "wall_edge_endpoints_required", nil)
 		return
 	}
-	edge, wall, err := s.store.CreateEdge(s.requestContext(r), projectID, from, to)
+	edge, err := prepared.Create(wallapp.CreateEdgeCommand{From: from, To: to})
 	if err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
-	// CreateEdge is idempotent. Distinguish "newly created" by comparing the
-	// fingerprint snapshot the caller would have observed in the previous
-	// state; we approximate that here by checking whether the edge's id is
-	// present in the wall (always true) and whether wall.Version was bumped.
-	// In practice we rely on the store: a duplicate returns the existing edge
-	// without bumping version and without any DB write, so we can detect it
-	// via that contract by re-reading wall.UpdatedAt being unchanged from a
-	// prior observation. Without a prior observation we conservatively emit
-	// the refresh - duplicate is rare in normal Shift-drag usage.
-	s.emitWallRefreshNeeded(r.Context(), projectID, "wall_edge_created")
-	_ = wall
 	writeJSON(w, http.StatusCreated, wallEdgeToJSON(edge))
 }
 
 func (s *Server) handleWallDeleteEdge(w http.ResponseWriter, r *http.Request, projectID int64, edgeID string) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallEdgeMutations.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	edgeID = strings.TrimSpace(edgeID)
@@ -345,11 +350,10 @@ func (s *Server) handleWallDeleteEdge(w http.ResponseWriter, r *http.Request, pr
 		writeValidationError(w, "edgeId required", "edge_id_required", map[string]any{"field": "edgeId"})
 		return
 	}
-	if _, err := s.store.DeleteEdge(s.requestContext(r), projectID, edgeID); err != nil {
+	if err := prepared.Delete(wallapp.DeleteEdgeCommand{EdgeID: edgeID}); err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
-	s.emitWallRefreshNeeded(r.Context(), projectID, "wall_edge_deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
 

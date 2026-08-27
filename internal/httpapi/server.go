@@ -154,6 +154,7 @@ type Server struct {
 	userDeletions                 *useradminapp.RESTDeletionService
 	wallNoteMutations             *wallapp.RESTNoteService
 	wallReplacements              *wallapp.RESTReplacementService
+	wallEdgeMutations             *wallapp.RESTEdgeService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -647,6 +648,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Roles:        st,
 		Replacements: st,
 		Refresh:      wallRefreshPublisher{server: server},
+	})
+	server.wallEdgeMutations = wallapp.NewRESTEdgeService(wallapp.RESTEdgeServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
 	})
 	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
 	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)
