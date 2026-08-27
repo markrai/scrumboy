@@ -23,6 +23,7 @@ import (
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
 	useradminapp "scrumboy/internal/application/useradmin"
+	wallapp "scrumboy/internal/application/wall"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
@@ -151,6 +152,7 @@ type Server struct {
 	userCreations                 *useradminapp.RESTCreationService
 	userRoleMutations             *useradminapp.RESTRoleService
 	userDeletions                 *useradminapp.RESTDeletionService
+	wallNoteMutations             *wallapp.RESTNoteService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -635,6 +637,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
+	server.wallNoteMutations = wallapp.NewRESTNoteService(wallapp.RESTNoteServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
+	})
 	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
 	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)
 	server.projectUpdates = projectapp.NewRESTUpdateService(projectapp.RESTUpdateServiceDependencies{

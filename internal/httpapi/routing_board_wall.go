@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/store"
 )
 
@@ -91,6 +93,17 @@ func (s *Server) requireWallWriter(w http.ResponseWriter, r *http.Request, proje
 	return false
 }
 
+func writeWallMutationPreparationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, wallapp.ErrActorRequired):
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+	case errors.Is(err, wallapp.ErrContributorRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "contributor or higher required", nil)
+	default:
+		writeInternal(w, err)
+	}
+}
+
 func (s *Server) handleWallGet(w http.ResponseWriter, r *http.Request, projectID int64) {
 	wall, err := s.store.GetWall(s.requestContext(r), projectID)
 	if err != nil {
@@ -110,14 +123,22 @@ type wallNoteInputJSON struct {
 }
 
 func (s *Server) handleWallCreateNote(w http.ResponseWriter, r *http.Request, projectID int64) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallNoteMutations.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	var in wallNoteInputJSON
 	if err := readJSON(w, r, s.maxBody, &in); err != nil {
 		return
 	}
-	note, _, err := s.store.CreateNote(s.requestContext(r), projectID, store.CreateNoteInput{
+	note, err := prepared.Create(wallapp.CreateNoteCommand{
 		X: in.X, Y: in.Y, Width: in.Width, Height: in.Height,
 		Color: in.Color, Text: in.Text,
 	})
@@ -125,7 +146,6 @@ func (s *Server) handleWallCreateNote(w http.ResponseWriter, r *http.Request, pr
 		writeStoreErr(w, err, true)
 		return
 	}
-	s.emitWallRefreshNeeded(r.Context(), projectID, "wall_note_created")
 	writeJSON(w, http.StatusCreated, wallNoteToJSON(note))
 }
 
@@ -140,7 +160,15 @@ type wallNotePatchJSON struct {
 }
 
 func (s *Server) handleWallPatchNote(w http.ResponseWriter, r *http.Request, projectID int64, noteID string) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallNoteMutations.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	noteID = strings.TrimSpace(noteID)
@@ -152,7 +180,8 @@ func (s *Server) handleWallPatchNote(w http.ResponseWriter, r *http.Request, pro
 	if err := readJSON(w, r, s.maxBody, &in); err != nil {
 		return
 	}
-	note, _, err := s.store.PatchNote(s.requestContext(r), projectID, noteID, store.PatchNoteInput{
+	note, err := prepared.Patch(wallapp.PatchNoteCommand{
+		NoteID:    noteID,
 		IfVersion: in.IfVersion,
 		X:         in.X, Y: in.Y, Width: in.Width, Height: in.Height,
 		Color: in.Color, Text: in.Text,
@@ -161,12 +190,19 @@ func (s *Server) handleWallPatchNote(w http.ResponseWriter, r *http.Request, pro
 		writeStoreErr(w, err, true)
 		return
 	}
-	s.emitWallRefreshNeeded(r.Context(), projectID, "wall_note_updated")
 	writeJSON(w, http.StatusOK, wallNoteToJSON(note))
 }
 
 func (s *Server) handleWallDeleteNote(w http.ResponseWriter, r *http.Request, projectID int64, noteID string) {
-	if s.requireWallWriter(w, r, projectID) {
+	mutationCtx := s.requestContext(r)
+	effectCtx := r.Context()
+	prepared, err := s.wallNoteMutations.Prepare(
+		mutationCtx,
+		effectCtx,
+		wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
 		return
 	}
 	noteID = strings.TrimSpace(noteID)
@@ -174,11 +210,10 @@ func (s *Server) handleWallDeleteNote(w http.ResponseWriter, r *http.Request, pr
 		writeValidationError(w, "noteId required", "note_id_required", map[string]any{"field": "noteId"})
 		return
 	}
-	if _, err := s.store.DeleteNote(s.requestContext(r), projectID, noteID); err != nil {
+	if err := prepared.Delete(wallapp.DeleteNoteCommand{NoteID: noteID}); err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
-	s.emitWallRefreshNeeded(r.Context(), projectID, "wall_note_deleted")
 	w.WriteHeader(http.StatusNoContent)
 }
 

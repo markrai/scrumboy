@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/eventbus"
 )
 
@@ -25,6 +26,20 @@ type wallTransientEvent struct {
 	Type      string         `json:"type"`
 	ProjectID int64          `json:"projectId"`
 	Payload   map[string]any `json:"payload,omitempty"`
+}
+
+type wallRefreshPublisher struct {
+	server *Server
+}
+
+var _ wallapp.WallRefreshPublisher = wallRefreshPublisher{}
+
+func (p wallRefreshPublisher) PublishWallRefresh(
+	ctx context.Context,
+	projectID int64,
+	reason wallapp.RefreshReason,
+) {
+	p.server.emitWallRefreshNeeded(ctx, projectID, string(reason))
 }
 
 func (s *Server) emitWallRefreshNeeded(ctx context.Context, projectID int64, reason string) {
