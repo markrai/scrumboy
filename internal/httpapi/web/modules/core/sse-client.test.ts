@@ -132,4 +132,26 @@ describe('SseConnectionManager stream boundary', () => {
     manager.stop();
     expect(streams[3].close).toHaveBeenCalledOnce();
   });
+
+  it('coalesces adjacent native and browser restart requests into one stream recycle', () => {
+    const streams: FakeStream[] = [];
+    const openEventStream = vi.fn(() => {
+      const stream = new FakeStream();
+      streams.push(stream);
+      return stream;
+    });
+    installFakeMobileTransport(openEventStream);
+    const manager = new SseConnectionManager('/api/me/realtime', {});
+
+    manager.open();
+    manager.restartRequested('native-foreground');
+    manager.restartRequested('visibility');
+    manager.restartRequested('pageshow-bfcache');
+    vi.advanceTimersByTime(399);
+    expect(openEventStream).toHaveBeenCalledOnce();
+
+    vi.advanceTimersByTime(1);
+    expect(streams[0].close).toHaveBeenCalledOnce();
+    expect(openEventStream).toHaveBeenCalledTimes(2);
+  });
 });

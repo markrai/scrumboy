@@ -15,6 +15,7 @@ import { t } from '../i18n/index.js';
 
 const MAX_SEEN_IDS = 500;
 const seenEventIds = new Set<string>();
+export const NATIVE_FOREGROUND_EVENT = 'scrumboy:native-foreground';
 
 let globalManager: SseConnectionManager | null = null;
 
@@ -84,7 +85,8 @@ export function registerAnonymousSseRestart(fn: (reason: string) => void): void 
 }
 
 /**
- * One-time: visibility / bfcache pageshow / online → debounced global + anonymous SSE restart + resume resync.
+ * One-time: native active / visibility / bfcache pageshow / online →
+ * debounced global + anonymous SSE restart + resume resync.
  * Idempotent and safe to call from router on load; listeners attach at most once.
  */
 export function initForegroundLifecycle(): void {
@@ -125,9 +127,14 @@ export function initForegroundLifecycle(): void {
     onForeground('online');
   };
 
+  const onNativeForeground = () => {
+    onForeground('native-foreground');
+  };
+
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener('pageshow', onPageShow);
   window.addEventListener('online', onOnline);
+  window.addEventListener(NATIVE_FOREGROUND_EVENT, onNativeForeground);
 }
 
 /** For tests / diagnostics: true after initForegroundLifecycle attached listeners. */

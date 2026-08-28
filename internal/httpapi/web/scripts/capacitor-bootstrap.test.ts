@@ -22,7 +22,8 @@ describe('C2 mobile bootstrap artifact boundary', () => {
     expect(mobileIndex).not.toMatch(/<script\b[^>]*\bsrc="\/app\.js/);
     expect(mobileIndex).not.toMatch(/\b(?:src|href|content)="https?:\/\//i);
     expect(bootstrapEntry).toContain("import { startMobileBootstrap } from './bootstrap-core.js'");
-    expect(bootstrapEntry).toContain('void startMobileBootstrap()');
+    expect(bootstrapEntry).toContain("import { installNativeLifecycle } from './native-lifecycle.js'");
+    expect(bootstrapEntry).toContain('void installNativeLifecycle().then(() => startMobileBootstrap())');
     expect(bootstrapCore.indexOf('installRuntimeAndStartProduct')).toBeGreaterThan(-1);
   });
 
