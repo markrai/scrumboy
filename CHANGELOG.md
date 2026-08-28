@@ -1,6 +1,29 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+
+## [3.34.0] - 2026-08-28
+
+### Added
+
+- **Android Capacitor shell** - New `mobile/capacitor` workspace packages a
+  thin Android shell that loads signed web assets from a generated `www/`
+  artifact. A packaged server selector and native `ScrumboyTransport` plugin
+  own the selected origin, authenticated cookie jar, REST, SSE, and acquired
+  resource networking. Session cookies stay native and are never exposed to
+  JavaScript; changing servers clears the native session and related state.
+  Interactive OIDC, push, deep links, and iOS remain later phases. See
+  [mobile/capacitor/README.md](mobile/capacitor/README.md).
+
+### Changed
+
+- **Web runtime platform boundary** - Browser networking, PWA/push, wallpaper
+  resources, and related feature gates go through an `AppRuntime` /
+  `ServerTransport` abstraction so the same packaged web app can run under
+  Capacitor without loading the remote server UI into the WebView.
+- **Native session fencing** - The Android transport uses crash-consistent
+  cookie ownership and generation fencing so stale in-flight session delivery
+  cannot overwrite a newer selected-server session after a switch or restart.
 
 ## [3.33.11] - 2026-08-27
 
