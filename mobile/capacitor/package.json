@@ -7,6 +7,8 @@
     "node": ">=22.0.0"
   },
   "scripts": {
+    "build:shell": "node scripts/build-shell.mjs",
+    "typecheck:shell": "tsc -p tsconfig.json",
     "cap:sync": "cap sync android",
     "cap:copy": "cap copy android",
     "android:open": "cap open android",
@@ -14,10 +16,12 @@
   },
   "dependencies": {
     "@capacitor/android": "8.5.0",
-    "@capacitor/core": "8.5.0"
+    "@capacitor/core": "8.5.0",
+    "@capacitor/preferences": "8.0.1"
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.0",
+    "esbuild": "0.28.2",
     "typescript": "5.9.3"
   }
 }

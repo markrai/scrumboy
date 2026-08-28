@@ -39,6 +39,7 @@ function installFakeMobile(transport: ServerTransport): AppRuntime {
     publicLinkOrigin: () => 'https://public.example',
     supportsPWA: () => false,
     supportsWebPush: () => false,
+    supportsInteractiveOIDC: () => false,
     transport: () => transport,
   };
   installAppRuntime(runtime);

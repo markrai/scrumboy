@@ -36,7 +36,17 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation platform("com.squareup.okhttp3:okhttp-bom:5.5.0")
+    // OkHttp's Android 5.5.0 variant requires compileSdk 37. Capacitor 8 is
+    // intentionally pinned to 36, so use the same release's JVM artifact.
+    implementation "com.squareup.okhttp3:okhttp-jvm:5.5.0"
+    implementation("com.squareup.okhttp3:okhttp-sse") {
+        exclude group: "com.squareup.okhttp3", module: "okhttp"
+    }
     testImplementation "junit:junit:$junitVersion"
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0") {
+        exclude group: "com.squareup.okhttp3", module: "okhttp"
+    }
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')

@@ -48,6 +48,7 @@ describe('product realtime over a fake mobile stream', () => {
       publicLinkOrigin: () => 'https://server.example',
       supportsPWA: () => false,
       supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => false,
       transport: () => transport,
     };
     installAppRuntime(runtime);

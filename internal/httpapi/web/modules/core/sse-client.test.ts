@@ -45,6 +45,7 @@ function installFakeMobileTransport(openEventStream: ReturnType<typeof vi.fn>): 
     publicLinkOrigin: () => 'https://server.example',
     supportsPWA: () => false,
     supportsWebPush: () => false,
+    supportsInteractiveOIDC: () => false,
     transport: () => transport,
   };
   installAppRuntime(runtime);

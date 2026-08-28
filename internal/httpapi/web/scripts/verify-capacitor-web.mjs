@@ -77,11 +77,25 @@ export async function verifyCapacitorWebArtifact() {
   assert(await exists(resolve(artifactRoot, 'bootstrap.js')), 'Missing generated bootstrap.js');
   const bootstrap = await readFile(resolve(artifactRoot, 'bootstrap.js'), 'utf8');
   assert(bootstrap.includes('meta[name="scrumboy-runtime"]'), 'Bootstrap does not verify the Capacitor runtime marker');
-  assert(bootstrap.includes('Mobile shell ready.'), 'Bootstrap does not render the C1 status surface');
-  assert(!/\b(?:fetch|EventSource|XMLHttpRequest)\s*\(/.test(bootstrap), 'Bootstrap contains direct networking');
-  assert(!/\b(?:window\.)?open\s*\(|\b(?:window\.|globalThis\.)?location\s*=/.test(bootstrap), 'Bootstrap contains navigation');
-  assert(!/\bhttps?:\/\//i.test(bootstrap), 'Bootstrap contains a remote URL');
-  assert(!/\bimport\s*\(/.test(bootstrap) && !/\/app\.js\b/.test(bootstrap), 'Bootstrap starts the product app before C2');
+  assert(bootstrap.includes('scrumboy.server.origin.v1'), 'Bootstrap does not own the selected-server preference');
+  assert(bootstrap.includes('ScrumboyTransport'), 'Bootstrap does not contain the native transport binding');
+  assert(bootstrap.includes('/dist/platform/runtime.js'), 'Bootstrap does not import the packaged runtime seam');
+  assert(bootstrap.includes('/app.js'), 'Bootstrap does not retain the packaged product entry handoff');
+  assert(bootstrap.indexOf('installAppRuntime') < bootstrap.lastIndexOf('/app.js'), 'Bootstrap product import is not ordered after runtime installation');
+  // The pinned @capacitor/core bundle carries a dormant CapacitorHttp web
+  // fallback with fetch(). Audit Scrumboy-authored shell sources so that
+  // upstream dead code is not mistaken for the selected-server transport.
+  const shellDirectory = resolve(artifactRoot, '..', 'shell');
+  const shellSources = await Promise.all(
+    (await readdir(shellDirectory))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => readFile(resolve(shellDirectory, name), 'utf8')),
+  );
+  assert(
+    !/\b(?:fetch|EventSource|XMLHttpRequest)\s*\(/.test(shellSources.join('\n')),
+    'Scrumboy mobile shell source contains direct networking',
+  );
+  assert(!/\b(?:window\.)?open\s*\(/.test(bootstrap), 'Bootstrap opens remote navigation');
 
   const files = await artifactFiles();
   const forbidden = files.filter((file) =>

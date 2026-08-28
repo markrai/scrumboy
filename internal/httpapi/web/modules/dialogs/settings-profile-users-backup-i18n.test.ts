@@ -282,6 +282,43 @@ describe('settings i18n (profile / users / backup / customization)', () => {
 	  expect(text).not.toContain('No effective owner login method is available');
 	});
 
+  it('shows selected server/change action and gates interactive OIDC in the Capacitor profile', async () => {
+    const runtime = await import('../platform/runtime.js');
+    runtime.installAppRuntime({
+      kind: 'capacitor',
+      assetOrigin: () => 'capacitor://localhost',
+      serverOrigin: () => 'https://selected.example',
+      publicLinkOrigin: () => 'https://selected.example',
+      supportsPWA: () => false,
+      supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => false,
+      transport: () => ({
+        request: vi.fn(),
+        openEventStream: vi.fn(),
+        acquireResource: vi.fn(),
+        logout: vi.fn(),
+      } as any),
+    });
+    const user = {
+      id: 1,
+      name: 'Mobile User',
+      email: 'mobile@example.com',
+      systemRole: 'user',
+      twoFactorEnabled: false,
+      hasLocalPassword: true,
+      oidcLinked: false,
+    };
+    const changeServer = vi.fn();
+    window.addEventListener('scrumboy:mobile-change-server', changeServer, { once: true });
+
+    await setupSettingsView({ activeTab: 'profile', user, oidcEnabled: true, localAuthEnabled: true });
+
+    expect(document.getElementById('settingsTabContent')?.textContent).toContain('https://selected.example');
+    expect(document.getElementById('connectSSOBtn')).toBeNull();
+    document.getElementById('mobileChangeServerBtn')?.click();
+    expect(changeServer).toHaveBeenCalledOnce();
+  });
+
 	it('makes the local-auth-disabled owner warning conditional on SSO becoming unavailable', async () => {
 	  const ssoOnlyOwner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false, hasLocalPassword: false, oidcLinked: true };
 	  await setupSettingsView({ activeTab: 'profile', user: ssoOnlyOwner, oidcEnabled: true, localAuthEnabled: false });

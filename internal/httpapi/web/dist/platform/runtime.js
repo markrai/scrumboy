@@ -11,6 +11,7 @@ const browserRuntime = {
     publicLinkOrigin: currentOrigin,
     supportsPWA: () => true,
     supportsWebPush: () => true,
+    supportsInteractiveOIDC: () => true,
     transport: () => browserTransport,
 };
 function unconfiguredMobileError() {
@@ -41,6 +42,7 @@ const unconfiguredMobileRuntime = {
     },
     supportsPWA: () => false,
     supportsWebPush: () => false,
+    supportsInteractiveOIDC: () => false,
     transport: () => unconfiguredMobileTransport,
 };
 function runtimeKindFromDocument() {

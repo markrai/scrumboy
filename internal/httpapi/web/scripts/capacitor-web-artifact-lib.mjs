@@ -17,7 +17,7 @@ export const mobileBootstrapSource = resolve(
   repositoryRoot,
   'mobile',
   'capacitor',
-  'shell',
+  '.generated',
   'bootstrap.js',
 );
 

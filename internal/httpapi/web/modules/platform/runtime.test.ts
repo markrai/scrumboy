@@ -25,6 +25,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.publicLinkOrigin()).toBe(window.location.origin);
     expect(runtime.supportsPWA()).toBe(true);
     expect(runtime.supportsWebPush()).toBe(true);
+    expect(runtime.supportsInteractiveOIDC()).toBe(true);
   });
 
   it('recognizes the generated mobile marker without importing Capacitor', async () => {
@@ -38,6 +39,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.assetOrigin()).toBe(window.location.origin);
     expect(runtime.supportsPWA()).toBe(false);
     expect(runtime.supportsWebPush()).toBe(false);
+    expect(runtime.supportsInteractiveOIDC()).toBe(false);
     await expect(runtime.transport().request('/api/auth/status')).rejects.toThrow('has not been installed');
   });
 
@@ -50,6 +52,7 @@ describe('runtime origin and feature boundaries', () => {
       publicLinkOrigin: () => 'https://public.scrumboy.example',
       supportsPWA: () => false,
       supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => false,
       transport: () => transport,
     };
     installAppRuntime(runtime);

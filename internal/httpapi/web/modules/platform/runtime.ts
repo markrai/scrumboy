@@ -17,6 +17,7 @@ export interface AppRuntime {
   publicLinkOrigin(): string;
   supportsPWA(): boolean;
   supportsWebPush(): boolean;
+  supportsInteractiveOIDC(): boolean;
   transport(): ServerTransport;
 }
 
@@ -35,6 +36,7 @@ const browserRuntime: AppRuntime = {
   publicLinkOrigin: currentOrigin,
   supportsPWA: () => true,
   supportsWebPush: () => true,
+  supportsInteractiveOIDC: () => true,
   transport: () => browserTransport,
 };
 
@@ -68,6 +70,7 @@ const unconfiguredMobileRuntime: AppRuntime = {
   },
   supportsPWA: () => false,
   supportsWebPush: () => false,
+  supportsInteractiveOIDC: () => false,
   transport: () => unconfiguredMobileTransport,
 };
 

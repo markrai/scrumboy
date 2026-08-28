@@ -42,6 +42,7 @@ describe('future native runtime browser-feature gates', () => {
       publicLinkOrigin: () => 'https://server.example',
       supportsPWA: () => false,
       supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => false,
       transport: () => transport,
     };
     installAppRuntime(runtime);

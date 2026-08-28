@@ -10,6 +10,7 @@ import {
   writeArtifactManifest,
 } from './capacitor-web-artifact-lib.mjs';
 import { verifyCapacitorWebArtifact } from './verify-capacitor-web.mjs';
+import { buildMobileShell } from '../../../../mobile/capacitor/scripts/build-shell.mjs';
 
 function versionArgument(argv) {
   const index = argv.indexOf('--version');
@@ -24,6 +25,7 @@ function versionArgument(argv) {
 }
 
 export async function buildCapacitorWebArtifact(version) {
+  await buildMobileShell();
   await rm(artifactRoot, { recursive: true, force: true });
   await mkdir(artifactRoot, { recursive: true });
 

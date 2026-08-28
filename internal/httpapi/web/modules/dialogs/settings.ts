@@ -1521,7 +1521,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
 	      ? "settings.profile.authentication.sso"
 	      : "settings.profile.authentication.none";
 	const effectiveLocal = !!u?.hasLocalPassword && getLocalAuthEnabled();
-	const effectiveSSO = !!u?.oidcLinked && getOidcEnabled();
+	const interactiveOIDC = getAppRuntime().supportsInteractiveOIDC();
+	const effectiveSSO = !!u?.oidcLinked && getOidcEnabled() && interactiveOIDC;
 	const ownerWarning = u?.systemRole === "owner" && !effectiveLocal && !effectiveSSO
 	  ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.noEffectiveOwner">This owner account has no effective sign-in method under the current authentication configuration. The current session may be temporary; host recovery may be required.</div>`
 	  : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO && !getLocalAuthEnabled()
@@ -1529,12 +1530,12 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
 	    : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO
 	      ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.providerOnly">This owner relies on the external SSO provider. Set a local recovery password to prepare for an outage.</div>`
 	    : "";
-	const connectSSOAction = u && getOidcEnabled() && !u.oidcLinked
+	const connectSSOAction = u && getOidcEnabled() && interactiveOIDC && !u.oidcLinked
 	  ? u.hasLocalPassword
 	    ? `<button class="btn" id="connectSSOBtn" data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</button>`
 	    : `<div class="muted"><strong data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</strong>: <span data-i18n-text="settings.profile.authentication.connectRequiresLocal">Set or recover a Scrumboy password before connecting the current SSO provider.</span></div>`
 	  : "";
-	const methodActions = u ? `
+	const methodActions = u && interactiveOIDC ? `
 	  <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
 	    ${u.oidcLinked && !u.hasLocalPassword ? `<button class="btn" id="setScrumboyPasswordBtn" data-i18n-text="settings.profile.authentication.setPassword">Set Scrumboy password</button>` : ""}
 	    ${connectSSOAction}
@@ -1557,7 +1558,15 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
           <button class="btn" id="enable2FABtn" style="margin-top: 8px;" data-i18n-text="settings.profile.twoFactor.enable">Enable 2FA</button>
         </div>
       `) : "";
+    const runtime = getAppRuntime();
+    const mobileServerSection = runtime.kind === 'capacitor' ? `
+      <div class="settings-section" style="margin-bottom: 24px;">
+        <div class="settings-section__title">Server</div>
+        <div class="settings-section__description muted">${escapeHTML(runtime.serverOrigin())}</div>
+        <button class="btn btn--ghost" id="mobileChangeServerBtn" type="button" style="margin-top: 8px;">Change server</button>
+      </div>` : "";
     return `
+      ${mobileServerSection}
       <div class="settings-section" style="position: relative;">
         <div class="settings-section__title" data-i18n-text="settings.profile.title">Profile</div>
         <div class="settings-section__description muted" data-i18n-text="settings.profile.description">Signed-in user for this instance.</div>
@@ -2023,6 +2032,13 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     logoutBtn.addEventListener("click", () => {
       (settingsDialog as HTMLDialogElement).close();
       void getAppRuntime().transport().logout();
+    }, { signal });
+  }
+
+  const mobileChangeServerBtn = document.getElementById("mobileChangeServerBtn");
+  if (mobileChangeServerBtn) {
+    mobileChangeServerBtn.addEventListener("click", () => {
+      window.dispatchEvent(new CustomEvent("scrumboy:mobile-change-server"));
     }, { signal });
   }
 
