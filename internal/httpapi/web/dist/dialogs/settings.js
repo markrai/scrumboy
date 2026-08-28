@@ -15,6 +15,7 @@ import { normalizeSprints } from '../sprints.js';
 import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, getDesktopNotificationStatusKind, } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
+import { getAppRuntime } from '../platform/runtime.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import { getWrapLanesPreference, setWrapLanesPreference, syncOpenBoardWrapLanesClass, } from '../core/wrap-lanes-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref } from '../core/email-notify-preferences.js';
@@ -470,7 +471,7 @@ function syncPushLocaleState() {
     if (!hint)
         return;
     const pushReady = getAuthStatusAvailable() && getPushConfigured();
-    const unsupported = !("serviceWorker" in navigator) || !("PushManager" in window);
+    const unsupported = !getAppRuntime().supportsWebPush() || !("serviceWorker" in navigator) || !("PushManager" in window);
     if (pushReady && unsupported) {
         hint.textContent = t("settings.customization.push.unsupported");
     }
@@ -630,7 +631,7 @@ function renderBackupWarnings(warnings) {
 // Backup handlers
 async function handleBackupExport() {
     try {
-        const response = await fetch("/api/backup/export", {
+        const response = await getAppRuntime().transport().request("/api/backup/export", {
             headers: {
                 "X-Scrumboy": "1"
             }
@@ -1819,11 +1820,7 @@ export async function renderSettingsModal(options) {
     if (logoutBtn) {
         logoutBtn.addEventListener("click", () => {
             settingsDialog.close();
-            const form = document.createElement("form");
-            form.method = "POST";
-            form.action = "/api/auth/logout";
-            document.body.appendChild(form);
-            form.submit();
+            void getAppRuntime().transport().logout();
         }, { signal });
     }
     // Profile avatar click: open file picker to change avatar
@@ -2259,7 +2256,7 @@ export async function renderSettingsModal(options) {
                     pushHint.textContent = "";
                 }
             }
-            else if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+            else if (!getAppRuntime().supportsWebPush() || !("serviceWorker" in navigator) || !("PushManager" in window)) {
                 pushToggle.disabled = true;
                 if (pushHint) {
                     pushHint.textContent = t("settings.customization.push.unsupported");
@@ -2788,7 +2785,7 @@ function showCreateUserDialog() {
     }
 }
 function submitOIDCAuthorizationForm(request) {
-    const endpoint = new URL(request.authorizationEndpoint, window.location.origin);
+    const endpoint = new URL(request.authorizationEndpoint, getAppRuntime().serverOrigin());
     if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
         throw new Error(t("settings.profile.authentication.providerInvalid"));
     }

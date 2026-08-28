@@ -149,8 +149,7 @@ export function startGlobalRealtime(): void {
   }
 
   if (!globalManager) {
-    const url = new URL('/api/me/realtime', window.location.origin).toString();
-    globalManager = new SseConnectionManager(url, {
+    globalManager = new SseConnectionManager('/api/me/realtime', {
       label: 'me/realtime',
       onMessage: handleIncomingMessage,
     });

@@ -17,6 +17,8 @@
     "test:cards-per-lane": "playwright test --config=playwright.config.ts scripts/cards-per-lane.playwright.ts",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "copy:i18n": "node scripts/copy-i18n-locales.mjs",
+    "build:capacitor-web": "node scripts/build-capacitor-web.mjs",
+    "verify:capacitor-web": "node scripts/verify-capacitor-web.mjs",
     "build": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run generate:landing && tsc && npm run copy:i18n",
     "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && vitest run",
     "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"

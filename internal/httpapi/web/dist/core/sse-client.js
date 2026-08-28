@@ -3,6 +3,7 @@
  * stale watchdog (data-line pings), and bounded exponential backoff on errors.
  * Server tick interval must match internal/httpapi/sse.go heartbeatInterval (25s).
  */
+import { getAppRuntime } from '../platform/runtime.js';
 /** Must match server heartbeatInterval (25s). */
 export const SSE_SERVER_TICK_MS = 25000;
 /** Three missed server ticks → force reconnect. */
@@ -24,7 +25,7 @@ function dbg(label, ...args) {
     }
 }
 export class SseConnectionManager {
-    constructor(url, handlers) {
+    constructor(path, handlers) {
         this.es = null;
         /** Incremented when closing or starting a new connection; handlers capture myGen at creation. */
         this.generation = 0;
@@ -32,11 +33,11 @@ export class SseConnectionManager {
         this.staleTimer = null;
         this.backoffTimer = null;
         this.consecutiveErrors = 0;
-        this.url = url;
+        this.path = path;
         this.handlers = handlers;
     }
     label() {
-        return this.handlers.label ?? this.url;
+        return this.handlers.label ?? this.path;
     }
     /** Start or recycle the connection (closes any existing socket first). */
     open() {
@@ -49,7 +50,7 @@ export class SseConnectionManager {
         this.generation++;
         const myGen = this.generation;
         dbg(this.label(), "open gen=", myGen);
-        const es = new EventSource(this.url);
+        const es = getAppRuntime().transport().openEventStream(this.path);
         this.es = es;
         es.onopen = () => {
             if (myGen !== this.generation)

@@ -82,6 +82,7 @@ import {
   type DesktopNotificationStatusKind,
 } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
+import { getAppRuntime } from '../platform/runtime.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import {
   getWrapLanesPreference,
@@ -617,7 +618,7 @@ function syncPushLocaleState(): void {
   const hint = document.getElementById("pushNotifyHint");
   if (!hint) return;
   const pushReady = getAuthStatusAvailable() && getPushConfigured();
-  const unsupported = !("serviceWorker" in navigator) || !("PushManager" in window);
+  const unsupported = !getAppRuntime().supportsWebPush() || !("serviceWorker" in navigator) || !("PushManager" in window);
   if (pushReady && unsupported) {
     hint.textContent = t("settings.customization.push.unsupported");
   }
@@ -782,7 +783,7 @@ function renderBackupWarnings(warnings: string[] | undefined | null): void {
 // Backup handlers
 async function handleBackupExport(): Promise<void> {
   try {
-    const response = await fetch("/api/backup/export", {
+    const response = await getAppRuntime().transport().request("/api/backup/export", {
       headers: {
         "X-Scrumboy": "1"
       }
@@ -2021,11 +2022,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   if (logoutBtn) {
     logoutBtn.addEventListener("click", () => {
       (settingsDialog as HTMLDialogElement).close();
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = "/api/auth/logout";
-      document.body.appendChild(form);
-      form.submit();
+      void getAppRuntime().transport().logout();
     }, { signal });
   }
 
@@ -2496,7 +2493,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         if (pushHint) {
           pushHint.textContent = "";
         }
-      } else if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      } else if (!getAppRuntime().supportsWebPush() || !("serviceWorker" in navigator) || !("PushManager" in window)) {
         pushToggle.disabled = true;
         if (pushHint) {
           pushHint.textContent = t("settings.customization.push.unsupported");
@@ -3065,7 +3062,7 @@ type OIDCAuthorizationResponse = {
 };
 
 function submitOIDCAuthorizationForm(request: OIDCAuthorizationResponse): void {
-  const endpoint = new URL(request.authorizationEndpoint, window.location.origin);
+  const endpoint = new URL(request.authorizationEndpoint, getAppRuntime().serverOrigin());
   if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
     throw new Error(t("settings.profile.authentication.providerInvalid"));
   }

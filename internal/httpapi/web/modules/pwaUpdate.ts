@@ -6,6 +6,7 @@
 
 import { hasI18nKey, I18N_LOCALE_CHANGED, t } from './i18n/index.js';
 import { escapeHTML, getAppVersion } from './utils.js';
+import { getAppRuntime } from './platform/runtime.js';
 
 const PWA_UPDATE_PENDING_KEY = 'pwaUpdatePending';
 
@@ -91,6 +92,7 @@ function dismissUpdateNotification(): void {
 }
 
 function registerServiceWorker(): void {
+  if (!getAppRuntime().supportsPWA()) return;
   if (!('serviceWorker' in navigator)) return;
 
   const isLocalhost =
@@ -149,6 +151,7 @@ function registerServiceWorker(): void {
 }
 
 export function registerPwaGlobals(): void {
+  if (!getAppRuntime().supportsPWA()) return;
   (window as unknown as { reloadForUpdate: () => void }).reloadForUpdate = reloadForUpdate;
   (window as unknown as { dismissUpdateNotification: () => void }).dismissUpdateNotification = dismissUpdateNotification;
   registerServiceWorker();

@@ -5,6 +5,7 @@ import { escapeHTML, showToast } from '../utils.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
 import { getTodoFormPermissions } from './todo-permissions.js';
+import { getAppRuntime } from '../platform/runtime.js';
 
 const BOUND_FLAG = Symbol('bound');
 
@@ -394,7 +395,7 @@ export function bindShareTodoButton(): void {
       showToast(t("todo.links.cannotShare"));
       return;
     }
-    const url = `${window.location.origin}/${slug}/t/${editing.localId}`;
+    const url = buildPublicTodoUrl(slug, editing.localId);
     const title = editing.title ? `${editing.title} (#${editing.localId})` : t("todo.links.storyFallbackTitle", { id: editing.localId });
     if (typeof navigator.share === "function") {
       try {
@@ -418,4 +419,8 @@ export function bindShareTodoButton(): void {
       }
     }
   });
+}
+
+export function buildPublicTodoUrl(slug: string, localId: number): string {
+  return `${getAppRuntime().publicLinkOrigin()}/${slug}/t/${localId}`;
 }

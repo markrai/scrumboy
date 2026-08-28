@@ -231,8 +231,7 @@ export function connectBoardEvents(slug) {
         boardRealtimeBound = true;
         return;
     }
-    const url = new URL(`/api/board/${slug}/events`, window.location.origin).toString();
-    const manager = new SseConnectionManager(url, {
+    const manager = new SseConnectionManager(`/api/board/${slug}/events`, {
         label: `board/${slug}/events`,
         // Anonymous-board onopen is conservative: skip reconnect refetches while
         // the initial board load is still in flight, while the manager/slug is

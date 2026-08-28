@@ -1,5 +1,7 @@
+import { getAppRuntime } from './platform/runtime.js';
+
 async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
+  const res = await getAppRuntime().transport().request(path, {
     headers: { "Content-Type": "application/json", "X-Scrumboy": "1", ...(options.headers || {}) },
     ...options,
   });
@@ -17,7 +19,7 @@ async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): P
 
 /** POST multipart (no JSON Content-Type; browser sets boundary). */
 async function apiFetchForm<T = unknown>(path: string, form: FormData): Promise<T> {
-  const res = await fetch(path, {
+  const res = await getAppRuntime().transport().request(path, {
     method: "POST",
     headers: { "X-Scrumboy": "1" },
     body: form,

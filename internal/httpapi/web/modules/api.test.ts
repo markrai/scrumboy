@@ -37,4 +37,37 @@ describe('apiFetch', () => {
       },
     });
   });
+
+  it('preserves status/data errors and 204 responses', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 204, json: vi.fn() })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: { message: 'conflict' }, detail: 'kept' }),
+      });
+    const { apiFetch } = await import('./api.js');
+
+    await expect(apiFetch('/api/empty')).resolves.toBeNull();
+    await expect(apiFetch('/api/conflict')).rejects.toMatchObject({
+      message: 'conflict',
+      status: 409,
+      data: { error: { message: 'conflict' }, detail: 'kept' },
+    });
+  });
+
+  it('preserves multipart form data and lets fetch create the boundary', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ rev: 2 }) });
+    const { apiFetchForm } = await import('./api.js');
+    const form = new FormData();
+    form.append('file', new Blob(['image']), 'wallpaper.jpg');
+
+    await expect(apiFetchForm('/api/user/wallpaper/image', form)).resolves.toEqual({ rev: 2 });
+    expect(fetchMock).toHaveBeenCalledWith('/api/user/wallpaper/image', {
+      method: 'POST',
+      headers: { 'X-Scrumboy': '1' },
+      body: form,
+    });
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Content-Type');
+  });
 });
