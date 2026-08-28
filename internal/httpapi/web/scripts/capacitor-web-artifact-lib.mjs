@@ -13,6 +13,13 @@ export const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const repositoryRoot = resolve(webRoot, '..', '..', '..');
 export const artifactRoot = resolve(repositoryRoot, 'mobile', 'capacitor', 'www');
 export const artifactManifestName = '.artifact-manifest.json';
+export const mobileBootstrapSource = resolve(
+  repositoryRoot,
+  'mobile',
+  'capacitor',
+  'shell',
+  'bootstrap.js',
+);
 
 const explicitRuntimeFiles = [
   'favicon.ico',
@@ -136,6 +143,10 @@ export async function copyExplicitRuntimeAssets() {
   }
 }
 
+export async function copyMobileBootstrap() {
+  await copyFile(mobileBootstrapSource, resolve(artifactRoot, 'bootstrap.js'));
+}
+
 export function transformIndex(source, version) {
   if (!source.includes('{{VERSION}}')) {
     throw new Error('Authoritative index.html no longer contains the expected {{VERSION}} token');
@@ -145,6 +156,10 @@ export function transformIndex(source, version) {
     throw new Error(`Expected one PWA manifest link, found ${manifestLinks.length}`);
   }
   let output = source.replace(manifestLinks[0], '');
+  output = output.replace(
+    /^[ \t]*<meta\b[^>]*\bcontent="https?:\/\/[^"]+"[^>]*>[ \t]*\r?\n/gim,
+    '',
+  );
   const appVersionMeta = `<meta name="app-version" content="{{VERSION}}" />`;
   if (!output.includes(appVersionMeta)) {
     throw new Error('Could not locate app-version meta element for the runtime marker');
@@ -153,9 +168,22 @@ export function transformIndex(source, version) {
     appVersionMeta,
     `${appVersionMeta}\n    <meta name="scrumboy-runtime" content="capacitor" />`,
   );
+  const productEntryScripts = output.match(
+    /^[ \t]*<script\s+type="module"\s+src="\/app\.js\?v=\{\{VERSION\}\}"\s*><\/script>[ \t]*$/gm,
+  ) || [];
+  if (productEntryScripts.length !== 1) {
+    throw new Error(`Expected one product app entry script, found ${productEntryScripts.length}`);
+  }
+  output = output.replace(
+    productEntryScripts[0],
+    '    <script type="module" src="/bootstrap.js"></script>',
+  );
   output = output.replaceAll('{{VERSION}}', version);
   if (/\{\{[^}]+\}\}/.test(output)) {
     throw new Error('Generated index.html contains an unresolved template token');
+  }
+  if (/\b(?:src|href|content)="https?:\/\//i.test(output)) {
+    throw new Error('Generated index.html contains a remote URL');
   }
   return output;
 }

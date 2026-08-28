@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import {
   artifactRoot,
   copyExplicitRuntimeAssets,
+  copyMobileBootstrap,
   copyReachableModuleGraph,
   transformIndex,
   webRoot,
@@ -30,6 +31,7 @@ export async function buildCapacitorWebArtifact(version) {
   await writeFile(resolve(artifactRoot, 'index.html'), transformIndex(sourceIndex, version), 'utf8');
   const modules = await copyReachableModuleGraph();
   await copyExplicitRuntimeAssets();
+  await copyMobileBootstrap();
   const manifest = await writeArtifactManifest(version);
   const verification = await verifyCapacitorWebArtifact();
   return { modules, manifest, verification };
@@ -38,4 +40,3 @@ export async function buildCapacitorWebArtifact(version) {
 const version = versionArgument(process.argv.slice(2));
 const result = await buildCapacitorWebArtifact(version);
 console.log(`Built ${result.verification.fileCount} mobile web files (${result.modules.length} reachable JS modules) at ${artifactRoot}`);
-

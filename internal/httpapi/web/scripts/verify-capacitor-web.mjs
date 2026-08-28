@@ -69,7 +69,19 @@ export async function verifyCapacitorWebArtifact() {
   assert(!/\{\{[^}]+\}\}/.test(index), 'Generated index.html contains an unresolved template token');
   assert(index.includes('<meta name="scrumboy-runtime" content="capacitor" />'), 'Generated index.html lacks the Capacitor runtime marker');
   assert(!/<link\s+rel="manifest"/i.test(index), 'Generated index.html must not expose the PWA manifest');
+  assert(index.includes('<script type="module" src="/bootstrap.js"></script>'), 'Generated index.html does not load the mobile bootstrap');
+  assert(!/<script\b[^>]*\bsrc="\/app\.js(?:[?#][^"]*)?"/i.test(index), 'Generated index.html must not start the product app before C2 installs the runtime');
+  assert(!/\b(?:src|href|content)="https?:\/\//i.test(index), 'Generated index.html contains a remote URL');
   await assertLocalReferencesExist('index.html', index, /(?:src|href)="([^"]+)"/g);
+
+  assert(await exists(resolve(artifactRoot, 'bootstrap.js')), 'Missing generated bootstrap.js');
+  const bootstrap = await readFile(resolve(artifactRoot, 'bootstrap.js'), 'utf8');
+  assert(bootstrap.includes('meta[name="scrumboy-runtime"]'), 'Bootstrap does not verify the Capacitor runtime marker');
+  assert(bootstrap.includes('Mobile shell ready.'), 'Bootstrap does not render the C1 status surface');
+  assert(!/\b(?:fetch|EventSource|XMLHttpRequest)\s*\(/.test(bootstrap), 'Bootstrap contains direct networking');
+  assert(!/\b(?:window\.)?open\s*\(|\b(?:window\.|globalThis\.)?location\s*=/.test(bootstrap), 'Bootstrap contains navigation');
+  assert(!/\bhttps?:\/\//i.test(bootstrap), 'Bootstrap contains a remote URL');
+  assert(!/\bimport\s*\(/.test(bootstrap) && !/\/app\.js\b/.test(bootstrap), 'Bootstrap starts the product app before C2');
 
   const files = await artifactFiles();
   const forbidden = files.filter((file) =>
