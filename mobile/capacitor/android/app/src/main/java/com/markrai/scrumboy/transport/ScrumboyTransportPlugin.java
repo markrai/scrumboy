@@ -52,6 +52,7 @@ public final class ScrumboyTransportPlugin extends Plugin {
     private final ExecutorService worker = Executors.newCachedThreadPool();
     private final NativeCallRegistry calls = new NativeCallRegistry();
     private final NativeSessionGeneration sessionGeneration = new NativeSessionGeneration();
+    private final NativeSessionDelivery sessionDelivery = new NativeSessionDelivery(sessionGeneration);
     private final Map<String, EventSource> streams = new ConcurrentHashMap<>();
     private final Object configurationLock = new Object();
 
@@ -469,7 +470,7 @@ public final class ScrumboyTransportPlugin extends Plugin {
     }
 
     private void emitStreamEvent(long generation, String streamId, String kind, String value) {
-        sessionGeneration.runIfCurrent(generation, () -> {
+        sessionDelivery.emitCurrent(generation, () -> {
             JSObject event = new JSObject();
             event.put("streamId", streamId);
             event.put("kind", kind);
@@ -529,9 +530,7 @@ public final class ScrumboyTransportPlugin extends Plugin {
     }
 
     private void resolveCurrent(long generation, PluginCall call, JSObject result) throws InterruptedIOException {
-        if (!sessionGeneration.runIfCurrent(generation, () -> call.resolve(result))) {
-            throw new InterruptedIOException("session invalidated");
-        }
+        sessionDelivery.resolveCurrent(generation, () -> call.resolve(result));
     }
 
     private boolean isDebuggable() {
