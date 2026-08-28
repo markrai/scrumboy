@@ -109,7 +109,7 @@ type RESTWriterRoleStore interface {
 }
 
 // NoteMutationStore exposes only the persistence capabilities required by the
-// future REST note mutation service.
+// REST note mutation service.
 type NoteMutationStore interface {
 	CreateNote(
 		ctx context.Context,
@@ -140,7 +140,7 @@ type WallReplacementStore interface {
 }
 
 // EdgeMutationStore exposes only the persistence capabilities required by the
-// future REST edge mutation service.
+// REST edge mutation service.
 type EdgeMutationStore interface {
 	CreateEdge(
 		ctx context.Context,

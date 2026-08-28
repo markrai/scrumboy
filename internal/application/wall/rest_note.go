@@ -23,7 +23,7 @@ type RESTNoteService struct {
 	refresh   WallRefreshPublisher
 }
 
-// NewRESTNoteService constructs an unwired REST Wall note service.
+// NewRESTNoteService constructs a REST Wall note service.
 func NewRESTNoteService(deps RESTNoteServiceDependencies) *RESTNoteService {
 	return &RESTNoteService{
 		roles:     deps.Roles,

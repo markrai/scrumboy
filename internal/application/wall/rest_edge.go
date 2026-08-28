@@ -23,7 +23,7 @@ type RESTEdgeService struct {
 	refresh   WallRefreshPublisher
 }
 
-// NewRESTEdgeService constructs an unwired REST Wall edge service.
+// NewRESTEdgeService constructs a REST Wall edge service.
 func NewRESTEdgeService(deps RESTEdgeServiceDependencies) *RESTEdgeService {
 	return &RESTEdgeService{
 		roles:     deps.Roles,

@@ -19,7 +19,7 @@ type RESTTransientService struct {
 	publisher WallTransientPublisher
 }
 
-// NewRESTTransientService constructs an unwired REST Wall transient service.
+// NewRESTTransientService constructs a REST Wall transient service.
 func NewRESTTransientService(deps RESTTransientServiceDependencies) *RESTTransientService {
 	return &RESTTransientService{
 		roles:     deps.Roles,

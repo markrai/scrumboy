@@ -24,7 +24,7 @@ type RESTReplacementService struct {
 	refresh      WallRefreshPublisher
 }
 
-// NewRESTReplacementService constructs an unwired REST Wall replacement
+// NewRESTReplacementService constructs a REST Wall replacement
 // service.
 func NewRESTReplacementService(deps RESTReplacementServiceDependencies) *RESTReplacementService {
 	return &RESTReplacementService{
