@@ -95,7 +95,14 @@ export async function verifyCapacitorWebArtifact() {
     !/\b(?:fetch|EventSource|XMLHttpRequest)\s*\(/.test(shellSources.join('\n')),
     'Scrumboy mobile shell source contains direct networking',
   );
-  assert(!/\b(?:window\.)?open\s*\(/.test(bootstrap), 'Bootstrap opens remote navigation');
+  // @capacitor/browser intentionally carries a web fallback implemented with
+  // window.open(). Audit Scrumboy-authored shell sources so that the pinned
+  // plugin can own external OIDC navigation without allowing direct WebView
+  // or window navigation in the application shell.
+  assert(
+    !/(?:\b(?:window|globalThis|self)\.open|(?<![.$\w])open)\s*\(|\b(?:window\.)?location\.(?:assign|replace)\s*\(/.test(shellSources.join('\n')),
+    'Scrumboy mobile shell source opens remote navigation directly',
+  );
 
   const files = await artifactFiles();
   const forbidden = files.filter((file) =>

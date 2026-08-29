@@ -217,6 +217,28 @@ describe('router push autosubscribe gate', () => {
     expect(renderProjectsMock).toHaveBeenCalledTimes(1);
   });
 
+  it('re-enters the normal auth, router, and realtime path after native OIDC success', async () => {
+    installAuthStatus(false);
+    const mod = await loadRouterModule();
+
+    await mod.handleNativeOIDCResult({ returnTo: '/dashboard?view=mine' });
+
+    expect(window.location.pathname + window.location.search).toBe('/dashboard?view=mine');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/auth/status');
+    expect(startGlobalRealtimeMock).toHaveBeenCalledOnce();
+    expect(renderDashboardMock).toHaveBeenCalledOnce();
+  });
+
+  it('sanitizes native OIDC errors before returning to the signed-out auth UI', async () => {
+    installSignedOutAuthStatus();
+    const mod = await loadRouterModule();
+
+    await mod.handleNativeOIDCResult({ error: 'attacker_text', code: 'must-not-cross' });
+
+    expect(window.location.search).toBe('?oidc_error=generic');
+    expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/?oidc_error=generic' }));
+  });
+
   it('hydrates structured Web Push status and clears it on logout', async () => {
     installAuthStatus(false, { state: 'invalid', reason: 'invalid_subscriber' });
     const mod = await loadRouterModule();
@@ -244,6 +266,7 @@ describe('router push autosubscribe gate', () => {
       next: '/',
       bootstrap: false,
       oidcEnabled: false,
+      mobileOidcEnabled: false,
       localAuthEnabled: true,
       selfServicePasswordResetEnabled: true,
     });
@@ -272,6 +295,7 @@ describe('router push autosubscribe gate', () => {
       next: '/sample-board',
       bootstrap: false,
       oidcEnabled: false,
+      mobileOidcEnabled: false,
       localAuthEnabled: true,
       selfServicePasswordResetEnabled: true,
     });
@@ -280,13 +304,13 @@ describe('router push autosubscribe gate', () => {
 	it('does not render the direct local reset page when local authentication is disabled', async () => {
 	  window.history.replaceState({}, '', '/auth/reset-password?token=secret');
 	  apiFetchMock.mockImplementation(async (url: string) => {
-	    if (url === '/api/auth/status') return { user: null, bootstrapAvailable: false, mode: 'full', oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false };
+	    if (url === '/api/auth/status') return { user: null, bootstrapAvailable: false, mode: 'full', oidcEnabled: true, mobileOidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false };
 	    throw new Error(`unexpected apiFetch url: ${url}`);
 	  });
 	  const mod = await loadRouterModule();
 	  await mod.router();
 	  expect(renderResetPasswordMock).not.toHaveBeenCalled();
-	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
+	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, mobileOidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
 	});
 });
 

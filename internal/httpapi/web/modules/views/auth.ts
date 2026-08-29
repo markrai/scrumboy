@@ -16,6 +16,7 @@ type AuthBaseState = {
     next: string;
     bootstrap: boolean;
     oidcEnabled: boolean;
+    mobileOidcEnabled: boolean;
     localAuthEnabled: boolean;
     selfServicePasswordResetEnabled: boolean;
   };
@@ -300,11 +301,12 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
   ensureAuthLocaleListener();
   authViewState = state;
 
-  const { next, bootstrap, oidcEnabled, localAuthEnabled, selfServicePasswordResetEnabled } = state.options;
+  const { next, bootstrap, oidcEnabled, mobileOidcEnabled, localAuthEnabled, selfServicePasswordResetEnabled } = state.options;
   const version = getAppVersion();
   const showLocalForm = localAuthEnabled;
   const showForgotPassword = !bootstrap && showLocalForm && selfServicePasswordResetEnabled;
-  const interactiveOidcEnabled = oidcEnabled && getAppRuntime().supportsInteractiveOIDC();
+  const runtime = getAppRuntime();
+  const interactiveOidcEnabled = oidcEnabled && (runtime.kind === 'browser' || mobileOidcEnabled) && runtime.supportsInteractiveOIDC();
   const ssoButtonHTML = interactiveOidcEnabled
     ? `<a class="btn btn--sso" id="authSsoBtn" href="/api/auth/oidc/login?return_to=${encodeURIComponent(next)}">${escapeHTML(t("auth.oidc.button"))}</a>`
     : "";
@@ -351,6 +353,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
   const pwToggle = document.getElementById("authPasswordToggle") as HTMLElement | null;
   const pwIcon = document.getElementById("authPasswordIcon")?.querySelector("path");
   const forgotPasswordBtn = document.getElementById("authForgotPassword");
+  const ssoBtn = document.getElementById("authSsoBtn");
 
   if (nameEl) {
     nameEl.value = state.draft.name;
@@ -381,13 +384,21 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
 
   if (options.handleOidcError && renderOidcErrorToast()) {
     state.options.next = stripOidcErrorFromNext(state.options.next);
-    const ssoBtn = document.getElementById("authSsoBtn");
     if (ssoBtn) {
       ssoBtn.setAttribute(
         "href",
         `/api/auth/oidc/login?return_to=${encodeURIComponent(state.options.next)}`,
       );
     }
+  }
+
+  if (ssoBtn) {
+    ssoBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      void runtime.startInteractiveOIDC(state.options.next).catch(() => {
+        showToast(t('auth.oidc.error.generic'));
+      });
+    });
   }
 
   if (forgotPasswordBtn && emailEl && pwEl) {
@@ -454,7 +465,7 @@ function renderAuthView(state: AuthBaseState, options: { handleOidcError: boolea
   }
 }
 
-export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabled?: boolean; localAuthEnabled?: boolean; selfServicePasswordResetEnabled?: boolean } = {}): void {
+export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabled?: boolean; mobileOidcEnabled?: boolean; localAuthEnabled?: boolean; selfServicePasswordResetEnabled?: boolean } = {}): void {
   const next = opts.next ?? stripOidcErrorFromNext(window.location.pathname + window.location.search);
   const state: AuthBaseState = {
     mode: "auth",
@@ -462,6 +473,7 @@ export function renderAuth(opts: { next?: string; bootstrap?: boolean; oidcEnabl
       next,
       bootstrap: !!opts.bootstrap,
       oidcEnabled: !!opts.oidcEnabled,
+      mobileOidcEnabled: !!opts.mobileOidcEnabled,
       localAuthEnabled: opts.localAuthEnabled !== false,
       selfServicePasswordResetEnabled: !!opts.selfServicePasswordResetEnabled,
     },

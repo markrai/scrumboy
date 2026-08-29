@@ -12,6 +12,9 @@ const browserRuntime = {
     supportsPWA: () => true,
     supportsWebPush: () => true,
     supportsInteractiveOIDC: () => true,
+    startInteractiveOIDC: async (returnTo) => {
+        globalThis.location?.assign(`/api/auth/oidc/login?return_to=${encodeURIComponent(returnTo)}`);
+    },
     transport: () => browserTransport,
 };
 function unconfiguredMobileError() {
@@ -43,6 +46,7 @@ const unconfiguredMobileRuntime = {
     supportsPWA: () => false,
     supportsWebPush: () => false,
     supportsInteractiveOIDC: () => false,
+    startInteractiveOIDC: () => Promise.reject(unconfiguredMobileError()),
     transport: () => unconfiguredMobileTransport,
 };
 function runtimeKindFromDocument() {

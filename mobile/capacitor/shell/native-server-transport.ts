@@ -119,12 +119,12 @@ export class NativeServerTransport implements ServerTransport {
   readonly #plugin: ScrumboyTransportPlugin;
   readonly #streams = new Map<string, StreamCallbacks>();
   #listenerReady: Promise<void> | null = null;
-  readonly #onLogout: () => void;
+  readonly #onLogout: () => void | Promise<void>;
   readonly #convertFileSrc: (uri: string) => string;
 
   constructor(options: {
     plugin?: ScrumboyTransportPlugin;
-    onLogout?: () => void;
+    onLogout?: () => void | Promise<void>;
     convertFileSrc?: (uri: string) => string;
   } = {}) {
     this.#plugin = options.plugin || ScrumboyTransport;
@@ -231,7 +231,7 @@ export class NativeServerTransport implements ServerTransport {
     try {
       await this.#plugin.logout();
     } finally {
-      this.#onLogout();
+      await this.#onLogout();
     }
   }
 

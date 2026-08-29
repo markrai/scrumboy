@@ -42,6 +42,7 @@ Thumbs.db
 coverage.out
 *.cover
 *.test
+/.tmp/
 
 # Development related
 /docs/draft/
@@ -50,4 +51,5 @@ a.bat
 tests.bat
 win_reset_factory.bat
 win_build_web.bat
+deploy-android.bat
 *.pem

@@ -53,7 +53,8 @@ afterEach(() => {
 describe('C2 Capacitor runtime', () => {
   it('keeps packaged assets local while selecting the server for APIs and public links', () => {
     const transport = transportStub();
-    const runtime = createCapacitorRuntime('https://server.example', transport);
+    const startInteractiveOIDC = vi.fn(async () => undefined);
+    const runtime = createCapacitorRuntime('https://server.example', transport, startInteractiveOIDC);
 
     expect(runtime.kind).toBe('capacitor');
     expect(runtime.assetOrigin()).toBe(window.location.origin);
@@ -61,7 +62,9 @@ describe('C2 Capacitor runtime', () => {
     expect(runtime.publicLinkOrigin()).toBe('https://server.example');
     expect(runtime.supportsPWA()).toBe(false);
     expect(runtime.supportsWebPush()).toBe(false);
-    expect(runtime.supportsInteractiveOIDC()).toBe(false);
+    expect(runtime.supportsInteractiveOIDC()).toBe(true);
+    void runtime.startInteractiveOIDC('/dashboard');
+    expect(startInteractiveOIDC).toHaveBeenCalledWith('/dashboard');
     expect(runtime.transport()).toBe(transport);
   });
 

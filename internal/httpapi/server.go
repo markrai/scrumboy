@@ -178,9 +178,11 @@ type Server struct {
 	notificationMailDone    <-chan struct{}
 	emailNotifier           *emailNotifier
 
-	authRateLimit       *ratelimit.Limiter
-	oauthDCRRateLimit   *ratelimit.Limiter
-	oauthTokenRateLimit *ratelimit.Limiter
+	authRateLimit               *ratelimit.Limiter
+	mobileOIDCStartRateLimit    *ratelimit.Limiter
+	mobileOIDCExchangeRateLimit *ratelimit.Limiter
+	oauthDCRRateLimit           *ratelimit.Limiter
+	oauthTokenRateLimit         *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
@@ -240,6 +242,10 @@ type storeAPI interface {
 	AssignUnownedDurableProjectsToUser(ctx context.Context, userID int64) error
 	ClaimTemporaryBoard(ctx context.Context, projectID, userID int64) error
 	CreateSession(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)
+	CreateMobileOIDCFlow(ctx context.Context, rawState, handoffChallenge, returnTo string, ttl time.Duration) error
+	GetMobileOIDCFlow(ctx context.Context, rawState string) (store.MobileOIDCFlow, error)
+	CreateMobileOIDCHandoffGrant(ctx context.Context, rawState string, userID int64, ttl time.Duration) (code string, expiresAt time.Time, returnTo string, err error)
+	ExchangeMobileOIDCHandoff(ctx context.Context, rawCode, rawState, verifier string, sessionTTL time.Duration) (store.MobileOIDCExchange, error)
 	DeleteSession(ctx context.Context, token string) error
 	DeleteSessionsByUserID(ctx context.Context, userID int64) error
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
@@ -529,6 +535,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 	firstPasswordStartLimiter := ratelimit.New(5, time.Minute)
 	firstPasswordFinishLimiter := ratelimit.New(5, time.Minute)
 	oidcLinkStartLimiter := ratelimit.New(5, time.Minute)
+	mobileOIDCStartRateLimit := ratelimit.New(20, time.Minute)
+	mobileOIDCExchangeRateLimit := ratelimit.New(20, time.Minute)
 	currentPasswordLimiter := ratelimit.New(5, time.Minute)
 	secondFactorLimiter := ratelimit.New(5, time.Minute)
 	totpLimiter := ratelimit.New(5, time.Minute)
@@ -607,6 +615,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		notificationMailDone:        notificationMailDone,
 		emailNotifier:               emailNotifier,
 		authRateLimit:               authRateLimit,
+		mobileOIDCStartRateLimit:    mobileOIDCStartRateLimit,
+		mobileOIDCExchangeRateLimit: mobileOIDCExchangeRateLimit,
 		oauthDCRRateLimit:           oauthDCRRateLimit,
 		oauthTokenRateLimit:         oauthTokenRateLimit,
 		encryptionKey:               encKey,

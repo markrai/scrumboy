@@ -1001,6 +1001,7 @@ describe("auth view i18n", () => {
       supportsPWA: () => false,
       supportsWebPush: () => false,
       supportsInteractiveOIDC: () => false,
+      startInteractiveOIDC: vi.fn(async () => undefined),
       transport: () => transport,
     });
 
@@ -1009,6 +1010,32 @@ describe("auth view i18n", () => {
     expect(document.getElementById("authSsoBtn")).toBeNull();
     expect(document.querySelector(".auth-divider")).toBeNull();
     expect(document.getElementById("authForm")).not.toBeNull();
+  });
+
+  it("requires the additive mobile capability and delegates native SSO to AppRuntime", async () => {
+    await setupI18n("en");
+    const runtime = await import("../platform/runtime.js");
+    const auth = await import("./auth.js");
+    const startInteractiveOIDC = vi.fn(async () => undefined);
+    runtime.installAppRuntime({
+      kind: "capacitor",
+      assetOrigin: () => "capacitor://localhost",
+      serverOrigin: () => "https://server.example",
+      publicLinkOrigin: () => "https://server.example",
+      supportsPWA: () => false,
+      supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => true,
+      startInteractiveOIDC,
+      transport: () => ({}) as never,
+    });
+
+    auth.renderAuth({ next: "/dashboard?view=mine", oidcEnabled: true, mobileOidcEnabled: false });
+    expect(document.getElementById("authSsoBtn")).toBeNull();
+
+    auth.renderAuth({ next: "/dashboard?view=mine", oidcEnabled: true, mobileOidcEnabled: true });
+    document.getElementById("authSsoBtn")?.click();
+    await flushPromises();
+    expect(startInteractiveOIDC).toHaveBeenCalledWith("/dashboard?view=mine");
   });
 
   it("shows forgot password only for configured local sign-in outside bootstrap", async () => {

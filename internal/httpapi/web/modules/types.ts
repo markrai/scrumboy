@@ -247,6 +247,7 @@ export interface AuthStatusResponse {
   selfServicePasswordResetEnabled?: boolean;
   emailNotifyAvailable?: boolean;
   oidcEnabled?: boolean;
+  mobileOidcEnabled?: boolean;
   localAuthEnabled?: boolean;
   wallEnabled?: boolean;
   markdownNotesEnabled?: boolean;

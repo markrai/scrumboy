@@ -46,6 +46,7 @@ function installFakeMobileTransport(openEventStream: ReturnType<typeof vi.fn>): 
     supportsPWA: () => false,
     supportsWebPush: () => false,
     supportsInteractiveOIDC: () => false,
+    startInteractiveOIDC: vi.fn(async () => undefined),
     transport: () => transport,
   };
   installAppRuntime(runtime);

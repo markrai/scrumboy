@@ -130,6 +130,10 @@ export function getOidcEnabled(): boolean {
   return !!current._oidcEnabled;
 }
 
+export function getMobileOidcEnabled(): boolean {
+  return !!current._mobileOidcEnabled;
+}
+
 export function getLocalAuthEnabled(): boolean {
   return current._localAuthEnabled !== false;
 }

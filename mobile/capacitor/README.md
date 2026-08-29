@@ -57,8 +57,24 @@ npm --prefix mobile/capacitor run android:run
 npm --prefix mobile/capacitor run android:open
 ```
 
-## C2 boundary and C3 handoff
+## Native Android OIDC (C4)
 
-C2 supports one selected Scrumboy server. Server selection is stored with Capacitor Preferences; session cookies remain native and are never exposed to JavaScript. Changing servers clears the native session, active streams, acquired resources, and user-scoped WebView state. Interactive OIDC remains disabled in the mobile runtime pending its dedicated native handoff phase.
+Interactive SSO on Android uses an external browser / Custom Tab and the server's existing OIDC configuration. No second IdP Android client is required; the registered HTTPS redirect URL remains `SCRUMBOY_OIDC_REDIRECT_URL`.
 
-C2 does not add app lifecycle/resume integration, Android back-button behavior, deep links, native OIDC, push, sharing/filesystem polish, native AI, multiple-server profiles, or iOS. Those remain later phases.
+Sequence:
+
+1. Product auth UI calls `AppRuntime.startInteractiveOIDC(...)`.
+2. The shell coordinator posts `POST /api/auth/oidc/mobile/start` through the selected-server native transport, keeps the S256 verifier in Capacitor Preferences, and opens the returned HTTPS authorization URL externally.
+3. After IdP login, Scrumboy's ordinary HTTPS callback issues a short-lived one-time handoff and redirects to `com.markrai.scrumboy://oidc/callback` with only `code`+`state` (or `error`+`state`).
+4. Warm returns use `appUrlOpen`; cold launches use `getLaunchUrl`. Both validate the pending selected-server binding and exchange through the same native transport cookie jar.
+5. Successful exchange sets a normal `scrumboy_session` cookie. The custom callback never carries session credentials.
+
+Logout still calls ordinary server logout, clears native session cookies, and retains the selected server. Browser/PWA OIDC is unchanged and does not use the mobile handoff. iOS native OIDC is not implemented.
+
+Android `allowBackup` is disabled; Capacitor Preferences (`CapacitorStorage`) and the native cookie jar (`scrumboy_transport_cookies_v1`) are excluded from cloud backup and device-to-device transfer rules.
+
+## C2 / later-phase boundary
+
+C2 supports one selected Scrumboy server. Server selection is stored with Capacitor Preferences; session cookies remain native and are never exposed to JavaScript. Changing servers clears the native session, active streams, acquired resources, and user-scoped WebView state.
+
+Android back-button behavior (C3.1), push, generic deep links beyond the OIDC callback, sharing/filesystem polish, native AI, multiple-server profiles, and iOS remain later phases.

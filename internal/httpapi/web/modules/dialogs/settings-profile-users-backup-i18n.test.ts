@@ -292,6 +292,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
       supportsPWA: () => false,
       supportsWebPush: () => false,
       supportsInteractiveOIDC: () => false,
+      startInteractiveOIDC: vi.fn(async () => undefined),
       transport: () => ({
         request: vi.fn(),
         openEventStream: vi.fn(),

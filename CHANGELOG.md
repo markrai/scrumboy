@@ -12,8 +12,15 @@
   own the selected origin, authenticated cookie jar, REST, SSE, and acquired
   resource networking. Session cookies stay native and are never exposed to
   JavaScript; changing servers clears the native session and related state.
-  Interactive OIDC, push, deep links, and iOS remain later phases. See
-  [mobile/capacitor/README.md](mobile/capacitor/README.md).
+  See [mobile/capacitor/README.md](mobile/capacitor/README.md).
+- **Android native OIDC handoff** - Packaged Android SSO opens the existing
+  configured IdP in an external browser/Custom Tab, returns through the
+  ordinary HTTPS Scrumboy OIDC callback, and completes a short-lived one-time
+  handoff into `com.markrai.scrumboy://oidc/callback`. The app exchanges an
+  app-held S256 verifier for a normal `scrumboy_session` cookie via the native
+  transport cookie jar. Browser/PWA OIDC is unchanged; no second IdP client is
+  required. Push, generic deep links, and iOS remain later phases. See
+  [docs/oidc.md](docs/oidc.md) and [mobile/capacitor/README.md](mobile/capacitor/README.md).
 
 ### Changed
 
