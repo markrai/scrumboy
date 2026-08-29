@@ -1,7 +1,0 @@
-# import config
-packagefile os=C:\Users\user\AppData\Local\go-build\c4\c4718498c7c82cfde48400e1efa605af88a895d7291ef2307cb8c73f82b8d211-d
-packagefile reflect=C:\Users\user\AppData\Local\go-build\36\36c1c096ab4ec1d9e96c41c64c811c6a93f5ed970e36c6e6a2ae9570d283a53d-d
-packagefile testing=C:\Users\user\AppData\Local\go-build\cd\cd99464d6f6f58b8c0ac194c460e084745f2548472a36f3eb75521cdda42e571-d
-packagefile testing/internal/testdeps=C:\Users\user\AppData\Local\go-build\5b\5b1ca33e8598a4d8576a4816542bc65dcb9a375c36641d060bba114ceaf50ecb-d
-packagefile runtime=C:\Users\user\AppData\Local\go-build\fc\fcdee23b2b20cee365034a3e8db74e4055dd2ab54b13ceac35c0ab48aed7fbd4-d
-packagefile scrumboy/cmd/slugfix=C:\dev\project\scrumboy\.tmp\c4-go-work-all\go-build2426871728\b320\_pkg_.a

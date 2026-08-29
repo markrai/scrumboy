@@ -116,6 +116,22 @@ The `first_password_grants` table may be present in full SQLite backups. Grant v
 - **`oidc_error=auth_time`**: the provider did not honor the sensitive reauthentication contract. Confirm support for `max_age=0` and a valid `auth_time` claim.
 - **`oidc_error=identity_mismatch` or `session_changed`**: the provider identity or Scrumboy session changed during a sensitive operation; start again from Settings.
 
+## Android packaged app (native handoff)
+
+The Android Capacitor shell reuses the same OIDC environment variables and the same HTTPS redirect URL registered with the IdP. No second Android IdP client or redirect URI is required.
+
+Flow:
+
+1. The packaged app asks the selected Scrumboy server for a mobile authorization URL (`POST /api/auth/oidc/mobile/start`) and keeps an independent S256 verifier only on the device.
+2. The IdP opens in an external browser / Custom Tab — never inside the privileged WebView.
+3. The provider returns to the existing `SCRUMBOY_OIDC_REDIRECT_URL` HTTPS callback.
+4. Scrumboy issues a short-lived one-time handoff code and redirects only to `com.markrai.scrumboy://oidc/callback` with `code`+`state` (or `error`+`state`).
+5. The app exchanges that handoff through the selected-server native transport (`POST /api/auth/oidc/mobile/exchange`) and receives a normal `scrumboy_session` cookie in the native cookie jar.
+
+The custom callback never carries a session cookie, access token, refresh token, ID token, email, user id, provider token, verifier, server URL, or `returnTo`. Browser and PWA SSO continue to use `GET /api/auth/oidc/login` and are not routed through the mobile handoff. iOS native OIDC is not implemented yet.
+
+See [mobile/capacitor/README.md](../mobile/capacitor/README.md) and [authentication-api.md](authentication-api.md).
+
 ## Deliberate limitations
 
 There is no canonical-email change flow, unlinking, IdP logout, multiple simultaneous OIDC providers, role/group claim mapping, provider 2FA policy enforcement, 2FA-reset recovery command, userinfo use, or refresh-token use.

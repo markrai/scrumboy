@@ -296,16 +296,18 @@ curl -b cookies.txt -X POST http://localhost:8080/mcp \
 
 ### OIDC login (optional)
 
-When the server is configured with OIDC environment variables (`SCRUMBOY_OIDC_ISSUER`, `SCRUMBOY_OIDC_CLIENT_ID`, `SCRUMBOY_OIDC_CLIENT_SECRET`, `SCRUMBOY_OIDC_REDIRECT_URL`), two additional endpoints become available:
+When the server is configured with OIDC environment variables (`SCRUMBOY_OIDC_ISSUER`, `SCRUMBOY_OIDC_CLIENT_ID`, `SCRUMBOY_OIDC_CLIENT_SECRET`, `SCRUMBOY_OIDC_REDIRECT_URL`), these endpoints become available:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/auth/oidc/login?return_to=/` | Redirects browser to the IdP authorization endpoint |
-| `GET` | `/api/auth/oidc/callback?code=...&state=...` | Handles the IdP callback, creates a session, and redirects to `return_to` |
+| `GET` | `/api/auth/oidc/login?return_to=/` | Redirects browser/PWA to the IdP authorization endpoint |
+| `GET` | `/api/auth/oidc/callback?code=...&state=...` | Handles the IdP callback; browser flows create a session and redirect to `return_to`; mobile-marked flows mint a one-time handoff and redirect to `com.markrai.scrumboy://oidc/callback` |
+| `POST` | `/api/auth/oidc/mobile/start` | JSON start for the packaged Android app; returns `authorizationUrl` + `flowState` |
+| `POST` | `/api/auth/oidc/mobile/exchange` | JSON exchange for the packaged Android app; sets the normal `scrumboy_session` cookie and returns `returnTo` only |
 
-These are browser-redirect endpoints, not JSON APIs. After successful OIDC login, the user receives a standard `scrumboy_session` cookie. MCP and REST access work identically to password-based sessions.
+Browser login/callback remain redirect endpoints, not JSON APIs. Mobile start/exchange are unauthenticated JSON routes used by the Android shell; they reuse the same IdP client and HTTPS redirect URL. After successful OIDC login (browser or mobile exchange), the user receives a standard `scrumboy_session` cookie. MCP and REST access work identically to password-based sessions. See [`docs/oidc.md`](docs/oidc.md) and [`docs/authentication-api.md`](docs/authentication-api.md).
 
-`GET /api/auth/status` includes `oidcEnabled` (bool) and `localAuthEnabled` (bool) when OIDC is configured, plus `pushConfigured` (bool). `pushConfigured` is true only when Web Push is **effectively enabled** (validated matching VAPID key pair, valid/default subscriber, full mode) — not merely when env key strings are non-empty. In full mode, **signed-in** responses also include `push: { "state": "...", "reason": "..." | null }` with the prepared status (`enabled`, `not_configured`, `invalid`, `unavailable` and reasons such as `invalid_vapid_public_key`, `invalid_vapid_private_key`, `invalid_subscriber`, `initialization_failed`). Unauthenticated and anonymous-mode status omit the detailed `push` object. See [`docs/vapid.md`](docs/vapid.md#effective-enablement-not-just-keys-present).
+`GET /api/auth/status` includes `oidcEnabled` (bool), `mobileOidcEnabled` (bool), and `localAuthEnabled` (bool) when OIDC is configured, plus `pushConfigured` (bool). `pushConfigured` is true only when Web Push is **effectively enabled** (validated matching VAPID key pair, valid/default subscriber, full mode) — not merely when env key strings are non-empty. In full mode, **signed-in** responses also include `push: { "state": "...", "reason": "..." | null }` with the prepared status (`enabled`, `not_configured`, `invalid`, `unavailable` and reasons such as `invalid_vapid_public_key`, `invalid_vapid_private_key`, `invalid_subscriber`, `initialization_failed`). Unauthenticated and anonymous-mode status omit the detailed `push` object. See [`docs/vapid.md`](docs/vapid.md#effective-enablement-not-just-keys-present).
 
 ### API access tokens (REST)
 
