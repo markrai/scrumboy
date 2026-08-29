@@ -382,15 +382,20 @@ async function handleNativeOIDCResult(detail) {
     let returnTo = null;
     if (typeof result.returnTo === 'string' && result.returnTo.startsWith('/') && !result.returnTo.startsWith('//') && !result.returnTo.includes('\\')) {
         try {
-            const parsed = new URL(result.returnTo, window.location.origin);
-            if (parsed.origin === window.location.origin)
-                returnTo = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+            const parsed = new URL(result.returnTo, 'https://mobile-return.invalid');
+            if (parsed.origin === 'https://mobile-return.invalid')
+                returnTo = parsed;
         }
         catch {
             returnTo = null;
         }
     }
-    const target = returnTo ? new URL(returnTo, window.location.origin) : new URL(window.location.href);
+    const target = new URL(window.location.href);
+    if (returnTo) {
+        target.pathname = returnTo.pathname;
+        target.search = returnTo.search;
+        target.hash = returnTo.hash;
+    }
     if (!returnTo) {
         const error = typeof result.error === 'string' && nativeOIDCErrors.has(result.error) ? result.error : 'generic';
         target.searchParams.set('oidc_error', error);
