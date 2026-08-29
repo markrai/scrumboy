@@ -70,6 +70,7 @@ import {
   type SprintChipData,
 } from './board-rendering.js';
 import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, agendaMobileTabAriaLabel, agendaMobileTabInnerHtml, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
+import { resolveDblClickCreateTarget } from './board-dblclick.js';
 import {
   clearTodoMultiSelection,
   ensureBulkEditUi,
@@ -492,6 +493,23 @@ function attachBoardDelegationHandlers(): void {
       (contextMenu as HTMLElement).style.left = `${mouseEvent.pageX}px`;
       (contextMenu as HTMLElement).style.top = `${mouseEvent.pageY}px`;
     }
+  });
+
+  // Double-click on a lane creates a card there; on empty board background,
+  // in the first workflow column. Bound on .page so the background below and
+  // beside the lanes is included. Desktop-only: no manual double-tap
+  // detection (mobile uses lane tabs and the New Todo button).
+  const pageEl = boardEl.closest(".page") ?? boardEl;
+  pageEl.addEventListener("dblclick", (e: Event) => {
+    if (dragInProgress || dragJustEnded) return;
+    const board = getBoard();
+    if (!board) return;
+    if (!(isTemporaryBoard(board) || currentUserProjectRole === "maintainer")) return;
+    const firstColumnKey = getBoardColumns(board)[0]?.key || "backlog";
+    const status = resolveDblClickCreateTarget(e.target, firstColumnKey);
+    if (!status) return;
+    e.preventDefault();
+    openTodoDialog({ mode: "create", status, role: currentUserProjectRole });
   });
 
   ensureBulkEditUi({
