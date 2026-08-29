@@ -1,11 +1,16 @@
+import { emptyClientCapabilityRegistry } from './client-capabilities.js';
 import { BrowserServerTransport } from './browser-server-transport.js';
 const RUNTIME_META_NAME = 'scrumboy-runtime';
 function currentOrigin() {
     return globalThis.location?.origin || '';
 }
 const browserTransport = new BrowserServerTransport();
+function emptyCapability(name) {
+    return emptyClientCapabilityRegistry.get(name);
+}
 const browserRuntime = {
     kind: 'browser',
+    capability: emptyCapability,
     assetOrigin: currentOrigin,
     serverOrigin: currentOrigin,
     publicLinkOrigin: currentOrigin,
@@ -36,6 +41,7 @@ const unconfiguredMobileTransport = {
 };
 const unconfiguredMobileRuntime = {
     kind: 'capacitor',
+    capability: emptyCapability,
     assetOrigin: currentOrigin,
     serverOrigin: () => {
         throw unconfiguredMobileError();
@@ -59,7 +65,7 @@ export function getAppRuntime() {
         return installedRuntime;
     return runtimeKindFromDocument() === 'capacitor' ? unconfiguredMobileRuntime : browserRuntime;
 }
-/** Future native bootstrap installs its runtime before product networking starts. */
+/** Native bootstrap installs its runtime before product networking starts. */
 export function installAppRuntime(runtime) {
     installedRuntime = runtime;
 }

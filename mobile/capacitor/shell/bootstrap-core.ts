@@ -1,4 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
+import { emptyClientCapabilityRegistry } from '../../../internal/httpapi/web/modules/platform/client-capabilities.js';
+import type { AppCapabilityRegistry } from '../../../internal/httpapi/web/modules/platform/client-capabilities.js';
 import { NativeServerTransport } from './native-server-transport.js';
 import { clearScrumboyWebState, installRuntimeAndStartProduct } from './native-runtime.js';
 import { nativeOIDC, type NativeOIDCCoordinator } from './native-oidc.js';
@@ -12,6 +14,7 @@ type PreferenceStore = Pick<typeof Preferences, 'get' | 'set' | 'remove'>;
 type Importer = (path: string) => Promise<unknown>;
 
 export interface BootstrapDependencies {
+  capabilities: AppCapabilityRegistry;
   preferences: PreferenceStore;
   plugin: ScrumboyTransportPlugin;
   oidc: NativeOIDCCoordinator;
@@ -21,6 +24,7 @@ export interface BootstrapDependencies {
 }
 
 const defaults: BootstrapDependencies = {
+  capabilities: emptyClientCapabilityRegistry,
   preferences: Preferences,
   plugin: ScrumboyTransport,
   oidc: nativeOIDC,
@@ -48,7 +52,13 @@ async function startProduct(origin: string, deps: BootstrapDependencies): Promis
     },
   });
   await deps.oidc.configure(origin, transport);
-  await installRuntimeAndStartProduct(origin, transport, deps.importer, (returnTo) => deps.oidc.start(returnTo));
+  await installRuntimeAndStartProduct(
+    origin,
+    transport,
+    deps.importer,
+    (returnTo) => deps.oidc.start(returnTo),
+    deps.capabilities,
+  );
   deps.oidc.markProductReady();
   let serverChangeStarted = false;
   const handleServerChange = () => {

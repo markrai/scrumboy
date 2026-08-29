@@ -37,6 +37,7 @@ describe('future native runtime browser-feature gates', () => {
     };
     const runtime: AppRuntime = {
       kind: 'capacitor',
+      capability: () => null,
       assetOrigin: () => 'https://localhost',
       serverOrigin: () => 'https://server.example',
       publicLinkOrigin: () => 'https://server.example',

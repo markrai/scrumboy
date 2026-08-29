@@ -16,6 +16,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function lookupUnknownCapability(runtime: AppRuntime): unknown {
+  return Reflect.apply(runtime.capability, runtime, ['test-only']);
+}
+
 describe('runtime origin and feature boundaries', () => {
   it('keeps all browser origins aligned and browser capabilities enabled', () => {
     const runtime = getAppRuntime();
@@ -26,6 +30,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.supportsPWA()).toBe(true);
     expect(runtime.supportsWebPush()).toBe(true);
     expect(runtime.supportsInteractiveOIDC()).toBe(true);
+    expect(lookupUnknownCapability(runtime)).toBeNull();
   });
 
   it('recognizes the generated mobile marker without importing Capacitor', async () => {
@@ -40,6 +45,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.supportsPWA()).toBe(false);
     expect(runtime.supportsWebPush()).toBe(false);
     expect(runtime.supportsInteractiveOIDC()).toBe(false);
+    expect(lookupUnknownCapability(runtime)).toBeNull();
     await expect(runtime.startInteractiveOIDC('/')).rejects.toThrow('has not been installed');
     await expect(runtime.transport().request('/api/auth/status')).rejects.toThrow('has not been installed');
   });
@@ -48,6 +54,7 @@ describe('runtime origin and feature boundaries', () => {
     const transport = {} as ServerTransport;
     const runtime: AppRuntime = {
       kind: 'capacitor',
+      capability: () => null,
       assetOrigin: () => 'https://localhost',
       serverOrigin: () => 'https://scrumboy.example',
       publicLinkOrigin: () => 'https://public.scrumboy.example',

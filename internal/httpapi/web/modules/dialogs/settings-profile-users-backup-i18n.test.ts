@@ -286,6 +286,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
     const runtime = await import('../platform/runtime.js');
     runtime.installAppRuntime({
       kind: 'capacitor',
+      capability: () => null,
       assetOrigin: () => 'capacitor://localhost',
       serverOrigin: () => 'https://selected.example',
       publicLinkOrigin: () => 'https://selected.example',

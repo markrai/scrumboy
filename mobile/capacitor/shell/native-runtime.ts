@@ -1,3 +1,5 @@
+import { emptyClientCapabilityRegistry } from '../../../internal/httpapi/web/modules/platform/client-capabilities.js';
+import type { AppCapabilityRegistry } from '../../../internal/httpapi/web/modules/platform/client-capabilities.js';
 import type { AppRuntime } from '../../../internal/httpapi/web/modules/platform/runtime.js';
 import type { ServerTransport } from '../../../internal/httpapi/web/modules/platform/server-transport.js';
 
@@ -35,9 +37,11 @@ export function createCapacitorRuntime(
   startInteractiveOIDC: (returnTo: string) => Promise<void> = async () => {
     throw new Error('Native OIDC is not configured');
   },
+  capabilities: AppCapabilityRegistry = emptyClientCapabilityRegistry,
 ): AppRuntime {
   return {
     kind: 'capacitor',
+    capability: (name) => capabilities.get(name),
     assetOrigin: () => globalThis.location?.origin || '',
     serverOrigin: () => origin,
     publicLinkOrigin: () => origin,
@@ -56,8 +60,14 @@ export async function installRuntimeAndStartProduct(
   startInteractiveOIDC: (returnTo: string) => Promise<void> = async () => {
     throw new Error('Native OIDC is not configured');
   },
+  capabilities: AppCapabilityRegistry = emptyClientCapabilityRegistry,
 ): Promise<void> {
   const runtimeModule = await importer('/dist/platform/runtime.js') as RuntimeModule;
-  runtimeModule.installAppRuntime(createCapacitorRuntime(origin, transport, startInteractiveOIDC));
+  runtimeModule.installAppRuntime(createCapacitorRuntime(
+    origin,
+    transport,
+    startInteractiveOIDC,
+    capabilities,
+  ));
   await importer('/app.js');
 }

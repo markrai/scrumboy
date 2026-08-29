@@ -49,6 +49,7 @@ function installFakeMobile(
   };
   const runtime: AppRuntime = {
     kind: 'capacitor',
+    capability: () => null,
     assetOrigin: () => 'https://localhost',
     serverOrigin: () => 'https://server.example',
     publicLinkOrigin: () => 'https://server.example',

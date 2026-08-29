@@ -34,6 +34,7 @@ function fakeTransport(request = vi.fn()): ServerTransport {
 function installFakeMobile(transport: ServerTransport): AppRuntime {
   const runtime: AppRuntime = {
     kind: 'capacitor',
+    capability: () => null,
     assetOrigin: () => 'https://localhost',
     serverOrigin: () => 'https://server.example',
     publicLinkOrigin: () => 'https://public.example',

@@ -995,6 +995,7 @@ describe("auth view i18n", () => {
     };
     runtime.installAppRuntime({
       kind: "capacitor",
+      capability: () => null,
       assetOrigin: () => "capacitor://localhost",
       serverOrigin: () => "https://server.example",
       publicLinkOrigin: () => "https://server.example",
@@ -1019,6 +1020,7 @@ describe("auth view i18n", () => {
     const startInteractiveOIDC = vi.fn(async () => undefined);
     runtime.installAppRuntime({
       kind: "capacitor",
+      capability: () => null,
       assetOrigin: () => "capacitor://localhost",
       serverOrigin: () => "https://server.example",
       publicLinkOrigin: () => "https://server.example",

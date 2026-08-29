@@ -8,6 +8,8 @@ import {
   createCapacitorRuntime,
   installRuntimeAndStartProduct,
 } from '../../../../mobile/capacitor/shell/native-runtime.js';
+import type { AppCapabilityRegistry } from '../modules/platform/client-capabilities.js';
+import type { AppRuntime } from '../modules/platform/runtime.js';
 import type { ServerTransport } from '../modules/platform/server-transport.js';
 
 function base64(value: string): string {
@@ -40,6 +42,10 @@ function transportStub(): ServerTransport {
   } as unknown as ServerTransport;
 }
 
+function lookupUnknownCapability(runtime: AppRuntime): unknown {
+  return Reflect.apply(runtime.capability, runtime, ['test-only']);
+}
+
 beforeEach(() => {
   localStorage.clear();
   sessionStorage.clear();
@@ -66,23 +72,55 @@ describe('C2 Capacitor runtime', () => {
     void runtime.startInteractiveOIDC('/dashboard');
     expect(startInteractiveOIDC).toHaveBeenCalledWith('/dashboard');
     expect(runtime.transport()).toBe(transport);
+    expect(lookupUnknownCapability(runtime)).toBeNull();
+  });
+
+  it('delegates capability lookup to the injected registry', () => {
+    const get = vi.fn(() => null);
+    const capabilities: AppCapabilityRegistry = { get };
+    const runtime = createCapacitorRuntime(
+      'https://server.example',
+      transportStub(),
+      undefined,
+      capabilities,
+    );
+
+    expect(lookupUnknownCapability(runtime)).toBeNull();
+    expect(get).toHaveBeenCalledWith('test-only');
   });
 
   it('installs the runtime before importing packaged app.js', async () => {
     const order: string[] = [];
-    const installAppRuntime = vi.fn(() => order.push('runtime-installed'));
+    const get = vi.fn(() => null);
+    const capabilities: AppCapabilityRegistry = { get };
+    let installedRuntime: AppRuntime | null = null;
+    const installAppRuntime = vi.fn((runtime: AppRuntime) => {
+      installedRuntime = runtime;
+      order.push('runtime-installed');
+    });
     const importer = vi.fn(async (path: string) => {
       order.push(`import:${path}`);
+      if (path === '/app.js') {
+        expect(installedRuntime).not.toBeNull();
+        expect(lookupUnknownCapability(installedRuntime!)).toBeNull();
+      }
       return path === '/dist/platform/runtime.js' ? { installAppRuntime } : {};
     });
 
-    await installRuntimeAndStartProduct('https://server.example', transportStub(), importer);
+    await installRuntimeAndStartProduct(
+      'https://server.example',
+      transportStub(),
+      importer,
+      undefined,
+      capabilities,
+    );
 
     expect(order).toEqual([
       'import:/dist/platform/runtime.js',
       'runtime-installed',
       'import:/app.js',
     ]);
+    expect(get).toHaveBeenCalledWith('test-only');
   });
 
   it('clears user-scoped WebView state while retaining device-global preferences', () => {

@@ -43,6 +43,7 @@ describe('product realtime over a fake mobile stream', () => {
     };
     const runtime: AppRuntime = {
       kind: 'capacitor',
+      capability: () => null,
       assetOrigin: () => 'https://localhost',
       serverOrigin: () => 'https://server.example',
       publicLinkOrigin: () => 'https://server.example',

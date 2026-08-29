@@ -8,6 +8,7 @@ import {
   type BootstrapDependencies,
 } from '../../../../mobile/capacitor/shell/bootstrap-core.js';
 import type { ScrumboyTransportPlugin } from '../../../../mobile/capacitor/shell/native-plugin.js';
+import type { AppRuntime } from '../modules/platform/runtime.js';
 import { renderServerSelector } from '../../../../mobile/capacitor/shell/server-selection.js';
 
 function pluginFake(overrides: Partial<ScrumboyTransportPlugin> = {}): ScrumboyTransportPlugin {
@@ -34,9 +35,10 @@ function pluginFake(overrides: Partial<ScrumboyTransportPlugin> = {}): ScrumboyT
 function dependencies(options: {
   saved?: string | null;
   plugin?: ScrumboyTransportPlugin;
+  capabilities?: BootstrapDependencies['capabilities'];
   order?: string[];
   onAppImport?: () => void;
-  onRuntime?: (runtime: { transport(): { logout(): Promise<void> } }) => void;
+  onRuntime?: (runtime: AppRuntime) => void;
 } = {}): BootstrapDependencies & {
   preferences: BootstrapDependencies['preferences'] & {
     get: ReturnType<typeof vi.fn>;
@@ -71,6 +73,7 @@ function dependencies(options: {
     return {};
   });
   return {
+    capabilities: options.capabilities || { get: () => null },
     preferences,
     plugin,
     oidc,
@@ -155,6 +158,30 @@ describe('C2 server selection bootstrap', () => {
       'import:/app.js',
     ]);
     expect(plugin.configure).toHaveBeenCalledWith({ origin: 'https://saved.example', resetSession: false });
+  });
+
+  it('injects the capability dependency before importing app.js', async () => {
+    const get = vi.fn(() => null);
+    const capabilities: BootstrapDependencies['capabilities'] = { get };
+    let installedRuntime: AppRuntime | null = null;
+    let capabilityAtAppImport: unknown = 'app-not-imported';
+    const deps = dependencies({
+      saved: 'https://saved.example',
+      capabilities,
+      onRuntime: (runtime) => { installedRuntime = runtime; },
+      onAppImport: () => {
+        capabilityAtAppImport = Reflect.apply(
+          installedRuntime!.capability,
+          installedRuntime,
+          ['test-only'],
+        );
+      },
+    });
+
+    await startMobileBootstrap(deps);
+
+    expect(capabilityAtAppImport).toBeNull();
+    expect(get).toHaveBeenCalledWith('test-only');
   });
 
   it('shows Retry and Change server without importing app when a saved server fails', async () => {

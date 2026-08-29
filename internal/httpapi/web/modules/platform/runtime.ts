@@ -1,3 +1,5 @@
+import { emptyClientCapabilityRegistry } from './client-capabilities.js';
+import type { AppCapabilityMap, CapabilityId } from './client-capabilities.js';
 import { BrowserServerTransport } from './browser-server-transport.js';
 import type {
   AcquiredServerResource,
@@ -12,6 +14,7 @@ export type RuntimeKind = 'browser' | 'capacitor';
 
 export interface AppRuntime {
   readonly kind: RuntimeKind;
+  capability<K extends CapabilityId<AppCapabilityMap>>(name: K): AppCapabilityMap[K] | null;
   assetOrigin(): string;
   serverOrigin(): string;
   publicLinkOrigin(): string;
@@ -30,8 +33,15 @@ function currentOrigin(): string {
 
 const browserTransport = new BrowserServerTransport();
 
+function emptyCapability<K extends CapabilityId<AppCapabilityMap>>(
+  name: K,
+): AppCapabilityMap[K] | null {
+  return emptyClientCapabilityRegistry.get(name);
+}
+
 const browserRuntime: AppRuntime = {
   kind: 'browser',
+  capability: emptyCapability,
   assetOrigin: currentOrigin,
   serverOrigin: currentOrigin,
   publicLinkOrigin: currentOrigin,
@@ -65,6 +75,7 @@ const unconfiguredMobileTransport: ServerTransport = {
 
 const unconfiguredMobileRuntime: AppRuntime = {
   kind: 'capacitor',
+  capability: emptyCapability,
   assetOrigin: currentOrigin,
   serverOrigin: () => {
     throw unconfiguredMobileError();
@@ -91,7 +102,7 @@ export function getAppRuntime(): AppRuntime {
   return runtimeKindFromDocument() === 'capacitor' ? unconfiguredMobileRuntime : browserRuntime;
 }
 
-/** Future native bootstrap installs its runtime before product networking starts. */
+/** Native bootstrap installs its runtime before product networking starts. */
 export function installAppRuntime(runtime: AppRuntime): void {
   installedRuntime = runtime;
 }
