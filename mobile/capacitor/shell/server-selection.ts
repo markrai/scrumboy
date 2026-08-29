@@ -33,6 +33,12 @@ function errorText(error: unknown): string {
   return messages[code] || 'Could not connect to this Scrumboy server.';
 }
 
+function productMount(): HTMLElement {
+  const host = document.getElementById('app');
+  if (!host) throw new Error('Packaged Scrumboy application root is missing');
+  return host;
+}
+
 export function renderServerSelector(mode: SelectorMode, actions: SelectorActions): void {
   const shell = element('main');
   shell.id = 'scrumboy-mobile-bootstrap';
@@ -54,7 +60,7 @@ export function renderServerSelector(mode: SelectorMode, actions: SelectorAction
     retry.addEventListener('click', () => void actions.retry?.());
     change.addEventListener('click', () => actions.change?.());
     shell.append(retry, change, status);
-    document.body.replaceChildren(shell);
+    productMount().replaceChildren(shell);
     return;
   }
 
@@ -95,6 +101,6 @@ export function renderServerSelector(mode: SelectorMode, actions: SelectorAction
   });
   if (mode.message) status.textContent = mode.message;
   shell.append(form);
-  document.body.replaceChildren(shell);
+  productMount().replaceChildren(shell);
   input.focus();
 }

@@ -8,6 +8,7 @@ import {
   type BootstrapDependencies,
 } from '../../../../mobile/capacitor/shell/bootstrap-core.js';
 import type { ScrumboyTransportPlugin } from '../../../../mobile/capacitor/shell/native-plugin.js';
+import { renderServerSelector } from '../../../../mobile/capacitor/shell/server-selection.js';
 
 function pluginFake(overrides: Partial<ScrumboyTransportPlugin> = {}): ScrumboyTransportPlugin {
   return {
@@ -34,6 +35,7 @@ function dependencies(options: {
   saved?: string | null;
   plugin?: ScrumboyTransportPlugin;
   order?: string[];
+  onAppImport?: () => void;
 } = {}): BootstrapDependencies & {
   preferences: BootstrapDependencies['preferences'] & {
     get: ReturnType<typeof vi.fn>;
@@ -54,6 +56,7 @@ function dependencies(options: {
     if (path === '/dist/platform/runtime.js') {
       return { installAppRuntime: vi.fn(() => order.push('runtime-installed')) };
     }
+    if (path === '/app.js') options.onAppImport?.();
     return {};
   });
   return {
@@ -73,12 +76,41 @@ function submitOrigin(origin: string): void {
 
 beforeEach(() => {
   document.head.innerHTML = '<meta name="scrumboy-runtime" content="capacitor">';
-  document.body.innerHTML = '<div id="app"></div>';
+  document.body.innerHTML = [
+    '<div id="app"></div>',
+    '<dialog id="todoDialog"></dialog>',
+    '<dialog id="settingsDialog"></dialog>',
+    '<div id="toast" class="toast" role="status"></div>',
+  ].join('');
   localStorage.clear();
   sessionStorage.clear();
 });
 
 describe('C2 server selection bootstrap', () => {
+  it.each([
+    ['entry', { kind: 'entry' } as const],
+    ['saved-unreachable', {
+      kind: 'saved-unreachable',
+      origin: 'https://offline.example',
+      message: 'Could not connect.',
+    } as const],
+  ])('renders the %s selector only inside the authoritative product mount', (_name, mode) => {
+    const body = document.body;
+    const toast = document.getElementById('toast');
+    const todoDialog = document.getElementById('todoDialog');
+    const replaceBodyChildren = vi.spyOn(body, 'replaceChildren');
+
+    renderServerSelector(mode, { connect: vi.fn(async () => undefined) });
+
+    expect(document.body).toBe(body);
+    expect(replaceBodyChildren).not.toHaveBeenCalled();
+    expect(document.querySelector('#app > #scrumboy-mobile-bootstrap')).toBeInstanceOf(HTMLElement);
+    expect(document.getElementById('toast')).toBe(toast);
+    expect(document.getElementById('todoDialog')).toBe(todoDialog);
+    expect(toast?.isConnected).toBe(true);
+    expect(todoDialog?.isConnected).toBe(true);
+  });
+
   it('shows the selector when no server is saved', async () => {
     const deps = dependencies();
 
@@ -155,6 +187,111 @@ describe('C2 server selection bootstrap', () => {
       key: SELECTED_SERVER_KEY,
       value: 'https://selected.example',
     });
+  });
+
+  it('preserves packaged DOM until app.js takes over the product mount on first connect', async () => {
+    const order: string[] = [];
+    const plugin = pluginFake({
+      probeServer: vi.fn(async () => ({
+        normalizedOrigin: 'https://vega.example:9446',
+        version: '3.34.0',
+        authStatus: { mode: 'full', user: null },
+      })),
+      configure: vi.fn(async () => { order.push('configure'); }),
+    });
+    const deps = dependencies({
+      plugin,
+      order,
+      onAppImport: () => {
+        expect(document.getElementById('toast')).toBeInstanceOf(HTMLElement);
+        expect(document.getElementById('todoDialog')).toBeInstanceOf(HTMLDialogElement);
+        const app = document.getElementById('app');
+        expect(app).toBeInstanceOf(HTMLElement);
+        const product = document.createElement('section');
+        product.id = 'packaged-auth-ui';
+        app?.replaceChildren(product);
+      },
+    });
+
+    await startMobileBootstrap(deps);
+    submitOrigin('https://vega.example:9446');
+
+    await vi.waitFor(() => expect(document.getElementById('packaged-auth-ui')).toBeInstanceOf(HTMLElement));
+    expect(document.getElementById('scrumboy-mobile-bootstrap')).toBeNull();
+    expect(deps.preferences.set).toHaveBeenCalledWith({
+      key: SELECTED_SERVER_KEY,
+      value: 'https://vega.example:9446',
+    });
+    expect(plugin.configure).toHaveBeenCalledWith({
+      origin: 'https://vega.example:9446',
+      resetSession: false,
+    });
+    expect(order).toEqual([
+      'persist:https://vega.example:9446',
+      'configure',
+      'import:/dist/platform/runtime.js',
+      'runtime-installed',
+      'import:/app.js',
+    ]);
+  });
+
+  it('keeps the packaged DOM viable after a failed candidate and then starts in the same launch', async () => {
+    const plugin = pluginFake({
+      probeServer: vi.fn()
+        .mockRejectedValueOnce({ code: 'connect_failure' })
+        .mockResolvedValueOnce({
+          normalizedOrigin: 'https://vega.example:9446',
+          version: '3.34.0',
+          authStatus: { mode: 'full', user: null },
+        }),
+    });
+    const deps = dependencies({
+      plugin,
+      onAppImport: () => {
+        expect(document.getElementById('toast')).toBeInstanceOf(HTMLElement);
+        const product = document.createElement('section');
+        product.id = 'packaged-auth-ui';
+        document.getElementById('app')?.replaceChildren(product);
+      },
+    });
+
+    await startMobileBootstrap(deps);
+    submitOrigin('https://offline.example');
+    await vi.waitFor(() => expect(document.getElementById('scrumboy-mobile-server-status')?.textContent).toContain('Could not connect'));
+
+    submitOrigin('https://vega.example:9446');
+    await vi.waitFor(() => expect(document.getElementById('packaged-auth-ui')).toBeInstanceOf(HTMLElement));
+
+    expect(document.getElementById('scrumboy-mobile-bootstrap')).toBeNull();
+    expect(document.getElementById('todoDialog')).toBeInstanceOf(HTMLDialogElement);
+    expect(deps.importer).toHaveBeenCalledWith('/app.js');
+  });
+
+  it('preserves packaged DOM while a saved-unreachable retry starts the product in place', async () => {
+    const plugin = pluginFake({
+      configure: vi.fn()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce(undefined),
+    });
+    const deps = dependencies({
+      saved: 'https://vega.example:9446',
+      plugin,
+      onAppImport: () => {
+        expect(document.getElementById('toast')).toBeInstanceOf(HTMLElement);
+        expect(document.getElementById('settingsDialog')).toBeInstanceOf(HTMLDialogElement);
+        const product = document.createElement('section');
+        product.id = 'packaged-auth-ui';
+        document.getElementById('app')?.replaceChildren(product);
+      },
+    });
+
+    await startMobileBootstrap(deps);
+    [...document.querySelectorAll('button')].find((button) => button.textContent === 'Retry')?.click();
+
+    await vi.waitFor(() => expect(document.getElementById('packaged-auth-ui')).toBeInstanceOf(HTMLElement));
+    expect(document.getElementById('scrumboy-mobile-bootstrap')).toBeNull();
+    expect(document.getElementById('toast')).toBeInstanceOf(HTMLElement);
+    expect(deps.importer).toHaveBeenCalledWith('/app.js');
   });
 
   it('does not persist or import after a candidate probe failure', async () => {
