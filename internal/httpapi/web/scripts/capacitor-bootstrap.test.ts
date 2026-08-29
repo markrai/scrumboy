@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { transformIndex } from './capacitor-web-artifact-lib.mjs';
+import { explicitAssetAllowlist, transformIndex } from './capacitor-web-artifact-lib.mjs';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = resolve(webRoot, '..', '..', '..');
@@ -36,5 +36,10 @@ describe('C2 mobile bootstrap artifact boundary', () => {
     expect(source).not.toMatch(/\bhttps?:\/\//i);
     expect(source).not.toMatch(/\b(?:server\.url|allowNavigation)\b/);
     expect(source).not.toMatch(/\b(?:location\.assign|window\.open)\s*\(/);
+  });
+
+  it('packages the server-default project thumbnail for the app-local origin', () => {
+    expect(explicitAssetAllowlist()).toContain('scrumboy.png');
+    expect(readFileSync(resolve(webRoot, 'scrumboy.png')).byteLength).toBeGreaterThan(0);
   });
 });

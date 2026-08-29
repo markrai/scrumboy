@@ -27,6 +27,7 @@ const explicitRuntimeFiles = [
   'styles.css',
   'scrumbabylogo.png',
   'scrumbabytrash.png',
+  'scrumboy.png',
   'scrumboytext.png',
   'mic.svg',
   'new.svg',
