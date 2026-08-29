@@ -1,6 +1,7 @@
 import { Preferences } from '@capacitor/preferences';
 import { NativeServerTransport } from './native-server-transport.js';
 import { clearScrumboyWebState, installRuntimeAndStartProduct } from './native-runtime.js';
+import { nativeOIDC, type NativeOIDCCoordinator } from './native-oidc.js';
 import { ScrumboyTransport, type ScrumboyTransportPlugin } from './native-plugin.js';
 import { renderServerSelector } from './server-selection.js';
 
@@ -13,6 +14,7 @@ type Importer = (path: string) => Promise<unknown>;
 export interface BootstrapDependencies {
   preferences: PreferenceStore;
   plugin: ScrumboyTransportPlugin;
+  oidc: NativeOIDCCoordinator;
   importer: Importer;
   reload(): void;
   confirmChange(): boolean;
@@ -21,6 +23,7 @@ export interface BootstrapDependencies {
 const defaults: BootstrapDependencies = {
   preferences: Preferences,
   plugin: ScrumboyTransport,
+  oidc: nativeOIDC,
   importer: (path) => import(path),
   reload: () => globalThis.location?.reload(),
   confirmChange: () => globalThis.confirm('Change Scrumboy server? The current mobile session will be cleared.'),
@@ -36,14 +39,24 @@ function assertPackagedRuntime(): void {
 }
 
 async function startProduct(origin: string, deps: BootstrapDependencies): Promise<void> {
-  const transport = new NativeServerTransport({ plugin: deps.plugin });
-  await installRuntimeAndStartProduct(origin, transport, deps.importer);
+  const transport = new NativeServerTransport({
+    plugin: deps.plugin,
+    onLogout: async () => {
+      await deps.oidc.clearPending();
+      clearScrumboyWebState();
+      globalThis.location?.reload();
+    },
+  });
+  await deps.oidc.configure(origin, transport);
+  await installRuntimeAndStartProduct(origin, transport, deps.importer, (returnTo) => deps.oidc.start(returnTo));
+  deps.oidc.markProductReady();
   let serverChangeStarted = false;
   const handleServerChange = () => {
     if (serverChangeStarted || !deps.confirmChange()) return;
     serverChangeStarted = true;
     void (async () => {
       try {
+        await deps.oidc.clearPending();
         await deps.plugin.resetForServerChange();
         clearScrumboyWebState();
         await deps.preferences.remove({ key: SELECTED_SERVER_KEY });

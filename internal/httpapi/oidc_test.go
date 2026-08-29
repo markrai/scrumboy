@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -25,6 +27,19 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
+
+func mobileOIDCTestProof(fill byte) string {
+	value := make([]byte, 32)
+	for i := range value {
+		value[i] = fill
+	}
+	return base64.RawURLEncoding.EncodeToString(value)
+}
+
+func mobileOIDCTestChallenge(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
 
 // fakeIdP simulates an OIDC provider for integration tests.
 type fakeIdP struct {
@@ -359,6 +374,331 @@ func TestOIDCLoginRedirect(t *testing.T) {
 	}
 	if redirectURL.Query().Get("code_challenge_method") != "S256" || redirectURL.Query().Get("nonce") == "" {
 		t.Errorf("OIDC redirect missing PKCE or nonce: %s", location)
+	}
+}
+
+type mobileOIDCTestFlow struct {
+	client   *http.Client
+	verifier string
+	state    string
+	code     string
+}
+
+func startMobileOIDCTestFlow(t *testing.T, serverURL string) mobileOIDCTestFlow {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Jar: jar,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	verifier := mobileOIDCTestProof('v')
+	var start map[string]any
+	resp, _ := doJSON(t, client, http.MethodPost, serverURL+"/api/auth/oidc/mobile/start", map[string]any{
+		"codeChallenge":       mobileOIDCTestChallenge(verifier),
+		"codeChallengeMethod": "S256",
+		"returnTo":            "/dashboard?view=mine",
+	}, &start)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("mobile start status=%d response=%#v", resp.StatusCode, start)
+	}
+	authorizationURL, _ := start["authorizationUrl"].(string)
+	state, _ := start["flowState"].(string)
+	if authorizationURL == "" || state == "" {
+		t.Fatalf("mobile start response=%#v", start)
+	}
+	authURL, err := url.Parse(authorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authURL.Query().Get("state") != state || authURL.Query().Get("redirect_uri") != serverURL+"/api/auth/oidc/callback" {
+		t.Fatalf("mobile flow did not reuse existing provider callback: %s", authorizationURL)
+	}
+
+	authorize, err := client.Get(authorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorize.Body.Close()
+	providerCallback := authorize.Header.Get("Location")
+	callback, err := client.Get(providerCallback)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback.Body.Close()
+	if callback.StatusCode != http.StatusFound {
+		t.Fatalf("mobile provider callback status=%d", callback.StatusCode)
+	}
+	for _, cookie := range callback.Cookies() {
+		if cookie.Name == "scrumboy_session" {
+			t.Fatalf("provider callback established browser session: %+v", cookie)
+		}
+	}
+	handoff, err := url.Parse(callback.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if handoff.Scheme != "com.markrai.scrumboy" || handoff.Host != "oidc" || handoff.Path != "/callback" {
+		t.Fatalf("mobile callback URI=%q", callback.Header.Get("Location"))
+	}
+	if len(handoff.Query()) != 2 || len(handoff.Query()["code"]) != 1 || len(handoff.Query()["state"]) != 1 {
+		t.Fatalf("mobile callback exposed unexpected parameters: %v", handoff.Query())
+	}
+	if handoff.Query().Get("state") != state || !validRawURLProof(handoff.Query().Get("code"), 32) {
+		t.Fatalf("mobile handoff proof mismatch: %v", handoff.Query())
+	}
+	return mobileOIDCTestFlow{client: client, verifier: verifier, state: state, code: handoff.Query().Get("code")}
+}
+
+func TestMobileOIDCStartValidationAndStatus(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	client := &http.Client{}
+
+	var status map[string]any
+	doJSON(t, client, http.MethodGet, ts.URL+"/api/auth/status", nil, &status)
+	if status["oidcEnabled"] != true || status["mobileOidcEnabled"] != true {
+		t.Fatalf("OIDC status flags=%#v", status)
+	}
+	invalid, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/start", map[string]any{
+		"codeChallenge": "short", "codeChallengeMethod": "plain", "returnTo": "https://evil.example",
+	}, nil)
+	if invalid.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid mobile proof status=%d", invalid.StatusCode)
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/oidc/mobile/start", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	missingHeader, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	missingHeader.Body.Close()
+	if missingHeader.StatusCode != http.StatusForbidden {
+		t.Fatalf("missing X-Scrumboy status=%d", missingHeader.StatusCode)
+	}
+	plain, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/oidc/mobile/start", strings.NewReader(`{}`))
+	plain.Header.Set("Content-Type", "text/plain")
+	plain.Header.Set("X-Scrumboy", "1")
+	wrongContentType, err := client.Do(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongContentType.Body.Close()
+	if wrongContentType.StatusCode != http.StatusBadRequest {
+		t.Fatalf("text/plain mobile start status=%d", wrongContentType.StatusCode)
+	}
+}
+
+func TestMobileOIDCStartIsRateLimited(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	client := &http.Client{}
+	body := map[string]any{
+		"codeChallenge": mobileOIDCTestChallenge(mobileOIDCTestProof('v')), "codeChallengeMethod": "S256", "returnTo": "/",
+	}
+	for attempt := 1; attempt <= 21; attempt++ {
+		resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/start", body, nil)
+		if attempt <= 20 && resp.StatusCode != http.StatusOK {
+			t.Fatalf("mobile start attempt %d status=%d", attempt, resp.StatusCode)
+		}
+		if attempt == 21 && resp.StatusCode != http.StatusTooManyRequests {
+			t.Fatalf("mobile start rate limit status=%d", resp.StatusCode)
+		}
+	}
+}
+
+func TestMobileOIDCExchangeEstablishesNormalSessionOnce(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	flow := startMobileOIDCTestFlow(t, ts.URL)
+
+	var exchange map[string]any
+	resp, _ := doJSON(t, flow.client, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/exchange", map[string]any{
+		"code": flow.code, "state": flow.state, "verifier": flow.verifier,
+	}, &exchange)
+	if resp.StatusCode != http.StatusOK || exchange["returnTo"] != "/dashboard?view=mine" {
+		t.Fatalf("mobile exchange status=%d response=%#v", resp.StatusCode, exchange)
+	}
+	var sessionCookie *http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "scrumboy_session" {
+			sessionCookie = cookie
+		}
+	}
+	if sessionCookie == nil || !sessionCookie.HttpOnly || sessionCookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("ordinary session cookie missing/hardened incorrectly: %+v", sessionCookie)
+	}
+	var status map[string]any
+	doJSON(t, flow.client, http.MethodGet, ts.URL+"/api/auth/status", nil, &status)
+	if status["user"] == nil {
+		t.Fatalf("native exchange did not establish authenticated status: %#v", status)
+	}
+
+	replayClient := &http.Client{}
+	replay, _ := doJSON(t, replayClient, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/exchange", map[string]any{
+		"code": flow.code, "state": flow.state, "verifier": flow.verifier,
+	}, nil)
+	if replay.StatusCode != http.StatusUnauthorized || len(replay.Cookies()) != 0 {
+		t.Fatalf("mobile grant replay status=%d cookies=%v", replay.StatusCode, replay.Cookies())
+	}
+}
+
+func TestMobileOIDCWrongProofDoesNotConsumeGrant(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	flow := startMobileOIDCTestFlow(t, ts.URL)
+
+	for name, body := range map[string]map[string]any{
+		"state":    {"code": flow.code, "state": mobileOIDCTestProof('x'), "verifier": flow.verifier},
+		"verifier": {"code": flow.code, "state": flow.state, "verifier": mobileOIDCTestProof('x')},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp, _ := doJSON(t, &http.Client{}, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/exchange", body, nil)
+			if resp.StatusCode != http.StatusUnauthorized || len(resp.Cookies()) != 0 {
+				t.Fatalf("wrong %s status=%d cookies=%v", name, resp.StatusCode, resp.Cookies())
+			}
+		})
+	}
+	valid, _ := doJSON(t, flow.client, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/exchange", map[string]any{
+		"code": flow.code, "state": flow.state, "verifier": flow.verifier,
+	}, nil)
+	if valid.StatusCode != http.StatusOK {
+		t.Fatalf("valid proof failed after wrong proofs: %d", valid.StatusCode)
+	}
+}
+
+func TestMobileOIDCConcurrentExchangeHasOneWinner(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	flow := startMobileOIDCTestFlow(t, ts.URL)
+
+	const attempts = 8
+	statuses := make(chan int, attempts)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			body, _ := json.Marshal(map[string]any{"code": flow.code, "state": flow.state, "verifier": flow.verifier})
+			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/oidc/mobile/exchange", strings.NewReader(string(body)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Scrumboy", "1")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				statuses <- 0
+				return
+			}
+			resp.Body.Close()
+			statuses <- resp.StatusCode
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(statuses)
+	winners := 0
+	for status := range statuses {
+		if status == http.StatusOK {
+			winners++
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("concurrent exchange winners=%d, want 1", winners)
+	}
+}
+
+func TestMobileOIDCProviderFailureReturnsOnlySanitizedErrorAndState(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	ts, cleanup := newTestOIDCServer(t, idp)
+	defer cleanup()
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	verifier := mobileOIDCTestProof('v')
+	var start map[string]any
+	doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/oidc/mobile/start", map[string]any{
+		"codeChallenge": mobileOIDCTestChallenge(verifier), "codeChallengeMethod": "S256", "returnTo": "/",
+	}, &start)
+	state := start["flowState"].(string)
+	callback, err := client.Get(ts.URL + "/api/auth/oidc/callback?error=access_denied&state=" + url.QueryEscape(state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback.Body.Close()
+	location, _ := url.Parse(callback.Header.Get("Location"))
+	if location.Scheme != "com.markrai.scrumboy" || len(location.Query()) != 2 || location.Query().Get("error") != "provider" || location.Query().Get("state") != state {
+		t.Fatalf("mobile provider error redirect=%q", callback.Header.Get("Location"))
+	}
+	if len(callback.Cookies()) != 0 {
+		t.Fatalf("provider failure set cookies: %v", callback.Cookies())
+	}
+}
+
+func TestMobileOIDCServerRestartKeepsFlowKindAndFailsClosed(t *testing.T) {
+	idp := newFakeIdP(t)
+	defer idp.close()
+	sqlDB, err := db.Open(filepath.Join(t.TempDir(), "app.db"), db.Options{
+		BusyTimeout: 5000, JournalMode: "WAL", Synchronous: "FULL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := migrate.Apply(context.Background(), sqlDB); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqlDB, &store.StoreOptions{ConfiguredOIDCIssuer: idp.issuer})
+	newService := func(redirectURL string) *oidc.Service {
+		return oidc.New(oidc.Config{
+			IssuerCanonical: idp.issuer,
+			ClientID:        idp.clientID,
+			ClientSecret:    "test-secret",
+			RedirectURL:     redirectURL,
+		})
+	}
+
+	first := NewServer(st, Options{ScrumboyMode: "full", MaxRequestBody: 1 << 20, OIDCService: newService("http://placeholder/api/auth/oidc/callback")})
+	firstHTTP := httptest.NewServer(first)
+	first.oidcService = newService(firstHTTP.URL + "/api/auth/oidc/callback")
+	var start map[string]any
+	doJSON(t, &http.Client{}, http.MethodPost, firstHTTP.URL+"/api/auth/oidc/mobile/start", map[string]any{
+		"codeChallenge": mobileOIDCTestChallenge(mobileOIDCTestProof('v')), "codeChallengeMethod": "S256", "returnTo": "/",
+	}, &start)
+	state := start["flowState"].(string)
+	firstHTTP.Close()
+	first.Close(context.Background())
+
+	second := NewServer(st, Options{ScrumboyMode: "full", MaxRequestBody: 1 << 20, OIDCService: newService("http://placeholder/api/auth/oidc/callback")})
+	secondHTTP := httptest.NewServer(second)
+	defer secondHTTP.Close()
+	defer second.Close(context.Background())
+	second.oidcService = newService(secondHTTP.URL + "/api/auth/oidc/callback")
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	callback, err := client.Get(secondHTTP.URL + "/api/auth/oidc/callback?code=untrusted&state=" + url.QueryEscape(state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	callback.Body.Close()
+	location, _ := url.Parse(callback.Header.Get("Location"))
+	if location.Scheme != "com.markrai.scrumboy" || location.Query().Get("error") != "state_invalid" || location.Query().Get("state") != state {
+		t.Fatalf("restarted callback fell through browser flow: %q", callback.Header.Get("Location"))
+	}
+	if len(callback.Cookies()) != 0 {
+		t.Fatalf("restart failure established session: %v", callback.Cookies())
 	}
 }
 

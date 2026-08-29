@@ -43,6 +43,7 @@ describe('future native runtime browser-feature gates', () => {
       supportsPWA: () => false,
       supportsWebPush: () => false,
       supportsInteractiveOIDC: () => false,
+      startInteractiveOIDC: vi.fn(async () => undefined),
       transport: () => transport,
     };
     installAppRuntime(runtime);

@@ -23,7 +23,11 @@ describe('C2 mobile bootstrap artifact boundary', () => {
     expect(mobileIndex).not.toMatch(/\b(?:src|href|content)="https?:\/\//i);
     expect(bootstrapEntry).toContain("import { startMobileBootstrap } from './bootstrap-core.js'");
     expect(bootstrapEntry).toContain("import { installNativeLifecycle } from './native-lifecycle.js'");
-    expect(bootstrapEntry).toContain('void installNativeLifecycle().then(() => startMobileBootstrap())');
+    expect(bootstrapEntry).toContain("import { nativeOIDC } from './native-oidc.js'");
+    expect(bootstrapEntry).toContain('void Promise.all([');
+    expect(bootstrapEntry).toContain('installNativeLifecycle()');
+    expect(bootstrapEntry).toContain('nativeOIDC.installURLCapture()');
+    expect(bootstrapEntry).toContain(']).then(() => startMobileBootstrap())');
     expect(bootstrapCore.indexOf('installRuntimeAndStartProduct')).toBeGreaterThan(-1);
   });
 

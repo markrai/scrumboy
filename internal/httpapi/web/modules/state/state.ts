@@ -36,6 +36,7 @@ export interface State {
   _emailNotifyAvailable?: boolean;
   emailNotifyPreference: EmailNotifyPreferenceState;
   _oidcEnabled?: boolean;
+  _mobileOidcEnabled?: boolean;
   _localAuthEnabled?: boolean;
   _wallEnabled?: boolean;
   _markdownNotesEnabled?: boolean;

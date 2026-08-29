@@ -122,6 +122,10 @@ export function setOidcEnabled(enabled: boolean): void {
   current._oidcEnabled = enabled;
 }
 
+export function setMobileOidcEnabled(enabled: boolean): void {
+  current._mobileOidcEnabled = enabled;
+}
+
 export function setLocalAuthEnabled(enabled: boolean): void {
   current._localAuthEnabled = enabled;
 }

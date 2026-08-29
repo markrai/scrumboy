@@ -55,6 +55,7 @@ function installFakeMobile(
     supportsPWA: () => false,
     supportsWebPush: () => false,
     supportsInteractiveOIDC: () => false,
+    startInteractiveOIDC: vi.fn(async () => undefined),
     transport: () => transport,
   };
   installAppRuntime(runtime);

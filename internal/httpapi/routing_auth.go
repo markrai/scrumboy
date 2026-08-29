@@ -71,6 +71,16 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		s.handleOIDCLinkStart(w, r)
 		return
 	}
+	if len(rest) == 3 && rest[0] == "oidc" && rest[1] == "mobile" {
+		switch rest[2] {
+		case "start":
+			s.handleMobileOIDCStart(w, r)
+			return
+		case "exchange":
+			s.handleMobileOIDCExchange(w, r)
+			return
+		}
+	}
 	// OIDC login/callback and first-password completion.
 	if len(rest) == 2 && rest[0] == "oidc" {
 		switch rest[1] {
@@ -153,6 +163,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 			"mermaidNotesEnabled":             s.mermaidNotesEnabled,
 		}
 		resp["oidcEnabled"] = s.oidcService != nil
+		resp["mobileOidcEnabled"] = s.oidcService != nil
 		resp["localAuthEnabled"] = localAuthEnabled
 		resp["wallEnabled"] = s.wallEnabled
 		resp["emailNotifyAvailable"] = s.smtpConfigured && s.publicBaseURL != ""

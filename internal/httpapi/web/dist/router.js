@@ -3,8 +3,8 @@ import { renderAuth, renderResetPassword, renderProjects, renderDashboard, rende
 import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from './core/realtime.js';
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
-import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
@@ -121,6 +121,7 @@ async function routeOnceBody() {
         setSelfServicePasswordResetEnabled(!!(st && st.selfServicePasswordResetEnabled));
         setEmailNotifyAvailable(!!(st && st.emailNotifyAvailable));
         setOidcEnabled(!!(st && st.oidcEnabled));
+        setMobileOidcEnabled(!!(st && st.mobileOidcEnabled));
         setLocalAuthEnabled(st && st.localAuthEnabled !== false);
         setWallEnabled(!!(st && st.wallEnabled));
         setMarkdownNotesEnabled(!!(st && st.markdownNotesEnabled));
@@ -283,7 +284,7 @@ async function routeOnceBody() {
             renderResetPassword(r.token);
         }
         else {
-            renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
+            renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
         }
         return;
     }
@@ -292,7 +293,7 @@ async function routeOnceBody() {
     if (getUser() == null && getAuthStatusChecked() && getAuthStatusAvailable()) {
         if (r.name === "projects" || r.name === "dashboard") {
             console.log("Router: showing auth UI (not logged in)");
-            renderAuth({ next: window.location.pathname + window.location.search, bootstrap: getBootstrapAvailable(), oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
+            renderAuth({ next: window.location.pathname + window.location.search, bootstrap: getBootstrapAvailable(), oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
             return;
         }
     }
@@ -348,7 +349,7 @@ async function routeOnceBody() {
             console.error("Router: error rendering board:", err);
             if (err && err.status === 401) {
                 // Only show auth UI for 401s (entry points). Resource endpoints should generally return 404 when unauthenticated.
-                renderAuth({ next: window.location.pathname + window.location.search, bootstrap: false, oidcEnabled: getOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
+                renderAuth({ next: window.location.pathname + window.location.search, bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
                 return;
             }
             throw err;
@@ -374,9 +375,38 @@ async function router() {
         isRouting = false;
     }
 }
+const nativeOIDCErrors = new Set(['state_invalid', 'provider', 'token', 'email', 'auth_time', 'link_required']);
+/** Re-enter the ordinary auth-status/router/realtime path after native handoff. */
+async function handleNativeOIDCResult(detail) {
+    const result = detail && typeof detail === 'object' ? detail : {};
+    let returnTo = null;
+    if (typeof result.returnTo === 'string' && result.returnTo.startsWith('/') && !result.returnTo.startsWith('//') && !result.returnTo.includes('\\')) {
+        try {
+            const parsed = new URL(result.returnTo, window.location.origin);
+            if (parsed.origin === window.location.origin)
+                returnTo = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+        catch {
+            returnTo = null;
+        }
+    }
+    const target = returnTo ? new URL(returnTo, window.location.origin) : new URL(window.location.href);
+    if (!returnTo) {
+        const error = typeof result.error === 'string' && nativeOIDCErrors.has(result.error) ? result.error : 'generic';
+        target.searchParams.set('oidc_error', error);
+    }
+    history.replaceState({}, '', target.pathname + target.search + target.hash);
+    setAuthStatusChecked(false);
+    await router();
+}
+window.addEventListener('scrumboy:native-oidc-result', (event) => {
+    void handleNativeOIDCResult(event.detail).catch((error) => {
+        console.error('Router error:', error);
+    });
+});
 window.addEventListener("popstate", () => {
     router().catch((err) => {
         console.error("Router error:", err);
     });
 });
-export { navigate, parseRoute, router };
+export { handleNativeOIDCResult, navigate, parseRoute, router };

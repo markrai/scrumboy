@@ -29,7 +29,13 @@ export function clearScrumboyWebState(): void {
   }
 }
 
-export function createCapacitorRuntime(origin: string, transport: ServerTransport): AppRuntime {
+export function createCapacitorRuntime(
+  origin: string,
+  transport: ServerTransport,
+  startInteractiveOIDC: (returnTo: string) => Promise<void> = async () => {
+    throw new Error('Native OIDC is not configured');
+  },
+): AppRuntime {
   return {
     kind: 'capacitor',
     assetOrigin: () => globalThis.location?.origin || '',
@@ -37,7 +43,8 @@ export function createCapacitorRuntime(origin: string, transport: ServerTranspor
     publicLinkOrigin: () => origin,
     supportsPWA: () => false,
     supportsWebPush: () => false,
-    supportsInteractiveOIDC: () => false,
+    supportsInteractiveOIDC: () => true,
+    startInteractiveOIDC,
     transport: () => transport,
   };
 }
@@ -46,8 +53,11 @@ export async function installRuntimeAndStartProduct(
   origin: string,
   transport: ServerTransport,
   importer: ModuleImporter = (path) => import(path),
+  startInteractiveOIDC: (returnTo: string) => Promise<void> = async () => {
+    throw new Error('Native OIDC is not configured');
+  },
 ): Promise<void> {
   const runtimeModule = await importer('/dist/platform/runtime.js') as RuntimeModule;
-  runtimeModule.installAppRuntime(createCapacitorRuntime(origin, transport));
+  runtimeModule.installAppRuntime(createCapacitorRuntime(origin, transport, startInteractiveOIDC));
   await importer('/app.js');
 }

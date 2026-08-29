@@ -40,6 +40,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.supportsPWA()).toBe(false);
     expect(runtime.supportsWebPush()).toBe(false);
     expect(runtime.supportsInteractiveOIDC()).toBe(false);
+    await expect(runtime.startInteractiveOIDC('/')).rejects.toThrow('has not been installed');
     await expect(runtime.transport().request('/api/auth/status')).rejects.toThrow('has not been installed');
   });
 
@@ -53,6 +54,7 @@ describe('runtime origin and feature boundaries', () => {
       supportsPWA: () => false,
       supportsWebPush: () => false,
       supportsInteractiveOIDC: () => false,
+      startInteractiveOIDC: vi.fn(async () => undefined),
       transport: () => transport,
     };
     installAppRuntime(runtime);

@@ -18,6 +18,7 @@ export interface AppRuntime {
   supportsPWA(): boolean;
   supportsWebPush(): boolean;
   supportsInteractiveOIDC(): boolean;
+  startInteractiveOIDC(returnTo: string): Promise<void>;
   transport(): ServerTransport;
 }
 
@@ -37,6 +38,9 @@ const browserRuntime: AppRuntime = {
   supportsPWA: () => true,
   supportsWebPush: () => true,
   supportsInteractiveOIDC: () => true,
+  startInteractiveOIDC: async (returnTo) => {
+    globalThis.location?.assign(`/api/auth/oidc/login?return_to=${encodeURIComponent(returnTo)}`);
+  },
   transport: () => browserTransport,
 };
 
@@ -71,6 +75,7 @@ const unconfiguredMobileRuntime: AppRuntime = {
   supportsPWA: () => false,
   supportsWebPush: () => false,
   supportsInteractiveOIDC: () => false,
+  startInteractiveOIDC: () => Promise.reject(unconfiguredMobileError()),
   transport: () => unconfiguredMobileTransport,
 };
 

@@ -36,6 +36,7 @@ function dependencies(options: {
   plugin?: ScrumboyTransportPlugin;
   order?: string[];
   onAppImport?: () => void;
+  onRuntime?: (runtime: { transport(): { logout(): Promise<void> } }) => void;
 } = {}): BootstrapDependencies & {
   preferences: BootstrapDependencies['preferences'] & {
     get: ReturnType<typeof vi.fn>;
@@ -51,10 +52,20 @@ function dependencies(options: {
     remove: vi.fn(async () => { order.push('preference-removed'); }),
   };
   const plugin = options.plugin || pluginFake();
+  const oidc = {
+    installURLCapture: vi.fn(async () => undefined),
+    configure: vi.fn(async () => undefined),
+    start: vi.fn(async () => undefined),
+    clearPending: vi.fn(async () => { order.push('oidc-clear'); }),
+    markProductReady: vi.fn(),
+  };
   const importer = vi.fn(async (path: string) => {
     order.push(`import:${path}`);
     if (path === '/dist/platform/runtime.js') {
-      return { installAppRuntime: vi.fn(() => order.push('runtime-installed')) };
+      return { installAppRuntime: vi.fn((runtime) => {
+        order.push('runtime-installed');
+        options.onRuntime?.(runtime);
+      }) };
     }
     if (path === '/app.js') options.onAppImport?.();
     return {};
@@ -62,6 +73,7 @@ function dependencies(options: {
   return {
     preferences,
     plugin,
+    oidc,
     importer,
     reload: vi.fn(() => order.push('reload')),
     confirmChange: vi.fn(() => true),
@@ -338,10 +350,24 @@ describe('C2 server selection bootstrap', () => {
     window.dispatchEvent(new CustomEvent(CHANGE_SERVER_EVENT));
     await vi.waitFor(() => expect(deps.reload).toHaveBeenCalledOnce());
 
-    expect(order.slice(-3)).toEqual(['native-reset', 'preference-removed', 'reload']);
+    expect(order.slice(-4)).toEqual(['oidc-clear', 'native-reset', 'preference-removed', 'reload']);
     expect(deps.preferences.remove).toHaveBeenCalledWith({ key: SELECTED_SERVER_KEY });
     expect(localStorage.getItem('private-user-state')).toBeNull();
     expect(localStorage.getItem('scrumboy.locale')).toBe('de');
+  });
+
+  it('clears pending OIDC proof before completing native logout cleanup', async () => {
+    let runtime!: { transport(): { logout(): Promise<void> } };
+    const deps = dependencies({
+      saved: 'https://saved.example',
+      onRuntime: (installed) => { runtime = installed; },
+    });
+    await startMobileBootstrap(deps);
+
+    await runtime.transport().logout();
+
+    expect(deps.plugin.logout).toHaveBeenCalledOnce();
+    expect(deps.oidc.clearPending).toHaveBeenCalledOnce();
   });
 
   it('fails closed outside the packaged Capacitor runtime', async () => {

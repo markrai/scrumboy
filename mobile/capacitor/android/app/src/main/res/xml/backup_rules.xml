@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+    <exclude domain="sharedpref" path="scrumboy_transport_cookies_v1.xml" />
+</full-backup-content>

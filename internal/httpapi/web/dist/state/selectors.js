@@ -97,6 +97,9 @@ export function getEmailNotifyPreferenceState() {
 export function getOidcEnabled() {
     return !!current._oidcEnabled;
 }
+export function getMobileOidcEnabled() {
+    return !!current._mobileOidcEnabled;
+}
 export function getLocalAuthEnabled() {
     return current._localAuthEnabled !== false;
 }

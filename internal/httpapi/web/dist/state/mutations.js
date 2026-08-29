@@ -90,6 +90,9 @@ export function setEmailNotifyPreferenceState(state) {
 export function setOidcEnabled(enabled) {
     current._oidcEnabled = enabled;
 }
+export function setMobileOidcEnabled(enabled) {
+    current._mobileOidcEnabled = enabled;
+}
 export function setLocalAuthEnabled(enabled) {
     current._localAuthEnabled = enabled;
 }
