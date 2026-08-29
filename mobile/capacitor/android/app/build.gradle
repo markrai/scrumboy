@@ -36,6 +36,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
     implementation platform("com.squareup.okhttp3:okhttp-bom:5.5.0")
     // OkHttp's Android 5.5.0 variant requires compileSdk 37. Capacitor 8 is
     // intentionally pinned to 36, so use the same release's JVM artifact.

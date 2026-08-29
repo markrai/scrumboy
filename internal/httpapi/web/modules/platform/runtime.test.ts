@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BrowserServerTransport } from './browser-server-transport.js';
+import { LOCAL_TEXT_GENERATION_CAPABILITY } from './local-text-generation.js';
 import {
   getAppRuntime,
   installAppRuntime,
@@ -30,6 +31,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.supportsPWA()).toBe(true);
     expect(runtime.supportsWebPush()).toBe(true);
     expect(runtime.supportsInteractiveOIDC()).toBe(true);
+    expect(runtime.capability(LOCAL_TEXT_GENERATION_CAPABILITY)).toBeNull();
     expect(lookupUnknownCapability(runtime)).toBeNull();
   });
 
@@ -45,6 +47,7 @@ describe('runtime origin and feature boundaries', () => {
     expect(runtime.supportsPWA()).toBe(false);
     expect(runtime.supportsWebPush()).toBe(false);
     expect(runtime.supportsInteractiveOIDC()).toBe(false);
+    expect(runtime.capability(LOCAL_TEXT_GENERATION_CAPABILITY)).toBeNull();
     expect(lookupUnknownCapability(runtime)).toBeNull();
     await expect(runtime.startInteractiveOIDC('/')).rejects.toThrow('has not been installed');
     await expect(runtime.transport().request('/api/auth/status')).rejects.toThrow('has not been installed');

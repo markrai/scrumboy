@@ -1,5 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { createClientCapabilityRegistry } from './client-capabilities.js';
+import type { AppCapabilityMap } from './client-capabilities.js';
+import type { LocalTextGenerationCapability } from './local-text-generation.js';
 
 interface EchoCapability {
   echo(value: string): string;
@@ -55,5 +57,16 @@ describe('client capability registry', () => {
     expect(registry.get('test.echo')).toBeNull();
     expect(Object.isFrozen(registry)).toBe(true);
     expect(Object.keys(registry)).toEqual(['get']);
+  });
+
+  it('registers the one production capability without changing test-local maps', () => {
+    const localTextGeneration = {} as LocalTextGenerationCapability;
+    const registry = createClientCapabilityRegistry<AppCapabilityMap>({
+      'local-text-generation': localTextGeneration,
+    });
+
+    expect(registry.get('local-text-generation')).toBe(localTextGeneration);
+    expectTypeOf(registry.get('local-text-generation'))
+      .toEqualTypeOf<LocalTextGenerationCapability | null>();
   });
 });

@@ -8,6 +8,14 @@ import {
   type BootstrapDependencies,
 } from '../../../../mobile/capacitor/shell/bootstrap-core.js';
 import type { ScrumboyTransportPlugin } from '../../../../mobile/capacitor/shell/native-plugin.js';
+import {
+  createClientCapabilityRegistry,
+  type AppCapabilityMap,
+} from '../modules/platform/client-capabilities.js';
+import {
+  LOCAL_TEXT_GENERATION_CAPABILITY,
+  type LocalTextGenerationCapability,
+} from '../modules/platform/local-text-generation.js';
 import type { AppRuntime } from '../modules/platform/runtime.js';
 import { renderServerSelector } from '../../../../mobile/capacitor/shell/server-selection.js';
 
@@ -36,6 +44,7 @@ function dependencies(options: {
   saved?: string | null;
   plugin?: ScrumboyTransportPlugin;
   capabilities?: BootstrapDependencies['capabilities'];
+  invalidateCapabilities?: BootstrapDependencies['invalidateCapabilities'];
   order?: string[];
   onAppImport?: () => void;
   onRuntime?: (runtime: AppRuntime) => void;
@@ -74,6 +83,9 @@ function dependencies(options: {
   });
   return {
     capabilities: options.capabilities || { get: () => null },
+    invalidateCapabilities: options.invalidateCapabilities || vi.fn(async () => {
+      order.push('capabilities-invalidated');
+    }),
     preferences,
     plugin,
     oidc,
@@ -161,8 +173,10 @@ describe('C2 server selection bootstrap', () => {
   });
 
   it('injects the capability dependency before importing app.js', async () => {
-    const get = vi.fn(() => null);
-    const capabilities: BootstrapDependencies['capabilities'] = { get };
+    const localTextGeneration = {} as LocalTextGenerationCapability;
+    const capabilities = createClientCapabilityRegistry<AppCapabilityMap>({
+      [LOCAL_TEXT_GENERATION_CAPABILITY]: localTextGeneration,
+    });
     let installedRuntime: AppRuntime | null = null;
     let capabilityAtAppImport: unknown = 'app-not-imported';
     const deps = dependencies({
@@ -170,18 +184,13 @@ describe('C2 server selection bootstrap', () => {
       capabilities,
       onRuntime: (runtime) => { installedRuntime = runtime; },
       onAppImport: () => {
-        capabilityAtAppImport = Reflect.apply(
-          installedRuntime!.capability,
-          installedRuntime,
-          ['test-only'],
-        );
+        capabilityAtAppImport = installedRuntime!.capability(LOCAL_TEXT_GENERATION_CAPABILITY);
       },
     });
 
     await startMobileBootstrap(deps);
 
-    expect(capabilityAtAppImport).toBeNull();
-    expect(get).toHaveBeenCalledWith('test-only');
+    expect(capabilityAtAppImport).toBe(localTextGeneration);
   });
 
   it('shows Retry and Change server without importing app when a saved server fails', async () => {
@@ -377,7 +386,13 @@ describe('C2 server selection bootstrap', () => {
     window.dispatchEvent(new CustomEvent(CHANGE_SERVER_EVENT));
     await vi.waitFor(() => expect(deps.reload).toHaveBeenCalledOnce());
 
-    expect(order.slice(-4)).toEqual(['oidc-clear', 'native-reset', 'preference-removed', 'reload']);
+    expect(order.slice(-5)).toEqual([
+      'capabilities-invalidated',
+      'oidc-clear',
+      'native-reset',
+      'preference-removed',
+      'reload',
+    ]);
     expect(deps.preferences.remove).toHaveBeenCalledWith({ key: SELECTED_SERVER_KEY });
     expect(localStorage.getItem('private-user-state')).toBeNull();
     expect(localStorage.getItem('scrumboy.locale')).toBe('de');
@@ -394,7 +409,25 @@ describe('C2 server selection bootstrap', () => {
     await runtime.transport().logout();
 
     expect(deps.plugin.logout).toHaveBeenCalledOnce();
+    expect(deps.invalidateCapabilities).toHaveBeenCalledOnce();
     expect(deps.oidc.clearPending).toHaveBeenCalledOnce();
+  });
+
+  it('continues logout and server change when capability invalidation fails', async () => {
+    let runtime!: { transport(): { logout(): Promise<void> } };
+    const deps = dependencies({
+      saved: 'https://saved.example',
+      invalidateCapabilities: vi.fn(async () => { throw new Error('native cancellation failed'); }),
+      onRuntime: (installed) => { runtime = installed; },
+    });
+    await startMobileBootstrap(deps);
+
+    await expect(runtime.transport().logout()).resolves.toBeUndefined();
+    expect(deps.oidc.clearPending).toHaveBeenCalledOnce();
+
+    window.dispatchEvent(new CustomEvent(CHANGE_SERVER_EVENT));
+    await vi.waitFor(() => expect(deps.reload).toHaveBeenCalledOnce());
+    expect(deps.plugin.resetForServerChange).toHaveBeenCalledOnce();
   });
 
   it('fails closed outside the packaged Capacitor runtime', async () => {

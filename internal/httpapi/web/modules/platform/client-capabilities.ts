@@ -1,5 +1,9 @@
-/** Operation-oriented product capability vocabulary; intentionally empty in C5.0. */
-export interface AppCapabilityMap {}
+import type { LocalTextGenerationCapability } from './local-text-generation.js';
+
+/** Operation-oriented product capability vocabulary. */
+export interface AppCapabilityMap {
+  'local-text-generation': LocalTextGenerationCapability;
+}
 
 export type CapabilityId<M extends object> = Extract<keyof M, string>;
 

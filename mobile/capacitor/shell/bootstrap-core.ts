@@ -15,6 +15,7 @@ type Importer = (path: string) => Promise<unknown>;
 
 export interface BootstrapDependencies {
   capabilities: AppCapabilityRegistry;
+  invalidateCapabilities(): Promise<void>;
   preferences: PreferenceStore;
   plugin: ScrumboyTransportPlugin;
   oidc: NativeOIDCCoordinator;
@@ -25,6 +26,7 @@ export interface BootstrapDependencies {
 
 const defaults: BootstrapDependencies = {
   capabilities: emptyClientCapabilityRegistry,
+  invalidateCapabilities: async () => undefined,
   preferences: Preferences,
   plugin: ScrumboyTransport,
   oidc: nativeOIDC,
@@ -34,6 +36,10 @@ const defaults: BootstrapDependencies = {
 };
 
 let removeServerChangeHandler: (() => void) | null = null;
+
+async function invalidateCapabilitiesBestEffort(deps: BootstrapDependencies): Promise<void> {
+  await deps.invalidateCapabilities().catch(() => undefined);
+}
 
 function assertPackagedRuntime(): void {
   const runtimeMarker = document.head.querySelector('meta[name="scrumboy-runtime"]');
@@ -46,6 +52,7 @@ async function startProduct(origin: string, deps: BootstrapDependencies): Promis
   const transport = new NativeServerTransport({
     plugin: deps.plugin,
     onLogout: async () => {
+      await invalidateCapabilitiesBestEffort(deps);
       await deps.oidc.clearPending();
       clearScrumboyWebState();
       globalThis.location?.reload();
@@ -66,6 +73,7 @@ async function startProduct(origin: string, deps: BootstrapDependencies): Promis
     serverChangeStarted = true;
     void (async () => {
       try {
+        await invalidateCapabilitiesBestEffort(deps);
         await deps.oidc.clearPending();
         await deps.plugin.resetForServerChange();
         clearScrumboyWebState();
