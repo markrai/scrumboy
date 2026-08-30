@@ -125,19 +125,29 @@ function preservesCanonicalEntityWords(transcript: string, command: string): boo
   return matched.slice(1).every((entity) => normalizedWords(entity).every((word) => sourceWords.has(word)));
 }
 
+function unwrapWholeOutputJsonFence(raw: string): string {
+  const fenced = raw.match(/^\s*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*\s*$/i);
+  if (fenced) return fenced[1];
+  if (/```/.test(raw)) {
+    throw new LocalTextGenerationError('output_rejected', { recoverable: false });
+  }
+  return raw;
+}
+
 export function parseVoiceInterpretationEnvelope(raw: unknown): VoiceInterpretationResult {
   if (
     typeof raw !== 'string'
     || raw.length === 0
     || raw.length > VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits
-    || /```/.test(raw)
   ) {
     throw new LocalTextGenerationError('output_rejected', { recoverable: false });
   }
 
+  const json = unwrapWholeOutputJsonFence(raw);
+
   let envelope: unknown;
   try {
-    envelope = JSON.parse(raw);
+    envelope = JSON.parse(json);
   } catch {
     throw new LocalTextGenerationError('output_rejected', { recoverable: false });
   }

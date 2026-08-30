@@ -135,6 +135,40 @@ describe('VoiceFlow local interpretation contract', () => {
       .toEqual({ kind: 'refused' });
   });
 
+  it('accepts a whole-output JSON code fence from the physical provider', async () => {
+    const local = capability(undefined, '```json\n{\n  "command": "move todo bogus to done"\n}\n```');
+
+    await expect(interpretVoiceCommand({
+      transcript: 'Could you put bogus in done?',
+      capability: local,
+      locale: 'en',
+    })).resolves.toEqual({ kind: 'candidate', command: 'move todo bogus to done' });
+  });
+
+  it('accepts a whole-output unlabelled code fence', () => {
+    expect(parseVoiceInterpretationEnvelope('```\n{"command":"move todo bogus to done"}\n```'))
+      .toEqual({ kind: 'candidate', command: 'move todo bogus to done' });
+  });
+
+  it.each([
+    ['text language tag', '```text\n{"command":"open story 56"}\n```'],
+    ['JavaScript language tag', '```javascript\n{"command":"open story 56"}\n```'],
+    ['prose before a fence', 'Here is the command:\n```json\n{"command":"open story 56"}\n```'],
+    ['prose after a fence', '```json\n{"command":"open story 56"}\n```\nDone'],
+    ['multiple fenced blocks', '```json\n{"command":"open story 56"}\n```\n```\n{"command":"open story 57"}\n```'],
+    ['malformed fenced JSON', '```json\n{"command":\n```'],
+    ['an extra fenced envelope field', '```\n{"command":"open story 56","intent":"open"}\n```'],
+    ['an empty fenced command', '```json\n{"command":""}\n```'],
+    ['a fenced tool-like candidate', '```\n{"command":"callMcpTool todos.delete"}\n```'],
+    [
+      'fenced raw output beyond the envelope bound',
+      `\`\`\`json\n${' '.repeat(VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits)}\n\`\`\``,
+    ],
+  ])('rejects %s without bypassing envelope validation', (_name, output) => {
+    expect(() => parseVoiceInterpretationEnvelope(output))
+      .toThrowError(expect.objectContaining({ code: 'output_rejected' }));
+  });
+
   it.each([
     ['prose', 'Here is the command: {"command":"open story 56"}'],
     ['extra key', '{"command":"open story 56","intent":"open"}'],
@@ -143,7 +177,6 @@ describe('VoiceFlow local interpretation contract', () => {
     ['tool name', '{"command":"callMcpTool todos.list"}'],
     ['nested JSON', '{"command":"open {\\"id\\":56}"}'],
     ['array', '[{"command":"open story 56"}]'],
-    ['Markdown', '```json\\n{"command":"open story 56"}\\n```'],
     ['empty', '{"command":""}'],
     ['oversized candidate', `{"command":"${'x'.repeat(VOICE_INTERPRETATION_LIMITS.candidateCodeUnits + 1)}"}`],
     ['oversized envelope', `{"command":null}${' '.repeat(VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits)}`],
