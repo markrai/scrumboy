@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
 
@@ -8,11 +8,19 @@ const executeCommandIRMock = vi.hoisted(() => vi.fn());
 const startOneShotRecognitionMock = vi.hoisted(() => vi.fn());
 const speakMock = vi.hoisted(() => vi.fn());
 const showConfirmDialogMock = vi.hoisted(() => vi.fn());
+const getVoiceInterpretationAvailabilityMock = vi.hoisted(() => vi.fn());
+const prepareVoiceInterpretationMock = vi.hoisted(() => vi.fn());
+const interpretVoiceCommandMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./mcp-client.js', () => ({ callMcpTool: callMcpToolMock }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
 vi.mock('./speech.js', () => ({ startOneShotRecognition: startOneShotRecognitionMock }));
 vi.mock('./speech-output.js', () => ({ speak: speakMock }));
+vi.mock('./local-interpretation.js', () => ({
+  getVoiceInterpretationAvailability: getVoiceInterpretationAvailabilityMock,
+  prepareVoiceInterpretation: prepareVoiceInterpretationMock,
+  interpretVoiceCommand: interpretVoiceCommandMock,
+}));
 vi.mock('../utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils.js')>();
   return { ...actual, showConfirmDialog: showConfirmDialogMock };
@@ -31,6 +39,7 @@ import {
   VOICE_FLOW_HANDS_FREE_CONFIRMATION_STORAGE_KEY,
   VOICE_FLOW_MODE_STORAGE_KEY,
 } from '../core/voiceflow-preferences.js';
+import { LocalTextGenerationError } from '../platform/local-text-generation.js';
 
 const members: BoardMember[] = [
   { userId: 7, name: 'Ada Lovelace', email: 'ada@example.com', role: 'maintainer' },
@@ -76,6 +85,7 @@ function makeAmbiguousLoginBoard(): Board {
 
 function makeContext(board = makeBoard()): VoiceCommandDialogContext {
   return {
+    userId: 7,
     projectId: 1,
     projectSlug: 'alpha',
     board,
@@ -86,6 +96,7 @@ function makeContext(board = makeBoard()): VoiceCommandDialogContext {
 
 function makeOptions(getContext: () => VoiceCommandDialogContext | null): OpenVoiceCommandOptions {
   return {
+    initialUserId: 7,
     initialProjectId: 1,
     initialProjectSlug: 'alpha',
     getContext,
@@ -110,6 +121,10 @@ beforeEach(() => {
   startOneShotRecognitionMock.mockReset();
   speakMock.mockReset().mockResolvedValue(undefined);
   showConfirmDialogMock.mockReset().mockResolvedValue(true);
+  getVoiceInterpretationAvailabilityMock.mockReset().mockResolvedValue({ state: 'absent' });
+  prepareVoiceInterpretationMock.mockReset().mockResolvedValue(undefined);
+  interpretVoiceCommandMock.mockReset().mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
     configurable: true,
     value(this: HTMLDialogElement) {
@@ -664,4 +679,341 @@ describe('voice command flow', () => {
       entities: { localId: 56 },
     });
   });
+
+  it('keeps deterministic parsing first and never queries local AI for a supported command', async () => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'open story 56';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(document.getElementById('voiceSummary')?.textContent).toContain('Fix login');
+    expect(getVoiceInterpretationAvailabilityMock).not.toHaveBeenCalled();
+    expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['unknown status', 'move story 56 to parked'],
+    ['unknown member', 'assign story 56 to Grace Hopper'],
+  ])('does not offer AI for downstream %s resolution failures', async (_name, command) => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = command;
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(getVoiceInterpretationAvailabilityMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves browser/no-capability behavior after an unsupported deterministic command', async () => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you open the login card for me?';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
+    expect((document.getElementById('voiceInterpretationPanel') as HTMLElement).hidden).toBe(true);
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect(transcript.value).toBe('Could you open the login card for me?');
+  });
+
+  it('requires an explicit tap, reparses AI output, and confirms even a non-mutating AI action', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+    executeCommandIRMock.mockResolvedValue({});
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'Could you show me the login card?';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(false);
+
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    expect(interpretVoiceCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      transcript: 'Could you show me the login card?',
+      signal: expect.any(AbortSignal),
+    }));
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(false);
+    expect(document.getElementById('voiceInterpretationOriginal')?.textContent)
+      .toBe('Could you show me the login card?');
+    expect(document.getElementById('voiceInterpretationCandidate')?.textContent).toBe('open story 56');
+    expect(document.getElementById('voiceInterpretationAction')?.textContent).toContain('Fix login');
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+    expect(showConfirmDialogMock).toHaveBeenCalledWith(
+      expect.stringContaining('Fix login'),
+      'Confirm interpreted command',
+      expect.any(String),
+    );
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandIRMock.mock.calls[0][0]).toMatchObject({ intent: 'open_todo' });
+  });
+
+  it('cannot execute an AI proposal when the original input changes during confirmation', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+    let finishConfirmation: ((confirmed: boolean) => void) | undefined;
+    showConfirmDialogMock.mockImplementation(() => new Promise((resolve) => { finishConfirmation = resolve; }));
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+    transcript.value = 'a different request';
+    transcript.dispatchEvent(new Event('input', { bubbles: true }));
+    finishConfirmation?.(true);
+    await flushAsync();
+
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('never prepares automatically and prepares only after the explicit setup tap', async () => {
+    getVoiceInterpretationAvailabilityMock
+      .mockResolvedValueOnce({ state: 'action-required', action: 'download' })
+      .mockResolvedValueOnce({ state: 'ready', maximumOutputTokens: 96 });
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
+    expect((document.getElementById('voicePrepareBtn') as HTMLButtonElement).hidden).toBe(false);
+
+    document.getElementById('voicePrepareBtn')?.click();
+    await flushAsync();
+    expect(prepareVoiceInterpretationMock).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a canonical candidate that the deterministic parser cannot accept', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'say hello to the board' });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Please greet everybody';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    expect(document.getElementById('voiceInterpretationStatus')?.textContent)
+      .toContain('could not be safely understood');
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('discards a late inference when the board context changes', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    let finish: ((result: { kind: 'candidate'; command: string }) => void) | undefined;
+    interpretVoiceCommandMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    let context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    context = makeContext(makeBoard({ project: { ...makeBoard().project!, name: 'Replacement' } }));
+    finish?.({ kind: 'candidate', command: 'open story 56' });
+    await flushAsync();
+
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('resolves the canonical candidate against fresh contents of the still-current board', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    let finish: ((result: { kind: 'candidate'; command: string }) => void) | undefined;
+    interpretVoiceCommandMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const board = makeBoard();
+    openVoiceCommandDialog(makeOptions(() => makeContext(board)));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    board.columns.doing[0].title = 'Fresh login title';
+    finish?.({ kind: 'candidate', command: 'open story 56' });
+    await flushAsync();
+
+    expect(document.getElementById('voiceInterpretationAction')?.textContent)
+      .toContain('Fresh login title');
+  });
+
+  it('aborts interpretation on dialog close and replacement review', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    let firstSignal: AbortSignal | undefined;
+    interpretVoiceCommandMock.mockImplementation(({ signal }) => {
+      firstSignal = signal;
+      return new Promise(() => {});
+    });
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(firstSignal?.aborted).toBe(true);
+
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+    const replacementSignal = interpretVoiceCommandMock.mock.calls.at(-1)?.[0].signal as AbortSignal;
+    document.getElementById('voiceCommandClose')?.click();
+    expect(replacementSignal.aborted).toBe(true);
+  });
+
+  it('aborts and clears an AI proposal when the app backgrounds', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(false);
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(true);
+    expect(transcript.value).toBe('Could you show me the login card?');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts an active inference when the app backgrounds and never replays it on resume', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    let inferenceSignal: AbortSignal | undefined;
+    interpretVoiceCommandMock.mockImplementation(({ signal }) => {
+      inferenceSignal = signal;
+      return new Promise(() => {});
+    });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(inferenceSignal?.aborted).toBe(true);
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('scrumboy:native-foreground'));
+    await flushAsync();
+    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(2);
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves existing authorization checks for an AI-derived mutation', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'move story 56 to done' });
+    const context = { ...makeContext(), role: 'viewer' };
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you put login in done?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['busy', 'On-device interpretation is busy'],
+    ['quota_exceeded', 'temporarily unavailable'],
+  ])('preserves the transcript after %s inference errors', async (code, expectedMessage) => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockRejectedValue(new LocalTextGenerationError(code as 'busy' | 'quota_exceeded'));
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    expect(transcript.value).toBe('Could you show me the login card?');
+    expect(document.getElementById('voiceInterpretationStatus')?.textContent).toContain(expectedMessage);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps Hands-Free deterministic-only after an unsupported speech command', async () => {
+    localStorage.setItem(VOICE_FLOW_MODE_STORAGE_KEY, 'hands-free');
+    startOneShotRecognitionMock.mockResolvedValueOnce({ alternatives: ['Could you show me the login card?'] });
+
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    await flushAsync();
+
+    expect(getVoiceInterpretationAvailabilityMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('cannot carry an AI-derived proposal into Hands-Free auto-execution', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+    startOneShotRecognitionMock.mockResolvedValueOnce({ alternatives: ['unsupported hands free request'] });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(false);
+
+    document.getElementById('voiceModeHandsFree')?.click();
+    await flushAsync();
+
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(true);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(showConfirmDialogMock).not.toHaveBeenCalled();
+  });
+});
+
+afterEach(() => {
+  document.getElementById('voiceCommandDialog')?.dispatchEvent(new Event('voice-command:close'));
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });

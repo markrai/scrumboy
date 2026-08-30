@@ -10,6 +10,7 @@ import {
   type VoiceFlowHandsFreeConfirmation,
   type VoiceFlowMode,
 } from '../core/voiceflow-preferences.js';
+import { NATIVE_FOREGROUND_EVENT } from '../core/realtime.js';
 import { isAnonymousBoard, isTemporaryBoard, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/board-command-capabilities.js';
@@ -34,8 +35,16 @@ import {
 } from './schema.js';
 import { normalizeConfirmationResponse, normalizeDisambiguationChoice, type VoiceConfirmation, type VoiceDisambiguationChoice } from './vocabulary.js';
 import { renderVoiceMessage, voiceMessage, voiceText, type VoiceMessageDescriptor } from './i18n.js';
+import {
+  getVoiceInterpretationAvailability,
+  interpretVoiceCommand,
+  prepareVoiceInterpretation,
+  type VoiceInterpretationAvailability,
+} from './local-interpretation.js';
+import { LocalTextGenerationError, type LocalTextGenerationErrorCode } from '../platform/local-text-generation.js';
 
 export type VoiceCommandDialogContext = {
+  userId: number;
   projectId: number;
   projectSlug: string;
   board: Board;
@@ -44,6 +53,7 @@ export type VoiceCommandDialogContext = {
 };
 
 export type OpenVoiceCommandOptions = {
+  initialUserId: number;
   initialProjectId: number;
   initialProjectSlug: string;
   getContext: () => VoiceCommandDialogContext | null;
@@ -72,6 +82,8 @@ type PendingDisambiguation = {
   transcript: string;
   draft: ParsedCommandDraft;
   candidates: TodoTargetCandidate[];
+  source: 'deterministic' | 'ai';
+  originalTranscript: string;
 };
 
 type DialogMessage =
@@ -211,7 +223,12 @@ function canRunResolvedCommand(context: VoiceCommandDialogContext, command: Reso
 
 function getActiveContext(options: OpenVoiceCommandOptions): CommandResult<VoiceCommandDialogContext> {
   const context = options.getContext();
-  if (!context || context.projectId !== options.initialProjectId || context.projectSlug !== options.initialProjectSlug) {
+  if (
+    !context
+    || context.userId !== options.initialUserId
+    || context.projectId !== options.initialProjectId
+    || context.projectSlug !== options.initialProjectSlug
+  ) {
     return localizedCommandFailure("stale_context", "voice.errors.staleContext", "The board changed before the command could run.");
   }
   const allowed = canShowVoiceCommands({
@@ -412,6 +429,25 @@ function createDialog(): HTMLDialogElement {
         <span class="voice-command__status" id="voiceReviewStatus" aria-live="polite"></span>
       </div>
 
+      <section class="voice-command__interpretation" id="voiceInterpretationPanel" hidden>
+        <p class="voice-command__interpretation-disclosure" id="voiceInterpretationDisclosure" data-i18n-text="voice.ai.disclosure" data-i18n-fallback="On-device interpretation can rewrite this text as a supported VoiceFlow command. Your text stays on this device.">On-device interpretation can rewrite this text as a supported VoiceFlow command. Your text stays on this device.</p>
+        <div class="voice-command__status" id="voiceInterpretationStatus" aria-live="polite"></div>
+        <div class="voice-command__interpretation-actions">
+          <button type="button" class="btn" id="voiceInterpretBtn" hidden data-i18n-text="voice.ai.interpret" data-i18n-fallback="Interpret on device">Interpret on device</button>
+          <button type="button" class="btn" id="voicePrepareBtn" hidden data-i18n-text="voice.ai.setup" data-i18n-fallback="Set up on-device interpretation">Set up on-device interpretation</button>
+          <button type="button" class="btn btn--ghost" id="voiceInterpretRetryBtn" hidden data-i18n-text="voice.ai.retry" data-i18n-fallback="Retry status">Retry status</button>
+          <button type="button" class="btn btn--ghost" id="voiceInterpretCancelBtn" hidden data-i18n-text="common.cancel" data-i18n-fallback="Cancel">Cancel</button>
+        </div>
+      </section>
+
+      <section class="voice-command__interpretation-proposal" id="voiceInterpretationProposal" hidden>
+        <dl>
+          <div><dt data-i18n-text="voice.ai.original" data-i18n-fallback="Original">Original</dt><dd id="voiceInterpretationOriginal"></dd></div>
+          <div><dt data-i18n-text="voice.ai.interpreted" data-i18n-fallback="Interpreted command">Interpreted command</dt><dd id="voiceInterpretationCandidate"></dd></div>
+          <div><dt data-i18n-text="voice.ai.willDo" data-i18n-fallback="Will do">Will do</dt><dd id="voiceInterpretationAction"></dd></div>
+        </dl>
+      </section>
+
       <div class="voice-command__summary" id="voiceSummary" hidden></div>
       <div class="voice-command__disambiguation" id="voiceDisambiguation" hidden></div>
 
@@ -456,6 +492,17 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   const executeBtn = dialog.querySelector<HTMLButtonElement>("#voiceExecuteBtn");
   const summary = dialog.querySelector<HTMLElement>("#voiceSummary");
   const disambiguation = dialog.querySelector<HTMLElement>("#voiceDisambiguation");
+  const interpretationPanel = dialog.querySelector<HTMLElement>("#voiceInterpretationPanel");
+  const interpretationDisclosure = dialog.querySelector<HTMLElement>("#voiceInterpretationDisclosure");
+  const interpretationStatus = dialog.querySelector<HTMLElement>("#voiceInterpretationStatus");
+  const interpretBtn = dialog.querySelector<HTMLButtonElement>("#voiceInterpretBtn");
+  const prepareBtn = dialog.querySelector<HTMLButtonElement>("#voicePrepareBtn");
+  const interpretationRetryBtn = dialog.querySelector<HTMLButtonElement>("#voiceInterpretRetryBtn");
+  const interpretationCancelBtn = dialog.querySelector<HTMLButtonElement>("#voiceInterpretCancelBtn");
+  const interpretationProposal = dialog.querySelector<HTMLElement>("#voiceInterpretationProposal");
+  const interpretationOriginal = dialog.querySelector<HTMLElement>("#voiceInterpretationOriginal");
+  const interpretationCandidate = dialog.querySelector<HTMLElement>("#voiceInterpretationCandidate");
+  const interpretationAction = dialog.querySelector<HTMLElement>("#voiceInterpretationAction");
   const listenStatus = dialog.querySelector<HTMLElement>("#voiceListenStatus");
   const reviewStatus = dialog.querySelector<HTMLElement>("#voiceReviewStatus");
   const stateEl = dialog.querySelector<HTMLElement>("#voiceFlowState");
@@ -464,6 +511,9 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   let handsFreeConfirmation: VoiceFlowHandsFreeConfirmation = getVoiceFlowHandsFreeConfirmationPreference();
   let flowState: VoiceInteractionState = "idle";
   let currentCommand: ResolvedCommand | null = null;
+  let currentCommandSource: 'deterministic' | 'ai' = 'deterministic';
+  let currentOriginalTranscript = '';
+  let currentCanonicalTranscript = '';
   let pendingDisambiguation: PendingDisambiguation | null = null;
   let currentTargetSelection: { transcript: string; localId: number; allowedLocalIds: number[] } | null = null;
   let executing = false;
@@ -473,6 +523,13 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   let listenController: AbortController | null = null;
   let reviewController: AbortController | null = null;
   let executeController: AbortController | null = null;
+  let interpretationController: AbortController | null = null;
+  let interpretationOwner = 0;
+  let interpretationRelevant = false;
+  let interpretationAvailability: VoiceInterpretationAvailability | null = null;
+  let interpretationPhase: 'idle' | 'checking' | 'preparing' | 'interpreting' | 'refused' | 'error' = 'idle';
+  let interpretationErrorCode: LocalTextGenerationErrorCode | null = null;
+  let lastForegroundStatusRefreshAt = 0;
   let listenStatusMessage: DialogMessage | null = null;
   let reviewStatusMessage: DialogMessage | null = null;
 
@@ -500,6 +557,155 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   const renderStatuses = () => {
     safeSetText(listenStatus, renderDialogMessage(listenStatusMessage));
     safeSetText(reviewStatus, renderDialogMessage(reviewStatusMessage));
+  };
+
+  const interpretationErrorMessage = (code: LocalTextGenerationErrorCode | null): string => {
+    switch (code) {
+      case 'cancelled':
+        return '';
+      case 'busy':
+        return voiceText("voice.ai.busy", "On-device interpretation is busy. Try again shortly.");
+      case 'quota_exceeded':
+        return voiceText("voice.ai.quota", "On-device interpretation is temporarily unavailable. Try again later.");
+      case 'foreground_required':
+        return voiceText("voice.ai.foreground", "Keep Scrumboy in the foreground, then try again.");
+      case 'insufficient_storage':
+        return voiceText("voice.ai.storage", "More device storage is required for on-device interpretation.");
+      case 'output_rejected':
+        return voiceText("voice.ai.invalidOutput", "That interpretation could not be safely understood. Edit the command and try again.");
+      case 'input_too_large':
+        return voiceText("voice.ai.inputTooLarge", "Shorten the command before interpreting it on device.");
+      case 'unsupported':
+      case 'disabled':
+      case 'not_ready':
+      case 'download_failed':
+      case 'invalid_request':
+      case 'internal':
+      case null:
+        return voiceText("voice.ai.failed", "On-device interpretation is unavailable. You can edit the command and review it manually.");
+    }
+  };
+
+  const availabilityMessage = (availability: VoiceInterpretationAvailability | null): string => {
+    if (!availability) return '';
+    switch (availability.state) {
+      case 'absent':
+        return '';
+      case 'locale-unsupported':
+        return voiceText("voice.ai.englishOnly", "On-device interpretation is currently available for English commands only.");
+      case 'unsupported':
+        return voiceText("voice.ai.unsupported", "On-device interpretation is not supported on this device.");
+      case 'action-required':
+        if (availability.action === 'download') {
+          return voiceText("voice.ai.downloadRequired", "Set up the on-device model before interpreting commands.");
+        }
+        if (availability.action === 'enable') {
+          return voiceText("voice.ai.enableRequired", "Enable on-device intelligence in system settings, then retry status.");
+        }
+        return voiceText("voice.ai.updateRequired", "A system update is required for on-device interpretation.");
+      case 'preparing': {
+        if (availability.downloadedBytes != null && availability.totalBytes != null && availability.totalBytes > 0) {
+          const percent = Math.max(0, Math.min(100, Math.round((availability.downloadedBytes / availability.totalBytes) * 100)));
+          return voiceText("voice.ai.preparingProgress", "Preparing on-device interpretation: {percent}%", { percent });
+        }
+        return voiceText("voice.ai.preparing", "Preparing on-device interpretation...");
+      }
+      case 'ready':
+        return voiceText("voice.ai.ready", "This command can be interpreted on this device.");
+      case 'temporarily-unavailable':
+        switch (availability.reason) {
+          case 'busy':
+            return voiceText("voice.ai.busy", "On-device interpretation is busy. Try again shortly.");
+          case 'quota':
+            return voiceText("voice.ai.quota", "On-device interpretation is temporarily unavailable. Try again later.");
+          case 'foreground':
+            return voiceText("voice.ai.foreground", "Keep Scrumboy in the foreground, then try again.");
+          case 'storage':
+            return voiceText("voice.ai.storage", "More device storage is required for on-device interpretation.");
+          case 'initializing':
+          case 'provider':
+            return voiceText("voice.ai.unavailable", "On-device interpretation is temporarily unavailable.");
+        }
+    }
+  };
+
+  const renderInterpretation = () => {
+    if (!interpretationPanel) return;
+    const visible = interpretationRelevant
+      && mode === 'safe'
+      && interpretationAvailability?.state !== 'absent';
+    interpretationPanel.hidden = !visible;
+    if (!visible) return;
+    const busy = interpretationPhase === 'checking'
+      || interpretationPhase === 'preparing'
+      || interpretationPhase === 'interpreting';
+    interpretationPanel.setAttribute('aria-busy', String(busy));
+    if (interpretationDisclosure) {
+      interpretationDisclosure.hidden = interpretationAvailability?.state === 'locale-unsupported'
+        || interpretationAvailability?.state === 'unsupported';
+    }
+    let message = availabilityMessage(interpretationAvailability);
+    if (interpretationPhase === 'checking') {
+      message = voiceText("voice.ai.checking", "Checking on-device interpretation...");
+    } else if (interpretationPhase === 'preparing') {
+      message = voiceText("voice.ai.preparing", "Preparing on-device interpretation...");
+    } else if (interpretationPhase === 'interpreting') {
+      message = voiceText("voice.ai.interpreting", "Interpreting on device...");
+    } else if (interpretationPhase === 'refused') {
+      message = voiceText("voice.ai.refused", "That request could not be converted into one supported command. Edit it and try again.");
+    } else if (interpretationPhase === 'error') {
+      message = interpretationErrorMessage(interpretationErrorCode);
+    }
+    safeSetText(interpretationStatus, message);
+
+    const availability = interpretationAvailability;
+    if (interpretBtn) {
+      interpretBtn.hidden = busy || availability?.state !== 'ready';
+      interpretBtn.disabled = busy;
+    }
+    if (prepareBtn) {
+      prepareBtn.hidden = busy
+        || availability?.state !== 'action-required'
+        || availability.action !== 'download';
+      prepareBtn.disabled = busy;
+    }
+    if (interpretationRetryBtn) {
+      interpretationRetryBtn.hidden = busy || !availability || ![
+        'action-required',
+        'preparing',
+        'temporarily-unavailable',
+      ].includes(availability.state);
+      interpretationRetryBtn.disabled = busy;
+    }
+    if (interpretationCancelBtn) {
+      interpretationCancelBtn.hidden = !busy || interpretationPhase === 'checking';
+      interpretationCancelBtn.disabled = !busy;
+    }
+  };
+
+  const renderInterpretationProposal = () => {
+    const isAi = !!currentCommand && currentCommandSource === 'ai';
+    if (interpretationProposal) interpretationProposal.hidden = !isAi;
+    if (!isAi || !currentCommand) return;
+    safeSetText(interpretationOriginal, currentOriginalTranscript);
+    safeSetText(interpretationCandidate, currentCanonicalTranscript);
+    safeSetText(interpretationAction, formatResolvedCommand(currentCommand).summary);
+  };
+
+  const abortInterpretation = () => {
+    interpretationOwner += 1;
+    interpretationController?.abort();
+    interpretationController = null;
+  };
+
+  const clearInterpretation = () => {
+    abortInterpretation();
+    interpretationRelevant = false;
+    interpretationAvailability = null;
+    interpretationPhase = 'idle';
+    interpretationErrorCode = null;
+    if (interpretationPanel) interpretationPanel.hidden = true;
+    if (interpretationProposal) interpretationProposal.hidden = true;
   };
 
   const renderCurrentCommand = () => {
@@ -532,6 +738,9 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
 
   const clearResolved = () => {
     currentCommand = null;
+    currentCommandSource = 'deterministic';
+    currentOriginalTranscript = '';
+    currentCanonicalTranscript = '';
     pendingDisambiguation = null;
     currentTargetSelection = null;
     if (summary) {
@@ -547,6 +756,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       executeBtn.classList.remove("btn--danger");
       executeBtn.textContent = voiceText("voice.action.execute", "Execute");
     }
+    if (interpretationProposal) interpretationProposal.hidden = true;
   };
 
   const renderDisambiguation = (pending: PendingDisambiguation) => {
@@ -570,12 +780,19 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     disambiguation.hidden = false;
   };
 
-  const showTargetAmbiguity = (failure: CommandFailure, transcriptValue: string): boolean => {
+  const showTargetAmbiguity = (
+    failure: CommandFailure,
+    transcriptValue: string,
+    source: 'deterministic' | 'ai' = 'deterministic',
+    originalTranscript = transcriptValue,
+  ): boolean => {
     if (!isTargetAmbiguity(failure)) return false;
     pendingDisambiguation = {
       transcript: failure.transcript || transcriptValue,
       draft: failure.draft,
       candidates: failure.candidates.slice(0, 3),
+      source,
+      originalTranscript,
     };
     currentCommand = null;
     currentTargetSelection = null;
@@ -602,9 +819,18 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     renderCurrentCommand();
     if (pendingDisambiguation) renderDisambiguation(pendingDisambiguation);
     renderStatuses();
+    renderInterpretation();
+    renderInterpretationProposal();
   };
 
   const onLocaleChange = () => {
+    abortInterpretation();
+    if (currentCommandSource === 'ai') clearResolved();
+    if (interpretationRelevant) {
+      interpretationAvailability = null;
+      interpretationPhase = 'idle';
+      void refreshInterpretationAvailability();
+    }
     relocalizeDialog();
   };
 
@@ -612,9 +838,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     if (closed) return;
     closed = true;
     document.removeEventListener(I18N_LOCALE_CHANGED, onLocaleChange);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener(NATIVE_FOREGROUND_EVENT, onNativeForeground);
     listenController?.abort();
     reviewController?.abort();
     executeController?.abort();
+    abortInterpretation();
     listenController = null;
     reviewController = null;
     executeController = null;
@@ -635,6 +864,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       stopListening();
       reviewController?.abort();
       executeController?.abort();
+      clearInterpretation();
       clearResolved();
     }
     mode = nextMode;
@@ -658,9 +888,19 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     return resolved.danger;
   };
 
-  const applyResolved = (resolved: ResolvedCommand) => {
+  const applyResolved = (
+    resolved: ResolvedCommand,
+    metadata: {
+      source?: 'deterministic' | 'ai';
+      originalTranscript?: string;
+      canonicalTranscript?: string;
+    } = {},
+  ) => {
     if (closed) return;
     currentCommand = resolved;
+    currentCommandSource = metadata.source ?? 'deterministic';
+    currentOriginalTranscript = metadata.originalTranscript ?? (transcript?.value.trim() ?? '');
+    currentCanonicalTranscript = metadata.canonicalTranscript ?? currentOriginalTranscript;
     pendingDisambiguation = null;
     if (disambiguation) {
       disambiguation.hidden = true;
@@ -674,10 +914,211 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       executeBtn.classList.toggle("btn--danger", resolved.danger);
     }
     setReviewStatus(null);
+    renderInterpretationProposal();
+  };
+
+  const errorCodeForInterpretation = (error: unknown): LocalTextGenerationErrorCode =>
+    error instanceof LocalTextGenerationError ? error.code : 'internal';
+
+  const beginInterpretationOperation = (): { controller: AbortController; owner: number } => {
+    abortInterpretation();
+    const controller = new AbortController();
+    interpretationController = controller;
+    return { controller, owner: interpretationOwner };
+  };
+
+  const interpretationStillOwns = (
+    controller: AbortController,
+    owner: number,
+    originalTranscript?: string,
+  ): boolean => {
+    if (
+      closed
+      || controller.signal.aborted
+      || interpretationController !== controller
+      || interpretationOwner !== owner
+      || mode !== 'safe'
+    ) return false;
+    if (originalTranscript != null && transcript?.value.trim() !== originalTranscript) return false;
+    return !isCommandFailure(getActiveContext(options));
+  };
+
+  const refreshInterpretationAvailability = async (): Promise<void> => {
+    if (!interpretationRelevant || mode !== 'safe' || closed) return;
+    if (interpretationController && interpretationPhase === 'checking') return;
+    const originalTranscript = transcript?.value.trim() ?? '';
+    const { controller, owner } = beginInterpretationOperation();
+    interpretationPhase = 'checking';
+    interpretationErrorCode = null;
+    renderInterpretation();
+    try {
+      const availability = await getVoiceInterpretationAvailability({ signal: controller.signal });
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      interpretationAvailability = availability;
+      interpretationPhase = 'idle';
+      renderInterpretation();
+    } catch (error) {
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      const code = errorCodeForInterpretation(error);
+      if (code === 'cancelled') return;
+      interpretationPhase = 'error';
+      interpretationErrorCode = code;
+      renderInterpretation();
+    } finally {
+      if (interpretationController === controller) interpretationController = null;
+    }
+  };
+
+  const runInterpretationPreparation = async (): Promise<void> => {
+    if (!interpretationRelevant || mode !== 'safe' || closed) return;
+    const originalTranscript = transcript?.value.trim() ?? '';
+    const { controller, owner } = beginInterpretationOperation();
+    interpretationPhase = 'preparing';
+    interpretationErrorCode = null;
+    renderInterpretation();
+    try {
+      await prepareVoiceInterpretation({ signal: controller.signal });
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      interpretationAvailability = await getVoiceInterpretationAvailability({ signal: controller.signal });
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      interpretationPhase = 'idle';
+      renderInterpretation();
+    } catch (error) {
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      const code = errorCodeForInterpretation(error);
+      interpretationPhase = code === 'cancelled' ? 'idle' : 'error';
+      interpretationErrorCode = code === 'cancelled' ? null : code;
+      renderInterpretation();
+    } finally {
+      if (interpretationController === controller) interpretationController = null;
+    }
+  };
+
+  const runInterpretation = async (): Promise<void> => {
+    if (
+      !interpretationRelevant
+      || interpretationAvailability?.state !== 'ready'
+      || mode !== 'safe'
+      || closed
+    ) return;
+    const originalTranscript = transcript?.value.trim() ?? '';
+    const initialContext = getActiveContext(options);
+    if (isCommandFailure(initialContext)) {
+      setReviewStatus(initialContext);
+      return;
+    }
+    const { controller, owner } = beginInterpretationOperation();
+    interpretationPhase = 'interpreting';
+    interpretationErrorCode = null;
+    renderInterpretation();
+    try {
+      const interpreted = await interpretVoiceCommand({
+        transcript: originalTranscript,
+        signal: controller.signal,
+      });
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      const latestContext = getActiveContext(options);
+      if (
+        isCommandFailure(latestContext)
+        || latestContext.value.userId !== initialContext.value.userId
+        || latestContext.value.projectId !== initialContext.value.projectId
+        || latestContext.value.projectSlug !== initialContext.value.projectSlug
+        || latestContext.value.board !== initialContext.value.board
+        || latestContext.value.members !== initialContext.value.members
+        || latestContext.value.role !== initialContext.value.role
+      ) return;
+      if (interpreted.kind === 'refused') {
+        interpretationPhase = 'refused';
+        renderInterpretation();
+        return;
+      }
+
+      const resolved = await parseAndResolveCommand(interpreted.command, options, controller.signal);
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      if (isCommandFailure(resolved)) {
+        if (showTargetAmbiguity(resolved, interpreted.command, 'ai', originalTranscript)) {
+          interpretationRelevant = false;
+          renderInterpretation();
+          return;
+        }
+        interpretationPhase = 'error';
+        interpretationErrorCode = 'output_rejected';
+        renderInterpretation();
+        return;
+      }
+
+      interpretationRelevant = false;
+      interpretationPhase = 'idle';
+      applyResolved(resolved.value, {
+        source: 'ai',
+        originalTranscript,
+        canonicalTranscript: interpreted.command,
+      });
+      setFlowState('target_resolved');
+      renderInterpretation();
+      executeBtn?.focus();
+    } catch (error) {
+      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+      const code = errorCodeForInterpretation(error);
+      interpretationPhase = code === 'cancelled' ? 'idle' : 'error';
+      interpretationErrorCode = code === 'cancelled' ? null : code;
+      renderInterpretation();
+    } finally {
+      if (interpretationController === controller) interpretationController = null;
+    }
+  };
+
+  const cancelInterpretation = () => {
+    abortInterpretation();
+    interpretationPhase = 'idle';
+    interpretationErrorCode = null;
+    renderInterpretation();
+    (interpretBtn?.hidden ? interpretationRetryBtn : interpretBtn)?.focus();
+  };
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      lastForegroundStatusRefreshAt = 0;
+      const wasRelevant = interpretationRelevant || currentCommandSource === 'ai';
+      abortInterpretation();
+      if (currentCommandSource === 'ai') clearResolved();
+      interpretationRelevant = wasRelevant;
+      interpretationPhase = 'idle';
+      interpretationErrorCode = null;
+      renderInterpretation();
+      return;
+    }
+    refreshInterpretationAfterForeground();
+  };
+
+  const onNativeForeground = () => {
+    if (document.visibilityState !== 'hidden') refreshInterpretationAfterForeground();
+  };
+
+  const refreshInterpretationAfterForeground = () => {
+    if (!interpretationRelevant) return;
+    const now = Date.now();
+    if (now - lastForegroundStatusRefreshAt < 1_000) return;
+    lastForegroundStatusRefreshAt = now;
+    void refreshInterpretationAvailability();
+  };
+
+  const offerInterpretationForFailure = (failure: CommandFailure, value: string): void => {
+    const parserResult = parseCommand(value);
+    if (
+      value.length === 0
+      || value.length > 260
+      || failure.code !== 'unsupported'
+      || !isCommandFailure(parserResult)
+      || parserResult.code !== 'unsupported'
+    ) return;
+    interpretationRelevant = true;
+    void refreshInterpretationAvailability();
   };
 
   const reviewTranscript = async () => {
     reviewController?.abort();
+    clearInterpretation();
     const controller = new AbortController();
     reviewController = controller;
     clearResolved();
@@ -690,6 +1131,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       if (isCommandFailure(resolved)) {
         if (showTargetAmbiguity(resolved, value)) return;
         setReviewStatus(resolved);
+        offerInterpretationForFailure(resolved, value);
         return;
       }
       applyResolved(resolved.value);
@@ -699,13 +1141,31 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     }
   };
 
-  const executeReviewedCommand = async (reviewedCommand: ResolvedCommand, controller: AbortController): Promise<boolean> => {
+  const executeReviewedCommand = async (
+    reviewedCommand: ResolvedCommand,
+    controller: AbortController,
+    reviewedContext: {
+      source: 'deterministic' | 'ai';
+      originalTranscript: string;
+      canonicalTranscript: string;
+    } = {
+      source: currentCommandSource,
+      originalTranscript: currentOriginalTranscript,
+      canonicalTranscript: currentCanonicalTranscript,
+    },
+  ): Promise<boolean> => {
     const reviewedHash = commandHash(reviewedCommand);
     if (reviewedHash === lastExecutedHash) {
       setReviewStatus(voiceMessage("voice.status.alreadyRan", "This command already ran."));
       return false;
     }
-    const value = transcript?.value.trim() ?? "";
+    const originalValue = transcript?.value.trim() ?? "";
+    if (reviewedContext.source === 'ai' && originalValue !== reviewedContext.originalTranscript) {
+      clearResolved();
+      setReviewStatus(voiceMessage("voice.status.commandChanged", "Command changed. Review again before running."));
+      return false;
+    }
+    const value = reviewedContext.source === 'ai' ? reviewedContext.canonicalTranscript : originalValue;
     const selection = currentTargetSelection?.transcript === value
       ? {
           selectedLocalId: currentTargetSelection.localId,
@@ -751,10 +1211,14 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       setReviewStatus(resolved);
       return null;
     }
-    if (transcript) transcript.value = pending.transcript;
+    if (transcript && pending.source === 'deterministic') transcript.value = pending.transcript;
     currentTargetSelection = { transcript: pending.transcript, localId: candidate.localId, allowedLocalIds };
     setFlowState("target_resolved");
-    applyResolved(resolved.value);
+    applyResolved(resolved.value, {
+      source: pending.source,
+      originalTranscript: pending.originalTranscript,
+      canonicalTranscript: pending.transcript,
+    });
     return resolved.value;
   };
 
@@ -826,6 +1290,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     listenController?.abort();
     reviewController?.abort();
     executeController?.abort();
+    clearInterpretation();
     clearResolved();
     listenStoppedByUser = false;
     const controller = new AbortController();
@@ -903,6 +1368,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   cancelBtn?.addEventListener("click", close);
   dialog.addEventListener("voice-command:close", close);
   document.addEventListener(I18N_LOCALE_CHANGED, onLocaleChange);
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener(NATIVE_FOREGROUND_EVENT, onNativeForeground);
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) close();
   });
@@ -911,10 +1378,23 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     close();
   });
 
-  transcript?.addEventListener("input", clearResolved);
+  transcript?.addEventListener("input", () => {
+    clearInterpretation();
+    clearResolved();
+  });
   reviewBtn?.addEventListener("click", () => {
     void reviewTranscript();
   });
+  interpretBtn?.addEventListener('click', () => {
+    void runInterpretation();
+  });
+  prepareBtn?.addEventListener('click', () => {
+    void runInterpretationPreparation();
+  });
+  interpretationRetryBtn?.addEventListener('click', () => {
+    void refreshInterpretationAvailability();
+  });
+  interpretationCancelBtn?.addEventListener('click', cancelInterpretation);
   disambiguation?.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>(".voice-command__candidate");
     if (!button) return;
@@ -953,6 +1433,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         if (transcript && speech.alternatives[0]) transcript.value = speech.alternatives[0];
         if (showTargetAmbiguity(parsed, speech.alternatives[0] || "")) return;
         setListenStatus(parsed);
+        offerInterpretationForFailure(parsed, speech.alternatives[0] || "");
         return;
       }
       if (transcript) transcript.value = parsed.value.transcript;
@@ -987,6 +1468,11 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     event.preventDefault();
     if (mode === "hands-free" || executing || !currentCommand || !executeBtn) return;
     const reviewedCommand = currentCommand;
+    const reviewedContext = {
+      source: currentCommandSource,
+      originalTranscript: currentOriginalTranscript,
+      canonicalTranscript: currentCanonicalTranscript,
+    };
 
     executeController?.abort();
     const controller = new AbortController();
@@ -996,9 +1482,15 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     setFlowState("execute");
     setReviewStatus(voiceMessage("voice.status.running", "Running..."));
     try {
-      if (reviewedCommand.danger) {
+      if (reviewedContext.source === 'ai' || reviewedCommand.danger) {
         const display = formatResolvedCommand(reviewedCommand);
-        const confirmed = await showConfirmDialog(display.summary, voiceText("voice.confirm.title", "Confirm command"), display.confirmLabel);
+        const confirmed = await showConfirmDialog(
+          display.summary,
+          reviewedContext.source === 'ai'
+            ? voiceText("voice.ai.confirmTitle", "Confirm interpreted command")
+            : voiceText("voice.confirm.title", "Confirm command"),
+          display.confirmLabel,
+        );
         if (!confirmed) {
           executeBtn.disabled = false;
           setReviewStatus(voiceMessage("voice.status.cancelled", "Cancelled"));
@@ -1006,7 +1498,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           return;
         }
       }
-      const executed = await executeReviewedCommand(reviewedCommand, controller);
+      const executed = await executeReviewedCommand(reviewedCommand, controller, reviewedContext);
       if (!executed) {
         if (currentCommand) executeBtn.disabled = false;
         return;

@@ -16,11 +16,19 @@ const executeCommandIRMock = vi.hoisted(() => vi.fn());
 const startOneShotRecognitionMock = vi.hoisted(() => vi.fn());
 const speakMock = vi.hoisted(() => vi.fn());
 const showConfirmDialogMock = vi.hoisted(() => vi.fn());
+const getVoiceInterpretationAvailabilityMock = vi.hoisted(() => vi.fn());
+const prepareVoiceInterpretationMock = vi.hoisted(() => vi.fn());
+const interpretVoiceCommandMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./mcp-client.js', () => ({ callMcpTool: callMcpToolMock }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
 vi.mock('./speech.js', () => ({ startOneShotRecognition: startOneShotRecognitionMock }));
 vi.mock('./speech-output.js', () => ({ speak: speakMock }));
+vi.mock('./local-interpretation.js', () => ({
+  getVoiceInterpretationAvailability: getVoiceInterpretationAvailabilityMock,
+  prepareVoiceInterpretation: prepareVoiceInterpretationMock,
+  interpretVoiceCommand: interpretVoiceCommandMock,
+}));
 vi.mock('../utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils.js')>();
   return { ...actual, showConfirmDialog: showConfirmDialogMock };
@@ -71,6 +79,7 @@ function makeBoard(overrides: Partial<Board> = {}): Board {
 
 function makeContext(board = makeBoard()): VoiceCommandDialogContext {
   return {
+    userId: 7,
     projectId: 1,
     projectSlug: 'alpha',
     board,
@@ -81,6 +90,7 @@ function makeContext(board = makeBoard()): VoiceCommandDialogContext {
 
 function makeOptions(getContext: () => VoiceCommandDialogContext | null): OpenVoiceCommandOptions {
   return {
+    initialUserId: 7,
     initialProjectId: 1,
     initialProjectSlug: 'alpha',
     getContext,
@@ -114,6 +124,9 @@ describe('VoiceFlow i18n', () => {
     startOneShotRecognitionMock.mockReset();
     speakMock.mockReset().mockResolvedValue(undefined);
     showConfirmDialogMock.mockReset().mockResolvedValue(true);
+    getVoiceInterpretationAvailabilityMock.mockReset().mockResolvedValue({ state: 'absent' });
+    prepareVoiceInterpretationMock.mockReset().mockResolvedValue(undefined);
+    interpretVoiceCommandMock.mockReset().mockResolvedValue({ kind: 'refused' });
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
       configurable: true,
       value(this: HTMLDialogElement) {
@@ -150,6 +163,48 @@ describe('VoiceFlow i18n', () => {
     expect(document.getElementById('voiceModeSafe')?.textContent).toBe(de['voice.mode.safe']);
     expect(document.getElementById('voiceListenBtn')?.textContent).toBe(de['voice.action.listen']);
     expect(document.getElementById('voiceFlowState')?.textContent).toBe(de['voice.state.idle']);
+  });
+
+  it('localizes interpretation controls and shows the English-only status after a locale change', async () => {
+    getVoiceInterpretationAvailabilityMock
+      .mockResolvedValueOnce({ state: 'ready', maximumOutputTokens: 96 })
+      .mockResolvedValueOnce({ state: 'locale-unsupported' });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(document.getElementById('voiceInterpretBtn')?.textContent).toBe(en['voice.ai.interpret']);
+    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(false);
+
+    await setLocale('de');
+    await flushAsync();
+
+    expect(document.getElementById('voiceInterpretBtn')?.textContent).toBe(de['voice.ai.interpret']);
+    expect(document.getElementById('voiceInterpretationStatus')?.textContent).toBe(de['voice.ai.englishOnly']);
+    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(true);
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+  });
+
+  it('removes interpretation locale and foreground listeners when the dialog closes', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Could you show me the login card?';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
+
+    document.getElementById('voiceCommandClose')?.click();
+    await setLocale('de');
+    window.dispatchEvent(new Event('scrumboy:native-foreground'));
+    await flushAsync();
+
+    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
   });
 
   it('updates an open dialog after locale change without reopening or re-resolving', async () => {

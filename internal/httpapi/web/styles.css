@@ -1815,6 +1815,50 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   font-size: var(--fs-13);
 }
 
+.voice-command__interpretation,
+.voice-command__interpretation-proposal {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: rgba(96, 165, 250, 0.08);
+  padding: var(--s-10) 12px;
+}
+
+.voice-command__interpretation-disclosure {
+  margin: 0 0 var(--s-8);
+  color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.45;
+}
+
+.voice-command__interpretation-actions {
+  display: flex;
+  gap: var(--s-8);
+  flex-wrap: wrap;
+  margin-top: var(--s-8);
+}
+
+.voice-command__interpretation-proposal dl {
+  display: grid;
+  gap: var(--s-10);
+  margin: 0;
+}
+
+.voice-command__interpretation-proposal dl > div {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.voice-command__interpretation-proposal dt {
+  color: var(--muted);
+  font-size: var(--fs-12);
+  font-weight: 700;
+}
+
+.voice-command__interpretation-proposal dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .voice-command__summary {
   border: 1px solid var(--border);
   border-radius: var(--radius-8);
@@ -1860,6 +1904,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 
 .voice-command__summary[hidden],
 .voice-command__disambiguation[hidden],
+.voice-command__interpretation[hidden],
+.voice-command__interpretation-proposal[hidden],
 .voice-command__speech[hidden],
 .voice-command__confirmation-policy[hidden] {
   display: none;
