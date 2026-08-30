@@ -11,7 +11,7 @@ import {
   type VoiceFlowMode,
 } from '../core/voiceflow-preferences.js';
 import { NATIVE_FOREGROUND_EVENT } from '../core/realtime.js';
-import { isAnonymousBoard, isTemporaryBoard, showConfirmDialog, showToast } from '../utils.js';
+import { isAnonymousBoard, isTemporaryBoard, showConfirmDialog, showToast, type ConfirmDialogTone } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/board-command-capabilities.js';
 import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
@@ -912,6 +912,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     return resolved.danger;
   };
 
+  const confirmationTone = (resolved: ResolvedCommand): ConfirmDialogTone => {
+    if (resolved.ir.intent === "todos.delete") return "danger";
+    if (resolved.ir.intent === "todos.create") return "success";
+    return "default";
+  };
+
   const applyResolved = (
     resolved: ResolvedCommand,
     metadata: {
@@ -1649,6 +1655,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
             ? voiceText("voice.ai.confirmTitle", "Confirm interpreted command")
             : voiceText("voice.confirm.title", "Confirm command"),
           display.confirmLabel,
+          confirmationTone(reviewedCommand),
         );
         if (!confirmed) {
           executeBtn.disabled = false;

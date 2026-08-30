@@ -7,10 +7,10 @@ describe('voice command MCP mapping', () => {
       intent: 'todos.create',
       projectId: 1,
       projectSlug: 'alpha',
-      entities: { title: 'Fix login' },
+      entities: { title: 'Fix login', columnKey: 'todo' },
     })).toEqual({
       tool: 'todos_create',
-      input: { projectSlug: 'alpha', title: 'Fix login' },
+      input: { projectSlug: 'alpha', title: 'Fix login', columnKey: 'todo' },
     });
 
     expect(buildMcpCall({

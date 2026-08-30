@@ -236,6 +236,14 @@ export interface PromptDialogOptions {
   maxLength?: number;
 }
 
+export type ConfirmDialogTone = "default" | "success" | "danger";
+
+function confirmDialogToneClass(tone: ConfirmDialogTone): string {
+  if (tone === "success") return " btn--success";
+  if (tone === "danger") return " btn--danger";
+  return "";
+}
+
 /**
  * Shows a custom confirmation dialog matching the site's design.
  * Returns a Promise that resolves to true if confirmed, false if cancelled.
@@ -251,11 +259,13 @@ export interface PromptDialogOptions {
  * @param message - Body text
  * @param title - Dialog title (default "Confirm")
  * @param confirmLabel - Label for confirm button (default "Confirm")
+ * @param tone - Semantic confirm-button tone (default "danger" for existing callers)
  */
 export function showConfirmDialog(
   message: string,
   title: string = t("common.confirm"),
   confirmLabel: string = t("common.confirm"),
+  tone: ConfirmDialogTone = "danger",
 ): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const dialog = document.createElement('dialog');
@@ -273,7 +283,7 @@ export function showConfirmDialog(
         <div class="dialog__footer">
           <div class="spacer"></div>
           <button class="btn btn--ghost" type="button" id="confirmDialogCancel">${escapeHTML(t("common.cancel"))}</button>
-          <button class="btn btn--danger" type="button" id="confirmDialogConfirm">${escapeHTML(confirmLabel)}</button>
+          <button class="btn${confirmDialogToneClass(tone)}" type="button" id="confirmDialogConfirm">${escapeHTML(confirmLabel)}</button>
         </div>
       </div>
     `;

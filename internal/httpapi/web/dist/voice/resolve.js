@@ -172,11 +172,15 @@ function withResolvedCommandDisplay(command) {
 }
 export async function resolveCommandDraft(draft, context, options = {}) {
     if (draft.intent === "todos.create") {
+        const destination = boardLanes(context.board)[0];
+        if (!destination) {
+            return localizedCommandFailure("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
+        }
         const ir = {
             intent: "todos.create",
             projectId: context.projectId,
             projectSlug: context.projectSlug,
-            entities: { title: draft.title },
+            entities: { title: draft.title, columnKey: destination.key },
         };
         const validated = validateResolvedIR(ir, context);
         if (isCommandFailure(validated))

@@ -26,6 +26,7 @@ export function buildMcpCall(ir: McpCommandIR): McpCommandCall {
         input: {
           projectSlug: ir.projectSlug,
           title: ir.entities.title,
+          columnKey: ir.entities.columnKey,
         },
       };
     case "todos.move":

@@ -795,6 +795,13 @@ export function openVoiceCommandDialog(options) {
         }
         return resolved.danger;
     };
+    const confirmationTone = (resolved) => {
+        if (resolved.ir.intent === "todos.delete")
+            return "danger";
+        if (resolved.ir.intent === "todos.create")
+            return "success";
+        return "default";
+    };
     const applyResolved = (resolved, metadata = {}) => {
         if (closed)
             return;
@@ -1563,7 +1570,7 @@ export function openVoiceCommandDialog(options) {
                 const display = formatResolvedCommand(reviewedCommand);
                 const confirmed = await showConfirmDialog(display.summary, reviewedContext.source === 'ai'
                     ? voiceText("voice.ai.confirmTitle", "Confirm interpreted command")
-                    : voiceText("voice.confirm.title", "Confirm command"), display.confirmLabel);
+                    : voiceText("voice.confirm.title", "Confirm command"), display.confirmLabel, confirmationTone(reviewedCommand));
                 if (!confirmed) {
                     executeBtn.disabled = false;
                     setReviewStatus(voiceMessage("voice.status.cancelled", "Cancelled"));

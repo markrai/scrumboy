@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
+import { buildMcpCall } from './execute.js';
 import { parseCommand } from './parser.js';
 import { resolveCommandDraft } from './resolve.js';
 
@@ -49,6 +50,41 @@ async function parseAndResolve(input: string, sourceBoard = board()) {
 }
 
 describe('voice command resolution', () => {
+  it('resolves create into the first active workflow column used by ordinary create', async () => {
+    const sourceBoard = board({
+      columnOrder: [
+        { key: 'todo', name: 'To Do', isDone: false },
+        { key: 'done', name: 'Done', isDone: true },
+      ],
+      columns: { todo: [], done: [] },
+    });
+
+    const resolved = await parseAndResolve('create todo Clean the garage', sourceBoard);
+
+    expect(resolved).toMatchObject({
+      ok: true,
+      value: {
+        ir: {
+          intent: 'todos.create',
+          projectId: 1,
+          projectSlug: 'alpha',
+          entities: { title: 'Clean the garage', columnKey: 'todo' },
+        },
+      },
+    });
+    if (!resolved.ok || resolved.value.ir.intent !== 'todos.create') {
+      throw new Error('create command did not reach the create execution boundary');
+    }
+    expect(buildMcpCall(resolved.value.ir)).toEqual({
+      tool: 'todos_create',
+      input: {
+        projectSlug: 'alpha',
+        title: 'Clean the garage',
+        columnKey: 'todo',
+      },
+    });
+  });
+
   it('maps spoken status aliases to active board lane keys', async () => {
     const resolved = await parseAndResolve('todo 56 is in progress');
 

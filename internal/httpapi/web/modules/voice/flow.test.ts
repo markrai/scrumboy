@@ -600,7 +600,7 @@ describe('voice command flow', () => {
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await flushAsync();
 
-    expect(showConfirmDialogMock).toHaveBeenCalledWith('Delete todo #56: Fix login', 'Confirm command', 'Delete');
+    expect(showConfirmDialogMock).toHaveBeenCalledWith('Delete todo #56: Fix login', 'Confirm command', 'Delete', 'danger');
     expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
   });
 
@@ -924,9 +924,94 @@ describe('voice command flow', () => {
       expect.stringContaining('Fix login'),
       'Confirm interpreted command',
       expect.any(String),
+      'default',
     );
     expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
     expect(executeCommandIRMock.mock.calls[0][0]).toMatchObject({ intent: 'open_todo' });
+  });
+
+  it('executes an AI-primary create in the deterministic default lane with success confirmation semantics', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'create todo Clean the garage' });
+    executeCommandIRMock.mockResolvedValue({});
+    const sourceBoard = makeBoard({
+      columnOrder: [
+        { key: 'todo', name: 'To Do', isDone: false },
+        { key: 'done', name: 'Done', isDone: true },
+      ],
+      columns: { todo: [], done: [] },
+    });
+    const context = makeContext(sourceBoard);
+    const options = makeOptions(() => context);
+    const deterministic = await parseAndResolveCommand('create todo Clean the garage', options);
+    if (!deterministic.ok) throw new Error('deterministic create did not resolve');
+
+    openVoiceCommandDialog(options);
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'Create a to-do about cleaning the garage today';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(interpretVoiceCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      transcript: 'Create a to-do about cleaning the garage today',
+      signal: expect.any(AbortSignal),
+    }));
+    expect(deterministicInterpretMock).not.toHaveBeenCalledWith(
+      'Create a to-do about cleaning the garage today',
+      expect.anything(),
+    );
+    expect(document.getElementById('voiceInterpretationCandidate')?.textContent)
+      .toBe('create todo Clean the garage');
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(showConfirmDialogMock).toHaveBeenCalledWith(
+      'Create todo "Clean the garage"',
+      'Confirm interpreted command',
+      'Create',
+      'success',
+    );
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandIRMock.mock.calls[0][0]).toEqual(deterministic.value.ir);
+    expect(executeCommandIRMock.mock.calls[0][0]).toEqual({
+      intent: 'todos.create',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { title: 'Clean the garage', columnKey: 'todo' },
+    });
+  });
+
+  it('keeps AI-derived delete confirmation destructive', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'delete todo 56' });
+    executeCommandIRMock.mockResolvedValue({});
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'Please delete the login todo';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(localAiInterpretMock).toHaveBeenCalledWith(
+      'Please delete the login todo',
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(document.getElementById('voiceSummary')?.textContent).toBe('Delete todo #56: Fix login');
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(false);
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(showConfirmDialogMock).toHaveBeenCalledWith(
+      'Delete todo #56: Fix login',
+      'Confirm interpreted command',
+      'Delete',
+      'danger',
+    );
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
   });
 
   it('preserves the existing local-AI refusal presentation through the common interpreter result', async () => {

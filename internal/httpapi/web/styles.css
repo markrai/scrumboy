@@ -64,6 +64,7 @@
   --muted: #9ca3af;
   --border: rgba(255, 255, 255, 0.08);
   --accent: #60a5fa;
+  --success: #22c55e;
   --danger: #ef4444;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   --project-name-color: #EFBF04;
@@ -105,6 +106,7 @@
   --muted: #6b7280;
   --border: rgba(0, 0, 0, 0.12);
   --accent: #3b82f6;
+  --success: #16a34a;
   --danger: #dc2626;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
   --project-name-color: #111827;
@@ -1444,6 +1446,24 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   cursor: not-allowed;
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.2);
+  color: var(--muted);
+}
+
+.btn--success {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border-color: color-mix(in srgb, var(--success) 32%, transparent);
+}
+
+.btn--success:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--success) 55%, transparent);
+}
+
+.btn--success:disabled,
+.btn--success[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--success) 8%, transparent);
+  border-color: color-mix(in srgb, var(--success) 20%, transparent);
   color: var(--muted);
 }
 

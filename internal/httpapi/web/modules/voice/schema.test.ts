@@ -45,7 +45,7 @@ describe('voice command schema validation', () => {
       intent: 'todos.create',
       projectId: 1,
       projectSlug: 'alpha',
-      entities: { title: 'Fix login', columnKey: 'done' },
+      entities: { title: 'Fix login', columnKey: 'doing', unexpected: true },
     }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
 
     expect(validateCommandIR({
@@ -54,6 +54,35 @@ describe('voice command schema validation', () => {
       projectSlug: 'alpha',
       entities: { localId: 56, title: 'wrong' },
     }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
+  });
+
+  it('requires create commands to carry an active board column key', () => {
+    expect(validateCommandIR({
+      intent: 'todos.create',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { title: 'Fix login', columnKey: 'doing' },
+    }, { projectId: 1, projectSlug: 'alpha', board })).toMatchObject({
+      ok: true,
+      value: { entities: { title: 'Fix login', columnKey: 'doing' } },
+    });
+
+    expect(validateCommandIR({
+      intent: 'todos.create',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { title: 'Fix login' },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
+
+    expect(validateCommandIR({
+      intent: 'todos.create',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { title: 'Fix login', columnKey: 'backlog' },
+    }, { projectId: 1, projectSlug: 'alpha', board })).toMatchObject({
+      ok: false,
+      code: 'unknown_status',
+    });
   });
 
   it('rejects a move onto agenda when agenda is not a workflow column', () => {

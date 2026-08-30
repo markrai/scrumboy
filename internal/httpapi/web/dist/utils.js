@@ -207,6 +207,13 @@ export function getAppVersion() {
     const meta = document.querySelector('meta[name="app-version"]');
     return meta ? (meta.getAttribute("content") || "") : "";
 }
+function confirmDialogToneClass(tone) {
+    if (tone === "success")
+        return " btn--success";
+    if (tone === "danger")
+        return " btn--danger";
+    return "";
+}
 /**
  * Shows a custom confirmation dialog matching the site's design.
  * Returns a Promise that resolves to true if confirmed, false if cancelled.
@@ -222,8 +229,9 @@ export function getAppVersion() {
  * @param message - Body text
  * @param title - Dialog title (default "Confirm")
  * @param confirmLabel - Label for confirm button (default "Confirm")
+ * @param tone - Semantic confirm-button tone (default "danger" for existing callers)
  */
-export function showConfirmDialog(message, title = t("common.confirm"), confirmLabel = t("common.confirm")) {
+export function showConfirmDialog(message, title = t("common.confirm"), confirmLabel = t("common.confirm"), tone = "danger") {
     return new Promise((resolve, reject) => {
         const dialog = document.createElement('dialog');
         dialog.className = 'dialog';
@@ -239,7 +247,7 @@ export function showConfirmDialog(message, title = t("common.confirm"), confirmL
         <div class="dialog__footer">
           <div class="spacer"></div>
           <button class="btn btn--ghost" type="button" id="confirmDialogCancel">${escapeHTML(t("common.cancel"))}</button>
-          <button class="btn btn--danger" type="button" id="confirmDialogConfirm">${escapeHTML(confirmLabel)}</button>
+          <button class="btn${confirmDialogToneClass(tone)}" type="button" id="confirmDialogConfirm">${escapeHTML(confirmLabel)}</button>
         </div>
       </div>
     `;

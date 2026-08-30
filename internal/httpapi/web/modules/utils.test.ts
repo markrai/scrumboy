@@ -100,6 +100,21 @@ describe("showConfirmDialog lifecycle", () => {
     });
   });
 
+  it.each([
+    ["default", false, false],
+    ["success", true, false],
+    ["danger", false, true],
+  ] as const)("applies the %s semantic confirmation tone", async (tone, success, danger) => {
+    const resultPromise = showConfirmDialog("Proceed?", "Confirm", "Continue", tone);
+    const confirmBtn = document.getElementById("confirmDialogConfirm") as HTMLButtonElement;
+
+    expect(confirmBtn.classList.contains("btn--success")).toBe(success);
+    expect(confirmBtn.classList.contains("btn--danger")).toBe(danger);
+
+    confirmBtn.click();
+    await expect(resultPromise).resolves.toBe(true);
+  });
+
   it("resolves true exactly once even on double-click confirm", async () => {
     const resultPromise = showConfirmDialog("Proceed?");
     const confirmBtn = document.getElementById("confirmDialogConfirm") as HTMLButtonElement;
