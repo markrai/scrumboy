@@ -4,6 +4,7 @@ import { isAnonymousBoard, isTemporaryBoard, showConfirmDialog, showToast } from
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/board-command-capabilities.js';
 import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
+import { deterministicVoiceCommandInterpreter } from './deterministic-interpreter.js';
 import { executeCommandIR } from './execute.js';
 import { callMcpTool } from './mcp-client.js';
 import { parseCommand } from './parser.js';
@@ -1011,7 +1012,17 @@ export function openVoiceCommandDialog(options) {
         setReviewStatus(voiceMessage("voice.status.reviewing", "Reviewing..."));
         setFlowState("resolve_target");
         try {
-            const resolved = await parseAndResolveCommand(value, options, controller.signal);
+            const interpretation = await deterministicVoiceCommandInterpreter.interpret(value, { signal: controller.signal });
+            if (closed || controller.signal.aborted || reviewController !== controller)
+                return;
+            if (interpretation.kind === 'unsupported') {
+                if (showTargetAmbiguity(interpretation.failure, value))
+                    return;
+                setReviewStatus(interpretation.failure);
+                offerInterpretationForFailure(interpretation.failure, value);
+                return;
+            }
+            const resolved = await parseAndResolveCommand(interpretation.command, options, controller.signal);
             if (closed || controller.signal.aborted || reviewController !== controller)
                 return;
             if (isCommandFailure(resolved)) {
@@ -1021,7 +1032,11 @@ export function openVoiceCommandDialog(options) {
                 offerInterpretationForFailure(resolved, value);
                 return;
             }
-            applyResolved(resolved.value);
+            applyResolved(resolved.value, {
+                source: 'deterministic',
+                originalTranscript: value,
+                canonicalTranscript: interpretation.command,
+            });
             setFlowState("target_resolved");
         }
         finally {

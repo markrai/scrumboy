@@ -11,6 +11,7 @@ const showConfirmDialogMock = vi.hoisted(() => vi.fn());
 const getVoiceInterpretationAvailabilityMock = vi.hoisted(() => vi.fn());
 const prepareVoiceInterpretationMock = vi.hoisted(() => vi.fn());
 const interpretVoiceCommandMock = vi.hoisted(() => vi.fn());
+const deterministicInterpretMock = vi.hoisted(() => vi.fn());
 
 vi.mock('./mcp-client.js', () => ({ callMcpTool: callMcpToolMock }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
@@ -21,6 +22,19 @@ vi.mock('./local-interpretation.js', () => ({
   prepareVoiceInterpretation: prepareVoiceInterpretationMock,
   interpretVoiceCommand: interpretVoiceCommandMock,
 }));
+vi.mock('./deterministic-interpreter.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./deterministic-interpreter.js')>();
+  deterministicInterpretMock.mockImplementation(
+    (input: string, options?: { signal?: AbortSignal }) =>
+      actual.deterministicVoiceCommandInterpreter.interpret(input, options),
+  );
+  return {
+    ...actual,
+    deterministicVoiceCommandInterpreter: {
+      interpret: deterministicInterpretMock,
+    },
+  };
+});
 vi.mock('../utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils.js')>();
   return { ...actual, showConfirmDialog: showConfirmDialogMock };
@@ -124,6 +138,7 @@ beforeEach(() => {
   getVoiceInterpretationAvailabilityMock.mockReset().mockResolvedValue({ state: 'absent' });
   prepareVoiceInterpretationMock.mockReset().mockResolvedValue(undefined);
   interpretVoiceCommandMock.mockReset().mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+  deterministicInterpretMock.mockClear();
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
     configurable: true,
@@ -406,6 +421,48 @@ describe('voice command flow', () => {
     expect(executeCommandIRMock).not.toHaveBeenCalled();
     expect(document.getElementById('voiceReviewStatus')?.textContent).toBe('Command changed. Review again before running.');
     expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('routes typed review through the deterministic interpreter and reparses its canonical candidate', async () => {
+    deterministicInterpretMock.mockResolvedValueOnce({ kind: 'candidate', command: 'open todo 56' });
+    const getContext = vi.fn(() => makeContext());
+    openVoiceCommandDialog(makeOptions(getContext));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Please show me the login card';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(deterministicInterpretMock).toHaveBeenCalledTimes(1);
+    expect(deterministicInterpretMock).toHaveBeenCalledWith(
+      'Please show me the login card',
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(document.getElementById('voiceSummary')?.textContent).toBe('Open todo #56: Fix login');
+    expect(transcript.value).toBe('Please show me the login card');
+    expect(getContext).toHaveBeenCalledTimes(1);
+    expect(callMcpToolMock).not.toHaveBeenCalled();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves a canonicalizing typed alias while reviewing through the interpreter seam', async () => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'move story fifty six to in progress';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(deterministicInterpretMock).toHaveBeenCalledWith(
+      'move story fifty six to in progress',
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(document.getElementById('voiceSummary')?.textContent)
+      .toBe('Move todo #56: Fix login to In Progress');
+    expect(transcript.value).toBe('move story fifty six to in progress');
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('opens as VoiceFlow and writes canonical todo text after Safe-Mode speech', async () => {
@@ -1060,6 +1117,29 @@ describe('voice command flow', () => {
     expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(false);
     expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
     expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['project-scoped command', 'move story 56 to done in project beta', 'Project scope is fixed by the current board.'],
+    ['invalid identifier', 'move number to testing', 'Todo ID was not recognized.'],
+  ])('does not offer AI for a deterministic %s failure', async (_name, command, message) => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = command;
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(deterministicInterpretMock).toHaveBeenCalledWith(
+      command,
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(document.getElementById('voiceReviewStatus')?.textContent).toBe(message);
+    expect((document.getElementById('voiceInterpretationPanel') as HTMLElement).hidden).toBe(true);
+    expect(getVoiceInterpretationAvailabilityMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('keeps ordinary deterministic review usable after failed optional interpretation', async () => {
