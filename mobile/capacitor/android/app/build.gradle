@@ -37,6 +37,9 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    // ML Kit genai-prompt 1.0.0-beta4 calls Job.cancel$default on the Job
+    // interface (kotlinx-coroutines 1.11.0+). Its POM only requests 1.7.3.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation platform("com.squareup.okhttp3:okhttp-bom:5.5.0")
     // OkHttp's Android 5.5.0 variant requires compileSdk 37. Capacitor 8 is
     // intentionally pinned to 36, so use the same release's JVM artifact.
