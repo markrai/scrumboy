@@ -49,9 +49,18 @@ describe('VoiceFlow local interpretation contract', () => {
     expect(local.status).toHaveBeenCalledTimes(1);
   });
 
-  it('does not query an absent capability or an unsupported locale', async () => {
-    expect(await getVoiceInterpretationAvailability({ capability: null, locale: 'en' }))
+  it('treats the browser runtime registry absence as normal without querying a provider', async () => {
+    const browser = getBrowserRuntimeForTests();
+    const capabilityLookup = vi.fn(browser.capability.bind(browser));
+    installAppRuntime({
+      ...browser,
+      capability: capabilityLookup as AppRuntime['capability'],
+    });
+
+    expect(await getVoiceInterpretationAvailability({ locale: 'en' }))
       .toEqual({ state: 'absent' });
+    expect(capabilityLookup).toHaveBeenCalledWith('local-text-generation');
+
     const local = capability();
     expect(await getVoiceInterpretationAvailability({ capability: local, locale: 'de' }))
       .toEqual({ state: 'locale-unsupported' });
@@ -136,6 +145,8 @@ describe('VoiceFlow local interpretation contract', () => {
     ['array', '[{"command":"open story 56"}]'],
     ['Markdown', '```json\\n{"command":"open story 56"}\\n```'],
     ['empty', '{"command":""}'],
+    ['oversized candidate', `{"command":"${'x'.repeat(VOICE_INTERPRETATION_LIMITS.candidateCodeUnits + 1)}"}`],
+    ['oversized envelope', `{"command":null}${' '.repeat(VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits)}`],
   ])('rejects %s output before deterministic parsing', (_name, output) => {
     expect(() => parseVoiceInterpretationEnvelope(output))
       .toThrowError(expect.objectContaining({ code: 'output_rejected' }));
