@@ -19,6 +19,12 @@ const showConfirmDialogMock = vi.hoisted(() => vi.fn());
 const getVoiceInterpretationAvailabilityMock = vi.hoisted(() => vi.fn());
 const prepareVoiceInterpretationMock = vi.hoisted(() => vi.fn());
 const interpretVoiceCommandMock = vi.hoisted(() => vi.fn());
+const runtimeCapabilityMock = vi.hoisted(() => vi.fn());
+const localTextGenerationCapability = vi.hoisted(() => ({
+  status: vi.fn(),
+  prepare: vi.fn(),
+  generate: vi.fn(),
+}));
 
 vi.mock('./mcp-client.js', () => ({ callMcpTool: callMcpToolMock }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
@@ -28,6 +34,9 @@ vi.mock('./local-interpretation.js', () => ({
   getVoiceInterpretationAvailability: getVoiceInterpretationAvailabilityMock,
   prepareVoiceInterpretation: prepareVoiceInterpretationMock,
   interpretVoiceCommand: interpretVoiceCommandMock,
+}));
+vi.mock('../platform/runtime.js', () => ({
+  getAppRuntime: () => ({ capability: runtimeCapabilityMock }),
 }));
 vi.mock('../utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils.js')>();
@@ -127,6 +136,10 @@ describe('VoiceFlow i18n', () => {
     getVoiceInterpretationAvailabilityMock.mockReset().mockResolvedValue({ state: 'absent' });
     prepareVoiceInterpretationMock.mockReset().mockResolvedValue(undefined);
     interpretVoiceCommandMock.mockReset().mockResolvedValue({ kind: 'refused' });
+    runtimeCapabilityMock.mockReset().mockReturnValue(null);
+    localTextGenerationCapability.status.mockReset();
+    localTextGenerationCapability.prepare.mockReset();
+    localTextGenerationCapability.generate.mockReset();
     Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
       configurable: true,
       value(this: HTMLDialogElement) {
@@ -165,10 +178,9 @@ describe('VoiceFlow i18n', () => {
     expect(document.getElementById('voiceFlowState')?.textContent).toBe(de['voice.state.idle']);
   });
 
-  it('localizes interpretation controls and shows the English-only status after a locale change', async () => {
-    getVoiceInterpretationAvailabilityMock
-      .mockResolvedValueOnce({ state: 'ready', maximumOutputTokens: 96 })
-      .mockResolvedValueOnce({ state: 'locale-unsupported' });
+  it('localizes enhanced recovery controls and returns a non-English turn to deterministic VoiceFlow', async () => {
+    runtimeCapabilityMock.mockReturnValue(localTextGenerationCapability);
+    localTextGenerationCapability.status.mockResolvedValue({ state: 'action-required', action: 'download' });
     const context = makeContext();
     openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
@@ -177,34 +189,38 @@ describe('VoiceFlow i18n', () => {
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
 
-    expect(document.getElementById('voiceInterpretBtn')?.textContent).toBe(en['voice.ai.interpret']);
-    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(false);
+    expect(document.getElementById('voiceUseBasicBtn')?.textContent).toBe(en['voice.ai.useBasic']);
+    expect((document.getElementById('voiceUseBasicBtn') as HTMLButtonElement).hidden).toBe(false);
 
     await setLocale('de');
     await flushAsync();
 
-    expect(document.getElementById('voiceInterpretBtn')?.textContent).toBe(de['voice.ai.interpret']);
-    expect(document.getElementById('voiceInterpretationStatus')?.textContent).toBe(de['voice.ai.englishOnly']);
-    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(true);
+    expect(document.getElementById('voiceUseBasicBtn')?.textContent).toBe(de['voice.ai.useBasic']);
+    expect((document.getElementById('voiceInterpretationPanel') as HTMLElement).hidden).toBe(true);
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(document.getElementById('voiceReviewStatus')?.textContent).toBe(de['voice.errors.unsupportedCommand']);
+    expect((document.getElementById('voiceInterpretationPanel') as HTMLElement).hidden).toBe(true);
     expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
   });
 
   it('removes interpretation locale and foreground listeners when the dialog closes', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    runtimeCapabilityMock.mockReturnValue(localTextGenerationCapability);
+    localTextGenerationCapability.status.mockResolvedValue({ state: 'action-required', action: 'download' });
     const context = makeContext();
     openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
-    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
+    expect(localTextGenerationCapability.status).toHaveBeenCalledTimes(1);
 
     document.getElementById('voiceCommandClose')?.click();
     await setLocale('de');
     window.dispatchEvent(new Event('scrumboy:native-foreground'));
     await flushAsync();
 
-    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
+    expect(localTextGenerationCapability.status).toHaveBeenCalledTimes(1);
   });
 
   it('updates an open dialog after locale change without reopening or re-resolving', async () => {

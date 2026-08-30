@@ -28,20 +28,26 @@ describe('voice command dormant loading', () => {
 
   it('keeps local interpretation inside the existing lazy VoiceFlow graph', () => {
     const flow = readSource('./flow.ts');
+    const selection = readSource('./interpreter-selection.ts');
     const interpretation = readSource('./local-interpretation.ts');
 
-    expect(flow).toMatch(/from ['"]\.\/local-interpretation\.js['"]/);
-    expect(interpretation).not.toMatch(/from ['"][^'"]*mcp-client/);
-    expect(interpretation).not.toMatch(/\b(?:callMcpTool|executeCommandIR)\s*\(/);
-    expect(interpretation).not.toMatch(/\.transport\s*\(\)|\bfetch\s*\(/);
+    expect(flow).toMatch(/from ['"]\.\/interpreter-selection\.js['"]/);
+    expect(selection).toMatch(/from ['"]\.\/local-ai-interpreter\.js['"]/);
+    for (const source of [selection, interpretation]) {
+      expect(source).not.toMatch(/from ['"][^'"]*mcp-client/);
+      expect(source).not.toMatch(/\b(?:callMcpTool|executeCommandIR)\s*\(/);
+      expect(source).not.toMatch(/\.transport\s*\(\)|\bfetch\s*\(/);
+    }
   });
 
   it('keeps browser and PWA VoiceFlow capability-driven and free of native platform gates', () => {
     const flow = readSource('./flow.ts');
+    const selection = readSource('./interpreter-selection.ts');
     const interpretation = readSource('./local-interpretation.ts');
 
-    expect(interpretation).toMatch(/getAppRuntime\(\)\.capability\(LOCAL_TEXT_GENERATION_CAPABILITY\)/);
-    for (const source of [flow, interpretation]) {
+    expect(selection).toMatch(/getAppRuntime\(\)/);
+    expect(selection).toMatch(/\.capability\([\s\S]*LOCAL_TEXT_GENERATION_CAPABILITY/);
+    for (const source of [flow, selection, interpretation]) {
       expect(source).not.toMatch(/mobile\/capacitor|native-local-text-generation|navigator\.userAgent/i);
       expect(source).not.toMatch(/\bAndroid\b|\bPixel\b|Gemini Nano|ML Kit|API[- ]level/i);
     }

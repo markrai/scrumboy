@@ -156,6 +156,17 @@ async function flushAsync(): Promise<void> {
   }
 }
 
+function useLocalTextGenerationStatus(
+  status: Awaited<ReturnType<typeof localTextGenerationCapability.status>>,
+): void {
+  runtimeCapabilityMock.mockReturnValue(localTextGenerationCapability);
+  localTextGenerationCapability.status.mockResolvedValue(status);
+}
+
+function useReadyLocalAi(): void {
+  useLocalTextGenerationStatus({ state: 'ready', maximumOutputTokens: 96 });
+}
+
 beforeEach(() => {
   document.body.innerHTML = '';
   localStorage.clear();
@@ -170,7 +181,13 @@ beforeEach(() => {
   deterministicInterpretMock.mockClear();
   localAiInterpretMock.mockClear();
   createLocalAiInterpreterMock.mockClear();
-  runtimeCapabilityMock.mockReset().mockReturnValue(localTextGenerationCapability);
+  runtimeCapabilityMock.mockReset().mockReturnValue(null);
+  localTextGenerationCapability.status.mockReset().mockResolvedValue({
+    state: 'ready',
+    maximumOutputTokens: 96,
+  });
+  localTextGenerationCapability.prepare.mockReset().mockResolvedValue(undefined);
+  localTextGenerationCapability.generate.mockReset();
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
     configurable: true,
@@ -774,17 +791,10 @@ describe('voice command flow', () => {
     });
   });
 
-  it.each([
-    ['capability absent', { state: 'absent' }],
-    ['capability ready', { state: 'ready', maximumOutputTokens: 96 }],
-    ['capability unsupported', { state: 'unsupported', reason: 'device' }],
-    ['capability temporarily unavailable', { state: 'temporarily-unavailable', reason: 'provider' }],
-    ['capability status failure', new LocalTextGenerationError('internal')],
-  ])('keeps the same deterministic result with %s and bypasses local AI', async (_name, availability) => {
-    if (availability instanceof Error) {
-      getVoiceInterpretationAvailabilityMock.mockRejectedValue(availability);
-    } else {
-      getVoiceInterpretationAvailabilityMock.mockResolvedValue(availability);
+  it.each(['capability absent', 'capability unsupported'])
+  ('keeps the same deterministic result with %s and bypasses local AI', async (state) => {
+    if (state === 'capability unsupported') {
+      useLocalTextGenerationStatus({ state: 'unsupported', reason: 'device' });
     }
     executeCommandIRMock.mockResolvedValue({});
     openVoiceCommandDialog(makeOptions(() => makeContext()));
@@ -800,7 +810,11 @@ describe('voice command flow', () => {
     expect(document.getElementById('voiceSummary')?.textContent).toBe('Open todo #56: Fix login');
     expect(executeBtn.disabled).toBe(false);
     expect((document.getElementById('voiceInterpretationPanel') as HTMLElement).hidden).toBe(true);
-    expect(getVoiceInterpretationAvailabilityMock).not.toHaveBeenCalled();
+    expect(deterministicInterpretMock).toHaveBeenCalledWith(
+      'open story 56',
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(createLocalAiInterpreterMock).not.toHaveBeenCalled();
     expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
     expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
 
@@ -841,7 +855,7 @@ describe('voice command flow', () => {
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
 
-    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
+    expect(runtimeCapabilityMock).toHaveBeenCalledTimes(1);
     expect((document.getElementById('voiceInterpretationPanel') as HTMLElement).hidden).toBe(true);
     expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(true);
     expect(document.getElementById('voiceReviewStatus')?.textContent).toBe('Unsupported command.');
@@ -859,13 +873,13 @@ describe('voice command flow', () => {
 
     expect(document.getElementById('voiceSummary')?.textContent).toBe('Open todo #56: Fix login');
     expect(executeBtn.disabled).toBe(false);
-    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(1);
+    expect(runtimeCapabilityMock).toHaveBeenCalledTimes(2);
     expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
     expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
   });
 
-  it('requires an explicit tap, reparses AI output, and confirms even a non-mutating AI action', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+  it('uses ready local AI as the primary raw-input interpreter and confirms even a non-mutating action', async () => {
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
     executeCommandIRMock.mockResolvedValue({});
     const context = makeContext();
@@ -876,12 +890,12 @@ describe('voice command flow', () => {
 
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
-    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
     expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
-    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(false);
-
-    document.getElementById('voiceInterpretBtn')?.click();
-    await flushAsync();
+    expect((document.getElementById('voiceInterpretBtn') as HTMLButtonElement).hidden).toBe(true);
+    expect(deterministicInterpretMock).not.toHaveBeenCalledWith(
+      'Could you show me the login card?',
+      expect.anything(),
+    );
 
     expect(interpretVoiceCommandMock).toHaveBeenCalledWith(expect.objectContaining({
       transcript: 'Could you show me the login card?',
@@ -901,6 +915,8 @@ describe('voice command flow', () => {
       .toBe('Could you show me the login card?');
     expect(document.getElementById('voiceInterpretationCandidate')?.textContent).toBe('open story 56');
     expect(document.getElementById('voiceInterpretationAction')?.textContent).toContain('Fix login');
+    expect(transcript.value).toBe('Could you show me the login card?');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
 
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     await flushAsync();
@@ -914,7 +930,7 @@ describe('voice command flow', () => {
   });
 
   it('preserves the existing local-AI refusal presentation through the common interpreter result', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'refused' });
     const context = makeContext();
     openVoiceCommandDialog(makeOptions(() => context));
@@ -922,8 +938,6 @@ describe('voice command flow', () => {
     transcript.value = 'Please do something ambiguous';
 
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     expect(localAiInterpretMock).toHaveBeenCalledWith(
@@ -933,12 +947,14 @@ describe('voice command flow', () => {
     expect(document.getElementById('voiceInterpretationStatus')?.textContent)
       .toBe('That request could not be converted into one supported command. Edit it and try again.');
     expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById('voiceUseBasicBtn') as HTMLButtonElement).hidden).toBe(false);
+    expect(deterministicInterpretMock).not.toHaveBeenCalled();
     expect(transcript.value).toBe('Please do something ambiguous');
     expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('cannot execute an AI proposal when the original input changes during confirmation', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
     let finishConfirmation: ((confirmed: boolean) => void) | undefined;
     showConfirmDialogMock.mockImplementation(() => new Promise((resolve) => { finishConfirmation = resolve; }));
@@ -948,8 +964,6 @@ describe('voice command flow', () => {
     const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
@@ -963,10 +977,12 @@ describe('voice command flow', () => {
   });
 
   it('never prepares automatically and prepares only after the explicit setup tap', async () => {
-    getVoiceInterpretationAvailabilityMock
+    runtimeCapabilityMock.mockReturnValue(localTextGenerationCapability);
+    localTextGenerationCapability.status
       .mockResolvedValueOnce({ state: 'action-required', action: 'download' })
       .mockResolvedValueOnce({ state: 'ready', maximumOutputTokens: 96 });
-    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
 
@@ -980,11 +996,12 @@ describe('voice command flow', () => {
     expect(prepareVoiceInterpretationMock).toHaveBeenCalledWith(
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(2);
+    expect(localTextGenerationCapability.status).toHaveBeenCalledTimes(2);
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a canonical candidate that the deterministic parser cannot accept', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'say hello to the board' });
     const context = makeContext();
     openVoiceCommandDialog(makeOptions(() => context));
@@ -992,8 +1009,6 @@ describe('voice command flow', () => {
     transcript.value = 'Please greet everybody';
 
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     expect(document.getElementById('voiceInterpretationStatus')?.textContent)
@@ -1003,7 +1018,7 @@ describe('voice command flow', () => {
   });
 
   it.each(['user', 'project', 'board'] as const)('discards a late inference when the %s context changes', async (changedContext) => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     let finish: ((result: { kind: 'candidate'; command: string }) => void) | undefined;
     interpretVoiceCommandMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     let context = makeContext();
@@ -1011,8 +1026,6 @@ describe('voice command flow', () => {
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     if (changedContext === 'user') {
@@ -1030,7 +1043,7 @@ describe('voice command flow', () => {
   });
 
   it('resolves the canonical candidate against fresh contents of the still-current board', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     let finish: ((result: { kind: 'candidate'; command: string }) => void) | undefined;
     interpretVoiceCommandMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
     const board = makeBoard();
@@ -1038,8 +1051,6 @@ describe('voice command flow', () => {
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     board.columns.doing[0].title = 'Fresh login title';
@@ -1051,10 +1062,10 @@ describe('voice command flow', () => {
   });
 
   it('aborts interpretation on dialog close and replacement review', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
-    let firstSignal: AbortSignal | undefined;
+    useReadyLocalAi();
+    const inferenceSignals: AbortSignal[] = [];
     interpretVoiceCommandMock.mockImplementation(({ signal }) => {
-      firstSignal = signal;
+      inferenceSignals.push(signal);
       return new Promise(() => {});
     });
     openVoiceCommandDialog(makeOptions(() => makeContext()));
@@ -1062,29 +1073,23 @@ describe('voice command flow', () => {
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
-    await flushAsync();
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
-    expect(firstSignal?.aborted).toBe(true);
+    expect(inferenceSignals[0]?.aborted).toBe(true);
 
-    document.getElementById('voiceInterpretBtn')?.click();
-    await flushAsync();
-    const replacementSignal = interpretVoiceCommandMock.mock.calls.at(-1)?.[0].signal as AbortSignal;
+    const replacementSignal = inferenceSignals[1];
     document.getElementById('voiceCommandClose')?.click();
     expect(replacementSignal.aborted).toBe(true);
   });
 
   it('aborts and clears an AI proposal when the app backgrounds', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
     const context = makeContext();
     openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
     expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(false);
 
@@ -1097,7 +1102,7 @@ describe('voice command flow', () => {
   });
 
   it('aborts an active inference when the app backgrounds and never replays it on resume', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     let inferenceSignal: AbortSignal | undefined;
     interpretVoiceCommandMock.mockImplementation(({ signal }) => {
       inferenceSignal = signal;
@@ -1109,8 +1114,6 @@ describe('voice command flow', () => {
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
-    await flushAsync();
 
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
     document.dispatchEvent(new Event('visibilitychange'));
@@ -1120,20 +1123,18 @@ describe('voice command flow', () => {
     document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(new Event('scrumboy:native-foreground'));
     await flushAsync();
-    expect(getVoiceInterpretationAvailabilityMock).toHaveBeenCalledTimes(2);
+    expect(localTextGenerationCapability.status).toHaveBeenCalledTimes(1);
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
   });
 
   it('preserves existing authorization checks for an AI-derived mutation', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'move story 56 to done' });
     const context = { ...makeContext(), role: 'viewer' };
     openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you put login in done?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
@@ -1144,45 +1145,74 @@ describe('voice command flow', () => {
     ['busy', 'On-device interpretation is busy'],
     ['quota_exceeded', 'temporarily unavailable'],
   ])('preserves the transcript after %s inference errors', async (code, expectedMessage) => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockRejectedValue(new LocalTextGenerationError(code as 'busy' | 'quota_exceeded'));
-    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     expect(transcript.value).toBe('Could you show me the login card?');
     expect(document.getElementById('voiceInterpretationStatus')?.textContent).toContain(expectedMessage);
+    expect(deterministicInterpretMock).not.toHaveBeenCalled();
+    expect((document.getElementById('voiceUseBasicBtn') as HTMLButtonElement).hidden).toBe(false);
     expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['a capability status failure', () => getVoiceInterpretationAvailabilityMock.mockRejectedValue(new LocalTextGenerationError('internal'))],
-    ['temporary provider unavailability', () => getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'temporarily-unavailable', reason: 'provider' })],
-  ])('keeps ordinary deterministic review usable after %s', async (_name, arrangeAvailability) => {
-    arrangeAvailability();
-    openVoiceCommandDialog(makeOptions(() => makeContext()));
+  it('does not silently select deterministic while setup is required and offers an explicit basic turn', async () => {
+    useLocalTextGenerationStatus({ state: 'action-required', action: 'download' });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'open story 56';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(deterministicInterpretMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect((document.getElementById('voicePrepareBtn') as HTMLButtonElement).hidden).toBe(false);
+    expect((document.getElementById('voiceUseBasicBtn') as HTMLButtonElement).hidden).toBe(false);
+
+    document.getElementById('voiceUseBasicBtn')?.click();
+    await flushAsync();
+
+    expect(deterministicInterpretMock).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('voiceSummary')?.textContent).toBe('Open todo #56: Fix login');
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(false);
+    expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+  });
+
+  it('rechecks temporarily unavailable capability state on an explicit Retry turn', async () => {
+    runtimeCapabilityMock.mockReturnValue(localTextGenerationCapability);
+    localTextGenerationCapability.status
+      .mockResolvedValueOnce({ state: 'temporarily-unavailable', reason: 'provider' })
+      .mockResolvedValueOnce({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
 
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
 
-    expect(document.getElementById('voiceReviewStatus')?.textContent).toBe('Unsupported command.');
-    expect(transcript.value).toBe('Could you show me the login card?');
+    expect(deterministicInterpretMock).not.toHaveBeenCalled();
+    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
+    expect(document.getElementById('voiceInterpretationStatus')?.textContent)
+      .toContain('temporarily unavailable');
+    expect((document.getElementById('voiceInterpretRetryBtn') as HTMLButtonElement).hidden).toBe(false);
+    expect((document.getElementById('voiceUseBasicBtn') as HTMLButtonElement).hidden).toBe(false);
 
-    transcript.value = 'open story 56';
-    transcript.dispatchEvent(new Event('input', { bubbles: true }));
-    document.getElementById('voiceReviewBtn')?.click();
+    document.getElementById('voiceInterpretRetryBtn')?.click();
     await flushAsync();
 
+    expect(localTextGenerationCapability.status).toHaveBeenCalledTimes(2);
+    expect(localAiInterpretMock).toHaveBeenCalledTimes(1);
     expect(document.getElementById('voiceSummary')?.textContent).toBe('Open todo #56: Fix login');
-    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(false);
-    expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
-    expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1208,29 +1238,28 @@ describe('voice command flow', () => {
     expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
-  it('keeps ordinary deterministic review usable after failed optional interpretation', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+  it('has no hidden fallback after AI failure and uses deterministic only after the explicit basic action', async () => {
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockRejectedValue(new LocalTextGenerationError('internal'));
-    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
-    transcript.value = 'Could you show me the login card?';
+    transcript.value = 'open story 56';
 
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
 
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
-    expect(document.getElementById('voiceReviewStatus')?.textContent).toBe('Unsupported command.');
-    expect(transcript.value).toBe('Could you show me the login card?');
+    expect(deterministicInterpretMock).not.toHaveBeenCalled();
+    expect(transcript.value).toBe('open story 56');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
 
-    transcript.value = 'open story 56';
-    transcript.dispatchEvent(new Event('input', { bubbles: true }));
-    document.getElementById('voiceReviewBtn')?.click();
+    document.getElementById('voiceUseBasicBtn')?.click();
     await flushAsync();
 
     expect(document.getElementById('voiceSummary')?.textContent).toBe('Open todo #56: Fix login');
     expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(false);
+    expect(deterministicInterpretMock).toHaveBeenCalledTimes(1);
     expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
   });
@@ -1250,7 +1279,7 @@ describe('voice command flow', () => {
   });
 
   it('cannot carry an AI-derived proposal into Hands-Free auto-execution', async () => {
-    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
     startOneShotRecognitionMock.mockResolvedValueOnce({ alternatives: ['unsupported hands free request'] });
     const context = makeContext();
@@ -1258,8 +1287,6 @@ describe('voice command flow', () => {
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
     transcript.value = 'Could you show me the login card?';
     document.getElementById('voiceReviewBtn')?.click();
-    await flushAsync();
-    document.getElementById('voiceInterpretBtn')?.click();
     await flushAsync();
     expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(false);
 
