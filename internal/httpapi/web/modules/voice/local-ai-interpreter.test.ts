@@ -50,14 +50,14 @@ describe('local-AI VoiceFlow interpreter', () => {
     });
   });
 
-  it('maps refusal to the established unsupported command failure without deterministic parsing', async () => {
+  it('maps semantic-gap refusal to the established unsupported command failure without deterministic parsing', async () => {
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'refused' });
     const interpreter = createLocalAiVoiceCommandInterpreter({
       capability: capability(),
       locale: 'en',
     });
 
-    await expect(interpreter.interpret('Please do something ambiguous')).resolves.toMatchObject({
+    await expect(interpreter.interpret('Create a to-do about cleaning the garage today')).resolves.toMatchObject({
       kind: 'unsupported',
       failure: {
         ok: false,
@@ -65,6 +65,9 @@ describe('local-AI VoiceFlow interpreter', () => {
         message: 'Unsupported command.',
       },
     });
+    expect(interpretVoiceCommandMock).toHaveBeenCalledWith(expect.objectContaining({
+      transcript: 'Create a to-do about cleaning the garage today',
+    }));
   });
 
   it('preserves operational provider errors instead of manufacturing command failures', async () => {

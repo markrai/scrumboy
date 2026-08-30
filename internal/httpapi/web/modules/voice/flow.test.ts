@@ -1014,28 +1014,33 @@ describe('voice command flow', () => {
     expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves the existing local-AI refusal presentation through the common interpreter result', async () => {
+  it('refuses a local-AI create with unrepresented meaning without proposal, resolution, or mutation', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'refused' });
     const context = makeContext();
-    openVoiceCommandDialog(makeOptions(() => context));
+    const options = makeOptions(() => context);
+    openVoiceCommandDialog(options);
     const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
-    transcript.value = 'Please do something ambiguous';
+    transcript.value = 'Create a to-do about cleaning the garage today';
 
     document.getElementById('voiceReviewBtn')?.click();
     await flushAsync();
 
     expect(localAiInterpretMock).toHaveBeenCalledWith(
-      'Please do something ambiguous',
+      'Create a to-do about cleaning the garage today',
       { signal: expect.any(AbortSignal) },
     );
     expect(document.getElementById('voiceInterpretationStatus')?.textContent)
       .toBe('That request could not be converted into one supported command. Edit it and try again.');
     expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById('voiceSummary') as HTMLElement).hidden).toBe(true);
     expect((document.getElementById('voiceUseBasicBtn') as HTMLButtonElement).hidden).toBe(false);
     expect(deterministicInterpretMock).not.toHaveBeenCalled();
-    expect(transcript.value).toBe('Please do something ambiguous');
+    expect(transcript.value).toBe('Create a to-do about cleaning the garage today');
+    expect(callMcpToolMock).not.toHaveBeenCalled();
     expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(showConfirmDialogMock).not.toHaveBeenCalled();
+    expect(options.recordMutation).not.toHaveBeenCalled();
   });
 
   it('cannot execute an AI proposal when the original input changes during confirmation', async () => {

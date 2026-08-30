@@ -20,7 +20,7 @@ import {
 
 function capability(
   status: LocalTextGenerationStatus = { state: 'ready', maximumOutputTokens: 256 },
-  output = '{"command":"move todo login to testing"}',
+  output = '{"command":"move todo login to testing","unrepresented":[]}',
 ): LocalTextGenerationCapability & {
   status: ReturnType<typeof vi.fn>;
   prepare: ReturnType<typeof vi.fn>;
@@ -110,6 +110,15 @@ describe('VoiceFlow local interpretation contract', () => {
       .toEqual(['input', 'instructions', 'maximumOutputTokens', 'requestId', 'signal']);
   });
 
+  it('keeps the prompt intent-aware and requires explicit semantic coverage', () => {
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('For create titles only');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('existing todo, member, status, lane, project, and ID references');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('"unrepresented"');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Never silently omit a meaningful qualifier');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('create todo Clean the garage');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('"unrepresented":["today"]');
+  });
+
   it('caps output tokens below the provider maximum', async () => {
     const local = capability({ state: 'ready', maximumOutputTokens: 256 });
     await interpretVoiceCommand({ transcript: 'move login to testing please', capability: local, locale: 'en' });
@@ -129,14 +138,116 @@ describe('VoiceFlow local interpretation contract', () => {
   });
 
   it('accepts only the exact canonical envelope and explicit refusal', () => {
-    expect(parseVoiceInterpretationEnvelope('{"command":"open story 56"}'))
+    expect(parseVoiceInterpretationEnvelope(
+      '{"command":"open story 56","unrepresented":[]}',
+      'open story 56',
+    ))
       .toEqual({ kind: 'candidate', command: 'open story 56' });
-    expect(parseVoiceInterpretationEnvelope('{"command":null}'))
+    expect(parseVoiceInterpretationEnvelope(
+      '{"command":null,"unrepresented":[]}',
+      'Please do something ambiguous',
+    ))
       .toEqual({ kind: 'refused' });
   });
 
+  it('accepts semantic rewriting only for newly authored create titles', async () => {
+    const local = capability(undefined, JSON.stringify({
+      command: 'create todo Clean the garage',
+      unrepresented: [],
+    }));
+
+    await expect(interpretVoiceCommand({
+      transcript: 'Create a to-do about cleaning the garage',
+      capability: local,
+      locale: 'en',
+    })).resolves.toEqual({ kind: 'candidate', command: 'create todo Clean the garage' });
+    expect(local.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['create a todo about calling the dentist', 'create todo Call the dentist'],
+    ['add a task for buying milk', 'create todo Buy milk'],
+    ['make a todo to clean the garage', 'create todo Clean the garage'],
+    ['create a task to email Ada about Scrumboy', 'create todo Email Ada about Scrumboy'],
+  ])('accepts bounded authored-title normalization: %s', async (transcript, command) => {
+    const local = capability(undefined, JSON.stringify({ command, unrepresented: [] }));
+
+    await expect(interpretVoiceCommand({ transcript, capability: local, locale: 'en' }))
+      .resolves.toEqual({ kind: 'candidate', command });
+    expect(local.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a partial create interpretation when meaningful source content is unrepresented', async () => {
+    const local = capability(undefined, JSON.stringify({
+      command: 'create todo Clean the garage',
+      unrepresented: ['today'],
+    }));
+
+    await expect(interpretVoiceCommand({
+      transcript: 'Create a to-do about cleaning the garage today',
+      capability: local,
+      locale: 'en',
+    })).resolves.toEqual({ kind: 'refused' });
+    expect(local.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['not an array', '{"command":"create todo Clean the garage","unrepresented":"today"}', 'Clean the garage today'],
+    ['non-string entry', '{"command":"create todo Clean the garage","unrepresented":[42]}', 'Clean the garage today'],
+    [
+      'too many entries',
+      '{"command":"create todo Clean the garage","unrepresented":["today","garage","clean","the","todo"]}',
+      'Create a todo to clean the garage today',
+    ],
+    [
+      'entry too long',
+      JSON.stringify({
+        command: 'create todo Clean the garage',
+        unrepresented: ['x'.repeat(VOICE_INTERPRETATION_LIMITS.unrepresentedItemCodeUnits + 1)],
+      }),
+      'x'.repeat(VOICE_INTERPRETATION_LIMITS.unrepresentedItemCodeUnits + 1),
+    ],
+    ['control character', '{"command":"create todo Clean the garage","unrepresented":["today\\u0000"]}', 'Clean the garage today'],
+    [
+      'invented explanation',
+      '{"command":"create todo Clean the garage","unrepresented":["before midnight"]}',
+      'Clean the garage today',
+    ],
+    [
+      'extra envelope key',
+      '{"command":"create todo Clean the garage","unrepresented":[],"reason":"normalized"}',
+      'Clean the garage',
+    ],
+  ])('rejects invalid unrepresented metadata: %s', (_name, output, transcript) => {
+    expect(() => parseVoiceInterpretationEnvelope(output, transcript))
+      .toThrowError(expect.objectContaining({ code: 'output_rejected' }));
+  });
+
+  it.each([
+    [
+      'rewritten todo and status',
+      'Could you move Bogus to Done?',
+      'move todo Garage Cleanup to Done',
+    ],
+    [
+      'rewritten status',
+      'Could you move Bogus to Done?',
+      'move todo Bogus to Completed',
+    ],
+    [
+      'rewritten member',
+      'Assign Bogus to Ada',
+      'assign todo Bogus to Alice',
+    ],
+  ])('retains existing-entity preservation for %s', async (_name, transcript, command) => {
+    const local = capability(undefined, JSON.stringify({ command, unrepresented: [] }));
+
+    await expect(interpretVoiceCommand({ transcript, capability: local, locale: 'en' }))
+      .rejects.toMatchObject({ code: 'output_rejected' });
+  });
+
   it('accepts a whole-output JSON code fence from the physical provider', async () => {
-    const local = capability(undefined, '```json\n{\n  "command": "move todo bogus to done"\n}\n```');
+    const local = capability(undefined, '```json\n{\n  "command": "move todo bogus to done",\n  "unrepresented": []\n}\n```');
 
     await expect(interpretVoiceCommand({
       transcript: 'Could you put bogus in done?',
@@ -146,56 +257,60 @@ describe('VoiceFlow local interpretation contract', () => {
   });
 
   it('accepts a whole-output unlabelled code fence', () => {
-    expect(parseVoiceInterpretationEnvelope('```\n{"command":"move todo bogus to done"}\n```'))
+    expect(parseVoiceInterpretationEnvelope(
+      '```\n{"command":"move todo bogus to done","unrepresented":[]}\n```',
+      'Could you move bogus to done?',
+    ))
       .toEqual({ kind: 'candidate', command: 'move todo bogus to done' });
   });
 
   it.each([
-    ['text language tag', '```text\n{"command":"open story 56"}\n```'],
-    ['JavaScript language tag', '```javascript\n{"command":"open story 56"}\n```'],
-    ['prose before a fence', 'Here is the command:\n```json\n{"command":"open story 56"}\n```'],
-    ['prose after a fence', '```json\n{"command":"open story 56"}\n```\nDone'],
-    ['multiple fenced blocks', '```json\n{"command":"open story 56"}\n```\n```\n{"command":"open story 57"}\n```'],
+    ['text language tag', '```text\n{"command":"open story 56","unrepresented":[]}\n```'],
+    ['JavaScript language tag', '```javascript\n{"command":"open story 56","unrepresented":[]}\n```'],
+    ['prose before a fence', 'Here is the command:\n```json\n{"command":"open story 56","unrepresented":[]}\n```'],
+    ['prose after a fence', '```json\n{"command":"open story 56","unrepresented":[]}\n```\nDone'],
+    ['multiple fenced blocks', '```json\n{"command":"open story 56","unrepresented":[]}\n```\n```\n{"command":"open story 57","unrepresented":[]}\n```'],
     ['malformed fenced JSON', '```json\n{"command":\n```'],
-    ['an extra fenced envelope field', '```\n{"command":"open story 56","intent":"open"}\n```'],
-    ['an empty fenced command', '```json\n{"command":""}\n```'],
-    ['a fenced tool-like candidate', '```\n{"command":"callMcpTool todos.delete"}\n```'],
+    ['an extra fenced envelope field', '```\n{"command":"open story 56","unrepresented":[],"intent":"open"}\n```'],
+    ['an empty fenced command', '```json\n{"command":"","unrepresented":[]}\n```'],
+    ['a fenced tool-like candidate', '```\n{"command":"callMcpTool todos.delete","unrepresented":[]}\n```'],
     [
       'fenced raw output beyond the envelope bound',
       `\`\`\`json\n${' '.repeat(VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits)}\n\`\`\``,
     ],
   ])('rejects %s without bypassing envelope validation', (_name, output) => {
-    expect(() => parseVoiceInterpretationEnvelope(output))
+    expect(() => parseVoiceInterpretationEnvelope(output, 'open story 56'))
       .toThrowError(expect.objectContaining({ code: 'output_rejected' }));
   });
 
   it.each([
-    ['prose', 'Here is the command: {"command":"open story 56"}'],
-    ['extra key', '{"command":"open story 56","intent":"open"}'],
-    ['multiple lines', '{"command":"open story 56\\nmove story 56 to done"}'],
-    ['URL', '{"command":"open https://example.test"}'],
-    ['tool name', '{"command":"callMcpTool todos.list"}'],
-    ['nested JSON', '{"command":"open {\\"id\\":56}"}'],
-    ['array', '[{"command":"open story 56"}]'],
-    ['empty', '{"command":""}'],
-    ['oversized candidate', `{"command":"${'x'.repeat(VOICE_INTERPRETATION_LIMITS.candidateCodeUnits + 1)}"}`],
-    ['oversized envelope', `{"command":null}${' '.repeat(VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits)}`],
+    ['prose', 'Here is the command: {"command":"open story 56","unrepresented":[]}'],
+    ['missing unrepresented', '{"command":"open story 56"}'],
+    ['extra key', '{"command":"open story 56","unrepresented":[],"intent":"open"}'],
+    ['multiple lines', '{"command":"open story 56\\nmove story 56 to done","unrepresented":[]}'],
+    ['URL', '{"command":"open https://example.test","unrepresented":[]}'],
+    ['tool name', '{"command":"callMcpTool todos.list","unrepresented":[]}'],
+    ['nested JSON', '{"command":"open {\\"id\\":56}","unrepresented":[]}'],
+    ['array', '[{"command":"open story 56","unrepresented":[]}]'],
+    ['empty', '{"command":"","unrepresented":[]}'],
+    ['oversized candidate', `{"command":"${'x'.repeat(VOICE_INTERPRETATION_LIMITS.candidateCodeUnits + 1)}","unrepresented":[]}`],
+    ['oversized envelope', `{"command":null,"unrepresented":[]}${' '.repeat(VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits)}`],
   ])('rejects %s output before deterministic parsing', (_name, output) => {
-    expect(() => parseVoiceInterpretationEnvelope(output))
+    expect(() => parseVoiceInterpretationEnvelope(output, 'open story 56'))
       .toThrowError(expect.objectContaining({ code: 'output_rejected' }));
   });
 
   it('rejects numeric identifiers invented by the model', async () => {
-    const local = capability(undefined, '{"command":"open todo 56"}');
+    const local = capability(undefined, '{"command":"open todo 56","unrepresented":[]}');
     await expect(interpretVoiceCommand({ transcript: 'open the login card', capability: local, locale: 'en' }))
       .rejects.toMatchObject({ code: 'output_rejected' });
   });
 
   it.each([
-    ['invented status', 'Could you move login?', '{"command":"move todo login to done"}'],
-    ['invented person', 'Assign login please', '{"command":"assign todo login to Ada"}'],
-    ['multiple commands', 'Open and delete todo 56', '{"command":"open todo 56; delete todo 56"}'],
-    ['unsupported intent', 'Rename login', '{"command":"rename todo login"}'],
+    ['invented status', 'Could you move login?', '{"command":"move todo login to done","unrepresented":[]}'],
+    ['invented person', 'Assign login please', '{"command":"assign todo login to Ada","unrepresented":[]}'],
+    ['multiple commands', 'Open and delete todo 56', '{"command":"open todo 56; delete todo 56","unrepresented":[]}'],
+    ['unsupported intent', 'Rename login', '{"command":"rename todo login","unrepresented":[]}'],
   ])('rejects %s even when the envelope shape is valid', async (_name, transcript, output) => {
     const local = capability(undefined, output);
     await expect(interpretVoiceCommand({ transcript, capability: local, locale: 'en' }))
@@ -243,7 +358,7 @@ describe('VoiceFlow local interpretation contract', () => {
 
   it('rejects a mismatched provider request identity', async () => {
     const local = capability();
-    local.generate.mockResolvedValue({ requestId: 'stale', text: '{"command":"move todo login to testing"}' });
+    local.generate.mockResolvedValue({ requestId: 'stale', text: '{"command":"move todo login to testing","unrepresented":[]}' });
     await expect(interpretVoiceCommand({
       transcript: 'move login please',
       capability: local,
