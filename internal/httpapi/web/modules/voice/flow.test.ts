@@ -12,6 +12,14 @@ const getVoiceInterpretationAvailabilityMock = vi.hoisted(() => vi.fn());
 const prepareVoiceInterpretationMock = vi.hoisted(() => vi.fn());
 const interpretVoiceCommandMock = vi.hoisted(() => vi.fn());
 const deterministicInterpretMock = vi.hoisted(() => vi.fn());
+const localAiInterpretMock = vi.hoisted(() => vi.fn());
+const createLocalAiInterpreterMock = vi.hoisted(() => vi.fn());
+const runtimeCapabilityMock = vi.hoisted(() => vi.fn());
+const localTextGenerationCapability = vi.hoisted(() => ({
+  status: vi.fn(),
+  prepare: vi.fn(),
+  generate: vi.fn(),
+}));
 
 vi.mock('./mcp-client.js', () => ({ callMcpTool: callMcpToolMock }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
@@ -35,6 +43,27 @@ vi.mock('./deterministic-interpreter.js', async (importOriginal) => {
     },
   };
 });
+vi.mock('./local-ai-interpreter.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./local-ai-interpreter.js')>();
+  createLocalAiInterpreterMock.mockImplementation(
+    (dependencies: Parameters<typeof actual.createLocalAiVoiceCommandInterpreter>[0]) => {
+      const interpreter = actual.createLocalAiVoiceCommandInterpreter(dependencies);
+      return {
+        interpret(input: string, options?: { signal?: AbortSignal }) {
+          localAiInterpretMock(input, options);
+          return interpreter.interpret(input, options);
+        },
+      };
+    },
+  );
+  return {
+    ...actual,
+    createLocalAiVoiceCommandInterpreter: createLocalAiInterpreterMock,
+  };
+});
+vi.mock('../platform/runtime.js', () => ({
+  getAppRuntime: () => ({ capability: runtimeCapabilityMock }),
+}));
 vi.mock('../utils.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils.js')>();
   return { ...actual, showConfirmDialog: showConfirmDialogMock };
@@ -139,6 +168,9 @@ beforeEach(() => {
   prepareVoiceInterpretationMock.mockReset().mockResolvedValue(undefined);
   interpretVoiceCommandMock.mockReset().mockResolvedValue({ kind: 'candidate', command: 'open story 56' });
   deterministicInterpretMock.mockClear();
+  localAiInterpretMock.mockClear();
+  createLocalAiInterpreterMock.mockClear();
+  runtimeCapabilityMock.mockReset().mockReturnValue(localTextGenerationCapability);
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
   Object.defineProperty(HTMLDialogElement.prototype, 'showModal', {
     configurable: true,
@@ -624,6 +656,7 @@ describe('voice command flow', () => {
       entities: { localId: 56 },
     });
     expect(getVoiceInterpretationAvailabilityMock).not.toHaveBeenCalled();
+    expect(runtimeCapabilityMock).not.toHaveBeenCalled();
     expect(prepareVoiceInterpretationMock).not.toHaveBeenCalled();
     expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
   });
@@ -854,6 +887,15 @@ describe('voice command flow', () => {
       transcript: 'Could you show me the login card?',
       signal: expect.any(AbortSignal),
     }));
+    expect(runtimeCapabilityMock).toHaveBeenCalledWith('local-text-generation');
+    expect(createLocalAiInterpreterMock).toHaveBeenCalledWith({
+      capability: localTextGenerationCapability,
+      locale: 'en',
+    });
+    expect(localAiInterpretMock).toHaveBeenCalledWith(
+      'Could you show me the login card?',
+      { signal: expect.any(AbortSignal) },
+    );
     expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(false);
     expect(document.getElementById('voiceInterpretationOriginal')?.textContent)
       .toBe('Could you show me the login card?');
@@ -869,6 +911,30 @@ describe('voice command flow', () => {
     );
     expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
     expect(executeCommandIRMock.mock.calls[0][0]).toMatchObject({ intent: 'open_todo' });
+  });
+
+  it('preserves the existing local-AI refusal presentation through the common interpreter result', async () => {
+    getVoiceInterpretationAvailabilityMock.mockResolvedValue({ state: 'ready', maximumOutputTokens: 96 });
+    interpretVoiceCommandMock.mockResolvedValue({ kind: 'refused' });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Please do something ambiguous';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    document.getElementById('voiceInterpretBtn')?.click();
+    await flushAsync();
+
+    expect(localAiInterpretMock).toHaveBeenCalledWith(
+      'Please do something ambiguous',
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(document.getElementById('voiceInterpretationStatus')?.textContent)
+      .toBe('That request could not be converted into one supported command. Edit it and try again.');
+    expect((document.getElementById('voiceInterpretationProposal') as HTMLElement).hidden).toBe(true);
+    expect(transcript.value).toBe('Please do something ambiguous');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('cannot execute an AI proposal when the original input changes during confirmation', async () => {

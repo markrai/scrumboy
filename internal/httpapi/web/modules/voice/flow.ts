@@ -14,9 +14,10 @@ import { NATIVE_FOREGROUND_EVENT } from '../core/realtime.js';
 import { isAnonymousBoard, isTemporaryBoard, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/board-command-capabilities.js';
-import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
+import { getLocale, I18N_LOCALE_CHANGED } from '../i18n/index.js';
 import { deterministicVoiceCommandInterpreter } from './deterministic-interpreter.js';
 import { executeCommandIR } from './execute.js';
+import { createLocalAiVoiceCommandInterpreter } from './local-ai-interpreter.js';
 import { callMcpTool } from './mcp-client.js';
 import { parseCommand } from './parser.js';
 import { formatResolvedCommand, resolveCommandDraft } from './resolve.js';
@@ -38,11 +39,15 @@ import { normalizeConfirmationResponse, normalizeDisambiguationChoice, type Voic
 import { renderVoiceMessage, voiceMessage, voiceText, type VoiceMessageDescriptor } from './i18n.js';
 import {
   getVoiceInterpretationAvailability,
-  interpretVoiceCommand,
   prepareVoiceInterpretation,
   type VoiceInterpretationAvailability,
 } from './local-interpretation.js';
-import { LocalTextGenerationError, type LocalTextGenerationErrorCode } from '../platform/local-text-generation.js';
+import {
+  LOCAL_TEXT_GENERATION_CAPABILITY,
+  LocalTextGenerationError,
+  type LocalTextGenerationErrorCode,
+} from '../platform/local-text-generation.js';
+import { getAppRuntime } from '../platform/runtime.js';
 
 export type VoiceCommandDialogContext = {
   userId: number;
@@ -1013,10 +1018,18 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     interpretationErrorCode = null;
     renderInterpretation();
     try {
-      const interpreted = await interpretVoiceCommand({
-        transcript: originalTranscript,
-        signal: controller.signal,
+      const capability = getAppRuntime().capability(LOCAL_TEXT_GENERATION_CAPABILITY);
+      if (!capability) {
+        throw new LocalTextGenerationError('unsupported', { recoverable: false });
+      }
+      const interpreter = createLocalAiVoiceCommandInterpreter({
+        capability,
+        locale: getLocale(),
       });
+      const interpreted = await interpreter.interpret(
+        originalTranscript,
+        { signal: controller.signal },
+      );
       if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
       const latestContext = getActiveContext(options);
       if (
@@ -1028,7 +1041,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         || latestContext.value.members !== initialContext.value.members
         || latestContext.value.role !== initialContext.value.role
       ) return;
-      if (interpreted.kind === 'refused') {
+      if (interpreted.kind === 'unsupported') {
         interpretationPhase = 'refused';
         renderInterpretation();
         return;
