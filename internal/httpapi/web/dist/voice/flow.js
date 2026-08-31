@@ -1,23 +1,23 @@
 import { getVoiceFlowHandsFreeConfirmationPreference, getVoiceFlowContinueConversationPreference, getVoiceFlowModePreference, setVoiceFlowContinueConversationPreference, setVoiceFlowHandsFreeConfirmationPreference, setVoiceFlowModePreference, VOICE_FLOW_CONFIRM_DELETES, VOICE_FLOW_CONFIRM_MUTATIONS, } from '../core/voiceflow-preferences.js';
 import { NATIVE_FOREGROUND_EVENT } from '../core/realtime.js';
-import { isAnonymousBoard, isTemporaryBoard, showConfirmDialog, showToast } from '../utils.js';
+import { showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
-import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/board-command-capabilities.js';
 import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
 import { deterministicVoiceCommandInterpreter } from './deterministic-interpreter.js';
 import { createVoiceConversationSession } from './conversation-session.js';
-import { activeTodoTransitionAfterSuccessfulIR, resolveConversationTodoTarget, } from './conversation-resolve.js';
+import { activeTodoTransitionAfterSuccessfulIR, } from './conversation-resolve.js';
 import { executeCommandIR } from './execute.js';
 import { normalizeVoiceInterpreterFailure, prepareVoiceCommandInterpreterForTurn, selectVoiceCommandInterpreterForTurn, } from './interpreter-selection.js';
-import { callMcpTool } from './mcp-client.js';
 import { parseCommand } from './parser.js';
-import { formatResolvedCommand, resolveCommandDraft, resolveTodoTitleUpdate } from './resolve.js';
+import { formatResolvedCommand } from './resolve.js';
 import { startOneShotRecognition } from './speech.js';
 import { speak } from './speech-output.js';
 import { transitionVoiceInteractionState } from './state-machine.js';
 import { cloneCommandFailure, isCommandFailure, localizedCommandFailure, localizeCommandFailure, } from './schema.js';
 import { normalizeConfirmationResponse, normalizeDisambiguationChoice } from './vocabulary.js';
 import { renderVoiceMessage, voiceMessage, voiceText } from './i18n.js';
+import { canRunResolvedVoiceCommand, getActiveVoiceCommandContext, isVoiceMutationCommand, parseAndResolveVoiceCommand, resolveParsedVoiceDraft, voiceCommandHash, } from './command-resolution.js';
+import { resolveVoiceConversationCommand } from './conversation-command.js';
 const VOICE_STATE_LABELS = {
     idle: voiceMessage("voice.state.idle", "idle"),
     listening_command: voiceMessage("voice.state.listeningCommand", "listening command"),
@@ -86,9 +86,7 @@ function renderDialogMessage(message) {
         return localizeCommandFailure(message);
     return renderVoiceMessage(message);
 }
-function commandHash(command) {
-    return JSON.stringify(command.ir);
-}
+const commandHash = voiceCommandHash;
 function draftHash(draft) {
     return JSON.stringify(draft);
 }
@@ -116,77 +114,11 @@ function dedupeAlternatives(alternatives) {
     }
     return out;
 }
-function isMutationCommand(command) {
-    switch (command.ir.intent) {
-        case "todos.create":
-        case "todos.move":
-        case "todos.delete":
-        case "todos.assign":
-        case "todos.update_title":
-            return true;
-        case "open_todo":
-            return false;
-        default: {
-            const exhaustive = command.ir;
-            return exhaustive;
-        }
-    }
-}
-function canRunResolvedCommand(context, command) {
-    if (!isMutationCommand(command))
-        return true;
-    return canRunVoiceMutationCommands({
-        projectId: context.projectId,
-        projectSlug: context.projectSlug,
-        role: context.role,
-        isTemporary: isTemporaryBoard(context.board),
-        isAnonymous: isAnonymousBoard(context.board),
-    });
-}
-function getActiveContext(options) {
-    const context = options.getContext();
-    if (!context
-        || context.userId !== options.initialUserId
-        || context.projectId !== options.initialProjectId
-        || context.projectSlug !== options.initialProjectSlug) {
-        return localizedCommandFailure("stale_context", "voice.errors.staleContext", "The board changed before the command could run.");
-    }
-    const allowed = canShowVoiceCommands({
-        projectId: context.projectId,
-        projectSlug: context.projectSlug,
-        role: context.role,
-        isTemporary: isTemporaryBoard(context.board),
-        isAnonymous: isAnonymousBoard(context.board),
-    });
-    if (!allowed) {
-        return localizedCommandFailure("stale_context", "voice.errors.commandsUnavailable", "Commands are unavailable for this board.");
-    }
-    return { ok: true, value: context };
-}
-async function resolveParsedDraft(draft, context, signal, targetSelection = {}) {
-    return resolveCommandDraft(draft, {
-        projectId: context.projectId,
-        projectSlug: context.projectSlug,
-        board: context.board,
-        members: context.members,
-        callTool: (tool, input) => callMcpTool(tool, input, { signal }),
-    }, targetSelection);
-}
-export async function parseAndResolveCommand(transcript, options, signal, targetSelection = {}) {
-    const context = getActiveContext(options);
-    if (isCommandFailure(context))
-        return context;
-    const parsed = parseCommand(transcript);
-    if (isCommandFailure(parsed))
-        return parsed;
-    const resolved = await resolveParsedDraft(parsed.value, context.value, signal, targetSelection);
-    if (isCommandFailure(resolved))
-        return resolved;
-    if (!canRunResolvedCommand(context.value, resolved.value)) {
-        return localizedCommandFailure("unauthorized", "voice.errors.unauthorizedMutation", "Only maintainers can run mutating commands.");
-    }
-    return resolved;
-}
+export const parseAndResolveCommand = parseAndResolveVoiceCommand;
+const getActiveContext = getActiveVoiceCommandContext;
+const resolveParsedDraft = resolveParsedVoiceDraft;
+const canRunResolvedCommand = canRunResolvedVoiceCommand;
+const isMutationCommand = isVoiceMutationCommand;
 export async function parseAlternatives(alternatives, options, signal) {
     const successes = [];
     let firstFailure = null;
@@ -942,77 +874,7 @@ export function openVoiceCommandDialog(options) {
         setFlowState('reset');
         transcript?.focus();
     };
-    const resolveConversationIntent = async (intent, signal, targetOverride) => {
-        const context = getActiveContext(options);
-        if (isCommandFailure(context)) {
-            conversationSession.clearActiveTodo();
-            return context;
-        }
-        const pending = conversationSession.getState().pending;
-        const targetInput = targetOverride
-            ?? (intent.kind === 'update-todo-title' && pending ? pending.target : intent.target);
-        const target = resolveConversationTodoTarget(targetInput, conversationSession.getState(), {
-            projectId: context.value.projectId,
-            projectSlug: context.value.projectSlug,
-            board: context.value.board,
-        });
-        if (target.ok === false) {
-            if (target.code === 'project_mismatch' || target.code === 'todo_missing') {
-                conversationSession.clearActiveTodo();
-            }
-            return target.code === 'no_active_todo'
-                ? localizedCommandFailure('unknown_story', 'voice.errors.todoReferenceRequired', 'Todo reference is required.')
-                : localizedCommandFailure('stale_context', 'voice.errors.staleContext', 'The board changed before the command could run.');
-        }
-        const localId = target.value.reference.localId;
-        if (intent.kind === 'update-todo-title' && intent.title === null) {
-            conversationSession.setActiveTodo(target.value.reference);
-            conversationSession.setPendingInteraction({
-                kind: 'missing-slot',
-                action: 'todo.update_title',
-                slot: 'title',
-                target: target.value.reference,
-            });
-            setSemanticInteraction({
-                kind: 'question',
-                response: 'free-text',
-                message: {
-                    key: 'voice.question.updateTitle',
-                    fallback: 'What would you like to change the title to?',
-                },
-            });
-            return { ok: true, value: null };
-        }
-        const resolved = intent.kind === 'update-todo-title'
-            ? await resolveTodoTitleUpdate(localId, intent.title, {
-                projectId: context.value.projectId,
-                projectSlug: context.value.projectSlug,
-                board: context.value.board,
-                members: context.value.members,
-                callTool: (tool, input) => callMcpTool(tool, input, { signal }),
-            })
-            : await resolveParsedDraft({
-                intent: 'open_todo',
-                target: {
-                    kind: 'id',
-                    localId,
-                    display: String(localId),
-                },
-                display: `open todo ${localId}`,
-            }, context.value, signal);
-        if (isCommandFailure(resolved))
-            return resolved;
-        if (!canRunResolvedCommand(context.value, resolved.value)) {
-            return localizedCommandFailure('unauthorized', 'voice.errors.unauthorizedMutation', 'Only maintainers can run mutating commands.');
-        }
-        return {
-            ok: true,
-            value: Object.freeze({
-                command: resolved.value,
-                target: target.value.reference,
-            }),
-        };
-    };
+    const resolveConversationIntent = (intent, signal, targetOverride) => resolveVoiceConversationCommand(intent, conversationSession, options, signal, targetOverride);
     const beginInterpretationOperation = () => {
         abortInterpretation();
         const controller = new AbortController();
@@ -1165,6 +1027,7 @@ export function openVoiceCommandDialog(options) {
                 if (resolved.value === null) {
                     interpretationRoute = null;
                     interpretationPhase = 'idle';
+                    renderSemanticInteraction();
                     awaitPendingQuestion();
                     renderInterpretation();
                     return;
@@ -1375,6 +1238,7 @@ export function openVoiceCommandDialog(options) {
                 if (resolved.value === null) {
                     interpretationRoute = null;
                     interpretationPhase = 'idle';
+                    renderSemanticInteraction();
                     awaitPendingQuestion();
                     renderInterpretation();
                     return;

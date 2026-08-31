@@ -14,6 +14,7 @@ import { t } from '../i18n/index.js';
 const MAX_SEEN_IDS = 500;
 const seenEventIds = new Set();
 export const NATIVE_FOREGROUND_EVENT = 'scrumboy:native-foreground';
+export const NATIVE_BACKGROUND_EVENT = 'scrumboy:native-background';
 let globalManager = null;
 let anonymousSseRestart = null;
 let foregroundLifecycleInited = false;

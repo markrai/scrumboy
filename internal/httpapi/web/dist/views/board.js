@@ -95,7 +95,7 @@ function bindVoiceCommandButton() {
         const initialProjectSlug = openingContext.projectSlug;
         const initialUserId = openingContext.userId;
         try {
-            const { openVoiceCommandDialog } = await import("../voice/flow.js");
+            const { openVoiceFlow } = await import("../voice/entry.js");
             const latestContext = getVoiceCommandContext();
             if (!canUseVoiceCommandContext(latestContext)
                 || latestContext.userId !== initialUserId
@@ -104,7 +104,7 @@ function bindVoiceCommandButton() {
                 showToast(t("board.voice.boardChanged"));
                 return;
             }
-            openVoiceCommandDialog({
+            await openVoiceFlow({
                 initialUserId,
                 initialProjectId,
                 initialProjectSlug,

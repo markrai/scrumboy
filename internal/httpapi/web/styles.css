@@ -1723,6 +1723,183 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   width: min(560px, calc(100vw - 32px));
 }
 
+.voice-agent {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 1400;
+  width: min(340px, calc(100vw - 32px));
+  display: grid;
+  gap: var(--s-10);
+  padding: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.voice-agent__topline,
+.voice-agent__identity,
+.voice-agent__controls,
+.voice-agent__confirmation-actions {
+  display: flex;
+  align-items: center;
+}
+
+.voice-agent__topline {
+  justify-content: space-between;
+  gap: var(--s-10);
+}
+
+.voice-agent__identity,
+.voice-agent__controls,
+.voice-agent__confirmation-actions {
+  gap: var(--s-8);
+}
+
+.voice-agent__identity {
+  min-width: 0;
+  font-size: var(--fs-13);
+  font-weight: 700;
+}
+
+.voice-agent__icon-button {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 20px;
+}
+
+.voice-agent__icon-button:hover,
+.voice-agent__icon-button:focus-visible {
+  color: var(--text);
+  background: var(--panel2);
+}
+
+.voice-agent__wave {
+  width: 38px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.voice-agent__wave span {
+  width: 3px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+}
+
+.voice-agent[data-state="listening"] {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  box-shadow: var(--shadow), 0 0 24px color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.voice-agent[data-state="listening"] .voice-agent__wave span {
+  animation: voice-agent-listening 0.7s ease-in-out infinite alternate;
+}
+
+.voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(2),
+.voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(4) {
+  animation-delay: -0.35s;
+}
+
+.voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(3) {
+  animation-delay: -0.55s;
+}
+
+.voice-agent[data-state="processing"] .voice-agent__wave {
+  animation: voice-agent-processing 0.85s ease-in-out infinite;
+}
+
+.voice-agent[data-state="question"] .voice-agent__wave,
+.voice-agent[data-state="confirmation"] .voice-agent__wave {
+  color: #f59e0b;
+}
+
+.voice-agent[data-state="success"] .voice-agent__wave {
+  color: #22c55e;
+}
+
+.voice-agent[data-state="error"] .voice-agent__wave {
+  color: var(--danger);
+}
+
+.voice-agent__status {
+  min-height: 20px;
+  color: var(--muted);
+  font-size: var(--fs-13);
+  line-height: 1.4;
+}
+
+.voice-agent__confirmation {
+  display: grid;
+  gap: var(--s-10);
+  padding: var(--s-10);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: var(--panel2);
+}
+
+.voice-agent__confirmation[hidden],
+.voice-agent__controls [hidden],
+.voice-agent__continue[hidden] {
+  display: none;
+}
+
+.voice-agent__summary {
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.voice-agent__confirmation-actions {
+  justify-content: flex-end;
+}
+
+.voice-agent__controls {
+  flex-wrap: wrap;
+}
+
+.voice-agent__continue {
+  margin-top: 0;
+}
+
+@keyframes voice-agent-listening {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(3.6); }
+}
+
+@keyframes voice-agent-processing {
+  0%, 100% { transform: translateX(-3px); opacity: 0.55; }
+  50% { transform: translateX(3px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-agent[data-state="listening"] .voice-agent__wave span,
+  .voice-agent[data-state="processing"] .voice-agent__wave {
+    animation: none;
+  }
+
+  .voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(2),
+  .voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(4) {
+    transform: scaleY(2.2);
+  }
+}
+
 .voice-command {
   gap: var(--s-14);
 }

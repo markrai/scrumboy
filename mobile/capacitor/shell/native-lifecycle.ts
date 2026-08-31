@@ -2,6 +2,7 @@ import { App, type AppState } from '@capacitor/app';
 import type { PluginListenerHandle } from '@capacitor/core';
 
 export const NATIVE_FOREGROUND_EVENT = 'scrumboy:native-foreground';
+export const NATIVE_BACKGROUND_EVENT = 'scrumboy:native-background';
 
 export interface NativeAppLifecycle {
   addListener(
@@ -24,6 +25,8 @@ export async function installNativeLifecycle(app: NativeAppLifecycle = App): Pro
   const pending = app.addListener('appStateChange', ({ isActive }) => {
     if (isActive) {
       window.dispatchEvent(new Event(NATIVE_FOREGROUND_EVENT));
+    } else {
+      window.dispatchEvent(new Event(NATIVE_BACKGROUND_EVENT));
     }
   });
   listenerHandle = pending;

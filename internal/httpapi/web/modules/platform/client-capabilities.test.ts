@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { createClientCapabilityRegistry } from './client-capabilities.js';
 import type { AppCapabilityMap } from './client-capabilities.js';
 import type { LocalTextGenerationCapability } from './local-text-generation.js';
+import type { SpeechInputCapability } from './speech-input.js';
 
 interface EchoCapability {
   echo(value: string): string;
@@ -59,14 +60,19 @@ describe('client capability registry', () => {
     expect(Object.keys(registry)).toEqual(['get']);
   });
 
-  it('registers the one production capability without changing test-local maps', () => {
+  it('registers independent production capabilities without changing test-local maps', () => {
     const localTextGeneration = {} as LocalTextGenerationCapability;
+    const speechInput = {} as SpeechInputCapability;
     const registry = createClientCapabilityRegistry<AppCapabilityMap>({
       'local-text-generation': localTextGeneration,
+      'speech-input': speechInput,
     });
 
     expect(registry.get('local-text-generation')).toBe(localTextGeneration);
+    expect(registry.get('speech-input')).toBe(speechInput);
     expectTypeOf(registry.get('local-text-generation'))
       .toEqualTypeOf<LocalTextGenerationCapability | null>();
+    expectTypeOf(registry.get('speech-input'))
+      .toEqualTypeOf<SpeechInputCapability | null>();
   });
 });
