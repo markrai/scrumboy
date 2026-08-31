@@ -14,6 +14,7 @@ export interface VoiceConversationSession {
   getState(): VoiceConversationState;
   setActiveProject(project: VoiceProjectReference): void;
   setActiveTodo(todo: VoiceTodoReference): void;
+  clearActiveTodo(): void;
   setPendingInteraction(pending: VoicePendingInteraction): void;
   clearPendingInteraction(): void;
   setLastInteraction(interaction: VoiceSemanticInteraction): void;
@@ -136,6 +137,15 @@ export function createVoiceConversationSession(): VoiceConversationSession {
         activeProject: freezeProject(todo),
         activeTodo,
         pending: todoChanged ? null : state.pending,
+      });
+    },
+
+    clearActiveTodo() {
+      requireActive();
+      state = freezeState({
+        ...state,
+        activeTodo: null,
+        pending: null,
       });
     },
 

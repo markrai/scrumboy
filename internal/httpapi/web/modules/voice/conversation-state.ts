@@ -12,6 +12,12 @@ export type VoiceTodoReference = Readonly<{
   localId: number;
 }>;
 
+export type VoiceCurrentTodoTarget = Readonly<{
+  kind: 'current';
+}>;
+
+export type VoiceConversationTodoTarget = VoiceTodoReference | VoiceCurrentTodoTarget;
+
 export type VoicePendingInteraction = Readonly<{
   kind: 'missing-slot';
   action: 'todo.update_title';

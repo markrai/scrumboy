@@ -98,6 +98,14 @@ export function createVoiceConversationSession() {
                 pending: todoChanged ? null : state.pending,
             });
         },
+        clearActiveTodo() {
+            requireActive();
+            state = freezeState({
+                ...state,
+                activeTodo: null,
+                pending: null,
+            });
+        },
         setPendingInteraction(pending) {
             requireActive();
             state = freezeState({ ...state, pending: freezePending(pending) });

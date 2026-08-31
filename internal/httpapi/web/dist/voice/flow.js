@@ -6,6 +6,7 @@ import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/boar
 import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
 import { deterministicVoiceCommandInterpreter } from './deterministic-interpreter.js';
 import { createVoiceConversationSession } from './conversation-session.js';
+import { activeTodoTransitionAfterSuccessfulIR } from './conversation-resolve.js';
 import { executeCommandIR } from './execute.js';
 import { normalizeVoiceInterpreterFailure, prepareVoiceCommandInterpreterForTurn, selectVoiceCommandInterpreterForTurn, } from './interpreter-selection.js';
 import { callMcpTool } from './mcp-client.js';
@@ -1238,6 +1239,13 @@ export function openVoiceCommandDialog(options) {
         });
         if (closed || controller.signal.aborted || executeController !== controller)
             return false;
+        const activeTodoTransition = activeTodoTransitionAfterSuccessfulIR(resolved.value.ir, conversationSession.getState().activeTodo);
+        if (activeTodoTransition.kind === 'set') {
+            conversationSession.setActiveTodo(activeTodoTransition.reference);
+        }
+        else if (activeTodoTransition.kind === 'clear') {
+            conversationSession.clearActiveTodo();
+        }
         lastExecutedHash = nextHash;
         return true;
     };

@@ -64,9 +64,14 @@ vi.mock('./local-ai-interpreter.js', async (importOriginal) => {
 });
 vi.mock('./conversation-session.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./conversation-session.js')>();
-  createVoiceConversationSessionMock.mockImplementation(
-    () => actual.createVoiceConversationSession(),
-  );
+  createVoiceConversationSessionMock.mockImplementation(() => {
+    const session = actual.createVoiceConversationSession();
+    return {
+      ...session,
+      setActiveTodo: vi.fn(session.setActiveTodo),
+      clearActiveTodo: vi.fn(session.clearActiveTodo),
+    };
+  });
   return {
     ...actual,
     createVoiceConversationSession: createVoiceConversationSessionMock,
@@ -490,6 +495,102 @@ describe('voice command flow', () => {
       lastInteraction: null,
       continuationEnabled: false,
     });
+  });
+
+  it.each([
+    ['open', 'open todo 56'],
+    ['move', 'move todo 56 to done'],
+    ['assign', 'assign todo 56 to Ada Lovelace'],
+  ])('sets active todo from the successfully executed authoritative %s resolution', async (_label, command) => {
+    executeCommandIRMock.mockResolvedValue({});
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = command;
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(session.setActiveTodo).toHaveBeenCalledWith({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 56,
+    });
+  });
+
+  it('clears an active todo only after that target is successfully deleted', async () => {
+    executeCommandIRMock.mockResolvedValue({});
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 56,
+    });
+    session.setActiveTodo.mockClear();
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'delete todo 56';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(session.clearActiveTodo).toHaveBeenCalledTimes(1);
+    expect(session.setActiveTodo).not.toHaveBeenCalled();
+  });
+
+  it('does not guess a new active todo after successful create', async () => {
+    executeCommandIRMock.mockResolvedValue({});
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 56,
+    });
+    session.setActiveTodo.mockClear();
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'create todo Fix logout';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(session.setActiveTodo).not.toHaveBeenCalled();
+    expect(session.clearActiveTodo).not.toHaveBeenCalled();
+  });
+
+  it('does not change active todo when fresh entity resolution fails', async () => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    const existing = {
+      kind: 'todo' as const,
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 56,
+    };
+    session.setActiveTodo(existing);
+    session.setActiveTodo.mockClear();
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'open todo 999';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(session.getState().activeTodo).toEqual(existing);
+    expect(session.setActiveTodo).not.toHaveBeenCalled();
+    expect(session.clearActiveTodo).not.toHaveBeenCalled();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('requires review again when fresh execute context resolves to a different IR', async () => {

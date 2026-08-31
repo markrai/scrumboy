@@ -70,6 +70,20 @@ describe('VoiceFlow conversation session foundation', () => {
     expect(session.getState().pending).toBeNull();
   });
 
+  it('clears the active todo and its pending work while preserving project context', () => {
+    const session = createVoiceConversationSession();
+    session.setActiveTodo(firstTodo);
+    session.setPendingInteraction(pendingTitle);
+
+    session.clearActiveTodo();
+
+    expect(session.getState()).toMatchObject({
+      activeProject: { projectId: 1, projectSlug: 'alpha' },
+      activeTodo: null,
+      pending: null,
+    });
+  });
+
   it.each([
     ['another todo in the same project', secondTodo],
     ['a todo in another project', otherProjectTodo],
@@ -137,6 +151,7 @@ describe('VoiceFlow conversation session foundation', () => {
   it('exposes state coordination only and keeps forbidden capabilities out of the foundation', () => {
     const session = createVoiceConversationSession();
     expect(Object.keys(session).sort()).toEqual([
+      'clearActiveTodo',
       'clearPendingInteraction',
       'dispose',
       'getState',
