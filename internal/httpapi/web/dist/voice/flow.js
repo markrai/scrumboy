@@ -6,6 +6,7 @@ import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/boar
 import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
 import { deterministicVoiceCommandInterpreter } from './deterministic-interpreter.js';
 import { executeCommandIR } from './execute.js';
+import { mountInterpretationLab } from './interpretation-lab.js';
 import { normalizeVoiceInterpreterFailure, prepareVoiceCommandInterpreterForTurn, selectVoiceCommandInterpreterForTurn, } from './interpreter-selection.js';
 import { callMcpTool } from './mcp-client.js';
 import { parseCommand } from './parser.js';
@@ -402,6 +403,19 @@ export function openVoiceCommandDialog(options) {
     const reviewStatus = dialog.querySelector("#voiceReviewStatus");
     const stateEl = dialog.querySelector("#voiceFlowState");
     const notify = options.showMessage ?? showToast;
+    const interpretationLab = mountInterpretationLab(dialog, {
+        getResolveContext: () => {
+            const context = getActiveContext(options);
+            if (isCommandFailure(context))
+                return null;
+            return {
+                projectId: context.value.projectId,
+                projectSlug: context.value.projectSlug,
+                board: context.value.board,
+                members: context.value.members,
+            };
+        },
+    });
     let mode = getVoiceFlowModePreference();
     let handsFreeConfirmation = getVoiceFlowHandsFreeConfirmationPreference();
     let flowState = "idle";
@@ -746,6 +760,7 @@ export function openVoiceCommandDialog(options) {
         reviewController?.abort();
         executeController?.abort();
         abortInterpretation();
+        interpretationLab.dispose();
         listenController = null;
         reviewController = null;
         executeController = null;

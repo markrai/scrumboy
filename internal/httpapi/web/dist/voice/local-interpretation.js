@@ -97,6 +97,11 @@ function preservesCanonicalEntityWords(transcript, command) {
     const sourceWords = new Set(normalizedWords(transcript));
     return matched.slice(1).every((entity) => normalizedWords(entity).every((word) => sourceWords.has(word)));
 }
+export function validateVoiceInterpretationCandidate(transcript, command) {
+    if (!preservesCanonicalEntityWords(transcript, command)) {
+        throw new LocalTextGenerationError('output_rejected', { recoverable: false });
+    }
+}
 function normalizedCoverageText(value) {
     return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en');
 }
@@ -128,7 +133,7 @@ function unwrapWholeOutputJsonFence(raw) {
     }
     return raw;
 }
-export function parseVoiceInterpretationEnvelope(raw, transcript) {
+export function parseVoiceInterpretationEnvelopeDetails(raw, transcript) {
     if (typeof raw !== 'string'
         || raw.length === 0
         || raw.length > VOICE_INTERPRETATION_LIMITS.envelopeCodeUnits) {
@@ -165,8 +170,14 @@ export function parseVoiceInterpretationEnvelope(raw, transcript) {
             || /\b(?:mcp|callMcpTool|executeCommandIR|todos\.|projects\.|users\.)\b/i.test(command)) {
             throw new LocalTextGenerationError('output_rejected', { recoverable: false });
         }
-        if (unrepresented.length === 0)
-            return { kind: 'candidate', command };
+        return { command, unrepresented };
+    }
+    return { command: null, unrepresented };
+}
+export function parseVoiceInterpretationEnvelope(raw, transcript) {
+    const envelope = parseVoiceInterpretationEnvelopeDetails(raw, transcript);
+    if (envelope.command !== null && envelope.unrepresented.length === 0) {
+        return { kind: 'candidate', command: envelope.command };
     }
     return { kind: 'refused' };
 }
@@ -208,7 +219,7 @@ export async function prepareVoiceInterpretation(options = {}) {
         throw normalizedError(error);
     }
 }
-export async function interpretVoiceCommand(options) {
+export async function generateVoiceInterpretationRaw(options) {
     const transcript = validateTranscript(options.transcript);
     throwIfAborted(options.signal);
     if (localeFor(options) !== 'en') {
@@ -232,7 +243,7 @@ export async function interpretVoiceCommand(options) {
         const result = await capability.generate({
             requestId,
             input: transcript,
-            instructions: VOICE_INTERPRETATION_INSTRUCTIONS,
+            instructions: options.instructions,
             maximumOutputTokens: Math.min(VOICE_INTERPRETATION_LIMITS.maximumOutputTokens, status.maximumOutputTokens),
             signal: options.signal,
         });
@@ -240,13 +251,20 @@ export async function interpretVoiceCommand(options) {
         if (result.requestId !== requestId) {
             throw new LocalTextGenerationError('output_rejected', { recoverable: false });
         }
-        const parsed = parseVoiceInterpretationEnvelope(result.text, transcript);
-        if (parsed.kind === 'candidate' && !preservesCanonicalEntityWords(transcript, parsed.command)) {
-            throw new LocalTextGenerationError('output_rejected', { recoverable: false });
-        }
-        return parsed;
+        return { transcript, rawOutput: result.text };
     }
     catch (error) {
         throw normalizedError(error);
     }
+}
+export async function interpretVoiceCommand(options) {
+    const generated = await generateVoiceInterpretationRaw({
+        ...options,
+        instructions: VOICE_INTERPRETATION_INSTRUCTIONS,
+    });
+    const parsed = parseVoiceInterpretationEnvelope(generated.rawOutput, generated.transcript);
+    if (parsed.kind === 'candidate') {
+        validateVoiceInterpretationCandidate(generated.transcript, parsed.command);
+    }
+    return parsed;
 }

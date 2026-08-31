@@ -40,6 +40,11 @@ export type VoiceInterpretationResult =
   | { kind: 'candidate'; command: string }
   | { kind: 'refused' };
 
+export type VoiceInterpretationEnvelope = {
+  command: string | null;
+  unrepresented: string[];
+};
+
 export type VoiceInterpretationOptions = {
   capability?: LocalTextGenerationCapability | null;
   locale?: string;
@@ -49,6 +54,15 @@ export type VoiceInterpretationOptions = {
 
 export type InterpretVoiceCommandOptions = VoiceInterpretationOptions & {
   transcript: string;
+};
+
+export type GenerateVoiceInterpretationOptions = InterpretVoiceCommandOptions & {
+  instructions: string;
+};
+
+export type VoiceInterpretationGeneration = {
+  transcript: string;
+  rawOutput: string;
 };
 
 let requestSequence = 0;
@@ -131,6 +145,12 @@ function preservesCanonicalEntityWords(transcript: string, command: string): boo
   return matched.slice(1).every((entity) => normalizedWords(entity).every((word) => sourceWords.has(word)));
 }
 
+export function validateVoiceInterpretationCandidate(transcript: string, command: string): void {
+  if (!preservesCanonicalEntityWords(transcript, command)) {
+    throw new LocalTextGenerationError('output_rejected', { recoverable: false });
+  }
+}
+
 function normalizedCoverageText(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en');
 }
@@ -166,7 +186,10 @@ function unwrapWholeOutputJsonFence(raw: string): string {
   return raw;
 }
 
-export function parseVoiceInterpretationEnvelope(raw: unknown, transcript: string): VoiceInterpretationResult {
+export function parseVoiceInterpretationEnvelopeDetails(
+  raw: unknown,
+  transcript: string,
+): VoiceInterpretationEnvelope {
   if (
     typeof raw !== 'string'
     || raw.length === 0
@@ -209,7 +232,15 @@ export function parseVoiceInterpretationEnvelope(raw: unknown, transcript: strin
     ) {
       throw new LocalTextGenerationError('output_rejected', { recoverable: false });
     }
-    if (unrepresented.length === 0) return { kind: 'candidate', command };
+    return { command, unrepresented };
+  }
+  return { command: null, unrepresented };
+}
+
+export function parseVoiceInterpretationEnvelope(raw: unknown, transcript: string): VoiceInterpretationResult {
+  const envelope = parseVoiceInterpretationEnvelopeDetails(raw, transcript);
+  if (envelope.command !== null && envelope.unrepresented.length === 0) {
+    return { kind: 'candidate', command: envelope.command };
   }
   return { kind: 'refused' };
 }
@@ -249,9 +280,9 @@ export async function prepareVoiceInterpretation(options: VoiceInterpretationOpt
   }
 }
 
-export async function interpretVoiceCommand(
-  options: InterpretVoiceCommandOptions,
-): Promise<VoiceInterpretationResult> {
+export async function generateVoiceInterpretationRaw(
+  options: GenerateVoiceInterpretationOptions,
+): Promise<VoiceInterpretationGeneration> {
   const transcript = validateTranscript(options.transcript);
   throwIfAborted(options.signal);
   if (localeFor(options) !== 'en') {
@@ -276,7 +307,7 @@ export async function interpretVoiceCommand(
     const result = await capability.generate({
       requestId,
       input: transcript,
-      instructions: VOICE_INTERPRETATION_INSTRUCTIONS,
+      instructions: options.instructions,
       maximumOutputTokens: Math.min(
         VOICE_INTERPRETATION_LIMITS.maximumOutputTokens,
         status.maximumOutputTokens,
@@ -287,12 +318,22 @@ export async function interpretVoiceCommand(
     if (result.requestId !== requestId) {
       throw new LocalTextGenerationError('output_rejected', { recoverable: false });
     }
-    const parsed = parseVoiceInterpretationEnvelope(result.text, transcript);
-    if (parsed.kind === 'candidate' && !preservesCanonicalEntityWords(transcript, parsed.command)) {
-      throw new LocalTextGenerationError('output_rejected', { recoverable: false });
-    }
-    return parsed;
+    return { transcript, rawOutput: result.text };
   } catch (error) {
     throw normalizedError(error);
   }
+}
+
+export async function interpretVoiceCommand(
+  options: InterpretVoiceCommandOptions,
+): Promise<VoiceInterpretationResult> {
+  const generated = await generateVoiceInterpretationRaw({
+    ...options,
+    instructions: VOICE_INTERPRETATION_INSTRUCTIONS,
+  });
+  const parsed = parseVoiceInterpretationEnvelope(generated.rawOutput, generated.transcript);
+  if (parsed.kind === 'candidate') {
+    validateVoiceInterpretationCandidate(generated.transcript, parsed.command);
+  }
+  return parsed;
 }

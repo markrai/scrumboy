@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   VOICE_INTERPRETATION_INSTRUCTIONS,
   VOICE_INTERPRETATION_LIMITS,
+  VOICE_INTERPRETATION_PROMPT_VERSION,
   getVoiceInterpretationAvailability,
   interpretVoiceCommand,
   parseVoiceInterpretationEnvelope,
@@ -111,6 +112,7 @@ describe('VoiceFlow local interpretation contract', () => {
   });
 
   it('keeps the prompt intent-aware and requires explicit semantic coverage', () => {
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-canonical-v2');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('For create titles only');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('existing todo, member, status, lane, project, and ID references');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('"unrepresented"');

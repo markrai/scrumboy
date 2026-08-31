@@ -526,6 +526,26 @@ describe('voice command flow', () => {
     expect(document.getElementById('voiceSummary')?.textContent).toBe('Delete todo #56: Fix login');
   });
 
+  it('exposes the temporary Interpretation Lab from the existing VoiceFlow dialog', () => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+
+    const toggle = document.getElementById('voiceInterpretationLabToggle') as HTMLButtonElement;
+    const panel = document.getElementById('voiceInterpretationLabPanel') as HTMLElement;
+    expect(toggle.textContent).toBe('Interpretation Lab');
+    expect(panel.hidden).toBe(true);
+
+    toggle.click();
+
+    expect(panel.hidden).toBe(false);
+    expect(panel.textContent).toContain('Experimental / temporary');
+    expect((document.getElementById('voiceInterpretationLabCorpus') as HTMLTextAreaElement).value)
+      .toContain('Create a to-do about fixing the bathroom by 6:00 p.m.');
+    expect(document.getElementById('voiceInterpretationLabRunCandidate')?.textContent).toBe('Run candidate');
+    expect(document.getElementById('voiceInterpretationLabRunAll')?.textContent).toBe('Run all');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(callMcpToolMock).not.toHaveBeenCalled();
+  });
+
   it('shows Safe-Mode title disambiguation candidates and executes the selected todo', async () => {
     executeCommandIRMock.mockResolvedValue({});
     openVoiceCommandDialog(makeOptions(() => makeContext(makeAmbiguousLoginBoard())));
