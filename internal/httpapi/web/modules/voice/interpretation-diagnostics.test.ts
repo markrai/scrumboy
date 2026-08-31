@@ -11,13 +11,14 @@ import {
   type InterpretationLabResolveContext,
 } from './interpretation-diagnostics.js';
 import {
-  CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS,
-  CANDIDATE_VOICE_INTERPRETATION_PROMPT_VERSION,
   EXPERIMENTAL_VOICE_INTERPRETATION_INSTRUCTIONS,
   EXPERIMENTAL_VOICE_INTERPRETATION_PROMPT_VERSION,
   INTERPRETATION_LAB_CANDIDATE_PROFILE,
   INTERPRETATION_LAB_CURRENT_PROFILE,
   INTERPRETATION_LAB_EXPERIMENTAL_PROFILE,
+  LEGACY_VOICE_INTERPRETATION_INSTRUCTIONS,
+  LEGACY_VOICE_INTERPRETATION_PROMPT_VERSION,
+  interpretationLabInstructions,
 } from './interpretation-lab-prompts.js';
 import {
   VOICE_INTERPRETATION_INSTRUCTIONS,
@@ -75,7 +76,7 @@ function capability(
 }
 
 describe('temporary VoiceFlow interpretation diagnostics', () => {
-  it('selects exact current-v2, unchanged experimental-v3, and separate candidate-v3 instructions', async () => {
+  it('selects frozen legacy-v2, unchanged experimental-v3, and the exact production prompt for candidate-v3', async () => {
     const local = capability('{"command":"create todo Clean the garage","unrepresented":[]}');
 
     await diagnoseVoiceInterpretation({
@@ -85,10 +86,17 @@ describe('temporary VoiceFlow interpretation diagnostics', () => {
       getResolveContext: context,
     });
 
-    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-canonical-v2');
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-natural-v3');
+    expect(LEGACY_VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-canonical-v2');
+    expect(interpretationLabInstructions(INTERPRETATION_LAB_CURRENT_PROFILE))
+      .toBe(LEGACY_VOICE_INTERPRETATION_INSTRUCTIONS);
+    expect(interpretationLabInstructions(INTERPRETATION_LAB_CANDIDATE_PROFILE))
+      .toBe(VOICE_INTERPRETATION_INSTRUCTIONS);
     expect(local.generate).toHaveBeenCalledWith(expect.objectContaining({
-      instructions: VOICE_INTERPRETATION_INSTRUCTIONS,
+      instructions: LEGACY_VOICE_INTERPRETATION_INSTRUCTIONS,
     }));
+    expect(local.generate.mock.calls[0][0].instructions)
+      .not.toBe(VOICE_INTERPRETATION_INSTRUCTIONS);
     expect(local.generate.mock.calls[0][0].instructions)
       .not.toBe(EXPERIMENTAL_VOICE_INTERPRETATION_INSTRUCTIONS);
 
@@ -108,7 +116,7 @@ describe('temporary VoiceFlow interpretation diagnostics', () => {
     expect(local.generate.mock.calls[1][0].instructions)
       .toBe(EXPERIMENTAL_VOICE_INTERPRETATION_INSTRUCTIONS);
     expect(local.generate.mock.calls[2][0].instructions)
-      .toBe(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS);
+      .toBe(VOICE_INTERPRETATION_INSTRUCTIONS);
   });
 
   it('makes the temporary prompt punctuation-independent and natural-language aware without domain authority', () => {
@@ -123,27 +131,29 @@ describe('temporary VoiceFlow interpretation diagnostics', () => {
     expect(EXPERIMENTAL_VOICE_INTERPRETATION_INSTRUCTIONS).toContain('unrepresented');
   });
 
-  it('defines the production-candidate prompt as natural-language aware and semantically fail-closed', () => {
-    expect(CANDIDATE_VOICE_INTERPRETATION_PROMPT_VERSION)
-      .toBe('voice-command-natural-v3-candidate');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+  it('keeps the promoted production prompt natural-language aware and semantically fail-closed', () => {
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION)
+      .toBe('voice-command-natural-v3');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('Scrumboy, a task and kanban application');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS).toContain('speech-transcribed English');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('speech-transcribed English');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('Do not rely on colons, commas, periods, quotation marks, capitalization');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('normalize the user-authored content into a concise natural task title');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('preserve identity');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('CRITICAL SEMANTIC COMPLETENESS RULE');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('Count intended Scrumboy actions, not conjunction words');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('If the user requests two or more actions, do not choose');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('{"command":null,"unrepresented":["Open and delete Bogus"]}');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('{"command":"create todo Fix the bathroom","unrepresented":["by 6:00 p.m."]}');
-    expect(CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS)
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('Never invent or rename authoritative domain entities');
   });
 
@@ -286,11 +296,11 @@ describe('temporary VoiceFlow interpretation diagnostics', () => {
     local.generate.mockImplementation(async (request) => {
       active += 1;
       maximumActive = Math.max(maximumActive, active);
-      const profile = request.instructions === VOICE_INTERPRETATION_INSTRUCTIONS
-        ? 'current'
+      const profile = request.instructions === LEGACY_VOICE_INTERPRETATION_INSTRUCTIONS
+        ? 'legacy'
         : request.instructions === EXPERIMENTAL_VOICE_INTERPRETATION_INSTRUCTIONS
           ? 'experimental'
-          : request.instructions === CANDIDATE_VOICE_INTERPRETATION_INSTRUCTIONS
+          : request.instructions === VOICE_INTERPRETATION_INSTRUCTIONS
             ? 'candidate'
             : 'unknown';
       order.push(`${request.input}|${profile}`);
@@ -318,10 +328,10 @@ describe('temporary VoiceFlow interpretation diagnostics', () => {
 
     expect(maximumActive).toBe(1);
     expect(order).toEqual([
-      'Clean the garage|current',
+      'Clean the garage|legacy',
       'Clean the garage|experimental',
       'Clean the garage|candidate',
-      'Call the dentist|current',
+      'Call the dentist|legacy',
       'Call the dentist|experimental',
       'Call the dentist|candidate',
     ]);

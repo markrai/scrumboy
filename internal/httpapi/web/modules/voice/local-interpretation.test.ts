@@ -90,7 +90,7 @@ describe('VoiceFlow local interpretation contract', () => {
     }
   });
 
-  it('sends only the bounded transcript and constant contract after explicit invocation', async () => {
+  it('sends the production natural-v3 contract to generation after explicit invocation', async () => {
     const local = capability({ state: 'ready', maximumOutputTokens: 72 });
     await expect(interpretVoiceCommand({
       transcript: '  Could you move login over to testing?  ',
@@ -107,18 +107,34 @@ describe('VoiceFlow local interpretation contract', () => {
       maximumOutputTokens: 72,
       signal: undefined,
     });
+    expect(local.generate.mock.calls[0][0].instructions)
+      .toBe(VOICE_INTERPRETATION_INSTRUCTIONS);
+    expect(local.generate.mock.calls[0][0].instructions)
+      .toContain('Contract: voice-command-natural-v3.');
     expect(Object.keys(local.generate.mock.calls[0][0]).sort())
       .toEqual(['input', 'instructions', 'maximumOutputTokens', 'requestId', 'signal']);
   });
 
-  it('keeps the prompt intent-aware and requires explicit semantic coverage', () => {
-    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-canonical-v2');
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('For create titles only');
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('existing todo, member, status, lane, project, and ID references');
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('"unrepresented"');
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Never silently omit a meaningful qualifier');
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('create todo Clean the garage');
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('"unrepresented":["today"]');
+  it('keeps the promoted prompt natural-language aware and semantically fail-closed', () => {
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-natural-v3');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Scrumboy, a task and kanban application');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('A todo is a task card');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('speech-transcribed English');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('Do not rely on colons, commas, periods, quotation marks, capitalization');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('normalize the user-authored content into a concise natural task title');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('preserve identity');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('CRITICAL SEMANTIC COMPLETENESS RULE');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Count intended Scrumboy actions, not conjunction words');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('If the user requests two or more actions, do not choose');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('{"command":null,"unrepresented":["Open and delete Bogus"]}');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('{"command":"create todo Fix the bathroom","unrepresented":["by 6:00 p.m."]}');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('Never invent or rename authoritative domain entities');
   });
 
   it('caps output tokens below the provider maximum', async () => {

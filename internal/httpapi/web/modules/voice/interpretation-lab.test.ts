@@ -86,6 +86,7 @@ describe('temporary VoiceFlow Interpretation Lab UI', () => {
     expect(corpus?.value).toContain('Create a todo to call Alice and Bob');
     expect(root.querySelector('#voiceInterpretationLabRunCandidate')?.textContent).toBe('Run candidate');
     expect(root.querySelector('#voiceInterpretationLabRunAll')?.textContent).toBe('Run all');
+    expect(root.querySelector('#voiceInterpretationLabRunCurrent')?.textContent).toBe('Run legacy');
     expect(root.querySelector('#voiceInterpretationLabRunBoth')).toBeNull();
     expect(localStorage.length).toBe(0);
   });

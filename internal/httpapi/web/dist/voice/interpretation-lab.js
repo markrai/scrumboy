@@ -70,7 +70,7 @@ function readinessMessage(status) {
 function profileLabel(profile) {
     switch (profile) {
         case INTERPRETATION_LAB_CURRENT_PROFILE:
-            return 'Current v2';
+            return 'Legacy v2';
         case INTERPRETATION_LAB_EXPERIMENTAL_PROFILE:
             return 'Experimental v3';
         case INTERPRETATION_LAB_CANDIDATE_PROFILE:
@@ -172,7 +172,7 @@ export function mountInterpretationLab(dialog, options) {
       <textarea class="input voice-command__lab-corpus" id="voiceInterpretationLabCorpus" rows="10"></textarea>
     </label>
     <div class="voice-command__lab-actions">
-      <button type="button" class="btn" id="voiceInterpretationLabRunCurrent">Run current</button>
+      <button type="button" class="btn" id="voiceInterpretationLabRunCurrent">Run legacy</button>
       <button type="button" class="btn" id="voiceInterpretationLabRunExperimental">Run experimental</button>
       <button type="button" class="btn" id="voiceInterpretationLabRunCandidate">Run candidate</button>
       <button type="button" class="btn" id="voiceInterpretationLabRunAll">Run all</button>
