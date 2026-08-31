@@ -1075,6 +1075,172 @@ describe('voice command flow', () => {
     expect(executeCommandIRMock.mock.calls[0][0]).toMatchObject({ intent: 'open_todo' });
   });
 
+  it('resolves open-current against fresh active-todo state and reuses the reviewed open path', async () => {
+    useReadyLocalAi();
+    let finish: ((result: {
+      kind: 'conversation';
+      intent: { kind: 'open-todo'; target: { kind: 'current' } };
+    }) => void) | undefined;
+    interpretVoiceCommandMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    executeCommandIRMock.mockResolvedValue({});
+    const board = makeBoard({
+      columns: {
+        backlog: [],
+        doing: [{ id: 10, localId: 553, title: 'Original title', status: 'doing' }],
+        done: [],
+      },
+    });
+    const options = makeOptions(() => makeContext(board));
+    openVoiceCommandDialog(options);
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 553,
+    });
+    session.setActiveTodo.mockClear();
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'Open it';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    board.columns.doing[0].title = 'Fresh authoritative title';
+    finish?.({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    await flushAsync();
+
+    expect(document.getElementById('voiceInterpretationOriginal')?.textContent).toBe('Open it');
+    expect(document.getElementById('voiceInterpretationCandidate')?.textContent).toBe('Open it');
+    expect(document.getElementById('voiceInterpretationAction')?.textContent)
+      .toBe('Open todo #553: Fresh authoritative title');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(showConfirmDialogMock).toHaveBeenCalledWith(
+      'Open todo #553: Fresh authoritative title',
+      'Confirm interpreted command',
+      'Open',
+      'default',
+    );
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandIRMock.mock.calls[0][0]).toEqual({
+      intent: 'open_todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 553 },
+    });
+    expect(session.setActiveTodo).toHaveBeenCalledWith({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 553,
+    });
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails open-current safely when no active todo exists', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    const context = makeContext();
+    const options = makeOptions(() => context);
+    openVoiceCommandDialog(options);
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Open this card';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(document.getElementById('voiceReviewStatus')?.textContent)
+      .toBe('Todo reference is required.');
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+    expect(session.clearActiveTodo).not.toHaveBeenCalled();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(options.openTodo).not.toHaveBeenCalled();
+  });
+
+  it('clears a project-mismatched active todo instead of opening it', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    const context = makeContext();
+    const options = makeOptions(() => context);
+    openVoiceCommandDialog(options);
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({
+      kind: 'todo',
+      projectId: 2,
+      projectSlug: 'beta',
+      localId: 553,
+    });
+    session.clearActiveTodo.mockClear();
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Open that one';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(session.clearActiveTodo).toHaveBeenCalledTimes(1);
+    expect(session.getState().activeTodo).toBeNull();
+    expect(document.getElementById('voiceReviewStatus')?.textContent)
+      .toBe('The board changed before the command could run.');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(options.openTodo).not.toHaveBeenCalled();
+  });
+
+  it('rechecks open-current at execution and clears a todo that disappeared after review', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    const board = makeBoard({
+      columns: {
+        backlog: [],
+        doing: [{ id: 10, localId: 553, title: 'Will disappear', status: 'doing' }],
+        done: [],
+      },
+    });
+    const options = makeOptions(() => makeContext(board));
+    openVoiceCommandDialog(options);
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 553,
+    });
+    session.clearActiveTodo.mockClear();
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+    transcript.value = 'Open it';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(document.getElementById('voiceSummary')?.textContent)
+      .toBe('Open todo #553: Will disappear');
+
+    board.columns.doing = [];
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(session.clearActiveTodo).toHaveBeenCalledTimes(1);
+    expect(session.getState().activeTodo).toBeNull();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(options.openTodo).not.toHaveBeenCalled();
+  });
+
   it('executes an AI-primary create in the deterministic default lane with success confirmation semantics', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({ kind: 'candidate', command: 'create todo Clean the garage' });

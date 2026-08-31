@@ -9,7 +9,7 @@ export function createLocalAiVoiceCommandInterpreter(dependencies) {
                 locale: dependencies.locale,
                 signal: options.signal,
             });
-            if (interpretation.kind === 'candidate')
+            if (interpretation.kind !== 'refused')
                 return interpretation;
             return {
                 kind: 'unsupported',

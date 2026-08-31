@@ -41,6 +41,13 @@ describe('deterministic VoiceFlow interpreter', () => {
     expect(interpretation).toEqual({ kind: 'candidate', command: 'open todo 56' });
   });
 
+  it('does not add contextual pronoun handling to the deterministic path', async () => {
+    const parserResult = parseCommand('Open it');
+
+    await expect(deterministicVoiceCommandInterpreter.interpret('Open it'))
+      .resolves.toEqual({ kind: 'unsupported', failure: parserResult });
+  });
+
   it('rejects an already-aborted request without starting lifecycle work', async () => {
     const controller = new AbortController();
     controller.abort();

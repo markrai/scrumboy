@@ -17,8 +17,12 @@ import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/boar
 import { I18N_LOCALE_CHANGED } from '../i18n/index.js';
 import { deterministicVoiceCommandInterpreter } from './deterministic-interpreter.js';
 import { createVoiceConversationSession } from './conversation-session.js';
-import { activeTodoTransitionAfterSuccessfulIR } from './conversation-resolve.js';
+import {
+  activeTodoTransitionAfterSuccessfulIR,
+  resolveConversationTodoTarget,
+} from './conversation-resolve.js';
 import { executeCommandIR } from './execute.js';
+import type { VoiceConversationIntent } from './interpreter.js';
 import {
   normalizeVoiceInterpreterFailure,
   prepareVoiceCommandInterpreterForTurn,
@@ -520,6 +524,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   let currentCommandSource: 'deterministic' | 'ai' = 'deterministic';
   let currentOriginalTranscript = '';
   let currentCanonicalTranscript = '';
+  let currentConversationIntent: VoiceConversationIntent | null = null;
   let pendingDisambiguation: PendingDisambiguation | null = null;
   let currentTargetSelection: { transcript: string; localId: number; allowedLocalIds: number[] } | null = null;
   let executing = false;
@@ -763,6 +768,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     currentCommandSource = 'deterministic';
     currentOriginalTranscript = '';
     currentCanonicalTranscript = '';
+    currentConversationIntent = null;
     pendingDisambiguation = null;
     currentTargetSelection = null;
     if (summary) {
@@ -928,6 +934,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       source?: 'deterministic' | 'ai';
       originalTranscript?: string;
       canonicalTranscript?: string;
+      conversationIntent?: VoiceConversationIntent | null;
     } = {},
   ) => {
     if (closed) return;
@@ -935,6 +942,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     currentCommandSource = metadata.source ?? 'deterministic';
     currentOriginalTranscript = metadata.originalTranscript ?? (transcript?.value.trim() ?? '');
     currentCanonicalTranscript = metadata.canonicalTranscript ?? currentOriginalTranscript;
+    currentConversationIntent = metadata.conversationIntent ?? null;
     pendingDisambiguation = null;
     if (disambiguation) {
       disambiguation.hidden = true;
@@ -949,6 +957,60 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     }
     setReviewStatus(null);
     renderInterpretationProposal();
+  };
+
+  const resolveConversationIntent = async (
+    intent: VoiceConversationIntent,
+    signal?: AbortSignal,
+  ): Promise<CommandResult<ResolvedCommand>> => {
+    const context = getActiveContext(options);
+    if (isCommandFailure(context)) return context;
+
+    const target = resolveConversationTodoTarget(
+      intent.target,
+      conversationSession.getState(),
+      {
+        projectId: context.value.projectId,
+        projectSlug: context.value.projectSlug,
+        board: context.value.board,
+      },
+    );
+    if (target.ok === false) {
+      if (target.code === 'project_mismatch' || target.code === 'todo_missing') {
+        conversationSession.clearActiveTodo();
+      }
+      return target.code === 'no_active_todo'
+        ? localizedCommandFailure(
+            'unknown_story',
+            'voice.errors.todoReferenceRequired',
+            'Todo reference is required.',
+          )
+        : localizedCommandFailure(
+            'stale_context',
+            'voice.errors.staleContext',
+            'The board changed before the command could run.',
+          );
+    }
+
+    const localId = target.value.reference.localId;
+    const resolved = await resolveParsedDraft({
+      intent: 'open_todo',
+      target: {
+        kind: 'id',
+        localId,
+        display: String(localId),
+      },
+      display: `open todo ${localId}`,
+    }, context.value, signal);
+    if (isCommandFailure(resolved)) return resolved;
+    if (!canRunResolvedCommand(context.value, resolved.value)) {
+      return localizedCommandFailure(
+        'unauthorized',
+        'voice.errors.unauthorizedMutation',
+        'Only maintainers can run mutating commands.',
+      );
+    }
+    return resolved;
   };
 
   const beginInterpretationOperation = (): { controller: AbortController; owner: number } => {
@@ -1080,11 +1142,24 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         return;
       }
 
-      const resolved = await parseAndResolveCommand(interpreted.command, options, controller.signal);
+      const resolved = interpreted.kind === 'conversation'
+        ? await resolveConversationIntent(interpreted.intent, controller.signal)
+        : await parseAndResolveCommand(interpreted.command, options, controller.signal);
       if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
       if (isCommandFailure(resolved)) {
-        if (showTargetAmbiguity(resolved, interpreted.command, 'ai', originalTranscript)) {
+        if (
+          interpreted.kind === 'candidate'
+          && showTargetAmbiguity(resolved, interpreted.command, 'ai', originalTranscript)
+        ) {
           interpretationRoute = null;
+          renderInterpretation();
+          return;
+        }
+        if (interpreted.kind === 'conversation') {
+          interpretationRoute = null;
+          interpretationPhase = 'idle';
+          setReviewStatus(resolved);
+          setFlowState('error');
           renderInterpretation();
           return;
         }
@@ -1099,7 +1174,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       applyResolved(resolved.value, {
         source: 'ai',
         originalTranscript,
-        canonicalTranscript: interpreted.command,
+        canonicalTranscript: interpreted.kind === 'candidate'
+          ? interpreted.command
+          : originalTranscript,
+        conversationIntent: interpreted.kind === 'conversation'
+          ? interpreted.intent
+          : null,
       });
       setFlowState('target_resolved');
       renderInterpretation();
@@ -1252,16 +1332,27 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         }
         return;
       }
-      const resolved = await parseAndResolveCommand(interpretation.command, options, controller.signal);
+      const resolved = interpretation.kind === 'conversation'
+        ? await resolveConversationIntent(interpretation.intent, controller.signal)
+        : await parseAndResolveCommand(interpretation.command, options, controller.signal);
       if (closed || controller.signal.aborted || reviewController !== controller) return;
       if (initialContext && !sameTurnContext(initialContext)) return;
       if (isCommandFailure(resolved)) {
-        if (showTargetAmbiguity(resolved, interpretation.command, source, value)) {
+        if (
+          interpretation.kind === 'candidate'
+          && showTargetAmbiguity(resolved, interpretation.command, source, value)
+        ) {
           interpretationRoute = null;
           renderInterpretation();
           return;
         }
-        if (source === 'ai') {
+        if (interpretation.kind === 'conversation') {
+          interpretationRoute = null;
+          interpretationPhase = 'idle';
+          setReviewStatus(resolved);
+          setFlowState('error');
+          renderInterpretation();
+        } else if (source === 'ai') {
           interpretationPhase = 'error';
           interpretationFailure = { code: 'invalid-output', recoverable: false };
           setFlowState('error');
@@ -1276,7 +1367,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       applyResolved(resolved.value, {
         source,
         originalTranscript: value,
-        canonicalTranscript: interpretation.command,
+        canonicalTranscript: interpretation.kind === 'candidate'
+          ? interpretation.command
+          : value,
+        conversationIntent: interpretation.kind === 'conversation'
+          ? interpretation.intent
+          : null,
       });
       setFlowState("target_resolved");
       renderInterpretation();
@@ -1308,10 +1404,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       source: 'deterministic' | 'ai';
       originalTranscript: string;
       canonicalTranscript: string;
+      conversationIntent: VoiceConversationIntent | null;
     } = {
       source: currentCommandSource,
       originalTranscript: currentOriginalTranscript,
       canonicalTranscript: currentCanonicalTranscript,
+      conversationIntent: currentConversationIntent,
     },
   ): Promise<boolean> => {
     const reviewedHash = commandHash(reviewedCommand);
@@ -1332,10 +1430,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           allowedLocalIds: currentTargetSelection.allowedLocalIds,
         }
       : {};
-    const resolved = await parseAndResolveCommand(value, options, controller.signal, selection);
+    const resolved = reviewedContext.conversationIntent
+      ? await resolveConversationIntent(reviewedContext.conversationIntent, controller.signal)
+      : await parseAndResolveCommand(value, options, controller.signal, selection);
     if (closed || controller.signal.aborted || executeController !== controller) return false;
     if (isCommandFailure(resolved)) {
-      if (showTargetAmbiguity(resolved, value)) return false;
+      if (!reviewedContext.conversationIntent && showTargetAmbiguity(resolved, value)) return false;
       setReviewStatus(resolved);
       return false;
     }
@@ -1650,6 +1750,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       source: currentCommandSource,
       originalTranscript: currentOriginalTranscript,
       canonicalTranscript: currentCanonicalTranscript,
+      conversationIntent: currentConversationIntent,
     };
 
     executeController?.abort();

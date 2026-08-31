@@ -19,7 +19,7 @@ export function createLocalAiVoiceCommandInterpreter(
         locale: dependencies.locale,
         signal: options.signal,
       });
-      if (interpretation.kind === 'candidate') return interpretation;
+      if (interpretation.kind !== 'refused') return interpretation;
       return {
         kind: 'unsupported',
         failure: localizedCommandFailure(

@@ -70,6 +70,23 @@ describe('local-AI VoiceFlow interpreter', () => {
     }));
   });
 
+  it('maps the bounded provider result to the common open-current conversation intent', async () => {
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    const interpreter = createLocalAiVoiceCommandInterpreter({
+      capability: capability(),
+      locale: 'en',
+    });
+
+    await expect(interpreter.interpret('Open it')).resolves.toEqual({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves operational provider errors instead of manufacturing command failures', async () => {
     const providerError = new LocalTextGenerationError('busy');
     interpretVoiceCommandMock.mockRejectedValue(providerError);
@@ -79,5 +96,17 @@ describe('local-AI VoiceFlow interpreter', () => {
     });
 
     await expect(interpreter.interpret('Could you move bogus to done?')).rejects.toBe(providerError);
+  });
+
+  it('preserves provider cancellation without fallback or a second inference', async () => {
+    const cancellation = new LocalTextGenerationError('cancelled');
+    interpretVoiceCommandMock.mockRejectedValue(cancellation);
+    const interpreter = createLocalAiVoiceCommandInterpreter({
+      capability: capability(),
+      locale: 'en',
+    });
+
+    await expect(interpreter.interpret('Open it')).rejects.toBe(cancellation);
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
   });
 });
