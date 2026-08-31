@@ -11,6 +11,8 @@ export const VOICE_FLOW_MODE_STORAGE_KEY = "scrumboy.voiceFlowMode";
 export const VOICE_FLOW_MODE_PREFERENCE_KEY = "voiceFlowMode";
 export const VOICE_FLOW_HANDS_FREE_CONFIRMATION_STORAGE_KEY = "scrumboy.voiceFlowHandsFreeConfirmation";
 export const VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY = "voiceFlowHandsFreeConfirmation";
+export const VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY = "scrumboy.voiceFlowContinueConversation";
+export const VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY = "voiceFlowContinueConversation";
 export function normalizeVoiceFlowEnabled(value) {
     return value === false || value === "false" || value === "0" || value === "off"
         ? false
@@ -21,6 +23,9 @@ export function normalizeVoiceFlowMode(value) {
 }
 export function normalizeVoiceFlowHandsFreeConfirmation(value) {
     return value === VOICE_FLOW_CONFIRM_MUTATIONS ? VOICE_FLOW_CONFIRM_MUTATIONS : VOICE_FLOW_CONFIRM_DELETES;
+}
+export function normalizeVoiceFlowContinueConversation(value) {
+    return value === true || value === "true" || value === "1" || value === "on";
 }
 export function getVoiceFlowModePreference() {
     try {
@@ -44,6 +49,14 @@ export function getVoiceFlowHandsFreeConfirmationPreference() {
     }
     catch {
         return VOICE_FLOW_CONFIRM_DELETES;
+    }
+}
+export function getVoiceFlowContinueConversationPreference() {
+    try {
+        return normalizeVoiceFlowContinueConversation(localStorage.getItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY));
+    }
+    catch {
+        return false;
     }
 }
 export function setVoiceFlowEnabledPreference(enabled, opts) {
@@ -89,6 +102,21 @@ export function setVoiceFlowHandsFreeConfirmationPreference(value, opts) {
         body: JSON.stringify({ key: VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, value: next }),
     }).catch(() => { });
 }
+export function setVoiceFlowContinueConversationPreference(enabled, opts) {
+    const next = normalizeVoiceFlowContinueConversation(enabled);
+    const serialized = String(next);
+    try {
+        localStorage.setItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY, serialized);
+    }
+    catch {
+    }
+    if (opts?.skipRemote || !getUser())
+        return;
+    void apiFetch('/api/user/preferences', {
+        method: 'PUT',
+        body: JSON.stringify({ key: VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY, value: serialized }),
+    }).catch(() => { });
+}
 export function hydrateVoiceFlowModeFromServer(value) {
     setVoiceFlowModePreference(normalizeVoiceFlowMode(value), { skipRemote: true });
 }
@@ -97,4 +125,7 @@ export function hydrateVoiceFlowEnabledFromServer(value) {
 }
 export function hydrateVoiceFlowHandsFreeConfirmationFromServer(value) {
     setVoiceFlowHandsFreeConfirmationPreference(normalizeVoiceFlowHandsFreeConfirmation(value), { skipRemote: true });
+}
+export function hydrateVoiceFlowContinueConversationFromServer(value) {
+    setVoiceFlowContinueConversationPreference(normalizeVoiceFlowContinueConversation(value), { skipRemote: true });
 }

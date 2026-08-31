@@ -1,9 +1,22 @@
 import type { CommandFailure } from './schema.js';
 import type { VoiceCurrentTodoTarget } from './conversation-state.js';
 
-export type VoiceConversationIntent = Readonly<{
-  kind: 'open-todo';
-  target: VoiceCurrentTodoTarget;
+export type VoiceConversationIntent =
+  | Readonly<{
+      kind: 'open-todo';
+      target: VoiceCurrentTodoTarget;
+    }>
+  | Readonly<{
+      kind: 'update-todo-title';
+      target: VoiceCurrentTodoTarget;
+      title: string | null;
+    }>;
+
+export type VoiceInterpreterConversationContext = Readonly<{
+  pending: null | Readonly<{
+    action: 'todo.update_title';
+    slot: 'title';
+  }>;
 }>;
 
 export type VoiceCommandInterpretation =
@@ -13,6 +26,7 @@ export type VoiceCommandInterpretation =
 
 export type VoiceCommandInterpretationOptions = {
   signal?: AbortSignal;
+  conversation?: VoiceInterpreterConversationContext;
 };
 
 export interface VoiceCommandInterpreter {

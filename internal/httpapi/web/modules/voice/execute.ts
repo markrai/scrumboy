@@ -3,7 +3,7 @@ import { voiceText } from './i18n.js';
 import { callMcpTool, type McpToolName } from './mcp-client.js';
 import type { CommandIR } from './schema.js';
 
-type McpCommandIR = Extract<CommandIR, { intent: "todos.create" | "todos.move" | "todos.delete" | "todos.assign" }>;
+type McpCommandIR = Extract<CommandIR, { intent: "todos.create" | "todos.move" | "todos.delete" | "todos.assign" | "todos.update_title" }>;
 
 export type McpCommandCall = {
   tool: McpToolName;
@@ -54,6 +54,17 @@ export function buildMcpCall(ir: McpCommandIR): McpCommandCall {
           localId: ir.entities.localId,
           patch: {
             assigneeUserId: ir.entities.assigneeUserId,
+          },
+        },
+      };
+    case "todos.update_title":
+      return {
+        tool: "todos_update",
+        input: {
+          projectSlug: ir.projectSlug,
+          localId: ir.entities.localId,
+          patch: {
+            title: ir.entities.title,
           },
         },
       };

@@ -2,7 +2,9 @@ import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
 import {
   getVoiceFlowHandsFreeConfirmationPreference,
+  getVoiceFlowContinueConversationPreference,
   getVoiceFlowModePreference,
+  setVoiceFlowContinueConversationPreference,
   setVoiceFlowHandsFreeConfirmationPreference,
   setVoiceFlowModePreference,
   VOICE_FLOW_CONFIRM_DELETES,
@@ -23,6 +25,8 @@ import {
 } from './conversation-resolve.js';
 import { executeCommandIR } from './execute.js';
 import type { VoiceConversationIntent } from './interpreter.js';
+import type { VoiceTodoReference } from './conversation-state.js';
+import type { VoiceSemanticInteraction } from './semantic-interaction.js';
 import {
   normalizeVoiceInterpreterFailure,
   prepareVoiceCommandInterpreterForTurn,
@@ -32,7 +36,7 @@ import {
 } from './interpreter-selection.js';
 import { callMcpTool } from './mcp-client.js';
 import { parseCommand } from './parser.js';
-import { formatResolvedCommand, resolveCommandDraft } from './resolve.js';
+import { formatResolvedCommand, resolveCommandDraft, resolveTodoTitleUpdate } from './resolve.js';
 import { startOneShotRecognition } from './speech.js';
 import { speak } from './speech-output.js';
 import { transitionVoiceInteractionState, type VoiceInteractionState } from './state-machine.js';
@@ -207,6 +211,7 @@ function isMutationCommand(command: ResolvedCommand): boolean {
     case "todos.move":
     case "todos.delete":
     case "todos.assign":
+    case "todos.update_title":
       return true;
     case "open_todo":
       return false;
@@ -430,6 +435,17 @@ function createDialog(): HTMLDialogElement {
           <span class="voice-command__confirmation-label" id="voiceHandsFreeConfirmLabel">Confirm only deletes</span>
         </label>
       </div>
+      <div class="voice-command__confirmation-policy">
+        <label class="voice-command__switch">
+          <input type="checkbox" id="voiceContinueConversationToggle" role="switch" aria-describedby="voiceContinueConversationLabel" />
+          <span class="voice-command__switch-track" aria-hidden="true">
+            <span class="voice-command__switch-thumb"></span>
+          </span>
+          <span class="voice-command__confirmation-label" id="voiceContinueConversationLabel" data-i18n-text="voice.continueConversation" data-i18n-fallback="Continue conversation">Continue conversation</span>
+        </label>
+      </div>
+
+      <div class="voice-command__semantic-interaction" id="voiceSemanticInteraction" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
       <div class="voice-command__review">
         <button type="button" class="btn btn--ghost" id="voiceReviewBtn" data-i18n-text="voice.action.review" data-i18n-fallback="Review">Review</button>
@@ -497,6 +513,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   const handsFreeConfirmPolicy = dialog.querySelector<HTMLElement>("#voiceHandsFreeConfirmPolicy");
   const handsFreeConfirmToggle = dialog.querySelector<HTMLInputElement>("#voiceHandsFreeConfirmToggle");
   const handsFreeConfirmLabel = dialog.querySelector<HTMLElement>("#voiceHandsFreeConfirmLabel");
+  const continueConversationToggle = dialog.querySelector<HTMLInputElement>("#voiceContinueConversationToggle");
+  const semanticInteraction = dialog.querySelector<HTMLElement>("#voiceSemanticInteraction");
   const reviewBtn = dialog.querySelector<HTMLButtonElement>("#voiceReviewBtn");
   const executeBtn = dialog.querySelector<HTMLButtonElement>("#voiceExecuteBtn");
   const summary = dialog.querySelector<HTMLElement>("#voiceSummary");
@@ -519,12 +537,14 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   const notify = options.showMessage ?? showToast;
   let mode: VoiceFlowMode = getVoiceFlowModePreference();
   let handsFreeConfirmation: VoiceFlowHandsFreeConfirmation = getVoiceFlowHandsFreeConfirmationPreference();
+  let continueConversation = getVoiceFlowContinueConversationPreference();
   let flowState: VoiceInteractionState = "idle";
   let currentCommand: ResolvedCommand | null = null;
   let currentCommandSource: 'deterministic' | 'ai' = 'deterministic';
   let currentOriginalTranscript = '';
   let currentCanonicalTranscript = '';
   let currentConversationIntent: VoiceConversationIntent | null = null;
+  let currentConversationTarget: VoiceTodoReference | null = null;
   let pendingDisambiguation: PendingDisambiguation | null = null;
   let currentTargetSelection: { transcript: string; localId: number; allowedLocalIds: number[] } | null = null;
   let executing = false;
@@ -568,6 +588,30 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   const renderStatuses = () => {
     safeSetText(listenStatus, renderDialogMessage(listenStatusMessage));
     safeSetText(reviewStatus, renderDialogMessage(reviewStatusMessage));
+  };
+
+  const renderSemanticInteraction = () => {
+    if (!semanticInteraction) return;
+    const interaction = conversationSession.getState().lastInteraction;
+    semanticInteraction.hidden = interaction === null;
+    semanticInteraction.textContent = interaction
+      ? renderVoiceMessage(interaction.message)
+      : "";
+  };
+
+  const setSemanticInteraction = (interaction: VoiceSemanticInteraction) => {
+    conversationSession.setLastInteraction(interaction);
+    renderSemanticInteraction();
+  };
+
+  const interpreterOptions = (signal: AbortSignal) => {
+    if (!conversationSession.getState().pending) return { signal };
+    return {
+      signal,
+      conversation: {
+        pending: { action: 'todo.update_title' as const, slot: 'title' as const },
+      },
+    };
   };
 
   const interpretationErrorMessage = (failure: VoiceInterpreterFailure | null): string => {
@@ -763,12 +807,20 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     );
   };
 
+  const applyContinueConversationPreference = () => {
+    if (continueConversationToggle) {
+      continueConversationToggle.checked = continueConversation;
+      continueConversationToggle.setAttribute("aria-checked", String(continueConversation));
+    }
+  };
+
   const clearResolved = () => {
     currentCommand = null;
     currentCommandSource = 'deterministic';
     currentOriginalTranscript = '';
     currentCanonicalTranscript = '';
     currentConversationIntent = null;
+    currentConversationTarget = null;
     pendingDisambiguation = null;
     currentTargetSelection = null;
     if (summary) {
@@ -844,6 +896,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     hydrateVoiceI18n(dialog);
     renderFlowState();
     applyHandsFreeConfirmationPreference();
+    applyContinueConversationPreference();
+    renderSemanticInteraction();
     renderCurrentCommand();
     if (pendingDisambiguation) renderDisambiguation(pendingDisambiguation);
     renderStatuses();
@@ -915,6 +969,56 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     setFlowState("reset");
   };
 
+  const resetTurn = () => {
+    reviewController?.abort();
+    reviewController = null;
+    clearInterpretation();
+    clearResolved();
+    if (transcript) transcript.value = '';
+    lastExecutedHash = null;
+    setListenStatus(null);
+    setReviewStatus(null);
+    setFlowState('reset');
+    if (listenBtn) listenBtn.disabled = false;
+    if (stopBtn) stopBtn.disabled = true;
+    transcript?.focus();
+  };
+
+  const setContinueConversation = (enabled: boolean, persist = true) => {
+    const next = !!enabled;
+    if (continueConversation && !next) {
+      conversationSession.reset();
+      resetTurn();
+      if (semanticInteraction) {
+        semanticInteraction.hidden = true;
+        semanticInteraction.textContent = '';
+      }
+    }
+    continueConversation = next;
+    conversationSession.setContinuationEnabled(next);
+    if (persist) setVoiceFlowContinueConversationPreference(next);
+    applyContinueConversationPreference();
+  };
+
+  const completeSuccessfulTurn = () => {
+    if (conversationSession.getState().continuationEnabled) {
+      resetTurn();
+      return;
+    }
+    close();
+  };
+
+  const cancelReviewedCommand = (command: ResolvedCommand) => {
+    if (command.ir.intent !== 'todos.update_title') return;
+    conversationSession.clearPendingInteraction();
+    setSemanticInteraction({
+      kind: 'information',
+      message: { key: 'voice.status.cancelled', fallback: 'Cancelled' },
+    });
+    clearResolved();
+    if (conversationSession.getState().continuationEnabled) resetTurn();
+  };
+
   const shouldConfirmHandsFreeCommand = (resolved: ResolvedCommand): boolean => {
     if (handsFreeConfirmation === VOICE_FLOW_CONFIRM_MUTATIONS) {
       return isMutationCommand(resolved);
@@ -935,6 +1039,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       originalTranscript?: string;
       canonicalTranscript?: string;
       conversationIntent?: VoiceConversationIntent | null;
+      conversationTarget?: VoiceTodoReference | null;
     } = {},
   ) => {
     if (closed) return;
@@ -943,6 +1048,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     currentOriginalTranscript = metadata.originalTranscript ?? (transcript?.value.trim() ?? '');
     currentCanonicalTranscript = metadata.canonicalTranscript ?? currentOriginalTranscript;
     currentConversationIntent = metadata.conversationIntent ?? null;
+    currentConversationTarget = metadata.conversationTarget ?? null;
     pendingDisambiguation = null;
     if (disambiguation) {
       disambiguation.hidden = true;
@@ -959,15 +1065,34 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     renderInterpretationProposal();
   };
 
+  const awaitPendingQuestion = () => {
+    clearResolved();
+    if (transcript) transcript.value = '';
+    setListenStatus(null);
+    setReviewStatus(null);
+    setFlowState('reset');
+    transcript?.focus();
+  };
+
   const resolveConversationIntent = async (
     intent: VoiceConversationIntent,
     signal?: AbortSignal,
-  ): Promise<CommandResult<ResolvedCommand>> => {
+    targetOverride?: VoiceTodoReference | null,
+  ): Promise<CommandResult<Readonly<{
+    command: ResolvedCommand;
+    target: VoiceTodoReference;
+  }> | null>> => {
     const context = getActiveContext(options);
-    if (isCommandFailure(context)) return context;
+    if (isCommandFailure(context)) {
+      conversationSession.clearActiveTodo();
+      return context;
+    }
 
+    const pending = conversationSession.getState().pending;
+    const targetInput = targetOverride
+      ?? (intent.kind === 'update-todo-title' && pending ? pending.target : intent.target);
     const target = resolveConversationTodoTarget(
-      intent.target,
+      targetInput,
       conversationSession.getState(),
       {
         projectId: context.value.projectId,
@@ -993,15 +1118,42 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     }
 
     const localId = target.value.reference.localId;
-    const resolved = await resolveParsedDraft({
-      intent: 'open_todo',
-      target: {
-        kind: 'id',
-        localId,
-        display: String(localId),
-      },
-      display: `open todo ${localId}`,
-    }, context.value, signal);
+    if (intent.kind === 'update-todo-title' && intent.title === null) {
+      conversationSession.setActiveTodo(target.value.reference);
+      conversationSession.setPendingInteraction({
+        kind: 'missing-slot',
+        action: 'todo.update_title',
+        slot: 'title',
+        target: target.value.reference,
+      });
+      setSemanticInteraction({
+        kind: 'question',
+        response: 'free-text',
+        message: {
+          key: 'voice.question.updateTitle',
+          fallback: 'What would you like to change the title to?',
+        },
+      });
+      return { ok: true, value: null };
+    }
+
+    const resolved = intent.kind === 'update-todo-title'
+      ? await resolveTodoTitleUpdate(localId, intent.title, {
+          projectId: context.value.projectId,
+          projectSlug: context.value.projectSlug,
+          board: context.value.board,
+          members: context.value.members,
+          callTool: (tool, input) => callMcpTool(tool, input, { signal }),
+        })
+      : await resolveParsedDraft({
+          intent: 'open_todo',
+          target: {
+            kind: 'id',
+            localId,
+            display: String(localId),
+          },
+          display: `open todo ${localId}`,
+        }, context.value, signal);
     if (isCommandFailure(resolved)) return resolved;
     if (!canRunResolvedCommand(context.value, resolved.value)) {
       return localizedCommandFailure(
@@ -1010,7 +1162,13 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         'Only maintainers can run mutating commands.',
       );
     }
-    return resolved;
+    return {
+      ok: true,
+      value: Object.freeze({
+        command: resolved.value,
+        target: target.value.reference,
+      }),
+    };
   };
 
   const beginInterpretationOperation = (): { controller: AbortController; owner: number } => {
@@ -1105,6 +1263,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     const originalTranscript = transcript?.value.trim() ?? '';
     const initialContext = getActiveContext(options);
     if (isCommandFailure(initialContext)) {
+      conversationSession.clearActiveTodo();
       setReviewStatus(initialContext);
       return;
     }
@@ -1123,7 +1282,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       }
       const interpreted = await selection.interpreter.interpret(
         originalTranscript,
-        { signal: controller.signal },
+        interpreterOptions(controller.signal),
       );
       if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
       const latestContext = getActiveContext(options);
@@ -1142,20 +1301,12 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         return;
       }
 
-      const resolved = interpreted.kind === 'conversation'
-        ? await resolveConversationIntent(interpreted.intent, controller.signal)
-        : await parseAndResolveCommand(interpreted.command, options, controller.signal);
-      if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
-      if (isCommandFailure(resolved)) {
-        if (
-          interpreted.kind === 'candidate'
-          && showTargetAmbiguity(resolved, interpreted.command, 'ai', originalTranscript)
-        ) {
-          interpretationRoute = null;
-          renderInterpretation();
-          return;
-        }
-        if (interpreted.kind === 'conversation') {
+      let resolvedCommand: ResolvedCommand;
+      let conversationTarget: VoiceTodoReference | null = null;
+      if (interpreted.kind === 'conversation') {
+        const resolved = await resolveConversationIntent(interpreted.intent, controller.signal);
+        if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+        if (isCommandFailure(resolved)) {
           interpretationRoute = null;
           interpretationPhase = 'idle';
           setReviewStatus(resolved);
@@ -1163,15 +1314,35 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           renderInterpretation();
           return;
         }
-        interpretationPhase = 'error';
-        interpretationFailure = { code: 'invalid-output', recoverable: false };
-        renderInterpretation();
-        return;
+        if (resolved.value === null) {
+          interpretationRoute = null;
+          interpretationPhase = 'idle';
+          awaitPendingQuestion();
+          renderInterpretation();
+          return;
+        }
+        resolvedCommand = resolved.value.command;
+        conversationTarget = resolved.value.target;
+      } else {
+        const resolved = await parseAndResolveCommand(interpreted.command, options, controller.signal);
+        if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
+        if (isCommandFailure(resolved)) {
+          if (showTargetAmbiguity(resolved, interpreted.command, 'ai', originalTranscript)) {
+            interpretationRoute = null;
+            renderInterpretation();
+            return;
+          }
+          interpretationPhase = 'error';
+          interpretationFailure = { code: 'invalid-output', recoverable: false };
+          renderInterpretation();
+          return;
+        }
+        resolvedCommand = resolved.value;
       }
 
       interpretationRoute = null;
       interpretationPhase = 'idle';
-      applyResolved(resolved.value, {
+      applyResolved(resolvedCommand, {
         source: 'ai',
         originalTranscript,
         canonicalTranscript: interpreted.kind === 'candidate'
@@ -1180,6 +1351,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         conversationIntent: interpreted.kind === 'conversation'
           ? interpreted.intent
           : null,
+        conversationTarget,
       });
       setFlowState('target_resolved');
       renderInterpretation();
@@ -1304,6 +1476,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       if (source === 'ai') {
         const activeContext = getActiveContext(options);
         if (isCommandFailure(activeContext)) {
+          conversationSession.clearActiveTodo();
           setReviewStatus(activeContext);
           return;
         }
@@ -1316,7 +1489,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       }
       const interpretation = await selection.interpreter.interpret(
         value,
-        { signal: controller.signal },
+        interpreterOptions(controller.signal),
       );
       if (closed || controller.signal.aborted || reviewController !== controller) return;
       if (initialContext && !sameTurnContext(initialContext)) return;
@@ -1332,39 +1505,54 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         }
         return;
       }
-      const resolved = interpretation.kind === 'conversation'
-        ? await resolveConversationIntent(interpretation.intent, controller.signal)
-        : await parseAndResolveCommand(interpretation.command, options, controller.signal);
-      if (closed || controller.signal.aborted || reviewController !== controller) return;
-      if (initialContext && !sameTurnContext(initialContext)) return;
-      if (isCommandFailure(resolved)) {
-        if (
-          interpretation.kind === 'candidate'
-          && showTargetAmbiguity(resolved, interpretation.command, source, value)
-        ) {
-          interpretationRoute = null;
-          renderInterpretation();
-          return;
-        }
-        if (interpretation.kind === 'conversation') {
+      let resolvedCommand: ResolvedCommand;
+      let conversationTarget: VoiceTodoReference | null = null;
+      if (interpretation.kind === 'conversation') {
+        const resolved = await resolveConversationIntent(interpretation.intent, controller.signal);
+        if (closed || controller.signal.aborted || reviewController !== controller) return;
+        if (initialContext && !sameTurnContext(initialContext)) return;
+        if (isCommandFailure(resolved)) {
           interpretationRoute = null;
           interpretationPhase = 'idle';
           setReviewStatus(resolved);
           setFlowState('error');
           renderInterpretation();
-        } else if (source === 'ai') {
-          interpretationPhase = 'error';
-          interpretationFailure = { code: 'invalid-output', recoverable: false };
-          setFlowState('error');
-          renderInterpretation();
-        } else {
-          setReviewStatus(resolved);
+          return;
         }
-        return;
+        if (resolved.value === null) {
+          interpretationRoute = null;
+          interpretationPhase = 'idle';
+          awaitPendingQuestion();
+          renderInterpretation();
+          return;
+        }
+        resolvedCommand = resolved.value.command;
+        conversationTarget = resolved.value.target;
+      } else {
+        const resolved = await parseAndResolveCommand(interpretation.command, options, controller.signal);
+        if (closed || controller.signal.aborted || reviewController !== controller) return;
+        if (initialContext && !sameTurnContext(initialContext)) return;
+        if (isCommandFailure(resolved)) {
+          if (showTargetAmbiguity(resolved, interpretation.command, source, value)) {
+            interpretationRoute = null;
+            renderInterpretation();
+            return;
+          }
+          if (source === 'ai') {
+            interpretationPhase = 'error';
+            interpretationFailure = { code: 'invalid-output', recoverable: false };
+            setFlowState('error');
+            renderInterpretation();
+          } else {
+            setReviewStatus(resolved);
+          }
+          return;
+        }
+        resolvedCommand = resolved.value;
       }
       interpretationRoute = null;
       interpretationPhase = 'idle';
-      applyResolved(resolved.value, {
+      applyResolved(resolvedCommand, {
         source,
         originalTranscript: value,
         canonicalTranscript: interpretation.kind === 'candidate'
@@ -1373,6 +1561,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         conversationIntent: interpretation.kind === 'conversation'
           ? interpretation.intent
           : null,
+        conversationTarget,
       });
       setFlowState("target_resolved");
       renderInterpretation();
@@ -1405,11 +1594,13 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       originalTranscript: string;
       canonicalTranscript: string;
       conversationIntent: VoiceConversationIntent | null;
+      conversationTarget: VoiceTodoReference | null;
     } = {
       source: currentCommandSource,
       originalTranscript: currentOriginalTranscript,
       canonicalTranscript: currentCanonicalTranscript,
       conversationIntent: currentConversationIntent,
+      conversationTarget: currentConversationTarget,
     },
   ): Promise<boolean> => {
     const reviewedHash = commandHash(reviewedCommand);
@@ -1430,22 +1621,37 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           allowedLocalIds: currentTargetSelection.allowedLocalIds,
         }
       : {};
-    const resolved = reviewedContext.conversationIntent
-      ? await resolveConversationIntent(reviewedContext.conversationIntent, controller.signal)
-      : await parseAndResolveCommand(value, options, controller.signal, selection);
-    if (closed || controller.signal.aborted || executeController !== controller) return false;
-    if (isCommandFailure(resolved)) {
-      if (!reviewedContext.conversationIntent && showTargetAmbiguity(resolved, value)) return false;
-      setReviewStatus(resolved);
-      return false;
+    let resolvedCommand: ResolvedCommand;
+    if (reviewedContext.conversationIntent) {
+      const resolved = await resolveConversationIntent(
+        reviewedContext.conversationIntent,
+        controller.signal,
+        reviewedContext.conversationTarget,
+      );
+      if (closed || controller.signal.aborted || executeController !== controller) return false;
+      if (isCommandFailure(resolved)) {
+        setReviewStatus(resolved);
+        return false;
+      }
+      if (resolved.value === null) return false;
+      resolvedCommand = resolved.value.command;
+    } else {
+      const resolved = await parseAndResolveCommand(value, options, controller.signal, selection);
+      if (closed || controller.signal.aborted || executeController !== controller) return false;
+      if (isCommandFailure(resolved)) {
+        if (showTargetAmbiguity(resolved, value)) return false;
+        setReviewStatus(resolved);
+        return false;
+      }
+      resolvedCommand = resolved.value;
     }
-    const nextHash = commandHash(resolved.value);
+    const nextHash = commandHash(resolvedCommand);
     if (nextHash !== reviewedHash) {
       clearResolved();
       setReviewStatus(voiceMessage("voice.status.commandChanged", "Command changed. Review again before running."));
       return false;
     }
-    await executeCommandIR(resolved.value.ir, {
+    await executeCommandIR(resolvedCommand.ir, {
       refreshBoard: options.refreshBoard,
       openTodo: options.openTodo,
       recordMutation: options.recordMutation,
@@ -1453,13 +1659,23 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     });
     if (closed || controller.signal.aborted || executeController !== controller) return false;
     const activeTodoTransition = activeTodoTransitionAfterSuccessfulIR(
-      resolved.value.ir,
+      resolvedCommand.ir,
       conversationSession.getState().activeTodo,
     );
     if (activeTodoTransition.kind === 'set') {
       conversationSession.setActiveTodo(activeTodoTransition.reference);
     } else if (activeTodoTransition.kind === 'clear') {
       conversationSession.clearActiveTodo();
+    }
+    if (resolvedCommand.ir.intent === 'todos.update_title') {
+      conversationSession.clearPendingInteraction();
+      setSemanticInteraction({
+        kind: 'success',
+        message: {
+          key: 'voice.success.titleUpdated',
+          fallback: 'Title updated successfully.',
+        },
+      });
     }
     lastExecutedHash = nextHash;
     return true;
@@ -1604,7 +1820,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       if (!executed) return;
       setFlowState("success");
       notify(voiceText("voice.status.commandComplete", "Command complete"));
-      close();
+      completeSuccessfulTurn();
     } catch (err: any) {
       if (!closed && !controller.signal.aborted) {
         setListenStatus(err?.message ? { kind: "literal", text: err.message } : voiceMessage("voice.errors.speechRecognitionFailed", "Speech recognition failed."));
@@ -1632,6 +1848,9 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     handsFreeConfirmation = handsFreeConfirmToggle.checked ? VOICE_FLOW_CONFIRM_MUTATIONS : VOICE_FLOW_CONFIRM_DELETES;
     setVoiceFlowHandsFreeConfirmationPreference(handsFreeConfirmation);
     applyHandsFreeConfirmationPreference();
+  });
+  continueConversationToggle?.addEventListener("change", () => {
+    setContinueConversation(continueConversationToggle.checked);
   });
   closeBtn?.addEventListener("click", close);
   cancelBtn?.addEventListener("click", close);
@@ -1751,6 +1970,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       originalTranscript: currentOriginalTranscript,
       canonicalTranscript: currentCanonicalTranscript,
       conversationIntent: currentConversationIntent,
+      conversationTarget: currentConversationTarget,
     };
 
     executeController?.abort();
@@ -1775,6 +1995,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           executeBtn.disabled = false;
           setReviewStatus(voiceMessage("voice.status.cancelled", "Cancelled"));
           setFlowState("cancel");
+          cancelReviewedCommand(reviewedCommand);
           return;
         }
       }
@@ -1785,7 +2006,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       }
       setFlowState("success");
       notify(voiceText("voice.status.commandComplete", "Command complete"));
-      close();
+      completeSuccessfulTurn();
     } catch (err: any) {
       if (!closed && !controller.signal.aborted) {
         setReviewStatus(err?.message ? { kind: "literal", text: err.message } : voiceMessage("voice.errors.commandFailed", "Command failed."));
@@ -1800,6 +2021,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
 
   setMode(mode, false);
   applyHandsFreeConfirmationPreference();
+  setContinueConversation(continueConversation, false);
+  renderSemanticInteraction();
   dialog.showModal();
   transcript?.focus();
   if (mode === "hands-free") {

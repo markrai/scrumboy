@@ -40,6 +40,17 @@ export function buildMcpCall(ir) {
                     },
                 },
             };
+        case "todos.update_title":
+            return {
+                tool: "todos_update",
+                input: {
+                    projectSlug: ir.projectSlug,
+                    localId: ir.entities.localId,
+                    patch: {
+                        title: ir.entities.title,
+                    },
+                },
+            };
     }
 }
 export async function executeCommandIR(ir, options = {}) {

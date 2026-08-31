@@ -7,7 +7,7 @@ import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvai
 import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
-import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
+import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowContinueConversationFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
 import { setDefaultCardsPerLane, CARDS_PER_LANE_PREFERENCE_KEY } from './orchestration/board-refresh.js';
 import { loadWrapLanesPreferenceFromServer, WRAP_LANES_PREFERENCE_KEY, } from './core/wrap-lanes-preferences.js';
@@ -203,6 +203,14 @@ async function routeOnceBody() {
                 const confirmationResp = await apiFetch(`/api/user/preferences?key=${VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY}`);
                 if (confirmationResp?.value)
                     hydrateVoiceFlowHandsFreeConfirmationFromServer(confirmationResp.value);
+            }
+            catch (err) {
+                // Ignore errors
+            }
+            try {
+                const continuationResp = await apiFetch(`/api/user/preferences?key=${VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY}`);
+                if (continuationResp?.value)
+                    hydrateVoiceFlowContinueConversationFromServer(continuationResp.value);
             }
             catch (err) {
                 // Ignore errors

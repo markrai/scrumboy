@@ -64,6 +64,7 @@ export function todoReferenceFromResolvedIR(ir: CommandIR): VoiceTodoReference |
     case 'todos.move':
     case 'todos.delete':
     case 'todos.assign':
+    case 'todos.update_title':
     case 'open_todo':
       return todoReference(ir.projectId, ir.projectSlug, ir.entities.localId);
   }

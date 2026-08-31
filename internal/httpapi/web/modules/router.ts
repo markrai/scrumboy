@@ -11,9 +11,11 @@ import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import {
   hydrateVoiceFlowEnabledFromServer,
+  hydrateVoiceFlowContinueConversationFromServer,
   hydrateVoiceFlowHandsFreeConfirmationFromServer,
   hydrateVoiceFlowModeFromServer,
   VOICE_FLOW_ENABLED_PREFERENCE_KEY,
+  VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY,
   VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY,
   VOICE_FLOW_MODE_PREFERENCE_KEY,
 } from './core/voiceflow-preferences.js';
@@ -249,6 +251,13 @@ async function routeOnceBody(): Promise<void> {
       try {
         const confirmationResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY}`);
         if (confirmationResp?.value) hydrateVoiceFlowHandsFreeConfirmationFromServer(confirmationResp.value);
+      } catch (err) {
+        // Ignore errors
+      }
+
+      try {
+        const continuationResp = await apiFetch<{ value: string }>(`/api/user/preferences?key=${VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY}`);
+        if (continuationResp?.value) hydrateVoiceFlowContinueConversationFromServer(continuationResp.value);
       } catch (err) {
         // Ignore errors
       }

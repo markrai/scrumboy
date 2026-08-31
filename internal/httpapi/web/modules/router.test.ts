@@ -22,6 +22,7 @@ const {
   applyWallpaperForAuthContextMock,
   loadUserWallpaperMock,
   hydrateVoiceFlowEnabledFromServerMock,
+  hydrateVoiceFlowContinueConversationFromServerMock,
   hydrateVoiceFlowHandsFreeConfirmationFromServerMock,
   hydrateVoiceFlowModeFromServerMock,
 } = vi.hoisted(() => ({
@@ -44,6 +45,7 @@ const {
   applyWallpaperForAuthContextMock: vi.fn(),
   loadUserWallpaperMock: vi.fn().mockResolvedValue(undefined),
   hydrateVoiceFlowEnabledFromServerMock: vi.fn(),
+  hydrateVoiceFlowContinueConversationFromServerMock: vi.fn(),
   hydrateVoiceFlowHandsFreeConfirmationFromServerMock: vi.fn(),
   hydrateVoiceFlowModeFromServerMock: vi.fn(),
 }));
@@ -89,9 +91,11 @@ vi.mock('./wallpaper.js', () => ({
 
 vi.mock('./core/voiceflow-preferences.js', () => ({
   hydrateVoiceFlowEnabledFromServer: hydrateVoiceFlowEnabledFromServerMock,
+  hydrateVoiceFlowContinueConversationFromServer: hydrateVoiceFlowContinueConversationFromServerMock,
   hydrateVoiceFlowHandsFreeConfirmationFromServer: hydrateVoiceFlowHandsFreeConfirmationFromServerMock,
   hydrateVoiceFlowModeFromServer: hydrateVoiceFlowModeFromServerMock,
   VOICE_FLOW_ENABLED_PREFERENCE_KEY: 'voiceflowEnabled',
+  VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY: 'voiceflowContinueConversation',
   VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY: 'voiceflowHandsFreeConfirmation',
   VOICE_FLOW_MODE_PREFERENCE_KEY: 'voiceflowMode',
 }));
@@ -136,6 +140,7 @@ describe('router push autosubscribe gate', () => {
     applyWallpaperForAuthContextMock.mockClear();
     loadUserWallpaperMock.mockClear();
     hydrateVoiceFlowEnabledFromServerMock.mockClear();
+    hydrateVoiceFlowContinueConversationFromServerMock.mockClear();
     hydrateVoiceFlowHandsFreeConfirmationFromServerMock.mockClear();
     hydrateVoiceFlowModeFromServerMock.mockClear();
   });
@@ -348,6 +353,7 @@ describe('router cold-start boardData handoff', () => {
     applyWallpaperForAuthContextMock.mockClear();
     loadUserWallpaperMock.mockClear();
     hydrateVoiceFlowEnabledFromServerMock.mockClear();
+    hydrateVoiceFlowContinueConversationFromServerMock.mockClear();
     hydrateVoiceFlowHandsFreeConfirmationFromServerMock.mockClear();
     hydrateVoiceFlowModeFromServerMock.mockClear();
     apiFetchMock.mockImplementation(async (url: string) => {

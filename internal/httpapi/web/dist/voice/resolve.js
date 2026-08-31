@@ -161,6 +161,14 @@ export function formatResolvedCommand(command) {
                 confirmLabel: voiceText("voice.action.assign", "Assign"),
             };
         }
+        case "todos.update_title": {
+            const localId = command.ir.entities.localId;
+            const title = command.ir.entities.title;
+            return {
+                summary: voiceText("voice.summary.updateTitle", "Change the title of #{localId} to \"{title}\"", { localId, title }),
+                confirmLabel: voiceText("voice.action.updateTitle", "Change title"),
+            };
+        }
         default: {
             const exhaustive = command.ir;
             return exhaustive;
@@ -169,6 +177,39 @@ export function formatResolvedCommand(command) {
 }
 function withResolvedCommandDisplay(command) {
     return { ...command, ...formatResolvedCommand(command) };
+}
+export async function resolveTodoTitleUpdate(localId, title, context) {
+    const target = await resolveTodoTarget({
+        kind: "id",
+        localId,
+        display: String(localId),
+    }, {
+        projectSlug: context.projectSlug,
+        board: context.board,
+        callTool: context.callTool,
+    });
+    if (isCommandFailure(target))
+        return target;
+    const ir = {
+        intent: "todos.update_title",
+        projectId: context.projectId,
+        projectSlug: context.projectSlug,
+        entities: { localId: target.value.todo.localId, title },
+    };
+    const validated = validateResolvedIR(ir, context);
+    if (isCommandFailure(validated))
+        return validated;
+    return {
+        ok: true,
+        value: withResolvedCommandDisplay({
+            ir: validated.value,
+            summary: "",
+            confirmLabel: "",
+            danger: false,
+            requiresConfirmation: true,
+            storyTitle: target.value.todo.title,
+        }),
+    };
 }
 export async function resolveCommandDraft(draft, context, options = {}) {
     if (draft.intent === "todos.create") {

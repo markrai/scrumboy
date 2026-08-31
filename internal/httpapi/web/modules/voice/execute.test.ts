@@ -42,6 +42,42 @@ describe('voice command MCP mapping', () => {
       tool: 'todos_update',
       input: { projectSlug: 'alpha', localId: 56, patch: { assigneeUserId: 7 } },
     });
+
+    expect(buildMcpCall({
+      intent: 'todos.update_title',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, title: 'Fix the login race condition' },
+    })).toEqual({
+      tool: 'todos_update',
+      input: {
+        projectSlug: 'alpha',
+        localId: 56,
+        patch: { title: 'Fix the login race condition' },
+      },
+    });
+  });
+
+  it('executes a title update once through the authoritative MCP update path', async () => {
+    const callTool = vi.fn().mockResolvedValue({ todo: { localId: 56 } });
+    const recordMutation = vi.fn();
+    const refreshBoard = vi.fn().mockResolvedValue(undefined);
+
+    await executeCommandIR({
+      intent: 'todos.update_title',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, title: 'Fix the login race condition' },
+    }, { callTool, recordMutation, refreshBoard });
+
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(callTool).toHaveBeenCalledWith('todos_update', {
+      projectSlug: 'alpha',
+      localId: 56,
+      patch: { title: 'Fix the login race condition' },
+    });
+    expect(recordMutation).toHaveBeenCalledTimes(1);
+    expect(refreshBoard).toHaveBeenCalledTimes(1);
   });
 
   it('records mutation before MCP and refreshes only after success', async () => {

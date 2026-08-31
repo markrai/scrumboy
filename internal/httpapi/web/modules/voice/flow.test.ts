@@ -95,6 +95,7 @@ import {
   type VoiceCommandDialogContext,
 } from './flow.js';
 import {
+  VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY,
   VOICE_FLOW_HANDS_FREE_CONFIRMATION_STORAGE_KEY,
   VOICE_FLOW_MODE_STORAGE_KEY,
 } from '../core/voiceflow-preferences.js';
@@ -1142,6 +1143,310 @@ describe('voice command flow', () => {
       localId: 553,
     });
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps completed turns only when Continue conversation is on and clears context when turned off', async () => {
+    executeCommandIRMock.mockResolvedValue({});
+    const context = makeContext();
+    const options = makeOptions(() => context);
+    openVoiceCommandDialog(options);
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    const toggle = document.getElementById('voiceContinueConversationToggle') as HTMLInputElement;
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+
+    expect(toggle.checked).toBe(false);
+    expect(localStorage.getItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY)).toBeNull();
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(session.getState().continuationEnabled).toBe(true);
+
+    transcript.value = 'open todo 56';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(document.getElementById('voiceCommandDialog')).not.toBeNull();
+    expect(transcript.value).toBe('');
+    expect(session.getState().activeTodo).toMatchObject({ localId: 56, projectSlug: 'alpha' });
+
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: { kind: 'open-todo', target: { kind: 'current' } },
+    });
+    transcript.value = 'Open it';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(2);
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('voiceCommandDialog')).not.toBeNull();
+    expect(session.getState().activeTodo).toMatchObject({ localId: 56 });
+
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(session.getState()).toMatchObject({
+      activeTodo: null,
+      pending: null,
+      continuationEnabled: false,
+    });
+    expect(localStorage.getItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY)).toBe('false');
+  });
+
+  it('asks for a missing title, binds the answer to the concrete pending target, confirms, and executes once', async () => {
+    useReadyLocalAi();
+    executeCommandIRMock.mockResolvedValue({});
+    interpretVoiceCommandMock
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+      })
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: {
+          kind: 'update-todo-title',
+          target: { kind: 'current' },
+          title: 'Fix the login race condition',
+        },
+      });
+    const context = makeContext();
+    const options = makeOptions(() => context);
+    openVoiceCommandDialog(options);
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({
+      kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56,
+    });
+    const toggle = document.getElementById('voiceContinueConversationToggle') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+
+    transcript.value = 'Change the title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(document.getElementById('voiceSemanticInteraction')?.textContent)
+      .toBe('What would you like to change the title to?');
+    expect((document.getElementById('voiceSemanticInteraction') as HTMLElement).hidden).toBe(false);
+    expect(transcript.value).toBe('');
+    expect(session.getState().pending).toEqual({
+      kind: 'missing-slot',
+      action: 'todo.update_title',
+      slot: 'title',
+      target: { kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 },
+    });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+
+    transcript.value = 'Fix the login race condition';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(localAiInterpretMock.mock.calls[1]).toEqual([
+      'Fix the login race condition',
+      {
+        signal: expect.any(AbortSignal),
+        conversation: {
+          pending: { action: 'todo.update_title', slot: 'title' },
+        },
+      },
+    ]);
+    expect(document.getElementById('voiceSummary')?.textContent)
+      .toBe('Change the title of #56 to "Fix the login race condition"');
+
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(showConfirmDialogMock).toHaveBeenCalledWith(
+      'Change the title of #56 to "Fix the login race condition"',
+      'Confirm interpreted command',
+      'Change title',
+      'default',
+    );
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandIRMock.mock.calls[0][0]).toEqual({
+      intent: 'todos.update_title',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, title: 'Fix the login race condition' },
+    });
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(2);
+    expect(session.getState().pending).toBeNull();
+    expect(session.getState().activeTodo).toEqual({
+      kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56,
+    });
+    expect(JSON.stringify(session.getState().activeTodo)).not.toContain('Fix the login race condition');
+    expect(document.getElementById('voiceSemanticInteraction')?.textContent)
+      .toBe('Title updated successfully.');
+    expect(document.getElementById('voiceCommandDialog')).not.toBeNull();
+  });
+
+  it('keeps a missing-title clarification alive with Continue conversation off, then closes after success', async () => {
+    useReadyLocalAi();
+    executeCommandIRMock.mockResolvedValue({});
+    interpretVoiceCommandMock
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+      })
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: 'New title' },
+      });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 });
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+
+    transcript.value = 'Change the title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(document.getElementById('voiceCommandDialog')).not.toBeNull();
+    expect(session.getState().continuationEnabled).toBe(false);
+
+    transcript.value = 'New title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+    expect(executeCommandIRMock).toHaveBeenCalledTimes(1);
+    expect(document.getElementById('voiceCommandDialog')).toBeNull();
+  });
+
+  it('cancels a reviewed pending title without mutation while preserving the active todo', async () => {
+    useReadyLocalAi();
+    showConfirmDialogMock.mockResolvedValue(false);
+    interpretVoiceCommandMock
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+      })
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: 'New title' },
+      });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 });
+    const toggle = document.getElementById('voiceContinueConversationToggle') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    const form = document.getElementById('voiceCommandForm') as HTMLFormElement;
+
+    transcript.value = 'Change the title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    transcript.value = 'New title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushAsync();
+
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    expect(session.getState().pending).toBeNull();
+    expect(session.getState().activeTodo).toMatchObject({ localId: 56 });
+    expect(document.getElementById('voiceCommandDialog')).not.toBeNull();
+    expect((document.getElementById('voiceExecuteBtn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('fails a pending title answer stale when its concrete todo disappeared', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+      })
+      .mockResolvedValueOnce({
+        kind: 'conversation',
+        intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: 'New title' },
+      });
+    const sourceBoard = makeBoard();
+    openVoiceCommandDialog(makeOptions(() => makeContext(sourceBoard)));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 });
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+
+    transcript.value = 'Change the title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    sourceBoard.columns.doing = [];
+    transcript.value = 'New title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(session.getState().activeTodo).toBeNull();
+    expect(session.getState().pending).toBeNull();
+    expect(document.getElementById('voiceReviewStatus')?.textContent)
+      .toBe('The board changed before the command could run.');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('reviews a direct current-title value without creating a missing-slot question', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: {
+        kind: 'update-todo-title',
+        target: { kind: 'current' },
+        title: 'Fix the login race condition',
+      },
+    });
+    const context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 });
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Change its title to Fix the login race condition';
+
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(session.getState().pending).toBeNull();
+    expect((document.getElementById('voiceSemanticInteraction') as HTMLElement).hidden).toBe(true);
+    expect(document.getElementById('voiceSummary')?.textContent)
+      .toBe('Change the title of #56 to "Fix the login race condition"');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('clears pending and active conversational context when the project changes', async () => {
+    useReadyLocalAi();
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+    });
+    let context = makeContext();
+    openVoiceCommandDialog(makeOptions(() => context));
+    const session = createVoiceConversationSessionMock.mock.results[0].value;
+    session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 });
+    const transcript = document.getElementById('voiceTranscript') as HTMLTextAreaElement;
+    transcript.value = 'Change the title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+    expect(session.getState().pending).not.toBeNull();
+
+    context = {
+      ...makeContext(),
+      projectId: 2,
+      projectSlug: 'beta',
+    };
+    transcript.value = 'New title';
+    document.getElementById('voiceReviewBtn')?.click();
+    await flushAsync();
+
+    expect(session.getState().activeTodo).toBeNull();
+    expect(session.getState().pending).toBeNull();
+    expect(document.getElementById('voiceReviewStatus')?.textContent)
+      .toBe('The board changed before the command could run.');
+    expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('fails open-current safely when no active todo exists', async () => {

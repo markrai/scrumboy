@@ -15,8 +15,7 @@ Voice commands are project-scoped. Everything you say applies to the project you
 * You can target a todo by **local ID** (number) or by a **title phrase** (when the match is strong enough—see below)
 * You can use the number directly (e.g. “open 12”)
 * Commands must be clear and complete (no guessing)
-* Each command stands alone (no “move it”)
-* **Pronouns are not supported** for targets: phrases like “it”, “that”, “this one” are rejected
+* Explicit todo commands use an ID or title. The bounded conversational forms described below may refer to the active todo as “it”, “this todo”, or “this card”.
 * **Project switching in speech is not supported** (e.g. “in project foo …”); stay on the current board
 
 ## Referencing a todo: ID vs title
@@ -83,6 +82,14 @@ Built-in phrases are mapped to your board’s lanes where possible, including:
 Custom lane **names** and **keys** are also accepted when they resolve to a single lane.
 
 ## Modes
+
+### Continue conversation
+
+The **Continue conversation** toggle is off by default. When enabled, a successful turn clears the transcript and review UI while retaining only the in-memory active todo reference needed for the next bounded turn. Turning it off, closing VoiceFlow, changing project context, signing out, or restarting the process clears that conversation state.
+
+After a todo has been opened or otherwise resolved successfully, on-device interpretation can understand **“Open it”**, **“Change the title”**, and **“Change its title to …”**. A missing title produces the question **“What would you like to change the title to?”**; the next answer is bound to the concrete pending todo, freshly revalidated, explicitly confirmed, and executed through the normal todo-update path. The pending question remains open long enough to answer even when continuation is off.
+
+No chat transcript, todo title, project data, or pending answer is persisted. Only the boolean toggle preference may be stored.
 
 ### Safe-Mode (default)
 

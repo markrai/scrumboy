@@ -90,7 +90,7 @@ describe('VoiceFlow local interpretation contract', () => {
     }
   });
 
-  it('sends the production conversational-v4 contract to generation after explicit invocation', async () => {
+  it('sends the production conversational-v5 contract to generation after explicit invocation', async () => {
     const local = capability({ state: 'ready', maximumOutputTokens: 72 });
     await expect(interpretVoiceCommand({
       transcript: '  Could you move login over to testing?  ',
@@ -110,13 +110,13 @@ describe('VoiceFlow local interpretation contract', () => {
     expect(local.generate.mock.calls[0][0].instructions)
       .toBe(VOICE_INTERPRETATION_INSTRUCTIONS);
     expect(local.generate.mock.calls[0][0].instructions)
-      .toContain('Contract: voice-command-conversational-v4.');
+      .toContain('Contract: voice-command-conversational-v5.');
     expect(Object.keys(local.generate.mock.calls[0][0]).sort())
       .toEqual(['input', 'instructions', 'maximumOutputTokens', 'requestId', 'signal']);
   });
 
-  it('keeps the promoted v3 language rules while adding only bounded current-todo interpretation', () => {
-    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-conversational-v4');
+  it('keeps the promoted v3/v4 language rules while adding only bounded current-title interpretation', () => {
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-command-conversational-v5');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Scrumboy, a task and kanban application');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('A todo is a task card');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('speech-transcribed English');
@@ -147,6 +147,10 @@ describe('VoiceFlow local interpretation contract', () => {
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('"Open that one"');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('{"action":"open_todo","target":"current"}');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('{"action":"update_title","target":"current","title":null}');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS)
+      .toContain('{"action":"update_title","target":"current","title":"Fix the login race condition"}');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS)
       .toContain('never provide, infer, copy, reconstruct, or guess its ID');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS)
@@ -196,6 +200,65 @@ describe('VoiceFlow local interpretation contract', () => {
       kind: 'conversation',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
+  });
+
+  it('accepts only bounded current-title results with a missing or authored title', () => {
+    expect(parseVoiceInterpretationEnvelope(
+      '{"command":null,"conversation":{"action":"update_title","target":"current","title":null},"unrepresented":[]}',
+      'Change the title',
+    )).toEqual({
+      kind: 'conversation',
+      intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+    });
+    expect(parseVoiceInterpretationEnvelope(
+      '{"command":null,"conversation":{"action":"update_title","target":"current","title":"  Fix the login race condition  "},"unrepresented":[]}',
+      'Change its title to Fix the login race condition',
+    )).toEqual({
+      kind: 'conversation',
+      intent: {
+        kind: 'update-todo-title',
+        target: { kind: 'current' },
+        title: 'Fix the login race condition',
+      },
+    });
+  });
+
+  it('sends only bounded pending-slot context in the v5 instructions', async () => {
+    const local = capability(undefined, JSON.stringify({
+      command: null,
+      conversation: { action: 'update_title', target: 'current', title: 'Fix the login race condition' },
+      unrepresented: [],
+    }));
+
+    await expect(interpretVoiceCommand({
+      transcript: 'Make it Fix the login race condition',
+      capability: local,
+      locale: 'en',
+      conversation: {
+        pending: { action: 'todo.update_title', slot: 'title' },
+      },
+    })).resolves.toMatchObject({
+      kind: 'conversation',
+      intent: { kind: 'update-todo-title', title: 'Fix the login race condition' },
+    });
+    const request = local.generate.mock.calls[0][0];
+    expect(request.instructions).toContain('waiting only for the replacement title');
+    expect(Object.keys(request).sort())
+      .toEqual(['input', 'instructions', 'maximumOutputTokens', 'requestId', 'signal']);
+  });
+
+  it.each([
+    { action: 'update_title', target: 'current' },
+    { action: 'update_title', target: 'current', title: '', id: 553 },
+    { action: 'update_title', target: 553, title: 'New title' },
+    { action: 'update_title', target: 'current', title: { value: 'New title' } },
+    { action: 'update_title', target: 'current', title: 'x'.repeat(201) },
+    { action: 'update_title', target: 'current', title: 'New title', projectSlug: 'alpha' },
+  ])('rejects smuggled or invalid title conversation output %#', (conversation) => {
+    expect(() => parseVoiceInterpretationEnvelope(
+      JSON.stringify({ command: null, conversation, unrepresented: [] }),
+      'Change its title',
+    )).toThrow();
   });
 
   it('maps a generated bounded current envelope without canonical entity preservation', async () => {

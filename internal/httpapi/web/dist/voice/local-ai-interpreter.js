@@ -8,6 +8,7 @@ export function createLocalAiVoiceCommandInterpreter(dependencies) {
                 capability: dependencies.capability,
                 locale: dependencies.locale,
                 signal: options.signal,
+                conversation: options.conversation,
             });
             if (interpretation.kind !== 'refused')
                 return interpretation;

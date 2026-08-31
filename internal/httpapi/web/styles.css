@@ -1887,6 +1887,14 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   line-height: 1.45;
 }
 
+.voice-command__semantic-interaction {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  background: rgba(96, 165, 250, 0.08);
+  padding: var(--s-10) 12px;
+  line-height: 1.45;
+}
+
 .voice-command__disambiguation {
   border: 1px solid var(--border);
   border-radius: var(--radius-8);
@@ -1923,6 +1931,7 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 }
 
 .voice-command__summary[hidden],
+.voice-command__semantic-interaction[hidden],
 .voice-command__disambiguation[hidden],
 .voice-command__interpretation[hidden],
 .voice-command__interpretation-proposal[hidden],

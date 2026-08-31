@@ -87,6 +87,33 @@ describe('local-AI VoiceFlow interpreter', () => {
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
   });
 
+  it('forwards only the provider-neutral pending-slot context', async () => {
+    const local = capability();
+    const conversation = {
+      pending: { action: 'todo.update_title' as const, slot: 'title' as const },
+    };
+    interpretVoiceCommandMock.mockResolvedValue({
+      kind: 'conversation',
+      intent: {
+        kind: 'update-todo-title',
+        target: { kind: 'current' },
+        title: 'Fix the login race condition',
+      },
+    });
+    const interpreter = createLocalAiVoiceCommandInterpreter({ capability: local, locale: 'en' });
+
+    await interpreter.interpret('Fix the login race condition', { conversation });
+
+    expect(interpretVoiceCommandMock).toHaveBeenCalledWith({
+      transcript: 'Fix the login race condition',
+      capability: local,
+      locale: 'en',
+      signal: undefined,
+      conversation,
+    });
+    expect(JSON.stringify(conversation)).not.toContain('553');
+  });
+
   it('preserves operational provider errors instead of manufacturing command failures', async () => {
     const providerError = new LocalTextGenerationError('busy');
     interpretVoiceCommandMock.mockRejectedValue(providerError);

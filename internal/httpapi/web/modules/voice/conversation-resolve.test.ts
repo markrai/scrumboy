@@ -57,6 +57,10 @@ describe('VoiceFlow current-todo resolution', () => {
       { intent: 'todos.assign', projectId: 1, projectSlug: 'alpha', entities: { localId: 553, assigneeUserId: 7 } },
     ],
     [
+      'title update',
+      { intent: 'todos.update_title', projectId: 1, projectSlug: 'alpha', entities: { localId: 553, title: 'New title' } },
+    ],
+    [
       'delete',
       { intent: 'todos.delete', projectId: 1, projectSlug: 'alpha', entities: { localId: 553 } },
     ],
@@ -149,6 +153,10 @@ describe('VoiceFlow current-todo resolution', () => {
     [
       'assign',
       { intent: 'todos.assign', projectId: 1, projectSlug: 'alpha', entities: { localId: 553, assigneeUserId: 7 } },
+    ],
+    [
+      'title update',
+      { intent: 'todos.update_title', projectId: 1, projectSlug: 'alpha', entities: { localId: 553, title: 'New title' } },
     ],
   ] satisfies Array<[string, CommandIR]>)('sets the active todo after successful %s', (_label, ir) => {
     expect(activeTodoTransitionAfterSuccessfulIR(ir, null)).toEqual({
