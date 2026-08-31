@@ -14,6 +14,7 @@ const interpretVoiceCommandMock = vi.hoisted(() => vi.fn());
 const deterministicInterpretMock = vi.hoisted(() => vi.fn());
 const localAiInterpretMock = vi.hoisted(() => vi.fn());
 const createLocalAiInterpreterMock = vi.hoisted(() => vi.fn());
+const createVoiceConversationSessionMock = vi.hoisted(() => vi.fn());
 const runtimeCapabilityMock = vi.hoisted(() => vi.fn());
 const localTextGenerationCapability = vi.hoisted(() => ({
   status: vi.fn(),
@@ -59,6 +60,16 @@ vi.mock('./local-ai-interpreter.js', async (importOriginal) => {
   return {
     ...actual,
     createLocalAiVoiceCommandInterpreter: createLocalAiInterpreterMock,
+  };
+});
+vi.mock('./conversation-session.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./conversation-session.js')>();
+  createVoiceConversationSessionMock.mockImplementation(
+    () => actual.createVoiceConversationSession(),
+  );
+  return {
+    ...actual,
+    createVoiceConversationSession: createVoiceConversationSessionMock,
   };
 });
 vi.mock('../platform/runtime.js', () => ({
@@ -181,6 +192,7 @@ beforeEach(() => {
   deterministicInterpretMock.mockClear();
   localAiInterpretMock.mockClear();
   createLocalAiInterpreterMock.mockClear();
+  createVoiceConversationSessionMock.mockClear();
   runtimeCapabilityMock.mockReset().mockReturnValue(null);
   localTextGenerationCapability.status.mockReset().mockResolvedValue({
     state: 'ready',
@@ -448,6 +460,38 @@ describe('voice command flow', () => {
     expect(document.getElementById('voiceCommandDialog')).toBeNull();
   });
 
+  it('disposes conversation state on close and reopens with a fresh empty session', () => {
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const firstSession = createVoiceConversationSessionMock.mock.results[0].value;
+    firstSession.setActiveTodo({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 553,
+    });
+
+    document.getElementById('voiceCommandClose')?.click();
+
+    expect(firstSession.getState().activeTodo).toBeNull();
+    expect(() => firstSession.setActiveTodo({
+      kind: 'todo',
+      projectId: 1,
+      projectSlug: 'alpha',
+      localId: 553,
+    })).toThrow(/disposed/i);
+
+    openVoiceCommandDialog(makeOptions(() => makeContext()));
+    const reopenedSession = createVoiceConversationSessionMock.mock.results[1].value;
+    expect(reopenedSession).not.toBe(firstSession);
+    expect(reopenedSession.getState()).toEqual({
+      activeProject: null,
+      activeTodo: null,
+      pending: null,
+      lastInteraction: null,
+      continuationEnabled: false,
+    });
+  });
+
   it('requires review again when fresh execute context resolves to a different IR', async () => {
     let context = makeContext();
     openVoiceCommandDialog(makeOptions(() => context));
@@ -524,26 +568,6 @@ describe('voice command flow', () => {
 
     expect((document.getElementById('voiceTranscript') as HTMLTextAreaElement).value).toBe('delete todo 56');
     expect(document.getElementById('voiceSummary')?.textContent).toBe('Delete todo #56: Fix login');
-  });
-
-  it('exposes the temporary Interpretation Lab from the existing VoiceFlow dialog', () => {
-    openVoiceCommandDialog(makeOptions(() => makeContext()));
-
-    const toggle = document.getElementById('voiceInterpretationLabToggle') as HTMLButtonElement;
-    const panel = document.getElementById('voiceInterpretationLabPanel') as HTMLElement;
-    expect(toggle.textContent).toBe('Interpretation Lab');
-    expect(panel.hidden).toBe(true);
-
-    toggle.click();
-
-    expect(panel.hidden).toBe(false);
-    expect(panel.textContent).toContain('Experimental / temporary');
-    expect((document.getElementById('voiceInterpretationLabCorpus') as HTMLTextAreaElement).value)
-      .toContain('Create a to-do about fixing the bathroom by 6:00 p.m.');
-    expect(document.getElementById('voiceInterpretationLabRunCandidate')?.textContent).toBe('Run candidate');
-    expect(document.getElementById('voiceInterpretationLabRunAll')?.textContent).toBe('Run all');
-    expect(executeCommandIRMock).not.toHaveBeenCalled();
-    expect(callMcpToolMock).not.toHaveBeenCalled();
   });
 
   it('shows Safe-Mode title disambiguation candidates and executes the selected todo', async () => {
