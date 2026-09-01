@@ -18,10 +18,15 @@ function todo(localId: number, title: string, status: string, assigneeUserId?: n
   return { id: localId, localId, title, status, ...(assigneeUserId == null ? {} : { assigneeUserId }) };
 }
 
-function board(backlog: Todo[] = [], doing: Todo[] = [], done: Todo[] = []): Board {
+function board(
+  backlog: Todo[] = [],
+  doing: Todo[] = [],
+  done: Todo[] = [],
+  tags: string[] = [],
+): Board {
   return {
     project: { id: 1, slug: 'alpha', name: 'Alpha', dominantColor: '#123456' },
-    tags: [],
+    tags: tags.map((name) => ({ name, count: 0 })),
     columnOrder: [
       { key: 'backlog', name: 'Backlog', isDone: false },
       { key: 'doing', name: 'In Progress', isDone: false },
@@ -401,6 +406,292 @@ describe('semantic VoiceFlow domain resolution', () => {
       value: {
         kind: 'command',
         command: { danger: false, requiresConfirmation: false },
+      },
+    });
+  });
+
+  it('distinguishes append notes from replacement and materializes the existing update body', async () => {
+    const existing = { ...todo(351, 'Bogus', 'backlog'), body: 'Existing context' };
+    const appended = await resolve({
+      kind: 'append-todo-notes',
+      target: { kind: 'current' },
+      notes: 'Investigate retry timeout',
+    }, board([existing]));
+    expect(appended).toMatchObject({ ok: false, code: 'unknown_story' });
+
+    const session = createVoiceConversationSession();
+    session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 351 });
+    await expect(resolveVoiceSemanticIntent({
+      kind: 'append-todo-notes',
+      target: { kind: 'current' },
+      notes: 'Investigate retry timeout',
+    }, session.getState(), context(board([existing])))).resolves.toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: {
+          ir: {
+            intent: 'todos.append_notes',
+            entities: {
+              localId: 351,
+              body: 'Existing context\nInvestigate retry timeout',
+              notes: 'Investigate retry timeout',
+            },
+          },
+          requiresConfirmation: true,
+        },
+      },
+    });
+
+    await expect(resolveVoiceSemanticIntent({
+      kind: 'replace-todo-notes',
+      target: { kind: 'current' },
+      notes: 'Blocked by API migration',
+    }, session.getState(), context(board([existing])))).resolves.toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: {
+          ir: {
+            intent: 'todos.replace_notes',
+            entities: { body: 'Blocked by API migration' },
+          },
+        },
+      },
+    });
+  });
+
+  it('uses a fresh authoritative todo read before materializing an appended notes replacement', async () => {
+    const sourceBoard = board([{ ...todo(351, 'Bogus', 'backlog'), body: 'Stale notes' }]);
+    const session = createVoiceConversationSession();
+    session.setActiveProject({ projectId: 1, projectSlug: 'alpha' });
+    const callTool = async () => ({
+      todo: { ...todo(351, 'Bogus', 'backlog'), body: 'Fresh notes' },
+    });
+    const result = await resolveVoiceSemanticIntent({
+      kind: 'append-todo-notes',
+      target: { kind: 'title', text: 'Bogus' },
+      notes: 'Investigate timeout',
+    }, session.getState(), { ...context(sourceBoard), callTool });
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: { ir: { entities: { body: 'Fresh notes\nInvestigate timeout' } } },
+      },
+    });
+  });
+
+  it('filters tag add no-ops before deciding todo ambiguity', async () => {
+    const result = await resolve({
+      kind: 'add-todo-tag',
+      target: { kind: 'title', text: 'Bogus' },
+      tag: { kind: 'name', text: 'backend' },
+    }, board([
+      { ...todo(351, 'Bogus', 'backlog'), tags: ['backend'] },
+      { ...todo(352, 'Bogus', 'backlog'), tags: [] },
+    ], [], [], ['backend']));
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: {
+          ir: {
+            intent: 'todos.add_tag',
+            entities: { localId: 352, tags: ['backend'], tag: 'backend' },
+          },
+        },
+      },
+    });
+  });
+
+  it('returns tag add/remove no-ops without confirmation and removes through the existing tag list patch', async () => {
+    const tagged = { ...todo(351, 'Bogus', 'backlog'), tags: ['frontend', 'backend'] };
+    await expect(resolve({
+      kind: 'add-todo-tag',
+      target: { kind: 'title', text: 'Bogus' },
+      tag: { kind: 'name', text: 'backend' },
+    }, board([tagged], [], [], ['backend']))).resolves.toMatchObject({
+      ok: true,
+      value: { kind: 'information', interaction: { message: { key: 'voice.info.tagAlreadyPresent' } } },
+    });
+
+    await expect(resolve({
+      kind: 'remove-todo-tag',
+      target: { kind: 'title', text: 'Bogus' },
+      tag: { kind: 'name', text: 'backend' },
+    }, board([tagged], [], [], ['backend']))).resolves.toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: {
+          ir: {
+            intent: 'todos.remove_tag',
+            entities: { localId: 351, tags: ['frontend'], tag: 'backend' },
+          },
+        },
+      },
+    });
+  });
+
+  it('clarifies real todo and tag ambiguity with authoritative choices', async () => {
+    const todoAmbiguity = await resolve({
+      kind: 'add-todo-tag',
+      target: { kind: 'title', text: 'Bogus' },
+      tag: { kind: 'name', text: 'backend' },
+    }, board([
+      { ...todo(351, 'Bogus', 'backlog'), tags: [] },
+      { ...todo(352, 'Bogus', 'backlog'), tags: [] },
+    ], [], [], ['backend']));
+    expect(todoAmbiguity).toMatchObject({
+      ok: true,
+      value: { kind: 'clarification', choices: [{ kind: 'todo' }, { kind: 'todo' }] },
+    });
+
+    const tagAmbiguity = await resolve({
+      kind: 'add-todo-tag',
+      target: { kind: 'title', text: 'Bogus' },
+      tag: { kind: 'name', text: 'back' },
+    }, board([todo(351, 'Bogus', 'backlog')], [], [], ['backend', 'backoffice']));
+    expect(tagAmbiguity).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'clarification',
+        interaction: {
+          message: { key: 'voice.prompt.whichTag' },
+          options: [{ id: 'tag:backend' }, { id: 'tag:backoffice' }],
+        },
+      },
+    });
+  });
+
+  it('supports single-assignee clearing and suppresses an already-unassigned mutation', async () => {
+    const assigned = await resolve({
+      kind: 'unassign-todo',
+      target: { kind: 'title', text: 'Bogus' },
+    }, board([todo(351, 'Bogus', 'backlog', 7)]));
+    expect(assigned).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: {
+          ir: { intent: 'todos.unassign', entities: { localId: 351, assigneeUserId: null } },
+        },
+      },
+    });
+
+    await expect(resolve({
+      kind: 'unassign-todo',
+      target: { kind: 'title', text: 'Bogus' },
+    }, board([todo(351, 'Bogus', 'backlog')]))).resolves.toMatchObject({
+      ok: true,
+      value: { kind: 'information', interaction: { message: { key: 'voice.info.alreadyUnassigned' } } },
+    });
+  });
+
+  it('grounds a named unassign member and uses assignment viability to remove false todo ambiguity', async () => {
+    const result = await resolve({
+      kind: 'unassign-todo',
+      target: { kind: 'title', text: 'Bogus' },
+      assignee: { kind: 'name', text: 'Mark Rai' },
+    }, board([
+      todo(351, 'Bogus', 'backlog', 7),
+      todo(352, 'Bogus', 'backlog', 8),
+    ]));
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'command',
+        command: {
+          ir: { intent: 'todos.unassign', entities: { localId: 351, assigneeUserId: null } },
+        },
+      },
+    });
+  });
+
+  it('does not clear a different assignee when the user explicitly names a member', async () => {
+    await expect(resolve({
+      kind: 'unassign-todo',
+      target: { kind: 'title', text: 'Bogus' },
+      assignee: { kind: 'name', text: 'Mark Rai' },
+    }, board([todo(351, 'Bogus', 'backlog', 8)]))).resolves.toMatchObject({
+      ok: true,
+      value: {
+        kind: 'information',
+        interaction: { message: { key: 'voice.info.notAssignedToMember' } },
+      },
+    });
+  });
+
+  it.each([
+    ['assignee', 'voice.info.todoAssignee'],
+    ['tags', 'voice.info.todoTags'],
+    ['notes', 'voice.info.todoNotes'],
+    ['lane', 'voice.info.todoLane'],
+  ] as const)('answers the authoritative %s inspection without a command', async (aspect, key) => {
+    const existing = {
+      ...todo(351, 'Bogus', 'backlog', 7),
+      body: 'Investigate timeout',
+      tags: ['backend'],
+    };
+    const result = await resolve({
+      kind: 'inspect-todo',
+      target: { kind: 'title', text: 'Bogus' },
+      aspect,
+    }, board([existing], [], [], ['backend']));
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'information',
+        target: { localId: 351 },
+        interaction: { message: { key } },
+      },
+    });
+  });
+
+  it('clarifies ambiguous read targets instead of guessing an answer', async () => {
+    const result = await resolve({
+      kind: 'inspect-todo',
+      target: { kind: 'title', text: 'Bogus' },
+      aspect: 'assignee',
+    }, board([todo(351, 'Bogus', 'backlog'), todo(352, 'Bogus', 'backlog')]));
+    expect(result).toMatchObject({
+      ok: true,
+      value: { kind: 'clarification', choices: [{ kind: 'todo' }, { kind: 'todo' }] },
+    });
+  });
+
+  it('renders a project completion count returned by the authoritative read tool', async () => {
+    const session = createVoiceConversationSession();
+    session.setActiveProject({ projectId: 1, projectSlug: 'alpha' });
+    const calls: Array<{ tool: string; input: Record<string, unknown> }> = [];
+    const result = await resolveVoiceSemanticIntent({
+      kind: 'count-completed-todos',
+      period: { kind: 'this-week' },
+    }, session.getState(), {
+      ...context(board()),
+      timezone: 'America/New_York',
+      callTool: async (tool, input) => {
+        calls.push({ tool, input });
+        return { count: 12 };
+      },
+    });
+    expect(calls).toEqual([{
+      tool: 'todos_countCompleted',
+      input: {
+        projectSlug: 'alpha',
+        period: 'this-week',
+        timezone: 'America/New_York',
+      },
+    }]);
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        kind: 'information',
+        interaction: { message: { key: 'voice.info.completedThisWeek', values: { count: 12 } } },
       },
     });
   });

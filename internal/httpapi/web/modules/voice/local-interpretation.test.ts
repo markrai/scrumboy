@@ -87,7 +87,7 @@ describe('VoiceFlow local semantic interpretation contract', () => {
     expect(disabled.prepare).not.toHaveBeenCalled();
   });
 
-  it('sends the versioned v6 semantic contract after explicit invocation', async () => {
+  it('sends the versioned v7 semantic contract after explicit invocation', async () => {
     const local = capability({ state: 'ready', maximumOutputTokens: 144 });
     await expect(interpretVoiceCommand({
       transcript: '  Could you move login over to testing?  ',
@@ -103,7 +103,7 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       },
     });
 
-    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-semantic-v6');
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-semantic-v7');
     expect(local.generate).toHaveBeenCalledWith({
       requestId: 'voice-request-1',
       input: 'Could you move login over to testing?',
@@ -111,12 +111,14 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       maximumOutputTokens: 144,
       signal: undefined,
     });
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Contract: voice-semantic-v6.');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Contract: voice-semantic-v7.');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Do not translate the request into a textual command');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Move Fixed Radical Login to done');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Assign Bogus to Mark Rai');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Open and delete Bogus');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Never emit projectId');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Append notes and replace notes are different operations');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('count-completed-todos');
   });
 
   it.each([
@@ -225,6 +227,136 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       .toThrow(expect.objectContaining({ code: 'output_rejected' }));
   });
 
+  it.each([
+    [
+      'Open Current Affairs',
+      { kind: 'open-todo', target: { kind: 'current' } },
+      false,
+    ],
+    [
+      'Open Current Affairs',
+      { kind: 'open-todo', target: { kind: 'title', text: 'Current Affairs' } },
+      true,
+    ],
+    [
+      'Move Current Affairs to Done',
+      {
+        kind: 'move-todo',
+        target: { kind: 'current' },
+        destination: { kind: 'name', text: 'Done' },
+      },
+      false,
+    ],
+    [
+      'Move this to Done',
+      {
+        kind: 'move-todo',
+        target: { kind: 'current' },
+        destination: { kind: 'name', text: 'Done' },
+      },
+      true,
+    ],
+    [
+      'Delete This Is Fine',
+      { kind: 'delete-todo', target: { kind: 'current' } },
+      false,
+    ],
+    [
+      'Delete this',
+      { kind: 'delete-todo', target: { kind: 'current' } },
+      true,
+    ],
+    [
+      'Assign That One Bug to Mark Rai',
+      {
+        kind: 'assign-todo',
+        target: { kind: 'current' },
+        assignee: { kind: 'name', text: 'Mark Rai' },
+      },
+      false,
+    ],
+    [
+      'Assign this to Mark Rai',
+      {
+        kind: 'assign-todo',
+        target: { kind: 'current' },
+        assignee: { kind: 'name', text: 'Mark Rai' },
+      },
+      true,
+    ],
+    [
+      'Add current tag to Fixed Radical Login',
+      {
+        kind: 'add-todo-tag',
+        target: { kind: 'current' },
+        tag: { kind: 'name', text: 'current' },
+      },
+      false,
+    ],
+    [
+      'Add current tag to Fixed Radical Login',
+      {
+        kind: 'add-todo-tag',
+        target: { kind: 'title', text: 'Fixed Radical Login' },
+        tag: { kind: 'name', text: 'current' },
+      },
+      true,
+    ],
+    [
+      'Remove current tag from Fixed Radical Login',
+      {
+        kind: 'remove-todo-tag',
+        target: { kind: 'current' },
+        tag: { kind: 'name', text: 'current' },
+      },
+      false,
+    ],
+    [
+      'Remove current tag from this',
+      {
+        kind: 'remove-todo-tag',
+        target: { kind: 'current' },
+        tag: { kind: 'name', text: 'current' },
+      },
+      true,
+    ],
+    [
+      'Unassign Same One Bug',
+      { kind: 'unassign-todo', target: { kind: 'current' } },
+      false,
+    ],
+    [
+      'Unassign this story',
+      { kind: 'unassign-todo', target: { kind: 'current' } },
+      true,
+    ],
+    [
+      'Who is assigned to This Is Fine?',
+      {
+        kind: 'inspect-todo',
+        target: { kind: 'current' },
+        aspect: 'assignee',
+      },
+      false,
+    ],
+    [
+      'Who is assigned to this?',
+      {
+        kind: 'inspect-todo',
+        target: { kind: 'current' },
+        aspect: 'assignee',
+      },
+      true,
+    ],
+  ])('enforces target-position provenance for %s', (transcript, intent, accepted) => {
+    const parse = () => parseVoiceInterpretationEnvelope(envelope(intent), transcript);
+    if (accepted) {
+      expect(parse()).toEqual({ kind: 'semantic', intent });
+    } else {
+      expect(parse).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+    }
+  });
+
   it('allows update-title to identify an implicit current target on the first turn', () => {
     const intent = {
       kind: 'update-todo-title',
@@ -232,6 +364,19 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       title: null,
     };
     expect(parseVoiceInterpretationEnvelope(envelope(intent), 'Change the title'))
+      .toEqual({ kind: 'semantic', intent });
+  });
+
+  it.each([
+    ['Change its title to fixing the login race condition'],
+    ["Change this todo's title to fixing the login race condition"],
+  ])('grounds normalized replacement-title output in contextual target provenance for %s', (transcript) => {
+    const intent = {
+      kind: 'update-todo-title',
+      target: { kind: 'current' },
+      title: 'Fix the login race condition',
+    };
+    expect(parseVoiceInterpretationEnvelope(envelope(intent), transcript))
       .toEqual({ kind: 'semantic', intent });
   });
 
@@ -337,6 +482,143 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       title: 'Fixed Login',
     }), 'Rename Fixed Radical Login to Fixed Login', conversation))
       .toThrow(expect.objectContaining({ code: 'output_rejected' }));
+  });
+
+  it.each([
+    [
+      'Add investigate retry timeout to the notes',
+      {
+        kind: 'append-todo-notes',
+        target: { kind: 'current' },
+        notes: 'Investigate retry timeout',
+      },
+    ],
+    [
+      'Replace the notes with blocked by API migration',
+      {
+        kind: 'replace-todo-notes',
+        target: { kind: 'current' },
+        notes: 'Blocked by API migration',
+      },
+    ],
+    [
+      'Add backend tag to Bogus',
+      {
+        kind: 'add-todo-tag',
+        target: { kind: 'title', text: 'Bogus' },
+        tag: { kind: 'name', text: 'backend' },
+      },
+    ],
+    [
+      'Remove backend tag from Bogus',
+      {
+        kind: 'remove-todo-tag',
+        target: { kind: 'title', text: 'Bogus' },
+        tag: { kind: 'name', text: 'backend' },
+      },
+    ],
+    [
+      'Unassign Bogus',
+      { kind: 'unassign-todo', target: { kind: 'title', text: 'Bogus' } },
+    ],
+    [
+      'Remove Mark from Bogus',
+      {
+        kind: 'unassign-todo',
+        target: { kind: 'title', text: 'Bogus' },
+        assignee: { kind: 'name', text: 'Mark' },
+      },
+    ],
+    [
+      'Remove the assignee from this story',
+      { kind: 'unassign-todo', target: { kind: 'current' } },
+    ],
+    [
+      'Who is assigned to Bogus?',
+      {
+        kind: 'inspect-todo',
+        target: { kind: 'title', text: 'Bogus' },
+        aspect: 'assignee',
+      },
+    ],
+    [
+      'What lane is this in?',
+      { kind: 'inspect-todo', target: { kind: 'current' }, aspect: 'lane' },
+    ],
+    [
+      'How many stories did we complete this week?',
+      { kind: 'count-completed-todos', period: { kind: 'this-week' } },
+    ],
+  ])('accepts the bounded v7 operation for %s', (transcript, intent) => {
+    expect(parseVoiceInterpretationEnvelope(envelope(intent), transcript))
+      .toEqual({ kind: 'semantic', intent });
+  });
+
+  it('rejects an unassign interpretation that discards an explicitly named member', () => {
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'unassign-todo', target: { kind: 'title', text: 'Bogus' } }),
+      'Remove Mark from Bogus',
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+  });
+
+  it('does not treat a contextual word inside authored notes as current-target provenance', () => {
+    const transcript = 'Add current retry data to the notes of Fixed Radical Login';
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({
+        kind: 'append-todo-notes',
+        target: { kind: 'current' },
+        notes: 'Current retry data',
+      }),
+      transcript,
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+
+    expect(parseVoiceInterpretationEnvelope(
+      envelope({
+        kind: 'append-todo-notes',
+        target: { kind: 'title', text: 'Fixed Radical Login' },
+        notes: 'Current retry data',
+      }),
+      transcript,
+    )).toMatchObject({
+      kind: 'semantic',
+      intent: { target: { kind: 'title', text: 'Fixed Radical Login' } },
+    });
+  });
+
+  it('does not treat a contextual word inside a replacement title as target provenance', () => {
+    const transcript = 'Rename Fixed Radical Login to Fix the current retry bug';
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({
+        kind: 'update-todo-title',
+        target: { kind: 'current' },
+        title: 'Fix the current retry bug',
+      }),
+      transcript,
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+  });
+
+  it.each([
+    {
+      kind: 'add-todo-tag',
+      target: { kind: 'title', text: 'Bogus' },
+      tag: { kind: 'name', text: 'backend', tagId: 9 },
+    },
+    {
+      kind: 'inspect-todo',
+      target: { kind: 'title', text: 'Bogus' },
+      aspect: 'lane',
+      columnKey: 'done',
+    },
+    {
+      kind: 'count-completed-todos',
+      period: { kind: 'this-week' },
+      count: 12,
+    },
+  ])('rejects model-supplied authoritative v7 facts', (intent) => {
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope(intent),
+      'Add backend tag to Bogus',
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
   });
 
   it.each([

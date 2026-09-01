@@ -149,4 +149,48 @@ describe('voice command schema validation', () => {
       entities: { localId: 56, title: 'New title', notes: 'also replace these' },
     }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
   });
+
+  it('validates the broader todo mutation family with exact materialized fields', () => {
+    expect(validateCommandIR({
+      intent: 'todos.append_notes',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, body: 'Existing\nInvestigate timeout', notes: 'Investigate timeout' },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(true);
+
+    expect(validateCommandIR({
+      intent: 'todos.add_tag',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, tags: ['frontend', 'backend'], tag: 'backend' },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(true);
+
+    expect(validateCommandIR({
+      intent: 'todos.unassign',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, assigneeUserId: null },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(true);
+
+    expect(validateCommandIR({
+      intent: 'todos.replace_notes',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, body: '', notes: '' },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
+
+    expect(validateCommandIR({
+      intent: 'todos.remove_tag',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, tags: ['frontend'], tag: 'backend', tagId: 99 },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
+
+    expect(validateCommandIR({
+      intent: 'todos.unassign',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, assigneeUserId: 7 },
+    }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
+  });
 });

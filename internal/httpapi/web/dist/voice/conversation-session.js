@@ -27,6 +27,9 @@ function freezeSemanticTodoReference(target) {
 function freezeSemanticMemberReference(member) {
     return Object.freeze({ ...member });
 }
+function freezeSemanticTagReference(tag) {
+    return Object.freeze({ ...tag });
+}
 function freezeSemanticIntent(intent) {
     switch (intent.kind) {
         case 'create-todo':
@@ -46,8 +49,26 @@ function freezeSemanticIntent(intent) {
                 target: freezeSemanticTodoReference(intent.target),
                 assignee: freezeSemanticMemberReference(intent.assignee),
             });
+        case 'unassign-todo':
+            return Object.freeze({
+                ...intent,
+                target: freezeSemanticTodoReference(intent.target),
+                ...(intent.assignee ? { assignee: freezeSemanticMemberReference(intent.assignee) } : {}),
+            });
         case 'update-todo-title':
+        case 'append-todo-notes':
+        case 'replace-todo-notes':
+        case 'inspect-todo':
             return Object.freeze({ ...intent, target: freezeSemanticTodoReference(intent.target) });
+        case 'add-todo-tag':
+        case 'remove-todo-tag':
+            return Object.freeze({
+                ...intent,
+                target: freezeSemanticTodoReference(intent.target),
+                tag: freezeSemanticTagReference(intent.tag),
+            });
+        case 'count-completed-todos':
+            return Object.freeze({ ...intent, period: Object.freeze({ ...intent.period }) });
     }
 }
 function freezeMessage(message) {
@@ -123,10 +144,18 @@ function freezeConversationSelection(selection) {
                 }),
             }
             : {}),
+        ...(selection.tag
+            ? {
+                tag: Object.freeze({
+                    selectedName: selection.tag.selectedName,
+                    allowedNames: Object.freeze([...selection.tag.allowedNames]),
+                }),
+            }
+            : {}),
     });
 }
 function freezeClarificationChoice(choice) {
-    if (choice.kind === 'member')
+    if (choice.kind === 'member' || choice.kind === 'tag')
         return Object.freeze({ ...choice });
     return Object.freeze({
         ...choice,

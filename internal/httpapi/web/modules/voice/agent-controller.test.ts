@@ -7,9 +7,10 @@ import type { SpeechInputCapability } from '../platform/speech-input.js';
 import { createVoiceConversationSession } from './conversation-session.js';
 
 const executeCommandIRMock = vi.hoisted(() => vi.fn().mockResolvedValue({ ok: true }));
+const callMcpToolMock = vi.hoisted(() => vi.fn().mockResolvedValue({ items: [] }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
 vi.mock('./mcp-client.js', () => ({
-  callMcpTool: vi.fn().mockResolvedValue({ items: [] }),
+  callMcpTool: callMcpToolMock,
 }));
 
 import { createVoiceAgentController } from './agent-controller.js';
@@ -76,7 +77,10 @@ function options(
   };
 }
 
-beforeEach(() => executeCommandIRMock.mockClear());
+beforeEach(() => {
+  executeCommandIRMock.mockClear();
+  callMcpToolMock.mockReset().mockResolvedValue({ items: [] });
+});
 
 describe('VoiceAgentController', () => {
   it('hands one bounded native transcript to AI exactly once and uses normal open resolution', async () => {
@@ -228,6 +232,96 @@ describe('VoiceAgentController', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('confirms an append-notes effect with fresh notes and executes exactly one existing mutation', async () => {
+    callMcpToolMock.mockResolvedValue({
+      todo: {
+        id: 355,
+        localId: 355,
+        title: 'Fixed Radical Login',
+        body: 'Existing investigation',
+        status: 'backlog',
+      },
+    });
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'append-todo-notes',
+          target: { kind: 'title', text: 'Fixed Radical Login' },
+          notes: 'Investigate retry timeout',
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter));
+
+    await controller.submitTranscript('Add investigate retry timeout to the notes of Fixed Radical Login');
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      confirmation: { summary: 'Add to the notes of #355: "Investigate retry timeout"' },
+    });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+
+    await controller.confirm();
+
+    expect(interpreter.interpret).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'todos.append_notes',
+        entities: {
+          localId: 355,
+          body: 'Existing investigation\nInvestigate retry timeout',
+          notes: 'Investigate retry timeout',
+        },
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('answers an authoritative assignee read directly without confirmation or a second inference', async () => {
+    callMcpToolMock.mockImplementation(async (tool: string) => {
+      if (tool === 'todos_get') {
+        return {
+          todo: {
+            id: 355,
+            localId: 355,
+            title: 'Fixed Radical Login',
+            status: 'backlog',
+            assigneeUserId: 7,
+          },
+        };
+      }
+      if (tool === 'members_list') {
+        return { items: makeContext().members };
+      }
+      return { items: [] };
+    });
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'inspect-todo',
+          target: { kind: 'title', text: 'Fixed Radical Login' },
+          aspect: 'assignee',
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter));
+
+    await controller.submitTranscript('Who is assigned to Fixed Radical Login?');
+
+    expect(controller.getView()).toMatchObject({
+      phase: 'success',
+      status: {
+        key: 'voice.info.todoAssignee',
+        values: { title: 'Fixed Radical Login', member: 'Owner' },
+      },
+      confirmation: null,
+    });
+    expect(interpreter.interpret).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 
   it('renders authoritative semantic choices and freshly resolves the clicked todo before confirmation', async () => {

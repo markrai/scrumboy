@@ -43,6 +43,7 @@ type storeAPI interface {
 	todolinkapp.MutationStore
 	todolinkapp.LinkReadStore
 	todoapp.UpdateStore
+	todoapp.CompletedTodoCountStore
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	todoapp.MoveStore
 	todoapp.MCPMoveLaneStore
@@ -98,6 +99,7 @@ type Adapter struct {
 	todoDeletes          *todoapp.MCPDeleteService
 	todoMoves            *todoapp.MCPMoveService
 	todoUpdates          *todoapp.MCPUpdateService
+	todoCompletionCounts *todoapp.MCPCompletionCountService
 	todoLinkMutations    *todolinkapp.MCPMutationService
 	workflowMutations    *workflowapp.MCPMutationService
 	priorityMutations    *priorityapp.MCPMutationService
@@ -162,6 +164,10 @@ func New(st storeAPI, opts Options) *Adapter {
 		todoDeletes: todoapp.NewMCPDeleteService(todoapp.MCPDeleteServiceDependencies{
 			Access: st,
 			Delete: st,
+		}),
+		todoCompletionCounts: todoapp.NewMCPCompletionCountService(todoapp.MCPCompletionCountServiceDependencies{
+			Access: st,
+			Counts: st,
 		}),
 		todoLinkMutations: todolinkapp.NewMCPMutationService(todolinkapp.MCPMutationServiceDependencies{
 			Access:    st,
@@ -416,6 +422,7 @@ func (a *Adapter) implementedTools() []string {
 		"todos_get",
 		"todos_search",
 		"todos_update",
+		"todos_countCompleted",
 		"todos_delete",
 		"todos_move",
 		"todos_linksList",

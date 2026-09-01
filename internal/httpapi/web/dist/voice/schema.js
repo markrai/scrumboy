@@ -113,6 +113,48 @@ export function validateCommandIR(value, context) {
             }
             return { ok: true, value: { ...ir, entities: { localId: ir.entities.localId, title } } };
         }
+        case "todos.append_notes":
+        case "todos.replace_notes": {
+            if (!hasExactKeys(ir.entities, ["localId", "body", "notes"])) {
+                return localizedFail("invalid_schema", "voice.errors.schema.updateNotesFieldsInvalid", "Notes update command fields are invalid.");
+            }
+            if (!isPositiveInteger(ir.entities.localId)) {
+                return localizedFail("invalid_schema", "voice.errors.schema.todoIdPositive", "Todo ID must be a positive integer.");
+            }
+            if (typeof ir.entities.body !== "string"
+                || typeof ir.entities.notes !== "string"
+                || ir.entities.notes.trim().length === 0
+                || ir.entities.notes.length > 1000
+                || ir.entities.body.length > 100000) {
+                return localizedFail("invalid_schema", "voice.errors.schema.notesInvalid", "Todo notes are invalid.");
+            }
+            return { ok: true, value: ir };
+        }
+        case "todos.add_tag":
+        case "todos.remove_tag": {
+            if (!hasExactKeys(ir.entities, ["localId", "tags", "tag"])) {
+                return localizedFail("invalid_schema", "voice.errors.schema.updateTagsFieldsInvalid", "Tag update command fields are invalid.");
+            }
+            if (!isPositiveInteger(ir.entities.localId)) {
+                return localizedFail("invalid_schema", "voice.errors.schema.todoIdPositive", "Todo ID must be a positive integer.");
+            }
+            if (!Array.isArray(ir.entities.tags)
+                || ir.entities.tags.some((tag) => typeof tag !== "string" || !tag.trim())
+                || typeof ir.entities.tag !== "string"
+                || !ir.entities.tag.trim()) {
+                return localizedFail("invalid_schema", "voice.errors.schema.tagsInvalid", "Todo tags are invalid.");
+            }
+            return { ok: true, value: ir };
+        }
+        case "todos.unassign": {
+            if (!hasExactKeys(ir.entities, ["localId", "assigneeUserId"])) {
+                return localizedFail("invalid_schema", "voice.errors.schema.unassignFieldsInvalid", "Unassign command fields are invalid.");
+            }
+            if (!isPositiveInteger(ir.entities.localId) || ir.entities.assigneeUserId !== null) {
+                return localizedFail("invalid_schema", "voice.errors.schema.unassignFieldsInvalid", "Unassign command fields are invalid.");
+            }
+            return { ok: true, value: ir };
+        }
         case "open_todo": {
             if (!hasExactKeys(ir.entities, ["localId"])) {
                 return localizedFail("invalid_schema", "voice.errors.schema.openFieldsInvalid", "Open command fields are invalid.");

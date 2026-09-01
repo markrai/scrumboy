@@ -26,6 +26,18 @@ export type VoiceSemanticMemberReference =
       text: string;
     }>;
 
+export type VoiceSemanticTagReference = Readonly<{
+  kind: 'name';
+  text: string;
+}>;
+
+export type VoiceSemanticTodoInspectionAspect =
+  | 'summary'
+  | 'assignee'
+  | 'lane'
+  | 'tags'
+  | 'notes';
+
 export type VoiceSemanticIntent =
   | Readonly<{
       kind: 'create-todo';
@@ -53,8 +65,44 @@ export type VoiceSemanticIntent =
       kind: 'update-todo-title';
       target: VoiceSemanticTodoReference;
       title: string | null;
+    }>
+  | Readonly<{
+      kind: 'append-todo-notes';
+      target: VoiceSemanticTodoReference;
+      notes: string;
+    }>
+  | Readonly<{
+      kind: 'replace-todo-notes';
+      target: VoiceSemanticTodoReference;
+      notes: string;
+    }>
+  | Readonly<{
+      kind: 'add-todo-tag';
+      target: VoiceSemanticTodoReference;
+      tag: VoiceSemanticTagReference;
+    }>
+  | Readonly<{
+      kind: 'remove-todo-tag';
+      target: VoiceSemanticTodoReference;
+      tag: VoiceSemanticTagReference;
+    }>
+  | Readonly<{
+      kind: 'unassign-todo';
+      target: VoiceSemanticTodoReference;
+      assignee?: VoiceSemanticMemberReference;
+    }>
+  | Readonly<{
+      kind: 'inspect-todo';
+      target: VoiceSemanticTodoReference;
+      aspect: VoiceSemanticTodoInspectionAspect;
+    }>
+  | Readonly<{
+      kind: 'count-completed-todos';
+      period: Readonly<{ kind: 'this-week' }>;
     }>;
 
 export function isVoiceSemanticMutationIntent(intent: VoiceSemanticIntent): boolean {
-  return intent.kind !== 'open-todo';
+  return intent.kind !== 'open-todo'
+    && intent.kind !== 'inspect-todo'
+    && intent.kind !== 'count-completed-todos';
 }

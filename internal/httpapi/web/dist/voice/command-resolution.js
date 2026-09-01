@@ -13,7 +13,12 @@ export function isVoiceMutationCommand(command) {
         case 'todos.move':
         case 'todos.delete':
         case 'todos.assign':
+        case 'todos.unassign':
         case 'todos.update_title':
+        case 'todos.append_notes':
+        case 'todos.replace_notes':
+        case 'todos.add_tag':
+        case 'todos.remove_tag':
             return true;
         case 'open_todo':
             return false;

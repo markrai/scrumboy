@@ -153,6 +153,40 @@ describe('VoiceFlow conversation session foundation', () => {
     }
   });
 
+  it('defensively freezes tag clarification references and selections', () => {
+    const session = createVoiceConversationSession();
+    const pending: VoicePendingInteraction = {
+      kind: 'clarification',
+      intent: {
+        kind: 'add-todo-tag',
+        target: { kind: 'title', text: 'Bogus' },
+        tag: { kind: 'name', text: 'back' },
+      },
+      choices: [
+        { kind: 'tag', name: 'backend' },
+        { kind: 'tag', name: 'backlog' },
+      ],
+      selection: {
+        tag: {
+          selectedName: 'backend',
+          allowedNames: ['backend', 'backlog'],
+        },
+      },
+    };
+
+    session.setPendingInteraction(pending);
+    const stored = session.getState().pending;
+
+    expect(stored).toEqual(pending);
+    if (stored?.kind === 'clarification') {
+      expect(Object.isFrozen(stored.intent)).toBe(true);
+      expect(Object.isFrozen(stored.intent.kind === 'add-todo-tag' && stored.intent.tag)).toBe(true);
+      expect(Object.isFrozen(stored.choices[0])).toBe(true);
+      expect(Object.isFrozen(stored.selection.tag)).toBe(true);
+      expect(Object.isFrozen(stored.selection.tag?.allowedNames)).toBe(true);
+    }
+  });
+
   it('resets active context, pending work, semantic output, and continuation state', () => {
     const session = createVoiceConversationSession();
     session.setActiveTodo(firstTodo);

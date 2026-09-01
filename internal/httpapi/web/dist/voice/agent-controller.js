@@ -167,6 +167,8 @@ export function createVoiceAgentController(options) {
                 emit('question', resolution.interaction.message, null, Object.freeze({ options: resolution.interaction.options }));
                 return;
             case 'information':
+                if (resolution.target)
+                    session.setActiveTodo(resolution.target);
                 completeInformation(resolution);
                 return;
         }
@@ -394,14 +396,23 @@ export function createVoiceAgentController(options) {
                             .map((candidate) => candidate.reference.localId),
                     },
                 }
-                : {
-                    member: {
-                        selectedUserId: choice.userId,
-                        allowedUserIds: pending.choices
-                            .filter((candidate) => candidate.kind === 'member')
-                            .map((candidate) => candidate.userId),
-                    },
-                };
+                : choice.kind === 'member'
+                    ? {
+                        member: {
+                            selectedUserId: choice.userId,
+                            allowedUserIds: pending.choices
+                                .filter((candidate) => candidate.kind === 'member')
+                                .map((candidate) => candidate.userId),
+                        },
+                    }
+                    : {
+                        tag: {
+                            selectedName: choice.name,
+                            allowedNames: pending.choices
+                                .filter((candidate) => candidate.kind === 'tag')
+                                .map((candidate) => candidate.name),
+                        },
+                    };
             const selection = {
                 ...pending.selection,
                 ...selected,

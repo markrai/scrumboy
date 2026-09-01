@@ -3,6 +3,14 @@ import { isVoiceSemanticMutationIntent } from './semantic-intent.js';
 import { callMcpTool } from './mcp-client.js';
 import { resolveVoiceSemanticIntent, } from './semantic-resolver.js';
 import { isCommandFailure, localizedCommandFailure, } from './schema.js';
+function currentTimezone() {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    }
+    catch {
+        return 'UTC';
+    }
+}
 export async function resolveVoiceSemanticCommand(intent, session, options, signal, selection = {}) {
     const context = getActiveVoiceCommandContext(options);
     if (isCommandFailure(context)) {
@@ -18,6 +26,7 @@ export async function resolveVoiceSemanticCommand(intent, session, options, sign
         projectSlug: context.value.projectSlug,
         board: context.value.board,
         members: context.value.members,
+        timezone: currentTimezone(),
         callTool: (tool, input) => callMcpTool(tool, input, { signal }),
     }, selection);
     if (isCommandFailure(resolved) && resolved.code === 'stale_context') {

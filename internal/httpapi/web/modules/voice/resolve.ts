@@ -206,6 +206,41 @@ export function formatResolvedCommand(command: ResolvedCommand): Pick<ResolvedCo
         confirmLabel: voiceText("voice.action.updateTitle", "Change title"),
       };
     }
+    case "todos.append_notes": {
+      const { localId, notes } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.appendNotes", "Add to the notes of #{localId}: \"{notes}\"", { localId, notes }),
+        confirmLabel: voiceText("voice.action.appendNotes", "Add notes"),
+      };
+    }
+    case "todos.replace_notes": {
+      const { localId, notes } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.replaceNotes", "Replace the notes of #{localId} with \"{notes}\"", { localId, notes }),
+        confirmLabel: voiceText("voice.action.replaceNotes", "Replace notes"),
+      };
+    }
+    case "todos.add_tag": {
+      const { localId, tag } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.addTag", "Add tag {tag} to todo #{localId}", { localId, tag }),
+        confirmLabel: voiceText("voice.action.addTag", "Add tag"),
+      };
+    }
+    case "todos.remove_tag": {
+      const { localId, tag } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.removeTag", "Remove tag {tag} from todo #{localId}", { localId, tag }),
+        confirmLabel: voiceText("voice.action.removeTag", "Remove tag"),
+      };
+    }
+    case "todos.unassign": {
+      const { localId } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.unassign", "Unassign todo #{localId}", { localId }),
+        confirmLabel: voiceText("voice.action.unassign", "Unassign"),
+      };
+    }
     default: {
       const exhaustive: never = command.ir;
       return exhaustive;

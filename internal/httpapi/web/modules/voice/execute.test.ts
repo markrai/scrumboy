@@ -56,6 +56,60 @@ describe('voice command MCP mapping', () => {
         patch: { title: 'Fix the login race condition' },
       },
     });
+
+    expect(buildMcpCall({
+      intent: 'todos.append_notes',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, body: 'Existing\nInvestigate timeout', notes: 'Investigate timeout' },
+    })).toEqual({
+      tool: 'todos_update',
+      input: {
+        projectSlug: 'alpha',
+        localId: 56,
+        patch: { body: 'Existing\nInvestigate timeout' },
+      },
+    });
+
+    expect(buildMcpCall({
+      intent: 'todos.replace_notes',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, body: 'Blocked by API migration', notes: 'Blocked by API migration' },
+    })).toEqual({
+      tool: 'todos_update',
+      input: { projectSlug: 'alpha', localId: 56, patch: { body: 'Blocked by API migration' } },
+    });
+
+    expect(buildMcpCall({
+      intent: 'todos.add_tag',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, tags: ['frontend', 'backend'], tag: 'backend' },
+    })).toEqual({
+      tool: 'todos_update',
+      input: { projectSlug: 'alpha', localId: 56, patch: { tags: ['frontend', 'backend'] } },
+    });
+
+    expect(buildMcpCall({
+      intent: 'todos.remove_tag',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, tags: ['frontend'], tag: 'backend' },
+    })).toEqual({
+      tool: 'todos_update',
+      input: { projectSlug: 'alpha', localId: 56, patch: { tags: ['frontend'] } },
+    });
+
+    expect(buildMcpCall({
+      intent: 'todos.unassign',
+      projectId: 1,
+      projectSlug: 'alpha',
+      entities: { localId: 56, assigneeUserId: null },
+    })).toEqual({
+      tool: 'todos_update',
+      input: { projectSlug: 'alpha', localId: 56, patch: { assigneeUserId: null } },
+    });
   });
 
   it('executes a title update once through the authoritative MCP update path', async () => {

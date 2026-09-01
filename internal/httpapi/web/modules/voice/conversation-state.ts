@@ -41,9 +41,15 @@ export type VoiceMemberClarificationChoice = Readonly<{
   email: string;
 }>;
 
+export type VoiceTagClarificationChoice = Readonly<{
+  kind: 'tag';
+  name: string;
+}>;
+
 export type VoiceClarificationChoice =
   | VoiceTodoClarificationChoice
-  | VoiceMemberClarificationChoice;
+  | VoiceMemberClarificationChoice
+  | VoiceTagClarificationChoice;
 
 export type VoiceConversationSelection = Readonly<{
   todo?: Readonly<{
@@ -53,6 +59,10 @@ export type VoiceConversationSelection = Readonly<{
   member?: Readonly<{
     selectedUserId: number;
     allowedUserIds: readonly number[];
+  }>;
+  tag?: Readonly<{
+    selectedName: string;
+    allowedNames: readonly string[];
   }>;
 }>;
 

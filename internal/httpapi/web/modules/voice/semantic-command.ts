@@ -18,6 +18,14 @@ import {
   type CommandResult,
 } from './schema.js';
 
+function currentTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 export async function resolveVoiceSemanticCommand(
   intent: VoiceSemanticIntent,
   session: VoiceConversationSession,
@@ -49,6 +57,7 @@ export async function resolveVoiceSemanticCommand(
       projectSlug: context.value.projectSlug,
       board: context.value.board,
       members: context.value.members,
+      timezone: currentTimezone(),
       callTool: (tool, input) => callMcpTool(tool, input, { signal }),
     },
     selection,

@@ -51,6 +51,35 @@ export function buildMcpCall(ir) {
                     },
                 },
             };
+        case "todos.append_notes":
+        case "todos.replace_notes":
+            return {
+                tool: "todos_update",
+                input: {
+                    projectSlug: ir.projectSlug,
+                    localId: ir.entities.localId,
+                    patch: { body: ir.entities.body },
+                },
+            };
+        case "todos.add_tag":
+        case "todos.remove_tag":
+            return {
+                tool: "todos_update",
+                input: {
+                    projectSlug: ir.projectSlug,
+                    localId: ir.entities.localId,
+                    patch: { tags: ir.entities.tags },
+                },
+            };
+        case "todos.unassign":
+            return {
+                tool: "todos_update",
+                input: {
+                    projectSlug: ir.projectSlug,
+                    localId: ir.entities.localId,
+                    patch: { assigneeUserId: null },
+                },
+            };
     }
 }
 export async function executeCommandIR(ir, options = {}) {

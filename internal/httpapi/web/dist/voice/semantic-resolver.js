@@ -107,17 +107,120 @@ async function resolveTodoCandidates(target, state, context, selection) {
         return resolved;
     return { ok: true, value: candidates };
 }
-function clarification(intent, choices, selection, member = false) {
+async function refreshTodoCandidate(candidate, context) {
+    if (!context.callTool)
+        return { ok: true, value: candidate };
+    try {
+        const response = await context.callTool('todos_get', {
+            projectSlug: context.projectSlug,
+            localId: candidate.reference.localId,
+        });
+        if (response?.todo?.localId !== candidate.reference.localId) {
+            return localizedCommandFailure('stale_context', 'voice.errors.staleContext', 'The board changed before the command could run.');
+        }
+        return { ok: true, value: resolvedTodoCandidate(context, response.todo) };
+    }
+    catch {
+        return localizedCommandFailure('stale_context', 'voice.errors.staleContext', 'The board changed before the command could run.');
+    }
+}
+async function refreshTodoCandidates(candidates, context) {
+    const refreshed = [];
+    for (const candidate of candidates) {
+        const result = await refreshTodoCandidate(candidate, context);
+        if (isCommandFailure(result))
+            return result;
+        refreshed.push(result.value);
+    }
+    return { ok: true, value: refreshed };
+}
+function projectTagNames(board) {
+    const names = new Map();
+    for (const tag of board.tags ?? []) {
+        const name = tag.name?.trim();
+        const normalized = normalizeLookup(name ?? '');
+        if (name && normalized && !names.has(normalized))
+            names.set(normalized, name);
+    }
+    return [...names.values()];
+}
+function matchingTagNames(reference, board) {
+    const wanted = normalizeLookup(reference.text);
+    if (!wanted)
+        return [];
+    const available = projectTagNames(board);
+    const exact = available.filter((name) => normalizeLookup(name) === wanted);
+    if (exact.length > 0)
+        return exact;
+    return available.filter((name) => {
+        const normalized = normalizeLookup(name);
+        const components = normalized.split(' ').filter(Boolean);
+        return normalized.startsWith(`${wanted} `)
+            || (wanted.length >= 2 && components.some((component) => component.startsWith(wanted)));
+    });
+}
+function selectedTagName(selection, context) {
+    if (!selection.allowedNames.includes(selection.selectedName)) {
+        return localizedCommandFailure('invalid_schema', 'voice.errors.selectedTagNotOffered', 'Selected tag was not one of the offered choices.');
+    }
+    const selected = projectTagNames(context.board).find((name) => normalizeLookup(name) === normalizeLookup(selection.selectedName));
+    return selected
+        ? { ok: true, value: selected }
+        : localizedCommandFailure('stale_context', 'voice.errors.staleContext', 'The board changed before the command could run.');
+}
+function tagClarification(intent, names, selection) {
+    return clarification(intent, names.slice(0, 3).map((name) => Object.freeze({
+        kind: 'tag',
+        name,
+    })), selection);
+}
+function todoHasTag(todo, tagName) {
+    const wanted = normalizeLookup(tagName);
+    return (todo.tags ?? []).some((tag) => normalizeLookup(tag) === wanted);
+}
+function tagsAfterAdd(todo, tagName) {
+    return todoHasTag(todo, tagName) ? [...(todo.tags ?? [])] : [...(todo.tags ?? []), tagName];
+}
+function tagsAfterRemove(todo, tagName) {
+    const wanted = normalizeLookup(tagName);
+    return (todo.tags ?? []).filter((tag) => normalizeLookup(tag) !== wanted);
+}
+function appendedNotes(body, notes) {
+    const existing = body ?? '';
+    if (!existing)
+        return notes;
+    return existing.endsWith('\n') ? `${existing}${notes}` : `${existing}\n${notes}`;
+}
+function clarification(intent, choices, selection) {
     const options = choices.map((choice) => Object.freeze({
         id: choice.kind === 'todo'
             ? `todo:${choice.reference.localId}`
-            : `member:${choice.userId}`,
+            : choice.kind === 'member'
+                ? `member:${choice.userId}`
+                : `tag:${choice.name}`,
         label: choice.kind === 'todo'
             ? `#${choice.reference.localId} · ${choice.title} · ${choice.laneName}`
-            : choice.email && choice.email !== choice.name
-                ? `${choice.name} · ${choice.email}`
+            : choice.kind === 'member'
+                ? choice.email && choice.email !== choice.name
+                    ? `${choice.name} · ${choice.email}`
+                    : choice.name
                 : choice.name,
     }));
+    const firstKind = choices[0]?.kind;
+    const prompt = firstKind === 'member'
+        ? {
+            key: 'voice.prompt.whichPerson',
+            fallback: 'Which person?',
+        }
+        : firstKind === 'tag'
+            ? {
+                key: 'voice.prompt.whichTag',
+                fallback: 'Which tag?',
+            }
+            : {
+                key: 'voice.prompt.whichOne',
+                fallback: 'Which one?',
+            };
     return Object.freeze({
         kind: 'clarification',
         intent,
@@ -126,10 +229,7 @@ function clarification(intent, choices, selection, member = false) {
         interaction: Object.freeze({
             kind: 'clarification',
             response: 'choice',
-            message: {
-                key: member ? 'voice.prompt.whichPerson' : 'voice.prompt.whichOne',
-                fallback: member ? 'Which person?' : 'Which one?',
-            },
+            message: prompt,
             options: Object.freeze(options),
         }),
     });
@@ -143,9 +243,10 @@ function todoClarification(intent, candidates, selection) {
         laneName: candidate.lane.name,
     })), selection);
 }
-function information(key, fallback, values) {
+function information(key, fallback, values, target) {
     return Object.freeze({
         kind: 'information',
+        ...(target ? { target } : {}),
         interaction: Object.freeze({
             kind: 'information',
             message: Object.freeze({ key, fallback, values: Object.freeze({ ...values }) }),
@@ -241,7 +342,7 @@ function memberClarification(intent, members, selection) {
         userId: member.userId,
         name: member.name || member.email,
         email: member.email,
-    })), selection, true);
+    })), selection);
 }
 function effectiveTarget(intent, state) {
     return intent.kind === 'update-todo-title'
@@ -282,6 +383,31 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
         return isCommandFailure(resolved)
             ? resolved
             : { ok: true, value: commandResolution(resolved.value, null, selection) };
+    }
+    if (intent.kind === 'count-completed-todos') {
+        if (!context.callTool) {
+            return localizedCommandFailure('network', 'voice.errors.completedCountUnavailable', 'The completed todo count is unavailable.');
+        }
+        try {
+            const response = await context.callTool('todos_countCompleted', {
+                projectSlug: context.projectSlug,
+                period: intent.period.kind,
+                timezone: context.timezone ?? 'UTC',
+            });
+            if (!Number.isInteger(response?.count) || Number(response.count) < 0) {
+                throw new Error('invalid completed count');
+            }
+            const count = Number(response.count);
+            return {
+                ok: true,
+                value: information(count === 1 ? 'voice.info.completedThisWeekOne' : 'voice.info.completedThisWeek', count === 1
+                    ? '1 story was completed this week.'
+                    : '{count} stories were completed this week.', { count }),
+            };
+        }
+        catch {
+            return localizedCommandFailure('network', 'voice.errors.completedCountUnavailable', 'The completed todo count is unavailable.');
+        }
     }
     if (intent.kind === 'move-todo') {
         const lane = resolveVoiceLane(intent.destination.text, context.board);
@@ -377,9 +503,233 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             ? resolved
             : { ok: true, value: commandResolution(resolved.value, target.reference, selection) };
     }
+    if (intent.kind === 'add-todo-tag' || intent.kind === 'remove-todo-tag') {
+        let tagName;
+        if (selection.tag) {
+            const selected = selectedTagName(selection.tag, context);
+            if (isCommandFailure(selected))
+                return selected;
+            tagName = selected.value;
+        }
+        if (!tagName) {
+            const matches = matchingTagNames(intent.tag, context.board);
+            if (matches.length === 0) {
+                return localizedCommandFailure('unknown_tag', 'voice.errors.tagNotFound', 'Tag was not found in this project.');
+            }
+            if (matches.length > 1) {
+                return { ok: true, value: tagClarification(intent, matches, selection) };
+            }
+            tagName = matches[0];
+        }
+        const candidates = await resolveTodoCandidates(effectiveTarget(intent, state), state, context, selection.todo);
+        if (isCommandFailure(candidates))
+            return candidates;
+        const fresh = await refreshTodoCandidates(candidates.value, context);
+        if (isCommandFailure(fresh))
+            return fresh;
+        const adding = intent.kind === 'add-todo-tag';
+        const classified = classifyTodoCandidates(fresh.value, (candidate) => {
+            const present = todoHasTag(candidate.todo, tagName);
+            return present === adding ? 'already-satisfied' : 'actionable';
+        });
+        const actionable = classified
+            .filter((candidate) => candidate.disposition === 'actionable')
+            .map((candidate) => candidate.candidate);
+        if (actionable.length > 1) {
+            return { ok: true, value: todoClarification(intent, actionable, selection) };
+        }
+        if (actionable.length === 0) {
+            const satisfied = classified.find((candidate) => candidate.disposition === 'already-satisfied')?.candidate;
+            if (!satisfied)
+                return failureFromEmptyCandidates();
+            return {
+                ok: true,
+                value: information(adding ? 'voice.info.tagAlreadyPresent' : 'voice.info.tagAlreadyAbsent', adding
+                    ? '{title} already has tag {tag}.'
+                    : '{title} does not have tag {tag}.', { title: satisfied.todo.title, tag: tagName }, satisfied.reference),
+            };
+        }
+        const target = actionable[0];
+        const tags = adding
+            ? tagsAfterAdd(target.todo, tagName)
+            : tagsAfterRemove(target.todo, tagName);
+        const resolved = buildResolvedCommand({
+            intent: adding ? 'todos.add_tag' : 'todos.remove_tag',
+            projectId: context.projectId,
+            projectSlug: context.projectSlug,
+            entities: { localId: target.todo.localId, tags, tag: tagName },
+        }, context, {
+            danger: false,
+            requiresConfirmation: true,
+            storyTitle: target.todo.title,
+        });
+        return isCommandFailure(resolved)
+            ? resolved
+            : { ok: true, value: commandResolution(resolved.value, target.reference, selection) };
+    }
     const candidates = await resolveTodoCandidates(effectiveTarget(intent, state), state, context, selection.todo);
     if (isCommandFailure(candidates))
         return candidates;
+    if (intent.kind === 'append-todo-notes' || intent.kind === 'replace-todo-notes') {
+        const fresh = await refreshTodoCandidates(candidates.value, context);
+        if (isCommandFailure(fresh))
+            return fresh;
+        const appending = intent.kind === 'append-todo-notes';
+        const classified = classifyTodoCandidates(fresh.value, (candidate) => !appending && (candidate.todo.body ?? '') === intent.notes
+            ? 'already-satisfied'
+            : 'actionable');
+        const actionable = classified
+            .filter((candidate) => candidate.disposition === 'actionable')
+            .map((candidate) => candidate.candidate);
+        if (actionable.length > 1) {
+            return { ok: true, value: todoClarification(intent, actionable, selection) };
+        }
+        if (actionable.length === 0) {
+            const satisfied = classified.find((candidate) => candidate.disposition === 'already-satisfied')?.candidate;
+            if (!satisfied)
+                return failureFromEmptyCandidates();
+            return {
+                ok: true,
+                value: information('voice.info.notesUnchanged', '{title} already has those notes.', { title: satisfied.todo.title }, satisfied.reference),
+            };
+        }
+        const target = actionable[0];
+        const body = appending
+            ? appendedNotes(target.todo.body, intent.notes)
+            : intent.notes;
+        const resolved = buildResolvedCommand({
+            intent: appending ? 'todos.append_notes' : 'todos.replace_notes',
+            projectId: context.projectId,
+            projectSlug: context.projectSlug,
+            entities: { localId: target.todo.localId, body, notes: intent.notes },
+        }, context, {
+            danger: false,
+            requiresConfirmation: true,
+            storyTitle: target.todo.title,
+        });
+        return isCommandFailure(resolved)
+            ? resolved
+            : { ok: true, value: commandResolution(resolved.value, target.reference, selection) };
+    }
+    if (intent.kind === 'unassign-todo') {
+        let namedMember;
+        if (intent.assignee && selection.member) {
+            const member = await selectedMember(selection.member, context);
+            if (isCommandFailure(member))
+                return member;
+            namedMember = member.value;
+        }
+        if (intent.assignee && !namedMember) {
+            const matching = await resolveMemberCandidates(intent.assignee, context);
+            if (matching.length === 0) {
+                return localizedCommandFailure('unknown_user', 'voice.errors.assigneeNotFound', 'Assignee was not found in this project.');
+            }
+            if (matching.length > 1) {
+                return { ok: true, value: memberClarification(intent, matching, selection) };
+            }
+            namedMember = matching[0];
+        }
+        const fresh = await refreshTodoCandidates(candidates.value, context);
+        if (isCommandFailure(fresh))
+            return fresh;
+        const classified = classifyTodoCandidates(fresh.value, (candidate) => {
+            if (namedMember) {
+                return candidate.todo.assigneeUserId === namedMember.userId
+                    ? 'actionable'
+                    : 'already-satisfied';
+            }
+            return candidate.todo.assigneeUserId == null ? 'already-satisfied' : 'actionable';
+        });
+        const actionable = classified
+            .filter((candidate) => candidate.disposition === 'actionable')
+            .map((candidate) => candidate.candidate);
+        if (actionable.length > 1) {
+            return { ok: true, value: todoClarification(intent, actionable, selection) };
+        }
+        if (actionable.length === 0) {
+            const satisfied = classified.find((candidate) => candidate.disposition === 'already-satisfied')?.candidate;
+            if (!satisfied)
+                return failureFromEmptyCandidates();
+            return {
+                ok: true,
+                value: information(namedMember ? 'voice.info.notAssignedToMember' : 'voice.info.alreadyUnassigned', namedMember
+                    ? '{title} is not assigned to {member}.'
+                    : '{title} is already unassigned.', {
+                    title: satisfied.todo.title,
+                    ...(namedMember ? { member: namedMember.name || namedMember.email } : {}),
+                }, satisfied.reference),
+            };
+        }
+        const target = actionable[0];
+        const resolved = buildResolvedCommand({
+            intent: 'todos.unassign',
+            projectId: context.projectId,
+            projectSlug: context.projectSlug,
+            entities: { localId: target.todo.localId, assigneeUserId: null },
+        }, context, {
+            danger: false,
+            requiresConfirmation: true,
+            storyTitle: target.todo.title,
+        });
+        return isCommandFailure(resolved)
+            ? resolved
+            : { ok: true, value: commandResolution(resolved.value, target.reference, selection) };
+    }
+    if (intent.kind === 'inspect-todo') {
+        const fresh = await refreshTodoCandidates(candidates.value, context);
+        if (isCommandFailure(fresh))
+            return fresh;
+        if (fresh.value.length > 1) {
+            return { ok: true, value: todoClarification(intent, fresh.value, selection) };
+        }
+        const target = fresh.value[0];
+        if (!target)
+            return failureFromEmptyCandidates();
+        switch (intent.aspect) {
+            case 'summary':
+                return {
+                    ok: true,
+                    value: information('voice.info.todoSummary', '#{localId} {title} is in {lane}.', { localId: target.todo.localId, title: target.todo.title, lane: target.lane.name }, target.reference),
+                };
+            case 'lane':
+                return {
+                    ok: true,
+                    value: information('voice.info.todoLane', '{title} is in {lane}.', { title: target.todo.title, lane: target.lane.name }, target.reference),
+                };
+            case 'tags': {
+                const tags = (target.todo.tags ?? []).join(', ');
+                return {
+                    ok: true,
+                    value: information(tags ? 'voice.info.todoTags' : 'voice.info.todoTagsNone', tags ? '{title} has tags: {tags}.' : '{title} has no tags.', { title: target.todo.title, tags }, target.reference),
+                };
+            }
+            case 'notes': {
+                const notes = target.todo.body ?? '';
+                return {
+                    ok: true,
+                    value: information(notes ? 'voice.info.todoNotes' : 'voice.info.todoNotesNone', notes ? 'Notes for {title}: {notes}' : '{title} has no notes.', { title: target.todo.title, notes }, target.reference),
+                };
+            }
+            case 'assignee': {
+                const assigneeId = target.todo.assigneeUserId;
+                if (assigneeId == null) {
+                    return {
+                        ok: true,
+                        value: information('voice.info.todoUnassigned', '{title} is unassigned.', { title: target.todo.title }, target.reference),
+                    };
+                }
+                const members = await projectMembers(context, true);
+                const assignee = members.find((member) => member.userId === assigneeId);
+                const member = assignee?.name || assignee?.email;
+                return {
+                    ok: true,
+                    value: information(member ? 'voice.info.todoAssignee' : 'voice.info.todoAssigneeUnavailable', member
+                        ? '{title} is assigned to {member}.'
+                        : '{title} is assigned to a member who is no longer available.', { title: target.todo.title, member: member ?? '' }, target.reference),
+                };
+            }
+        }
+    }
     if (intent.kind === 'update-todo-title') {
         if (intent.title === null) {
             if (candidates.value.length > 1) {

@@ -8,6 +8,7 @@ export type McpToolName =
   | "todos_move"
   | "todos_delete"
   | "todos_update"
+  | "todos_countCompleted"
   | "members_list";
 
 type McpEnvelope<T> =

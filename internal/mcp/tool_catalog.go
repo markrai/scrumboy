@@ -99,6 +99,15 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				}, nil),
 			}, []string{"projectSlug", "localId", "patch"}),
 		},
+		"todos_countCompleted": {
+			Name:        "todos_countCompleted",
+			Description: "Count todos completed in one project during a bounded calendar period using authoritative completion timestamps and the complete project scope.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"period":      jsonStringEnumProp("Bounded completion period", []string{"this-week"}),
+				"timezone":    jsonProp("string", "IANA timezone used for Monday calendar-week boundaries; defaults to UTC"),
+			}, []string{"projectSlug", "period"}),
+		},
 		"todos_delete": {
 			Name:        "todos_delete",
 			Description: "Delete a todo by its project-scoped local ID.",

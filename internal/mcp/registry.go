@@ -16,6 +16,7 @@ func (a *Adapter) registerTools() {
 	a.tools["todos_get"] = a.handleTodosGet
 	a.tools["todos_search"] = a.handleTodosSearch
 	a.tools["todos_update"] = a.handleTodosUpdate
+	a.tools["todos_countCompleted"] = a.handleTodosCountCompleted
 	a.tools["todos_delete"] = a.handleTodosDelete
 	a.tools["todos_move"] = a.handleTodosMove
 	a.tools["todos_linksList"] = a.handleTodosLinksList
