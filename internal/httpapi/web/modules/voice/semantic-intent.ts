@@ -41,7 +41,7 @@ export type VoiceSemanticTodoInspectionAspect =
 export type VoiceSemanticIntent =
   | Readonly<{
       kind: 'create-todo';
-      title: string;
+      title: string | null;
     }>
   | Readonly<{
       kind: 'open-todo';
@@ -50,12 +50,12 @@ export type VoiceSemanticIntent =
   | Readonly<{
       kind: 'move-todo';
       target: VoiceSemanticTodoReference;
-      destination: VoiceSemanticLaneReference;
+      destination: VoiceSemanticLaneReference | null;
     }>
   | Readonly<{
       kind: 'assign-todo';
       target: VoiceSemanticTodoReference;
-      assignee: VoiceSemanticMemberReference;
+      assignee: VoiceSemanticMemberReference | null;
     }>
   | Readonly<{
       kind: 'delete-todo';
@@ -69,22 +69,22 @@ export type VoiceSemanticIntent =
   | Readonly<{
       kind: 'append-todo-notes';
       target: VoiceSemanticTodoReference;
-      notes: string;
+      notes: string | null;
     }>
   | Readonly<{
       kind: 'replace-todo-notes';
       target: VoiceSemanticTodoReference;
-      notes: string;
+      notes: string | null;
     }>
   | Readonly<{
       kind: 'add-todo-tag';
       target: VoiceSemanticTodoReference;
-      tag: VoiceSemanticTagReference;
+      tag: VoiceSemanticTagReference | null;
     }>
   | Readonly<{
       kind: 'remove-todo-tag';
       target: VoiceSemanticTodoReference;
-      tag: VoiceSemanticTagReference;
+      tag: VoiceSemanticTagReference | null;
     }>
   | Readonly<{
       kind: 'unassign-todo';

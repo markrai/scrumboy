@@ -2,6 +2,7 @@ import { getLocale } from '../i18n/index.js';
 import { LOCAL_TEXT_GENERATION_CAPABILITY, } from '../platform/local-text-generation.js';
 import { getAppRuntime } from '../platform/runtime.js';
 import { SPEECH_INPUT_CAPABILITY, } from '../platform/speech-input.js';
+import { SPEECH_OUTPUT_CAPABILITY, } from '../platform/speech-output.js';
 function throwIfAborted(signal) {
     if (signal?.aborted)
         throw new DOMException('VoiceFlow selection cancelled.', 'AbortError');
@@ -18,6 +19,7 @@ export async function selectVoiceFlowExperience(options = {}) {
     const speechInput = runtime.capability(SPEECH_INPUT_CAPABILITY);
     if (!speechInput)
         return { kind: 'legacy-deterministic', reason: 'speech-absent' };
+    const speechOutput = runtime.capability(SPEECH_OUTPUT_CAPABILITY);
     let aiStatus = null;
     let speechStatus = null;
     try {
@@ -32,6 +34,7 @@ export async function selectVoiceFlowExperience(options = {}) {
             kind: 'enhanced-not-ready',
             localTextGeneration,
             speechInput,
+            speechOutput,
             aiStatus,
             speechStatus,
             reason: 'status-error',
@@ -45,12 +48,13 @@ export async function selectVoiceFlowExperience(options = {}) {
         return { kind: 'legacy-deterministic', reason: 'speech-unsupported' };
     }
     if (aiStatus.state === 'ready' && speechStatus.state === 'ready') {
-        return { kind: 'enhanced-agent', localTextGeneration, speechInput };
+        return { kind: 'enhanced-agent', localTextGeneration, speechInput, speechOutput };
     }
     return {
         kind: 'enhanced-not-ready',
         localTextGeneration,
         speechInput,
+        speechOutput,
         aiStatus,
         speechStatus,
         reason: aiStatus.state === 'ready' ? 'speech' : 'ai',

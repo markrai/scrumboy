@@ -347,6 +347,58 @@ describe('semantic VoiceFlow domain resolution', () => {
     });
   });
 
+  it.each([
+    [
+      { kind: 'create-todo', title: null } as VoiceSemanticIntent,
+      'title',
+      'voice.question.createTitle',
+    ],
+    [
+      { kind: 'move-todo', target: { kind: 'local-id', localId: 355 }, destination: null } as VoiceSemanticIntent,
+      'destination',
+      'voice.question.moveDestination',
+    ],
+    [
+      { kind: 'assign-todo', target: { kind: 'local-id', localId: 355 }, assignee: null } as VoiceSemanticIntent,
+      'assignee',
+      'voice.question.assignMember',
+    ],
+    [
+      { kind: 'append-todo-notes', target: { kind: 'local-id', localId: 355 }, notes: null } as VoiceSemanticIntent,
+      'notes',
+      'voice.question.appendNotes',
+    ],
+    [
+      { kind: 'replace-todo-notes', target: { kind: 'local-id', localId: 355 }, notes: null } as VoiceSemanticIntent,
+      'notes',
+      'voice.question.replaceNotes',
+    ],
+    [
+      { kind: 'add-todo-tag', target: { kind: 'local-id', localId: 355 }, tag: null } as VoiceSemanticIntent,
+      'tag',
+      'voice.question.whichTag',
+    ],
+    [
+      { kind: 'remove-todo-tag', target: { kind: 'local-id', localId: 355 }, tag: null } as VoiceSemanticIntent,
+      'tag',
+      'voice.question.whichTag',
+    ],
+  ])('returns an authoritative generalized %s slot question', async (intent, pendingSlot, key) => {
+    await expect(resolve(intent, board(
+      [todo(355, 'Fixed Radical Login', 'backlog')],
+      [],
+      [],
+      ['backend'],
+    ))).resolves.toMatchObject({
+      ok: true,
+      value: {
+        kind: 'question',
+        pendingSlot: { slot: pendingSlot },
+        interaction: { message: { key } },
+      },
+    });
+  });
+
   it('converges create, open, delete, and title update on existing IR intents', async () => {
     const sourceBoard = board([todo(355, 'Fixed Radical Login', 'backlog')]);
     const cases: Array<[VoiceSemanticIntent, string]> = [

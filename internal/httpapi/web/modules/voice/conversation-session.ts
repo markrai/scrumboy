@@ -38,15 +38,6 @@ function sameProject(
   return left?.projectId === right.projectId && left.projectSlug === right.projectSlug;
 }
 
-function sameTodo(
-  left: VoiceTodoReference | null,
-  right: VoiceTodoReference,
-): boolean {
-  return left?.projectId === right.projectId
-    && left.projectSlug === right.projectSlug
-    && left.localId === right.localId;
-}
-
 function freezeProject(project: VoiceProjectReference): VoiceProjectReference {
   return Object.freeze({
     projectId: project.projectId,
@@ -92,13 +83,13 @@ function freezeSemanticIntent(intent: VoiceSemanticIntent): VoiceSemanticIntent 
       return Object.freeze({
         ...intent,
         target: freezeSemanticTodoReference(intent.target),
-        destination: Object.freeze({ ...intent.destination }),
+        destination: intent.destination ? Object.freeze({ ...intent.destination }) : null,
       });
     case 'assign-todo':
       return Object.freeze({
         ...intent,
         target: freezeSemanticTodoReference(intent.target),
-        assignee: freezeSemanticMemberReference(intent.assignee),
+        assignee: intent.assignee ? freezeSemanticMemberReference(intent.assignee) : null,
       });
     case 'unassign-todo':
       return Object.freeze({
@@ -116,7 +107,7 @@ function freezeSemanticIntent(intent: VoiceSemanticIntent): VoiceSemanticIntent 
       return Object.freeze({
         ...intent,
         target: freezeSemanticTodoReference(intent.target),
-        tag: freezeSemanticTagReference(intent.tag),
+        tag: intent.tag ? freezeSemanticTagReference(intent.tag) : null,
       });
     case 'count-completed-todos':
       return Object.freeze({ ...intent, period: Object.freeze({ ...intent.period }) });
@@ -134,33 +125,37 @@ function freezeMessage(message: VoiceInteractionMessage): VoiceInteractionMessag
 
 function freezeInteraction(interaction: VoiceSemanticInteraction): VoiceSemanticInteraction {
   const message = freezeMessage(interaction.message);
+  const speech = interaction.speech ? freezeMessage(interaction.speech) : undefined;
   switch (interaction.kind) {
     case 'question':
-      return Object.freeze({ ...interaction, message });
+      return Object.freeze({ ...interaction, message, ...(speech ? { speech } : {}) });
     case 'clarification':
       return Object.freeze({
         ...interaction,
         message,
+        ...(speech ? { speech } : {}),
         options: Object.freeze(interaction.options.map((option) => Object.freeze({ ...option }))),
       });
     case 'confirmation':
       return Object.freeze({
         ...interaction,
         message,
+        ...(speech ? { speech } : {}),
         confirmLabel: freezeMessage(interaction.confirmLabel),
       });
     case 'refusal':
     case 'error':
-      return Object.freeze({ ...interaction, message });
+      return Object.freeze({ ...interaction, message, ...(speech ? { speech } : {}) });
     case 'unsupported-residue':
       return Object.freeze({
         ...interaction,
         message,
+        ...(speech ? { speech } : {}),
         residue: Object.freeze([...interaction.residue]),
       });
     case 'information':
     case 'success':
-      return Object.freeze({ ...interaction, message });
+      return Object.freeze({ ...interaction, message, ...(speech ? { speech } : {}) });
   }
 }
 
@@ -173,12 +168,17 @@ function freezePending(pending: VoicePendingInteraction): VoicePendingInteractio
       selection: freezeConversationSelection(pending.selection),
     });
   }
+  if (pending.kind === 'confirmation') {
+    return Object.freeze({ kind: pending.kind, operation: pending.operation });
+  }
   return Object.freeze({
     kind: pending.kind,
-    action: pending.action,
+    operation: pending.operation,
     slot: pending.slot,
-    target: freezeTodo(pending.target),
-  });
+    intent: freezeSemanticIntent(pending.intent),
+    selection: freezeConversationSelection(pending.selection),
+    ...('target' in pending ? { target: freezeTodo(pending.target) } : {}),
+  }) as VoicePendingInteraction;
 }
 
 function freezeConversationSelection(
@@ -250,13 +250,13 @@ export function createVoiceConversationSession(): VoiceConversationSession {
 
     setActiveTodo(todo) {
       requireActive();
-      const todoChanged = !sameTodo(state.activeTodo, todo);
+      const projectChanged = !sameProject(state.activeProject, todo);
       const activeTodo = freezeTodo(todo);
       state = freezeState({
         ...state,
         activeProject: freezeProject(todo),
         activeTodo,
-        pending: todoChanged ? null : state.pending,
+        pending: projectChanged ? null : state.pending,
       });
     },
 

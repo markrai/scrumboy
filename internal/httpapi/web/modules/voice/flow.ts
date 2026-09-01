@@ -516,7 +516,11 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     return {
       signal,
       conversation: {
-        pending: { action: 'todo.update_title' as const, slot: 'title' as const },
+        pending: {
+          kind: 'missing-slot' as const,
+          operation: 'todo.update_title' as const,
+          slot: 'title' as const,
+        },
       },
     };
   };
@@ -1122,6 +1126,11 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         renderInterpretation();
         return;
       }
+      if (interpreted.kind === 'dialogue') {
+        interpretationPhase = 'refused';
+        renderInterpretation();
+        return;
+      }
 
       let resolvedCommand: ResolvedCommand;
       let semanticTarget: VoiceTodoReference | null = null;
@@ -1325,6 +1334,15 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         } else {
           if (showTargetAmbiguity(interpretation.failure, value)) return;
           setReviewStatus(interpretation.failure);
+        }
+        return;
+      }
+      if (interpretation.kind === 'dialogue') {
+        if (source === 'ai') {
+          interpretationPhase = 'refused';
+          setReviewStatus(null);
+          setFlowState('error');
+          renderInterpretation();
         }
         return;
       }

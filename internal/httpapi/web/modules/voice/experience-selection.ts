@@ -10,6 +10,10 @@ import {
   type SpeechInputCapability,
   type SpeechInputStatus,
 } from '../platform/speech-input.js';
+import {
+  SPEECH_OUTPUT_CAPABILITY,
+  type SpeechOutputCapability,
+} from '../platform/speech-output.js';
 
 type VoiceExperienceRuntime = Pick<ReturnType<typeof getAppRuntime>, 'capability'>;
 
@@ -22,11 +26,13 @@ export type VoiceFlowExperienceSelection =
       kind: 'enhanced-agent';
       localTextGeneration: LocalTextGenerationCapability;
       speechInput: SpeechInputCapability;
+      speechOutput: SpeechOutputCapability | null;
     }>
   | Readonly<{
       kind: 'enhanced-not-ready';
       localTextGeneration: LocalTextGenerationCapability;
       speechInput: SpeechInputCapability;
+      speechOutput: SpeechOutputCapability | null;
       aiStatus: LocalTextGenerationStatus | null;
       speechStatus: SpeechInputStatus | null;
       reason: 'ai' | 'speech' | 'status-error';
@@ -55,6 +61,7 @@ export async function selectVoiceFlowExperience(
   if (!localTextGeneration) return { kind: 'legacy-deterministic', reason: 'ai-absent' };
   const speechInput = runtime.capability(SPEECH_INPUT_CAPABILITY);
   if (!speechInput) return { kind: 'legacy-deterministic', reason: 'speech-absent' };
+  const speechOutput = runtime.capability(SPEECH_OUTPUT_CAPABILITY);
 
   let aiStatus: LocalTextGenerationStatus | null = null;
   let speechStatus: SpeechInputStatus | null = null;
@@ -69,6 +76,7 @@ export async function selectVoiceFlowExperience(
       kind: 'enhanced-not-ready',
       localTextGeneration,
       speechInput,
+      speechOutput,
       aiStatus,
       speechStatus,
       reason: 'status-error',
@@ -83,12 +91,13 @@ export async function selectVoiceFlowExperience(
     return { kind: 'legacy-deterministic', reason: 'speech-unsupported' };
   }
   if (aiStatus.state === 'ready' && speechStatus.state === 'ready') {
-    return { kind: 'enhanced-agent', localTextGeneration, speechInput };
+    return { kind: 'enhanced-agent', localTextGeneration, speechInput, speechOutput };
   }
   return {
     kind: 'enhanced-not-ready',
     localTextGeneration,
     speechInput,
+    speechOutput,
     aiStatus,
     speechStatus,
     reason: aiStatus.state === 'ready' ? 'speech' : 'ai',

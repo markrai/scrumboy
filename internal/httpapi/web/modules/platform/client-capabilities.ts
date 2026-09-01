@@ -1,10 +1,12 @@
 import type { LocalTextGenerationCapability } from './local-text-generation.js';
 import type { SpeechInputCapability } from './speech-input.js';
+import type { SpeechOutputCapability } from './speech-output.js';
 
 /** Operation-oriented product capability vocabulary. */
 export interface AppCapabilityMap {
   'local-text-generation': LocalTextGenerationCapability;
   'speech-input': SpeechInputCapability;
+  'speech-output': SpeechOutputCapability;
 }
 
 export type CapabilityId<M extends object> = Extract<keyof M, string>;

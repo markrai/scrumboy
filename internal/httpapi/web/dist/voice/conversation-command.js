@@ -28,11 +28,19 @@ export async function resolveVoiceConversationCommand(intent, session, options, 
                 }),
             };
         case 'question':
+            if (!resolved.value.target
+                || resolved.value.pendingSlot.operation !== 'todo.update_title'
+                || resolved.value.pendingSlot.slot !== 'title'
+                || resolved.value.intent.kind !== 'update-todo-title') {
+                return localizedCommandFailure('unsupported', 'voice.errors.unsupportedCommand', 'Unsupported command.');
+            }
             session.setActiveTodo(resolved.value.target);
             session.setPendingInteraction({
                 kind: 'missing-slot',
-                action: 'todo.update_title',
-                slot: 'title',
+                operation: resolved.value.pendingSlot.operation,
+                slot: resolved.value.pendingSlot.slot,
+                intent: resolved.value.intent,
+                selection: resolved.value.selection,
                 target: resolved.value.target,
             });
             session.setLastInteraction(resolved.value.interaction);

@@ -29,8 +29,10 @@ const otherProjectTodo: VoiceTodoReference = {
 
 const pendingTitle: VoicePendingInteraction = {
   kind: 'missing-slot',
-  action: 'todo.update_title',
+  operation: 'todo.update_title',
   slot: 'title',
+  intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+  selection: {},
   target: firstTodo,
 };
 
@@ -84,21 +86,29 @@ describe('VoiceFlow conversation session foundation', () => {
     });
   });
 
-  it.each([
-    ['another todo in the same project', secondTodo],
-    ['a todo in another project', otherProjectTodo],
-  ])('clears pending work when the active todo changes to %s', (_case, replacement) => {
+  it('keeps bound pending work when the active todo changes within the project', () => {
     const session = createVoiceConversationSession();
     session.setActiveTodo(firstTodo);
     session.setPendingInteraction(pendingTitle);
 
-    session.setActiveTodo(replacement);
+    session.setActiveTodo(secondTodo);
 
-    expect(session.getState().activeTodo).toEqual(replacement);
+    expect(session.getState().activeTodo).toEqual(secondTodo);
     expect(session.getState().activeProject).toEqual({
-      projectId: replacement.projectId,
-      projectSlug: replacement.projectSlug,
+      projectId: secondTodo.projectId,
+      projectSlug: secondTodo.projectSlug,
     });
+    expect(session.getState().pending).toEqual(pendingTitle);
+  });
+
+  it('clears pending work when the active todo changes project', () => {
+    const session = createVoiceConversationSession();
+    session.setActiveTodo(firstTodo);
+    session.setPendingInteraction(pendingTitle);
+
+    session.setActiveTodo(otherProjectTodo);
+
+    expect(session.getState().activeTodo).toEqual(otherProjectTodo);
     expect(session.getState().pending).toBeNull();
   });
 

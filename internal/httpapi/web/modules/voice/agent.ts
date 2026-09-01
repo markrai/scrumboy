@@ -6,6 +6,7 @@ import { NATIVE_BACKGROUND_EVENT } from '../core/realtime.js';
 import { getLocale } from '../i18n/index.js';
 import type { LocalTextGenerationCapability } from '../platform/local-text-generation.js';
 import type { SpeechInputCapability } from '../platform/speech-input.js';
+import type { SpeechOutputCapability } from '../platform/speech-output.js';
 import {
   createVoiceAgentController,
   type VoiceAgentController,
@@ -21,6 +22,7 @@ const CHANGE_SERVER_EVENT = 'scrumboy:mobile-change-server';
 export type OpenVoiceAgentOptions = VoiceCommandOptions & Readonly<{
   localTextGeneration: LocalTextGenerationCapability;
   speechInput: SpeechInputCapability;
+  speechOutput: SpeechOutputCapability | null;
   onUseBasic(): void;
 }>;
 
@@ -123,10 +125,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
     const isListening = view.phase === 'listening';
     const isBusy = isListening || view.phase === 'processing';
     listen.hidden = isListening;
-    listen.disabled = isBusy
-      || view.phase === 'confirmation'
-      || view.clarification !== null
-      || view.phase === 'closed';
+    listen.disabled = isBusy || view.phase === 'closed';
     stop.hidden = !isListening;
     clarification.hidden = view.clarification === null;
     choices.replaceChildren();
@@ -153,6 +152,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
       locale: getLocale(),
     }),
     continuationEnabled: continuation.checked,
+    speechOutput: options.speechOutput,
     onView: render,
   });
 

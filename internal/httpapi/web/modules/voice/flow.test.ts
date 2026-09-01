@@ -1236,8 +1236,10 @@ describe('voice command flow', () => {
     expect(transcript.value).toBe('');
     expect(session.getState().pending).toEqual({
       kind: 'missing-slot',
-      action: 'todo.update_title',
+      operation: 'todo.update_title',
       slot: 'title',
+      intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
+      selection: {},
       target: { kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 56 },
     });
     expect(executeCommandIRMock).not.toHaveBeenCalled();
@@ -1251,7 +1253,11 @@ describe('voice command flow', () => {
       {
         signal: expect.any(AbortSignal),
         conversation: {
-          pending: { action: 'todo.update_title', slot: 'title' },
+          pending: {
+            kind: 'missing-slot',
+            operation: 'todo.update_title',
+            slot: 'title',
+          },
         },
       },
     ]);

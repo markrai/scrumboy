@@ -20,7 +20,11 @@ function speech(status: SpeechInputStatus): SpeechInputCapability {
 
 function runtime(localAi: LocalTextGenerationCapability | null, speechInput: SpeechInputCapability | null) {
   return {
-    capability: vi.fn((name: string) => name === 'local-text-generation' ? localAi : speechInput),
+    capability: vi.fn((name: string) => name === 'local-text-generation'
+      ? localAi
+      : name === 'speech-input'
+        ? speechInput
+        : null),
   } as any;
 }
 
@@ -52,7 +56,12 @@ describe('VoiceFlow experience selection', () => {
     await expect(selectVoiceFlowExperience({
       runtime: runtime(localAi, speechInput),
       locale: 'en',
-    })).resolves.toEqual({ kind: 'enhanced-agent', localTextGeneration: localAi, speechInput });
+    })).resolves.toEqual({
+      kind: 'enhanced-agent',
+      localTextGeneration: localAi,
+      speechInput,
+      speechOutput: null,
+    });
   });
 
   it('lets supported-but-not-ready enhanced capability state own the turn', async () => {
@@ -74,6 +83,6 @@ describe('VoiceFlow experience selection', () => {
     await selectVoiceFlowExperience({ runtime: selectedRuntime, locale: 'en' });
 
     expect(selectedRuntime.capability.mock.calls.map((call: unknown[]) => call[0]))
-      .toEqual(['local-text-generation', 'speech-input']);
+      .toEqual(['local-text-generation', 'speech-input', 'speech-output']);
   });
 });

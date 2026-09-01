@@ -1,5 +1,6 @@
 import { normalizeLookup } from './normalize.js';
 import { resolveConversationTodoTarget, } from './conversation-resolve.js';
+import { voiceSemanticOperation } from './dialogue-intent.js';
 import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, } from './resolve.js';
 import { isCommandFailure, localizedCommandFailure, normalizeTodoTitle, validateCommandIR, } from './schema.js';
 import { resolveTodoTarget } from './target-resolver.js';
@@ -221,6 +222,15 @@ function clarification(intent, choices, selection) {
                 key: 'voice.prompt.whichOne',
                 fallback: 'Which one?',
             };
+    const spokenChoices = choices.length <= 3
+        ? choices.map((choice) => choice.kind === 'todo'
+            ? `number ${choice.reference.localId} in ${choice.laneName}`
+            : choice.kind === 'member'
+                ? choice.email && choice.email !== choice.name
+                    ? `${choice.name}, ${choice.email}`
+                    : choice.name
+                : choice.name).join(' or ')
+        : '';
     return Object.freeze({
         kind: 'clarification',
         intent,
@@ -230,6 +240,17 @@ function clarification(intent, choices, selection) {
             kind: 'clarification',
             response: 'choice',
             message: prompt,
+            speech: spokenChoices
+                ? {
+                    key: 'voice.prompt.whichChoiceSpoken',
+                    fallback: 'I found {count} matches. Which one, {choices}?',
+                    values: { count: choices.length, choices: spokenChoices },
+                }
+                : {
+                    key: 'voice.prompt.whichChoiceManySpoken',
+                    fallback: 'I found {count} matches. Which one?',
+                    values: { count: choices.length },
+                },
             options: Object.freeze(options),
         }),
     });
@@ -345,23 +366,46 @@ function memberClarification(intent, members, selection) {
     })), selection);
 }
 function effectiveTarget(intent, state) {
-    return intent.kind === 'update-todo-title'
-        && state.pending?.kind === 'missing-slot'
-        && intent.target.kind === 'current'
-        ? state.pending.target
+    const pending = state.pending;
+    return pending?.kind === 'missing-slot'
+        && 'target' in pending
+        && pending.operation === voiceSemanticOperation(intent)
+        ? pending.target
         : intent.target;
 }
-function titleQuestion(target) {
+function missingSlotQuestion(intent, pendingSlot, selection, target) {
+    const prompt = (() => {
+        switch (pendingSlot.operation) {
+            case 'todo.create':
+                return { key: 'voice.question.createTitle', fallback: 'What should I call it?' };
+            case 'todo.move':
+                return { key: 'voice.question.moveDestination', fallback: 'Where should I move it?' };
+            case 'todo.assign':
+                return { key: 'voice.question.assignMember', fallback: 'Who should I assign it to?' };
+            case 'todo.update_title':
+                return {
+                    key: 'voice.question.updateTitle',
+                    fallback: 'What would you like to change the title to?',
+                };
+            case 'todo.append_notes':
+                return { key: 'voice.question.appendNotes', fallback: 'What should I add?' };
+            case 'todo.replace_notes':
+                return { key: 'voice.question.replaceNotes', fallback: 'What should the notes say?' };
+            case 'todo.add_tag':
+            case 'todo.remove_tag':
+                return { key: 'voice.question.whichTag', fallback: 'Which tag?' };
+        }
+    })();
     return Object.freeze({
         kind: 'question',
-        target: target.reference,
+        intent,
+        pendingSlot,
+        selection,
+        ...(target ? { target: target.reference } : {}),
         interaction: Object.freeze({
             kind: 'question',
             response: 'free-text',
-            message: Object.freeze({
-                key: 'voice.question.updateTitle',
-                fallback: 'What would you like to change the title to?',
-            }),
+            message: Object.freeze(prompt),
         }),
     });
 }
@@ -370,6 +414,12 @@ function failureFromEmptyCandidates() {
 }
 export async function resolveVoiceSemanticIntent(intent, state, context, selection = {}) {
     if (intent.kind === 'create-todo') {
+        if (intent.title === null) {
+            return {
+                ok: true,
+                value: missingSlotQuestion(intent, { operation: 'todo.create', slot: 'title' }, selection),
+            };
+        }
         const destination = voiceBoardLanes(context.board)[0];
         if (!destination) {
             return localizedCommandFailure('unknown_status', 'voice.errors.statusNotFound', 'Status was not found on this board.');
@@ -410,6 +460,21 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
         }
     }
     if (intent.kind === 'move-todo') {
+        if (intent.destination === null) {
+            const pendingCandidates = await resolveTodoCandidates(effectiveTarget(intent, state), state, context, selection.todo);
+            if (isCommandFailure(pendingCandidates))
+                return pendingCandidates;
+            if (pendingCandidates.value.length > 1) {
+                return { ok: true, value: todoClarification(intent, pendingCandidates.value, selection) };
+            }
+            const target = pendingCandidates.value[0];
+            return target
+                ? {
+                    ok: true,
+                    value: missingSlotQuestion(intent, { operation: 'todo.move', slot: 'destination' }, selection, target),
+                }
+                : failureFromEmptyCandidates();
+        }
         const lane = resolveVoiceLane(intent.destination.text, context.board);
         if (isCommandFailure(lane))
             return lane;
@@ -449,6 +514,21 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             : { ok: true, value: commandResolution(resolved.value, target.reference, selection) };
     }
     if (intent.kind === 'assign-todo') {
+        if (intent.assignee === null) {
+            const pendingCandidates = await resolveTodoCandidates(effectiveTarget(intent, state), state, context, selection.todo);
+            if (isCommandFailure(pendingCandidates))
+                return pendingCandidates;
+            if (pendingCandidates.value.length > 1) {
+                return { ok: true, value: todoClarification(intent, pendingCandidates.value, selection) };
+            }
+            const target = pendingCandidates.value[0];
+            return target
+                ? {
+                    ok: true,
+                    value: missingSlotQuestion(intent, { operation: 'todo.assign', slot: 'assignee' }, selection, target),
+                }
+                : failureFromEmptyCandidates();
+        }
         let resolvedMember;
         if (selection.member) {
             const member = await selectedMember(selection.member, context);
@@ -504,6 +584,24 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             : { ok: true, value: commandResolution(resolved.value, target.reference, selection) };
     }
     if (intent.kind === 'add-todo-tag' || intent.kind === 'remove-todo-tag') {
+        if (intent.tag === null) {
+            const pendingCandidates = await resolveTodoCandidates(effectiveTarget(intent, state), state, context, selection.todo);
+            if (isCommandFailure(pendingCandidates))
+                return pendingCandidates;
+            if (pendingCandidates.value.length > 1) {
+                return { ok: true, value: todoClarification(intent, pendingCandidates.value, selection) };
+            }
+            const target = pendingCandidates.value[0];
+            return target
+                ? {
+                    ok: true,
+                    value: missingSlotQuestion(intent, {
+                        operation: intent.kind === 'add-todo-tag' ? 'todo.add_tag' : 'todo.remove_tag',
+                        slot: 'tag',
+                    }, selection, target),
+                }
+                : failureFromEmptyCandidates();
+        }
         let tagName;
         if (selection.tag) {
             const selected = selectedTagName(selection.tag, context);
@@ -571,6 +669,23 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
     if (isCommandFailure(candidates))
         return candidates;
     if (intent.kind === 'append-todo-notes' || intent.kind === 'replace-todo-notes') {
+        if (intent.notes === null) {
+            if (candidates.value.length > 1) {
+                return { ok: true, value: todoClarification(intent, candidates.value, selection) };
+            }
+            const target = candidates.value[0];
+            return target
+                ? {
+                    ok: true,
+                    value: missingSlotQuestion(intent, {
+                        operation: intent.kind === 'append-todo-notes'
+                            ? 'todo.append_notes'
+                            : 'todo.replace_notes',
+                        slot: 'notes',
+                    }, selection, target),
+                }
+                : failureFromEmptyCandidates();
+        }
         const fresh = await refreshTodoCandidates(candidates.value, context);
         if (isCommandFailure(fresh))
             return fresh;
@@ -737,7 +852,10 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             }
             const target = candidates.value[0];
             return target
-                ? { ok: true, value: titleQuestion(target) }
+                ? {
+                    ok: true,
+                    value: missingSlotQuestion(intent, { operation: 'todo.update_title', slot: 'title' }, selection, target),
+                }
                 : failureFromEmptyCandidates();
         }
         const title = normalizeTodoTitle(intent.title);

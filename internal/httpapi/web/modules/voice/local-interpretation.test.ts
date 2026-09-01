@@ -87,7 +87,7 @@ describe('VoiceFlow local semantic interpretation contract', () => {
     expect(disabled.prepare).not.toHaveBeenCalled();
   });
 
-  it('sends the versioned v7 semantic contract after explicit invocation', async () => {
+  it('sends the versioned v8 semantic contract after explicit invocation', async () => {
     const local = capability({ state: 'ready', maximumOutputTokens: 144 });
     await expect(interpretVoiceCommand({
       transcript: '  Could you move login over to testing?  ',
@@ -103,7 +103,7 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       },
     });
 
-    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-semantic-v7');
+    expect(VOICE_INTERPRETATION_PROMPT_VERSION).toBe('voice-semantic-v8');
     expect(local.generate).toHaveBeenCalledWith({
       requestId: 'voice-request-1',
       input: 'Could you move login over to testing?',
@@ -111,7 +111,7 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       maximumOutputTokens: 144,
       signal: undefined,
     });
-    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Contract: voice-semantic-v7.');
+    expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Contract: voice-semantic-v8.');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Do not translate the request into a textual command');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Move Fixed Radical Login to done');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Assign Bogus to Mark Rai');
@@ -119,6 +119,142 @@ describe('VoiceFlow local semantic interpretation contract', () => {
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Never emit projectId');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('Append notes and replace notes are different operations');
     expect(VOICE_INTERPRETATION_INSTRUCTIONS).toContain('count-completed-todos');
+  });
+
+  it.each([
+    [
+      'Number 353',
+      { kind: 'select-choice', selector: { kind: 'local-id', localId: 353 } },
+      { pending: { kind: 'todo-choice' } } as const,
+    ],
+    [
+      'The one in the backlog',
+      { kind: 'select-choice', selector: { kind: 'lane', text: 'backlog' } },
+      { pending: { kind: 'todo-choice' } } as const,
+    ],
+    [
+      'The second one',
+      { kind: 'select-choice', selector: { kind: 'ordinal', index: 2 } },
+      { pending: { kind: 'todo-choice' } } as const,
+    ],
+    [
+      'Ada',
+      { kind: 'select-choice', selector: { kind: 'text', text: 'Ada' } },
+      { pending: { kind: 'member-choice' } } as const,
+    ],
+    [
+      'backend',
+      { kind: 'select-choice', selector: { kind: 'text', text: 'backend' } },
+      { pending: { kind: 'tag-choice' } } as const,
+    ],
+    [
+      'Yeah go ahead',
+      { kind: 'confirm' },
+      { pending: { kind: 'confirmation', operation: 'todo.move' } } as const,
+    ],
+    [
+      'Actually no',
+      { kind: 'decline' },
+      { pending: { kind: 'confirmation', operation: 'todo.move' } } as const,
+    ],
+    [
+      'Never mind',
+      { kind: 'cancel' },
+      { pending: { kind: 'missing-slot', operation: 'todo.move', slot: 'destination' } } as const,
+    ],
+  ])('accepts only a state-bounded dialogue envelope for %s', (transcript, intent, context) => {
+    expect(parseVoiceInterpretationEnvelope(envelope(intent), transcript, context)).toEqual({
+      kind: 'dialogue',
+      intent,
+    });
+  });
+
+  it.each([
+    [
+      'I will be there',
+      { kind: 'provide-slot', operation: 'todo.append_notes', slot: 'notes', value: 'I will be there' },
+      { pending: { kind: 'missing-slot', operation: 'todo.append_notes', slot: 'notes' } } as const,
+    ],
+    [
+      'Done',
+      {
+        kind: 'provide-slot',
+        operation: 'todo.move',
+        slot: 'destination',
+        value: { kind: 'name', text: 'Done' },
+      },
+      { pending: { kind: 'missing-slot', operation: 'todo.move', slot: 'destination' } } as const,
+    ],
+    [
+      'Mark',
+      {
+        kind: 'provide-slot',
+        operation: 'todo.assign',
+        slot: 'assignee',
+        value: { kind: 'name', text: 'Mark' },
+      },
+      { pending: { kind: 'missing-slot', operation: 'todo.assign', slot: 'assignee' } } as const,
+    ],
+    [
+      'backend',
+      {
+        kind: 'provide-slot',
+        operation: 'todo.add_tag',
+        slot: 'tag',
+        value: { kind: 'name', text: 'backend' },
+      },
+      { pending: { kind: 'missing-slot', operation: 'todo.add_tag', slot: 'tag' } } as const,
+    ],
+  ])('validates a generalized missing-slot response for %s', (transcript, intent, context) => {
+    expect(parseVoiceInterpretationEnvelope(envelope(intent), transcript, context)).toEqual({
+      kind: 'dialogue',
+      intent,
+    });
+  });
+
+  it('rejects invented IDs and dialogue categories outside their pending state', () => {
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'select-choice', selector: { kind: 'local-id', localId: 353 } }),
+      'The first one',
+      { pending: { kind: 'todo-choice' } },
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'confirm' }),
+      'Yes',
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'confirm' }),
+      'Yes',
+      { pending: { kind: 'todo-choice' } },
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'provide-slot', operation: 'todo.assign', slot: 'assignee', value: { kind: 'name', text: 'Mark' } }),
+      'Mark',
+      { pending: { kind: 'missing-slot', operation: 'todo.move', slot: 'destination' } },
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
+  });
+
+  it('accepts bounded confirmation corrections and rejects operation replacement', () => {
+    expect(parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'correct-choice', selector: { kind: 'lane', text: 'Backlog' } }),
+      'No use the one in Backlog',
+      { pending: { kind: 'confirmation', operation: 'todo.move' } },
+    )).toMatchObject({ kind: 'dialogue', intent: { kind: 'correct-choice' } });
+    expect(parseVoiceInterpretationEnvelope(
+      envelope({
+        kind: 'correct-value',
+        operation: 'todo.append_notes',
+        slot: 'notes',
+        value: "I'll arrive at six.",
+      }),
+      "Actually make the note I'll arrive at six.",
+      { pending: { kind: 'confirmation', operation: 'todo.append_notes' } },
+    )).toMatchObject({ kind: 'dialogue', intent: { kind: 'correct-value' } });
+    expect(() => parseVoiceInterpretationEnvelope(
+      envelope({ kind: 'delete-todo', target: { kind: 'current' } }),
+      'No delete it instead',
+      { pending: { kind: 'confirmation', operation: 'todo.move' } },
+    )).toThrow(expect.objectContaining({ code: 'output_rejected' }));
   });
 
   it.each([
@@ -446,12 +582,17 @@ describe('VoiceFlow local semantic interpretation contract', () => {
 
   it('uses only bounded pending-slot context for a replacement-title answer', async () => {
     const local = capability(undefined, envelope({
-      kind: 'update-todo-title',
-      target: { kind: 'current' },
-      title: 'Fix the login race condition',
+      kind: 'provide-slot',
+      operation: 'todo.update_title',
+      slot: 'title',
+      value: 'Fix the login race condition',
     }));
     const conversation = {
-      pending: { action: 'todo.update_title' as const, slot: 'title' as const },
+      pending: {
+        kind: 'missing-slot' as const,
+        operation: 'todo.update_title' as const,
+        slot: 'title' as const,
+      },
     };
 
     await expect(interpretVoiceCommand({
@@ -460,21 +601,26 @@ describe('VoiceFlow local semantic interpretation contract', () => {
       locale: 'en',
       conversation,
     })).resolves.toEqual({
-      kind: 'semantic',
+      kind: 'dialogue',
       intent: {
-        kind: 'update-todo-title',
-        target: { kind: 'current' },
-        title: 'Fix the login race condition',
+        kind: 'provide-slot',
+        operation: 'todo.update_title',
+        slot: 'title',
+        value: 'Fix the login race condition',
       },
     });
     const request = local.generate.mock.calls[0][0];
-    expect(request.instructions).toContain('waiting only for the replacement title');
+    expect(request.instructions).toContain('todo.update_title/title');
     expect(JSON.stringify(request)).not.toContain('553');
   });
 
   it('does not let pending title context erase an explicitly supplied todo target', () => {
     const conversation = {
-      pending: { action: 'todo.update_title' as const, slot: 'title' as const },
+      pending: {
+        kind: 'missing-slot' as const,
+        operation: 'todo.update_title' as const,
+        slot: 'title' as const,
+      },
     };
     expect(() => parseVoiceInterpretationEnvelope(envelope({
       kind: 'update-todo-title',

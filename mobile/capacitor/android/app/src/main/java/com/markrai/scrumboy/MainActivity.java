@@ -4,6 +4,7 @@ import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 import com.markrai.scrumboy.localai.ScrumboyLocalTextGenerationPlugin;
 import com.markrai.scrumboy.speech.ScrumboySpeechInputPlugin;
+import com.markrai.scrumboy.speech.ScrumboySpeechOutputPlugin;
 import com.markrai.scrumboy.transport.ScrumboyTransportPlugin;
 
 public class MainActivity extends BridgeActivity {
@@ -11,6 +12,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ScrumboyLocalTextGenerationPlugin.class);
         registerPlugin(ScrumboySpeechInputPlugin.class);
+        registerPlugin(ScrumboySpeechOutputPlugin.class);
         registerPlugin(ScrumboyTransportPlugin.class);
         super.onCreate(savedInstanceState);
     }

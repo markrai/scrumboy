@@ -86,10 +86,7 @@ export function openVoiceAgent(options) {
         const isListening = view.phase === 'listening';
         const isBusy = isListening || view.phase === 'processing';
         listen.hidden = isListening;
-        listen.disabled = isBusy
-            || view.phase === 'confirmation'
-            || view.clarification !== null
-            || view.phase === 'closed';
+        listen.disabled = isBusy || view.phase === 'closed';
         stop.hidden = !isListening;
         clarification.hidden = view.clarification === null;
         choices.replaceChildren();
@@ -115,6 +112,7 @@ export function openVoiceAgent(options) {
             locale: getLocale(),
         }),
         continuationEnabled: continuation.checked,
+        speechOutput: options.speechOutput,
         onView: render,
     });
     let disposed = false;

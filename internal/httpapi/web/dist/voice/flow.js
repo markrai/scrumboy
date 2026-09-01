@@ -418,7 +418,11 @@ export function openVoiceCommandDialog(options) {
         return {
             signal,
             conversation: {
-                pending: { action: 'todo.update_title', slot: 'title' },
+                pending: {
+                    kind: 'missing-slot',
+                    operation: 'todo.update_title',
+                    slot: 'title',
+                },
             },
         };
     };
@@ -1010,6 +1014,11 @@ export function openVoiceCommandDialog(options) {
                 renderInterpretation();
                 return;
             }
+            if (interpreted.kind === 'dialogue') {
+                interpretationPhase = 'refused';
+                renderInterpretation();
+                return;
+            }
             let resolvedCommand;
             let semanticTarget = null;
             if (interpreted.kind === 'semantic') {
@@ -1216,6 +1225,15 @@ export function openVoiceCommandDialog(options) {
                     if (showTargetAmbiguity(interpretation.failure, value))
                         return;
                     setReviewStatus(interpretation.failure);
+                }
+                return;
+            }
+            if (interpretation.kind === 'dialogue') {
+                if (source === 'ai') {
+                    interpretationPhase = 'refused';
+                    setReviewStatus(null);
+                    setFlowState('error');
+                    renderInterpretation();
                 }
                 return;
             }

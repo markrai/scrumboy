@@ -26,12 +26,16 @@ describe('C2 mobile bootstrap artifact boundary', () => {
     expect(bootstrapEntry).toContain("import { nativeOIDC } from './native-oidc.js'");
     expect(bootstrapEntry).toContain("import { createLocalTextGenerationComposition } from './local-text-generation-capability.js'");
     expect(bootstrapEntry).toContain('const localTextGeneration = createLocalTextGenerationComposition()');
+    expect(bootstrapEntry).toContain('const speechInput = createSpeechInputComposition()');
+    expect(bootstrapEntry).toContain('const speechOutput = createSpeechOutputComposition()');
     expect(bootstrapEntry).toContain('void Promise.all([');
     expect(bootstrapEntry).toContain('installNativeLifecycle()');
     expect(bootstrapEntry).toContain('nativeOIDC.installURLCapture()');
     expect(bootstrapEntry).toContain(']).then(() => startMobileBootstrap({');
-    expect(bootstrapEntry).toContain('capabilities: localTextGeneration.registry');
-    expect(bootstrapEntry).toContain('invalidateCapabilities: localTextGeneration.invalidate');
+    expect(bootstrapEntry).toContain('const capabilities = createClientCapabilityRegistry<AppCapabilityMap>({');
+    expect(bootstrapEntry).toContain('[SPEECH_OUTPUT_CAPABILITY]: speechOutputCapability');
+    expect(bootstrapEntry).toContain('invalidateCapabilities: async () => {');
+    expect(bootstrapEntry).toContain('speechOutput.invalidate()');
     expect(bootstrapCore.indexOf('installRuntimeAndStartProduct')).toBeGreaterThan(-1);
   });
 

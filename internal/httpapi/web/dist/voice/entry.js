@@ -18,6 +18,7 @@ export async function openVoiceFlow(options, dependencies = {}) {
             ...options,
             localTextGeneration: selection.localTextGeneration,
             speechInput: selection.speechInput,
+            speechOutput: selection.speechOutput,
             onUseBasic: () => void openBasic(),
         });
         return;

@@ -16,7 +16,11 @@ export type VoiceInteractionReason =
   | 'stale_context'
   | 'execution_failed';
 
-export type VoiceSemanticInteraction =
+type VoiceSemanticInteractionSpeech = Readonly<{
+  speech?: VoiceInteractionMessage;
+}>;
+
+export type VoiceSemanticInteraction = VoiceSemanticInteractionSpeech & (
   | Readonly<{
       kind: 'information';
       message: VoiceInteractionMessage;
@@ -59,4 +63,5 @@ export type VoiceSemanticInteraction =
       kind: 'error';
       message: VoiceInteractionMessage;
       reason: VoiceInteractionReason;
-    }>;
+    }>
+);
