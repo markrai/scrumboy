@@ -17,6 +17,7 @@ export interface Todo {
   title: string;
   body?: string;
   status: TodoStatus;
+  columnKey?: string;
   tags?: string[];
   estimationPoints?: number | null;
   assigneeUserId?: number | null;

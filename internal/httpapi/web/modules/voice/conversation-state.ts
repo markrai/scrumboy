@@ -1,4 +1,5 @@
 import type { VoiceSemanticInteraction } from './semantic-interaction.js';
+import type { VoiceSemanticIntent } from './semantic-intent.js';
 
 export type VoiceProjectReference = Readonly<{
   projectId: number;
@@ -18,12 +19,51 @@ export type VoiceCurrentTodoTarget = Readonly<{
 
 export type VoiceConversationTodoTarget = VoiceTodoReference | VoiceCurrentTodoTarget;
 
-export type VoicePendingInteraction = Readonly<{
+export type VoicePendingMissingSlot = Readonly<{
   kind: 'missing-slot';
   action: 'todo.update_title';
   slot: 'title';
   target: VoiceTodoReference;
 }>;
+
+export type VoiceTodoClarificationChoice = Readonly<{
+  kind: 'todo';
+  reference: VoiceTodoReference;
+  title: string;
+  laneKey: string;
+  laneName: string;
+}>;
+
+export type VoiceMemberClarificationChoice = Readonly<{
+  kind: 'member';
+  userId: number;
+  name: string;
+  email: string;
+}>;
+
+export type VoiceClarificationChoice =
+  | VoiceTodoClarificationChoice
+  | VoiceMemberClarificationChoice;
+
+export type VoiceConversationSelection = Readonly<{
+  todo?: Readonly<{
+    selectedLocalId: number;
+    allowedLocalIds: readonly number[];
+  }>;
+  member?: Readonly<{
+    selectedUserId: number;
+    allowedUserIds: readonly number[];
+  }>;
+}>;
+
+export type VoicePendingClarification = Readonly<{
+  kind: 'clarification';
+  intent: VoiceSemanticIntent;
+  choices: readonly VoiceClarificationChoice[];
+  selection: VoiceConversationSelection;
+}>;
+
+export type VoicePendingInteraction = VoicePendingMissingSlot | VoicePendingClarification;
 
 export type VoiceConversationState = Readonly<{
   activeProject: VoiceProjectReference | null;

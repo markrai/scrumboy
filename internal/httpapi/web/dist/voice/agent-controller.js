@@ -1,8 +1,8 @@
 import { getActiveVoiceCommandContext, isVoiceMutationCommand, parseAndResolveVoiceCommand, voiceCommandHash, } from './command-resolution.js';
-import { resolveVoiceConversationCommand } from './conversation-command.js';
 import { activeTodoTransitionAfterSuccessfulIR, } from './conversation-resolve.js';
 import { createVoiceConversationSession, } from './conversation-session.js';
 import { executeCommandIR } from './execute.js';
+import { resolveVoiceSemanticCommand } from './semantic-command.js';
 import { formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, localizeCommandFailure, } from './schema.js';
 import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError, } from '../platform/speech-input.js';
@@ -31,7 +31,7 @@ function speechFailureMessage(error) {
     }
 }
 function pendingInterpreterContext(session) {
-    if (!session.getState().pending)
+    if (session.getState().pending?.kind !== 'missing-slot')
         return undefined;
     return {
         pending: { action: 'todo.update_title', slot: 'title' },
@@ -44,13 +44,14 @@ export function createVoiceAgentController(options) {
         phase: 'ready',
         status: message('voice.agent.ready', 'Ready'),
         confirmation: null,
+        clarification: null,
     });
     let reviewed = null;
     let operationController = null;
     let operationOwner = 0;
     let closed = false;
-    const emit = (phase, status, confirmation = null) => {
-        view = Object.freeze({ phase, status, confirmation });
+    const emit = (phase, status, confirmation = null, clarification = null) => {
+        view = Object.freeze({ phase, status, confirmation, clarification });
         options.onView(view);
     };
     const owns = (owner, controller) => !closed
@@ -99,7 +100,7 @@ export function createVoiceAgentController(options) {
             session.reset();
         emit('success', success);
     };
-    const stageResolved = async (command, canonicalTranscript, conversationIntent, conversationTarget, owner, operation) => {
+    const stageResolved = async (command, canonicalTranscript, semanticIntent, semanticSelection, owner, operation) => {
         if (!isVoiceMutationCommand(command)) {
             await completeResolved(command, owner, operation);
             return;
@@ -107,8 +108,8 @@ export function createVoiceAgentController(options) {
         reviewed = Object.freeze({
             command,
             canonicalTranscript,
-            conversationIntent,
-            conversationTarget,
+            semanticIntent,
+            semanticSelection,
         });
         const display = formatResolvedCommand(command);
         session.setLastInteraction({
@@ -129,6 +130,46 @@ export function createVoiceAgentController(options) {
             confirmLabel: display.confirmLabel,
             danger: command.danger,
         }));
+    };
+    const completeInformation = (resolution) => {
+        session.clearPendingInteraction();
+        session.setLastInteraction(resolution.interaction);
+        reviewed = null;
+        if (!session.getState().continuationEnabled)
+            session.reset();
+        emit('success', resolution.interaction.message);
+    };
+    const applySemanticResolution = async (resolution, intent, transcript, owner, operation) => {
+        switch (resolution.kind) {
+            case 'command':
+                session.clearPendingInteraction();
+                await stageResolved(resolution.command, transcript, intent, resolution.selection, owner, operation);
+                return;
+            case 'question':
+                session.setActiveTodo(resolution.target);
+                session.setPendingInteraction({
+                    kind: 'missing-slot',
+                    action: 'todo.update_title',
+                    slot: 'title',
+                    target: resolution.target,
+                });
+                session.setLastInteraction(resolution.interaction);
+                emit('question', resolution.interaction.message);
+                return;
+            case 'clarification':
+                session.setPendingInteraction({
+                    kind: 'clarification',
+                    intent: resolution.intent,
+                    choices: resolution.choices,
+                    selection: resolution.selection,
+                });
+                session.setLastInteraction(resolution.interaction);
+                emit('question', resolution.interaction.message, null, Object.freeze({ options: resolution.interaction.options }));
+                return;
+            case 'information':
+                completeInformation(resolution);
+                return;
+        }
     };
     const interpretTranscript = async (transcript, owner, controller) => {
         const normalized = transcript.trim();
@@ -158,25 +199,28 @@ export function createVoiceAgentController(options) {
                 fail(literal(localizeCommandFailure(resolved)));
                 return;
             }
-            await stageResolved(resolved.value, interpretation.command, null, null, owner, controller);
+            await stageResolved(resolved.value, interpretation.command, null, {}, owner, controller);
             return;
         }
-        const resolved = await resolveVoiceConversationCommand(interpretation.intent, session, options, controller.signal);
+        if (session.getState().pending?.kind === 'missing-slot'
+            && (interpretation.intent.kind !== 'update-todo-title'
+                || interpretation.intent.target.kind !== 'current')) {
+            session.clearPendingInteraction();
+        }
+        const resolved = await resolveVoiceSemanticCommand(interpretation.intent, session, options, controller.signal);
         if (!owns(owner, controller))
             return;
         if (isCommandFailure(resolved)) {
             fail(literal(localizeCommandFailure(resolved)));
             return;
         }
-        if (resolved.value === null) {
-            const interaction = session.getState().lastInteraction;
-            emit('question', interaction ? interaction.message : message('voice.question.updateTitle', 'What would you like to change the title to?'));
-            return;
-        }
-        await stageResolved(resolved.value.command, normalized, interpretation.intent, resolved.value.target, owner, controller);
+        await applySemanticResolution(resolved.value, interpretation.intent, normalized, owner, controller);
     };
     const beginTranscriptOperation = async (transcript) => {
-        if (closed || operationController || reviewed)
+        if (closed
+            || operationController
+            || reviewed
+            || session.getState().pending?.kind === 'clarification')
             return;
         const controller = new AbortController();
         const owner = ++operationOwner;
@@ -206,7 +250,10 @@ export function createVoiceAgentController(options) {
                 && options.initialProjectSlug === context.initialProjectSlug;
         },
         async startListening() {
-            if (closed || operationController || reviewed)
+            if (closed
+                || operationController
+                || reviewed
+                || session.getState().pending?.kind === 'clarification')
                 return;
             if (!contextIsCurrent()) {
                 session.clearActiveTodo();
@@ -273,16 +320,18 @@ export function createVoiceAgentController(options) {
             emit('processing', message('voice.agent.processing', 'Processing…'));
             try {
                 let freshlyResolved;
-                if (pendingReview.conversationIntent) {
-                    const resolved = await resolveVoiceConversationCommand(pendingReview.conversationIntent, session, options, operation.signal, pendingReview.conversationTarget);
+                if (pendingReview.semanticIntent) {
+                    const resolved = await resolveVoiceSemanticCommand(pendingReview.semanticIntent, session, options, operation.signal, pendingReview.semanticSelection);
                     if (!owns(owner, operation))
                         return;
                     if (isCommandFailure(resolved)) {
                         fail(literal(localizeCommandFailure(resolved)));
                         return;
                     }
-                    if (resolved.value === null)
+                    if (resolved.value.kind !== 'command') {
+                        fail(message('voice.status.commandChanged', 'Command changed. Review again before running.'));
                         return;
+                    }
                     freshlyResolved = resolved.value.command;
                 }
                 else {
@@ -318,10 +367,77 @@ export function createVoiceAgentController(options) {
         cancelConfirmation() {
             if (closed || !reviewed)
                 return;
-            if (reviewed.command.ir.intent === 'todos.update_title') {
+            if (reviewed.command.ir.intent === 'todos.update_title'
+                || reviewed.semanticIntent?.kind === 'update-todo-title') {
                 session.clearPendingInteraction();
             }
             reviewed = null;
+            session.setLastInteraction({
+                kind: 'information',
+                message: { key: 'voice.status.cancelled', fallback: 'Cancelled' },
+            });
+            emit('ready', message('voice.status.cancelled', 'Cancelled'));
+        },
+        async chooseClarification(index) {
+            if (closed || operationController || reviewed || !Number.isInteger(index))
+                return;
+            const pending = session.getState().pending;
+            if (pending?.kind !== 'clarification' || index < 0 || index >= pending.choices.length)
+                return;
+            const choice = pending.choices[index];
+            const selected = choice.kind === 'todo'
+                ? {
+                    todo: {
+                        selectedLocalId: choice.reference.localId,
+                        allowedLocalIds: pending.choices
+                            .filter((candidate) => candidate.kind === 'todo')
+                            .map((candidate) => candidate.reference.localId),
+                    },
+                }
+                : {
+                    member: {
+                        selectedUserId: choice.userId,
+                        allowedUserIds: pending.choices
+                            .filter((candidate) => candidate.kind === 'member')
+                            .map((candidate) => candidate.userId),
+                    },
+                };
+            const selection = {
+                ...pending.selection,
+                ...selected,
+            };
+            const operation = new AbortController();
+            const owner = ++operationOwner;
+            operationController = operation;
+            const contextMonitor = monitorContext(owner, operation);
+            emit('processing', message('voice.agent.processing', 'Processing…'));
+            try {
+                const resolved = await resolveVoiceSemanticCommand(pending.intent, session, options, operation.signal, selection);
+                if (!owns(owner, operation))
+                    return;
+                if (isCommandFailure(resolved)) {
+                    fail(literal(localizeCommandFailure(resolved)));
+                    return;
+                }
+                session.clearPendingInteraction();
+                await applySemanticResolution(resolved.value, pending.intent, '', owner, operation);
+            }
+            catch (error) {
+                if (!owns(owner, operation))
+                    return;
+                fail(literal(error instanceof Error && error.message ? error.message : 'Command failed.'));
+            }
+            finally {
+                globalThis.clearInterval(contextMonitor);
+                if (operationOwner === owner && operationController === operation) {
+                    operationController = null;
+                }
+            }
+        },
+        cancelClarification() {
+            if (closed || session.getState().pending?.kind !== 'clarification')
+                return;
+            session.clearPendingInteraction();
             session.setLastInteraction({
                 kind: 'information',
                 message: { key: 'voice.status.cancelled', fallback: 'Cancelled' },

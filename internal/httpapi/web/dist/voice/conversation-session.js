@@ -21,6 +21,35 @@ function freezeTodo(todo) {
         localId: todo.localId,
     });
 }
+function freezeSemanticTodoReference(target) {
+    return Object.freeze({ ...target });
+}
+function freezeSemanticMemberReference(member) {
+    return Object.freeze({ ...member });
+}
+function freezeSemanticIntent(intent) {
+    switch (intent.kind) {
+        case 'create-todo':
+            return Object.freeze({ ...intent });
+        case 'open-todo':
+        case 'delete-todo':
+            return Object.freeze({ ...intent, target: freezeSemanticTodoReference(intent.target) });
+        case 'move-todo':
+            return Object.freeze({
+                ...intent,
+                target: freezeSemanticTodoReference(intent.target),
+                destination: Object.freeze({ ...intent.destination }),
+            });
+        case 'assign-todo':
+            return Object.freeze({
+                ...intent,
+                target: freezeSemanticTodoReference(intent.target),
+                assignee: freezeSemanticMemberReference(intent.assignee),
+            });
+        case 'update-todo-title':
+            return Object.freeze({ ...intent, target: freezeSemanticTodoReference(intent.target) });
+    }
+}
 function freezeMessage(message) {
     const values = message.values ? Object.freeze({ ...message.values }) : undefined;
     return Object.freeze({
@@ -33,8 +62,13 @@ function freezeInteraction(interaction) {
     const message = freezeMessage(interaction.message);
     switch (interaction.kind) {
         case 'question':
-        case 'clarification':
             return Object.freeze({ ...interaction, message });
+        case 'clarification':
+            return Object.freeze({
+                ...interaction,
+                message,
+                options: Object.freeze(interaction.options.map((option) => Object.freeze({ ...option }))),
+            });
         case 'confirmation':
             return Object.freeze({
                 ...interaction,
@@ -56,11 +90,47 @@ function freezeInteraction(interaction) {
     }
 }
 function freezePending(pending) {
+    if (pending.kind === 'clarification') {
+        return Object.freeze({
+            kind: pending.kind,
+            intent: freezeSemanticIntent(pending.intent),
+            choices: Object.freeze(pending.choices.map(freezeClarificationChoice)),
+            selection: freezeConversationSelection(pending.selection),
+        });
+    }
     return Object.freeze({
         kind: pending.kind,
         action: pending.action,
         slot: pending.slot,
         target: freezeTodo(pending.target),
+    });
+}
+function freezeConversationSelection(selection) {
+    return Object.freeze({
+        ...(selection.todo
+            ? {
+                todo: Object.freeze({
+                    selectedLocalId: selection.todo.selectedLocalId,
+                    allowedLocalIds: Object.freeze([...selection.todo.allowedLocalIds]),
+                }),
+            }
+            : {}),
+        ...(selection.member
+            ? {
+                member: Object.freeze({
+                    selectedUserId: selection.member.selectedUserId,
+                    allowedUserIds: Object.freeze([...selection.member.allowedUserIds]),
+                }),
+            }
+            : {}),
+    });
+}
+function freezeClarificationChoice(choice) {
+    if (choice.kind === 'member')
+        return Object.freeze({ ...choice });
+    return Object.freeze({
+        ...choice,
+        reference: freezeTodo(choice.reference),
     });
 }
 function freezeState(state) {

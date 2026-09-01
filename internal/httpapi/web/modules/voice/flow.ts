@@ -20,7 +20,7 @@ import {
   activeTodoTransitionAfterSuccessfulIR,
 } from './conversation-resolve.js';
 import { executeCommandIR } from './execute.js';
-import type { VoiceConversationIntent } from './interpreter.js';
+import type { VoiceSemanticIntent } from './semantic-intent.js';
 import type { VoiceTodoReference } from './conversation-state.js';
 import type { VoiceSemanticInteraction } from './semantic-interaction.js';
 import {
@@ -450,8 +450,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
   let currentCommandSource: 'deterministic' | 'ai' = 'deterministic';
   let currentOriginalTranscript = '';
   let currentCanonicalTranscript = '';
-  let currentConversationIntent: VoiceConversationIntent | null = null;
-  let currentConversationTarget: VoiceTodoReference | null = null;
+  let currentSemanticIntent: VoiceSemanticIntent | null = null;
+  let currentSemanticTarget: VoiceTodoReference | null = null;
   let pendingDisambiguation: PendingDisambiguation | null = null;
   let currentTargetSelection: { transcript: string; localId: number; allowedLocalIds: number[] } | null = null;
   let executing = false;
@@ -726,8 +726,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     currentCommandSource = 'deterministic';
     currentOriginalTranscript = '';
     currentCanonicalTranscript = '';
-    currentConversationIntent = null;
-    currentConversationTarget = null;
+    currentSemanticIntent = null;
+    currentSemanticTarget = null;
     pendingDisambiguation = null;
     currentTargetSelection = null;
     if (summary) {
@@ -945,8 +945,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       source?: 'deterministic' | 'ai';
       originalTranscript?: string;
       canonicalTranscript?: string;
-      conversationIntent?: VoiceConversationIntent | null;
-      conversationTarget?: VoiceTodoReference | null;
+      semanticIntent?: VoiceSemanticIntent | null;
+      semanticTarget?: VoiceTodoReference | null;
     } = {},
   ) => {
     if (closed) return;
@@ -954,8 +954,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     currentCommandSource = metadata.source ?? 'deterministic';
     currentOriginalTranscript = metadata.originalTranscript ?? (transcript?.value.trim() ?? '');
     currentCanonicalTranscript = metadata.canonicalTranscript ?? currentOriginalTranscript;
-    currentConversationIntent = metadata.conversationIntent ?? null;
-    currentConversationTarget = metadata.conversationTarget ?? null;
+    currentSemanticIntent = metadata.semanticIntent ?? null;
+    currentSemanticTarget = metadata.semanticTarget ?? null;
     pendingDisambiguation = null;
     if (disambiguation) {
       disambiguation.hidden = true;
@@ -981,8 +981,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
     transcript?.focus();
   };
 
-  const resolveConversationIntent = (
-    intent: VoiceConversationIntent,
+  const resolveSemanticIntent = (
+    intent: VoiceSemanticIntent,
     signal?: AbortSignal,
     targetOverride?: VoiceTodoReference | null,
   ) => resolveVoiceConversationCommand(
@@ -1124,9 +1124,9 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       }
 
       let resolvedCommand: ResolvedCommand;
-      let conversationTarget: VoiceTodoReference | null = null;
-      if (interpreted.kind === 'conversation') {
-        const resolved = await resolveConversationIntent(interpreted.intent, controller.signal);
+      let semanticTarget: VoiceTodoReference | null = null;
+      if (interpreted.kind === 'semantic') {
+        const resolved = await resolveSemanticIntent(interpreted.intent, controller.signal);
         if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
         if (isCommandFailure(resolved)) {
           interpretationRoute = null;
@@ -1145,7 +1145,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           return;
         }
         resolvedCommand = resolved.value.command;
-        conversationTarget = resolved.value.target;
+        semanticTarget = resolved.value.target;
       } else {
         const resolved = await parseAndResolveCommand(interpreted.command, options, controller.signal);
         if (!interpretationStillOwns(controller, owner, originalTranscript)) return;
@@ -1171,10 +1171,10 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         canonicalTranscript: interpreted.kind === 'candidate'
           ? interpreted.command
           : originalTranscript,
-        conversationIntent: interpreted.kind === 'conversation'
+        semanticIntent: interpreted.kind === 'semantic'
           ? interpreted.intent
           : null,
-        conversationTarget,
+        semanticTarget,
       });
       setFlowState('target_resolved');
       renderInterpretation();
@@ -1329,9 +1329,9 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         return;
       }
       let resolvedCommand: ResolvedCommand;
-      let conversationTarget: VoiceTodoReference | null = null;
-      if (interpretation.kind === 'conversation') {
-        const resolved = await resolveConversationIntent(interpretation.intent, controller.signal);
+      let semanticTarget: VoiceTodoReference | null = null;
+      if (interpretation.kind === 'semantic') {
+        const resolved = await resolveSemanticIntent(interpretation.intent, controller.signal);
         if (closed || controller.signal.aborted || reviewController !== controller) return;
         if (initialContext && !sameTurnContext(initialContext)) return;
         if (isCommandFailure(resolved)) {
@@ -1351,7 +1351,7 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
           return;
         }
         resolvedCommand = resolved.value.command;
-        conversationTarget = resolved.value.target;
+        semanticTarget = resolved.value.target;
       } else {
         const resolved = await parseAndResolveCommand(interpretation.command, options, controller.signal);
         if (closed || controller.signal.aborted || reviewController !== controller) return;
@@ -1382,10 +1382,10 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         canonicalTranscript: interpretation.kind === 'candidate'
           ? interpretation.command
           : value,
-        conversationIntent: interpretation.kind === 'conversation'
+        semanticIntent: interpretation.kind === 'semantic'
           ? interpretation.intent
           : null,
-        conversationTarget,
+        semanticTarget,
       });
       setFlowState("target_resolved");
       renderInterpretation();
@@ -1417,14 +1417,14 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       source: 'deterministic' | 'ai';
       originalTranscript: string;
       canonicalTranscript: string;
-      conversationIntent: VoiceConversationIntent | null;
-      conversationTarget: VoiceTodoReference | null;
+      semanticIntent: VoiceSemanticIntent | null;
+      semanticTarget: VoiceTodoReference | null;
     } = {
       source: currentCommandSource,
       originalTranscript: currentOriginalTranscript,
       canonicalTranscript: currentCanonicalTranscript,
-      conversationIntent: currentConversationIntent,
-      conversationTarget: currentConversationTarget,
+      semanticIntent: currentSemanticIntent,
+      semanticTarget: currentSemanticTarget,
     },
   ): Promise<boolean> => {
     const reviewedHash = commandHash(reviewedCommand);
@@ -1446,11 +1446,11 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
         }
       : {};
     let resolvedCommand: ResolvedCommand;
-    if (reviewedContext.conversationIntent) {
-      const resolved = await resolveConversationIntent(
-        reviewedContext.conversationIntent,
+    if (reviewedContext.semanticIntent) {
+      const resolved = await resolveSemanticIntent(
+        reviewedContext.semanticIntent,
         controller.signal,
-        reviewedContext.conversationTarget,
+        reviewedContext.semanticTarget,
       );
       if (closed || controller.signal.aborted || executeController !== controller) return false;
       if (isCommandFailure(resolved)) {
@@ -1793,8 +1793,8 @@ export function openVoiceCommandDialog(options: OpenVoiceCommandOptions): void {
       source: currentCommandSource,
       originalTranscript: currentOriginalTranscript,
       canonicalTranscript: currentCanonicalTranscript,
-      conversationIntent: currentConversationIntent,
-      conversationTarget: currentConversationTarget,
+      semanticIntent: currentSemanticIntent,
+      semanticTarget: currentSemanticTarget,
     };
 
     executeController?.abort();

@@ -112,6 +112,47 @@ describe('VoiceFlow conversation session foundation', () => {
     expect(session.getState().pending).toEqual(pendingTitle);
   });
 
+  it('defensively freezes bounded semantic clarification ownership', () => {
+    const session = createVoiceConversationSession();
+    const pending: VoicePendingInteraction = {
+      kind: 'clarification',
+      intent: {
+        kind: 'move-todo',
+        target: { kind: 'title', text: 'Bogus' },
+        destination: { kind: 'name', text: 'done' },
+      },
+      choices: [
+        {
+          kind: 'todo',
+          reference: firstTodo,
+          title: 'Bogus',
+          laneKey: 'backlog',
+          laneName: 'Backlog',
+        },
+        {
+          kind: 'todo',
+          reference: secondTodo,
+          title: 'Bogus',
+          laneKey: 'doing',
+          laneName: 'In Progress',
+        },
+      ],
+      selection: {},
+    };
+
+    session.setPendingInteraction(pending);
+    const stored = session.getState().pending;
+
+    expect(stored).toEqual(pending);
+    expect(Object.isFrozen(stored)).toBe(true);
+    if (stored?.kind === 'clarification') {
+      expect(Object.isFrozen(stored.intent)).toBe(true);
+      expect(Object.isFrozen(stored.choices)).toBe(true);
+      expect(Object.isFrozen(stored.choices[0])).toBe(true);
+      expect(Object.isFrozen(stored.selection)).toBe(true);
+    }
+  });
+
   it('resets active context, pending work, semantic output, and continuation state', () => {
     const session = createVoiceConversationSession();
     session.setActiveTodo(firstTodo);

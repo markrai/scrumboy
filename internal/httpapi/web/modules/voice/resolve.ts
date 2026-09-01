@@ -15,7 +15,7 @@ export type ResolveContext = {
   callTool?: <T = unknown>(tool: McpToolName, input: Record<string, unknown>) => Promise<T>;
 };
 
-type LaneRef = { key: string; name: string; isDone: boolean };
+export type VoiceLaneReference = { key: string; name: string; isDone: boolean };
 
 type MembersListResponse = {
   items?: BoardMember[];
@@ -26,7 +26,7 @@ export type ResolveCommandOptions = {
   allowedLocalIds?: number[];
 };
 
-function boardLanes(board: Board): LaneRef[] {
+export function voiceBoardLanes(board: Board): VoiceLaneReference[] {
   if (board.columnOrder && board.columnOrder.length > 0) {
     return board.columnOrder.map((lane) => ({
       key: lane.key,
@@ -41,18 +41,22 @@ function boardLanes(board: Board): LaneRef[] {
   }));
 }
 
-function addAlias(aliases: Map<string, Set<LaneRef>>, alias: string, lane: LaneRef): void {
+function addAlias(
+  aliases: Map<string, Set<VoiceLaneReference>>,
+  alias: string,
+  lane: VoiceLaneReference,
+): void {
   const key = normalizeLookup(alias);
   if (!key) return;
-  const existing = aliases.get(key) ?? new Set<LaneRef>();
+  const existing = aliases.get(key) ?? new Set<VoiceLaneReference>();
   existing.add(lane);
   aliases.set(key, existing);
 }
 
-function buildLaneAliasMap(board: Board): Map<string, Set<LaneRef>> {
-  const lanes = boardLanes(board);
+function buildLaneAliasMap(board: Board): Map<string, Set<VoiceLaneReference>> {
+  const lanes = voiceBoardLanes(board);
   const byKey = new Map(lanes.map((lane) => [lane.key, lane]));
-  const aliases = new Map<string, Set<LaneRef>>();
+  const aliases = new Map<string, Set<VoiceLaneReference>>();
 
   for (const lane of lanes) {
     addAlias(aliases, lane.name, lane);
@@ -71,7 +75,10 @@ function buildLaneAliasMap(board: Board): Map<string, Set<LaneRef>> {
   return aliases;
 }
 
-function resolveStatus(rawStatus: string, board: Board): CommandResult<LaneRef> {
+export function resolveVoiceLane(
+  rawStatus: string,
+  board: Board,
+): CommandResult<VoiceLaneReference> {
   const alias = normalizeLookup(rawStatus);
   const matches = buildLaneAliasMap(board).get(alias);
   if (!matches || matches.size === 0) {
@@ -253,7 +260,7 @@ export async function resolveCommandDraft(
   options: ResolveCommandOptions = {},
 ): Promise<CommandResult<ResolvedCommand>> {
   if (draft.intent === "todos.create") {
-    const destination = boardLanes(context.board)[0];
+    const destination = voiceBoardLanes(context.board)[0];
     if (!destination) {
       return localizedCommandFailure("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
     }
@@ -328,7 +335,7 @@ export async function resolveCommandDraft(
   }
 
   if (draft.intent === "todos.move") {
-    const lane = resolveStatus(draft.rawStatus, context.board);
+    const lane = resolveVoiceLane(draft.rawStatus, context.board);
     if (isCommandFailure(lane)) return lane;
     const target = await resolveDraftTarget(draft, context, options);
     if (isCommandFailure(target)) return target;

@@ -42,6 +42,9 @@ export function getActiveVoiceCommandContext(options) {
 export function canRunResolvedVoiceCommand(context, command) {
     if (!isVoiceMutationCommand(command))
         return true;
+    return canRunVoiceMutationInContext(context);
+}
+export function canRunVoiceMutationInContext(context) {
     return canRunVoiceMutationCommands({
         projectId: context.projectId,
         projectSlug: context.projectSlug,

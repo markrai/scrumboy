@@ -93,6 +93,10 @@ export function canRunResolvedVoiceCommand(
   command: ResolvedCommand,
 ): boolean {
   if (!isVoiceMutationCommand(command)) return true;
+  return canRunVoiceMutationInContext(context);
+}
+
+export function canRunVoiceMutationInContext(context: VoiceCommandContext): boolean {
   return canRunVoiceMutationCommands({
     projectId: context.projectId,
     projectSlug: context.projectSlug,

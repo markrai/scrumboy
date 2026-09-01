@@ -1079,7 +1079,7 @@ describe('voice command flow', () => {
   it('resolves open-current against fresh active-todo state and reuses the reviewed open path', async () => {
     useReadyLocalAi();
     let finish: ((result: {
-      kind: 'conversation';
+      kind: 'semantic';
       intent: { kind: 'open-todo'; target: { kind: 'current' } };
     }) => void) | undefined;
     interpretVoiceCommandMock.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
@@ -1109,7 +1109,7 @@ describe('voice command flow', () => {
     await flushAsync();
     board.columns.doing[0].title = 'Fresh authoritative title';
     finish?.({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     await flushAsync();
@@ -1173,7 +1173,7 @@ describe('voice command flow', () => {
 
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     transcript.value = 'Open it';
@@ -1202,11 +1202,11 @@ describe('voice command flow', () => {
     executeCommandIRMock.mockResolvedValue({});
     interpretVoiceCommandMock
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
       })
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: {
           kind: 'update-todo-title',
           target: { kind: 'current' },
@@ -1290,11 +1290,11 @@ describe('voice command flow', () => {
     executeCommandIRMock.mockResolvedValue({});
     interpretVoiceCommandMock
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
       })
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: 'New title' },
       });
     const context = makeContext();
@@ -1324,11 +1324,11 @@ describe('voice command flow', () => {
     showConfirmDialogMock.mockResolvedValue(false);
     interpretVoiceCommandMock
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
       })
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: 'New title' },
       });
     const context = makeContext();
@@ -1361,11 +1361,11 @@ describe('voice command flow', () => {
     useReadyLocalAi();
     interpretVoiceCommandMock
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
       })
       .mockResolvedValueOnce({
-        kind: 'conversation',
+        kind: 'semantic',
         intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: 'New title' },
       });
     const sourceBoard = makeBoard();
@@ -1392,7 +1392,7 @@ describe('voice command flow', () => {
   it('reviews a direct current-title value without creating a missing-slot question', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: {
         kind: 'update-todo-title',
         target: { kind: 'current' },
@@ -1419,7 +1419,7 @@ describe('voice command flow', () => {
   it('clears pending and active conversational context when the project changes', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
     });
     let context = makeContext();
@@ -1452,7 +1452,7 @@ describe('voice command flow', () => {
   it('fails open-current safely when no active todo exists', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     const context = makeContext();
@@ -1476,7 +1476,7 @@ describe('voice command flow', () => {
   it('clears a project-mismatched active todo instead of opening it', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     const context = makeContext();
@@ -1507,7 +1507,7 @@ describe('voice command flow', () => {
   it('rechecks open-current at execution and clears a todo that disappeared after review', async () => {
     useReadyLocalAi();
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     const board = makeBoard({

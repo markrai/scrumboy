@@ -27,8 +27,12 @@ describe('local-AI VoiceFlow interpreter', () => {
     const controller = new AbortController();
     const input = '  Could you move bogus to done?  ';
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'candidate',
-      command: 'move todo bogus to done',
+      kind: 'semantic',
+      intent: {
+        kind: 'move-todo',
+        target: { kind: 'title', text: 'bogus' },
+        destination: { kind: 'name', text: 'done' },
+      },
     });
 
     const interpreter = createLocalAiVoiceCommandInterpreter({
@@ -38,8 +42,12 @@ describe('local-AI VoiceFlow interpreter', () => {
 
     expect(interpretVoiceCommandMock).not.toHaveBeenCalled();
     await expect(interpreter.interpret(input, { signal: controller.signal })).resolves.toEqual({
-      kind: 'candidate',
-      command: 'move todo bogus to done',
+      kind: 'semantic',
+      intent: {
+        kind: 'move-todo',
+        target: { kind: 'title', text: 'bogus' },
+        destination: { kind: 'name', text: 'done' },
+      },
     });
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
     expect(interpretVoiceCommandMock).toHaveBeenCalledWith({
@@ -70,9 +78,9 @@ describe('local-AI VoiceFlow interpreter', () => {
     }));
   });
 
-  it('maps the bounded provider result to the common open-current conversation intent', async () => {
+  it('maps the bounded provider result to the common semantic intent', async () => {
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     const interpreter = createLocalAiVoiceCommandInterpreter({
@@ -81,7 +89,7 @@ describe('local-AI VoiceFlow interpreter', () => {
     });
 
     await expect(interpreter.interpret('Open it')).resolves.toEqual({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: { kind: 'open-todo', target: { kind: 'current' } },
     });
     expect(interpretVoiceCommandMock).toHaveBeenCalledTimes(1);
@@ -93,7 +101,7 @@ describe('local-AI VoiceFlow interpreter', () => {
       pending: { action: 'todo.update_title' as const, slot: 'title' as const },
     };
     interpretVoiceCommandMock.mockResolvedValue({
-      kind: 'conversation',
+      kind: 'semantic',
       intent: {
         kind: 'update-todo-title',
         target: { kind: 'current' },

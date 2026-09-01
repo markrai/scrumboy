@@ -3,7 +3,7 @@ import { cloneCommandFailure, localizedCommandFailure, isCommandFailure, validat
 import { BUILTIN_STATUS_ALIASES } from './vocabulary.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { voiceText } from './i18n.js';
-function boardLanes(board) {
+export function voiceBoardLanes(board) {
     if (board.columnOrder && board.columnOrder.length > 0) {
         return board.columnOrder.map((lane) => ({
             key: lane.key,
@@ -26,7 +26,7 @@ function addAlias(aliases, alias, lane) {
     aliases.set(key, existing);
 }
 function buildLaneAliasMap(board) {
-    const lanes = boardLanes(board);
+    const lanes = voiceBoardLanes(board);
     const byKey = new Map(lanes.map((lane) => [lane.key, lane]));
     const aliases = new Map();
     for (const lane of lanes) {
@@ -45,7 +45,7 @@ function buildLaneAliasMap(board) {
     }
     return aliases;
 }
-function resolveStatus(rawStatus, board) {
+export function resolveVoiceLane(rawStatus, board) {
     const alias = normalizeLookup(rawStatus);
     const matches = buildLaneAliasMap(board).get(alias);
     if (!matches || matches.size === 0) {
@@ -213,7 +213,7 @@ export async function resolveTodoTitleUpdate(localId, title, context) {
 }
 export async function resolveCommandDraft(draft, context, options = {}) {
     if (draft.intent === "todos.create") {
-        const destination = boardLanes(context.board)[0];
+        const destination = voiceBoardLanes(context.board)[0];
         if (!destination) {
             return localizedCommandFailure("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
         }
@@ -290,7 +290,7 @@ export async function resolveCommandDraft(draft, context, options = {}) {
         };
     }
     if (draft.intent === "todos.move") {
-        const lane = resolveStatus(draft.rawStatus, context.board);
+        const lane = resolveVoiceLane(draft.rawStatus, context.board);
         if (isCommandFailure(lane))
             return lane;
         const target = await resolveDraftTarget(draft, context, options);

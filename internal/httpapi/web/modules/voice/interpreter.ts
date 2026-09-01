@@ -1,16 +1,5 @@
 import type { CommandFailure } from './schema.js';
-import type { VoiceCurrentTodoTarget } from './conversation-state.js';
-
-export type VoiceConversationIntent =
-  | Readonly<{
-      kind: 'open-todo';
-      target: VoiceCurrentTodoTarget;
-    }>
-  | Readonly<{
-      kind: 'update-todo-title';
-      target: VoiceCurrentTodoTarget;
-      title: string | null;
-    }>;
+import type { VoiceSemanticIntent } from './semantic-intent.js';
 
 export type VoiceInterpreterConversationContext = Readonly<{
   pending: null | Readonly<{
@@ -21,7 +10,7 @@ export type VoiceInterpreterConversationContext = Readonly<{
 
 export type VoiceCommandInterpretation =
   | { kind: 'candidate'; command: string }
-  | { kind: 'conversation'; intent: VoiceConversationIntent }
+  | { kind: 'semantic'; intent: VoiceSemanticIntent }
   | { kind: 'unsupported'; failure: CommandFailure };
 
 export type VoiceCommandInterpretationOptions = {

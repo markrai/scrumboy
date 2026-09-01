@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
-import type { VoiceConversationIntent, VoiceCommandInterpreter } from './interpreter.js';
+import type { VoiceCommandInterpreter } from './interpreter.js';
+import type { VoiceSemanticIntent } from './semantic-intent.js';
 import type { SpeechInputCapability } from '../platform/speech-input.js';
 import { createVoiceConversationSession } from './conversation-session.js';
 
 const executeCommandIRMock = vi.hoisted(() => vi.fn().mockResolvedValue({ ok: true }));
 vi.mock('./execute.js', () => ({ executeCommandIR: executeCommandIRMock }));
+vi.mock('./mcp-client.js', () => ({
+  callMcpTool: vi.fn().mockResolvedValue({ items: [] }),
+}));
 
 import { createVoiceAgentController } from './agent-controller.js';
 
@@ -78,7 +82,10 @@ describe('VoiceAgentController', () => {
   it('hands one bounded native transcript to AI exactly once and uses normal open resolution', async () => {
     const speechInput = speech('Open story number 355');
     const interpreter: VoiceCommandInterpreter = {
-      interpret: vi.fn().mockResolvedValue({ kind: 'candidate', command: 'open todo 355' }),
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: { kind: 'open-todo', target: { kind: 'local-id', localId: 355 } },
+      }),
     };
     const controllerOptions = options(speechInput, interpreter);
     const controller = createVoiceAgentController(controllerOptions);
@@ -103,12 +110,12 @@ describe('VoiceAgentController', () => {
 
   it('preserves the missing-title dialogue across two speech windows without giving the model an ID', async () => {
     const speechInput = speech('Change the title', 'Fix the login race condition');
-    const intents: VoiceConversationIntent[] = [
+    const intents: VoiceSemanticIntent[] = [
       { kind: 'update-todo-title', target: { kind: 'current' }, title: null },
       { kind: 'update-todo-title', target: { kind: 'current' }, title: 'Fix the login race condition' },
     ];
     const interpreter: VoiceCommandInterpreter = {
-      interpret: vi.fn(async () => ({ kind: 'conversation', intent: intents.shift()! })),
+      interpret: vi.fn(async () => ({ kind: 'semantic', intent: intents.shift()! })),
     };
     const session = createVoiceConversationSession();
     session.setActiveTodo({ kind: 'todo', projectId: 1, projectSlug: 'alpha', localId: 355 });
@@ -190,5 +197,170 @@ describe('VoiceAgentController', () => {
     expect(speechInput.listen).toHaveBeenCalledTimes(2);
     expect(interpreter.interpret).toHaveBeenCalledTimes(2);
     expect(controller.getConversationState().activeTodo?.localId).toBe(355);
+  });
+
+  it('stages and executes the flagship semantic title move exactly once after confirmation', async () => {
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Fixed Radical Login' },
+          destination: { kind: 'name', text: 'done' },
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter));
+
+    await controller.submitTranscript('Move Fixed Radical Login to done');
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      confirmation: { summary: 'Move todo #355: Fixed Radical Login to Done' },
+    });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+
+    await controller.confirm();
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'todos.move',
+        entities: { localId: 355, toColumnKey: 'done' },
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('renders authoritative semantic choices and freshly resolves the clicked todo before confirmation', async () => {
+    const sourceBoard = makeBoard();
+    sourceBoard.columns.backlog = [
+      { id: 351, localId: 351, title: 'Bogus', status: 'backlog' },
+    ];
+    sourceBoard.columns.doing = [
+      { id: 352, localId: 352, title: 'Bogus', status: 'doing' },
+    ];
+    sourceBoard.columnOrder = [
+      { key: 'backlog', name: 'Backlog', isDone: false },
+      { key: 'doing', name: 'In Progress', isDone: false },
+      { key: 'done', name: 'Done', isDone: true },
+    ];
+    const activeContext = { ...makeContext(), board: sourceBoard };
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Bogus' },
+          destination: { kind: 'name', text: 'done' },
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter, {
+      getContext: vi.fn(() => activeContext),
+    }));
+
+    await controller.submitTranscript('Move Bogus to done');
+    expect(controller.getView()).toMatchObject({
+      phase: 'question',
+      clarification: {
+        options: [
+          { id: 'todo:351', label: '#351 · Bogus · Backlog' },
+          { id: 'todo:352', label: '#352 · Bogus · In Progress' },
+        ],
+      },
+    });
+    expect(controller.getConversationState().pending).toMatchObject({ kind: 'clarification' });
+
+    await controller.chooseClarification(0);
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      confirmation: { summary: 'Move todo #351: Bogus to Done' },
+    });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+
+    await controller.confirm();
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledWith(
+      expect.objectContaining({ entities: { localId: 351, toColumnKey: 'done' } }),
+      expect.any(Object),
+    );
+  });
+
+  it('completes an all-satisfied semantic request without clarification or mutation', async () => {
+    const sourceBoard = makeBoard();
+    sourceBoard.columns.backlog = [];
+    sourceBoard.columns.done = [
+      { id: 351, localId: 351, title: 'Bogus', status: 'done' },
+      { id: 352, localId: 352, title: 'Bogus', status: 'done' },
+    ];
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Bogus' },
+          destination: { kind: 'name', text: 'done' },
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter, {
+      getContext: vi.fn(() => ({ ...makeContext(), board: sourceBoard })),
+    }));
+
+    await controller.submitTranscript('Move Bogus to done');
+    expect(controller.getView()).toMatchObject({ phase: 'success', clarification: null });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('re-resolves a reviewed semantic effect and refuses execution when identity changes', async () => {
+    let sourceBoard = makeBoard();
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Fixed Radical Login' },
+          destination: { kind: 'name', text: 'done' },
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter, {
+      getContext: vi.fn(() => ({ ...makeContext(), board: sourceBoard })),
+    }));
+
+    await controller.submitTranscript('Move Fixed Radical Login to done');
+    expect(controller.getView().phase).toBe('confirmation');
+
+    sourceBoard = makeBoard();
+    sourceBoard.columns.backlog = [
+      { id: 355, localId: 355, title: 'Renamed card', status: 'backlog' },
+      { id: 356, localId: 356, title: 'Fixed Radical Login', status: 'backlog' },
+    ];
+    await controller.confirm();
+
+    expect(controller.getView()).toMatchObject({
+      phase: 'error',
+      status: { key: 'voice.status.commandChanged' },
+    });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('checks mutation authorization before semantic resolution or confirmation', async () => {
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'delete-todo',
+          target: { kind: 'title', text: 'Fixed Radical Login' },
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter, {
+      getContext: vi.fn(() => ({ ...makeContext(), role: 'contributor' })),
+    }));
+
+    await controller.submitTranscript('Delete Fixed Radical Login');
+
+    expect(controller.getView()).toMatchObject({ phase: 'error' });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
   });
 });

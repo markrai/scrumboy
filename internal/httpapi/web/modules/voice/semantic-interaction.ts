@@ -30,6 +30,10 @@ export type VoiceSemanticInteraction =
       kind: 'clarification';
       message: VoiceInteractionMessage;
       response: 'choice';
+      options: readonly Readonly<{
+        id: string;
+        label: string;
+      }>[];
     }>
   | Readonly<{
       kind: 'confirmation';

@@ -58,6 +58,10 @@ function createSurface(): HTMLElement {
       <button type="button" class="voice-agent__icon-button" data-voice-agent-close aria-label="Close" data-i18n-aria-label="common.close" data-i18n-fallback-aria-label="Close">&times;</button>
     </div>
     <div class="voice-agent__status" data-voice-agent-status role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="voice-agent__clarification" data-voice-agent-clarification hidden>
+      <div class="voice-command__candidate-list" data-voice-agent-choices></div>
+      <button type="button" class="btn btn--ghost" data-voice-agent-cancel-clarification data-i18n-text="common.cancel" data-i18n-fallback="Cancel">Cancel</button>
+    </div>
     <div class="voice-agent__confirmation" data-voice-agent-confirmation hidden>
       <div class="voice-agent__summary" data-voice-agent-summary></div>
       <div class="voice-agent__confirmation-actions">
@@ -99,6 +103,8 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
   const root = createSurface();
   document.body.appendChild(root);
   const status = root.querySelector<HTMLElement>('[data-voice-agent-status]')!;
+  const clarification = root.querySelector<HTMLElement>('[data-voice-agent-clarification]')!;
+  const choices = root.querySelector<HTMLElement>('[data-voice-agent-choices]')!;
   const confirmation = root.querySelector<HTMLElement>('[data-voice-agent-confirmation]')!;
   const summary = root.querySelector<HTMLElement>('[data-voice-agent-summary]')!;
   const listen = root.querySelector<HTMLButtonElement>('[data-voice-agent-listen]')!;
@@ -107,6 +113,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
   const basic = root.querySelector<HTMLButtonElement>('[data-voice-agent-basic]')!;
   const confirm = root.querySelector<HTMLButtonElement>('[data-voice-agent-confirm]')!;
   const cancel = root.querySelector<HTMLButtonElement>('[data-voice-agent-cancel]')!;
+  const cancelClarification = root.querySelector<HTMLButtonElement>('[data-voice-agent-cancel-clarification]')!;
   const continuation = root.querySelector<HTMLInputElement>('[data-voice-agent-continue]')!;
   continuation.checked = getVoiceFlowContinueConversationPreference();
 
@@ -116,8 +123,21 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
     const isListening = view.phase === 'listening';
     const isBusy = isListening || view.phase === 'processing';
     listen.hidden = isListening;
-    listen.disabled = isBusy || view.phase === 'confirmation' || view.phase === 'closed';
+    listen.disabled = isBusy
+      || view.phase === 'confirmation'
+      || view.clarification !== null
+      || view.phase === 'closed';
     stop.hidden = !isListening;
+    clarification.hidden = view.clarification === null;
+    choices.replaceChildren();
+    view.clarification?.options.forEach((option, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'voice-command__candidate';
+      button.dataset.index = String(index);
+      button.textContent = option.label;
+      choices.appendChild(button);
+    });
     confirmation.hidden = view.confirmation === null;
     if (view.confirmation) {
       summary.textContent = view.confirmation.summary;
@@ -175,6 +195,13 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
   });
   confirm.addEventListener('click', () => void controller.confirm());
   cancel.addEventListener('click', () => controller.cancelConfirmation());
+  clarification.addEventListener('click', (event) => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-index]');
+    if (!button) return;
+    const index = Number(button.dataset.index);
+    if (Number.isInteger(index)) void controller.chooseClarification(index);
+  });
+  cancelClarification.addEventListener('click', () => controller.cancelClarification());
   continuation.addEventListener('change', () => {
     const enabled = continuation.checked;
     controller.setContinuationEnabled(enabled);

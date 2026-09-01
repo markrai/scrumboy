@@ -12,17 +12,24 @@ const controller = vi.hoisted(() => ({
   stopListening: vi.fn(),
   confirm: vi.fn(),
   cancelConfirmation: vi.fn(),
+  chooseClarification: vi.fn(),
+  cancelClarification: vi.fn(),
   setContinuationEnabled: vi.fn(),
   invalidate: vi.fn(),
   close: vi.fn(),
 }));
+const agentView = vi.hoisted(() => ({
+  render: null as null | ((view: Record<string, unknown>) => void),
+}));
 
 vi.mock('./agent-controller.js', () => ({
   createVoiceAgentController: vi.fn((options) => {
+    agentView.render = options.onView;
     options.onView({
       phase: 'ready',
       status: { key: 'voice.status.ready', fallback: 'Ready' },
       confirmation: null,
+      clarification: null,
     });
     return controller;
   }),
@@ -59,6 +66,8 @@ beforeEach(() => {
   controller.startListening.mockClear();
   controller.close.mockClear();
   controller.invalidate.mockClear();
+  controller.chooseClarification.mockClear();
+  controller.cancelClarification.mockClear();
 });
 
 afterEach(() => closeVoiceAgent());
@@ -101,5 +110,32 @@ describe('floating VoiceFlow agent surface', () => {
 
     expect(controller.invalidate).toHaveBeenCalledOnce();
     expect(controller.close).not.toHaveBeenCalled();
+  });
+
+  it('renders authoritative clarification choices as clickable non-modal controls', () => {
+    open();
+    agentView.render?.({
+      phase: 'question',
+      status: { key: 'voice.prompt.whichOne', fallback: 'Which one?' },
+      confirmation: null,
+      clarification: {
+        options: [
+          { id: 'todo:351', label: '#351 · Bogus · Backlog' },
+          { id: 'todo:352', label: '#352 · Bogus · In Progress' },
+        ],
+      },
+    });
+
+    const choices = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-voice-agent-choices] button'));
+    expect(choices.map((choice) => choice.textContent)).toEqual([
+      '#351 · Bogus · Backlog',
+      '#352 · Bogus · In Progress',
+    ]);
+    expect(document.querySelector('[data-voice-agent-clarification]')?.hasAttribute('hidden')).toBe(false);
+    choices[1].click();
+    expect(controller.chooseClarification).toHaveBeenCalledWith(1);
+
+    document.querySelector<HTMLButtonElement>('[data-voice-agent-cancel-clarification]')!.click();
+    expect(controller.cancelClarification).toHaveBeenCalledOnce();
   });
 });

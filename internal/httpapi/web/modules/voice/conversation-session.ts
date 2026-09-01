@@ -1,6 +1,8 @@
 import {
   createEmptyVoiceConversationState,
   type VoiceConversationState,
+  type VoiceClarificationChoice,
+  type VoiceConversationSelection,
   type VoicePendingInteraction,
   type VoiceProjectReference,
   type VoiceTodoReference,
@@ -9,6 +11,11 @@ import type {
   VoiceInteractionMessage,
   VoiceSemanticInteraction,
 } from './semantic-interaction.js';
+import type {
+  VoiceSemanticIntent,
+  VoiceSemanticMemberReference,
+  VoiceSemanticTodoReference,
+} from './semantic-intent.js';
 
 export interface VoiceConversationSession {
   getState(): VoiceConversationState;
@@ -55,6 +62,42 @@ function freezeTodo(todo: VoiceTodoReference): VoiceTodoReference {
   });
 }
 
+function freezeSemanticTodoReference(
+  target: VoiceSemanticTodoReference,
+): VoiceSemanticTodoReference {
+  return Object.freeze({ ...target });
+}
+
+function freezeSemanticMemberReference(
+  member: VoiceSemanticMemberReference,
+): VoiceSemanticMemberReference {
+  return Object.freeze({ ...member });
+}
+
+function freezeSemanticIntent(intent: VoiceSemanticIntent): VoiceSemanticIntent {
+  switch (intent.kind) {
+    case 'create-todo':
+      return Object.freeze({ ...intent });
+    case 'open-todo':
+    case 'delete-todo':
+      return Object.freeze({ ...intent, target: freezeSemanticTodoReference(intent.target) });
+    case 'move-todo':
+      return Object.freeze({
+        ...intent,
+        target: freezeSemanticTodoReference(intent.target),
+        destination: Object.freeze({ ...intent.destination }),
+      });
+    case 'assign-todo':
+      return Object.freeze({
+        ...intent,
+        target: freezeSemanticTodoReference(intent.target),
+        assignee: freezeSemanticMemberReference(intent.assignee),
+      });
+    case 'update-todo-title':
+      return Object.freeze({ ...intent, target: freezeSemanticTodoReference(intent.target) });
+  }
+}
+
 function freezeMessage(message: VoiceInteractionMessage): VoiceInteractionMessage {
   const values = message.values ? Object.freeze({ ...message.values }) : undefined;
   return Object.freeze({
@@ -68,8 +111,13 @@ function freezeInteraction(interaction: VoiceSemanticInteraction): VoiceSemantic
   const message = freezeMessage(interaction.message);
   switch (interaction.kind) {
     case 'question':
-    case 'clarification':
       return Object.freeze({ ...interaction, message });
+    case 'clarification':
+      return Object.freeze({
+        ...interaction,
+        message,
+        options: Object.freeze(interaction.options.map((option) => Object.freeze({ ...option }))),
+      });
     case 'confirmation':
       return Object.freeze({
         ...interaction,
@@ -92,11 +140,50 @@ function freezeInteraction(interaction: VoiceSemanticInteraction): VoiceSemantic
 }
 
 function freezePending(pending: VoicePendingInteraction): VoicePendingInteraction {
+  if (pending.kind === 'clarification') {
+    return Object.freeze({
+      kind: pending.kind,
+      intent: freezeSemanticIntent(pending.intent),
+      choices: Object.freeze(pending.choices.map(freezeClarificationChoice)),
+      selection: freezeConversationSelection(pending.selection),
+    });
+  }
   return Object.freeze({
     kind: pending.kind,
     action: pending.action,
     slot: pending.slot,
     target: freezeTodo(pending.target),
+  });
+}
+
+function freezeConversationSelection(
+  selection: VoiceConversationSelection,
+): VoiceConversationSelection {
+  return Object.freeze({
+    ...(selection.todo
+      ? {
+          todo: Object.freeze({
+            selectedLocalId: selection.todo.selectedLocalId,
+            allowedLocalIds: Object.freeze([...selection.todo.allowedLocalIds]),
+          }),
+        }
+      : {}),
+    ...(selection.member
+      ? {
+          member: Object.freeze({
+            selectedUserId: selection.member.selectedUserId,
+            allowedUserIds: Object.freeze([...selection.member.allowedUserIds]),
+          }),
+        }
+      : {}),
+  });
+}
+
+function freezeClarificationChoice(choice: VoiceClarificationChoice): VoiceClarificationChoice {
+  if (choice.kind === 'member') return Object.freeze({ ...choice });
+  return Object.freeze({
+    ...choice,
+    reference: freezeTodo(choice.reference),
   });
 }
 
