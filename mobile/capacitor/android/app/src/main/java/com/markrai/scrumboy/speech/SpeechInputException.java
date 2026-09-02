@@ -3,11 +3,19 @@ package com.markrai.scrumboy.speech;
 final class SpeechInputException extends Exception {
     private final String code;
     private final boolean recoverable;
+    private final Integer providerCode;
+    private final String providerReason;
 
     SpeechInputException(String code, boolean recoverable) {
+        this(code, recoverable, null, null);
+    }
+
+    SpeechInputException(String code, boolean recoverable, Integer providerCode, String providerReason) {
         super(code);
         this.code = code;
         this.recoverable = recoverable;
+        this.providerCode = providerCode;
+        this.providerReason = providerReason;
     }
 
     String code() {
@@ -16,6 +24,14 @@ final class SpeechInputException extends Exception {
 
     boolean recoverable() {
         return recoverable;
+    }
+
+    Integer providerCode() {
+        return providerCode;
+    }
+
+    String providerReason() {
+        return providerReason;
     }
 
     static String publicMessage(String code) {

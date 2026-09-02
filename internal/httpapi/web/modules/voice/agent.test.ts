@@ -28,6 +28,8 @@ vi.mock('./agent-controller.js', () => ({
     options.onView({
       phase: 'ready',
       status: { key: 'voice.status.ready', fallback: 'Ready' },
+      activity: 'idle',
+      activityStatus: null,
       confirmation: null,
       clarification: null,
     });
@@ -117,6 +119,8 @@ describe('floating VoiceFlow agent surface', () => {
     agentView.render?.({
       phase: 'question',
       status: { key: 'voice.prompt.whichOne', fallback: 'Which one?' },
+      activity: 'listening',
+      activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' },
       confirmation: null,
       clarification: {
         options: [
@@ -132,10 +136,30 @@ describe('floating VoiceFlow agent surface', () => {
       '#352 · Bogus · In Progress',
     ]);
     expect(document.querySelector('[data-voice-agent-clarification]')?.hasAttribute('hidden')).toBe(false);
+    expect(document.querySelector('[data-voice-agent-activity]')?.textContent).toBe('Listening…');
+    expect(document.getElementById('voiceAgent')?.dataset.activity).toBe('listening');
     choices[1].click();
     expect(controller.chooseClarification).toHaveBeenCalledWith(1);
 
     document.querySelector<HTMLButtonElement>('[data-voice-agent-cancel-clarification]')!.click();
     expect(controller.cancelClarification).toHaveBeenCalledOnce();
+
+    agentView.render?.({
+      phase: 'question',
+      status: { key: 'voice.prompt.whichOne', fallback: 'Which one?' },
+      activity: 'idle',
+      activityStatus: { key: 'voice.agent.noSpeech', fallback: "I didn't hear a response." },
+      confirmation: null,
+      clarification: {
+        options: [
+          { id: 'todo:351', label: '#351 · Bogus · Backlog' },
+          { id: 'todo:352', label: '#352 · Bogus · In Progress' },
+        ],
+      },
+    });
+    expect(document.querySelector('[data-voice-agent-clarification]')?.hasAttribute('hidden')).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[data-voice-agent-listen]')?.hidden).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[data-voice-agent-listen]')?.disabled).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[data-voice-agent-stop]')?.hidden).toBe(true);
   });
 });

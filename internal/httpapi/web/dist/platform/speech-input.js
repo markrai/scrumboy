@@ -33,6 +33,27 @@ const NON_RECOVERABLE = new Set([
     'permission_denied_permanently',
     'invalid_request',
 ]);
+const PROVIDER_REASONS = new Set([
+    'audio',
+    'client',
+    'network',
+    'network_timeout',
+    'server',
+    'server_disconnected',
+    'recognizer_busy',
+    'too_many_requests',
+    'no_match',
+    'speech_timeout',
+    'language_not_supported',
+    'language_unavailable',
+    'unknown',
+]);
+export function isSpeechInputProviderReason(value) {
+    return typeof value === 'string' && PROVIDER_REASONS.has(value);
+}
+export function isSpeechInputProviderCode(value) {
+    return Number.isInteger(value) && value >= 0 && value <= 65535;
+}
 export function isSpeechInputErrorCode(value) {
     return typeof value === 'string' && ERROR_CODES.has(value);
 }
@@ -42,6 +63,10 @@ export class SpeechInputError extends Error {
         this.name = 'SpeechInputError';
         this.code = code;
         this.recoverable = options.recoverable ?? !NON_RECOVERABLE.has(code);
+        if (isSpeechInputProviderCode(options.providerCode))
+            this.providerCode = options.providerCode;
+        if (isSpeechInputProviderReason(options.providerReason))
+            this.providerReason = options.providerReason;
     }
 }
 export function validateSpeechInputListenOptions(options) {

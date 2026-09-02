@@ -5,6 +5,21 @@ export const SPEECH_INPUT_MAX_DURATION_MS = 10_000;
 export type SpeechInputUnsupportedReason = 'os' | 'device' | 'provider' | 'policy';
 export type SpeechInputUnavailableReason = 'busy' | 'foreground' | 'provider';
 
+export type SpeechInputProviderReason =
+  | 'audio'
+  | 'client'
+  | 'network'
+  | 'network_timeout'
+  | 'server'
+  | 'server_disconnected'
+  | 'recognizer_busy'
+  | 'too_many_requests'
+  | 'no_match'
+  | 'speech_timeout'
+  | 'language_not_supported'
+  | 'language_unavailable'
+  | 'unknown';
+
 export type SpeechInputStatus =
   | { state: 'unsupported'; reason: SpeechInputUnsupportedReason }
   | { state: 'ready' }
@@ -60,6 +75,30 @@ const NON_RECOVERABLE = new Set<SpeechInputErrorCode>([
   'invalid_request',
 ]);
 
+const PROVIDER_REASONS = new Set<SpeechInputProviderReason>([
+  'audio',
+  'client',
+  'network',
+  'network_timeout',
+  'server',
+  'server_disconnected',
+  'recognizer_busy',
+  'too_many_requests',
+  'no_match',
+  'speech_timeout',
+  'language_not_supported',
+  'language_unavailable',
+  'unknown',
+]);
+
+export function isSpeechInputProviderReason(value: unknown): value is SpeechInputProviderReason {
+  return typeof value === 'string' && PROVIDER_REASONS.has(value as SpeechInputProviderReason);
+}
+
+export function isSpeechInputProviderCode(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 65_535;
+}
+
 export function isSpeechInputErrorCode(value: unknown): value is SpeechInputErrorCode {
   return typeof value === 'string' && ERROR_CODES.has(value as SpeechInputErrorCode);
 }
@@ -67,12 +106,20 @@ export function isSpeechInputErrorCode(value: unknown): value is SpeechInputErro
 export class SpeechInputError extends Error {
   readonly code: SpeechInputErrorCode;
   readonly recoverable: boolean;
+  readonly providerCode?: number;
+  readonly providerReason?: SpeechInputProviderReason;
 
-  constructor(code: SpeechInputErrorCode, options: { recoverable?: boolean } = {}) {
+  constructor(code: SpeechInputErrorCode, options: {
+    recoverable?: boolean;
+    providerCode?: number;
+    providerReason?: SpeechInputProviderReason;
+  } = {}) {
     super(ERROR_MESSAGES[code]);
     this.name = 'SpeechInputError';
     this.code = code;
     this.recoverable = options.recoverable ?? !NON_RECOVERABLE.has(code);
+    if (isSpeechInputProviderCode(options.providerCode)) this.providerCode = options.providerCode;
+    if (isSpeechInputProviderReason(options.providerReason)) this.providerReason = options.providerReason;
   }
 }
 

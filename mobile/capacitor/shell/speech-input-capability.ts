@@ -7,6 +7,8 @@ import {
   SPEECH_INPUT_CAPABILITY,
   SpeechInputError,
   isSpeechInputErrorCode,
+  isSpeechInputProviderCode,
+  isSpeechInputProviderReason,
   validateSpeechInputListenOptions,
   validateSpeechInputResult,
   type SpeechInputCapability,
@@ -15,6 +17,7 @@ import {
   type SpeechInputStatus,
   type SpeechInputStatusOptions,
 } from '../../../internal/httpapi/web/modules/platform/speech-input.js';
+import { voiceFlowDiagnostic } from '../../../internal/httpapi/web/modules/platform/voiceflow-diagnostics.js';
 import {
   ScrumboySpeechInput,
   NATIVE_SPEECH_LISTENING_EVENT,
@@ -27,7 +30,11 @@ const INVALIDATION_TIMEOUT_MS = 1_000;
 
 interface NativeFailure {
   code?: unknown;
-  data?: { recoverable?: unknown };
+  data?: {
+    recoverable?: unknown;
+    providerCode?: unknown;
+    providerReason?: unknown;
+  };
 }
 
 interface ActiveOperation<T> {
@@ -67,6 +74,12 @@ function nativeError(error: unknown): SpeechInputError {
   return new SpeechInputError(code, {
     recoverable: typeof failure?.data?.recoverable === 'boolean'
       ? failure.data.recoverable
+      : undefined,
+    providerCode: isSpeechInputProviderCode(failure?.data?.providerCode)
+      ? failure.data.providerCode
+      : undefined,
+    providerReason: isSpeechInputProviderReason(failure?.data?.providerReason)
+      ? failure.data.providerReason
       : undefined,
   });
 }
@@ -241,6 +254,7 @@ export function createSpeechInputComposition(
         listenOptions.maxDurationMs,
         async (operationId) => {
           activeListening = operationId;
+          voiceFlowDiagnostic('ASR start', { operationId });
           let announced = false;
           const listener = await plugin.addListener(NATIVE_SPEECH_LISTENING_EVENT, (event) => {
             if (
@@ -250,6 +264,7 @@ export function createSpeechInputComposition(
               || listenOptions.signal?.aborted
             ) return;
             announced = true;
+            voiceFlowDiagnostic('ASR ready', { operationId });
             try {
               listenOptions.onListening?.();
             } catch {
@@ -269,7 +284,18 @@ export function createSpeechInputComposition(
         },
       ).then((result) => {
         validateSpeechInputResult(result);
-        return { transcript: result.transcript.trim() };
+        const transcript = result.transcript.trim();
+        voiceFlowDiagnostic('ASR result', { operationId: activeListening, transcript });
+        return { transcript };
+      }).catch((error: unknown) => {
+        const failure = nativeError(error);
+        voiceFlowDiagnostic('ASR failure', {
+          operationId: activeListening,
+          normalizedCode: failure.code,
+          ...(failure.providerCode === undefined ? {} : { providerCode: failure.providerCode }),
+          ...(failure.providerReason === undefined ? {} : { providerReason: failure.providerReason }),
+        });
+        throw failure;
       }).finally(() => {
         activeListening = null;
       });

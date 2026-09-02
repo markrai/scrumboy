@@ -36,4 +36,20 @@ describe('speech-input contract', () => {
       recoverable: false,
     });
   });
+
+  it('accepts only bounded provider diagnostics and never requires them', () => {
+    expect(new SpeechInputError('recognition_failed', {
+      providerCode: 3,
+      providerReason: 'audio',
+    })).toMatchObject({
+      code: 'recognition_failed',
+      providerCode: 3,
+      providerReason: 'audio',
+    });
+    expect(new SpeechInputError('recognition_failed')).not.toHaveProperty('providerCode');
+    expect(new SpeechInputError('recognition_failed', {
+      providerCode: 100_000,
+      providerReason: 'audio',
+    })).not.toHaveProperty('providerCode');
+  });
 });

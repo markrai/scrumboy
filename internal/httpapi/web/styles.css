@@ -1804,25 +1804,25 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   transform-origin: center;
 }
 
-.voice-agent[data-state="listening"] {
+.voice-agent[data-activity="listening"] {
   border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
   box-shadow: var(--shadow), 0 0 24px color-mix(in srgb, var(--accent) 38%, transparent);
 }
 
-.voice-agent[data-state="listening"] .voice-agent__wave span {
+.voice-agent[data-activity="listening"] .voice-agent__wave span {
   animation: voice-agent-listening 0.7s ease-in-out infinite alternate;
 }
 
-.voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(2),
-.voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(4) {
+.voice-agent[data-activity="listening"] .voice-agent__wave span:nth-child(2),
+.voice-agent[data-activity="listening"] .voice-agent__wave span:nth-child(4) {
   animation-delay: -0.35s;
 }
 
-.voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(3) {
+.voice-agent[data-activity="listening"] .voice-agent__wave span:nth-child(3) {
   animation-delay: -0.55s;
 }
 
-.voice-agent[data-state="processing"] .voice-agent__wave {
+.voice-agent[data-activity="processing"] .voice-agent__wave {
   animation: voice-agent-processing 0.85s ease-in-out infinite;
 }
 
@@ -1844,6 +1844,17 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   color: var(--muted);
   font-size: var(--fs-13);
   line-height: 1.4;
+}
+
+.voice-agent__activity {
+  min-height: 20px;
+  color: var(--accent);
+  font-size: var(--fs-13);
+  line-height: 1.4;
+}
+
+.voice-agent__activity[hidden] {
+  display: none;
 }
 
 .voice-agent__confirmation {
@@ -1889,13 +1900,13 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .voice-agent[data-state="listening"] .voice-agent__wave span,
-  .voice-agent[data-state="processing"] .voice-agent__wave {
+  .voice-agent[data-activity="listening"] .voice-agent__wave span,
+  .voice-agent[data-activity="processing"] .voice-agent__wave {
     animation: none;
   }
 
-  .voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(2),
-  .voice-agent[data-state="listening"] .voice-agent__wave span:nth-child(4) {
+  .voice-agent[data-activity="listening"] .voice-agent__wave span:nth-child(2),
+  .voice-agent[data-activity="listening"] .voice-agent__wave span:nth-child(4) {
     transform: scaleY(2.2);
   }
 }

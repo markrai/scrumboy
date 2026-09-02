@@ -256,6 +256,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
     private static void reject(PluginCall call, SpeechInputException error) {
         JSObject data = new JSObject();
         data.put("recoverable", error.recoverable());
+        if (error.providerCode() != null) data.put("providerCode", error.providerCode());
+        if (error.providerReason() != null) data.put("providerReason", error.providerReason());
         call.reject(SpeechInputException.publicMessage(error.code()), error.code(), data);
     }
 

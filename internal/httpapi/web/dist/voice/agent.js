@@ -26,6 +26,7 @@ function createSurface() {
       <button type="button" class="voice-agent__icon-button" data-voice-agent-close aria-label="Close" data-i18n-aria-label="common.close" data-i18n-fallback-aria-label="Close">&times;</button>
     </div>
     <div class="voice-agent__status" data-voice-agent-status role="status" aria-live="polite" aria-atomic="true"></div>
+    <div class="voice-agent__activity" data-voice-agent-activity role="status" aria-live="polite" aria-atomic="true" hidden></div>
     <div class="voice-agent__clarification" data-voice-agent-clarification hidden>
       <div class="voice-command__candidate-list" data-voice-agent-choices></div>
       <button type="button" class="btn btn--ghost" data-voice-agent-cancel-clarification data-i18n-text="common.cancel" data-i18n-fallback="Cancel">Cancel</button>
@@ -67,6 +68,7 @@ export function openVoiceAgent(options) {
     const root = createSurface();
     document.body.appendChild(root);
     const status = root.querySelector('[data-voice-agent-status]');
+    const activity = root.querySelector('[data-voice-agent-activity]');
     const clarification = root.querySelector('[data-voice-agent-clarification]');
     const choices = root.querySelector('[data-voice-agent-choices]');
     const confirmation = root.querySelector('[data-voice-agent-confirmation]');
@@ -82,12 +84,15 @@ export function openVoiceAgent(options) {
     continuation.checked = getVoiceFlowContinueConversationPreference();
     const render = (view) => {
         root.dataset.state = view.phase;
+        root.dataset.activity = view.activity;
         status.textContent = renderMessage(view.status);
-        const isListening = view.phase === 'listening';
-        const isBusy = isListening || view.phase === 'processing';
-        listen.hidden = isListening;
-        listen.disabled = isBusy || view.phase === 'closed';
-        stop.hidden = !isListening;
+        activity.hidden = view.activityStatus === null;
+        activity.textContent = view.activityStatus ? renderMessage(view.activityStatus) : '';
+        const isAcquiring = view.activity === 'starting-microphone' || view.activity === 'listening';
+        const isProcessing = view.activity === 'processing';
+        listen.hidden = isAcquiring;
+        listen.disabled = isProcessing || view.phase === 'closed';
+        stop.hidden = !isAcquiring;
         clarification.hidden = view.clarification === null;
         choices.replaceChildren();
         view.clarification?.options.forEach((option, index) => {

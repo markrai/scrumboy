@@ -24,7 +24,11 @@ function plugin(): NativeSpeechInputPlugin {
 }
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('Capacitor speech-input composition', () => {
   it('reports genuine recognizer readiness once for the owned operation', async () => {
@@ -47,6 +51,35 @@ describe('Capacitor speech-input composition', () => {
     await capability.listen({ maxDurationMs: 10_000, onListening });
 
     expect(onListening).toHaveBeenCalledOnce();
+  });
+
+  it('reports the owned final transcript only through opt-in qualification diagnostics', async () => {
+    const native = plugin();
+    let listeningListener!: (event: { operationId: string }) => void;
+    vi.mocked(native.addListener).mockImplementation(async (_name, listener) => {
+      listeningListener = listener;
+      return { remove: vi.fn().mockResolvedValue(undefined) };
+    });
+    vi.mocked(native.listen).mockImplementation(async () => {
+      listeningListener({ operationId: 'speech-1' });
+      return { transcript: 'Move Agenda lane finalization to backlog' };
+    });
+    vi.stubGlobal('localStorage', { getItem: vi.fn().mockReturnValue('1') });
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const composition = createSpeechInputComposition({
+      plugin: native,
+      operationIdFactory: () => 'speech-1',
+    });
+    const capability = composition.registry.get(SPEECH_INPUT_CAPABILITY)!;
+
+    await capability.listen({ maxDurationMs: 10_000 });
+
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR start', { operationId: 'speech-1' });
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR ready', { operationId: 'speech-1' });
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR result', {
+      operationId: 'speech-1',
+      transcript: 'Move Agenda lane finalization to backlog',
+    });
   });
 
   it('owns the 10-second deadline, cancels native work, and ignores a late result', async () => {
@@ -107,5 +140,29 @@ describe('Capacitor speech-input composition', () => {
     expect(native.invalidate).toHaveBeenCalledOnce();
     pending.resolve({ transcript: 'late transcript' });
     await Promise.resolve();
+  });
+
+  it('preserves normalized native failures with bounded provider diagnostics', async () => {
+    const native = plugin();
+    vi.mocked(native.listen).mockRejectedValue({
+      code: 'recognition_failed',
+      data: {
+        recoverable: true,
+        providerCode: 3,
+        providerReason: 'audio',
+      },
+    });
+    const composition = createSpeechInputComposition({
+      plugin: native,
+      operationIdFactory: () => 'speech-1',
+    });
+    const capability = composition.registry.get(SPEECH_INPUT_CAPABILITY)!;
+
+    await expect(capability.listen({ maxDurationMs: 10_000 })).rejects.toMatchObject({
+      code: 'recognition_failed',
+      recoverable: true,
+      providerCode: 3,
+      providerReason: 'audio',
+    });
   });
 });

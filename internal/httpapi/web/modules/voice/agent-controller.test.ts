@@ -7,6 +7,7 @@ import type { SpeechInputCapability } from '../platform/speech-input.js';
 import { SpeechInputError } from '../platform/speech-input.js';
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
 import { createVoiceConversationSession } from './conversation-session.js';
+import type { VoicePendingInteraction } from './conversation-state.js';
 
 const executeCommandIRMock = vi.hoisted(() => vi.fn().mockResolvedValue({ ok: true }));
 const callMcpToolMock = vi.hoisted(() => vi.fn().mockResolvedValue({ items: [] }));
@@ -554,6 +555,487 @@ describe('VoiceAgentController', () => {
       slot: 'destination',
     });
     expect(controller.getView().phase).toBe('question');
+  });
+
+  it('keeps a reviewed confirmation visible while automatic ASR listens and after recognition failure', async () => {
+    const automatic = deferred<{ transcript: string }>();
+    const speechInput: SpeechInputCapability = {
+      status: vi.fn().mockResolvedValue({ state: 'ready' }),
+      listen: vi.fn()
+        .mockImplementationOnce(async (input) => {
+          input.onListening?.();
+          return { transcript: 'Move Bogus back to backlog' };
+        })
+        .mockImplementationOnce((input) => {
+          input.onListening?.();
+          return automatic.promise;
+        }),
+    };
+    const output = speechOutput();
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Bogus' },
+          destination: { kind: 'name', text: 'Backlog' },
+        },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speechInput, interpreter, {
+      speechOutput: output,
+      continuationEnabled: false,
+      getContext: vi.fn(() => makeAmbiguousContext()),
+    }));
+
+    const task = controller.startListening();
+    await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledTimes(2));
+
+    expect(controller.getConversationState().pending).toMatchObject({
+      kind: 'confirmation',
+      operation: 'todo.move',
+    });
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      activity: 'listening',
+      activityStatus: { key: 'voice.agent.listening' },
+      confirmation: { summary: expect.stringContaining('Bogus') },
+    });
+
+    automatic.reject(new SpeechInputError('recognition_failed', {
+      providerCode: 3,
+      providerReason: 'audio',
+    }));
+    await task;
+
+    expect(controller.getConversationState().pending).toMatchObject({ kind: 'confirmation' });
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      activity: 'idle',
+      activityStatus: { key: 'voice.agent.speechFailed' },
+      confirmation: { summary: expect.stringContaining('Bogus') },
+    });
+    expect(speechInput.listen).toHaveBeenCalledTimes(2);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+
+    await controller.confirm();
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps authoritative choices visible during automatic ASR and after no speech', async () => {
+    const automatic = deferred<{ transcript: string }>();
+    const speechInput: SpeechInputCapability = {
+      status: vi.fn().mockResolvedValue({ state: 'ready' }),
+      listen: vi.fn()
+        .mockImplementationOnce(async (input) => {
+          input.onListening?.();
+          return { transcript: 'Open Bogus' };
+        })
+        .mockImplementationOnce((input) => {
+          input.onListening?.();
+          return automatic.promise;
+        }),
+    };
+    const controller = createVoiceAgentController(options(speechInput, {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: { kind: 'open-todo', target: { kind: 'title', text: 'Bogus' } },
+      }),
+    }, {
+      speechOutput: speechOutput(),
+      continuationEnabled: false,
+      getContext: vi.fn(() => makeAmbiguousContext()),
+    }));
+
+    const task = controller.startListening();
+    await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledTimes(2));
+
+    const pending = controller.getConversationState().pending;
+    expect(pending).toMatchObject({ kind: 'clarification' });
+    expect(controller.getView()).toMatchObject({
+      phase: 'question',
+      activity: 'listening',
+      clarification: { options: expect.arrayContaining([
+        expect.objectContaining({ label: expect.stringContaining('Done') }),
+        expect.objectContaining({ label: expect.stringContaining('Backlog') }),
+      ]) },
+    });
+
+    automatic.reject(new SpeechInputError('no_speech'));
+    await task;
+
+    expect(controller.getConversationState().pending).toBe(pending);
+    expect(controller.getView()).toMatchObject({
+      phase: 'question',
+      activity: 'idle',
+      activityStatus: { key: 'voice.agent.noSpeech' },
+      clarification: { options: expect.any(Array) },
+    });
+    expect(speechInput.listen).toHaveBeenCalledTimes(2);
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('lets the retained confirmation button take over from automatic listening', async () => {
+    const automatic = deferred<{ transcript: string }>();
+    const speechInput: SpeechInputCapability = {
+      status: vi.fn().mockResolvedValue({ state: 'ready' }),
+      listen: vi.fn()
+        .mockImplementationOnce(async (input) => {
+          input.onListening?.();
+          return { transcript: 'Move Bogus back to backlog' };
+        })
+        .mockImplementationOnce((input) => {
+          input.onListening?.();
+          return automatic.promise;
+        }),
+    };
+    const controller = createVoiceAgentController(options(speechInput, {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Bogus' },
+          destination: { kind: 'name', text: 'Backlog' },
+        },
+      }),
+    }, {
+      speechOutput: speechOutput(),
+      continuationEnabled: false,
+      getContext: vi.fn(() => makeAmbiguousContext()),
+    }));
+
+    const listening = controller.startListening();
+    await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledTimes(2));
+    expect(controller.getView()).toMatchObject({ phase: 'confirmation', activity: 'listening' });
+    await controller.confirm();
+
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    automatic.resolve({ transcript: 'late confirmation' });
+    await listening;
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+  });
+
+  it('lets a retained choice button take over from automatic listening', async () => {
+    const automatic = deferred<{ transcript: string }>();
+    const speechInput: SpeechInputCapability = {
+      status: vi.fn().mockResolvedValue({ state: 'ready' }),
+      listen: vi.fn()
+        .mockImplementationOnce(async (input) => {
+          input.onListening?.();
+          return { transcript: 'Open Bogus' };
+        })
+        .mockImplementationOnce((input) => {
+          input.onListening?.();
+          return automatic.promise;
+        }),
+    };
+    const controller = createVoiceAgentController(options(speechInput, {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: { kind: 'open-todo', target: { kind: 'title', text: 'Bogus' } },
+      }),
+    }, {
+      speechOutput: speechOutput(),
+      continuationEnabled: false,
+      getContext: vi.fn(() => makeAmbiguousContext()),
+    }));
+
+    const listening = controller.startListening();
+    await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledTimes(2));
+    expect(controller.getView()).toMatchObject({ phase: 'question', activity: 'listening' });
+    await controller.chooseClarification(0);
+
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledWith(
+      expect.objectContaining({ intent: 'open_todo', entities: { localId: 353 } }),
+      expect.any(Object),
+    );
+    automatic.resolve({ transcript: 'late choice' });
+    await listening;
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a missing-slot question visible while its automatic reply window listens', async () => {
+    const automatic = deferred<{ transcript: string }>();
+    const speechInput: SpeechInputCapability = {
+      status: vi.fn().mockResolvedValue({ state: 'ready' }),
+      listen: vi.fn()
+        .mockImplementationOnce(async (input) => {
+          input.onListening?.();
+          return { transcript: 'Move story 355' };
+        })
+        .mockImplementationOnce((input) => {
+          input.onListening?.();
+          return automatic.promise;
+        }),
+    };
+    const controller = createVoiceAgentController(options(speechInput, {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'local-id', localId: 355 },
+          destination: null,
+        },
+      }),
+    }, { speechOutput: speechOutput(), continuationEnabled: false }));
+
+    const task = controller.startListening();
+    await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledTimes(2));
+
+    expect(controller.getConversationState().pending).toMatchObject({
+      kind: 'missing-slot',
+      slot: 'destination',
+    });
+    expect(controller.getView()).toMatchObject({
+      phase: 'question',
+      activity: 'listening',
+      status: { key: 'voice.question.moveDestination' },
+    });
+
+    automatic.reject(new SpeechInputError('no_speech'));
+    await task;
+  });
+
+  it('shows recognizer busy on the pending question without retrying', async () => {
+    const speechInput: SpeechInputCapability = {
+      status: vi.fn().mockResolvedValue({ state: 'temporarily-unavailable', reason: 'busy' }),
+      listen: vi.fn(async (input) => {
+        input.onListening?.();
+        return { transcript: 'Move story 355' };
+      }),
+    };
+    const controller = createVoiceAgentController(options(speechInput, {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'local-id', localId: 355 },
+          destination: null,
+        },
+      }),
+    }, { speechOutput: speechOutput(), continuationEnabled: false }));
+
+    await controller.startListening();
+
+    expect(controller.getConversationState().pending).toMatchObject({ kind: 'missing-slot' });
+    expect(controller.getView()).toMatchObject({
+      phase: 'question',
+      activity: 'idle',
+      activityStatus: { key: 'voice.agent.busy' },
+    });
+    expect(speechInput.listen).toHaveBeenCalledOnce();
+  });
+
+  it('does not change any pending semantic state merely because ASR starts', async () => {
+    const target = { kind: 'todo' as const, projectId: 1, projectSlug: 'alpha', localId: 355 };
+    const pendingCases: readonly Readonly<{ name: string; pending: VoicePendingInteraction }>[] = [
+      {
+        name: 'confirmation',
+        pending: { kind: 'confirmation', operation: 'todo.move' },
+      },
+      {
+        name: 'todo clarification',
+        pending: {
+          kind: 'clarification',
+          intent: { kind: 'open-todo', target: { kind: 'title', text: 'Bogus' } },
+          choices: [{ kind: 'todo', reference: target, title: 'Bogus', laneKey: 'backlog', laneName: 'Backlog' }],
+          selection: {},
+        },
+      },
+      {
+        name: 'member clarification',
+        pending: {
+          kind: 'clarification',
+          intent: {
+            kind: 'assign-todo',
+            target: { kind: 'local-id', localId: 355 },
+            assignee: { kind: 'name', text: 'Alex' },
+          },
+          choices: [{ kind: 'member', userId: 8, name: 'Alex Smith', email: 'alex@example.com' }],
+          selection: {},
+        },
+      },
+      {
+        name: 'tag clarification',
+        pending: {
+          kind: 'clarification',
+          intent: {
+            kind: 'add-todo-tag',
+            target: { kind: 'local-id', localId: 355 },
+            tag: { kind: 'name', text: 'back' },
+          },
+          choices: [{ kind: 'tag', name: 'backend' }],
+          selection: {},
+        },
+      },
+      {
+        name: 'missing slot',
+        pending: {
+          kind: 'missing-slot',
+          operation: 'todo.create',
+          slot: 'title',
+          intent: { kind: 'create-todo', title: null },
+          selection: {},
+        },
+      },
+    ];
+
+    for (const pendingCase of pendingCases) {
+      const acquired = deferred<{ transcript: string }>();
+      const speechInput: SpeechInputCapability = {
+        status: vi.fn().mockResolvedValue({ state: 'ready' }),
+        listen: vi.fn((input) => {
+          input.onListening?.();
+          return acquired.promise;
+        }),
+      };
+      const session = createVoiceConversationSession();
+      session.setPendingInteraction(pendingCase.pending);
+      const before = session.getState().pending;
+      const controller = createVoiceAgentController(options(speechInput, { interpret: vi.fn() }, { session }));
+
+      const task = controller.startListening();
+      await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledOnce());
+      expect(controller.getConversationState().pending, pendingCase.name).toBe(before);
+      expect(controller.getView().activity, pendingCase.name).toBe('listening');
+
+      controller.stopListening();
+      acquired.resolve({ transcript: 'late' });
+      await task;
+      expect(controller.getConversationState().pending, pendingCase.name).toBe(before);
+    }
+  });
+
+  it('passes automatic spoken confirmation through pending context and executes exactly once without a button', async () => {
+    const speechInput = speech('Move Bogus back to backlog', 'Yeah, go ahead');
+    const output = speechOutput();
+    const interpretations: Awaited<ReturnType<VoiceCommandInterpreter['interpret']>>[] = [
+      {
+        kind: 'semantic',
+        intent: {
+          kind: 'move-todo',
+          target: { kind: 'title', text: 'Bogus' },
+          destination: { kind: 'name', text: 'Backlog' },
+        },
+      },
+      { kind: 'dialogue', intent: { kind: 'confirm' } },
+    ];
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn(async () => interpretations.shift()!),
+    };
+    const controller = createVoiceAgentController(options(speechInput, interpreter, {
+      speechOutput: output,
+      continuationEnabled: false,
+      getContext: vi.fn(() => makeAmbiguousContext()),
+    }));
+
+    await controller.startListening();
+
+    expect(interpreter.interpret).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(interpreter.interpret).mock.calls[1]).toEqual([
+      'Yeah, go ahead',
+      expect.objectContaining({
+        conversation: { pending: { kind: 'confirmation', operation: 'todo.move' } },
+      }),
+    ]);
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        intent: 'todos.move',
+        entities: { localId: 353, toColumnKey: 'backlog' },
+      }),
+      expect.any(Object),
+    );
+    expect(controller.getConversationState().pending).toBeNull();
+  });
+
+  it('anchors confirmation through spoken-answer processing and retains it for an invalid reply', async () => {
+    const secondTurn = deferred<Awaited<ReturnType<VoiceCommandInterpreter['interpret']>>>();
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn()
+        .mockResolvedValueOnce({
+          kind: 'semantic',
+          intent: {
+            kind: 'move-todo',
+            target: { kind: 'title', text: 'Bogus' },
+            destination: { kind: 'name', text: 'Backlog' },
+          },
+        })
+        .mockReturnValueOnce(secondTurn.promise),
+    };
+    const controller = createVoiceAgentController(options(
+      speech('Move Bogus back to backlog', 'The purple one'),
+      interpreter,
+      {
+        speechOutput: speechOutput(),
+        continuationEnabled: false,
+        getContext: vi.fn(() => makeAmbiguousContext()),
+      },
+    ));
+
+    const task = controller.startListening();
+    await vi.waitFor(() => expect(interpreter.interpret).toHaveBeenCalledTimes(2));
+
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      activity: 'processing',
+      confirmation: { summary: expect.stringContaining('Bogus') },
+    });
+    expect(controller.getConversationState().pending).toMatchObject({ kind: 'confirmation' });
+
+    secondTurn.resolve({
+      kind: 'unsupported',
+      failure: { ok: false, code: 'unsupported', message: 'Unsupported command.' },
+    });
+    await task;
+
+    expect(controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      activity: 'idle',
+      status: { key: 'voice.dialogue.invalidResponse' },
+      confirmation: { summary: expect.stringContaining('Bogus') },
+    });
+    expect(controller.getConversationState().pending).toMatchObject({ kind: 'confirmation' });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('passes an automatic spoken choice through offered-set context and opens only the selected todo', async () => {
+    const speechInput = speech('Open Bogus', 'The one in the backlog');
+    const interpretations: Awaited<ReturnType<VoiceCommandInterpreter['interpret']>>[] = [
+      {
+        kind: 'semantic',
+        intent: { kind: 'open-todo', target: { kind: 'title', text: 'Bogus' } },
+      },
+      {
+        kind: 'dialogue',
+        intent: { kind: 'select-choice', selector: { kind: 'lane', text: 'Backlog' } },
+      },
+    ];
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn(async () => interpretations.shift()!),
+    };
+    const controller = createVoiceAgentController(options(speechInput, interpreter, {
+      speechOutput: speechOutput(),
+      continuationEnabled: false,
+      getContext: vi.fn(() => makeAmbiguousContext()),
+    }));
+
+    await controller.startListening();
+
+    expect(interpreter.interpret).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(interpreter.interpret).mock.calls[1]).toEqual([
+      'The one in the backlog',
+      expect.objectContaining({
+        conversation: { pending: { kind: 'todo-choice' } },
+      }),
+    ]);
+    expect(executeCommandIRMock).toHaveBeenCalledOnce();
+    expect(executeCommandIRMock).toHaveBeenCalledWith(
+      expect.objectContaining({ intent: 'open_todo', entities: { localId: 354 } }),
+      expect.any(Object),
+    );
+    expect(controller.getConversationState().pending).toBeNull();
   });
 
   it('never automatically starts the microphone for a typed question', async () => {

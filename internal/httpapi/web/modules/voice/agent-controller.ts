@@ -52,16 +52,22 @@ import {
   type SpeechInputCapability,
 } from '../platform/speech-input.js';
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
+import { voiceFlowDiagnostic } from '../platform/voiceflow-diagnostics.js';
 
 export type VoiceAgentPhase =
   | 'ready'
-  | 'listening'
-  | 'processing'
   | 'question'
   | 'confirmation'
   | 'success'
   | 'error'
   | 'closed';
+
+export type VoiceAgentActivity =
+  | 'idle'
+  | 'speaking'
+  | 'starting-microphone'
+  | 'listening'
+  | 'processing';
 
 export type VoiceAgentMessage = VoiceMessageDescriptor | Readonly<{
   kind: 'literal';
@@ -71,6 +77,8 @@ export type VoiceAgentMessage = VoiceMessageDescriptor | Readonly<{
 export type VoiceAgentView = Readonly<{
   phase: VoiceAgentPhase;
   status: VoiceAgentMessage;
+  activity: VoiceAgentActivity;
+  activityStatus: VoiceAgentMessage | null;
   confirmation: null | Readonly<{
     summary: string;
     confirmLabel: string;
@@ -130,11 +138,11 @@ function speechFailureMessage(error: SpeechInputError): VoiceMessageDescriptor {
     case 'permission_denied_permanently':
       return message('voice.agent.permissionBlocked', 'Microphone permission is blocked. Enable it in system settings.');
     case 'no_speech':
-      return message('voice.agent.noSpeech', 'No speech was recognized.');
+      return message('voice.agent.noSpeech', "I didn't hear a response.");
     case 'timeout':
       return message('voice.agent.timeout', 'Listening stopped after 10 seconds.');
     case 'busy':
-      return message('voice.agent.busy', 'VoiceFlow is already listening.');
+      return message('voice.agent.busy', 'Speech recognizer is busy. Try again.');
     case 'foreground_required':
       return message('voice.agent.foreground', 'Keep Scrumboy in the foreground and try again.');
     case 'unsupported':
@@ -142,7 +150,7 @@ function speechFailureMessage(error: SpeechInputError): VoiceMessageDescriptor {
     case 'cancelled':
       return message('voice.agent.ready', 'Ready');
     default:
-      return message('voice.agent.speechFailed', 'On-device speech recognition failed.');
+      return message('voice.agent.speechFailed', 'Speech recognition failed. Try again.');
   }
 }
 
@@ -353,6 +361,8 @@ export function createVoiceAgentController(
   let view: VoiceAgentView = Object.freeze({
     phase: 'ready',
     status: message('voice.agent.ready', 'Ready'),
+    activity: 'idle',
+    activityStatus: null,
     confirmation: null,
     clarification: null,
   });
@@ -371,7 +381,22 @@ export function createVoiceAgentController(
     confirmation: VoiceAgentView['confirmation'] = null,
     clarification: VoiceAgentView['clarification'] = null,
   ) => {
-    view = Object.freeze({ phase, status, confirmation, clarification });
+    view = Object.freeze({
+      phase,
+      status,
+      activity: 'idle',
+      activityStatus: null,
+      confirmation,
+      clarification,
+    });
+    options.onView(view);
+  };
+
+  const emitActivity = (
+    activity: VoiceAgentActivity,
+    activityStatus: VoiceAgentMessage | null,
+  ) => {
+    view = Object.freeze({ ...view, activity, activityStatus });
     options.onView(view);
   };
 
@@ -406,10 +431,6 @@ export function createVoiceAgentController(
     emit('error', status);
   };
 
-  const restoreView = (snapshot: VoiceAgentView) => {
-    emit(snapshot.phase, snapshot.status, snapshot.confirmation, snapshot.clarification);
-  };
-
   const speakOwned = async (
     text: string,
     owner: number,
@@ -421,6 +442,7 @@ export function createVoiceAgentController(
       const status = await speechOutput.status({ signal: operation.signal });
       if (!owns(owner, operation) || status.state !== 'ready') return false;
       speaking = true;
+      emitActivity('speaking', null);
       await speechOutput.speak({
         text: text.slice(0, 600),
         language: 'en-US',
@@ -428,11 +450,26 @@ export function createVoiceAgentController(
       });
       if (!owns(owner, operation)) return false;
       speaking = false;
+      emitActivity('idle', null);
       return true;
     } catch {
-      if (owns(owner, operation)) speaking = false;
+      if (owns(owner, operation)) {
+        speaking = false;
+        emitActivity('idle', null);
+      }
       return false;
     }
+  };
+
+  const preserveInteractionAfterInputFailure = (error: SpeechInputError): void => {
+    if (error.code === 'cancelled') {
+      emitActivity('idle', null);
+      return;
+    }
+    const status = error.code === 'timeout'
+      ? message('voice.agent.noSpeech', "I didn't hear a response.")
+      : speechFailureMessage(error);
+    emitActivity('idle', status);
   };
 
   const listenOwned = async (
@@ -442,16 +479,34 @@ export function createVoiceAgentController(
     interpret: (transcript: string, owner: number, operation: AbortController) => Promise<void>,
   ): Promise<void> => {
     if (!owns(owner, operation)) return;
-    const previous = view;
     if (automatic) {
       try {
         const status = await options.speechInput.status({ signal: operation.signal });
-        if (!owns(owner, operation) || status.state !== 'ready') return;
-      } catch {
+        if (!owns(owner, operation)) return;
+        if (status.state !== 'ready') {
+          const code = status.state === 'unsupported'
+            ? 'unsupported'
+            : status.reason === 'busy'
+              ? 'busy'
+              : status.reason === 'foreground'
+                ? 'foreground_required'
+                : 'recognition_failed';
+          preserveInteractionAfterInputFailure(new SpeechInputError(code));
+          return;
+        }
+      } catch (error) {
+        if (owns(owner, operation)) {
+          preserveInteractionAfterInputFailure(error instanceof SpeechInputError
+            ? error
+            : new SpeechInputError('recognition_failed'));
+        }
         return;
       }
     }
-    emit('processing', message('voice.agent.startingMicrophone', 'Starting microphone…'));
+    emitActivity(
+      'starting-microphone',
+      message('voice.agent.startingMicrophone', 'Starting microphone…'),
+    );
     try {
       const result = await options.speechInput.listen({
         maxDurationMs: SPEECH_INPUT_MAX_DURATION_MS,
@@ -459,7 +514,7 @@ export function createVoiceAgentController(
         signal: operation.signal,
         onListening: () => {
           if (owns(owner, operation)) {
-            emit('listening', message('voice.agent.listening', 'Listening…'));
+            emitActivity('listening', message('voice.agent.listening', 'Listening…'));
           }
         },
       });
@@ -467,21 +522,23 @@ export function createVoiceAgentController(
       await interpret(result.transcript, owner, operation);
     } catch (error) {
       if (!owns(owner, operation)) return;
-      if (
-        automatic
-        && error instanceof SpeechInputError
-        && ['no_speech', 'timeout', 'cancelled', 'recognition_failed'].includes(error.code)
-      ) {
-        restoreView(previous);
+      if (error instanceof SpeechInputError && error.code === 'cancelled') {
+        if (automatic || session.getState().pending || reviewed) {
+          preserveInteractionAfterInputFailure(error);
+        } else {
+          emit('ready', speechFailureMessage(error));
+        }
         return;
       }
-      if (error instanceof SpeechInputError && error.code === 'cancelled') {
-        emit('ready', speechFailureMessage(error));
+      if (automatic || session.getState().pending || reviewed) {
+        preserveInteractionAfterInputFailure(error instanceof SpeechInputError
+          ? error
+          : new SpeechInputError('recognition_failed'));
         return;
       }
       fail(error instanceof SpeechInputError
         ? speechFailureMessage(error)
-        : message('voice.agent.speechFailed', 'On-device speech recognition failed.'));
+        : message('voice.agent.speechFailed', 'Speech recognition failed. Try again.'));
     }
   };
 
@@ -1012,7 +1069,7 @@ export function createVoiceAgentController(
       return;
     }
     if (dialogue.kind === 'confirm') {
-      emit('processing', message('voice.agent.processing', 'Processing…'));
+      emitActivity('processing', message('voice.agent.processing', 'Processing…'));
       await confirmReviewed(owner, operation);
       return;
     }
@@ -1037,16 +1094,25 @@ export function createVoiceAgentController(
       return;
     }
     const wasPending = session.getState().pending !== null;
+    const conversation = pendingInterpreterContext(session);
+    voiceFlowDiagnostic('turn', {
+      pendingKind: conversation?.pending.kind ?? 'none',
+    });
     if (!wasPending) {
       dialogueTurns = 0;
       retainedTodoChoices = Object.freeze([]);
     }
-    emit('processing', message('voice.agent.processing', 'Processing…'));
+    emitActivity('processing', message('voice.agent.processing', 'Processing…'));
     const interpretation = await options.interpreter.interpret(normalized, {
       signal: operation.signal,
-      conversation: pendingInterpreterContext(session),
+      conversation,
     });
     if (!owns(owner, operation)) return;
+    voiceFlowDiagnostic('interpretation', {
+      kind: interpretation.kind === 'dialogue' || interpretation.kind === 'unsupported'
+        ? interpretation.kind
+        : 'semantic',
+    });
     if (interpretation.kind === 'unsupported') {
       if (wasPending) showInvalidPendingResponse();
       else fail(literal(localizeCommandFailure(interpretation.failure)));
@@ -1131,7 +1197,11 @@ export function createVoiceAgentController(
     stopListening() {
       if (closed || !operationController) return;
       cancelOwnedOperation();
-      emit('ready', message('voice.agent.stopped', 'Listening stopped.'));
+      if (session.getState().pending || reviewed) {
+        emitActivity('idle', message('voice.agent.stopped', 'Listening stopped.'));
+      } else {
+        emit('ready', message('voice.agent.stopped', 'Listening stopped.'));
+      }
     },
     async confirm() {
       if (closed || !reviewed) return;
@@ -1139,9 +1209,12 @@ export function createVoiceAgentController(
         cancelOwnedOperation();
         await options.speechOutput?.stop().catch(() => undefined);
       }
+      if (operationController && ['starting-microphone', 'listening'].includes(view.activity)) {
+        cancelOwnedOperation();
+      }
       if (operationController) return;
       await runOwned(async (owner, operation) => {
-        emit('processing', message('voice.agent.processing', 'Processing…'));
+        emitActivity('processing', message('voice.agent.processing', 'Processing…'));
         await confirmReviewed(owner, operation);
       });
     },
@@ -1166,6 +1239,9 @@ export function createVoiceAgentController(
       if (speaking) {
         cancelOwnedOperation();
         await options.speechOutput?.stop().catch(() => undefined);
+      }
+      if (operationController && ['starting-microphone', 'listening'].includes(view.activity)) {
+        cancelOwnedOperation();
       }
       if (operationController) return;
       await runOwned((owner, operation) => selectPendingClarification(
@@ -1215,6 +1291,8 @@ export function createVoiceAgentController(
       }
       if (!session.getState().pending && !reviewed) {
         emit('ready', message('voice.agent.ready', 'Ready'));
+      } else {
+        emitActivity('idle', null);
       }
     },
     close() {
