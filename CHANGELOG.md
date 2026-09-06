@@ -1,6 +1,18 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
+
+## [3.33.12] - 2026-09-06
+
+### Security
+
+- **Webhook SSRF** - Outbound webhook delivery resolves, classifies, and dials
+  a vetted IP instead of using Go's default HTTP client. Destinations that
+  resolve to loopback, LAN/private, Docker/internal, link-local, metadata, or
+  related blocked ranges are no longer delivered, including URLs already stored
+  before upgrade. Redirects are not followed. Webhook delivery ignores
+  environment `HTTP_PROXY`/`HTTPS_PROXY`. Public `http` and `https` webhook
+  URLs remain supported.
 
 ## [3.33.11] - 2026-08-27
 

@@ -80,7 +80,7 @@ Security depends on correct deployment and configuration (HTTPS, secrets, IdP ha
 
 **Intended protections:** limit damage from stolen database files (hashed secrets), stolen backups that omit hashes where designed, CSRF from foreign origins against cookie sessions, silent account takeover via email collision on OIDC, reuse of OAuth refresh tokens, and casual tampering with `audit_events` through the application.
 
-**Non-goals:** multi-tenant cloud isolation between hostile co-tenants on one process; cryptographic proof against DBA forgery of audit rows; SSRF-proof webhooks to arbitrary maintainer URLs; formal assurance cases or signed every release artifact.
+**Non-goals:** multi-tenant cloud isolation between hostile co-tenants on one process; cryptographic proof against DBA forgery of audit rows; formal assurance cases or signed every release artifact.
 
 ---
 
@@ -305,9 +305,9 @@ Assignee history uses a separate `todo_assignee_events` table (also append-orien
 
 ### Webhooks
 
-- Maintainers configure outbound HTTP URLs (http/https with a host). Optional shared secret produces `X-Scrumboy-Signature` (`sha256=` HMAC of the body).
+- Maintainers configure outbound HTTP URLs (`http`/`https` with a host). Optional shared secret produces `X-Scrumboy-Signature` (`sha256=` HMAC of the body).
 - Delivery uses a small retry worker and timeouts; secrets are stored as configured (not hashed like session tokens) and omitted from list API responses.
-- **No** application denylist for private/link-local destinations: a maintainer-chosen URL is trusted. Treat webhook URLs as sensitive configuration (SSRF risk to internal networks if a privileged user is tricked or compromised).
+- Outbound delivery resolves the destination, refuses loopback/private/link-local/special-purpose addresses, and dials a vetted IP directly (the same classification used for Agenda ICS fetches). Redirects are not followed. `HTTP_PROXY`/`HTTPS_PROXY` are ignored for webhook delivery. Create-time URL checks reject literal unsafe hosts; **dial-time enforcement** is what protects already-stored URLs after upgrade.
 - Shutdown drains in-flight mail/webhook work as implemented in process lifecycle.
 
 ---
@@ -408,7 +408,7 @@ This is not a full environment-variable catalog—see the root `[README.md](../R
 - No claim of formal security certification or third-party audit in this repository.
 - Scanner coverage is incomplete relative to “every commit on every tool” (Snyk/govulncheck manual; Trivy branch-gated; no CodeQL analyze).
 - External trust in IdPs, SMTP relays, browser push services, and webhook receivers.
-- Webhook URLs are not SSRF-filtered beyond scheme/host parse rules.
+- Webhook destinations must be publicly routable; loopback, RFC1918, link-local, and related ranges are refused at dial time (LAN/Docker-internal webhook URLs will not be delivered).
 - Some push payload / click deep-link contracts rely on manual or browser checks rather than automated field-contract tests (see ops docs).
 - Historical point-in-time “0 findings” tables are snapshots, not continuous guarantees.
 
