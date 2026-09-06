@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.33.12-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.33.13-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -138,7 +138,7 @@ macOS users can download architecture-specific archives from [GitHub Releases](h
 - Apple Silicon: `scrumboy-<tag>-darwin-arm64.tar.gz`
 - Intel: `scrumboy-<tag>-darwin-amd64.tar.gz`
 
-These binaries require **macOS 12 Monterey or later** (the Go 1.25 Darwin floor). That minimum is not raised by the GitHub Actions runner that produced the build.
+These binaries require **macOS 12 Monterey or later** (the Go 1.26 Darwin floor). That minimum is not raised by the GitHub Actions runner that produced the build.
 
 The matching `.sha256` file is published beside each archive for checksum verification. Release builds also publish a matching `.intoto.jsonl` provenance bundle. The macOS archives are not Apple-signed or notarized.
 
