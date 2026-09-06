@@ -4,19 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
+
+	"scrumboy/internal/safehttp"
 )
 
 const maxWebhooksPerProject = 20
 
 type Webhook struct {
-	ID        int64    `json:"id"`
-	UserID    int64    `json:"userId"`
-	ProjectID int64    `json:"projectId"`
-	URL       string   `json:"url"`
-	Events    []string `json:"events"`
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"userId"`
+	ProjectID int64     `json:"projectId"`
+	URL       string    `json:"url"`
+	Events    []string  `json:"events"`
 	CreatedAt time.Time `json:"createdAt"`
 	// Secret is never returned in list/get responses.
 }
@@ -35,12 +38,9 @@ func (s *Store) CreateWebhook(ctx context.Context, userID int64, in CreateWebhoo
 	if in.ProjectID <= 0 {
 		return Webhook{}, fmt.Errorf("%w: invalid project id", ErrValidation)
 	}
-	u, err := url.Parse(strings.TrimSpace(in.URL))
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return Webhook{}, fmt.Errorf("%w: invalid webhook url", ErrValidation)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return Webhook{}, fmt.Errorf("%w: url scheme must be http or https", ErrValidation)
+	u, err := parseWebhookURL(in.URL)
+	if err != nil {
+		return Webhook{}, err
 	}
 	if len(in.Events) == 0 || len(in.Events) > 50 {
 		return Webhook{}, fmt.Errorf("%w: events must contain 1-50 entries", ErrValidation)
@@ -153,4 +153,24 @@ func (s *Store) DeleteWebhook(ctx context.Context, userID, webhookID int64) erro
 		return ErrNotFound
 	}
 	return nil
+}
+
+// parseWebhookURL is fail-fast syntax/literal-IP checking. Delivery still
+// resolves hostnames and refuses forbidden addresses at dial time.
+func parseWebhookURL(raw string) (*url.URL, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return nil, fmt.Errorf("%w: invalid webhook url", ErrValidation)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return nil, fmt.Errorf("%w: url scheme must be http or https", ErrValidation)
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if host == "localhost" {
+		return nil, fmt.Errorf("%w: webhook destination is not allowed", ErrValidation)
+	}
+	if ip := net.ParseIP(host); ip != nil && safehttp.IsForbiddenIP(ip) {
+		return nil, fmt.Errorf("%w: webhook destination is not allowed", ErrValidation)
+	}
+	return u, nil
 }

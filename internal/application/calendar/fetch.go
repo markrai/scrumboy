@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"scrumboy/internal/calendar/ics"
+	"scrumboy/internal/safehttp"
 )
 
 const defaultFetchTimeout = 10 * time.Second
@@ -159,111 +160,31 @@ func (f *HTTPFetcher) validateURL(u *url.URL) error {
 }
 
 func (f *HTTPFetcher) dialContext(ctx context.Context, network, address string) (net.Conn, error) {
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return nil, ErrFeedRequest
+	conn, err := safehttp.Dialer{
+		LookupIP:  f.LookupIP,
+		Forbidden: f.blockedIP,
+	}.DialContext(ctx, network, address)
+	if err == nil {
+		return conn, nil
 	}
-	lookup := f.LookupIP
-	if lookup == nil {
-		lookup = defaultLookupIP
+	if errors.Is(err, safehttp.ErrForbidden) {
+		return nil, ErrFeedBlocked
 	}
-	ips, err := lookup(ctx, host)
-	if err != nil {
-		return nil, ErrFeedRequest
-	}
-	if len(ips) == 0 {
-		return nil, ErrFeedRequest
-	}
-	var last error
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	for _, ip := range ips {
-		if f.blockedIP(ip) {
-			last = ErrFeedBlocked
-			continue
-		}
-		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-		if err == nil {
-			return conn, nil
-		}
-		last = ErrFeedRequest
-	}
-	if last == nil {
-		last = ErrFeedBlocked
-	}
-	return nil, last
+	return nil, ErrFeedRequest
 }
 
 func (f *HTTPFetcher) blockedIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
+	classified := ip
 	if v4 := ip.To4(); v4 != nil {
-		ip = v4
+		classified = v4
 	}
-	if ip.IsLoopback() {
+	if classified.IsLoopback() {
 		return !f.AllowLoopback
 	}
-	return ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() ||
-		ip.IsUnspecified() ||
-		blockedSpecialPurposeIP(ip)
-}
-
-var blockedSpecialPurposeNets = mustParseCIDRs(
-	"100.64.0.0/10", // CGNAT / shared address space (RFC 6598)
-	"0.0.0.0/8",     // this network
-	"192.0.0.0/24",  // IETF protocol assignments
-	"192.0.2.0/24",  // TEST-NET-1
-	"198.51.100.0/24",
-	"203.0.113.0/24",
-	"198.18.0.0/15", // benchmarking
-	"240.0.0.0/4",   // reserved
-	"255.255.255.255/32",
-	"64:ff9b::/96",  // NAT64
-	"100::/64",      // discard-only
-	"2001:db8::/32", // documentation
-	"2002::/16",     // 6to4
-	"fec0::/10",     // deprecated site-local
-)
-
-func mustParseCIDRs(cidrs ...string) []*net.IPNet {
-	out := make([]*net.IPNet, 0, len(cidrs))
-	for _, cidr := range cidrs {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			panic(err)
-		}
-		out = append(out, network)
-	}
-	return out
-}
-
-func blockedSpecialPurposeIP(ip net.IP) bool {
-	for _, network := range blockedSpecialPurposeNets {
-		if network.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-
-func defaultLookupIP(ctx context.Context, host string) ([]net.IP, error) {
-	if ip := net.ParseIP(host); ip != nil {
-		return []net.IP{ip}, nil
-	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]net.IP, 0, len(addrs))
-	for _, addr := range addrs {
-		if addr.IP != nil {
-			out = append(out, addr.IP)
-		}
-	}
-	return out, nil
+	return safehttp.IsForbiddenIP(ip)
 }
 
 func sanitizeFetchError(err error) error {
@@ -271,7 +192,7 @@ func sanitizeFetchError(err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ErrFeedBlocked):
+	case errors.Is(err, ErrFeedBlocked), errors.Is(err, safehttp.ErrForbidden):
 		return ErrFeedBlocked
 	case errors.Is(err, ErrFeedTooLarge):
 		return ErrFeedTooLarge

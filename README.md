@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.33.11-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.33.12-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -485,7 +485,7 @@ Scrumboy can **POST JSON to URLs you register** when certain events occur. This 
 - **Who can configure:** Project **maintainers**, via the HTTP API only - there is **no settings screen** for webhooks yet.
 - **API:** `POST /api/webhooks` (create), `GET /api/webhooks` (list yours), `DELETE /api/webhooks/{id}` - same session cookie / CSRF header rules as other mutating `/api/`* calls.
 - **Events:** Subscribe to specific types (e.g. `todo.assigned`) or `*` for all delivered types. The set may grow over time; unused types in your list are harmless.
-- **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body).
+- **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body). Destinations must be publicly routable `http` or `https` URLs. Loopback, private, link-local, and metadata addresses are refused at delivery time (including URLs stored before upgrade). Redirects are not followed. Webhook delivery ignores environment `HTTP_PROXY`/`HTTPS_PROXY` settings so proxy routing cannot bypass destination validation.
 - **Semantics:** Best-effort delivery with retries on failure; not a durable external queue - design for idempotent receivers using the event `id` in the JSON body.
 
 Example create (replace cookie / project id / URL):
