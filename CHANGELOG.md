@@ -1,6 +1,6 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
 
 ## [3.34.0] - 2026-08-28
 
@@ -31,6 +31,30 @@
 - **Native session fencing** - The Android transport uses crash-consistent
   cookie ownership and generation fencing so stale in-flight session delivery
   cannot overwrite a newer selected-server session after a switch or restart.
+
+## [3.33.13] - 2026-09-06
+
+### Security
+
+- **golang.org/x/crypto and Go 1.26.8 toolchain** - Bump `golang.org/x/crypto`
+  from `v0.54.0` to `v0.56.0`, raise the `go.mod` language version from
+  `1.25.0` to `1.26.0`, pin the toolchain to `go1.26.8`, and pin the Docker
+  build image to `golang:1.26.8-alpine` by multi-platform manifest digest so
+  OpenSSF Scorecard / OSV findings `GO-2026-6303`, `GO-2026-6354`, and
+  `GO-2026-6355` are no longer reported. macOS binaries still require
+  macOS 12 Monterey or later.
+
+## [3.33.12] - 2026-09-06
+
+### Security
+
+- **Webhook SSRF** - Outbound webhook delivery resolves, classifies, and dials
+  a vetted IP instead of using Go's default HTTP client. Destinations that
+  resolve to loopback, LAN/private, Docker/internal, link-local, metadata, or
+  related blocked ranges are no longer delivered, including URLs already stored
+  before upgrade. Redirects are not followed. Webhook delivery ignores
+  environment `HTTP_PROXY`/`HTTPS_PROXY`. Public `http` and `https` webhook
+  URLs remain supported.
 
 ## [3.33.11] - 2026-08-27
 

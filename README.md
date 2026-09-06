@@ -138,7 +138,7 @@ macOS users can download architecture-specific archives from [GitHub Releases](h
 - Apple Silicon: `scrumboy-<tag>-darwin-arm64.tar.gz`
 - Intel: `scrumboy-<tag>-darwin-amd64.tar.gz`
 
-These binaries require **macOS 12 Monterey or later** (the Go 1.25 Darwin floor). That minimum is not raised by the GitHub Actions runner that produced the build.
+These binaries require **macOS 12 Monterey or later** (the Go 1.26 Darwin floor). That minimum is not raised by the GitHub Actions runner that produced the build.
 
 The matching `.sha256` file is published beside each archive for checksum verification. Release builds also publish a matching `.intoto.jsonl` provenance bundle. The macOS archives are not Apple-signed or notarized.
 
@@ -485,7 +485,7 @@ Scrumboy can **POST JSON to URLs you register** when certain events occur. This 
 - **Who can configure:** Project **maintainers**, via the HTTP API only - there is **no settings screen** for webhooks yet.
 - **API:** `POST /api/webhooks` (create), `GET /api/webhooks` (list yours), `DELETE /api/webhooks/{id}` - same session cookie / CSRF header rules as other mutating `/api/`* calls.
 - **Events:** Subscribe to specific types (e.g. `todo.assigned`) or `*` for all delivered types. The set may grow over time; unused types in your list are harmless.
-- **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body).
+- **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body). Destinations must be publicly routable `http` or `https` URLs. Loopback, private, link-local, and metadata addresses are refused at delivery time (including URLs stored before upgrade). Redirects are not followed. Webhook delivery ignores environment `HTTP_PROXY`/`HTTPS_PROXY` settings so proxy routing cannot bypass destination validation.
 - **Semantics:** Best-effort delivery with retries on failure; not a durable external queue - design for idempotent receivers using the event `id` in the JSON body.
 
 Example create (replace cookie / project id / URL):
