@@ -2,6 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
 
+## [3.33.14] - 2026-09-06
+
+### Fixed
+
+- **Bounded MCP project payloads** - `projects_list` now uses deterministic
+  cursor pagination (default 20, maximum 100) and an image-free database
+  projection. MCP project summaries, including `projects_create` and
+  `projects_update` results, no longer contain image data. REST/browser project
+  resources remain image-capable. JSON-RPC continues to return equivalent text
+  and structured content and now advertises the `projects_list` output schema.
+
 ## [3.33.13] - 2026-09-06
 
 ### Security
@@ -13,15 +24,6 @@
   OpenSSF Scorecard / OSV findings `GO-2026-6303`, `GO-2026-6354`, and
   `GO-2026-6355` are no longer reported. macOS binaries still require
   macOS 12 Monterey or later.
-
-### Fixed
-
-- **Bounded MCP project payloads** - `projects_list` now uses deterministic
-  cursor pagination (default 20, maximum 100) and an image-free database
-  projection. MCP project summaries, including `projects_create` and
-  `projects_update` results, no longer contain image data. REST/browser project
-  resources remain image-capable. JSON-RPC continues to return equivalent text
-  and structured content and now advertises the `projects_list` output schema.
 
 ## [3.33.12] - 2026-09-06
 
