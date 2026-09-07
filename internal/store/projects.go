@@ -365,6 +365,10 @@ func effectiveTagModeForProject(p Project, requestMode Mode) Mode {
 }
 
 const (
+	defaultProjectSummaryPageSize = 20
+	maxProjectSummaryPageSize     = 100
+	projectSummaryFetchSize       = maxProjectSummaryPageSize + 1
+
 	projectListSelectColumns     = `p.id, p.name, p.image, p.slug, p.dominant_color, p.estimation_mode, p.default_sprint_weeks, p.sprints_enabled, p.owner_user_id, p.creator_user_id, p.last_activity_at, p.expires_at, p.created_at, p.updated_at`
 	projectSummarySelectColumns  = `p.id, p.slug, p.name, p.dominant_color, p.default_sprint_weeks, p.expires_at, p.created_at, p.updated_at`
 	visibleProjectRoleExpression = `CASE
@@ -528,24 +532,25 @@ func (s *Store) ListProjectSummaries(ctx context.Context, limit int, cursor *str
 	}
 
 	if limit <= 0 {
-		limit = 20
+		limit = defaultProjectSummaryPageSize
 	}
-	if limit > 100 {
-		limit = 100
+	if limit > maxProjectSummaryPageSize {
+		limit = maxProjectSummaryPageSize
 	}
+	fetchLimit := limit + 1
 
 	args := visibleProjectsArgs(userID)
 	if hasCursor {
 		args = append(args, updatedAtCursor, updatedAtCursor, projectIDCursor)
 	}
-	args = append(args, limit+1)
+	args = append(args, fetchLimit)
 	rows, err := s.db.QueryContext(ctx, visibleProjectsQuery(projectSummarySelectColumns, hasCursor, true), args...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list project summaries: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]ProjectSummary, 0, limit+1)
+	out := make([]ProjectSummary, 0, projectSummaryFetchSize)
 	for rows.Next() {
 		var summary ProjectSummary
 		var expiresAtMs sql.NullInt64

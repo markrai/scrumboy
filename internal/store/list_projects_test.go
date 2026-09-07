@@ -327,6 +327,40 @@ func TestListProjectSummaries_KeysetPaginationAndImageIsolation(t *testing.T) {
 	}
 }
 
+func TestListProjectSummaries_MaximumPageSizePreservesExtraRow(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "maximum-page-owner@example.com", "password", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ctxOwner := WithUserID(ctx, owner.ID)
+
+	for i := 0; i < projectSummaryFetchSize; i++ {
+		if _, err := st.CreateProject(ctxOwner, fmt.Sprintf("Maximum Summary Page %03d", i)); err != nil {
+			t.Fatalf("CreateProject %d: %v", i, err)
+		}
+	}
+
+	firstPage, nextCursor, err := st.ListProjectSummaries(ctxOwner, maxProjectSummaryPageSize, nil)
+	if err != nil {
+		t.Fatalf("ListProjectSummaries first page: %v", err)
+	}
+	if len(firstPage) != maxProjectSummaryPageSize || nextCursor == nil {
+		t.Fatalf("first page len=%d nextCursor=%v, want len=%d and continuation", len(firstPage), nextCursor, maxProjectSummaryPageSize)
+	}
+
+	finalPage, finalCursor, err := st.ListProjectSummaries(ctxOwner, maxProjectSummaryPageSize, nextCursor)
+	if err != nil {
+		t.Fatalf("ListProjectSummaries final page: %v", err)
+	}
+	if len(finalPage) != 1 || finalCursor != nil {
+		t.Fatalf("final page len=%d nextCursor=%v, want one row and nil cursor", len(finalPage), finalCursor)
+	}
+}
+
 func TestProjectSummaryQueryProjectionExcludesImage(t *testing.T) {
 	for _, withCursor := range []bool{false, true} {
 		query := strings.ToLower(visibleProjectsQuery(projectSummarySelectColumns, withCursor, true))
