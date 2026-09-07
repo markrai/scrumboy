@@ -46,6 +46,12 @@ cd mobile/capacitor/android
 
 The debug APK is generated under `android/app/build/outputs/apk/debug/` and must not be committed.
 
+Android launcher icons (`ic_launcher`, `ic_launcher_round`, and adaptive `ic_launcher_foreground`) are derived from the PWA source `internal/httpapi/web/icon-512.png`. After changing that file, regenerate the mipmaps from the repository root:
+
+```powershell
+powershell -File mobile/capacitor/scripts/generate-android-icons.ps1
+```
+
 Debug builds may connect to an explicitly selected HTTP server for LAN development. Release builds require HTTPS. The production manifest does not globally enable cleartext traffic, and the transport does not bypass TLS validation.
 
 ## Run or open Android

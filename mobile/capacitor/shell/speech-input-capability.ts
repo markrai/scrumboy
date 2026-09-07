@@ -21,12 +21,31 @@ import { voiceFlowDiagnostic } from '../../../internal/httpapi/web/modules/platf
 import {
   ScrumboySpeechInput,
   NATIVE_SPEECH_LISTENING_EVENT,
+  NATIVE_SPEECH_CAPABILITY_EVENT,
   type NativeSpeechInputPlugin,
   type NativeSpeechInputStatus,
+  type NativeSpeechListeningEvent,
+  type NativeSpeechProviderId,
 } from './native-speech-input-plugin.js';
+
 
 const OPERATION_ID_CODE_UNITS = 128;
 const INVALIDATION_TIMEOUT_MS = 1_000;
+const LANGUAGE_CODE_UNITS = 64;
+
+export function effectiveSpeechInputLanguage(explicit?: string): string {
+  const candidate = (explicit && explicit.trim())
+    || (typeof navigator !== 'undefined' ? navigator.language : '')
+    || 'en-US';
+  if (
+    candidate.length > 0
+    && candidate.length <= LANGUAGE_CODE_UNITS
+    && /^[A-Za-z0-9-]+$/.test(candidate)
+  ) {
+    return candidate;
+  }
+  return 'en-US';
+}
 
 interface NativeFailure {
   code?: unknown;
@@ -138,7 +157,18 @@ export function createSpeechInputComposition(
     : INVALIDATION_TIMEOUT_MS;
   const operations = new Map<string, ActiveOperation<unknown>>();
   let activeListening: string | null = null;
+  let activeProvider: NativeSpeechProviderId | null = null;
   let invalidation: Promise<void> | null = null;
+
+  void Promise.resolve(plugin.addListener(NATIVE_SPEECH_CAPABILITY_EVENT, (event) => {
+    voiceFlowDiagnostic('ASR capability', {
+      cache: event.cache,
+      advancedSupport: event.advancedSupport,
+      statusSource: event.statusSource,
+      locale: event.locale,
+      provider: event.provider,
+    });
+  })).catch(() => undefined);
 
   function run<T>(
     signal: AbortSignal | undefined,
@@ -235,7 +265,10 @@ export function createSpeechInputComposition(
       if (!options || typeof options !== 'object' || !validSignal(options.signal)) {
         return Promise.reject(new SpeechInputError('invalid_request', { recoverable: false }));
       }
-      return run(options.signal, null, (operationId) => plugin.status({ operationId }))
+      return run(options.signal, null, (operationId) => plugin.status({
+        operationId,
+        language: effectiveSpeechInputLanguage(),
+      }))
         .then(validateStatus);
     },
     listen(listenOptions: SpeechInputListenOptions) {
@@ -249,6 +282,7 @@ export function createSpeechInputComposition(
       }
       if (activeListening !== null) return Promise.reject(new SpeechInputError('busy'));
       activeListening = 'starting';
+      activeProvider = null;
       return run(
         listenOptions.signal,
         listenOptions.maxDurationMs,
@@ -256,7 +290,7 @@ export function createSpeechInputComposition(
           activeListening = operationId;
           voiceFlowDiagnostic('ASR start', { operationId });
           let announced = false;
-          const listener = await plugin.addListener(NATIVE_SPEECH_LISTENING_EVENT, (event) => {
+          const listener = await plugin.addListener(NATIVE_SPEECH_LISTENING_EVENT, (event: NativeSpeechListeningEvent) => {
             if (
               announced
               || event.operationId !== operationId
@@ -264,7 +298,13 @@ export function createSpeechInputComposition(
               || listenOptions.signal?.aborted
             ) return;
             announced = true;
-            voiceFlowDiagnostic('ASR ready', { operationId });
+            if (event.provider === 'mlkit_genai_advanced' || event.provider === 'android_on_device') {
+              activeProvider = event.provider;
+            }
+            voiceFlowDiagnostic('ASR ready', {
+              operationId,
+              ...(activeProvider ? { provider: activeProvider } : {}),
+            });
             try {
               listenOptions.onListening?.();
             } catch {
@@ -276,7 +316,7 @@ export function createSpeechInputComposition(
             return await plugin.listen({
               operationId,
               maxDurationMs: listenOptions.maxDurationMs,
-              ...(listenOptions.language ? { language: listenOptions.language } : {}),
+              language: effectiveSpeechInputLanguage(listenOptions.language),
             });
           } finally {
             await listener.remove().catch(() => undefined);
@@ -285,19 +325,25 @@ export function createSpeechInputComposition(
       ).then((result) => {
         validateSpeechInputResult(result);
         const transcript = result.transcript.trim();
-        voiceFlowDiagnostic('ASR result', { operationId: activeListening, transcript });
+        voiceFlowDiagnostic('ASR result', {
+          operationId: activeListening,
+          transcript,
+          ...(activeProvider ? { provider: activeProvider } : {}),
+        });
         return { transcript };
       }).catch((error: unknown) => {
         const failure = nativeError(error);
         voiceFlowDiagnostic('ASR failure', {
           operationId: activeListening,
           normalizedCode: failure.code,
+          ...(activeProvider ? { provider: activeProvider } : {}),
           ...(failure.providerCode === undefined ? {} : { providerCode: failure.providerCode }),
           ...(failure.providerReason === undefined ? {} : { providerReason: failure.providerReason }),
         });
         throw failure;
       }).finally(() => {
         activeListening = null;
+        activeProvider = null;
       });
     },
   });

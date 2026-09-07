@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NativeSpeechInputPlugin } from '../../../../../mobile/capacitor/shell/native-speech-input-plugin.js';
-import { createSpeechInputComposition } from '../../../../../mobile/capacitor/shell/speech-input-capability.js';
+import { createSpeechInputComposition, effectiveSpeechInputLanguage } from '../../../../../mobile/capacitor/shell/speech-input-capability.js';
 import { SPEECH_INPUT_CAPABILITY } from './speech-input.js';
 
 function deferred<T>() {
@@ -20,10 +20,13 @@ function plugin(): NativeSpeechInputPlugin {
     cancel: vi.fn().mockResolvedValue(undefined),
     invalidate: vi.fn().mockResolvedValue(undefined),
     addListener: vi.fn().mockResolvedValue({ remove: vi.fn().mockResolvedValue(undefined) }),
-  };
+  } as NativeSpeechInputPlugin;
 }
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.stubGlobal('navigator', { language: 'en-US' });
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -34,8 +37,8 @@ describe('Capacitor speech-input composition', () => {
   it('reports genuine recognizer readiness once for the owned operation', async () => {
     const native = plugin();
     let listeningListener!: (event: { operationId: string }) => void;
-    vi.mocked(native.addListener).mockImplementation(async (_name, listener) => {
-      listeningListener = listener;
+    vi.mocked(native.addListener).mockImplementation(async (name, listener) => {
+      if (name === 'listening') listeningListener = listener as (event: { operationId: string }) => void;
       return { remove: vi.fn().mockResolvedValue(undefined) };
     });
     vi.mocked(native.listen).mockImplementation(async () => {
@@ -56,8 +59,8 @@ describe('Capacitor speech-input composition', () => {
   it('reports the owned final transcript only through opt-in qualification diagnostics', async () => {
     const native = plugin();
     let listeningListener!: (event: { operationId: string }) => void;
-    vi.mocked(native.addListener).mockImplementation(async (_name, listener) => {
-      listeningListener = listener;
+    vi.mocked(native.addListener).mockImplementation(async (name, listener) => {
+      if (name === 'listening') listeningListener = listener as (event: { operationId: string }) => void;
       return { remove: vi.fn().mockResolvedValue(undefined) };
     });
     vi.mocked(native.listen).mockImplementation(async () => {
@@ -97,6 +100,7 @@ describe('Capacitor speech-input composition', () => {
     await vi.waitFor(() => expect(native.listen).toHaveBeenCalledWith({
       operationId: 'speech-1',
       maxDurationMs: 10_000,
+      language: 'en-US',
     }));
     await vi.advanceTimersByTimeAsync(10_000);
     await expect(timeoutResult).resolves.toMatchObject({ code: 'timeout' });
@@ -163,6 +167,31 @@ describe('Capacitor speech-input composition', () => {
       recoverable: true,
       providerCode: 3,
       providerReason: 'audio',
+    });
+  });
+
+  it('passes the same effective recognition locale to status and listen', async () => {
+    vi.stubGlobal('navigator', { language: 'fr-FR' });
+    const native = plugin();
+    vi.mocked(native.listen).mockResolvedValue({ transcript: 'bonjour' });
+    const composition = createSpeechInputComposition({
+      plugin: native,
+      operationIdFactory: vi.fn().mockReturnValueOnce('status-1').mockReturnValueOnce('speech-1'),
+    });
+    const capability = composition.registry.get(SPEECH_INPUT_CAPABILITY)!;
+
+    expect(effectiveSpeechInputLanguage()).toBe('fr-FR');
+    await capability.status();
+    await capability.listen({ maxDurationMs: 10_000 });
+
+    expect(native.status).toHaveBeenCalledWith({
+      operationId: 'status-1',
+      language: 'fr-FR',
+    });
+    expect(native.listen).toHaveBeenCalledWith({
+      operationId: 'speech-1',
+      maxDurationMs: 10_000,
+      language: 'fr-FR',
     });
   });
 });
