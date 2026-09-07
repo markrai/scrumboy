@@ -2,9 +2,32 @@ package mcp
 
 // mcpToolDef is the MCP-spec shape returned by tools/list for each tool.
 type mcpToolDef struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	InputSchema any    `json:"inputSchema"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	InputSchema  any    `json:"inputSchema"`
+	OutputSchema any    `json:"outputSchema,omitempty"`
+}
+
+func projectsListOutputSchema() map[string]any {
+	project := jsonSchema("object", map[string]any{
+		"projectSlug":        jsonProp("string", "Project identifier (slug)"),
+		"projectId":          jsonProp("integer", "Project database ID"),
+		"name":               jsonProp("string", "Project name"),
+		"dominantColor":      jsonProp("string", "Project dominant color"),
+		"defaultSprintWeeks": jsonProp("integer", "Default sprint duration in weeks"),
+		"expiresAt":          jsonPropWithNull("string", "Expiration timestamp for temporary projects"),
+		"createdAt":          jsonProp("string", "Creation timestamp in RFC3339 format"),
+		"updatedAt":          jsonProp("string", "Last update timestamp in RFC3339 format"),
+		"role":               jsonProp("string", "Authenticated user's project role"),
+	}, []string{"projectSlug", "projectId", "name", "dominantColor", "defaultSprintWeeks", "expiresAt", "createdAt", "updatedAt", "role"})
+	return jsonSchema("object", map[string]any{
+		"items": map[string]any{
+			"type":  "array",
+			"items": project,
+		},
+		"nextCursor": jsonPropWithNull("string", "Cursor for the next page, or null on the final page"),
+		"hasMore":    jsonProp("boolean", "Whether another page is available"),
+	}, []string{"items", "nextCursor", "hasMore"})
 }
 
 // toolCatalogDefinitions holds MCP metadata for every callable tool.
@@ -17,8 +40,18 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"projects_list": {
 			Name:        "projects_list",
-			Description: "List all projects visible to the authenticated user, with their role in each project.",
-			InputSchema: jsonSchema("object", map[string]any{}, nil),
+			Description: "List a page of projects visible to the authenticated user, with their role in each project.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"limit": map[string]any{
+					"type":        []string{"integer", "null"},
+					"description": "Maximum results to return (default 20, max 100)",
+					"default":     20,
+					"minimum":     1,
+					"maximum":     100,
+				},
+				"cursor": jsonPropWithNull("string", "Pagination cursor from a previous projects_list call"),
+			}, nil),
+			OutputSchema: projectsListOutputSchema(),
 		},
 		"projects_create": {
 			Name:        "projects_create",

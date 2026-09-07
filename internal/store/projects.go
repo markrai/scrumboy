@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -363,6 +364,48 @@ func effectiveTagModeForProject(p Project, requestMode Mode) Mode {
 	return requestMode
 }
 
+const (
+	projectListSelectColumns     = `p.id, p.name, p.image, p.slug, p.dominant_color, p.estimation_mode, p.default_sprint_weeks, p.sprints_enabled, p.owner_user_id, p.creator_user_id, p.last_activity_at, p.expires_at, p.created_at, p.updated_at`
+	projectSummarySelectColumns  = `p.id, p.slug, p.name, p.dominant_color, p.default_sprint_weeks, p.expires_at, p.created_at, p.updated_at`
+	visibleProjectRoleExpression = `CASE
+    WHEN p.expires_at IS NOT NULL AND p.creator_user_id = ? THEN 'maintainer'
+    ELSE (SELECT pm.role FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ? LIMIT 1)
+  END AS role`
+	visibleProjectsFromWhere = `FROM projects p
+WHERE (
+  (p.expires_at IS NOT NULL AND p.creator_user_id = ?) OR
+  (p.expires_at IS NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?)) OR
+  (p.expires_at IS NOT NULL AND p.creator_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?))
+) AND p.import_batch_id IS NULL`
+	visibleProjectsOrderBy = `ORDER BY p.updated_at DESC, p.id DESC`
+)
+
+// visibleProjectsQuery keeps the authorization-sensitive role, visibility,
+// and ordering SQL shared while allowing full and lightweight projections.
+func visibleProjectsQuery(selectColumns string, withCursor, withLimit bool) string {
+	var query strings.Builder
+	query.WriteString("SELECT ")
+	query.WriteString(selectColumns)
+	query.WriteString(",\n  ")
+	query.WriteString(visibleProjectRoleExpression)
+	query.WriteByte('\n')
+	query.WriteString(visibleProjectsFromWhere)
+	if withCursor {
+		query.WriteString(`
+  AND (p.updated_at < ? OR (p.updated_at = ? AND p.id < ?))`)
+	}
+	query.WriteByte('\n')
+	query.WriteString(visibleProjectsOrderBy)
+	if withLimit {
+		query.WriteString("\nLIMIT ?")
+	}
+	return query.String()
+}
+
+func visibleProjectsArgs(userID int64) []any {
+	return []any{userID, userID, userID, userID, userID}
+}
+
 func (s *Store) ListProjects(ctx context.Context) ([]ProjectListEntry, error) {
 	enabled, err := s.authEnabled(ctx)
 	if err != nil {
@@ -381,19 +424,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]ProjectListEntry, error) {
 		// Role: temp creator => maintainer; otherwise use project_members (covers invited maintainers/contributors/viewers).
 		// IMPORTANT: Anonymous temp boards (creator_user_id IS NULL) stay out of listings — including the membership branch below
 		// so orphan project_members rows cannot surface unowned paste boards in a user's project list.
-		rows, err = s.db.QueryContext(ctx, `
-SELECT p.id, p.name, p.image, p.slug, p.dominant_color, p.estimation_mode, p.default_sprint_weeks, p.sprints_enabled, p.owner_user_id, p.creator_user_id, p.last_activity_at, p.expires_at, p.created_at, p.updated_at,
-  CASE
-    WHEN p.expires_at IS NOT NULL AND p.creator_user_id = ? THEN 'maintainer'
-    ELSE (SELECT pm.role FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ? LIMIT 1)
-  END AS role
-FROM projects p
-WHERE (
-  (p.expires_at IS NOT NULL AND p.creator_user_id = ?) OR
-  (p.expires_at IS NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?)) OR
-  (p.expires_at IS NOT NULL AND p.creator_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM project_members pm WHERE pm.project_id = p.id AND pm.user_id = ?))
-) AND p.import_batch_id IS NULL
-ORDER BY p.updated_at DESC, p.id DESC`, userID, userID, userID, userID, userID)
+		rows, err = s.db.QueryContext(ctx, visibleProjectsQuery(projectListSelectColumns, false, false), visibleProjectsArgs(userID)...)
 	} else {
 		// Anonymous mode: no authenticated project listings - return empty result explicitly
 		rows, err = s.db.QueryContext(ctx, `
@@ -445,6 +476,115 @@ WHERE 1=0`)
 		return nil, fmt.Errorf("rows projects: %w", err)
 	}
 	return out, nil
+}
+
+func parseProjectSummaryCursor(cursor *string) (updatedAtMs, projectID int64, present bool, err error) {
+	if cursor == nil {
+		return 0, 0, false, nil
+	}
+	raw := strings.TrimSpace(*cursor)
+	if raw == "" {
+		return 0, 0, false, nil
+	}
+	parts := strings.Split(raw, ":")
+	if len(parts) != 2 {
+		return 0, 0, false, fmt.Errorf("%w: invalid project summary cursor", ErrValidation)
+	}
+	updatedAtMs, parseErr := strconv.ParseInt(parts[0], 10, 64)
+	if parseErr != nil || updatedAtMs < 0 {
+		return 0, 0, false, fmt.Errorf("%w: invalid project summary cursor", ErrValidation)
+	}
+	projectID, parseErr = strconv.ParseInt(parts[1], 10, 64)
+	if parseErr != nil || projectID <= 0 {
+		return 0, 0, false, fmt.Errorf("%w: invalid project summary cursor", ErrValidation)
+	}
+	return updatedAtMs, projectID, true, nil
+}
+
+func encodeProjectSummaryCursor(updatedAtMs, projectID int64) string {
+	return strconv.FormatInt(updatedAtMs, 10) + ":" + strconv.FormatInt(projectID, 10)
+}
+
+// ListProjectSummaries returns a bounded, image-free page of projects visible
+// to the authenticated user. Visibility and role semantics are shared with
+// ListProjects through visibleProjectsQuery.
+func (s *Store) ListProjectSummaries(ctx context.Context, limit int, cursor *string) ([]ProjectSummary, *string, error) {
+	enabled, err := s.authEnabled(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !enabled {
+		return []ProjectSummary{}, nil, nil
+	}
+
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return nil, nil, ErrUnauthorized
+	}
+
+	updatedAtCursor, projectIDCursor, hasCursor, err := parseProjectSummaryCursor(cursor)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	args := visibleProjectsArgs(userID)
+	if hasCursor {
+		args = append(args, updatedAtCursor, updatedAtCursor, projectIDCursor)
+	}
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(ctx, visibleProjectsQuery(projectSummarySelectColumns, hasCursor, true), args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list project summaries: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]ProjectSummary, 0, limit+1)
+	for rows.Next() {
+		var summary ProjectSummary
+		var expiresAtMs sql.NullInt64
+		var createdAtMs, updatedAtMs int64
+		var role string
+		if err := rows.Scan(
+			&summary.ID,
+			&summary.Slug,
+			&summary.Name,
+			&summary.DominantColor,
+			&summary.DefaultSprintWeeks,
+			&expiresAtMs,
+			&createdAtMs,
+			&updatedAtMs,
+			&role,
+		); err != nil {
+			return nil, nil, fmt.Errorf("scan project summary: %w", err)
+		}
+		if expiresAtMs.Valid {
+			expiresAt := time.UnixMilli(expiresAtMs.Int64).UTC()
+			summary.ExpiresAt = &expiresAt
+		}
+		summary.CreatedAt = time.UnixMilli(createdAtMs).UTC()
+		summary.UpdatedAt = time.UnixMilli(updatedAtMs).UTC()
+		summary.Role = ProjectRole(role)
+		out = append(out, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("rows project summaries: %w", err)
+	}
+
+	if len(out) <= limit {
+		return out, nil, nil
+	}
+
+	page := out[:limit]
+	last := page[len(page)-1]
+	nextCursor := encodeProjectSummaryCursor(last.UpdatedAt.UnixMilli(), last.ID)
+	return page, &nextCursor, nil
 }
 
 // slugExists checks if a slug already exists in the database.

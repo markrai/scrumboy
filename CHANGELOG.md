@@ -14,6 +14,15 @@
   `GO-2026-6355` are no longer reported. macOS binaries still require
   macOS 12 Monterey or later.
 
+### Fixed
+
+- **Bounded MCP project payloads** - `projects_list` now uses deterministic
+  cursor pagination (default 20, maximum 100) and an image-free database
+  projection. MCP project summaries, including `projects_create` and
+  `projects_update` results, no longer contain image data. REST/browser project
+  resources remain image-capable. JSON-RPC continues to return equivalent text
+  and structured content and now advertises the `projects_list` output schema.
+
 ## [3.33.12] - 2026-09-06
 
 ### Security

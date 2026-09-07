@@ -228,6 +228,21 @@ type ProjectListEntry struct {
 	Role    ProjectRole
 }
 
+// ProjectSummary is a lightweight project list projection. It deliberately
+// excludes presentation and ownership fields that summary consumers do not
+// need, most notably the potentially large project image.
+type ProjectSummary struct {
+	ID                 int64
+	Slug               string
+	Name               string
+	DominantColor      string
+	DefaultSprintWeeks int
+	ExpiresAt          *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	Role               ProjectRole
+}
+
 // SystemRole represents a user's system-wide role (Owner, Admin, User).
 // System roles govern system-level permissions (user management, admin APIs).
 // System roles are completely separate from ProjectRole and do not grant

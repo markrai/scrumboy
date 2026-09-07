@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -97,6 +98,27 @@ func TestToolCatalog_NamesUniqueAndClaudeCompatible(t *testing.T) {
 
 		if !claudeToolNamePattern.MatchString(def.Name) {
 			t.Errorf("tool name %q does not match Claude's tool-name pattern %s", def.Name, claudeToolNamePattern.String())
+		}
+	}
+}
+
+func TestToolCatalog_OutputSchemasAreOptionalObjectRoots(t *testing.T) {
+	for name, def := range toolCatalogDefinitions() {
+		if name != "projects_list" && def.OutputSchema != nil {
+			t.Errorf("tool %q unexpectedly advertises an output schema", name)
+		}
+		if def.OutputSchema == nil {
+			continue
+		}
+		schema, ok := def.OutputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("tool %q output schema type=%T, want map[string]any", name, def.OutputSchema)
+		}
+		if schema["type"] != "object" {
+			t.Errorf("tool %q output schema root type=%v, want object", name, schema["type"])
+		}
+		if _, err := json.Marshal(schema); err != nil {
+			t.Errorf("tool %q output schema is not JSON serializable: %v", name, err)
 		}
 	}
 }

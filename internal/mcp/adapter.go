@@ -29,7 +29,7 @@ type storeAPI interface {
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
 	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
 	GetUserByOAuthAccessToken(ctx context.Context, rawToken, expectedResource string) (store.User, error)
-	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
+	ListProjectSummaries(ctx context.Context, limit int, cursor *string) ([]store.ProjectSummary, *string, error)
 	projectapp.ProjectCreationStore
 	projectapp.ProjectAccessStore
 	projectapp.ProjectManageAuthorizationStore
