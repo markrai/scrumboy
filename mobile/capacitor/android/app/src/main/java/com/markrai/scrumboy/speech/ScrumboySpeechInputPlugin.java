@@ -53,6 +53,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
 
     @Override
     public void load() {
+        SpeechInputDiagnostics.configure(getContext());
         foreground = getActivity() != null && !getActivity().isFinishing();
         advancedRuntime = new MlKitAdvancedSpeechRuntime();
         advancedManager = new AdvancedSpeechProviderManager(
@@ -274,8 +275,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
         String language,
         AdvancedSpeechDecision decision
     ) {
-        AdvancedSpeechTranscriptAccumulator accumulator = new AdvancedSpeechTranscriptAccumulator();
-        AdvancedUtteranceTerminal terminal = new AdvancedUtteranceTerminal();
+        AdvancedUtteranceLifecycle lifecycle = new AdvancedUtteranceLifecycle();
 
         final MlKitAdvancedSpeechRuntime.RecognitionHandle[] handleSlot =
             new MlKitAdvancedSpeechRuntime.RecognitionHandle[1];
@@ -294,24 +294,68 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                     @Override
                     public void onPartial(String text) {
                         if (!operations.isActive(operation)) return;
-                        accumulator.onPartial(text);
+                        SpeechInputDiagnostics.emit(
+                            "response",
+                            "provider", decision.providerId.diagnosticName(),
+                            "response", "partial"
+                        );
+                        lifecycle.onPartial(text);
                     }
 
+                    /**
+                     * FinalTextResponse is the authoritative transcript for this utterance and
+                     * is the product terminal. CompletedResponse marks the recognition stream
+                     * ending and, on a continuous mic source, never arrives on its own, so
+                     * waiting for it would hang until the shell's timeout cancelled the session.
+                     */
                     @Override
                     public void onFinal(String text) {
-                        if (!operations.isActive(operation)) return;
-                        accumulator.onFinal(text);
+                        AdvancedUtteranceLifecycle.Outcome outcome = lifecycle.onFinal(
+                            text,
+                            operations,
+                            operation,
+                            () -> stopAdvancedHandle(handleSlot)
+                        );
+                        SpeechInputDiagnostics.emit(
+                            "response",
+                            "provider", decision.providerId.diagnosticName(),
+                            "response", "final",
+                            "productTerminal", outcome == AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT
+                        );
+                        if (outcome != AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT) return;
+                        SpeechInputDiagnostics.emit(
+                            "product-terminal",
+                            "provider", decision.providerId.diagnosticName(),
+                            "product-terminal", "final",
+                            "length", lifecycle.transcript().length()
+                        );
+                        JSObject result = new JSObject();
+                        result.put("transcript", lifecycle.transcript());
+                        call.resolve(result);
                     }
 
+                    /**
+                     * Stream completion. Harmless and idempotent after a final already claimed
+                     * the product terminal; only a stream that ended without any valid final
+                     * settles here, and it settles as no_speech exactly as before.
+                     */
                     @Override
                     public void onCompleted() {
-                        if (!terminal.claimProductCompletion(operations, operation, () -> {})) return;
-                        if (!accumulator.hasFinal()) {
+                        AdvancedUtteranceLifecycle.Outcome outcome =
+                            lifecycle.onCompleted(operations, operation, () -> {});
+                        SpeechInputDiagnostics.emit(
+                            "response",
+                            "provider", decision.providerId.diagnosticName(),
+                            "response", "completed",
+                            "productTerminal", outcome != AdvancedUtteranceLifecycle.Outcome.IGNORE
+                        );
+                        if (outcome == AdvancedUtteranceLifecycle.Outcome.IGNORE) return;
+                        if (outcome == AdvancedUtteranceLifecycle.Outcome.REJECT_NO_SPEECH) {
                             reject(call, new SpeechInputException("no_speech", true));
                             return;
                         }
                         JSObject result = new JSObject();
-                        result.put("transcript", accumulator.finalTranscriptOrNull());
+                        result.put("transcript", lifecycle.transcript());
                         call.resolve(result);
                     }
 
@@ -320,13 +364,14 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         if (AdvancedSpeechErrorMapper.isCapabilityLevel(genAi != null ? genAi : error)) {
                             advancedManager.demoteForCapabilityFailure(decision.localeTag);
                         }
-                        if (
-                            AdvancedCaptureBoundary.allowSameTurnPlatformFallback(captureHandedToSdk)
-                            && operations.isActive(operation)
-                            && terminal.markAdvancedFinishedKeepOperation()
-                        ) {
-                            MlKitAdvancedSpeechRuntime.RecognitionHandle handle = handleSlot[0];
-                            if (handle != null) handle.cancel();
+                        SpeechInputDiagnostics.emit(
+                            "response",
+                            "provider", decision.providerId.diagnosticName(),
+                            "response", "error",
+                            "captureHandedToSdk", captureHandedToSdk
+                        );
+                        if (lifecycle.claimSameTurnPlatformFallback(captureHandedToSdk, operations, operation)) {
+                            stopAdvancedHandle(handleSlot);
                             startPlatformAfterAdvancedTeardown(
                                 operation,
                                 call,
@@ -335,10 +380,11 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                             );
                             return;
                         }
-                        if (!terminal.claimProductCompletion(operations, operation, () -> {
-                            MlKitAdvancedSpeechRuntime.RecognitionHandle handle = handleSlot[0];
-                            if (handle != null) handle.cancel();
-                        })) {
+                        if (!lifecycle.claimErrorTerminal(
+                            operations,
+                            operation,
+                            () -> stopAdvancedHandle(handleSlot)
+                        )) {
                             return;
                         }
                         reject(call, AdvancedSpeechErrorMapper.map(genAi != null ? genAi : error));
@@ -349,8 +395,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
             if (AdvancedSpeechErrorMapper.isCapabilityLevel(error)) {
                 advancedManager.demoteForCapabilityFailure(decision.localeTag);
             }
-            if (!operations.isActive(operation)) return;
-            if (!terminal.markAdvancedFinishedKeepOperation()) return;
+            // No recognizer was created, so capture was never handed to the SDK.
+            if (!lifecycle.claimSameTurnPlatformFallback(false, operations, operation)) return;
             startPlatformAfterAdvancedTeardown(
                 operation,
                 call,
@@ -366,6 +412,12 @@ public class ScrumboySpeechInputPlugin extends Plugin {
             operation,
             advancedTeardownBarrier
         );
+    }
+
+    /** Advanced native teardown for the exact published handle; idempotent. */
+    private static void stopAdvancedHandle(MlKitAdvancedSpeechRuntime.RecognitionHandle[] handleSlot) {
+        MlKitAdvancedSpeechRuntime.RecognitionHandle handle = handleSlot[0];
+        if (handle != null) handle.cancel();
     }
 
     /**
@@ -510,6 +562,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
     }
 
     private void notifyListening(String operationId, SpeechInputProviderId providerId) {
+        SpeechInputDiagnostics.emit("listening", "provider", providerId.diagnosticName());
         JSObject event = new JSObject();
         event.put("operationId", operationId);
         event.put("provider", providerId.diagnosticName());

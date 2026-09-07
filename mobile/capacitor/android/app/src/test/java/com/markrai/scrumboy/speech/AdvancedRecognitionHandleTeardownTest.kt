@@ -13,8 +13,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -152,6 +155,89 @@ class AdvancedRecognitionHandleTeardownTest {
             assertFalse(gate.isBusy)
         } finally {
             scope.cancel()
+        }
+    }
+
+    /**
+     * A successful FinalTextResponse now tears the Advanced session down by cancelling the
+     * recognition job. `SpeechRecognizer.stopRecognition` is a suspend function, so in a
+     * cancelled coroutine it fails fast at its suspension point unless the cleanup is
+     * shielded. This models the production `finally` block and proves both halves: the
+     * unshielded shape silently skips the native stop, the shielded shape preserves
+     * stop -> close -> gate release.
+     */
+    @Test
+    fun cancellationDrivenTeardownStillRunsTheSuspendingStopWhenShielded() {
+        assertEquals(listOf("close", "gate-release"), teardownEventsForCancelledSession(shielded = false))
+        assertEquals(listOf("stop", "close", "gate-release"), teardownEventsForCancelledSession(shielded = true))
+    }
+
+    /**
+     * Runs one lazy Advanced session that is cancelled while active, mirroring
+     * [MlKitAdvancedSpeechRuntime.prepareRecognition]'s teardown, and returns the native
+     * cleanup steps that actually executed.
+     */
+    private fun teardownEventsForCancelledSession(shielded: Boolean): List<String> {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val gate = AdvancedRecognizerSessionGate()
+        val events = Collections.synchronizedList(mutableListOf<String>())
+        val entered = CountDownLatch(1)
+        try {
+            val handle = MlKitAdvancedSpeechRuntime.RecognitionHandle()
+            val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+                var sessionTeardown: CompletableFuture<Void>? = null
+                var acquired = false
+                try {
+                    sessionTeardown = runInterruptible(Dispatchers.IO) { gate.acquire() }
+                    acquired = true
+                    handle.markNativeStarted()
+                    entered.countDown()
+                    awaitCancellation()
+                } finally {
+                    try {
+                        if (acquired) {
+                            if (shielded) {
+                                withContext(NonCancellable) { stopThenClose(events) }
+                            } else {
+                                stopThenClose(events)
+                            }
+                        }
+                    } finally {
+                        sessionTeardown?.let {
+                            gate.finish(it)
+                            events.add("gate-release")
+                        }
+                        handle.completeTeardown()
+                    }
+                }
+            }
+            handle.attachJob(job)
+            val teardown = handle.teardownFuture()
+
+            handle.start()
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            assertTrue(gate.isBusy)
+
+            // What a successful final now does to begin Advanced teardown.
+            handle.cancel()
+            teardown.get(5, TimeUnit.SECONDS)
+
+            assertFalse("the gate must always be released", gate.isBusy)
+            assertEquals(1, handle.nativeStartCount())
+            return events.toList()
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    /** `stopRecognition` is suspending in alpha1; `close` is not. */
+    private suspend fun stopThenClose(events: MutableList<String>) {
+        try {
+            yield()
+            events.add("stop")
+        } catch (_: Throwable) {
+        } finally {
+            events.add("close")
         }
     }
 }

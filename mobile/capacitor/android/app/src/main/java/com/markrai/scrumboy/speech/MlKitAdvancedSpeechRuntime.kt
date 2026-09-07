@@ -19,16 +19,27 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
 
 /**
  * Alpha1 ML Kit GenAI speech recognition exposes suspend/Flow APIs only.
  * This narrow Kotlin bridge is the smallest officially supported surface for Java callers.
+ *
+ * Response semantics (verified against genai-speech-recognition 1.0.0-alpha1 bytecode):
+ * [SpeechRecognizerResponse.FinalTextResponse] is the authoritative transcript for one
+ * utterance. [SpeechRecognizerResponse.CompletedResponse] is emitted from the SDK's
+ * `Flow.onCompletion` block and only when the terminating cause is null, so it marks the
+ * recognition STREAM ending, not the utterance. With [AudioSource.fromMic] the stream is
+ * continuous and does not end on its own after a final hypothesis, and a cancelled
+ * collection never emits it at all. Waiting for CompletedResponse after a valid final
+ * therefore hangs until the caller's timeout. The product terminal is the first valid final.
  *
  * Capture boundary: alpha1 starts the session when the Flow from
  * [SpeechRecognizer.startRecognition] is collected. There is no mic-acquired callback.
@@ -171,13 +182,19 @@ internal class MlKitAdvancedSpeechRuntime(
                 try {
                     val target = recognizer
                     if (target != null) {
-                        try {
-                            target.stopRecognition()
-                        } catch (_: Throwable) {
-                        } finally {
+                        // stopRecognition is a suspend function, so in a cancelled coroutine it
+                        // would fail fast at its suspension point and never reach the SDK. A
+                        // successful final now tears down by cancelling this job, so the stop is
+                        // shielded to preserve the documented stop -> close -> gate order.
+                        withContext(NonCancellable) {
                             try {
-                                target.close()
+                                target.stopRecognition()
                             } catch (_: Throwable) {
+                            } finally {
+                                try {
+                                    target.close()
+                                } catch (_: Throwable) {
+                                }
                             }
                         }
                     }
