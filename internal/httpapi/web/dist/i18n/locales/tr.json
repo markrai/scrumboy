@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Sprintler etkinleştirildi",
   "settings.sprints.toast.disabled": "Sprintler devre dışı bırakıldı",
   "settings.sprints.toast.toggleFailed": "Sprint ayarı güncellenemedi",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Dinlemeye Devam Et",
+  "voice.agent.noChanges": "Değişiklik gerekmiyor.",
+  "voice.agent.safeFailure": "Bu işlem güvenle tamamlanamadı. Lütfen tekrar deneyin.",
+  "voice.agent.batchResult": "Başarılı: {succeeded}. Başarısız veya doğrulanmamış: {failed}. Denenmedi: {remaining}. Yenileme başarısız: {refresh}."
 }

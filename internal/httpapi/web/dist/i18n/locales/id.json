@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Sprint diaktifkan",
   "settings.sprints.toast.disabled": "Sprint dinonaktifkan",
   "settings.sprints.toast.toggleFailed": "Gagal memperbarui pengaturan sprint",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Terus Mendengarkan",
+  "voice.agent.noChanges": "Tidak perlu perubahan.",
+  "voice.agent.safeFailure": "Saya tidak dapat menyelesaikannya dengan aman. Coba lagi.",
+  "voice.agent.batchResult": "Berhasil: {succeeded}. Gagal atau belum dikonfirmasi: {failed}. Belum dicoba: {remaining}. Penyegaran gagal: {refresh}."
 }

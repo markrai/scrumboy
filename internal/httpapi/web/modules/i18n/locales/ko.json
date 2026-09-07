@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "스프린트가 활성화되었습니다",
   "settings.sprints.toast.disabled": "스프린트가 비활성화되었습니다",
   "settings.sprints.toast.toggleFailed": "스프린트 설정을 업데이트하지 못했습니다",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "계속 듣기",
+  "voice.agent.noChanges": "변경할 필요가 없습니다.",
+  "voice.agent.safeFailure": "안전하게 완료하지 못했습니다. 다시 시도해 주세요.",
+  "voice.agent.batchResult": "성공: {succeeded}. 실패 또는 미확인: {failed}. 시도하지 않음: {remaining}. 새로 고침 실패: {refresh}."
 }

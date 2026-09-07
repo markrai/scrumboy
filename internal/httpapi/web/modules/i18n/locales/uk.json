@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Спринти увімкнено",
   "settings.sprints.toast.disabled": "Спринти вимкнено",
   "settings.sprints.toast.toggleFailed": "Не вдалося оновити налаштування спринтів",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Продовжувати слухати",
+  "voice.agent.noChanges": "Зміни не потрібні.",
+  "voice.agent.safeFailure": "Не вдалося безпечно завершити. Спробуйте ще раз.",
+  "voice.agent.batchResult": "Успішно: {succeeded}. Помилка або не підтверджено: {failed}. Не виконано: {remaining}. Помилка оновлення: {refresh}."
 }

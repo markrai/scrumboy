@@ -3,7 +3,7 @@ import {
   setVoiceFlowContinueConversationPreference,
 } from '../core/voiceflow-preferences.js';
 import { NATIVE_BACKGROUND_EVENT } from '../core/realtime.js';
-import { getLocale } from '../i18n/index.js';
+import { getLocale, hydrateI18n, I18N_LOCALE_CHANGED } from '../i18n/index.js';
 import type { LocalTextGenerationCapability } from '../platform/local-text-generation.js';
 import type { SpeechInputCapability } from '../platform/speech-input.js';
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
@@ -12,10 +12,10 @@ import {
   type VoiceAgentController,
   type VoiceAgentMessage,
   type VoiceAgentView,
-} from './agent-controller.js';
+} from './local-agent-controller.js';
 import type { VoiceCommandOptions } from './command-resolution.js';
 import { renderVoiceMessage } from './i18n.js';
-import { createLocalAiVoiceCommandInterpreter } from './local-ai-interpreter.js';
+import { createVoiceAgentModel } from './agent-model.js';
 
 const CHANGE_SERVER_EVENT = 'scrumboy:mobile-change-server';
 
@@ -80,7 +80,7 @@ function createSurface(): HTMLElement {
     <label class="voice-command__switch voice-agent__continue">
       <input type="checkbox" role="switch" data-voice-agent-continue />
       <span class="voice-command__switch-track" aria-hidden="true"><span class="voice-command__switch-thumb"></span></span>
-      <span data-i18n-text="voice.continueConversation" data-i18n-fallback="Continue conversation">Continue conversation</span>
+      <span data-i18n-text="voice.keepListening" data-i18n-fallback="Keep Listening">Keep Listening</span>
     </label>
   `;
   return root;
@@ -105,6 +105,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
 
   const root = createSurface();
   document.body.appendChild(root);
+  hydrateI18n(root);
   const status = root.querySelector<HTMLElement>('[data-voice-agent-status]')!;
   const activity = root.querySelector<HTMLElement>('[data-voice-agent-activity]')!;
   const clarification = root.querySelector<HTMLElement>('[data-voice-agent-clarification]')!;
@@ -152,10 +153,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
 
   const controller = createVoiceAgentController({
     ...options,
-    interpreter: createLocalAiVoiceCommandInterpreter({
-      capability: options.localTextGeneration,
-      locale: getLocale(),
-    }),
+    model: createVoiceAgentModel(options.localTextGeneration, getLocale()),
     continuationEnabled: continuation.checked,
     speechOutput: options.speechOutput,
     onView: render,
@@ -179,12 +177,14 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
     if (document.visibilityState === 'hidden') invalidateForBackground();
   };
   const onServerChange = () => closeAgent();
+  const onLocaleChange = () => { hydrateI18n(root); render(controller.getView()); };
   const closeAgent = () => {
     if (disposed) return;
     disposed = true;
     document.removeEventListener('visibilitychange', onVisibilityChange);
     window.removeEventListener(NATIVE_BACKGROUND_EVENT, invalidateForBackground);
     window.removeEventListener(CHANGE_SERVER_EVENT, onServerChange);
+    document.removeEventListener(I18N_LOCALE_CHANGED, onLocaleChange);
     dialogObserver.disconnect();
     controller.close();
     root.remove();
@@ -215,6 +215,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
   document.addEventListener('visibilitychange', onVisibilityChange);
   window.addEventListener(NATIVE_BACKGROUND_EVENT, invalidateForBackground);
   window.addEventListener(CHANGE_SERVER_EVENT, onServerChange);
+  document.addEventListener(I18N_LOCALE_CHANGED, onLocaleChange);
 
   activeAgent = Object.freeze({ root, controller, close: closeAgent });
   syncInteractiveHost();

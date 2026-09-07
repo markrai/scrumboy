@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Spirinti zimewashwa",
   "settings.sprints.toast.disabled": "Spirinti zimezimwa",
   "settings.sprints.toast.toggleFailed": "Imeshindwa kusasisha mpangilio wa spirinti",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Endelea Kusikiliza",
+  "voice.agent.noChanges": "Hakuna mabadiliko yanayohitajika.",
+  "voice.agent.safeFailure": "Sikuweza kumaliza hilo kwa usalama. Jaribu tena.",
+  "voice.agent.batchResult": "Imefanikiwa: {succeeded}. Imeshindwa au haijathibitishwa: {failed}. Haijajaribiwa: {remaining}. Kuonyesha upya kumeshindwa: {refresh}."
 }

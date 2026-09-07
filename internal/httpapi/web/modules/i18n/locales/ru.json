@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Спринты включены",
   "settings.sprints.toast.disabled": "Спринты отключены",
   "settings.sprints.toast.toggleFailed": "Не удалось обновить настройку спринтов",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Продолжать слушать",
+  "voice.agent.noChanges": "Изменения не требуются.",
+  "voice.agent.safeFailure": "Не удалось безопасно завершить. Попробуйте ещё раз.",
+  "voice.agent.batchResult": "Успешно: {succeeded}. Ошибка или не подтверждено: {failed}. Не выполнено: {remaining}. Ошибка обновления: {refresh}."
 }

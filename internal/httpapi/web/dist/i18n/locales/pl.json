@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Sprinty włączone",
   "settings.sprints.toast.disabled": "Sprinty wyłączone",
   "settings.sprints.toast.toggleFailed": "Nie udało się zaktualizować ustawienia sprintów",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Słuchaj dalej",
+  "voice.agent.noChanges": "Zmiany nie są potrzebne.",
+  "voice.agent.safeFailure": "Nie udało się bezpiecznie zakończyć. Spróbuj ponownie.",
+  "voice.agent.batchResult": "Powodzenie: {succeeded}. Błąd lub brak potwierdzenia: {failed}. Nie podjęto próby: {remaining}. Błąd odświeżania: {refresh}."
 }

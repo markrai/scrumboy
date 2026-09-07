@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "سپرنٹس فعال کر دیے گئے",
   "settings.sprints.toast.disabled": "سپرنٹس غیر فعال کر دیے گئے",
   "settings.sprints.toast.toggleFailed": "سپرنٹ کی ترتیب اپ ڈیٹ کرنے میں ناکامی",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "سنتے رہیں",
+  "voice.agent.noChanges": "کسی تبدیلی کی ضرورت نہیں۔",
+  "voice.agent.safeFailure": "یہ کام محفوظ طریقے سے مکمل نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
+  "voice.agent.batchResult": "کامیاب: {succeeded}۔ ناکام یا غیر مصدقہ: {failed}۔ کوشش نہیں کی گئی: {remaining}۔ ریفریش ناکام: {refresh}۔"
 }

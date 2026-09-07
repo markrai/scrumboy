@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "スプリントを有効にしました",
   "settings.sprints.toast.disabled": "スプリントを無効にしました",
   "settings.sprints.toast.toggleFailed": "スプリント設定の更新に失敗しました",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "聞き取りを続ける",
+  "voice.agent.noChanges": "変更は必要ありません。",
+  "voice.agent.safeFailure": "安全に完了できませんでした。もう一度お試しください。",
+  "voice.agent.batchResult": "成功: {succeeded}。失敗または未確認: {failed}。未実行: {remaining}。更新失敗: {refresh}。"
 }

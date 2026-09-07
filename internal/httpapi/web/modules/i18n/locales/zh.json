@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Sprint 已启用",
   "settings.sprints.toast.disabled": "Sprint 已禁用",
   "settings.sprints.toast.toggleFailed": "更新 Sprint 设置失败",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "继续聆听",
+  "voice.agent.noChanges": "无需更改。",
+  "voice.agent.safeFailure": "无法安全完成。请重试。",
+  "voice.agent.batchResult": "成功：{succeeded}。失败或未确认：{failed}。未尝试：{remaining}。刷新失败：{refresh}。"
 }

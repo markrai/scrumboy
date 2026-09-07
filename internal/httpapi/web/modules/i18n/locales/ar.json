@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "تم تفعيل السبرنتات",
   "settings.sprints.toast.disabled": "تم تعطيل السبرنتات",
   "settings.sprints.toast.toggleFailed": "فشل تحديث إعداد السبرنتات",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "متابعة الاستماع",
+  "voice.agent.noChanges": "لا حاجة إلى تغييرات.",
+  "voice.agent.safeFailure": "تعذر إكمال ذلك بأمان. حاول مرة أخرى.",
+  "voice.agent.batchResult": "نجح: {succeeded}. فشل أو لم يُؤكد: {failed}. لم تتم المحاولة: {remaining}. فشل التحديث: {refresh}."
 }

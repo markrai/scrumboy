@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "स्प्रिंट सक्षम किए गए",
   "settings.sprints.toast.disabled": "स्प्रिंट अक्षम किए गए",
   "settings.sprints.toast.toggleFailed": "स्प्रिंट सेटिंग अपडेट करने में विफल",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "सुनते रहें",
+  "voice.agent.noChanges": "किसी बदलाव की ज़रूरत नहीं है।",
+  "voice.agent.safeFailure": "यह सुरक्षित रूप से पूरा नहीं हो सका। फिर कोशिश करें।",
+  "voice.agent.batchResult": "सफल: {succeeded}। विफल या अपुष्ट: {failed}। प्रयास नहीं किया: {remaining}। रीफ़्रेश विफल: {refresh}।"
 }

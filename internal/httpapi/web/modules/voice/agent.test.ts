@@ -2,6 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalTextGenerationCapability } from '../platform/local-text-generation.js';
 import type { SpeechInputCapability } from '../platform/speech-input.js';
+import { initI18n, setLocale } from '../i18n/index.js';
+import en from '../i18n/locales/en.json';
+import de from '../i18n/locales/de.json';
 
 const controller = vi.hoisted(() => ({
   getView: vi.fn(),
@@ -22,7 +25,7 @@ const agentView = vi.hoisted(() => ({
   render: null as null | ((view: Record<string, unknown>) => void),
 }));
 
-vi.mock('./agent-controller.js', () => ({
+vi.mock('./local-agent-controller.js', () => ({
   createVoiceAgentController: vi.fn((options) => {
     agentView.render = options.onView;
     options.onView({
@@ -63,7 +66,8 @@ function open() {
   });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await initI18n({ locale: 'en', loadLocale: async locale => locale === 'de' ? de : en });
   document.body.replaceChildren();
   controller.startListening.mockClear();
   controller.close.mockClear();
@@ -75,6 +79,13 @@ beforeEach(() => {
 afterEach(() => closeVoiceAgent());
 
 describe('floating VoiceFlow agent surface', () => {
+  it('hydrates Keep Listening and follows locale changes', async () => {
+    controller.getView.mockReturnValue({ phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null });
+    open();
+    expect(document.querySelector('[data-i18n-text="voice.keepListening"]')?.textContent).toBe('Keep Listening');
+    await setLocale('de');
+    expect(document.querySelector('[data-i18n-text="voice.keepListening"]')?.textContent).toBe('Weiter zuhören');
+  });
   it('is a non-modal section and does not make ordinary application controls inert', () => {
     const appButton = document.createElement('button');
     const clicked = vi.fn();

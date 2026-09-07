@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "[!! Sprints enabled !!]",
   "settings.sprints.toast.disabled": "[!! Sprints disabled !!]",
   "settings.sprints.toast.toggleFailed": "[!! Failed to update sprints setting !!]",
-  "settings.calendar.nowLine.hint": "[!! Use a solid red current-time line instead of the quieter dotted line. !!]"
+  "settings.calendar.nowLine.hint": "[!! Use a solid red current-time line instead of the quieter dotted line. !!]",
+  "voice.keepListening": "[Ķëëþ Ŀïšţëñïñĝ~~~]",
+  "voice.agent.noChanges": "[Ñö çĥåñĝëš ñëëđëđ~~~]",
+  "voice.agent.safeFailure": "[Ï çöüļđ ñöţ ƒïñïšĥ ţĥåţ šåƒëļÿ. Þļëåšë ţŕÿ åĝåïñ~~~]",
+  "voice.agent.batchResult": "[Šüççëëđëđ: {succeeded}. Ƒåïļëđ öŕ üñçöñƒïŕmëđ: {failed}. Ñöţ åţţëmþţëđ: {remaining}. Ŕëƒŕëšĥ ƒåïļëđ: {refresh}.~~~]"
 }

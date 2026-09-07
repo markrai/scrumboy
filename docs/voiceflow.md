@@ -2,6 +2,20 @@
 
 Voice commands are project-scoped. Everything you say applies to the project you are currently viewing.
 
+## On-device AI VoiceFlow
+
+On supported, ready local-AI devices, AI VoiceFlow uses the `voice-agent-v9` domain-conditioned skill loop. Nano chooses one bounded Scrumboy skill at a time and can sequence several actions from one request. Todo, story, card, task and item identify the same entity; software-like titles such as **Bird's Eye View**, **Settings**, and **Search** remain literal todo titles.
+
+The available skills are `todos.resolve`, `todos.open`, `todos.inspect`, `todos.create`, `todos.move`, `todos.rename`, `todos.append_notes`, `todos.replace_notes`, `todos.assign`, `todos.unassign`, `todos.add_tag`, `todos.remove_tag`, `todos.delete`, and `analytics.count_completed` (this week). Opening and bounded reads can run immediately. Every mutation prepares a proposal. A complete task receives one combined confirmation, including when the user adds another action during confirmation. Natural replies such as “yeah, go ahead” and “no thanks” are interpreted locally.
+
+Scrumboy resolves resources, enforces permission and validation, and issues task-scoped opaque handles. The model sees bounded skill results, never the board or project member/tag catalogs. All proposals are freshly checked before presenting confirmation and again before the first mutation. Execution follows proposal order. A failure stops the batch and reports succeeded, failed or unconfirmed, and unattempted operations; separate server mutations are not a transaction and are not rolled back. Overlapping writes to the same todo field and create-then-assign dependencies require separate tasks in this version.
+
+Each task allows at most 8 model invocations (including protocol repairs), 6 skill calls, 4 mutation proposals, 5 choices per result, and 16 in-memory trace entries. Invalid output permits one local repair per step and never falls back to command parsing. Completion and invalidation clear task state. Project/account/server changes and closing VoiceFlow invalidate handles and pending proposals.
+
+**Keep Listening**, off by default, controls the next command window. Both settings allow the current task's clarification and confirmation replies. When enabled, a spoken terminal result opens exactly one additional bounded listening window and retains only an active todo reference. Speech output finishes before speech input starts. No always-on microphone, cloud AI, persisted conversation, or second model call for factual wording is used. The stored boolean preference is unchanged.
+
+The browser/basic path remains unchanged. The grammar, modes, and confirmation policy below describe that path.
+
 ## Locale boundary
 
 * The surrounding Scrumboy UI follows the app locale, including the `Settings -> Customization -> VoiceFlow` toggle and nearby board chrome.

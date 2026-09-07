@@ -1278,5 +1278,9 @@
   "settings.sprints.toast.enabled": "Đã bật sprint",
   "settings.sprints.toast.disabled": "Đã tắt sprint",
   "settings.sprints.toast.toggleFailed": "Cập nhật cài đặt sprint không thành công",
-  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line."
+  "settings.calendar.nowLine.hint": "Use a solid red current-time line instead of the quieter dotted line.",
+  "voice.keepListening": "Tiếp tục nghe",
+  "voice.agent.noChanges": "Không cần thay đổi.",
+  "voice.agent.safeFailure": "Không thể hoàn tất an toàn. Vui lòng thử lại.",
+  "voice.agent.batchResult": "Thành công: {succeeded}. Thất bại hoặc chưa xác nhận: {failed}. Chưa thử: {remaining}. Làm mới thất bại: {refresh}."
 }
