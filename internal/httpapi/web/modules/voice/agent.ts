@@ -153,7 +153,7 @@ export function openVoiceAgent(options: OpenVoiceAgentOptions): void {
 
   const controller = createVoiceAgentController({
     ...options,
-    model: createVoiceAgentModel(options.localTextGeneration, getLocale()),
+    model: createVoiceAgentModel(options.localTextGeneration, getLocale),
     continuationEnabled: continuation.checked,
     speechOutput: options.speechOutput,
     onView: render,

@@ -4,6 +4,7 @@ import type { VoiceCommandOptions } from './command-resolution.js';
 import type { SpeechInputCapability } from '../platform/speech-input.js';
 import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError } from '../platform/speech-input.js';
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { voiceText } from './i18n.js';
 import { VoiceAgentLoop, agentSafeFailure, type AgentLoopView } from './agent-loop.js';
 import { VoiceAgentSkillRegistry } from './agent-skills.js';
@@ -29,13 +30,13 @@ export function createVoiceAgentController(options: ControllerOptions) {
     try { loop.registry.context(new AbortController().signal); return true; } catch { return false; }
   };
   const abort = () => { operation?.abort(); operation = null; };
-  const speak = async (text: string, owner: AbortController): Promise<boolean> => {
-    if (!options.speechOutput || !owns(owner)) return false;
+  const speak = async (text: string | null, owner: AbortController): Promise<boolean> => {
+    if (!text?.trim() || text.length > SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS || !options.speechOutput || !owns(owner)) return false;
     try {
       const status = await options.speechOutput.status({ signal: owner.signal });
       if (!owns(owner) || status.state !== 'ready') return false;
       emit({ activity: 'speaking', activityStatus: null });
-      await options.speechOutput.speak({ text: text.slice(0, 600), language: 'en-US', signal: owner.signal });
+      await options.speechOutput.speak({ text, language: 'en-US', signal: owner.signal });
       if (!owns(owner)) return false;
       emit({ activity: 'idle', activityStatus: null });
       return true;
@@ -46,7 +47,9 @@ export function createVoiceAgentController(options: ControllerOptions) {
     emit({ phase: result.phase, status: literal(result.text), activity: 'idle', activityStatus: null,
       confirmation: result.phase === 'confirmation' ? { summary: result.text, confirmLabel: voiceText('common.confirm', 'Confirm'), danger: !!result.danger } : null,
       clarification: result.phase === 'question' ? { options: result.choices ?? [] } : null });
-    const spoken = await speak(result.text, owner);
+    // Confirmation speech must cover the whole batch. Null leaves visual/tap/manual Listen available.
+    const speechText = result.phase === 'confirmation' ? result.speechText : result.text.slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+    const spoken = await speak(speechText, owner);
     if (!owns(owner)) return;
     const terminal = result.phase === 'success' || result.phase === 'error';
     // Each result schedules at most one bounded window. Clarification/confirmation do not depend on the toggle.

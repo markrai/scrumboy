@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createVoiceAgentController } from './local-agent-controller.js';
 import { harness, skill, finish, latestRef } from './agent.test.utils.js';
 import { SpeechInputError } from '../platform/speech-input.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 
 function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListening = false) {
   let speaking = false;
@@ -18,6 +19,58 @@ function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListe
   return { controller, speechInput, speechOutput, onView };
 }
 describe('VoiceAgentController local skill production path', () => {
+  it('solicits yes only after every effect in a >600-character visual batch has been spoken', async () => {
+    const notes = 'Long dictated paragraph. '.repeat(32);
+    const h = harness([
+      skill('todos.move', { reference: 'Happy Birthday', lane: 'Done' }),
+      skill('todos.assign', { reference: 'Happy Birthday', member: 'Mark' }),
+      skill('todos.append_notes', { reference: 'Happy Birthday', text: notes }),
+      skill('todos.add_tag', { reference: 'Happy Birthday', tag: 'urgent' }), finish, { kind: 'confirm' },
+    ]);
+    const s = surface(h, ['Move, assign, append the paragraph, and tag urgent', 'yeah go ahead']);
+    let completeSpeech!: () => void;
+    s.speechOutput.speak.mockImplementationOnce(async () => {
+      await new Promise<void>(resolve => { completeSpeech = resolve; });
+      return { completed: true };
+    });
+    const listening = s.controller.startListening();
+    await vi.waitFor(() => expect(s.speechOutput.speak).toHaveBeenCalledOnce());
+    const visual = s.controller.getView().confirmation!.summary;
+    const spoken = s.speechOutput.speak.mock.calls[0][0].text;
+    expect(visual.length).toBeGreaterThan(SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+    expect(visual.indexOf('urgent')).toBeGreaterThan(SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+    expect(visual).toContain(notes);
+    expect(spoken.length).toBeLessThanOrEqual(SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+    for (const effect of ['Move', 'Mark', 'dictated text', 'urgent']) expect(spoken).toContain(effect);
+    expect(spoken).not.toContain(notes);
+    expect(s.speechInput.listen).toHaveBeenCalledOnce();
+    expect(h.execute).not.toHaveBeenCalled();
+    completeSpeech(); await listening;
+    expect(s.speechInput.listen).toHaveBeenCalledTimes(2);
+    expect(h.execute).toHaveBeenCalledTimes(4);
+    s.controller.close();
+  });
+  it.each([false, true])('does not auto-listen when the complete batch cannot fit, Keep Listening=%s', async enabled => {
+    const title = 'X'.repeat(200);
+    const h = harness([
+      skill('todos.move', { reference: title, lane: 'Done' }),
+      skill('todos.assign', { reference: title, member: 'Mark' }),
+      skill('todos.append_notes', { reference: title, text: 'Paragraph. '.repeat(80) }),
+      skill('todos.add_tag', { reference: title, tag: 'urgent' }), finish, { kind: 'confirm' },
+    ], enabled);
+    h.todo.title = title;
+    const s = surface(h, ['Prepare four changes', 'yes'], enabled);
+    await s.controller.startListening();
+    expect(s.controller.getView().confirmation!.summary).toContain('urgent');
+    expect(s.controller.getView().phase).toBe('confirmation');
+    expect(s.speechOutput.speak).not.toHaveBeenCalled();
+    expect(s.speechInput.listen).toHaveBeenCalledOnce();
+    expect(h.execute).not.toHaveBeenCalled();
+    // Explicit manual Listen remains available after visual review.
+    await s.controller.startListening();
+    expect(h.execute).toHaveBeenCalledTimes(4);
+    s.controller.close();
+  });
   it.each([false, true])('compound confirmation continues with Keep Listening %s; one next window only when enabled', async enabled => {
     const h = harness([skill('todos.open', { reference: 'Happy Birthday' }), input => skill('todos.append_notes', { todoRef: latestRef(input), text: 'How are you?' }), finish, { kind: 'confirm' }], enabled);
     const s = surface(h, ['Open Happy Birthday and add to the notes section: How are you?', 'yeah go ahead'], enabled);

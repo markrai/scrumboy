@@ -143,7 +143,7 @@ export class VoiceAgentLoop {
                         await task.proposals.preflight(this.registry, task, signal);
                         task.confirmation = true;
                         voiceFlowDiagnostic('VoiceAgent confirmation pending', { proposalCount: task.proposals.count });
-                        return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, danger: task.proposals.danger };
+                        return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, speechText: task.proposals.confirmationSpeech(), danger: task.proposals.danger };
                     }
                     const text = task.results.filter(result => result.status !== 'choices').map(renderAgentSkillResult).join('; ') || voiceText('voice.agent.noChanges', 'No changes needed.');
                     this.finish(task, 0);

@@ -3,6 +3,26 @@ import { describe, expect, it } from 'vitest';
 import { harness, skill, finish, latestRef } from './agent.test.utils.js';
 import { AGENT_LIMITS } from './agent-protocol.js';
 describe('bounded local agent loop', () => {
+  it.each(['todos.append_notes', 'todos.replace_notes'])('separates full visual and complete condensed %s confirmation speech', async name => {
+    const notes = 'Dictated text. '.repeat(60);
+    const h = harness([skill(name, { reference: 'Happy Birthday', text: notes }), skill('todos.add_tag', { reference: 'Happy Birthday', tag: 'urgent' }), finish]);
+    const view = await h.loop.submit('Update notes and add urgent', h.signal);
+    expect(view.phase).toBe('confirmation');
+    if (view.phase !== 'confirmation') throw new Error('Expected confirmation');
+    expect(view.text.length).toBeGreaterThan(600); expect(view.text).toContain(notes);
+    expect(view.speechText).toContain(name === 'todos.append_notes' ? 'Add the dictated text' : 'Replace the notes');
+    expect(view.speechText).toContain('urgent'); expect(view.speechText!.length).toBeLessThanOrEqual(600);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('marks confirmation speech unavailable rather than dropping a later proposal', async () => {
+    const title = 'X'.repeat(200);
+    const h = harness([skill('todos.move', { reference: title, lane: 'Done' }), skill('todos.assign', { reference: title, member: 'Mark' }), skill('todos.append_notes', { reference: title, text: 'Paragraph. '.repeat(80) }), skill('todos.rename', { reference: title, title: 'Renamed' }), finish]);
+    h.todo.title = title;
+    const view = await h.loop.submit('Prepare three changes', h.signal);
+    expect(view.phase).toBe('confirmation');
+    if (view.phase !== 'confirmation') throw new Error('Expected confirmation');
+    expect(view.text).toContain('Renamed'); expect(view.speechText).toBeNull(); expect(h.execute).not.toHaveBeenCalled();
+  });
   it.each([
     ["Open Bird's Eye View", "Bird's Eye View"], ["Open the todo Bird's Eye View", "Bird's Eye View"],
     ["Open the story called Bird's Eye View", "Bird's Eye View"], ["Open the card named Bird's Eye View", "Bird's Eye View"],

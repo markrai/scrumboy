@@ -1,4 +1,5 @@
 import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError } from '../platform/speech-input.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { voiceText } from './i18n.js';
 import { VoiceAgentLoop, agentSafeFailure } from './agent-loop.js';
 import { VoiceAgentSkillRegistry } from './agent-skills.js';
@@ -24,14 +25,14 @@ export function createVoiceAgentController(options) {
     };
     const abort = () => { operation?.abort(); operation = null; };
     const speak = async (text, owner) => {
-        if (!options.speechOutput || !owns(owner))
+        if (!text?.trim() || text.length > SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS || !options.speechOutput || !owns(owner))
             return false;
         try {
             const status = await options.speechOutput.status({ signal: owner.signal });
             if (!owns(owner) || status.state !== 'ready')
                 return false;
             emit({ activity: 'speaking', activityStatus: null });
-            await options.speechOutput.speak({ text: text.slice(0, 600), language: 'en-US', signal: owner.signal });
+            await options.speechOutput.speak({ text, language: 'en-US', signal: owner.signal });
             if (!owns(owner))
                 return false;
             emit({ activity: 'idle', activityStatus: null });
@@ -49,7 +50,9 @@ export function createVoiceAgentController(options) {
         emit({ phase: result.phase, status: literal(result.text), activity: 'idle', activityStatus: null,
             confirmation: result.phase === 'confirmation' ? { summary: result.text, confirmLabel: voiceText('common.confirm', 'Confirm'), danger: !!result.danger } : null,
             clarification: result.phase === 'question' ? { options: result.choices ?? [] } : null });
-        const spoken = await speak(result.text, owner);
+        // Confirmation speech must cover the whole batch. Null leaves visual/tap/manual Listen available.
+        const speechText = result.phase === 'confirmation' ? result.speechText : result.text.slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+        const spoken = await speak(speechText, owner);
         if (!owns(owner))
             return;
         const terminal = result.phase === 'success' || result.phase === 'error';

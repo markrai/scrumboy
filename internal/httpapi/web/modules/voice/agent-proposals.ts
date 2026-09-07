@@ -1,6 +1,8 @@
 import { AGENT_LIMITS, AgentProtocolError } from './agent-protocol.js';
 import type { AgentSkillContext, PreparedSkill, VoiceAgentSkillRegistry } from './agent-skills.js';
 import type { CommandIR } from './schema.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
+import { voiceText } from './i18n.js';
 
 function affectedField(ir: CommandIR): string {
   if (ir.intent.includes('notes')) return 'notes';
@@ -14,6 +16,20 @@ export class VoiceAgentProposalStore {
   private consumed = false;
   get count(): number { return this.proposals.length; }
   summaries(): string[] { return this.proposals.map(proposal => proposal.command.summary); }
+  /** All effects are represented, or speech confirmation is unavailable. Never truncate a batch. */
+  confirmationSpeech(): string | null {
+    const summaries = this.proposals.map(({ command }) => {
+      const ir = command.ir;
+      if ((ir.intent === 'todos.append_notes' || ir.intent === 'todos.replace_notes') && ir.entities.notes.length > 160) {
+        return ir.intent === 'todos.append_notes'
+          ? voiceText('voice.prompt.appendNotesLong', 'Add the dictated text to the notes of {title}?', { title: command.storyTitle })
+          : voiceText('voice.prompt.replaceNotesLong', 'Replace the notes of {title} with the dictated text?', { title: command.storyTitle });
+      }
+      return command.summary;
+    });
+    const text = `${summaries.join('; ')}?`;
+    return summaries.length > 0 && text.length <= SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS ? text : null;
+  }
   get danger(): boolean { return this.proposals.some(proposal => proposal.command.danger); }
   add(value: PreparedSkill): string {
     if (this.consumed || this.count >= AGENT_LIMITS.proposals) throw new AgentProtocolError('Proposal limit');

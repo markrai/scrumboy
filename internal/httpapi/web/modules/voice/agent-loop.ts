@@ -11,7 +11,10 @@ export type AgentTask = AgentSkillContext & {
   goal: string; trace: TraceEntry[]; proposals: VoiceAgentProposalStore; confirmation: boolean;
   modelSteps: number; skillCalls: number; results: AgentSkillResult[];
 };
-export type AgentLoopView = { phase: 'question' | 'confirmation' | 'success' | 'error'; text: string; choices?: { id: string; label: string }[]; danger?: boolean };
+export type AgentLoopView = { text: string; choices?: { id: string; label: string }[]; danger?: boolean } & (
+  | { phase: 'confirmation'; speechText: string | null }
+  | { phase: 'question' | 'success' | 'error' }
+);
 export const agentSafeFailure = () => voiceText('voice.agent.safeFailure', 'I could not finish that safely. Please try again.');
 function batchText(result: BatchExecution): string {
   if (!result.failed && !result.refreshFailed) return `${voiceText('voice.status.done', 'Done.')} ${result.succeeded.join('; ')}`;
@@ -109,7 +112,7 @@ export class VoiceAgentLoop {
             await task.proposals.preflight(this.registry, task, signal);
             task.confirmation = true;
             voiceFlowDiagnostic('VoiceAgent confirmation pending', { proposalCount: task.proposals.count });
-            return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, danger: task.proposals.danger };
+            return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, speechText: task.proposals.confirmationSpeech(), danger: task.proposals.danger };
           }
           const text = task.results.filter(result => result.status !== 'choices').map(renderAgentSkillResult).join('; ') || voiceText('voice.agent.noChanges', 'No changes needed.');
           this.finish(task, 0);
