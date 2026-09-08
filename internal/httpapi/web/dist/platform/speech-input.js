@@ -90,9 +90,13 @@ export function validateSpeechInputListenOptions(options) {
     }
 }
 export function validateSpeechInputResult(value) {
+    const keys = value && typeof value === 'object' ? Object.keys(value) : [];
+    const allowedKeys = new Set(['transcript', 'segmentCount']);
     if (!value
         || typeof value !== 'object'
-        || Object.keys(value).length !== 1
+        || keys.some(key => !allowedKeys.has(key))
+        || !keys.includes('transcript')
+        || keys.some(key => key === 'segmentCount') && keys.length !== 2
         || typeof value.transcript !== 'string'
         || (value.segmentCount !== undefined && (!Number.isInteger(value.segmentCount) || value.segmentCount < 1))
         || value.transcript.trim().length === 0
