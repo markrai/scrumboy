@@ -1,4 +1,28 @@
 export const AGENT_LIMITS = Object.freeze({ modelSteps: 8, skillCalls: 6, proposals: 4, choices: 5, resultText: 2048, ask: 320, trace: 16, utterance: 2000 });
+const ENVELOPE_KINDS = Object.freeze(['skill_call', 'ask_user', 'finish', 'confirm', 'decline', 'cancel']);
+export const ALLOWED_ENVELOPE_KINDS = Object.freeze({
+    idle: Object.freeze(['skill_call', 'ask_user', 'finish']),
+    clarification: Object.freeze(['skill_call', 'ask_user']),
+    choice: Object.freeze(['skill_call', 'ask_user']),
+    proposals_ready: Object.freeze(['skill_call', 'ask_user', 'finish']),
+    confirmation: Object.freeze(['skill_call', 'confirm', 'decline', 'cancel']),
+});
+export function allowedEnvelopeKinds(state) {
+    return ALLOWED_ENVELOPE_KINDS[state.kind] ?? ALLOWED_ENVELOPE_KINDS.idle;
+}
+export function agentStateGuidance(state) {
+    const count = state.proposalCount ?? 0;
+    const detail = state.kind === 'clarification' ? 'The user reply answers the pending question and is ordinary content, such as the lane named Done; it is never a protocol action.'
+        : state.kind === 'choice' ? 'A choice is unresolved: repeat the same skill with exactly one offered handle.'
+            : state.kind === 'proposals_ready' ? `${count} mutation(s) are prepared and not yet shown. Emit another skill_call while requested work remains, otherwise finish.`
+                : state.kind === 'confirmation' ? `${count} prepared mutation(s) await the user decision.`
+                    : 'No work is prepared yet.';
+    return `Current state: ${state.kind}. ${detail} Allowed envelope kinds: ${allowedEnvelopeKinds(state).join(', ')}.`;
+}
+/** Repair carries only application-owned reasons and state, never the rejected model output. */
+export function agentRepairInstruction(state, reason) {
+    return `Previous response violated protocol: ${reason}. ${agentStateGuidance(state)} Return exactly one valid envelope.`;
+}
 export const SKILL_NAMES = Object.freeze([
     'todos.resolve', 'todos.open', 'todos.inspect', 'todos.create', 'todos.move', 'todos.rename',
     'todos.append_notes', 'todos.replace_notes', 'todos.assign', 'todos.unassign', 'todos.add_tag',
@@ -20,7 +44,11 @@ function text(value, max) {
     if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))
         invalid('Invalid bounded string');
 }
-export function parseAgentEnvelope(raw, confirmation) {
+export function parseAgentEnvelope(raw, state) {
+    return interpretAgentEnvelope(raw, state).envelope;
+}
+/** Parses one model envelope and applies the single local-model compatibility recovery. */
+export function interpretAgentEnvelope(raw, state) {
     if (typeof raw !== 'string' || raw.length > 8192)
         invalid('Output too large');
     let value;
@@ -37,16 +65,34 @@ export function parseAgentEnvelope(raw, confirmation) {
         invalid('Expected strict JSON');
     }
     const envelope = object(value);
-    if (envelope.kind === 'ask_user') {
+    let kind = ENVELOPE_KINDS.find(name => name === envelope.kind);
+    if (!kind)
+        invalid('Unknown envelope kind');
+    let recoveredFrom;
+    // Local models conflate "preparation complete" with confirm. Present confirmation; never execute.
+    if (state.kind === 'proposals_ready' && kind === 'confirm') {
+        keys(envelope, ['kind']);
+        recoveredFrom = 'confirm';
+        kind = 'finish';
+        value = { kind: 'finish' };
+    }
+    if (!allowedEnvelopeKinds(state).includes(kind)) {
+        invalid(`Envelope ${kind} is not allowed in state ${state.kind}`);
+    }
+    if (kind === 'ask_user') {
         keys(envelope, ['kind', 'text']);
         text(envelope.text, AGENT_LIMITS.ask);
     }
-    else if (['finish', 'confirm', 'decline', 'cancel'].includes(String(envelope.kind))) {
-        keys(envelope, ['kind']);
-        if (envelope.kind !== 'finish' && !confirmation)
-            invalid('Confirmation is not pending');
+    else if (kind === 'finish') {
+        // An accompanying human-readable text is bounded, ignored and never renders; it must not discard prepared proposals.
+        keys(envelope, ['kind', 'text'], ['kind']);
+        if ('text' in envelope && (typeof envelope.text !== 'string' || envelope.text.length > AGENT_LIMITS.ask))
+            invalid('Invalid bounded string');
     }
-    else if (envelope.kind === 'skill_call') {
+    else if (kind !== 'skill_call') {
+        keys(envelope, ['kind']);
+    }
+    else {
         keys(envelope, ['kind', 'skill', 'arguments']);
         if (!SKILL_NAMES.includes(envelope.skill))
             invalid('Unknown skill');
@@ -86,7 +132,5 @@ export function parseAgentEnvelope(raw, confirmation) {
                 text(args[extra], extra === 'text' ? 1000 : 200);
         }
     }
-    else
-        invalid('Unknown envelope kind');
-    return value;
+    return { envelope: value, recoveredFrom };
 }

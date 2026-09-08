@@ -29,4 +29,14 @@ public class AdvancedSpeechTranscriptAccumulatorTest {
         accumulator.onFinal("x".repeat(261));
         assertFalse(accumulator.hasFinal());
     }
+
+    @Test
+    public void aggregatesMultipleAuthoritativeFinalSegmentsInOrder() {
+        AdvancedSpeechTranscriptAccumulator accumulator = new AdvancedSpeechTranscriptAccumulator();
+        assertTrue(accumulator.onFinal("create a story called Big Man"));
+        assertTrue(accumulator.onFinal("put it in Backlog and assign Mark"));
+        assertTrue(accumulator.onFinal("tag it UX"));
+        assertEquals(3, accumulator.segmentCount());
+        assertEquals("create a story called Big Man put it in Backlog and assign Mark tag it UX", accumulator.finalTranscriptOrNull());
+    }
 }

@@ -67,6 +67,7 @@ function open() {
 }
 
 beforeEach(async () => {
+  localStorage.removeItem('scrumboy_voice_create_v2');
   await initI18n({ locale: 'en', loadLocale: async locale => locale === 'de' ? de : en });
   document.body.replaceChildren();
   controller.startListening.mockClear();
@@ -76,9 +77,29 @@ beforeEach(async () => {
   controller.cancelClarification.mockClear();
 });
 
-afterEach(() => closeVoiceAgent());
+afterEach(() => { closeVoiceAgent(); localStorage.removeItem('scrumboy_voice_create_v2'); });
 
 describe('floating VoiceFlow agent surface', () => {
+  it('explicitly selects Create v2 and can return to the existing agent without a routing model', () => {
+    open();
+    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('agent');
+    const mode = document.querySelector<HTMLSelectElement>('[data-voice-agent-mode]')!;
+    mode.value = 'create-v2'; mode.dispatchEvent(new Event('change'));
+    expect(localStorage.getItem('scrumboy_voice_create_v2')).toBe('1');
+    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('create-v2');
+    expect(controller.close).toHaveBeenCalled();
+    expect(localTextGeneration.generate).not.toHaveBeenCalled();
+    const back = document.querySelector<HTMLSelectElement>('[data-voice-agent-mode]')!;
+    back.value = 'agent'; back.dispatchEvent(new Event('change'));
+    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('agent');
+  });
+  it('renders captured transcript as literal text, retaining whitespace', () => {
+    open();
+    agentView.render!({ phase: 'confirmation', status: { kind: 'literal', text: 'Review' }, activity: 'idle', activityStatus: null,
+      capturedTranscript: '  Create <img src=x>\nplease  ', confirmation: null, clarification: null });
+    const text = document.querySelector<HTMLElement>('[data-voice-agent-transcript]')!;
+    expect(text.hidden).toBe(false); expect(text.textContent).toBe('  Create <img src=x>\nplease  '); expect(text.querySelector('img')).toBeNull();
+  });
   it('hydrates Keep Listening and follows locale changes', async () => {
     controller.getView.mockReturnValue({ phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null });
     open();

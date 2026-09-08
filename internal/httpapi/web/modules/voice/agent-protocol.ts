@@ -20,7 +20,35 @@ export type SkillArguments = {
 };
 export type VoiceAgentSkillName = keyof SkillArguments;
 export type SkillCall = { [K in VoiceAgentSkillName]: { kind: 'skill_call'; skill: K; arguments: SkillArguments[K] } }[VoiceAgentSkillName];
-export type AgentEnvelope = SkillCall | { kind: 'ask_user'; text: string } | { kind: 'finish' | 'confirm' | 'decline' | 'cancel' };
+export type AgentEnvelope = SkillCall | { kind: 'ask_user'; text: string } | { kind: 'finish'; text?: string } | { kind: 'confirm' | 'decline' | 'cancel' };
+export type AgentEnvelopeKind = AgentEnvelope['kind'];
+export type AgentStateKind = 'idle' | 'clarification' | 'choice' | 'proposals_ready' | 'confirmation';
+/** The single application state the prompt, the parser and the repair guidance all read. */
+export type AgentState = { kind: AgentStateKind; proposalCount?: number };
+const ENVELOPE_KINDS: readonly AgentEnvelopeKind[] = Object.freeze(['skill_call', 'ask_user', 'finish', 'confirm', 'decline', 'cancel'] as const);
+export const ALLOWED_ENVELOPE_KINDS: Readonly<Record<AgentStateKind, readonly AgentEnvelopeKind[]>> = Object.freeze({
+  idle: Object.freeze(['skill_call', 'ask_user', 'finish'] as const),
+  clarification: Object.freeze(['skill_call', 'ask_user'] as const),
+  choice: Object.freeze(['skill_call', 'ask_user'] as const),
+  proposals_ready: Object.freeze(['skill_call', 'ask_user', 'finish'] as const),
+  confirmation: Object.freeze(['skill_call', 'confirm', 'decline', 'cancel'] as const),
+});
+export function allowedEnvelopeKinds(state: AgentState): readonly AgentEnvelopeKind[] {
+  return ALLOWED_ENVELOPE_KINDS[state.kind] ?? ALLOWED_ENVELOPE_KINDS.idle;
+}
+export function agentStateGuidance(state: AgentState): string {
+  const count = state.proposalCount ?? 0;
+  const detail = state.kind === 'clarification' ? 'The user reply answers the pending question and is ordinary content, such as the lane named Done; it is never a protocol action.'
+    : state.kind === 'choice' ? 'A choice is unresolved: repeat the same skill with exactly one offered handle.'
+    : state.kind === 'proposals_ready' ? `${count} mutation(s) are prepared and not yet shown. Emit another skill_call while requested work remains, otherwise finish.`
+    : state.kind === 'confirmation' ? `${count} prepared mutation(s) await the user decision.`
+    : 'No work is prepared yet.';
+  return `Current state: ${state.kind}. ${detail} Allowed envelope kinds: ${allowedEnvelopeKinds(state).join(', ')}.`;
+}
+/** Repair carries only application-owned reasons and state, never the rejected model output. */
+export function agentRepairInstruction(state: AgentState, reason: string): string {
+  return `Previous response violated protocol: ${reason}. ${agentStateGuidance(state)} Return exactly one valid envelope.`;
+}
 export const SKILL_NAMES: readonly VoiceAgentSkillName[] = Object.freeze([
   'todos.resolve', 'todos.open', 'todos.inspect', 'todos.create', 'todos.move', 'todos.rename',
   'todos.append_notes', 'todos.replace_notes', 'todos.assign', 'todos.unassign', 'todos.add_tag',
@@ -38,7 +66,11 @@ function keys(value: Record<string, unknown>, allowed: string[], required = allo
 function text(value: unknown, max: number): void {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) invalid('Invalid bounded string');
 }
-export function parseAgentEnvelope(raw: string, confirmation: boolean): AgentEnvelope {
+export function parseAgentEnvelope(raw: string, state: AgentState): AgentEnvelope {
+  return interpretAgentEnvelope(raw, state).envelope;
+}
+/** Parses one model envelope and applies the single local-model compatibility recovery. */
+export function interpretAgentEnvelope(raw: string, state: AgentState): { envelope: AgentEnvelope; recoveredFrom?: 'confirm' } {
   if (typeof raw !== 'string' || raw.length > 8192) invalid('Output too large');
   let value: unknown;
   // The local provider already tolerates a single surrounding JSON fence.
@@ -47,12 +79,28 @@ export function parseAgentEnvelope(raw: string, confirmation: boolean): AgentEnv
   else if (source.startsWith('```\n') && source.endsWith('\n```')) source = source.slice(4, -4);
   try { value = JSON.parse(source); } catch { invalid('Expected strict JSON'); }
   const envelope = object(value);
-  if (envelope.kind === 'ask_user') {
-    keys(envelope, ['kind', 'text']); text(envelope.text, AGENT_LIMITS.ask);
-  } else if (['finish', 'confirm', 'decline', 'cancel'].includes(String(envelope.kind))) {
+  let kind = ENVELOPE_KINDS.find(name => name === envelope.kind);
+  if (!kind) invalid('Unknown envelope kind');
+  let recoveredFrom: 'confirm' | undefined;
+  // Local models conflate "preparation complete" with confirm. Present confirmation; never execute.
+  if (state.kind === 'proposals_ready' && kind === 'confirm') {
     keys(envelope, ['kind']);
-    if (envelope.kind !== 'finish' && !confirmation) invalid('Confirmation is not pending');
-  } else if (envelope.kind === 'skill_call') {
+    recoveredFrom = 'confirm';
+    kind = 'finish';
+    value = { kind: 'finish' };
+  }
+  if (!allowedEnvelopeKinds(state).includes(kind)) {
+    invalid(`Envelope ${kind} is not allowed in state ${state.kind}`);
+  }
+  if (kind === 'ask_user') {
+    keys(envelope, ['kind', 'text']); text(envelope.text, AGENT_LIMITS.ask);
+  } else if (kind === 'finish') {
+    // An accompanying human-readable text is bounded, ignored and never renders; it must not discard prepared proposals.
+    keys(envelope, ['kind', 'text'], ['kind']);
+    if ('text' in envelope && (typeof envelope.text !== 'string' || envelope.text.length > AGENT_LIMITS.ask)) invalid('Invalid bounded string');
+  } else if (kind !== 'skill_call') {
+    keys(envelope, ['kind']);
+  } else {
     keys(envelope, ['kind', 'skill', 'arguments']);
     if (!SKILL_NAMES.includes(envelope.skill as VoiceAgentSkillName)) invalid('Unknown skill');
     const args = object(envelope.arguments);
@@ -79,6 +127,6 @@ export function parseAgentEnvelope(raw: string, confirmation: boolean): AgentEnv
           || fields.some(field => !['title', 'lane', 'assignees', 'tags', 'notes'].includes(field))) invalid('Invalid inspect fields');
       } else if (extra && extra in args) text(args[extra], extra === 'text' ? 1000 : 200);
     }
-  } else invalid('Unknown envelope kind');
-  return value as AgentEnvelope;
+  }
+  return { envelope: value as AgentEnvelope, recoveredFrom };
 }

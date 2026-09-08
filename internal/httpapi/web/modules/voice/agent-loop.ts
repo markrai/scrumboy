@@ -1,6 +1,6 @@
 import { createVoiceFlowTrace } from './trace.js';
 import { voiceText } from './i18n.js';
-import { AGENT_LIMITS, AgentProtocolError, parseAgentEnvelope, type AgentEnvelope, type SkillCall } from './agent-protocol.js';
+import { AGENT_LIMITS, AgentProtocolError, agentRepairInstruction, interpretAgentEnvelope, type AgentEnvelope, type AgentState, type SkillCall } from './agent-protocol.js';
 import { VoiceAgentResourceHandles } from './agent-resources.js';
 import { VoiceAgentProposalStore, type BatchExecution } from './agent-proposals.js';
 import { renderAgentSkillResult, type AgentSession, type AgentSkillContext, type AgentSkillResult, type VoiceAgentSkillRegistry } from './agent-skills.js';
@@ -8,7 +8,7 @@ import type { VoiceAgentModel } from './agent-model.js';
 
 type TraceEntry = { user: string } | { agent: AgentEnvelope } | { skillResult: { skill: SkillCall['skill']; result: AgentSkillResult } };
 export type AgentTask = AgentSkillContext & {
-  goal: string; trace: TraceEntry[]; proposals: VoiceAgentProposalStore; confirmation: boolean;
+  goal: string; trace: TraceEntry[]; proposals: VoiceAgentProposalStore; confirmation: boolean; clarification: boolean;
   modelSteps: number; skillCalls: number; results: AgentSkillResult[];
 };
 export type AgentLoopView = { text: string; choices?: { id: string; label: string }[]; danger?: boolean } & (
@@ -40,6 +40,14 @@ export class VoiceAgentLoop {
   }
   get pending(): boolean { return !!this.task; }
   get confirmationPending(): boolean { return !!this.task?.confirmation; }
+  /** Canonical state: the model input, envelope legality and repair guidance are all derived from it. */
+  private state(task: AgentTask): AgentState {
+    if (task.confirmation) return { kind: 'confirmation', proposalCount: task.proposals.count };
+    if (task.pendingChoice) return { kind: 'choice' };
+    if (task.clarification) return { kind: 'clarification' };
+    if (task.proposals.count) return { kind: 'proposals_ready', proposalCount: task.proposals.count };
+    return { kind: 'idle' };
+  }
   private append(task: AgentTask, value: TraceEntry): void {
     task.trace.push(value);
     if (task.trace.length > AGENT_LIMITS.trace) task.trace.shift();
@@ -47,7 +55,7 @@ export class VoiceAgentLoop {
   invalidate(): void {
     this.diagnostic?.end('controller_invalidated');
     this.task?.handles.clear(); this.task?.proposals.clear();
-    if (this.task) { this.task.goal = ''; this.task.confirmation = false; this.task.trace.length = 0; this.task.results.length = 0; this.task.pendingChoice = null; }
+    if (this.task) { this.task.goal = ''; this.task.confirmation = false; this.task.clarification = false; this.task.trace.length = 0; this.task.results.length = 0; this.task.pendingChoice = null; }
     this.task = null; this.session.activeTodo = null;
   }
   setKeepListening(enabled: boolean): void {
@@ -56,7 +64,7 @@ export class VoiceAgentLoop {
   }
   private finish(task: AgentTask, mutations: number): void {
     task.diagnostic?.end('success', { modelSteps: task.modelSteps, skillCalls: task.skillCalls, mutationsExecuted: mutations });
-    task.handles.clear(); task.proposals.clear(); task.goal = ''; task.confirmation = false; task.trace.length = 0; task.results.length = 0; task.pendingChoice = null;
+    task.handles.clear(); task.proposals.clear(); task.goal = ''; task.confirmation = false; task.clarification = false; task.trace.length = 0; task.results.length = 0; task.pendingChoice = null;
     this.task = null;
     if (!this.session.keepListening) this.session.activeTodo = null;
   }
@@ -89,7 +97,7 @@ export class VoiceAgentLoop {
       this.registry.context(signal);
       if (!utterance.trim() || utterance.length > AGENT_LIMITS.utterance) throw new AgentProtocolError('Utterance limit');
       if (!this.task) {
-        this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, choiceAnswered: false, confirmation: false, modelSteps: 0, skillCalls: 0, results: [] };
+        this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, choiceAnswered: false, confirmation: false, clarification: false, modelSteps: 0, skillCalls: 0, results: [] };
 
       } else if (this.task.pendingChoice) this.task.choiceAnswered = true;
       const task = this.task;
@@ -97,23 +105,31 @@ export class VoiceAgentLoop {
       while (true) {
         let envelope: AgentEnvelope | undefined;
         let repair: string | undefined;
+        const state = this.state(task);
         for (let attempt = 0; attempt < 2; attempt++) {
           if (task.modelSteps >= AGENT_LIMITS.modelSteps || task.skillCalls >= AGENT_LIMITS.skillCalls) throw new AgentProtocolError('Task limit');
           task.modelSteps++;
           const input = JSON.stringify({ goal: task.goal, activeTodoAvailable: !!this.session.activeTodo, trace: task.trace,
-            pending: task.confirmation ? { kind: 'confirmation', proposalCount: task.proposals.count } : task.pendingChoice ? { kind: 'choice', ...task.pendingChoice.result } : null,
-            ...(repair ? { repair: `Previous response violated protocol: ${repair}. Return one valid envelope.` } : {}),
+            pending: state.kind === 'choice' ? { ...state, ...task.pendingChoice!.result } : state,
+            ...(repair ? { repair: agentRepairInstruction(state, repair) } : {}),
           });
           stage = 'interpret';
           const raw = await this.model(input, signal);
           this.registry.context(signal);
           if (this.task !== task) throw new AgentProtocolError('Task expired');
-          try { envelope = parseAgentEnvelope(raw, task.confirmation); break; }
+          try {
+            const parsed = interpretAgentEnvelope(raw, state);
+            envelope = parsed.envelope;
+            diagnostic.emit('interpret', { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, ...(parsed.recoveredFrom ? { recoveredFrom: parsed.recoveredFrom } : {}), ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}) });
+            break;
+          }
           catch (error) { if (!(error instanceof AgentProtocolError) || attempt === 1) throw error; repair = error.message; }
         }
         if (!envelope) throw new AgentProtocolError('Missing envelope');
-        diagnostic.emit('interpret', { step: task.modelSteps, interpretationKind: envelope.kind, ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}) });
         this.append(task, { agent: envelope });
+        // Confirmation and clarification are exclusive; the next model request must see exactly one pending.kind.
+        task.clarification = envelope.kind === 'ask_user';
+        if (task.clarification) task.confirmation = false;
         if (envelope.kind === 'confirm') return this.confirm(signal);
         if (envelope.kind === 'decline' || envelope.kind === 'cancel') return this.cancel();
         if (envelope.kind === 'ask_user') {
@@ -128,6 +144,7 @@ export class VoiceAgentLoop {
             stage = 'confirmation_preflight';
             await task.proposals.preflight(this.registry, task, signal, 'confirmation_preflight');
             task.confirmation = true;
+            task.clarification = false;
             diagnostic.emit('confirmation', { phase: 'initial', required: true, ...task.proposals.diagnosticSummary() });
             return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, speechText: task.proposals.confirmationSpeech(), danger: task.proposals.danger };
           }

@@ -1,3 +1,4 @@
+import { classifyVoiceCommandSafety } from './command-safety.js';
 import { normalizeLookup } from './normalize.js';
 import { resolveConversationTodoTarget, } from './conversation-resolve.js';
 import { voiceSemanticOperation } from './dialogue-intent.js';
@@ -286,7 +287,7 @@ function buildResolvedCommand(ir, context, details) {
         ir: validated.value,
         summary: '',
         confirmLabel: '',
-        danger: details.danger,
+        danger: classifyVoiceCommandSafety(validated.value).danger,
         requiresConfirmation: details.requiresConfirmation,
         ...(details.storyTitle == null ? {} : { storyTitle: details.storyTitle }),
         ...(details.statusName == null ? {} : { statusName: details.statusName }),
@@ -429,7 +430,7 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectId: context.projectId,
             projectSlug: context.projectSlug,
             entities: { title: intent.title, columnKey: destination.key },
-        }, context, { danger: false, requiresConfirmation: true });
+        }, context, { requiresConfirmation: true });
         return isCommandFailure(resolved)
             ? resolved
             : { ok: true, value: commandResolution(resolved.value, null, selection) };
@@ -504,7 +505,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectSlug: context.projectSlug,
             entities: { localId: target.todo.localId, toColumnKey: lane.value.key },
         }, context, {
-            danger: false,
             requiresConfirmation: true,
             storyTitle: target.todo.title,
             statusName: lane.value.name,
@@ -574,7 +574,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectSlug: context.projectSlug,
             entities: { localId: target.todo.localId, assigneeUserId: resolvedMember.userId },
         }, context, {
-            danger: false,
             requiresConfirmation: true,
             storyTitle: target.todo.title,
             assigneeName: resolvedMember.name || resolvedMember.email,
@@ -657,7 +656,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectSlug: context.projectSlug,
             entities: { localId: target.todo.localId, tags, tag: tagName },
         }, context, {
-            danger: false,
             requiresConfirmation: true,
             storyTitle: target.todo.title,
         });
@@ -718,7 +716,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectSlug: context.projectSlug,
             entities: { localId: target.todo.localId, body, notes: intent.notes },
         }, context, {
-            danger: false,
             requiresConfirmation: true,
             storyTitle: target.todo.title,
         });
@@ -782,7 +779,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectSlug: context.projectSlug,
             entities: { localId: target.todo.localId, assigneeUserId: null },
         }, context, {
-            danger: false,
             requiresConfirmation: true,
             storyTitle: target.todo.title,
         });
@@ -887,7 +883,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             projectSlug: context.projectSlug,
             entities: { localId: target.todo.localId, title },
         }, context, {
-            danger: false,
             requiresConfirmation: true,
             storyTitle: target.todo.title,
         });
@@ -915,7 +910,6 @@ export async function resolveVoiceSemanticIntent(intent, state, context, selecti
             entities: { localId: target.todo.localId },
         };
     const resolved = buildResolvedCommand(ir, context, {
-        danger: intent.kind === 'delete-todo',
         requiresConfirmation: intent.kind === 'delete-todo',
         storyTitle: target.todo.title,
     });

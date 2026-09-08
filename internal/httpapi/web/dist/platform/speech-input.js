@@ -1,5 +1,8 @@
 export const SPEECH_INPUT_CAPABILITY = 'speech-input';
 export const SPEECH_INPUT_MAX_DURATION_MS = 10000;
+// Capability request bound, not the default duration chosen by existing callers.
+export const SPEECH_INPUT_DURATION_CEILING_MS = 45000;
+export const SPEECH_INPUT_MAX_TRANSCRIPT_CODE_UNITS = 2000;
 const ERROR_CODES = new Set([
     'unsupported',
     'not_ready',
@@ -74,7 +77,9 @@ export function validateSpeechInputListenOptions(options) {
         || typeof options !== 'object'
         || !Number.isInteger(options.maxDurationMs)
         || options.maxDurationMs < 1
-        || options.maxDurationMs > SPEECH_INPUT_MAX_DURATION_MS
+        || options.maxDurationMs > SPEECH_INPUT_DURATION_CEILING_MS
+        || (options.aggregationMode !== undefined && options.aggregationMode !== 'single' && options.aggregationMode !== 'create_v2')
+        || (options.postFinalGraceMs !== undefined && (!Number.isInteger(options.postFinalGraceMs) || options.postFinalGraceMs < 1 || options.postFinalGraceMs > 10000))
         || (options.onListening !== undefined && typeof options.onListening !== 'function')
         || (options.language !== undefined
             && (typeof options.language !== 'string'
@@ -89,8 +94,9 @@ export function validateSpeechInputResult(value) {
         || typeof value !== 'object'
         || Object.keys(value).length !== 1
         || typeof value.transcript !== 'string'
+        || (value.segmentCount !== undefined && (!Number.isInteger(value.segmentCount) || value.segmentCount < 1))
         || value.transcript.trim().length === 0
-        || value.transcript.length > 260) {
+        || value.transcript.length > SPEECH_INPUT_MAX_TRANSCRIPT_CODE_UNITS) {
         throw new SpeechInputError('recognition_failed');
     }
 }

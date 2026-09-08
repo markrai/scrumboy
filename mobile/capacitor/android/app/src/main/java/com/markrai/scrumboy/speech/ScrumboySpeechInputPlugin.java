@@ -29,7 +29,9 @@ public class ScrumboySpeechInputPlugin extends Plugin {
     static final String MICROPHONE_PERMISSION = "microphone";
     private static final String LISTENING_EVENT = "listening";
     private static final String CAPABILITY_EVENT = "asrCapability";
-    private static final int MAX_DURATION_MS = 10_000;
+    // Request validation bound. The shell owns the deadline and exact cancellation;
+    // product controllers independently choose 10s (agent) or 45s (Create v2).
+    private static final int MAX_DURATION_MS = 45_000;
 
     private final SpeechInputOperationRegistry operations = new SpeechInputOperationRegistry();
     /**
@@ -102,11 +104,16 @@ public class ScrumboySpeechInputPlugin extends Plugin {
     public void listen(PluginCall call) {
         final String operationId = call.getString("operationId");
         final Integer maxDurationMs = call.getInt("maxDurationMs");
+        final boolean aggregateSegments = "create_v2".equals(call.getString("aggregationMode"));
+        final Integer requestedGraceMs = call.getInt("postFinalGraceMs");
+        final int postFinalGraceMs = requestedGraceMs == null ? 4_000 : requestedGraceMs;
         final String language = call.getString("language");
         if (
             maxDurationMs == null
             || maxDurationMs < 1
             || maxDurationMs > MAX_DURATION_MS
+            || postFinalGraceMs < 1
+            || postFinalGraceMs > 10_000
             || (language != null && !validLanguage(language))
         ) {
             reject(call, new SpeechInputException("invalid_request", false));
@@ -314,14 +321,40 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                             text,
                             operations,
                             operation,
-                            () -> stopAdvancedHandle(handleSlot)
+                            () -> stopAdvancedHandle(handleSlot),
+                            aggregateSegments,
+                            postFinalGraceMs,
+                            mainHandler,
+                            () -> {
+                                SpeechInputDiagnostics.emit(
+                                    "turn-final",
+                                    "provider", decision.providerId.diagnosticName(),
+                                    "segments", lifecycle.segmentCount(),
+                                    "length", lifecycle.transcript().length(),
+                                    "completion", "post_final_grace"
+                                );
+                                JSObject result = new JSObject();
+                                result.put("transcript", lifecycle.transcript());
+                                result.put("segmentCount", lifecycle.segmentCount());
+                                call.resolve(result);
+                            }
                         );
                         SpeechInputDiagnostics.emit(
                             "response",
                             "provider", decision.providerId.diagnosticName(),
                             "response", "final",
-                            "productTerminal", outcome == AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT
+                            "productTerminal", outcome == AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT,
+                            "segmentFinal", aggregateSegments && outcome == AdvancedUtteranceLifecycle.Outcome.SEGMENT_FINAL
                         );
+                        if (aggregateSegments && outcome == AdvancedUtteranceLifecycle.Outcome.SEGMENT_FINAL) {
+                            SpeechInputDiagnostics.emit(
+                                "segment-final",
+                                "provider", decision.providerId.diagnosticName(),
+                                "segment", lifecycle.segmentCount(),
+                                "length", text == null ? 0 : text.trim().length()
+                            );
+                            return;
+                        }
                         if (outcome != AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT) return;
                         SpeechInputDiagnostics.emit(
                             "product-terminal",
@@ -331,6 +364,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         );
                         JSObject result = new JSObject();
                         result.put("transcript", lifecycle.transcript());
+                        if (aggregateSegments) result.put("segmentCount", lifecycle.segmentCount());
                         call.resolve(result);
                     }
 
@@ -356,6 +390,10 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         }
                         JSObject result = new JSObject();
                         result.put("transcript", lifecycle.transcript());
+                        if (aggregateSegments) {
+                            result.put("segmentCount", lifecycle.segmentCount());
+                            SpeechInputDiagnostics.emit("turn-final", "provider", decision.providerId.diagnosticName(), "segments", lifecycle.segmentCount(), "length", lifecycle.transcript().length(), "completion", "sdk_completed");
+                        }
                         call.resolve(result);
                     }
 

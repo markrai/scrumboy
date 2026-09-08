@@ -1,9 +1,10 @@
+import { classifyVoiceCommandSafety } from './command-safety.js';
 import { canRunVoiceMutationInContext, getActiveVoiceCommandContext } from './command-context.js';
 import { callMcpTool } from './mcp-client.js';
 import { executeCommandIR } from './execute.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { normalizeLookup } from './normalize.js';
-import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes } from './resolve.js';
+import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, matchVoiceMembers, matchVoiceTags } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { voiceText } from './i18n.js';
 import { AGENT_LIMITS, AgentProtocolError, SKILL_NAMES } from './agent-protocol.js';
@@ -168,14 +169,12 @@ export class VoiceAgentSkillRegistry {
             const response = await this.tool('members_list', { projectSlug: context.projectSlug }, signal);
             if (!Array.isArray(response.items))
                 return fail('stale');
-            const wanted = normalizeLookup(args.member);
             const members = [...new Map(response.items.map(member => [member.userId, member])).values()];
             let matches;
             if (resourceLike(args.member))
                 matches = members.filter(member => member.userId === task.handles.get(args.member, 'member').userId);
             else {
-                const exact = members.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);
-                matches = exact.length ? exact : members.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
+                matches = matchVoiceMembers(args.member, members);
             }
             if (!matches.length)
                 return fail('not_found', 'member');
@@ -186,10 +185,8 @@ export class VoiceAgentSkillRegistry {
         }
         if ('tag' in args) {
             const names = [...new Set((context.board.tags ?? []).map(tag => tag.name))];
-            const wanted = normalizeLookup(args.tag);
-            const exact = names.filter(name => normalizeLookup(name) === wanted);
             const matches = resourceLike(args.tag) ? names.filter(name => name === task.handles.get(args.tag, 'tag').name)
-                : exact.length ? exact : names.filter(name => wanted.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted)));
+                : matchVoiceTags(args.tag, context.board);
             if (!matches.length)
                 return fail('not_found', 'tag');
             if (matches.length > 1)
@@ -231,7 +228,11 @@ export class VoiceAgentSkillRegistry {
             return { result: facts };
         if (call.skill === 'todos.open') {
             this.context(signal);
+            task.diagnostic?.emit('resolve', { phase: 'initial', result: 'command', commandIntent: 'open_todo', localId: todo.localId, projectId: context.projectId });
+            task.diagnostic?.emit('safety', { phase: 'initial', commandIntent: 'open_todo', ...classifyVoiceCommandSafety({ intent: 'open_todo' }) });
+            task.diagnostic?.emit('execute', { result: 'started', commandIntent: 'open_todo' });
             await this.options.openTodo(todo.localId);
+            task.diagnostic?.emit('execute', { result: 'success', commandIntent: 'open_todo' });
             this.context(signal);
             task.session.activeTodo = task.handles.get(facts.todoRef, 'todo');
             return { result: { ...facts, status: 'opened' } };
@@ -279,7 +280,7 @@ export class VoiceAgentSkillRegistry {
         const validated = validateCommandIR(ir, context);
         if (isCommandFailure(validated))
             return fail('invalid');
-        const command = { ir: validated.value, storyTitle: todo?.title, statusName: lane?.name, assigneeName: member?.name, danger: call.skill === 'todos.delete', requiresConfirmation: true, summary: '', confirmLabel: '' };
+        const command = { ir: validated.value, storyTitle: todo?.title, statusName: lane?.name, assigneeName: member?.name, danger: classifyVoiceCommandSafety(validated.value).danger, requiresConfirmation: true, summary: '', confirmLabel: '' };
         Object.assign(command, formatResolvedCommand(command));
         if (call.skill === 'todos.create')
             command.summary = `${command.summary} · ${lane.name}`;
@@ -287,11 +288,15 @@ export class VoiceAgentSkillRegistry {
         const before = !todo ? null : call.skill.includes('notes') ? todo.body ?? '' : call.skill.includes('tag') ? todo.tags ?? [] : call.skill === 'todos.rename' ? todo.title : call.skill === 'todos.move' ? this.lane(todo, context.board) : call.skill.includes('assign') ? todo.assigneeUserId ?? null : todo;
         return { result: { status: 'prepared', proposalRef: '', summary: short(command.summary, 500) }, prepared: { call: boundCall, command, fingerprint: JSON.stringify({ ir: validated.value, before, title: todo?.title, lane: lane?.name, member: member?.name }) } };
     }
-    async preflight(prepared, task, signal) {
+    async preflight(prepared, task, signal, phase = 'initial') {
         const context = this.context(signal);
         if (!canRunVoiceMutationInContext(context))
             throw new AgentProtocolError('Permission denied');
         const result = await this.resolve(prepared.call, task, signal);
+        if (result.prepared)
+            task.diagnostic?.command(result.prepared.command, phase);
+        else
+            task.diagnostic?.emit('resolve', { phase, result: result.result.status });
         if (!result.prepared || result.prepared.fingerprint !== prepared.fingerprint)
             throw new AgentProtocolError('Proposal changed; start again');
         return result.prepared;

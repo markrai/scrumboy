@@ -1,12 +1,16 @@
-import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError } from '../platform/speech-input.js';
+import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError, isSpeechInputErrorCode } from '../platform/speech-input.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { voiceText } from './i18n.js';
 import { VoiceAgentLoop, agentSafeFailure } from './agent-loop.js';
 import { VoiceAgentSkillRegistry } from './agent-skills.js';
+/** Safety ceiling only; an owned ASR final still resolves acquisition immediately. */
+export const VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS = 45000;
+export const VOICE_CREATE_POST_FINAL_GRACE_MS = 4000;
 const literal = (text) => ({ kind: 'literal', text });
 /** Owns only UI, microphone/TTS sequencing, cancellation and lifecycle. */
 export function createVoiceAgentController(options) {
-    const loop = options.loop ?? new VoiceAgentLoop(options.model, new VoiceAgentSkillRegistry(options), options.continuationEnabled);
+    const legacyLoop = options.createSession ? null : options.loop ?? new VoiceAgentLoop(options.model, new VoiceAgentSkillRegistry(options), options.continuationEnabled);
+    const loop = options.createSession ?? legacyLoop;
     let view = { phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null };
     let operation = null;
     let closed = false;
@@ -16,7 +20,11 @@ export function createVoiceAgentController(options) {
     const owns = (owner) => !closed && operation === owner && !owner.signal.aborted;
     const contextCurrent = () => {
         try {
-            loop.registry.context(new AbortController().signal);
+            const signal = new AbortController().signal;
+            if (options.createSession)
+                options.createSession.context(signal);
+            else
+                legacyLoop.registry.context(signal);
             return true;
         }
         catch {
@@ -63,6 +71,8 @@ export function createVoiceAgentController(options) {
             voice = false;
     };
     const interpret = async (text, owner) => {
+        if (options.createSession && !loop.pending)
+            emit({ capturedTranscript: text });
         emit({ activity: 'processing', activityStatus: { key: 'voice.agent.processing', fallback: 'Processing…' } });
         const result = await loop.submit(text, owner.signal);
         if (owns(owner))
@@ -71,6 +81,8 @@ export function createVoiceAgentController(options) {
     const listen = async (owner, automatic) => {
         if (!owns(owner))
             return;
+        const maxDurationMs = options.createSession ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
+        loop.trace();
         try {
             if (automatic) {
                 const status = await options.speechInput.status({ signal: owner.signal });
@@ -80,16 +92,25 @@ export function createVoiceAgentController(options) {
                     throw new SpeechInputError('not_ready');
             }
             emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
-            const result = await options.speechInput.listen({ maxDurationMs: SPEECH_INPUT_MAX_DURATION_MS, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
+            const result = await options.speechInput.listen({ maxDurationMs, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
+                ...(options.createSession ? { aggregationMode: 'create_v2', postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS } : {}),
                 onListening: () => { if (owns(owner))
                     emit({ activity: 'listening', activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' } }); } });
-            if (owns(owner))
+            if (owns(owner)) {
+                loop.trace().emit('asr_final', { modality: 'voice', transcript: result.transcript.trim(), transcriptLength: result.transcript.trim().length, provider: result.provider, ...(result.segmentCount === undefined ? {} : { segmentCount: result.segmentCount }) });
                 await interpret(result.transcript, owner);
+            }
         }
         catch (error) {
             if (!owns(owner))
                 return;
-            const code = error instanceof SpeechInputError ? error.code : 'recognition_failed';
+            // The separately bundled Capacitor shell has its own SpeechInputError class.
+            // Preserve only allowlisted codes across that boundary, not instanceof identity.
+            const suppliedCode = error && typeof error === 'object' ? error.code : undefined;
+            const code = isSpeechInputErrorCode(suppliedCode) ? suppliedCode : 'recognition_failed';
+            loop.trace().emit(code === 'cancelled' ? 'cancel' : 'failure', { source: 'speech', code, maxDurationMs, interactionRetained: loop.pending });
+            if (!loop.pending)
+                loop.endTrace(code === 'cancelled' ? 'speech_cancelled' : 'speech_failure');
             const status = code === 'permission_denied' ? { key: 'voice.agent.permissionDenied', fallback: 'Microphone permission was denied.' }
                 : code === 'permission_denied_permanently' ? { key: 'voice.agent.permissionBlocked', fallback: 'Microphone permission is blocked. Enable it in system settings.' }
                     : code === 'no_speech' || code === 'timeout' ? { key: 'voice.agent.noSpeech', fallback: "I didn't hear a response." }
@@ -102,6 +123,7 @@ export function createVoiceAgentController(options) {
         if (closed || operation)
             return;
         if (!contextCurrent()) {
+            loop.endTrace('stale_context');
             loop.invalidate();
             emit({ phase: 'error', status: literal(agentSafeFailure()), confirmation: null, clarification: null });
             return;
@@ -124,11 +146,14 @@ export function createVoiceAgentController(options) {
     };
     const interruptAcquisition = async () => {
         if (view.activity === 'speaking') {
+            loop.cancelTrace('superseded', loop.pending);
             abort();
             await options.speechOutput?.stop().catch(() => undefined);
         }
-        else if (view.activity === 'starting-microphone' || view.activity === 'listening')
+        else if (view.activity === 'starting-microphone' || view.activity === 'listening') {
+            loop.cancelTrace('superseded', loop.pending);
             abort();
+        }
     };
     const controller = {
         getView: () => view,
@@ -138,9 +163,9 @@ export function createVoiceAgentController(options) {
         async startListening() { if (closed)
             return; await interruptAcquisition(); voice = true; await run(owner => listen(owner, false)); },
         async submitTranscript(text) { if (closed)
-            return; await interruptAcquisition(); voice = false; await run(owner => interpret(text, owner)); },
+            return; await interruptAcquisition(); voice = false; await run(owner => { loop.trace().emit('transcript_input', { modality: 'typed', transcript: text.trim(), transcriptLength: text.trim().length }); return interpret(text, owner); }); },
         stopListening() { if (closed)
-            return; abort(); emit({ activity: 'idle', activityStatus: { key: 'voice.agent.stopped', fallback: 'Listening stopped.' } }); },
+            return; loop.cancelTrace('microphone_stopped', loop.pending); abort(); emit({ activity: 'idle', activityStatus: { key: 'voice.agent.stopped', fallback: 'Listening stopped.' } }); },
         async confirm() { if (!loop.confirmationPending || closed)
             return; await interruptAcquisition(); await run(async (owner) => { emit({ activity: 'processing', activityStatus: null }); await show(await loop.confirm(owner.signal), owner); }); },
         cancelConfirmation() { if (closed || operation && view.activity === 'processing')
@@ -152,6 +177,7 @@ export function createVoiceAgentController(options) {
         invalidate(_options = {}) {
             if (closed)
                 return;
+            loop.cancelTrace('controller_invalidated');
             abort();
             voice = false;
             loop.invalidate();
@@ -159,12 +185,13 @@ export function createVoiceAgentController(options) {
             emit({ phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null });
         },
         close() { if (closed)
-            return; controller.invalidate(); closed = true; globalThis.clearInterval(contextMonitor); emit({ phase: 'closed', status: { key: 'voice.agent.closed', fallback: 'VoiceFlow closed.' } }); },
+            return; loop.cancelTrace('controller_closed'); controller.invalidate(); closed = true; globalThis.clearInterval(contextMonitor); emit({ phase: 'closed', status: { key: 'voice.agent.closed', fallback: 'VoiceFlow closed.' } }); },
     };
     // Pending tasks and retained references must expire even while the UI is waiting for a typed reply.
     const contextMonitor = globalThis.setInterval(() => {
-        if (closed || (!operation && !loop.pending && !loop.session.activeTodo) || contextCurrent())
+        if (closed || (!operation && !loop.pending && !legacyLoop?.session.activeTodo) || contextCurrent())
             return;
+        loop.endTrace('stale_context');
         controller.invalidate();
         emit({ phase: 'error', status: { key: 'voice.errors.staleContext', fallback: 'The board changed before the command could run.' } });
     }, 100);

@@ -10,6 +10,7 @@ export function buildMcpCall(ir) {
                     projectSlug: ir.projectSlug,
                     title: ir.entities.title,
                     columnKey: ir.entities.columnKey,
+                    ...('body' in ir.entities ? { body: ir.entities.body, tags: ir.entities.tags, assigneeUserId: ir.entities.assigneeUserId } : {}),
                 },
             };
         case "todos.move":

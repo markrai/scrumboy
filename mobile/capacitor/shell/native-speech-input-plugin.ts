@@ -28,8 +28,10 @@ export interface NativeSpeechInputPlugin {
   listen(options: {
     operationId: string;
     maxDurationMs: number;
+    aggregationMode?: 'single' | 'create_v2';
+    postFinalGraceMs?: number;
     language?: string;
-  }): Promise<{ transcript: string }>;
+  }): Promise<{ transcript: string; segmentCount?: number }>;
   cancel(options: { operationId: string }): Promise<void>;
   invalidate(): Promise<void>;
   clearAdvancedCapabilityCache?(): Promise<void>;

@@ -10,15 +10,16 @@ package com.markrai.scrumboy.speech;
  * {@code AudioSource.fromMic} stream it does not follow a final hypothesis on its own, and
  * a cancelled collection never emits it at all.
  *
- * Product invariant: the first valid FinalTextResponse is the terminal for the utterance.
- * Native teardown always runs; JavaScript settles at most once. Late completed, error,
- * cancellation, partial, or second final are inert.
+ * In single mode the first valid final is terminal. Create v2 uses the same continuous
+ * stream in aggregate mode: finals are authoritative segments and a bounded grace window
+ * chooses the VoiceFlow turn boundary.
  */
 final class AdvancedUtteranceLifecycle {
     /** What the caller owes JavaScript for this response. */
     enum Outcome {
         /** Not a product terminal, or JavaScript has already settled. Do nothing. */
         IGNORE,
+        SEGMENT_FINAL,
         /** This caller owns the terminal and must resolve {@link #transcript()}. */
         RESOLVE_TRANSCRIPT,
         /** This caller owns the terminal and must reject no_speech. */
@@ -27,9 +28,21 @@ final class AdvancedUtteranceLifecycle {
 
     private final AdvancedSpeechTranscriptAccumulator accumulator = new AdvancedSpeechTranscriptAccumulator();
     private final AdvancedUtteranceTerminal terminal = new AdvancedUtteranceTerminal();
+    private final Object aggregationLock = new Object();
+    private android.os.Handler handler;
+    private Runnable grace;
+    private boolean aggregate;
+    private long graceMs;
+    private SpeechInputOperationRegistry operations;
+    private SpeechInputOperationRegistry.Operation operation;
+    private Runnable nativeTeardown;
+    private Runnable resolve;
 
     void onPartial(String text) {
         accumulator.onPartial(text);
+        synchronized (aggregationLock) {
+            if (aggregate && accumulator.hasFinal() && text != null && !text.trim().isEmpty()) scheduleGraceLocked();
+        }
     }
 
     /**
@@ -44,9 +57,22 @@ final class AdvancedUtteranceLifecycle {
         String text,
         SpeechInputOperationRegistry operations,
         SpeechInputOperationRegistry.Operation operation,
-        Runnable nativeTeardown
+        Runnable nativeTeardown,
+        boolean aggregate,
+        long graceMs,
+        android.os.Handler handler,
+        Runnable resolve
     ) {
+        if (!aggregate && accumulator.hasFinal()) return Outcome.IGNORE;
         if (!accumulator.onFinal(text)) return Outcome.IGNORE;
+        if (aggregate) {
+            synchronized (aggregationLock) {
+                this.aggregate = true; this.graceMs = graceMs; this.handler = handler;
+                this.operations = operations; this.operation = operation; this.nativeTeardown = nativeTeardown; this.resolve = resolve;
+                scheduleGraceLocked();
+            }
+            return Outcome.SEGMENT_FINAL;
+        }
         if (!terminal.claimProductCompletion(operations, operation, nativeTeardown)) return Outcome.IGNORE;
         return Outcome.RESOLVE_TRANSCRIPT;
     }
@@ -61,8 +87,32 @@ final class AdvancedUtteranceLifecycle {
         SpeechInputOperationRegistry.Operation operation,
         Runnable nativeTeardown
     ) {
+        synchronized (aggregationLock) { if (handler != null && grace != null) handler.removeCallbacks(grace); }
         if (!terminal.claimProductCompletion(operations, operation, nativeTeardown)) return Outcome.IGNORE;
         return accumulator.hasFinal() ? Outcome.RESOLVE_TRANSCRIPT : Outcome.REJECT_NO_SPEECH;
+    }
+
+    Outcome onFinal(
+        String text,
+        SpeechInputOperationRegistry operations,
+        SpeechInputOperationRegistry.Operation operation,
+        Runnable nativeTeardown
+    ) {
+        return onFinal(text, operations, operation, nativeTeardown, false, 0, null, null);
+    }
+
+    private void scheduleGraceLocked() {
+        if (handler == null) return;
+        if (grace != null) handler.removeCallbacks(grace);
+        grace = () -> {
+            SpeechInputOperationRegistry.Operation op;
+            SpeechInputOperationRegistry ops;
+            Runnable teardown;
+            Runnable complete;
+            synchronized (aggregationLock) { op = operation; ops = operations; teardown = nativeTeardown; complete = resolve; grace = null; }
+            if (op != null && terminal.claimProductCompletion(ops, op, teardown) && complete != null) complete.run();
+        };
+        handler.postDelayed(grace, graceMs);
     }
 
     /**
@@ -96,4 +146,6 @@ final class AdvancedUtteranceLifecycle {
     String transcript() {
         return accumulator.finalTranscriptOrNull();
     }
+
+    int segmentCount() { return accumulator.segmentCount(); }
 }

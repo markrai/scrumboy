@@ -237,7 +237,10 @@ export function createSpeechInputComposition(
       }
       if (maxDurationMs !== null) {
         deadline = globalThis.setTimeout(
-          () => cancel(new SpeechInputError('timeout')),
+          () => {
+            voiceFlowDiagnostic('ASR deadline', { operationId, code: 'timeout', maxDurationMs });
+            cancel(new SpeechInputError('timeout'));
+          },
           maxDurationMs,
         );
       }
@@ -316,6 +319,8 @@ export function createSpeechInputComposition(
             return await plugin.listen({
               operationId,
               maxDurationMs: listenOptions.maxDurationMs,
+              ...(listenOptions.aggregationMode ? { aggregationMode: listenOptions.aggregationMode } : {}),
+              ...(listenOptions.postFinalGraceMs === undefined ? {} : { postFinalGraceMs: listenOptions.postFinalGraceMs }),
               language: effectiveSpeechInputLanguage(listenOptions.language),
             });
           } finally {
@@ -330,12 +335,13 @@ export function createSpeechInputComposition(
           transcript,
           ...(activeProvider ? { provider: activeProvider } : {}),
         });
-        return { transcript, ...(activeProvider ? { provider: activeProvider } : {}) };
+        return { transcript, ...(activeProvider ? { provider: activeProvider } : {}), ...(result.segmentCount === undefined ? {} : { segmentCount: result.segmentCount }) };
       }).catch((error: unknown) => {
         const failure = nativeError(error);
         voiceFlowDiagnostic('ASR failure', {
           operationId: activeListening,
           normalizedCode: failure.code,
+          maxDurationMs: listenOptions.maxDurationMs,
           ...(activeProvider ? { provider: activeProvider } : {}),
           ...(failure.providerCode === undefined ? {} : { providerCode: failure.providerCode }),
           ...(failure.providerReason === undefined ? {} : { providerReason: failure.providerReason }),

@@ -19,6 +19,12 @@ function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListe
   return { controller, speechInput, speechOutput, onView };
 }
 describe('VoiceAgentController local skill production path', () => {
+  it('keeps the All Commands acquisition window at 10 seconds', async () => {
+    const s = surface(harness(), []);
+    await s.controller.startListening();
+    expect(s.speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({ maxDurationMs: 10_000 }));
+    s.controller.close();
+  });
   it('solicits yes only after every effect in a >600-character visual batch has been spoken', async () => {
     const notes = 'Long dictated paragraph. '.repeat(32);
     const h = harness([

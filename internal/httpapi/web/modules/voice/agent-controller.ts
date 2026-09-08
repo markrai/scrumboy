@@ -76,6 +76,7 @@ export type VoiceAgentMessage = VoiceMessageDescriptor | Readonly<{
 }>;
 
 export type VoiceAgentView = Readonly<{
+  capturedTranscript?: string;
   phase: VoiceAgentPhase;
   status: VoiceAgentMessage;
   activity: VoiceAgentActivity;

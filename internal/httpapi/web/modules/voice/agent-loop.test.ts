@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { harness, skill, finish, latestRef } from './agent.test.utils.js';
 import { AGENT_LIMITS } from './agent-protocol.js';
 describe('bounded local agent loop', () => {
@@ -143,5 +143,264 @@ describe('bounded local agent loop', () => {
     await h.loop.submit('Open Happy Birthday', h.signal);
     const inputs = JSON.stringify(h.model.mock.calls);
     for (const secret of ['SECRET_NOTES', 'mark@example.test', 'urgent', 'projectId', 'columnKey', 'userId', 'localId']) expect(inputs).not.toContain(secret);
+  });
+});
+
+describe('state-aware voice agent protocol lifecycle', () => {
+  const pendingOf = (h: ReturnType<typeof harness>, call: number) => JSON.parse(h.model.mock.calls[call][0]).pending;
+
+  it('keeps a prepared create through a finish carrying harmless text (device case 1)', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which lane?' },
+      skill('todos.create', { title: 'hey, the night is young', lane: 'Backlog' }),
+      '{"kind":"finish","text":"Done"}',
+      { kind: 'confirm' },
+    ]);
+    expect((await h.loop.submit('create a to-do called hey, the night is young.', h.signal)).phase).toBe('question');
+    expect(pendingOf(h, 0)).toEqual({ kind: 'idle' });
+
+    const confirmation = await h.loop.submit('in backlog', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toMatch(/hey, the night is young/i);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.model).toHaveBeenCalledTimes(3);
+    expect(pendingOf(h, 1)).toEqual({ kind: 'clarification' });
+    expect(pendingOf(h, 2)).toEqual({ kind: 'proposals_ready', proposalCount: 1 });
+
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0].intent).toBe('todos.create');
+  });
+
+  it('reads a spoken "done" during clarification as the Done lane (device case 2)', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which lane should Oh My God go in?' },
+      skill('todos.create', { title: 'Oh My God', lane: 'Done' }),
+      finish,
+      { kind: 'confirm' },
+    ]);
+    expect((await h.loop.submit('create a story called Oh My God.', h.signal)).phase).toBe('question');
+    expect(h.loop.confirmationPending).toBe(false);
+
+    const view = await h.loop.submit('done.', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain('Oh My God');
+    expect(pendingOf(h, 1)).toEqual({ kind: 'clarification' });
+    expect(h.execute).not.toHaveBeenCalled();
+
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0].entities.columnKey).toBe('done');
+  });
+
+  it('repairs a confirmation action emitted during clarification instead of failing the task', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which lane should Oh My God go in?' },
+      { kind: 'confirm' },
+      skill('todos.create', { title: 'Oh My God', lane: 'Done' }),
+      finish,
+    ]);
+    await h.loop.submit('create a story called Oh My God.', h.signal);
+    expect((await h.loop.submit('done.', h.signal)).phase).toBe('confirmation');
+    const repair = JSON.parse(h.model.mock.calls[2][0]).repair;
+    expect(repair).toContain('Envelope confirm is not allowed in state clarification');
+    expect(repair).toContain('Current state: clarification');
+    expect(repair).toContain('Allowed envelope kinds: skill_call, ask_user');
+    expect(repair).not.toContain('"kind":"confirm"');
+  });
+
+  it('repairs a finish emitted for a spoken done clarification and creates in Done', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which lane should Oh My God go in?' },
+      finish,
+      skill('todos.create', { title: 'Oh My God', lane: 'Done' }),
+      finish,
+    ]);
+    expect((await h.loop.submit('create a story called Oh My God.', h.signal)).phase).toBe('question');
+    const view = await h.loop.submit('done.', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain('Oh My God');
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(pendingOf(h, 1)).toEqual({ kind: 'clarification' });
+    const repair = JSON.parse(h.model.mock.calls[2][0]).repair;
+    expect(repair).toContain('Envelope finish is not allowed in state clarification');
+    expect(repair).toContain('Current state: clarification');
+    expect(repair).toContain('Allowed envelope kinds: skill_call, ask_user');
+    expect(pendingOf(h, 3)).toEqual({ kind: 'proposals_ready', proposalCount: 1 });
+  });
+
+  it('cannot terminate an unanswered clarification through finish', async () => {
+    const h = harness([{ kind: 'ask_user', text: 'Which lane?' }, finish, finish]);
+    expect((await h.loop.submit('create a story called Oh My God.', h.signal)).phase).toBe('question');
+    const view = await h.loop.submit('done.', h.signal);
+    expect(view.phase).toBe('error');
+    expect(view.text).not.toContain('No changes needed');
+    expect(h.loop.pending).toBe(false);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(JSON.parse(h.model.mock.calls[2][0]).repair).toContain('Envelope finish is not allowed in state clarification');
+  });
+
+  it('never reports confirmation while a free-text clarification is outstanding', async () => {
+    const h = harness([{ kind: 'ask_user', text: 'Which lane?' }, { kind: 'ask_user', text: 'Still which lane?' }]);
+    expect((await h.loop.submit('create a story', h.signal)).phase).toBe('question');
+    expect(h.loop.confirmationPending).toBe(false);
+    expect((await h.loop.submit('done.', h.signal)).phase).toBe('question');
+    expect(pendingOf(h, 1)).toEqual({ kind: 'clarification' });
+    expect(h.loop.confirmationPending).toBe(false);
+  });
+
+  it('never reports clarification while confirmation is outstanding', async () => {
+    const h = harness([
+      skill('todos.create', { title: 'Oh My God', lane: 'Done' }), finish,
+      { kind: 'ask_user', text: 'Which lane?' }, { kind: 'confirm' },
+    ]);
+    expect((await h.loop.submit('create Oh My God in Done', h.signal)).phase).toBe('confirmation');
+    expect(h.loop.confirmationPending).toBe(true);
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(pendingOf(h, 2)).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    expect(pendingOf(h, 3)).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    expect(JSON.parse(h.model.mock.calls[3][0]).repair).toContain('Envelope ask_user is not allowed in state confirmation');
+    expect(h.execute).toHaveBeenCalledOnce();
+  });
+
+  it('repairs a finish emitted for yes while confirmation is pending and then confirms once', async () => {
+    const h = harness([
+      skill('todos.create', { title: 'Oh My God', lane: 'Done' }), finish,
+      finish, { kind: 'confirm' },
+    ]);
+    expect((await h.loop.submit('create a story called Oh My God.', h.signal)).phase).toBe('confirmation');
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(pendingOf(h, 2)).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    const repair = JSON.parse(h.model.mock.calls[3][0]).repair;
+    expect(repair).toContain('Envelope finish is not allowed in state confirmation');
+    expect(repair).toContain('Current state: confirmation');
+    expect(repair).toContain('Allowed envelope kinds: skill_call, confirm, decline, cancel');
+    expect(pendingOf(h, 3)).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    expect(h.execute).toHaveBeenCalledOnce();
+  });
+
+  it('qualified additional work leaves confirmation, then finishes from proposals_ready into a new confirmation', async () => {
+    const h = harness([
+      skill('todos.move', { reference: 'Happy Birthday', lane: 'Done' }), finish,
+      skill('todos.add_tag', { reference: 'Happy Birthday', tag: 'urgent' }), finish,
+      { kind: 'confirm' },
+    ]);
+    expect((await h.loop.submit('Move Happy Birthday to Done', h.signal)).phase).toBe('confirmation');
+    expect(h.loop.confirmationPending).toBe(true);
+    const next = await h.loop.submit('Yes but also tag it urgent', h.signal);
+    expect(next.phase).toBe('confirmation');
+    expect(next.text).toContain('urgent');
+    expect(pendingOf(h, 2)).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    expect(pendingOf(h, 3)).toEqual({ kind: 'proposals_ready', proposalCount: 2 });
+    expect(h.execute).not.toHaveBeenCalled();
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('prepares a compound batch across proposals_ready turns before one confirmation', async () => {
+    const h = harness([
+      skill('todos.move', { reference: 'Happy Birthday', lane: 'Done' }),
+      skill('todos.add_tag', { reference: 'Happy Birthday', tag: 'urgent' }),
+      finish,
+      { kind: 'confirm' },
+    ]);
+    const view = await h.loop.submit('Move Happy Birthday to Done and tag it urgent', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain('Done'); expect(view.text).toContain('urgent');
+    expect(pendingOf(h, 0)).toEqual({ kind: 'idle' });
+    expect(pendingOf(h, 1)).toEqual({ kind: 'proposals_ready', proposalCount: 1 });
+    expect(pendingOf(h, 2)).toEqual({ kind: 'proposals_ready', proposalCount: 2 });
+    expect(h.execute).not.toHaveBeenCalled();
+
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(h.execute.mock.calls.map(([ir]) => ir.intent)).toEqual(['todos.move', 'todos.add_tag']);
+  });
+
+  it('recovers a premature confirm after create as finish, then confirms once (device case A)', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const h = harness([
+      skill('todos.create', { title: 'I Am King' }),
+      { kind: 'confirm' },
+      { kind: 'confirm' },
+    ]);
+    try {
+      const view = await h.loop.submit('create a story called I Am King.', h.signal);
+      expect(view.phase).toBe('confirmation');
+      expect(view.text).toMatch(/I Am King/i);
+      expect(h.execute).not.toHaveBeenCalled();
+      expect(h.model).toHaveBeenCalledTimes(2);
+      expect(pendingOf(h, 1)).toEqual({ kind: 'proposals_ready', proposalCount: 1 });
+      expect(JSON.parse(h.model.mock.calls[1][0]).repair).toBeUndefined();
+      expect(debug.mock.calls.some(([, details]) => details?.stage === 'interpret' && details?.state === 'proposals_ready' && details?.interpretationKind === 'finish' && details?.recoveredFrom === 'confirm')).toBe(true);
+      expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+      expect(h.execute).toHaveBeenCalledOnce();
+      expect(h.execute.mock.calls[0][0].intent).toBe('todos.create');
+    } finally {
+      debug.mockRestore();
+      localStorage.removeItem('scrumboy_debug_voiceflow');
+    }
+  });
+
+  it('recovers a premature confirm after a Backlog clarification (device case B)', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which lane?' },
+      skill('todos.create', { title: 'I Am a Boy', lane: 'Backlog' }),
+      { kind: 'confirm' },
+      { kind: 'confirm' },
+    ]);
+    expect((await h.loop.submit('create a story called I Am a Boy', h.signal)).phase).toBe('question');
+    const view = await h.loop.submit('backlog.', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toMatch(/I Am a Boy/i);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(pendingOf(h, 1)).toEqual({ kind: 'clarification' });
+    expect(pendingOf(h, 2)).toEqual({ kind: 'proposals_ready', proposalCount: 1 });
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0].entities.columnKey).toBe('backlog');
+  });
+
+  it.each(['idle', 'clarification', 'choice'] as const)('does not recover confirm in %s', async state => {
+    if (state === 'idle') {
+      const h = harness([{ kind: 'confirm' }, { kind: 'confirm' }]);
+      expect((await h.loop.submit('create a story called I Am King.', h.signal)).phase).toBe('error');
+      expect(JSON.parse(h.model.mock.calls[1][0]).repair).toContain('Envelope confirm is not allowed in state idle');
+      expect(h.execute).not.toHaveBeenCalled();
+      return;
+    }
+    if (state === 'clarification') {
+      const h = harness([{ kind: 'ask_user', text: 'Which lane?' }, { kind: 'confirm' }, { kind: 'confirm' }]);
+      await h.loop.submit('create a story called I Am a Boy', h.signal);
+      expect((await h.loop.submit('backlog.', h.signal)).phase).toBe('error');
+      expect(JSON.parse(h.model.mock.calls[2][0]).repair).toContain('Envelope confirm is not allowed in state clarification');
+      expect(h.execute).not.toHaveBeenCalled();
+      return;
+    }
+    const h = harness([skill('todos.open', { reference: 'Bogus' }), { kind: 'ask_user', text: 'Which one?' }, { kind: 'confirm' }, { kind: 'confirm' }]);
+    h.todo.title = 'Bogus'; h.todo.localId = 353;
+    h.board.columns.done.push({ id: 92, localId: 354, title: 'Bogus', status: 'done', columnKey: 'done' });
+    expect((await h.loop.submit('Open Bogus', h.signal)).phase).toBe('question');
+    expect((await h.loop.submit('the first one', h.signal)).phase).toBe('error');
+    expect(JSON.parse(h.model.mock.calls[3][0]).repair).toContain('Envelope confirm is not allowed in state choice');
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+  });
+
+  it.each(['decline', 'cancel'] as const)('does not coerce proposals_ready %s into finish', async kind => {
+    const h = harness([skill('todos.create', { title: 'I Am King' }), { kind }, { kind }]);
+    expect((await h.loop.submit('create a story called I Am King.', h.signal)).phase).toBe('error');
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.loop.confirmationPending).toBe(false);
+    expect(JSON.parse(h.model.mock.calls[2][0]).repair).toContain(`Envelope ${kind} is not allowed in state proposals_ready`);
+  });
+
+  it('reports the choice state to the model while a choice is unresolved', async () => {
+    const h = harness([skill('todos.open', { reference: 'Bogus' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Bogus'; h.todo.localId = 353;
+    h.board.columns.done.push({ id: 92, localId: 354, title: 'Bogus', status: 'done', columnKey: 'done' });
+    expect((await h.loop.submit('Open Bogus', h.signal)).phase).toBe('question');
+    h.steps.push(input => skill('todos.open', { todoRef: JSON.parse(input).pending.choices[0].handle }), finish);
+    expect((await h.loop.submit('the first one', h.signal)).phase).toBe('success');
+    expect(pendingOf(h, 2)).toMatchObject({ kind: 'choice', resource: 'todo' });
   });
 });

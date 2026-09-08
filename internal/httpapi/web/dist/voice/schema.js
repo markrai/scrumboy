@@ -58,7 +58,8 @@ export function validateCommandIR(value, context) {
     const activeLaneKeys = laneKeys(context.board);
     switch (ir.intent) {
         case "todos.create": {
-            if (!hasExactKeys(ir.entities, ["title", "columnKey"])) {
+            const enriched = hasExactKeys(ir.entities, ["title", "columnKey", "body", "tags", "assigneeUserId"]);
+            if (!enriched && !hasExactKeys(ir.entities, ["title", "columnKey"])) {
                 return localizedFail("invalid_schema", "voice.errors.schema.createFieldsInvalid", "Create command fields are invalid.");
             }
             const title = normalizeTodoTitle(ir.entities.title);
@@ -68,7 +69,14 @@ export function validateCommandIR(value, context) {
             if (typeof ir.entities.columnKey !== "string" || !activeLaneKeys.has(ir.entities.columnKey)) {
                 return localizedFail("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
             }
-            return { ok: true, value: { ...ir, entities: { title, columnKey: ir.entities.columnKey } } };
+            if (enriched && (new TextEncoder().encode(title).length > 200
+                || typeof ir.entities.body !== 'string' || new TextEncoder().encode(ir.entities.body).length > 20000
+                || !Array.isArray(ir.entities.tags) || ir.entities.tags.length > 20
+                || ir.entities.tags.some(tag => typeof tag !== 'string' || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(tag))
+                || !(ir.entities.assigneeUserId === null || isPositiveInteger(ir.entities.assigneeUserId)))) {
+                return localizedFail('invalid_schema', 'voice.errors.schema.createFieldsInvalid', 'Create command fields are invalid.');
+            }
+            return { ok: true, value: { ...ir, entities: { ...ir.entities, title, columnKey: ir.entities.columnKey } } };
         }
         case "todos.move": {
             if (!hasExactKeys(ir.entities, ["localId", "toColumnKey"])) {

@@ -4,7 +4,21 @@ Voice commands are project-scoped. Everything you say applies to the project you
 
 ## On-device AI VoiceFlow
 
-On supported, ready local-AI devices, AI VoiceFlow uses the `voice-agent-v9` domain-conditioned skill loop. Nano chooses one bounded Scrumboy skill at a time and can sequence several actions from one request. Todo, story, card, task and item identify the same entity; software-like titles such as **Bird's Eye View**, **Settings**, and **Search** remain literal todo titles.
+### Experimental Create v2
+
+On English, enhanced-capable devices, the VoiceFlow mode selector offers **Create v2 (experimental)**. It persists the explicit local selection in `scrumboy_voice_create_v2` (`1` enables it); **All commands** selects the existing agent. Switching mode closes and invalidates the current interaction before listening again. No classifier model runs before the create planner, and non-create output does not automatically replay through the old agent. Select All commands for moves, updates, deletes and other existing skills.
+
+The `voice-create-plan-v1` prompt makes one request through the existing Nano generation bridge. It extracts one create with optional lane, singular assignee, existing tags and literal notes. Unspecified fields stay omitted in model output. Scrumboy supplies the current project, canonical leftmost lane, unassigned, no tags and empty notes. An explicit unresolved field never falls back to a default. Missing title or material unsupported content blocks the entire create. Duplicate people produce deterministic choices; selecting a choice does not call Nano.
+
+The final ASR transcript remains visible through preparation and review. Review text comes from the resolved command and includes the lane and supplied assignee/tags/notes, without listing empty defaults. Planning does not open todos or call mutation APIs. Confirmation refreshes and re-resolves the reviewed fields; a changed leftmost default, resolved identity or context invalidates consent. One enriched `todos_create` carries all fields in the existing server create transaction. No follow-up assign/tag/notes requests run.
+
+Whole-utterance `yes`, `yep`, `confirm`, `go ahead`, `do it`, and `yes please` confirm only a pending review. `no`, `cancel`, `never mind` and `stop` cancel. Mixed replies such as “yes but assign Sarah instead” invalidate the pending review and ask for a complete restatement; natural revision is not implemented. Confirmation adds no Nano generation. A lost execution response is reported as failed or unconfirmed and is not automatically retried.
+
+The existing 256-output-token generation budget is unchanged. This experiment bounds input to 2,000 code units, notes to 1,000 and tags to five; malformed/oversized output fails closed with no repair loop. These are parser limits, not a guarantee that every maximal request fits the token budget. Full extraction accuracy and output truncation still require physical Nano testing. The focused synthetic evaluation cases are in `internal/httpapi/web/scripts/voice-create-evaluation.json`; mocked tests prove orchestration, not physical-model accuracy. Diagnostic traces add `planner_start` and `plan` metadata without raw model output or duplicated notes.
+
+### Existing agent
+
+With All commands selected, AI VoiceFlow uses the existing domain-conditioned skill loop. Nano chooses one bounded Scrumboy skill at a time and can sequence several actions from one request. Todo, story, card, task and item identify the same entity; software-like titles such as **Bird's Eye View**, **Settings**, and **Search** remain literal todo titles.
 
 The available skills are `todos.resolve`, `todos.open`, `todos.inspect`, `todos.create`, `todos.move`, `todos.rename`, `todos.append_notes`, `todos.replace_notes`, `todos.assign`, `todos.unassign`, `todos.add_tag`, `todos.remove_tag`, `todos.delete`, and `analytics.count_completed` (this week). Opening and bounded reads can run immediately. Every mutation prepares a proposal. A complete task receives one combined confirmation, including when the user adds another action during confirmation. Natural replies such as “yeah, go ahead” and “no thanks” are interpreted locally.
 
@@ -55,6 +69,13 @@ For **move**, **delete**, **open** / **edit**, **assign**, and forms like **“t
 
 * create story "login page"
 * create todo "fix bug"
+
+Create v2 speech acquisition keeps one ML Kit recognition stream open across authoritative
+segment finals. Each final is retained in order; a 4-second post-final grace window ends the
+VoiceFlow turn after no further meaningful partial activity. The 45-second absolute ceiling
+still applies, and a ceiling timeout fails closed rather than promoting unfinished partial text.
+Create v2 then sends the joined authoritative segments to the planner once. All Commands keeps
+its existing first-final behavior and 10-second acquisition window.
 
 ## Move / Update Status
 

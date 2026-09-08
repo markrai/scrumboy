@@ -194,6 +194,16 @@ describe('Capacitor speech-input composition', () => {
       language: 'fr-FR',
     });
   });
+  it('passes the explicit Create v2 aggregation policy through the native ownership boundary', async () => {
+    const native = plugin();
+    vi.mocked(native.listen).mockResolvedValue({ transcript: 'Create Big Man' });
+    const capability = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-v2' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+    await capability.listen({ maxDurationMs: 45_000, aggregationMode: 'create_v2', postFinalGraceMs: 4_000 });
+    expect(native.listen).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'speech-v2', maxDurationMs: 45_000, aggregationMode: 'create_v2', postFinalGraceMs: 4_000,
+    }));
+  });
 });
 
 it.each(['mlkit_genai_advanced', 'android_on_device'] as const)('carries owned %s metadata across native composition', async provider => {
@@ -203,10 +213,60 @@ it.each(['mlkit_genai_advanced', 'android_on_device'] as const)('carries owned %
     if (name === 'listening') listener = callback as typeof listener;
     return { remove: vi.fn().mockResolvedValue(undefined) };
   });
+
   vi.mocked(native.listen).mockImplementation(async () => {
     listener({ operationId: 'speech-1', provider });
     return { transcript: '  Open 355  ' };
   });
   const composition = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-1' });
   await expect(composition.registry.get(SPEECH_INPUT_CAPABILITY)!.listen({ maxDurationMs: 10000 })).resolves.toEqual({ transcript: 'Open 355', provider });
+});
+
+describe('extended speech acquisition', () => {
+  it('allows capture past 10 seconds and classifies the exact 45-second app deadline as timeout', async () => {
+    const native = plugin();
+    const pending = deferred<{ transcript: string }>();
+    vi.mocked(native.listen).mockReturnValue(pending.promise);
+    vi.stubGlobal('localStorage', { getItem: vi.fn().mockReturnValue('1') });
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const capability = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-long' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+    const delivered = vi.fn();
+    const outcome = capability.listen({ maxDurationMs: 45_000 }).then(delivered, error => error);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(native.listen).toHaveBeenCalledWith(expect.objectContaining({ maxDurationMs: 45_000 }));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(native.cancel).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(34_999);
+    expect(native.cancel).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(outcome).resolves.toMatchObject({ code: 'timeout' });
+    expect(native.cancel).toHaveBeenCalledExactlyOnceWith({ operationId: 'speech-long' });
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR deadline', {
+      operationId: 'speech-long', code: 'timeout', maxDurationMs: 45_000,
+    });
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR failure', expect.objectContaining({ normalizedCode: 'timeout', maxDurationMs: 45_000 }));
+    pending.resolve({ transcript: 'late final' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(delivered).not.toHaveBeenCalled();
+  });
+
+  it('delivers an early native final immediately once and clears the 45-second deadline', async () => {
+    const native = plugin();
+    const pending = deferred<{ transcript: string }>();
+    vi.mocked(native.listen).mockReturnValue(pending.promise);
+    const capability = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-long' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+    const delivered = vi.fn();
+    const outcome = capability.listen({ maxDurationMs: 45_000 }).then(delivered);
+    await vi.advanceTimersByTimeAsync(20_000);
+    const finalAt = Date.now();
+    pending.resolve({ transcript: 'Create Big Man' });
+    await outcome;
+    expect(Date.now()).toBe(finalAt);
+    expect(delivered).toHaveBeenCalledExactlyOnceWith({ transcript: 'Create Big Man' });
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(native.cancel).not.toHaveBeenCalled();
+    expect(delivered).toHaveBeenCalledOnce();
+  });
 });

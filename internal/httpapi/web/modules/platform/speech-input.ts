@@ -1,6 +1,9 @@
 export const SPEECH_INPUT_CAPABILITY = 'speech-input' as const;
 
 export const SPEECH_INPUT_MAX_DURATION_MS = 10_000;
+// Capability request bound, not the default duration chosen by existing callers.
+export const SPEECH_INPUT_DURATION_CEILING_MS = 45_000;
+export const SPEECH_INPUT_MAX_TRANSCRIPT_CODE_UNITS = 2_000;
 
 export type SpeechInputUnsupportedReason = 'os' | 'device' | 'provider' | 'policy';
 export type SpeechInputUnavailableReason = 'busy' | 'foreground' | 'provider';
@@ -129,6 +132,8 @@ export type SpeechInputStatusOptions = Readonly<{
 
 export type SpeechInputListenOptions = Readonly<{
   maxDurationMs: number;
+  aggregationMode?: 'single' | 'create_v2';
+  postFinalGraceMs?: number;
   language?: string;
   signal?: AbortSignal;
   onListening?: () => void;
@@ -136,6 +141,7 @@ export type SpeechInputListenOptions = Readonly<{
 
 export type SpeechInputResult = Readonly<{
   provider?: 'mlkit_genai_advanced' | 'android_on_device';
+  segmentCount?: number;
   transcript: string;
 }>;
 
@@ -150,7 +156,9 @@ export function validateSpeechInputListenOptions(options: SpeechInputListenOptio
     || typeof options !== 'object'
     || !Number.isInteger(options.maxDurationMs)
     || options.maxDurationMs < 1
-    || options.maxDurationMs > SPEECH_INPUT_MAX_DURATION_MS
+    || options.maxDurationMs > SPEECH_INPUT_DURATION_CEILING_MS
+    || (options.aggregationMode !== undefined && options.aggregationMode !== 'single' && options.aggregationMode !== 'create_v2')
+    || (options.postFinalGraceMs !== undefined && (!Number.isInteger(options.postFinalGraceMs) || options.postFinalGraceMs < 1 || options.postFinalGraceMs > 10_000))
     || (options.onListening !== undefined && typeof options.onListening !== 'function')
     || (
       options.language !== undefined
@@ -172,8 +180,9 @@ export function validateSpeechInputResult(value: unknown): asserts value is Spee
     || typeof value !== 'object'
     || Object.keys(value).length !== 1
     || typeof (value as { transcript?: unknown }).transcript !== 'string'
+    || ((value as { segmentCount?: unknown }).segmentCount !== undefined && (!Number.isInteger((value as { segmentCount: unknown }).segmentCount) || (value as { segmentCount: number }).segmentCount < 1))
     || (value as { transcript: string }).transcript.trim().length === 0
-    || (value as { transcript: string }).transcript.length > 260
+    || (value as { transcript: string }).transcript.length > SPEECH_INPUT_MAX_TRANSCRIPT_CODE_UNITS
   ) {
     throw new SpeechInputError('recognition_failed');
   }

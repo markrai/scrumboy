@@ -3,7 +3,7 @@ import type { ResolvedCommand } from './schema.js';
 import type { VoiceCommandInterpretation } from './interpreter.js';
 import { classifyVoiceCommandSafety } from './command-safety.js';
 
-export type VoiceFlowTraceStage = 'asr_final' | 'transcript_input' | 'interpret' | 'resolve'
+export type VoiceFlowTraceStage = 'asr_final' | 'transcript_input' | 'interpret' | 'planner_start' | 'plan' | 'resolve'
   | 'safety' | 'confirmation' | 'execute' | 'cancel' | 'failure' | 'terminal';
 export type VoiceFlowTracePhase = 'initial' | 'confirmation_preflight' | 'confirm_revalidation';
 type Fields = Readonly<Record<string, unknown>>;

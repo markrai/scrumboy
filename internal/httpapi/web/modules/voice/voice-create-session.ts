@@ -1,0 +1,184 @@
+import { getAppRuntime } from '../platform/runtime.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
+import type { BoardMember } from '../state/state.js';
+import type { AgentLoopView } from './agent-loop.js';
+import { getActiveVoiceCommandContext, canRunVoiceMutationInContext, type VoiceCommandOptions } from './command-context.js';
+import { executeCommandIR } from './execute.js';
+import { callMcpTool } from './mcp-client.js';
+import { isCommandFailure } from './schema.js';
+import { voiceText } from './i18n.js';
+import { createVoiceFlowTrace } from './trace.js';
+import { executableCreatePlan, guardCreateRequest, VoiceCreatePlanError, type VoiceCreatePlanV1 } from './voice-create-plan.js';
+import { VOICE_CREATE_PLANNER_VERSION, type VoiceCreatePlanner } from './voice-create-planner.js';
+import { prepareVoiceCreate, type CreateMemberChoice, type PreparedVoiceCreate } from './voice-create-prepare.js';
+
+function wholeUtterance(text: string): string { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
+export function voiceCreateDecision(text: string): 'confirm' | 'cancel' | null {
+  const normalized = wholeUtterance(text);
+  if (['yes', 'yep', 'confirm', 'go ahead', 'do it', 'yes please'].includes(normalized)) return 'confirm';
+  if (['no', 'cancel', 'never mind', 'nevermind', 'stop'].includes(normalized)) return 'cancel';
+  return null;
+}
+type Options = VoiceCommandOptions & { planner: VoiceCreatePlanner; callTool?: typeof callMcpTool; execute?: typeof executeCommandIR; serverOrigin?: () => string };
+type Task = { plan: VoiceCreatePlanV1; choices: readonly CreateMemberChoice[]; prepared: PreparedVoiceCreate | null };
+function failureText(error: unknown): string {
+  const code = error instanceof VoiceCreatePlanError ? error.code : 'network';
+  switch (code) {
+    case 'missing_title': return voiceText('voice.create.missingTitle', 'Please restate the create request with a title.');
+    case 'incomplete_request': return voiceText('voice.create.incomplete', 'The complete request could not be prepared. Create v2 supports one new story with a lane, one assignee, existing tags and notes. Restate it or switch to All commands.');
+    case 'lane': return voiceText('voice.create.laneError', 'The requested lane or authoritative lane order is unavailable or ambiguous. No create was prepared.');
+    case 'member': return voiceText('voice.errors.assigneeNotFound', 'Assignee was not found in this project.');
+    case 'tag': return voiceText('voice.create.tagError', 'A requested tag is unavailable or ambiguous. The complete request was not prepared.');
+    case 'unauthorized': return voiceText('voice.errors.unauthorizedMutation', 'Only maintainers can run mutating commands.');
+    case 'stale_context': return voiceText('voice.create.stale', 'The reviewed context changed. Restate the request for a fresh review.');
+    default: return voiceText('voice.create.failed', 'The create request could not be prepared safely. Please try again.');
+  }
+}
+
+/** Application interaction, not an agent loop. Only confirm owns the execution port. */
+export class VoiceCreateSession {
+  private task: Task | null = null;
+  private diagnostic: ReturnType<typeof createVoiceFlowTrace> | null = null;
+  private revision = 0;
+  private working = false;
+  private readonly origin: string;
+  constructor(private readonly options: Options) { this.origin = this.serverOrigin(); }
+  private serverOrigin() { return (this.options.serverOrigin ?? (() => getAppRuntime().serverOrigin()))(); }
+  context(signal: AbortSignal) {
+    const context = getActiveVoiceCommandContext(this.options);
+    if (signal.aborted || this.serverOrigin() !== this.origin || isCommandFailure(context)) throw new VoiceCreatePlanError('stale_context');
+    if (!canRunVoiceMutationInContext(context.value)) throw new VoiceCreatePlanError('unauthorized');
+    return context.value;
+  }
+  get pending() { return !!this.task || this.working; }
+  get confirmationPending() { return !!this.task?.prepared && !this.working; }
+  trace() {
+    if (!this.diagnostic || this.diagnostic.ended) this.diagnostic = createVoiceFlowTrace();
+    return this.diagnostic;
+  }
+  endTrace(reason: string, fields: Record<string, unknown> = {}) { this.diagnostic?.end(reason, fields); }
+  cancelTrace(reason: string, retained = false) { this.diagnostic?.emit('cancel', { reason, interactionRetained: retained }); if (!retained) this.endTrace(reason); }
+  setKeepListening(_enabled: boolean) {} // No active-todo/session inference in this slice.
+  invalidate() { this.revision++; this.task = null; this.endTrace('controller_invalidated'); }
+  cancel(): AgentLoopView { this.cancelTrace('cancelled_by_user'); this.revision++; this.task = null; return { phase: 'success', text: voiceText('voice.status.cancelled', 'Cancelled.') }; }
+  private check(signal: AbortSignal, revision: number) { this.context(signal); if (revision !== this.revision) throw new VoiceCreatePlanError('stale_context'); }
+  private fail(error: unknown): AgentLoopView {
+    this.task = null;
+    if (error instanceof VoiceCreatePlanError) {
+      const plannerCode = ['invalid_json', 'not_object', 'wrong_version', 'invalid_kind', 'unknown_fields', 'missing_required_field', 'invalid_title', 'invalid_lane', 'invalid_assignee', 'invalid_tags', 'invalid_notes', 'invalid_unhandled', 'output_too_large', 'surrounding_prose'].includes(error.code);
+      this.trace().emit('failure', { code: error.code, ...(plannerCode ? { plannerVersion: VOICE_CREATE_PLANNER_VERSION, ...error.details } : {}) });
+    } else this.trace().emit('failure', { code: 'preparation_failed' });
+    this.endTrace('create_failed');
+    return { phase: 'error', text: failureText(error) };
+  }
+  private review(): AgentLoopView {
+    const summary = this.task!.prepared!.command.summary;
+    return { phase: 'confirmation', text: summary, danger: false, speechText: summary.length <= SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS ? summary : null };
+  }
+  private choiceView(): AgentLoopView {
+    return { phase: 'question', text: voiceText('voice.create.whichPerson', 'Which person? Select a name or say its option number.'),
+      choices: this.task!.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${member.name} · ${member.email}` })) };
+  }
+  private async prepare(plan: VoiceCreatePlanV1, signal: AbortSignal, revision: number, member?: CreateMemberChoice) {
+    this.check(signal, revision);
+    await this.options.refreshBoard();
+    const context = this.context(signal);
+    let members: BoardMember[] = [];
+    if (plan.assignee !== undefined) {
+      const result = await (this.options.callTool ?? callMcpTool)<{ items?: BoardMember[] }>('members_list', { projectSlug: context.projectSlug }, { signal });
+      if (!Array.isArray(result.items)) throw new VoiceCreatePlanError('network');
+      members = result.items;
+    }
+    this.check(signal, revision);
+    return prepareVoiceCreate(plan, this.context(signal), members, member);
+  }
+  async submit(transcript: string, signal: AbortSignal): Promise<AgentLoopView> {
+    if (this.working) return { phase: 'error', text: failureText(new VoiceCreatePlanError('stale_context')) };
+    const decision = voiceCreateDecision(transcript);
+    if (this.task?.prepared) {
+      if (decision === 'confirm') return this.confirm(signal);
+      if (decision === 'cancel') return this.cancel();
+      // Revision is out of scope: invalidate consent, retain no executable subset.
+      this.cancel();
+      return { phase: 'error', text: voiceText('voice.create.noRevision', 'No changes were made. Please restate the complete create request; revisions are not supported in Create v2 yet.') };
+    }
+    if (this.task?.choices.length) {
+      if (decision === 'cancel') return this.cancel();
+      const normalized = wholeUtterance(transcript);
+      const number = /^(?:option )?([1-9]\d*)$/.exec(normalized);
+      const names = this.task.choices.map((member, index) => ({ member, index })).filter(({ member }) => normalized === wholeUtterance(member.name) || normalized === wholeUtterance(member.email));
+      const index = number ? Number(number[1]) - 1 : names.length === 1 ? names[0].index : -1;
+      return index >= 0 && index < this.task.choices.length ? this.choose(index, signal) : this.choiceView();
+    }
+    if (decision) return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
+    const revision = ++this.revision;
+    this.working = true;
+    try {
+      this.context(signal);
+      this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 });
+      const plan = await this.options.planner(transcript, signal);
+      this.check(signal, revision);
+      this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
+        ...(plan.kind === 'create' ? { hasTitle: !!plan.title, explicitLane: plan.lane !== undefined, explicitAssignee: plan.assignee !== undefined,
+          tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
+      if (plan.kind !== 'create') throw new VoiceCreatePlanError('incomplete_request');
+      const checked = executableCreatePlan(plan);
+      guardCreateRequest(checked, transcript);
+      const result = await this.prepare(checked, signal, revision);
+      this.task = { plan: checked, choices: result.kind === 'member-choice' ? result.choices : [], prepared: result.kind === 'prepared' ? result.value : null };
+      if (result.kind === 'member-choice') { this.trace().emit('resolve', { result: 'member-choice', choiceCount: result.choices.length }); return this.choiceView(); }
+      return this.presentReview();
+    } catch (error) { if (revision !== this.revision) return { phase: 'error', text: failureText(error) }; return this.fail(error); }
+    finally { this.working = false; }
+  }
+  private presentReview(): AgentLoopView {
+    const prepared = this.task!.prepared!;
+    this.trace().command(prepared.command, 'confirmation_preflight');
+    this.trace().emit('resolve', { defaultLane: prepared.plan.lane === undefined, defaultAssignee: prepared.plan.assignee === undefined });
+    this.trace().emit('confirmation', { required: true, proposalCount: 1, plannerVersion: VOICE_CREATE_PLANNER_VERSION });
+    return this.review();
+  }
+  async choose(index: number, signal: AbortSignal): Promise<AgentLoopView> {
+    const task = this.task;
+    const member = task?.choices[index];
+    if (!member || this.working) return { phase: 'error', text: failureText(new VoiceCreatePlanError('stale_context')) };
+    this.working = true;
+    const revision = this.revision;
+    try {
+      const result = await this.prepare(task.plan, signal, revision, member);
+      if (result.kind !== 'prepared') throw new VoiceCreatePlanError('stale_context');
+      this.task = { ...task, prepared: result.value, choices: [] };
+      return this.presentReview();
+    } catch (error) { return revision === this.revision ? this.fail(error) : { phase: 'error', text: failureText(error) }; }
+    finally { this.working = false; }
+  }
+  async confirm(signal: AbortSignal): Promise<AgentLoopView> {
+    const prepared = this.task?.prepared;
+    if (!prepared || this.working) return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
+    this.working = true;
+    this.task = null; // Consume consent before any asynchronous work; no retries after a sent write.
+    const revision = this.revision;
+    let dispatched = false;
+    try {
+      this.trace().emit('confirmation', { phase: 'confirm_revalidation', result: 'started' });
+      const fresh = await this.prepare(prepared.plan, signal, revision, prepared.member);
+      if (fresh.kind !== 'prepared' || fresh.value.fingerprint !== prepared.fingerprint) throw new VoiceCreatePlanError('stale_context');
+      this.check(signal, revision);
+      this.trace().emit('confirmation', { phase: 'confirm_revalidation', result: 'accepted' });
+      this.trace().emit('execute', { result: 'started', commandIntent: 'todos.create', requestCount: 1 });
+      dispatched = true;
+      await (this.options.execute ?? executeCommandIR)(prepared.command.ir, { signal, recordMutation: this.options.recordMutation });
+      this.trace().emit('execute', { result: 'success', commandIntent: 'todos.create' });
+      let refreshFailed = false;
+      try { await this.options.refreshBoard(); } catch { refreshFailed = true; }
+      this.endTrace(refreshFailed ? 'refresh_failure' : 'success', { modelCalls: 1, mutationsExecuted: 1 });
+      return { phase: 'success', text: refreshFailed ? voiceText('voice.create.refreshFailed', 'Story created. The board could not refresh; refresh it before trying another create.') : voiceText('voice.status.done', 'Done.') };
+    } catch (error) {
+      if (!dispatched) return this.fail(error);
+      this.trace().emit('execute', { result: 'failed_or_unknown', commandIntent: 'todos.create' });
+      this.endTrace('execution_unconfirmed');
+      try { await this.options.refreshBoard(); } catch { /* No retry of the create. */ }
+      return { phase: 'error', text: voiceText('voice.create.unknown', 'Creation failed or could not be confirmed. Check the board before trying again; the request will not be retried automatically.') };
+    } finally { this.working = false; }
+  }
+}

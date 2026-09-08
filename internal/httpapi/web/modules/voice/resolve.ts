@@ -108,6 +108,21 @@ function findMatchingMembers(rawUser: string, members: BoardMember[]): BoardMemb
   return members.filter((member) => memberAliases(member).includes(wanted));
 }
 
+/** Shared conservative matching for local agent skills and semantic create preparation. */
+export function matchVoiceMembers(reference: string, members: readonly BoardMember[]): BoardMember[] {
+  const wanted = normalizeLookup(reference);
+  const unique = [...new Map(members.map(member => [member.userId, member])).values()];
+  const exact = unique.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);
+  return exact.length ? exact : unique.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
+}
+
+export function matchVoiceTags(reference: string, board: Board): string[] {
+  const names = [...new Set((board.tags ?? []).map(tag => tag.name))];
+  const wanted = normalizeLookup(reference);
+  const exact = names.filter(name => normalizeLookup(name) === wanted);
+  return exact.length ? exact : names.filter(name => wanted.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted)));
+}
+
 async function resolveMember(rawUser: string, context: ResolveContext): Promise<CommandResult<BoardMember>> {
   let matches = findMatchingMembers(rawUser, context.members);
   if (matches.length === 0 && context.callTool) {
@@ -160,6 +175,14 @@ export function formatResolvedCommand(command: ResolvedCommand): Pick<ResolvedCo
   switch (command.ir.intent) {
     case "todos.create": {
       const title = command.ir.entities.title;
+      if ('body' in command.ir.entities) {
+        const { body, tags, assigneeUserId } = command.ir.entities;
+        const lines = [voiceText('voice.create.summary', 'Create "{title}" in {lane}', { title, lane: command.statusName ?? command.ir.entities.columnKey })];
+        if (assigneeUserId != null) lines.push(voiceText('voice.create.assign', 'Assign {person}', { person: command.assigneeName ?? String(assigneeUserId) }));
+        if (tags?.length) lines.push(voiceText('voice.create.tags', 'Tags: {tags}', { tags: tags.join(', ') }));
+        if (body) lines.push(voiceText('voice.create.notes', 'Notes: {notes}', { notes: body }));
+        return { summary: lines.join('\n'), confirmLabel: voiceText('common.confirm', 'Confirm') };
+      }
       return {
         summary: voiceText("voice.summary.create", "Create todo \"{title}\"", { title }),
         confirmLabel: voiceText("voice.action.create", "Create"),

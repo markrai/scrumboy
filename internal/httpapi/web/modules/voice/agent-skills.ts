@@ -7,7 +7,7 @@ import { callMcpTool, type McpToolName } from './mcp-client.js';
 import { executeCommandIR } from './execute.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { normalizeLookup } from './normalize.js';
-import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes } from './resolve.js';
+import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, matchVoiceMembers, matchVoiceTags } from './resolve.js';
 import { isCommandFailure, validateCommandIR, type CommandIR, type ResolvedCommand } from './schema.js';
 import { voiceText } from './i18n.js';
 import { AGENT_LIMITS, AgentProtocolError, SKILL_NAMES, type SkillCall, type VoiceAgentSkillName } from './agent-protocol.js';
@@ -177,13 +177,11 @@ export class VoiceAgentSkillRegistry {
     if ('member' in args && args.member !== undefined) {
       const response = await this.tool<{ items?: BoardMember[] }>('members_list', { projectSlug: context.projectSlug }, signal);
       if (!Array.isArray(response.items)) return fail('stale');
-      const wanted = normalizeLookup(args.member);
       const members = [...new Map(response.items.map(member => [member.userId, member])).values()];
       let matches: BoardMember[];
       if (resourceLike(args.member)) matches = members.filter(member => member.userId === task.handles.get(args.member!, 'member').userId);
       else {
-        const exact = members.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);
-        matches = exact.length ? exact : members.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
+        matches = matchVoiceMembers(args.member, members);
       }
       if (!matches.length) return fail('not_found', 'member');
       if (matches.length > 1) return this.choice(task, call, 'member', matches.map(member => ({ handle: task.handles.issue({ kind: 'member', userId: member.userId }), label: short(`${member.name} · ${member.email}`) })));
@@ -192,10 +190,8 @@ export class VoiceAgentSkillRegistry {
     }
     if ('tag' in args) {
       const names = [...new Set((context.board.tags ?? []).map(tag => tag.name))];
-      const wanted = normalizeLookup(args.tag);
-      const exact = names.filter(name => normalizeLookup(name) === wanted);
       const matches = resourceLike(args.tag) ? names.filter(name => name === task.handles.get(args.tag, 'tag').name)
-        : exact.length ? exact : names.filter(name => wanted.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted)));
+        : matchVoiceTags(args.tag, context.board);
       if (!matches.length) return fail('not_found', 'tag');
       if (matches.length > 1) return this.choice(task, call, 'tag', matches.map(name => ({ handle: task.handles.issue({ kind: 'tag', name }), label: short(name) })));
       tag = matches[0];

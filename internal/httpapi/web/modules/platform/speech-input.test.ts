@@ -12,7 +12,8 @@ describe('speech-input contract', () => {
       maxDurationMs: SPEECH_INPUT_MAX_DURATION_MS,
       language: 'en-US',
     })).not.toThrow();
-    expect(() => validateSpeechInputListenOptions({ maxDurationMs: 10_001 }))
+    expect(() => validateSpeechInputListenOptions({ maxDurationMs: 45_000 })).not.toThrow();
+    expect(() => validateSpeechInputListenOptions({ maxDurationMs: 45_001 }))
       .toThrowError(expect.objectContaining({ code: 'invalid_request' }));
     expect(() => validateSpeechInputListenOptions({ maxDurationMs: 1_000, language: 'en_US' }))
       .toThrowError(expect.objectContaining({ code: 'invalid_request' }));
