@@ -1,3 +1,5 @@
+import type { createVoiceFlowTrace, VoiceFlowTracePhase } from './trace.js';
+import { classifyVoiceCommandSafety } from './command-safety.js';
 import type { Board, Todo } from '../types.js';
 import type { BoardMember } from '../state/state.js';
 import { canRunVoiceMutationInContext, getActiveVoiceCommandContext, type VoiceCommandOptions, type VoiceCommandContext } from './command-context.js';
@@ -24,6 +26,7 @@ export type PreparedSkill = Readonly<{ call: SkillCall; command: ResolvedCommand
 export type SkillOutcome = { result: AgentSkillResult; prepared?: PreparedSkill };
 export type AgentSession = { activeTodo: Extract<AgentResource, { kind: 'todo' }> | null; keepListening: boolean };
 export type AgentSkillContext = {
+  diagnostic?: ReturnType<typeof createVoiceFlowTrace>;
   handles: VoiceAgentResourceHandles;
   session: AgentSession;
   pendingChoice: { call: SkillCall; result: Extract<AgentSkillResult, { status: 'choices' }> } | null;
@@ -228,7 +231,11 @@ export class VoiceAgentSkillRegistry {
     if (call.skill === 'todos.resolve') return { result: facts! };
     if (call.skill === 'todos.open') {
       this.context(signal);
+      task.diagnostic?.emit('resolve', { phase: 'initial', result: 'command', commandIntent: 'open_todo', localId: todo.localId, projectId: context.projectId });
+      task.diagnostic?.emit('safety', { phase: 'initial', commandIntent: 'open_todo', ...classifyVoiceCommandSafety({ intent: 'open_todo' }) });
+      task.diagnostic?.emit('execute', { result: 'started', commandIntent: 'open_todo' });
       await this.options.openTodo(todo.localId);
+      task.diagnostic?.emit('execute', { result: 'success', commandIntent: 'open_todo' });
       this.context(signal);
       task.session.activeTodo = task.handles.get(facts!.todoRef, 'todo');
       return { result: { ...facts!, status: 'opened' } };
@@ -258,17 +265,19 @@ export class VoiceAgentSkillRegistry {
     }
     const validated = validateCommandIR(ir, context);
     if (isCommandFailure(validated)) return fail('invalid');
-    const command: ResolvedCommand = { ir: validated.value, storyTitle: todo?.title, statusName: lane?.name, assigneeName: member?.name, danger: call.skill === 'todos.delete', requiresConfirmation: true, summary: '', confirmLabel: '' };
+    const command: ResolvedCommand = { ir: validated.value, storyTitle: todo?.title, statusName: lane?.name, assigneeName: member?.name, danger: classifyVoiceCommandSafety(validated.value).danger, requiresConfirmation: true, summary: '', confirmLabel: '' };
     Object.assign(command, formatResolvedCommand(command));
     if (call.skill === 'todos.create') command.summary = `${command.summary} · ${lane!.name}`;
     // Precondition contains only the fields relevant to this effect and remains application-private.
     const before = !todo ? null : call.skill.includes('notes') ? todo.body ?? '' : call.skill.includes('tag') ? todo.tags ?? [] : call.skill === 'todos.rename' ? todo.title : call.skill === 'todos.move' ? this.lane(todo, context.board) : call.skill.includes('assign') ? todo.assigneeUserId ?? null : todo;
     return { result: { status: 'prepared', proposalRef: '', summary: short(command.summary, 500) }, prepared: { call: boundCall, command, fingerprint: JSON.stringify({ ir: validated.value, before, title: todo?.title, lane: lane?.name, member: member?.name }) } };
   }
-  async preflight(prepared: PreparedSkill, task: AgentSkillContext, signal: AbortSignal): Promise<PreparedSkill> {
+  async preflight(prepared: PreparedSkill, task: AgentSkillContext, signal: AbortSignal, phase: VoiceFlowTracePhase = 'initial'): Promise<PreparedSkill> {
     const context = this.context(signal);
     if (!canRunVoiceMutationInContext(context)) throw new AgentProtocolError('Permission denied');
     const result = await this.resolve(prepared.call, task, signal);
+    if (result.prepared) task.diagnostic?.command(result.prepared.command, phase);
+    else task.diagnostic?.emit('resolve', { phase, result: result.result.status });
     if (!result.prepared || result.prepared.fingerprint !== prepared.fingerprint) throw new AgentProtocolError('Proposal changed; start again');
     return result.prepared;
   }

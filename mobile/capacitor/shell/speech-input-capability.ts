@@ -330,7 +330,7 @@ export function createSpeechInputComposition(
           transcript,
           ...(activeProvider ? { provider: activeProvider } : {}),
         });
-        return { transcript };
+        return { transcript, ...(activeProvider ? { provider: activeProvider } : {}) };
       }).catch((error: unknown) => {
         const failure = nativeError(error);
         voiceFlowDiagnostic('ASR failure', {

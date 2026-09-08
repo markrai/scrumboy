@@ -1,4 +1,5 @@
 import { startMobileBootstrap } from './bootstrap-core.js';
+import './voiceflow-diagnostics.js';
 import { installNativeLifecycle } from './native-lifecycle.js';
 import { nativeOIDC } from './native-oidc.js';
 import { createLocalTextGenerationComposition } from './local-text-generation-capability.js';

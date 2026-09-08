@@ -32,3 +32,18 @@ describe('VoiceFlow qualification diagnostics', () => {
     expect(setItem).not.toHaveBeenCalled();
   });
 });
+
+it('forwards only opted-in traces as serialized shell events and isolates sink errors', () => {
+  vi.stubGlobal('localStorage', { getItem: () => '1' });
+  const dispatch = vi.fn();
+  vi.stubGlobal('dispatchEvent', dispatch);
+  vi.stubGlobal('CustomEvent', class { constructor(public type: string, public options: { detail: string }) {} });
+  vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+  voiceFlowDiagnostic('trace', { op: '42', stage: 'asr_final', transcript: 'quoted "text"' });
+  expect(dispatch.mock.calls[0][0]).toMatchObject({ type: 'scrumboy:voiceflow-trace', options: { detail: 'VF {"op":"42","stage":"asr_final","transcript":"quoted \\"text\\""}' } });
+  dispatch.mockClear();
+  voiceFlowDiagnostic('ASR ready');
+  expect(dispatch).not.toHaveBeenCalled();
+  vi.mocked(console.debug).mockImplementation(() => { throw new Error('sink unavailable'); });
+  expect(() => voiceFlowDiagnostic('trace', { op: '42' })).not.toThrow();
+});

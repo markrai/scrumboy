@@ -1,3 +1,4 @@
+import { classifyVoiceCommandSafety } from './command-safety.js';
 import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
 import { normalizeLookup } from './normalize.js';
@@ -248,8 +249,9 @@ export function formatResolvedCommand(command: ResolvedCommand): Pick<ResolvedCo
   }
 }
 
-function withResolvedCommandDisplay(command: ResolvedCommand): ResolvedCommand {
-  return { ...command, ...formatResolvedCommand(command) };
+function withResolvedCommandDisplay(command: Omit<ResolvedCommand, 'danger'>): ResolvedCommand {
+  const classified = { ...command, danger: classifyVoiceCommandSafety(command.ir).danger };
+  return { ...classified, ...formatResolvedCommand(classified) };
 }
 
 export async function resolveTodoTitleUpdate(
@@ -282,7 +284,6 @@ export async function resolveTodoTitleUpdate(
       ir: validated.value,
       summary: "",
       confirmLabel: "",
-      danger: false,
       requiresConfirmation: true,
       storyTitle: target.value.todo.title,
     }),
@@ -313,7 +314,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: false,
         requiresConfirmation: true,
       }),
     };
@@ -337,7 +337,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: false,
         requiresConfirmation: !!target.value.ambiguousId,
         storyTitle: todo.title,
       }),
@@ -362,7 +361,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: true,
         requiresConfirmation: true,
         storyTitle: todo.title,
       }),
@@ -389,7 +387,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: false,
         requiresConfirmation: true,
         storyTitle: todo.title,
         statusName: lane.value.name,
@@ -416,7 +413,6 @@ export async function resolveCommandDraft(
       ir: validated.value,
       summary: "",
       confirmLabel: "",
-      danger: false,
       requiresConfirmation: true,
       storyTitle: todo.title,
       assigneeName: member.value.name || member.value.email,

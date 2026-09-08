@@ -10,6 +10,7 @@ import com.markrai.scrumboy.transport.ScrumboyTransportPlugin;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(ScrumboyVoiceFlowPlugin.class);
         registerPlugin(ScrumboyLocalTextGenerationPlugin.class);
         registerPlugin(ScrumboySpeechInputPlugin.class);
         registerPlugin(ScrumboySpeechOutputPlugin.class);

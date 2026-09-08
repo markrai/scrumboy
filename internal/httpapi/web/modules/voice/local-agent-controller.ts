@@ -63,6 +63,7 @@ export function createVoiceAgentController(options: ControllerOptions) {
   };
   const listen = async (owner: AbortController, automatic: boolean) => {
     if (!owns(owner)) return;
+    loop.trace();
     try {
       if (automatic) {
         const status = await options.speechInput.status({ signal: owner.signal });
@@ -72,10 +73,15 @@ export function createVoiceAgentController(options: ControllerOptions) {
       emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
       const result = await options.speechInput.listen({ maxDurationMs: SPEECH_INPUT_MAX_DURATION_MS, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
         onListening: () => { if (owns(owner)) emit({ activity: 'listening', activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' } }); } });
-      if (owns(owner)) await interpret(result.transcript, owner);
+      if (owns(owner)) {
+        loop.trace().emit('asr_final', { modality: 'voice', transcript: result.transcript.trim(), transcriptLength: result.transcript.trim().length, provider: result.provider });
+        await interpret(result.transcript, owner);
+      }
     } catch (error) {
       if (!owns(owner)) return;
       const code = error instanceof SpeechInputError ? error.code : 'recognition_failed';
+      loop.trace().emit(code === 'cancelled' ? 'cancel' : 'failure', { source: 'speech', code, interactionRetained: loop.pending });
+      if (!loop.pending) loop.endTrace(code === 'cancelled' ? 'speech_cancelled' : 'speech_failure');
       const status: VoiceAgentMessage = code === 'permission_denied' ? { key: 'voice.agent.permissionDenied', fallback: 'Microphone permission was denied.' }
         : code === 'permission_denied_permanently' ? { key: 'voice.agent.permissionBlocked', fallback: 'Microphone permission is blocked. Enable it in system settings.' }
         : code === 'no_speech' || code === 'timeout' ? { key: 'voice.agent.noSpeech', fallback: "I didn't hear a response." }
@@ -86,15 +92,15 @@ export function createVoiceAgentController(options: ControllerOptions) {
   };
   const run = async (work: (owner: AbortController) => Promise<void>) => {
     if (closed || operation) return;
-    if (!contextCurrent()) { loop.invalidate(); emit({ phase: 'error', status: literal(agentSafeFailure()), confirmation: null, clarification: null }); return; }
+    if (!contextCurrent()) { loop.endTrace('stale_context'); loop.invalidate(); emit({ phase: 'error', status: literal(agentSafeFailure()), confirmation: null, clarification: null }); return; }
     const owner = new AbortController(); operation = owner;
     try { await work(owner); }
     catch { if (owns(owner)) { loop.invalidate(); emit({ phase: 'error', status: literal(agentSafeFailure()), activity: 'idle', activityStatus: null, confirmation: null, clarification: null }); } }
     finally { if (operation === owner) operation = null; }
   };
   const interruptAcquisition = async () => {
-    if (view.activity === 'speaking') { abort(); await options.speechOutput?.stop().catch(() => undefined); }
-    else if (view.activity === 'starting-microphone' || view.activity === 'listening') abort();
+    if (view.activity === 'speaking') { loop.cancelTrace('superseded', loop.pending); abort(); await options.speechOutput?.stop().catch(() => undefined); }
+    else if (view.activity === 'starting-microphone' || view.activity === 'listening') { loop.cancelTrace('superseded', loop.pending); abort(); }
   };
   const controller = {
     getView: () => view,
@@ -102,23 +108,24 @@ export function createVoiceAgentController(options: ControllerOptions) {
       return context.initialUserId === options.initialUserId && context.initialProjectId === options.initialProjectId && context.initialProjectSlug === options.initialProjectSlug;
     },
     async startListening() { if (closed) return; await interruptAcquisition(); voice = true; await run(owner => listen(owner, false)); },
-    async submitTranscript(text: string) { if (closed) return; await interruptAcquisition(); voice = false; await run(owner => interpret(text, owner)); },
-    stopListening() { if (closed) return; abort(); emit({ activity: 'idle', activityStatus: { key: 'voice.agent.stopped', fallback: 'Listening stopped.' } }); },
+    async submitTranscript(text: string) { if (closed) return; await interruptAcquisition(); voice = false; await run(owner => { loop.trace().emit('transcript_input', { modality: 'typed', transcript: text.trim(), transcriptLength: text.trim().length }); return interpret(text, owner); }); },
+    stopListening() { if (closed) return; loop.cancelTrace('microphone_stopped', loop.pending); abort(); emit({ activity: 'idle', activityStatus: { key: 'voice.agent.stopped', fallback: 'Listening stopped.' } }); },
     async confirm() { if (!loop.confirmationPending || closed) return; await interruptAcquisition(); await run(async owner => { emit({ activity: 'processing', activityStatus: null }); await show(await loop.confirm(owner.signal), owner); }); },
     cancelConfirmation() { if (closed || operation && view.activity === 'processing') return; void (async () => { await interruptAcquisition(); await run(owner => show(loop.cancel(), owner)); })(); },
     async chooseClarification(index: number) { if (closed || !Number.isInteger(index) || index < 0) return; await interruptAcquisition(); await run(async owner => { emit({ activity: 'processing', activityStatus: null }); await show(await loop.choose(index, owner.signal), owner); }); },
     cancelClarification() { controller.cancelConfirmation(); },
     setContinuationEnabled(enabled: boolean) { keepListening = !!enabled; loop.setKeepListening(keepListening); },
     invalidate(_options: { clearConversation?: boolean } = {}) {
-      if (closed) return; abort(); voice = false; loop.invalidate();
+      if (closed) return; loop.cancelTrace('controller_invalidated'); abort(); voice = false; loop.invalidate();
       void options.speechOutput?.invalidate().catch(() => undefined);
       emit({ phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null });
     },
-    close() { if (closed) return; controller.invalidate(); closed = true; globalThis.clearInterval(contextMonitor); emit({ phase: 'closed', status: { key: 'voice.agent.closed', fallback: 'VoiceFlow closed.' } }); },
+    close() { if (closed) return; loop.cancelTrace('controller_closed'); controller.invalidate(); closed = true; globalThis.clearInterval(contextMonitor); emit({ phase: 'closed', status: { key: 'voice.agent.closed', fallback: 'VoiceFlow closed.' } }); },
   };
   // Pending tasks and retained references must expire even while the UI is waiting for a typed reply.
   const contextMonitor = globalThis.setInterval(() => {
     if (closed || (!operation && !loop.pending && !loop.session.activeTodo) || contextCurrent()) return;
+    loop.endTrace('stale_context');
     controller.invalidate();
     emit({ phase: 'error', status: { key: 'voice.errors.staleContext', fallback: 'The board changed before the command could run.' } });
   }, 100);

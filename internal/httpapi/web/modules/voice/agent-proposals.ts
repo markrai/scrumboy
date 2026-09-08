@@ -1,3 +1,5 @@
+import type { VoiceFlowTracePhase } from './trace.js';
+import { classifyVoiceCommandBatchSafety } from './command-safety.js';
 import { AGENT_LIMITS, AgentProtocolError } from './agent-protocol.js';
 import type { AgentSkillContext, PreparedSkill, VoiceAgentSkillRegistry } from './agent-skills.js';
 import type { CommandIR } from './schema.js';
@@ -31,6 +33,16 @@ export class VoiceAgentProposalStore {
     return summaries.length > 0 && text.length <= SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS ? text : null;
   }
   get danger(): boolean { return this.proposals.some(proposal => proposal.command.danger); }
+  get safetyReason() { return classifyVoiceCommandBatchSafety(this.proposals.map(proposal => proposal.command.ir)).reason; }
+  diagnosticSummary() {
+    return {
+      proposalCount: this.count,
+      commandIntents: this.proposals.map(proposal => proposal.command.ir.intent),
+      danger: this.danger,
+      reason: this.safetyReason,
+      summary: this.summaries().join('; '),
+    };
+  }
   add(value: PreparedSkill): string {
     if (this.consumed || this.count >= AGENT_LIMITS.proposals) throw new AgentProtocolError('Proposal limit');
     const ir = value.command.ir;
@@ -47,23 +59,26 @@ export class VoiceAgentProposalStore {
     this.proposals.push(copy);
     return `proposal_${this.count}`;
   }
-  async preflight(registry: VoiceAgentSkillRegistry, task: AgentSkillContext, signal: AbortSignal): Promise<PreparedSkill[]> {
+  async preflight(registry: VoiceAgentSkillRegistry, task: AgentSkillContext, signal: AbortSignal, phase: VoiceFlowTracePhase = 'initial'): Promise<PreparedSkill[]> {
     if (this.consumed || !this.count) throw new AgentProtocolError('No pending proposals');
     await registry.options.refreshBoard();
     registry.context(signal);
     const fresh: PreparedSkill[] = [];
-    for (const proposal of this.proposals) fresh.push(await registry.preflight(proposal, task, signal));
+    for (const proposal of this.proposals) fresh.push(await registry.preflight(proposal, task, signal, phase));
     return fresh;
   }
   async confirm(registry: VoiceAgentSkillRegistry, task: AgentSkillContext, signal: AbortSignal): Promise<BatchExecution> {
     // All re-resolution, permission, validation and precondition checks precede the FIRST mutation.
-    const fresh = await this.preflight(registry, task, signal);
+    const fresh = await this.preflight(registry, task, signal, 'confirm_revalidation');
+    task.diagnostic?.emit('confirmation', { phase: 'confirm_revalidation', result: 'accepted', ...this.diagnosticSummary() });
     this.consumed = true;
     const result: BatchExecution = { succeeded: [], failed: null, unattempted: [], refreshFailed: false };
     for (let index = 0; index < fresh.length; index++) {
       const proposal = fresh[index];
       try {
+        task.diagnostic?.emit('execute', { result: 'started', proposal: index + 1, commandIntent: proposal.command.ir.intent });
         await registry.commit(proposal, signal);
+        task.diagnostic?.emit('execute', { result: 'success', proposal: index + 1, commandIntent: proposal.command.ir.intent });
         result.succeeded.push(proposal.command.summary);
         const ir = proposal.command.ir;
         if ('localId' in ir.entities && ir.intent !== 'todos.delete') {
@@ -71,6 +86,7 @@ export class VoiceAgentProposalStore {
           if ('todoRef' in args && args.todoRef) task.session.activeTodo = task.handles.get(args.todoRef, 'todo');
         } else if (ir.intent === 'todos.delete' && task.session.activeTodo?.localId === ir.entities.localId) task.session.activeTodo = null;
       } catch {
+        task.diagnostic?.emit('execute', { result: 'failure', reason: signal.aborted ? 'ownership_lost' : 'execution_exception', proposal: index + 1 });
         result.failed = proposal.command.summary;
         result.unattempted = fresh.slice(index + 1).map(proposal => proposal.command.summary);
         break;

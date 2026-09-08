@@ -135,6 +135,7 @@ export type SpeechInputListenOptions = Readonly<{
 }>;
 
 export type SpeechInputResult = Readonly<{
+  provider?: 'mlkit_genai_advanced' | 'android_on_device';
   transcript: string;
 }>;
 

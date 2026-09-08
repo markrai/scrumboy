@@ -195,3 +195,18 @@ describe('Capacitor speech-input composition', () => {
     });
   });
 });
+
+it.each(['mlkit_genai_advanced', 'android_on_device'] as const)('carries owned %s metadata across native composition', async provider => {
+  const native = plugin();
+  let listener!: (event: { operationId: string; provider: typeof provider }) => void;
+  vi.mocked(native.addListener).mockImplementation(async (name, callback) => {
+    if (name === 'listening') listener = callback as typeof listener;
+    return { remove: vi.fn().mockResolvedValue(undefined) };
+  });
+  vi.mocked(native.listen).mockImplementation(async () => {
+    listener({ operationId: 'speech-1', provider });
+    return { transcript: '  Open 355  ' };
+  });
+  const composition = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-1' });
+  await expect(composition.registry.get(SPEECH_INPUT_CAPABILITY)!.listen({ maxDurationMs: 10000 })).resolves.toEqual({ transcript: 'Open 355', provider });
+});

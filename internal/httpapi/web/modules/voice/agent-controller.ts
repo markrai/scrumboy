@@ -52,7 +52,8 @@ import {
   type SpeechInputCapability,
 } from '../platform/speech-input.js';
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
-import { voiceFlowDiagnostic } from '../platform/voiceflow-diagnostics.js';
+import { createVoiceFlowTrace, summarizeVoiceInterpretation } from './trace.js';
+import { classifyVoiceCommandSafety } from './command-safety.js';
 
 export type VoiceAgentPhase =
   | 'ready'
@@ -369,6 +370,12 @@ export function createVoiceAgentController(
   let reviewed: ReviewedAgentCommand | null = null;
   let operationController: AbortController | null = null;
   let operationOwner = 0;
+  let trace: ReturnType<typeof createVoiceFlowTrace> | null = null;
+  let traceStage = 'input';
+  const ensureTrace = () => {
+    if (!trace || trace.ended) trace = createVoiceFlowTrace();
+    return trace;
+  };
   let closed = false;
   let speaking = false;
   let taskModality: 'voice' | 'typed' | null = null;
@@ -421,6 +428,7 @@ export function createVoiceAgentController(
   ): ReturnType<typeof globalThis.setInterval> =>
     globalThis.setInterval(() => {
       if (!owns(owner, operation) || contextIsCurrent()) return;
+      trace?.end('stale_context');
       cancelOwnedOperation();
       reviewed = null;
       session.clearActiveTodo();
@@ -428,6 +436,9 @@ export function createVoiceAgentController(
     }, 100);
 
   const fail = (status: VoiceAgentMessage) => {
+    const reason = 'key' in status ? status.key : traceStage + '_failure';
+    trace?.emit('failure', { reason, source: traceStage });
+    trace?.end(reason);
     emit('error', status);
   };
 
@@ -479,6 +490,8 @@ export function createVoiceAgentController(
     interpret: (transcript: string, owner: number, operation: AbortController) => Promise<void>,
   ): Promise<void> => {
     if (!owns(owner, operation)) return;
+    ensureTrace();
+    traceStage = 'speech';
     if (automatic) {
       try {
         const status = await options.speechInput.status({ signal: operation.signal });
@@ -519,9 +532,13 @@ export function createVoiceAgentController(
         },
       });
       if (!owns(owner, operation)) return;
+      ensureTrace().emit('asr_final', { modality: 'voice', transcript: result.transcript.trim(), transcriptLength: result.transcript.trim().length, provider: result.provider });
       await interpret(result.transcript, owner, operation);
     } catch (error) {
       if (!owns(owner, operation)) return;
+      trace?.emit(error instanceof SpeechInputError && error.code === 'cancelled' ? 'cancel' : 'failure', { source: traceStage, code: error instanceof SpeechInputError ? error.code : traceStage + '_exception' });
+      if (traceStage !== 'speech') trace?.end(traceStage + '_exception');
+      if (!session.getState().pending && !reviewed) trace?.end(error instanceof SpeechInputError && error.code === 'cancelled' ? 'speech_cancelled' : traceStage === 'speech' ? 'speech_failure' : traceStage + '_exception');
       if (error instanceof SpeechInputError && error.code === 'cancelled') {
         if (automatic || session.getState().pending || reviewed) {
           preserveInteractionAfterInputFailure(error);
@@ -581,6 +598,8 @@ export function createVoiceAgentController(
     owner: number,
     operation: AbortController,
   ): Promise<void> => {
+    traceStage = 'execute';
+    trace?.emit('execute', { result: 'started', commandIntent: command.ir.intent });
     await executeCommandIR(command.ir, {
       refreshBoard: options.refreshBoard,
       openTodo: options.openTodo,
@@ -588,6 +607,8 @@ export function createVoiceAgentController(
       signal: operation.signal,
     });
     if (!owns(owner, operation)) return;
+    trace?.emit('execute', { result: 'success', commandIntent: command.ir.intent });
+    trace?.end('success');
     const activeTransition = activeTodoTransitionAfterSuccessfulIR(
       command.ir,
       session.getState().activeTodo,
@@ -607,6 +628,7 @@ export function createVoiceAgentController(
     owner: number,
     operation: AbortController,
   ) => {
+    trace?.end('information');
     session.setLastInteraction(resolution.interaction);
     const speechText = renderVoiceMessage(resolution.interaction.speech ?? resolution.interaction.message);
     finishTask();
@@ -617,6 +639,7 @@ export function createVoiceAgentController(
   const exceedDialogueLimit = async (owner: number, operation: AbortController): Promise<boolean> => {
     dialogueTurns += 1;
     if (dialogueTurns <= MAX_DIALOGUE_TURNS) return false;
+    trace?.end('dialogue_turn_limit');
     finishTask();
     const status = message(
       'voice.dialogue.turnLimit',
@@ -636,6 +659,7 @@ export function createVoiceAgentController(
     owner: number,
     operation: AbortController,
   ): Promise<void> => {
+    trace?.command(command, 'initial');
     if (!isVoiceMutationCommand(command)) {
       await completeResolved(command, owner, operation);
       return;
@@ -648,6 +672,7 @@ export function createVoiceAgentController(
       originalTodoChoices: Object.freeze([...originalTodoChoices]),
     });
     const display = formatResolvedCommand(command);
+    trace?.emit('confirmation', { phase: 'initial', required: true, commandIntent: command.ir.intent, ...classifyVoiceCommandSafety(command.ir), summary: display.summary });
     const interaction = {
       kind: 'confirmation' as const,
       message: {
@@ -691,6 +716,7 @@ export function createVoiceAgentController(
     owner: number,
     operation: AbortController,
   ): Promise<void> => {
+    if (resolution.kind !== 'command') trace?.emit('resolve', { phase: 'initial', result: resolution.kind, ...(resolution.kind === 'question' ? { pendingSlot: resolution.pendingSlot } : {}), ...(resolution.kind === 'clarification' ? { choiceCount: resolution.choices.length } : {}) });
     switch (resolution.kind) {
       case 'command':
         session.clearPendingInteraction();
@@ -766,6 +792,7 @@ export function createVoiceAgentController(
     owner: number,
     operation: AbortController,
   ): Promise<void> => {
+    traceStage = 'resolve';
     const resolved = await resolveVoiceSemanticCommand(
       intent,
       session,
@@ -775,6 +802,7 @@ export function createVoiceAgentController(
     );
     if (!owns(owner, operation)) return;
     if (isCommandFailure(resolved)) {
+      trace?.emit('resolve', { phase: traceStage === 'confirm_revalidation' ? 'confirm_revalidation' : 'initial', result: 'failure', code: resolved.code });
       fail(literal(localizeCommandFailure(resolved)));
       return;
     }
@@ -895,6 +923,7 @@ export function createVoiceAgentController(
   ): Promise<void> => {
     const pendingReview = reviewed;
     if (!pendingReview) return;
+    traceStage = 'confirm_revalidation';
     let freshlyResolved: ResolvedCommand;
     if (pendingReview.semanticIntent) {
       const resolved = await resolveVoiceSemanticCommand(
@@ -906,10 +935,12 @@ export function createVoiceAgentController(
       );
       if (!owns(owner, operation)) return;
       if (isCommandFailure(resolved)) {
+        trace?.emit('resolve', { phase: traceStage === 'confirm_revalidation' ? 'confirm_revalidation' : 'initial', result: 'failure', code: resolved.code });
         fail(literal(localizeCommandFailure(resolved)));
         return;
       }
       if (resolved.value.kind !== 'command') {
+        trace?.emit('resolve', { phase: 'confirm_revalidation', result: resolved.value.kind });
         fail(message('voice.status.commandChanged', 'Command changed. Review again before running.'));
         return;
       }
@@ -922,15 +953,18 @@ export function createVoiceAgentController(
       );
       if (!owns(owner, operation)) return;
       if (isCommandFailure(resolved)) {
+        trace?.emit('resolve', { phase: traceStage === 'confirm_revalidation' ? 'confirm_revalidation' : 'initial', result: 'failure', code: resolved.code });
         fail(literal(localizeCommandFailure(resolved)));
         return;
       }
       freshlyResolved = resolved.value;
     }
+    trace?.command(freshlyResolved, 'confirm_revalidation');
     if (voiceCommandHash(freshlyResolved) !== voiceCommandHash(pendingReview.command)) {
       fail(message('voice.status.commandChanged', 'Command changed. Review again before running.'));
       return;
     }
+    trace?.emit('confirmation', { phase: 'confirm_revalidation', result: 'accepted', commandIntent: freshlyResolved.ir.intent, ...classifyVoiceCommandSafety(freshlyResolved.ir), summary: formatResolvedCommand(freshlyResolved).summary });
     await completeResolved(freshlyResolved, owner, operation);
   };
 
@@ -939,6 +973,8 @@ export function createVoiceAgentController(
     owner: number,
     operation: AbortController,
   ): Promise<void> => {
+    trace?.emit('cancel', { reason: declined ? 'declined' : 'cancelled_by_user' });
+    trace?.end(declined ? 'declined' : 'cancelled_by_user');
     reviewed = null;
     retainedTodoChoices = Object.freeze([]);
     session.clearPendingInteraction();
@@ -1088,6 +1124,7 @@ export function createVoiceAgentController(
     const normalized = transcript.trim();
     if (!normalized || !owns(owner, operation)) return;
     if (!contextIsCurrent()) {
+      trace?.end('stale_context');
       reviewed = null;
       session.clearActiveTodo();
       fail(message('voice.errors.staleContext', 'The board changed before the command could run.'));
@@ -1095,24 +1132,19 @@ export function createVoiceAgentController(
     }
     const wasPending = session.getState().pending !== null;
     const conversation = pendingInterpreterContext(session);
-    voiceFlowDiagnostic('turn', {
-      pendingKind: conversation?.pending.kind ?? 'none',
-    });
+
     if (!wasPending) {
       dialogueTurns = 0;
       retainedTodoChoices = Object.freeze([]);
     }
     emitActivity('processing', message('voice.agent.processing', 'Processing…'));
+    traceStage = 'interpret';
     const interpretation = await options.interpreter.interpret(normalized, {
       signal: operation.signal,
       conversation,
     });
     if (!owns(owner, operation)) return;
-    voiceFlowDiagnostic('interpretation', {
-      kind: interpretation.kind === 'dialogue' || interpretation.kind === 'unsupported'
-        ? interpretation.kind
-        : 'semantic',
-    });
+    trace?.emit('interpret', { interpreterInput: normalized, pendingKind: conversation?.pending.kind ?? 'none', ...summarizeVoiceInterpretation(interpretation) });
     if (interpretation.kind === 'unsupported') {
       if (wasPending) showInvalidPendingResponse();
       else fail(literal(localizeCommandFailure(interpretation.failure)));
@@ -1127,6 +1159,7 @@ export function createVoiceAgentController(
       return;
     }
     if (interpretation.kind === 'candidate') {
+      traceStage = 'resolve';
       const resolved = await parseAndResolveVoiceCommand(
         interpretation.command,
         options,
@@ -1134,6 +1167,7 @@ export function createVoiceAgentController(
       );
       if (!owns(owner, operation)) return;
       if (isCommandFailure(resolved)) {
+        trace?.emit('resolve', { phase: traceStage === 'confirm_revalidation' ? 'confirm_revalidation' : 'initial', result: 'failure', code: resolved.code });
         fail(literal(localizeCommandFailure(resolved)));
         return;
       }
@@ -1147,7 +1181,9 @@ export function createVoiceAgentController(
     work: (owner: number, operation: AbortController) => Promise<void>,
   ): Promise<void> => {
     if (closed || operationController) return;
+    ensureTrace();
     if (!contextIsCurrent()) {
+      trace?.end('stale_context');
       reviewed = null;
       session.clearActiveTodo();
       fail(message('voice.errors.staleContext', 'The board changed before the command could run.'));
@@ -1161,6 +1197,8 @@ export function createVoiceAgentController(
       await work(owner, operation);
     } catch (error) {
       if (!owns(owner, operation)) return;
+      trace?.emit('failure', { source: traceStage, reason: traceStage === 'execute' ? 'execution_exception' : traceStage + '_exception' });
+      trace?.end(traceStage === 'execute' ? 'execution_exception' : traceStage + '_exception');
       fail(literal(error instanceof Error && error.message
         ? error.message
         : 'Command failed.'));
@@ -1192,10 +1230,16 @@ export function createVoiceAgentController(
     },
     async submitTranscript(transcript) {
       taskModality = 'typed';
-      await runOwned((owner, operation) => interpretTranscript(transcript, owner, operation));
+      await runOwned((owner, operation) => {
+        trace?.emit('transcript_input', { modality: 'typed', transcript: transcript.trim(), transcriptLength: transcript.trim().length });
+        if (!transcript.trim()) trace?.end('empty_transcript');
+        return interpretTranscript(transcript, owner, operation);
+      });
     },
     stopListening() {
       if (closed || !operationController) return;
+      trace?.emit('cancel', { reason: 'microphone_stopped', interactionRetained: !!(session.getState().pending || reviewed) });
+      if (!session.getState().pending && !reviewed) trace?.end('microphone_stopped');
       cancelOwnedOperation();
       if (session.getState().pending || reviewed) {
         emitActivity('idle', message('voice.agent.stopped', 'Listening stopped.'));
@@ -1280,6 +1324,8 @@ export function createVoiceAgentController(
     },
     invalidate(invalidationOptions = {}) {
       if (closed) return;
+      trace?.emit('cancel', { reason: 'controller_invalidated', interactionRetained: !invalidationOptions.clearConversation && !!(session.getState().pending || reviewed) });
+      if (invalidationOptions.clearConversation || (!session.getState().pending && !reviewed)) trace?.end('controller_invalidated');
       cancelOwnedOperation();
       taskModality = null;
       void options.speechOutput?.invalidate().catch(() => undefined);
@@ -1297,6 +1343,8 @@ export function createVoiceAgentController(
     },
     close() {
       if (closed) return;
+      trace?.emit('cancel', { reason: 'controller_closed' });
+      trace?.end('controller_closed');
       closed = true;
       cancelOwnedOperation();
       taskModality = null;

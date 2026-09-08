@@ -1,4 +1,4 @@
-import { voiceFlowDiagnostic } from '../platform/voiceflow-diagnostics.js';
+import { createVoiceFlowTrace } from './trace.js';
 import { voiceText } from './i18n.js';
 import { AGENT_LIMITS, AgentProtocolError, parseAgentEnvelope, type AgentEnvelope, type SkillCall } from './agent-protocol.js';
 import { VoiceAgentResourceHandles } from './agent-resources.js';
@@ -24,6 +24,16 @@ function batchText(result: BatchExecution): string {
 }
 export class VoiceAgentLoop {
   private task: AgentTask | null = null;
+  private diagnostic: ReturnType<typeof createVoiceFlowTrace> | null = null;
+  trace() {
+    if (!this.diagnostic || this.diagnostic.ended) this.diagnostic = createVoiceFlowTrace();
+    return this.diagnostic;
+  }
+  endTrace(reason: string) { this.diagnostic?.end(reason); }
+  cancelTrace(reason: string, retained = false) {
+    this.diagnostic?.emit('cancel', { reason, interactionRetained: retained });
+    if (!retained) this.diagnostic?.end(reason);
+  }
   readonly session: AgentSession;
   constructor(private readonly model: VoiceAgentModel, readonly registry: VoiceAgentSkillRegistry, keepListening: boolean) {
     this.session = { activeTodo: null, keepListening };
@@ -35,6 +45,7 @@ export class VoiceAgentLoop {
     if (task.trace.length > AGENT_LIMITS.trace) task.trace.shift();
   }
   invalidate(): void {
+    this.diagnostic?.end('controller_invalidated');
     this.task?.handles.clear(); this.task?.proposals.clear();
     if (this.task) { this.task.goal = ''; this.task.confirmation = false; this.task.trace.length = 0; this.task.results.length = 0; this.task.pendingChoice = null; }
     this.task = null; this.session.activeTodo = null;
@@ -44,12 +55,13 @@ export class VoiceAgentLoop {
     if (!enabled && !this.task) this.session.activeTodo = null;
   }
   private finish(task: AgentTask, mutations: number): void {
-    voiceFlowDiagnostic('VoiceAgent task complete', { modelSteps: task.modelSteps, skillCalls: task.skillCalls, mutationsExecuted: mutations });
+    task.diagnostic?.end('success', { modelSteps: task.modelSteps, skillCalls: task.skillCalls, mutationsExecuted: mutations });
     task.handles.clear(); task.proposals.clear(); task.goal = ''; task.confirmation = false; task.trace.length = 0; task.results.length = 0; task.pendingChoice = null;
     this.task = null;
     if (!this.session.keepListening) this.session.activeTodo = null;
   }
   cancel(): AgentLoopView {
+    this.cancelTrace('cancelled_by_user');
     if (this.task) this.finish(this.task, 0);
     return { phase: 'success', text: voiceText('voice.status.cancelled', 'Cancelled.') };
   }
@@ -59,10 +71,11 @@ export class VoiceAgentLoop {
     task.confirmation = false;
     try {
       const result = await task.proposals.confirm(this.registry, task, signal);
+      task.diagnostic?.end(result.failed ? 'execution_failure' : result.refreshFailed ? 'refresh_failure' : 'success', { succeededCount: result.succeeded.length, unattemptedCount: result.unattempted.length });
       const view: AgentLoopView = { phase: result.failed || result.refreshFailed ? 'error' : 'success', text: batchText(result) };
       this.finish(task, result.succeeded.length);
       return view;
-    } catch { this.invalidate(); return { phase: 'error', text: agentSafeFailure() }; }
+    } catch (error) { task.diagnostic?.emit('failure', { source: 'confirm_revalidation', reason: error instanceof AgentProtocolError ? error.message : 'revalidation_exception' }); task.diagnostic?.end('confirmation_failed'); this.invalidate(); return { phase: 'error', text: agentSafeFailure() }; }
   }
   async choose(index: number, signal: AbortSignal): Promise<AgentLoopView> {
     const choice = this.task?.pendingChoice?.result.choices[index];
@@ -70,12 +83,14 @@ export class VoiceAgentLoop {
     return this.submit(`I select the offered option ${choice.handle}: ${choice.label}`, signal);
   }
   async submit(utterance: string, signal: AbortSignal): Promise<AgentLoopView> {
+    const diagnostic = this.trace();
+    let stage = 'interpret';
     try {
       this.registry.context(signal);
       if (!utterance.trim() || utterance.length > AGENT_LIMITS.utterance) throw new AgentProtocolError('Utterance limit');
       if (!this.task) {
-        this.task = { goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, choiceAnswered: false, confirmation: false, modelSteps: 0, skillCalls: 0, results: [] };
-        voiceFlowDiagnostic('VoiceAgent task start');
+        this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, choiceAnswered: false, confirmation: false, modelSteps: 0, skillCalls: 0, results: [] };
+
       } else if (this.task.pendingChoice) this.task.choiceAnswered = true;
       const task = this.task;
       this.append(task, { user: utterance });
@@ -89,6 +104,7 @@ export class VoiceAgentLoop {
             pending: task.confirmation ? { kind: 'confirmation', proposalCount: task.proposals.count } : task.pendingChoice ? { kind: 'choice', ...task.pendingChoice.result } : null,
             ...(repair ? { repair: `Previous response violated protocol: ${repair}. Return one valid envelope.` } : {}),
           });
+          stage = 'interpret';
           const raw = await this.model(input, signal);
           this.registry.context(signal);
           if (this.task !== task) throw new AgentProtocolError('Task expired');
@@ -96,12 +112,12 @@ export class VoiceAgentLoop {
           catch (error) { if (!(error instanceof AgentProtocolError) || attempt === 1) throw error; repair = error.message; }
         }
         if (!envelope) throw new AgentProtocolError('Missing envelope');
-        voiceFlowDiagnostic('VoiceAgent model step', { step: task.modelSteps, kind: envelope.kind, ...(envelope.kind === 'skill_call' ? { skill: envelope.skill } : {}) });
+        diagnostic.emit('interpret', { step: task.modelSteps, interpretationKind: envelope.kind, ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}) });
         this.append(task, { agent: envelope });
         if (envelope.kind === 'confirm') return this.confirm(signal);
         if (envelope.kind === 'decline' || envelope.kind === 'cancel') return this.cancel();
         if (envelope.kind === 'ask_user') {
-          voiceFlowDiagnostic('VoiceAgent ask');
+          diagnostic.emit('resolve', { phase: 'initial', result: 'question', choiceCount: task.pendingChoice?.result.choices.length ?? 0 });
           const pending = task.pendingChoice?.result;
           return { phase: 'question', text: pending ? renderAgentSkillResult(pending) : envelope.text,
             ...(pending ? { choices: pending.choices.map(choice => ({ id: choice.handle, label: `${choice.number ? `#${choice.number} · ` : ''}${choice.label}${choice.lane ? ` · ${choice.lane}` : ''}` })) } : {}) };
@@ -109,9 +125,10 @@ export class VoiceAgentLoop {
         if (envelope.kind === 'finish') {
           if (task.pendingChoice) throw new AgentProtocolError('Choice unresolved');
           if (task.proposals.count) {
-            await task.proposals.preflight(this.registry, task, signal);
+            stage = 'confirmation_preflight';
+            await task.proposals.preflight(this.registry, task, signal, 'confirmation_preflight');
             task.confirmation = true;
-            voiceFlowDiagnostic('VoiceAgent confirmation pending', { proposalCount: task.proposals.count });
+            diagnostic.emit('confirmation', { phase: 'initial', required: true, ...task.proposals.diagnosticSummary() });
             return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, speechText: task.proposals.confirmationSpeech(), danger: task.proposals.danger };
           }
           const text = task.results.filter(result => result.status !== 'choices').map(renderAgentSkillResult).join('; ') || voiceText('voice.agent.noChanges', 'No changes needed.');
@@ -122,24 +139,29 @@ export class VoiceAgentLoop {
           task.skillCalls++;
           // A correction/addition invalidates the old confirmation before any new work.
           task.confirmation = false;
+          stage = 'resolve';
           const outcome = await this.registry.run(envelope, task, signal);
           this.registry.context(signal);
           if (this.task !== task) throw new AgentProtocolError('Task expired');
+          if (outcome.prepared) diagnostic.command(outcome.prepared.command, 'initial');
+          else if (outcome.result.status !== 'opened') diagnostic.emit('resolve', { phase: 'initial', skill: envelope.skill, result: outcome.result.status, ...('number' in outcome.result ? { localId: outcome.result.number } : {}), ...(outcome.result.status === 'choices' ? { choiceCount: outcome.result.choices.length } : {}) });
           if (outcome.prepared) {
             const ref = task.proposals.add(outcome.prepared);
             if (outcome.result.status === 'prepared') outcome.result.proposalRef = ref;
           }
           if (JSON.stringify(outcome.result).length > AGENT_LIMITS.resultText) throw new AgentProtocolError('Result limit');
           if (['stale', 'denied', 'invalid', 'not_found'].includes(outcome.result.status)) {
+            diagnostic.emit('failure', { source: 'resolve', reason: outcome.result.status });
+            diagnostic.end('resolution_failure', { code: outcome.result.status });
             const text = renderAgentSkillResult(outcome.result);
             this.finish(task, 0);
             return { phase: 'error', text };
           }
           this.append(task, { skillResult: { skill: envelope.skill, result: outcome.result } });
           task.results.push(outcome.result);
-          voiceFlowDiagnostic('VoiceAgent skill result', { skill: envelope.skill, status: outcome.result.status, choiceCount: outcome.result.status === 'choices' ? outcome.result.choices.length : 0, proposalCount: task.proposals.count });
+
         }
       }
-    } catch { this.invalidate(); return { phase: 'error', text: agentSafeFailure() }; }
+    } catch (error) { diagnostic.emit(stage === 'interpret' ? 'interpret' : 'failure', { result: 'failure', source: stage, reason: error instanceof AgentProtocolError ? error.message : stage + '_exception' }); diagnostic.end(stage + '_failure'); this.invalidate(); return { phase: 'error', text: agentSafeFailure() }; }
   }
 }

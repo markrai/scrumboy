@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
 import type { VoiceCommandInterpreter } from './interpreter.js';
 import type { VoiceSemanticIntent } from './semantic-intent.js';
@@ -1729,5 +1729,130 @@ describe('VoiceAgentController', () => {
 
     expect(interpreter.interpret).toHaveBeenCalledOnce();
     expect(controller.getConversationState().pending).toMatchObject({ kind: 'missing-slot' });
+  });
+});
+
+describe('VoiceFlow operation traces', () => {
+  let events: Record<string, any>[];
+  beforeEach(() => {
+    events = [];
+    vi.spyOn(console, 'debug').mockImplementation((event, details) => {
+      if (event === 'VoiceFlow trace') events.push(details);
+    });
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+  });
+  afterEach(() => {
+    localStorage.removeItem('scrumboy_debug_voiceflow');
+    vi.restoreAllMocks();
+  });
+  const semantic = (intent: VoiceSemanticIntent): VoiceCommandInterpreter => ({
+    interpret: vi.fn().mockResolvedValue({ kind: 'semantic', intent }),
+  });
+  const target = { kind: 'local-id' as const, localId: 355 };
+
+  it.each(['mlkit_genai_advanced', 'android_on_device'] as const)('traces safe ASR through success with provider %s', async (provider) => {
+    const input = speech();
+    vi.mocked(input.listen).mockResolvedValue({ transcript: '  Open 355  ', provider });
+    const c = createVoiceAgentController(options(input, semantic({ kind: 'open-todo', target })));
+    await c.startListening();
+    expect(events.map(e => e.stage)).toEqual(['asr_final', 'interpret', 'resolve', 'safety', 'execute', 'execute', 'terminal']);
+    expect(events[0]).toMatchObject({ modality: 'voice', provider, transcript: 'Open 355', transcriptLength: 8 });
+    expect(events.find(e => e.stage === 'safety')).toMatchObject({ danger: false, reason: 'non_delete_command' });
+    expect(events.at(-1)).toMatchObject({ outcome: 'success' });
+    expect(new Set(events.map(e => e.op)).size).toBe(1);
+    c.close();
+  });
+
+  it('keeps a typed delete correlated through explicit confirmation and revalidation', async () => {
+    const c = createVoiceAgentController(options(speech(), semantic({ kind: 'delete-todo', target })));
+    await c.submitTranscript('  delete 355 ');
+    expect(events.map(e => e.stage)).toEqual(['transcript_input', 'interpret', 'resolve', 'safety', 'confirmation']);
+    expect(events[0]).toMatchObject({ modality: 'typed', transcript: 'delete 355' });
+    expect(events[3]).toMatchObject({ danger: true, reason: 'destructive_delete' });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    await c.confirm();
+    expect(events.filter(e => e.stage === 'resolve').map(e => e.phase)).toEqual(['initial', 'confirm_revalidation']);
+    expect(events.filter(e => e.stage === 'safety').map(e => e.reason)).toEqual(['destructive_delete', 'destructive_delete']);
+    expect(events.at(-1)).toMatchObject({ outcome: 'success' });
+    expect(new Set(events.map(e => e.op)).size).toBe(1);
+    c.close();
+  });
+
+  it('preserves confirmation policy for safe mutations', async () => {
+    const c = createVoiceAgentController(options(speech(), semantic({ kind: 'move-todo', target, destination: { kind: 'name', text: 'done' } })));
+    await c.submitTranscript('move 355 to done');
+    expect(events.find(e => e.stage === 'safety')).toMatchObject({ danger: false, reason: 'non_delete_command' });
+    expect(events.at(-1)).toMatchObject({ stage: 'confirmation', required: true });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    await c.confirm();
+    expect(events.at(-1)).toMatchObject({ outcome: 'success' });
+    c.close();
+  });
+
+  it('explains interpretation refusal without execution', async () => {
+    const c = createVoiceAgentController(options(speech(), { interpret: vi.fn().mockResolvedValue({ kind: 'unsupported', failure: { ok: false, code: 'unsupported', message: 'Unsupported' } }) }));
+    await c.submitTranscript('nonsense');
+    expect(events.map(e => e.stage)).toEqual(['transcript_input', 'interpret', 'failure', 'terminal']);
+    expect(events[1]).toMatchObject({ result: 'failure', code: 'unsupported' });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    c.close();
+  });
+
+  it('records a missing-slot question and its cancellation', async () => {
+    const c = createVoiceAgentController(options(speech(), semantic({ kind: 'move-todo', target, destination: null })));
+    await c.submitTranscript('move 355');
+    expect(events.at(-1)).toMatchObject({ stage: 'resolve', result: 'question', pendingSlot: { slot: 'destination' } });
+    c.close();
+    expect(events.at(-1)).toMatchObject({ stage: 'terminal', outcome: 'controller_closed' });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+  });
+
+  it('records semantic failure with its stable code', async () => {
+    const c = createVoiceAgentController(options(speech(), semantic({ kind: 'open-todo', target: { kind: 'local-id', localId: 999 } })));
+    await c.submitTranscript('open 999');
+    expect(events.find(e => e.stage === 'resolve')).toMatchObject({ result: 'failure', code: 'unknown_story' });
+    expect(events.at(-1)?.stage).toBe('terminal');
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    c.close();
+  });
+
+  it('traces changed confirm-time resolution and still blocks execution', async () => {
+    const context = makeContext();
+    const c = createVoiceAgentController(options(speech(), semantic({ kind: 'move-todo', target, destination: { kind: 'name', text: 'done' } }), { getContext: () => context }));
+    await c.submitTranscript('move 355 to done');
+    context.board.columnOrder[1].key = 'finished';
+    context.board.columns.finished = context.board.columns.done;
+    delete context.board.columns.done;
+    await c.confirm();
+    expect(events.find(e => e.stage === 'resolve' && e.phase === 'confirm_revalidation')).toMatchObject({ toColumnKey: 'finished' });
+    expect(events.at(-1)).toMatchObject({ outcome: 'voice.status.commandChanged' });
+    expect(executeCommandIRMock).not.toHaveBeenCalled();
+    c.close();
+  });
+
+  it.each(['stopListening', 'invalidate', 'close'] as const)('ends %s and suppresses late owned results', async (action) => {
+    const pending = deferred<{ transcript: string }>();
+    const input = speech();
+    vi.mocked(input.listen).mockReturnValue(pending.promise);
+    const interpreter = semantic({ kind: 'open-todo', target });
+    const c = createVoiceAgentController(options(input, interpreter));
+    const listening = c.startListening();
+    c[action]();
+    pending.resolve({ transcript: 'open 355' });
+    await listening;
+    expect(events.at(-1)?.stage).toBe('terminal');
+    expect(events.filter(e => e.stage === 'terminal')).toHaveLength(1);
+    expect(events.some(e => e.stage === 'execute')).toBe(false);
+    expect(interpreter.interpret).not.toHaveBeenCalled();
+    c.close();
+  });
+
+  it('records execution exceptions without logging arbitrary exception payloads', async () => {
+    executeCommandIRMock.mockRejectedValueOnce(new Error('private server payload'));
+    const c = createVoiceAgentController(options(speech(), semantic({ kind: 'open-todo', target })));
+    await c.submitTranscript('open 355');
+    expect(events.at(-1)).toMatchObject({ outcome: 'execution_exception' });
+    expect(JSON.stringify(events)).not.toContain('private server payload');
+    c.close();
   });
 });
