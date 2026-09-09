@@ -4,13 +4,15 @@ import { harness } from './agent.test.utils.js';
 import { createVoiceCreatePlanner } from './voice-create-planner.js';
 import { VoiceCreateSession, voiceCreateDecision } from './voice-create-session.js';
 import { createVoiceAgentController } from './local-agent-controller.js';
-import { SpeechInputError } from '../platform/speech-input.js';
+import { SPEECH_INPUT_CAPABILITY, SpeechInputError, type SpeechInputCapability } from '../platform/speech-input.js';
 import { executeCommandIR } from './execute.js';
+import type { NativeSpeechInputPlugin } from '../../../../../mobile/capacitor/shell/native-speech-input-plugin.js';
+import { createSpeechInputComposition } from '../../../../../mobile/capacitor/shell/speech-input-capability.js';
 
 const all = { version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog', assignee: 'Mark', tags: ['urgent'], notes: 'Call tomorrow' };
 const controllers: ReturnType<typeof createVoiceAgentController>[] = [];
 afterEach(() => { controllers.splice(0).forEach(c => c.close()); vi.useRealTimers(); vi.restoreAllMocks(); localStorage.removeItem('scrumboy_debug_voiceflow'); });
-function fixture(plan = all) {
+function fixture(plan = all, suppliedSpeechInput?: SpeechInputCapability) {
   const h = harness();
   let origin = 'https://one.test';
   const generate = vi.fn(async request => ({ requestId: request.requestId, text: JSON.stringify(plan) }));
@@ -18,9 +20,19 @@ function fixture(plan = all) {
   const session = new VoiceCreateSession({ ...h.options, planner: createVoiceCreatePlanner({ generate }), callTool: h.callTool as never, execute, serverOrigin: () => origin });
   const speechInput = { status: vi.fn(async () => ({ state: 'ready' as const })), listen: vi.fn(async () => { throw new SpeechInputError('no_speech'); }) };
   const onView = vi.fn();
-  const controller = createVoiceAgentController({ ...h.options, model: h.model, createSession: session, speechInput, onView, continuationEnabled: false });
+  const controller = createVoiceAgentController({ ...h.options, model: h.model, createSession: session, speechInput: suppliedSpeechInput ?? speechInput, onView, continuationEnabled: false });
   controllers.push(controller);
   return { ...h, generate, execute, session, controller, onView, speechInput, setOrigin: (value: string) => { origin = value; } };
+}
+
+function nativeSpeech(result: { transcript: string; segmentCount?: number }): NativeSpeechInputPlugin {
+  return {
+    status: vi.fn().mockResolvedValue({ state: 'ready' }),
+    listen: vi.fn().mockResolvedValue(result),
+    cancel: vi.fn().mockResolvedValue(undefined),
+    invalidate: vi.fn().mockResolvedValue(undefined),
+    addListener: vi.fn().mockResolvedValue({ remove: vi.fn().mockResolvedValue(undefined) }),
+  } as NativeSpeechInputPlugin;
 }
 describe('Create v2 application interaction', () => {
   it('requests 45 seconds and sends a final after 20 seconds straight to the planner without an inactivity wait', async () => {
@@ -95,6 +107,42 @@ describe('Create v2 application interaction', () => {
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.generate.mock.calls[0][0].input).toBe(combined);
     expect(f.controller.getView().phase).toBe('confirmation');
+  });
+  it.each([
+    { transcript: 'Create Big Man', segmentCount: 1 },
+    { transcript: 'Create Big Man put it in Backlog', segmentCount: 2 },
+  ])('carries native segmentCount=$segmentCount through the shell into one controller turn', async result => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, any>[] = [];
+    vi.spyOn(console, 'debug').mockImplementation((name, fields) => {
+      if (name === 'VoiceFlow trace') events.push(fields);
+    });
+    const native = nativeSpeech(result);
+    const speechInput = createSpeechInputComposition({ plugin: native, operationIdFactory: () => `speech-${result.segmentCount}` })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man', ...(result.segmentCount === 2 ? { lane: 'Backlog' } : {}) } as never, speechInput);
+
+    await f.controller.startListening();
+
+    expect(events.filter(event => event.stage === 'asr_final')).toHaveLength(1);
+    expect(events.find(event => event.stage === 'asr_final')).toMatchObject({
+      transcript: result.transcript,
+      segmentCount: result.segmentCount,
+    });
+    expect(events.filter(event => event.stage === 'planner_start')).toHaveLength(1);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.generate.mock.calls[0][0].input).toBe(result.transcript);
+  });
+  it('turns three aggregated ASR finals into one planner invocation', async () => {
+    const result = { transcript: 'Create Big Man put it in Backlog and assign Mark', segmentCount: 3 };
+    const speechInput = createSpeechInputComposition({ plugin: nativeSpeech(result), operationIdFactory: () => 'speech-3' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+    const f = fixture(all, speechInput);
+
+    await f.controller.startListening();
+
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.generate.mock.calls[0][0].input).toBe(result.transcript);
   });
   it.each(['yes but assign Sarah instead', 'never mind', 'no', 'cancel', 'stop'])('never executes for %s', async reply => {
     const f = fixture(); await f.controller.submitTranscript('Create Big Man'); await f.controller.submitTranscript(reply);

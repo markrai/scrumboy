@@ -92,13 +92,13 @@ export function validateSpeechInputListenOptions(options) {
 export function validateSpeechInputResult(value) {
     const keys = value && typeof value === 'object' ? Object.keys(value) : [];
     const allowedKeys = new Set(['transcript', 'segmentCount']);
+    const hasSegmentCount = keys.includes('segmentCount');
     if (!value
         || typeof value !== 'object'
         || keys.some(key => !allowedKeys.has(key))
         || !keys.includes('transcript')
-        || keys.some(key => key === 'segmentCount') && keys.length !== 2
         || typeof value.transcript !== 'string'
-        || (value.segmentCount !== undefined && (!Number.isInteger(value.segmentCount) || value.segmentCount < 1))
+        || (hasSegmentCount && (!Number.isInteger(value.segmentCount) || value.segmentCount < 1))
         || value.transcript.trim().length === 0
         || value.transcript.length > SPEECH_INPUT_MAX_TRANSCRIPT_CODE_UNITS) {
         throw new SpeechInputError('recognition_failed');

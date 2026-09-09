@@ -19,11 +19,32 @@ describe('speech-input contract', () => {
       .toThrowError(expect.objectContaining({ code: 'invalid_request' }));
   });
 
-  it('accepts a single bounded transcript and rejects provider residue', () => {
-    expect(() => validateSpeechInputResult({ transcript: 'Open story 355' })).not.toThrow();
+  it.each([
+    { transcript: 'Open story 355' },
+    { transcript: 'Create Big Man', segmentCount: 1 },
+    { transcript: 'Create Big Man put it in Backlog', segmentCount: 2 },
+  ])('accepts the exact speech result contract: %#', result => {
+    expect(() => validateSpeechInputResult(result)).not.toThrow();
+  });
+
+  it('rejects provider residue and empty transcripts', () => {
     expect(() => validateSpeechInputResult({ transcript: 'Open story 355', audio: 'not-allowed' }))
       .toThrowError(expect.objectContaining({ code: 'recognition_failed' }));
     expect(() => validateSpeechInputResult({ transcript: '   ' }))
+      .toThrowError(expect.objectContaining({ code: 'recognition_failed' }));
+  });
+
+  it.each([
+    { transcript: 'x', segmentCount: 0 },
+    { transcript: 'x', segmentCount: -1 },
+    { transcript: 'x', segmentCount: 1.5 },
+    { transcript: 'x', segmentCount: '2' },
+    { transcript: 'x', segmentCount: null },
+    { transcript: 'x', segmentCount: undefined },
+    { transcript: 'x', segmentCount: 2, arbitrary: 'bad' },
+    { segmentCount: 2 },
+  ])('fails closed for a malformed or extended speech result: %#', result => {
+    expect(() => validateSpeechInputResult(result))
       .toThrowError(expect.objectContaining({ code: 'recognition_failed' }));
   });
 

@@ -39,4 +39,14 @@ public class AdvancedSpeechTranscriptAccumulatorTest {
         assertEquals(3, accumulator.segmentCount());
         assertEquals("create a story called Big Man put it in Backlog and assign Mark tag it UX", accumulator.finalTranscriptOrNull());
     }
+
+    @Test
+    public void continuedPartialDoesNotReplaceFinalSegments() {
+        AdvancedSpeechTranscriptAccumulator accumulator = new AdvancedSpeechTranscriptAccumulator();
+        assertTrue(accumulator.onFinal("create a story called Big Man"));
+        accumulator.onPartial("put it in Back");
+        assertTrue(accumulator.onFinal("put it in Backlog"));
+        assertEquals(2, accumulator.segmentCount());
+        assertEquals("create a story called Big Man put it in Backlog", accumulator.finalTranscriptOrNull());
+    }
 }

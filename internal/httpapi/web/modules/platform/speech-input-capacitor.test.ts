@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NativeSpeechInputPlugin } from '../../../../../mobile/capacitor/shell/native-speech-input-plugin.js';
 import { createSpeechInputComposition, effectiveSpeechInputLanguage } from '../../../../../mobile/capacitor/shell/speech-input-capability.js';
 import { SPEECH_INPUT_CAPABILITY } from './speech-input.js';
-import { validateSpeechInputResult } from './speech-input.js';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -206,10 +205,30 @@ describe('Capacitor speech-input composition', () => {
     }));
   });
 
-  it('accepts the native aggregated result shape and rejects arbitrary result fields', () => {
-    expect(() => validateSpeechInputResult({ transcript: 'Create Big Man', segmentCount: 1 })).not.toThrow();
-    expect(() => validateSpeechInputResult({ transcript: 'Create Big Man', segmentCount: 2, debug: true })).toThrow();
-    expect(() => validateSpeechInputResult({ transcript: 'Create Big Man', debug: true })).toThrow();
+  it.each([
+    { transcript: 'Create Big Man', segmentCount: 1 },
+    { transcript: 'Create Big Man put it in Backlog', segmentCount: 2 },
+  ])('preserves the native aggregated result across the shell and shared validator: %#', async result => {
+    const native = plugin();
+    vi.mocked(native.listen).mockResolvedValue(result);
+    const capability = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-v2' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+
+    await expect(capability.listen({
+      maxDurationMs: 45_000,
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: 4_000,
+    })).resolves.toEqual(result);
+  });
+
+  it('keeps the legacy transcript-only result valid for All Commands', async () => {
+    const native = plugin();
+    vi.mocked(native.listen).mockResolvedValue({ transcript: 'Move Fred to Done' });
+    const capability = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-legacy' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+
+    await expect(capability.listen({ maxDurationMs: 10_000 }))
+      .resolves.toEqual({ transcript: 'Move Fred to Done' });
   });
 });
 

@@ -209,7 +209,17 @@ public class ScrumboySpeechInputPlugin extends Plugin {
 
         // Provider choice is frozen for this utterance.
         if (decision.useAdvanced()) {
-            startAdvancedRecognition(operation, call, language, decision);
+            boolean aggregateSegments = "create_v2".equals(call.getString("aggregationMode"));
+            Integer requestedGraceMs = call.getInt("postFinalGraceMs");
+            int postFinalGraceMs = requestedGraceMs == null ? 4_000 : requestedGraceMs;
+            startAdvancedRecognition(
+                operation,
+                call,
+                language,
+                decision,
+                aggregateSegments,
+                postFinalGraceMs
+            );
         } else {
             startPlatformAfterAdvancedTeardown(operation, call, language, decision);
         }
@@ -280,7 +290,9 @@ public class ScrumboySpeechInputPlugin extends Plugin {
         SpeechInputOperationRegistry.Operation operation,
         PluginCall call,
         String language,
-        AdvancedSpeechDecision decision
+        AdvancedSpeechDecision decision,
+        boolean aggregateSegments,
+        int postFinalGraceMs
     ) {
         AdvancedUtteranceLifecycle lifecycle = new AdvancedUtteranceLifecycle();
 
