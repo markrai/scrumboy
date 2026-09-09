@@ -22,7 +22,7 @@ describe('voice command dormant loading', () => {
     const board = readSource('../views/board.ts');
 
     expect(board).not.toMatch(/import\s+(?!\()[^;]*from\s+['"][^'"]*voice\//s);
-    expect(board.match(/import\(["']\.\.\/voice\/flow\.js["']\)/g) ?? []).toHaveLength(1);
+    expect(board.match(/import\(["']\.\.\/voice\/entry\.js["']\)/g) ?? []).toHaveLength(1);
     expect(board).not.toMatch(/local-interpretation|local-text-generation/);
   });
 

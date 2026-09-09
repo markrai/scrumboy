@@ -3,6 +3,11 @@ export type ParsedNumber = {
   ambiguous: boolean;
 };
 
+export type SpokenReferenceIdentity = Readonly<{
+  lookup: string;
+  spelled: string | null;
+}>;
+
 const SMALL: Record<string, number> = {
   zero: 0,
   oh: 0,
@@ -60,6 +65,7 @@ function normalizeNumberPhrase(input: string): string[] {
 
 export function normalizePhrase(input: string): string {
   return String(input ?? "")
+    .normalize("NFKC")
     .toLowerCase()
     .replace(/[\u2018\u2019]/g, "'")
     .replace(/[\u201c\u201d]/g, '"')
@@ -74,6 +80,41 @@ export function normalizeLookup(input: string): string {
     .replace(/['"]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Normalizes a complete review response without deleting words. Ordinary
+ * sentence punctuation becomes whitespace while apostrophes remain intact.
+ * This intentionally supports only exact, allowlisted utterances.
+ */
+export function normalizeVoiceReviewUtterance(input: string): string {
+  return String(input ?? "")
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[.!?,;:]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Produces comparison-only identity for a spoken entity reference. `lookup`
+ * remains the conservative phrase form. `spelled` is available only for a
+ * compact ASCII alphanumeric token or a 2-8 character sequence whose parts are
+ * individually spelled letters/digits (periods, spaces, hyphens, ampersands,
+ * and slashes are treated as spelling separators).
+ *
+ * Stored/display values must never be replaced by either comparison form.
+ */
+export function spokenReferenceIdentity(input: string): SpokenReferenceIdentity {
+  const lookup = normalizeLookup(input);
+  const compact = /^[a-z0-9]{2,8}$/.test(lookup) ? lookup : null;
+  const parts = lookup.replace(/[.&/\\]+/g, " ").split(" ").filter(Boolean);
+  const spelled = compact ?? (parts.length >= 2 && parts.length <= 8 && parts.every(part => /^[a-z0-9]$/.test(part))
+    ? parts.join("")
+    : null);
+  return Object.freeze({ lookup, spelled });
 }
 
 function normalizeTrailingTitleNumberMarker(input: string): string {

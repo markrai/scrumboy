@@ -8,6 +8,7 @@ import { SPEECH_INPUT_CAPABILITY, SpeechInputError, type SpeechInputCapability }
 import { executeCommandIR } from './execute.js';
 import type { NativeSpeechInputPlugin } from '../../../../../mobile/capacitor/shell/native-speech-input-plugin.js';
 import { createSpeechInputComposition } from '../../../../../mobile/capacitor/shell/speech-input-capability.js';
+import { VOICE_REVIEW_CANCEL_PHRASES, VOICE_REVIEW_CONFIRM_PHRASES } from './vocabulary.js';
 
 const all = { version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog', assignee: 'Mark', tags: ['urgent'], notes: 'Call tomorrow' };
 const controllers: ReturnType<typeof createVoiceAgentController>[] = [];
@@ -81,6 +82,58 @@ describe('Create v2 application interaction', () => {
     expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toEqual({ projectSlug: 'alpha', title: 'Big Man', columnKey: 'backlog', assigneeUserId: 8, tags: ['urgent'], body: 'Call tomorrow' });
     await f.controller.confirm(); await f.controller.submitTranscript('yes');
     expect(f.execute).toHaveBeenCalledOnce(); expect(f.generate).toHaveBeenCalledOnce();
+  });
+  it.each(VOICE_REVIEW_CONFIRM_PHRASES)('executes once for standalone affirmative %s without another planner call', async approval => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog' } as never);
+    await f.controller.submitTranscript('Create Big Man');
+    await f.controller.submitTranscript(approval);
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.callTool.mock.calls.filter(([name]) => name === 'todos_create')).toHaveLength(1);
+  });
+  it('accepts sentence punctuation between words in an allowlisted affirmative', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog' } as never);
+    await f.controller.submitTranscript('Create Big Man');
+    await f.controller.submitTranscript('Yes, please.');
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.generate).toHaveBeenCalledOnce();
+  });
+  it.each(VOICE_REVIEW_CANCEL_PHRASES)('cancels standalone negative %s without mutation or another planner call', async reply => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog' } as never);
+    await f.controller.submitTranscript('Create Big Man');
+    await f.controller.submitTranscript(reply);
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.session.confirmationPending).toBe(false);
+  });
+  it('accepts sentence punctuation between words in an allowlisted cancellation', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog' } as never);
+    await f.controller.submitTranscript('Create Big Man');
+    await f.controller.submitTranscript('No, thanks.');
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.session.confirmationPending).toBe(false);
+  });
+  it.each([
+    'yes but assign Sarah',
+    'sure but put it in Testing',
+    'okay and tag it urgent',
+    'yeah change the title',
+    'go ahead after adding a note',
+    'yes except remove Mark',
+    'sure if you rename it',
+    'Yes, but assign Sarah.',
+    'Okay, and tag it UX.',
+  ])('invalidates review for mixed response %s without execution or replanning', async reply => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog' } as never);
+    await f.controller.submitTranscript('Create Big Man');
+    await f.controller.submitTranscript(reply);
+    expect(f.controller.getView().phase).toBe('error');
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.session.confirmationPending).toBe(false);
+    await f.controller.confirm();
+    expect(f.execute).not.toHaveBeenCalled();
   });
   it('retains exact final ASR text before generation resolves and throughout review/approval', async () => {
     const f = fixture();
@@ -179,6 +232,20 @@ describe('Create v2 application interaction', () => {
     expect(f.controller.getView().confirmation!.summary).toContain('Mark Smith');
     await f.controller.submitTranscript('yes'); expect(f.generate).toHaveBeenCalledOnce(); expect(f.execute).toHaveBeenCalledOnce();
   });
+  it('resolves U.X. and a member in one preparation, then deterministically confirms with sure', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Refactor Navigation', assignee: 'Mark', tags: ['U.X.'] } as never);
+    f.board.tags = [{ name: 'UX', count: 0 }, { name: 'Architecture', count: 0 }];
+    await f.controller.submitTranscript('Create Refactor Navigation, assign Mark and tag it U.X.');
+    expect(f.controller.getView().phase).toBe('confirmation');
+    expect(f.controller.getView().confirmation?.summary).toContain('Tags: UX');
+    expect(f.generate).toHaveBeenCalledOnce();
+    await f.controller.submitTranscript('Sure.');
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toMatchObject({
+      projectSlug: 'alpha', title: 'Refactor Navigation', assigneeUserId: 8, tags: ['UX'],
+    });
+  });
   it.each([{ ...all, unhandled: [{ text: 'schedule Tuesday', reason: 'unsupported' }] }, { version: 1, kind: 'not_create' }, { version: 1, kind: 'create' }])('blocks incomplete/unsupported before any query or review %#', async plan => {
     const f = fixture(plan as never); await f.controller.submitTranscript('Create a story');
     expect(f.controller.getView().phase).toBe('error'); expect(f.callTool).not.toHaveBeenCalled(); expect(f.execute).not.toHaveBeenCalled();
@@ -206,8 +273,25 @@ describe('Create v2 application interaction', () => {
     expect(events.at(-1)).toMatchObject({ stage: 'terminal', outcome: 'success', mutationsExecuted: 1 });
     expect(JSON.stringify(events)).not.toContain('Call tomorrow');
   });
+  it('traces authoritative leftmost-lane defaulting explicitly', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Big Man' } as never);
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: any[] = [];
+    vi.spyOn(console, 'debug').mockImplementation((name, fields) => { if (name === 'VoiceFlow trace') events.push(fields); });
+    f.board.columnOrder = [
+      { key: 'not_started', name: 'Not Started', isDone: false },
+      { key: 'doing', name: 'In Progress', isDone: false },
+      { key: 'testing', name: 'Testing', isDone: false },
+      { key: 'done', name: 'Done', isDone: true },
+    ];
+    f.board.columns = { not_started: [], doing: [], testing: [], done: [] };
+    await f.controller.submitTranscript('Create Big Man');
+    expect(f.controller.getView().confirmation?.summary).toContain('Not Started');
+    expect(events.find(event => event.stage === 'resolve' && 'defaultLane' in event)).toMatchObject({ defaultLane: true });
+  });
 });
 describe('whole utterance confirmation', () => {
-  it.each(['yes', 'yep', 'confirm', 'go ahead', 'do it', 'yes please', '  YES!  '])('accepts %s', text => expect(voiceCreateDecision(text)).toBe('confirm'));
-  it.each(['yes but assign Sarah instead', 'do not confirm', 'add notes yes', 'go ahead and delete Fred', 'not yes', 'yes? but no'])('rejects %s', text => expect(voiceCreateDecision(text)).toBeNull());
+  it.each([...VOICE_REVIEW_CONFIRM_PHRASES, '  YES!  ', 'That’s fine.', 'Yes, please.', 'Sure, thing.'])('accepts %s', text => expect(voiceCreateDecision(text)).toBe('confirm'));
+  it.each([...VOICE_REVIEW_CANCEL_PHRASES, 'No, thanks.'])('cancels %s', text => expect(voiceCreateDecision(text)).toBe('cancel'));
+  it.each(['yes but assign Sarah instead', 'do not confirm', 'add notes yes', 'go ahead and delete Fred', 'not yes', 'yes? but no'])('rejects %s', text => expect(voiceCreateDecision(text)).toBe('unknown'));
 });

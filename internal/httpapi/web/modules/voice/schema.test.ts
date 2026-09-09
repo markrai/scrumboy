@@ -85,6 +85,25 @@ describe('voice command schema validation', () => {
     });
   });
 
+  it('accepts enriched tag labels exactly when the server can canonicalize them', () => {
+    for (const tag of ['Architecture', 'make space', '--make---space--', 'UX']) {
+      expect(validateCommandIR({
+        intent: 'todos.create',
+        projectId: 1,
+        projectSlug: 'alpha',
+        entities: { title: 'Fix login', columnKey: 'doing', body: '', tags: [tag], assigneeUserId: null },
+      }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(true);
+    }
+    for (const tag of ['R&D', 'C++', 'bad!', 'x'.repeat(33)]) {
+      expect(validateCommandIR({
+        intent: 'todos.create',
+        projectId: 1,
+        projectSlug: 'alpha',
+        entities: { title: 'Fix login', columnKey: 'doing', body: '', tags: [tag], assigneeUserId: null },
+      }, { projectId: 1, projectSlug: 'alpha', board }).ok).toBe(false);
+    }
+  });
+
   it('rejects a move onto agenda when agenda is not a workflow column', () => {
     const result = validateCommandIR({
       intent: 'todos.move',

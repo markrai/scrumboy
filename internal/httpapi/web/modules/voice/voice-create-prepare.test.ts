@@ -24,6 +24,24 @@ describe('deterministic enriched create preparation', () => {
     expect(() => prepareVoiceCreate({ ...base, lane: 'Unknown' }, h.context(), [])).toThrow('lane');
     h.board.columnOrder = undefined;
     expect(() => prepareVoiceCreate(base, h.context(), [])).toThrow('lane');
+    h.board.columns.testing = [];
+    const explicit = prepareVoiceCreate({ ...base, lane: 'Testing' }, h.context(), []);
+    expect(explicit.kind === 'prepared' && explicit.value.command.ir.entities.columnKey).toBe('testing');
+  });
+  it('uses the rendered authoritative lane order for an omitted lane', () => {
+    const h = harness();
+    h.board.columnOrder = [
+      { key: 'not_started', name: 'Not Started', isDone: false },
+      { key: 'doing', name: 'In Progress', isDone: false },
+      { key: 'testing', name: 'Testing', isDone: false },
+      { key: 'done', name: 'Done', isDone: true },
+    ];
+    h.board.columns = { not_started: [], doing: [], testing: [], done: [] };
+    const result = prepareVoiceCreate(base, h.context(), []);
+    expect(result.kind).toBe('prepared');
+    if (result.kind !== 'prepared') return;
+    expect(result.value.command.ir.entities.columnKey).toBe('not_started');
+    expect(result.value.command.summary).toContain('Not Started');
   });
   it('returns deterministic person choices and binds only an offered member', () => {
     const h = harness(); h.context().members.push({ userId: 9, name: 'Mark Smith', email: 'ms@example.test', role: 'maintainer' });
@@ -46,6 +64,34 @@ describe('deterministic enriched create preparation', () => {
     expect(h.callTool).toHaveBeenCalledOnce(); expect(h.callTool.mock.calls[0][0]).toBe('todos_create');
     expect(Object.isFrozen(result.value.command.ir.entities.tags)).toBe(true);
   });
+  it('resolves acronym speech forms to the exact authoritative tag and rejects normalized collisions', () => {
+    const h = harness();
+    h.board.tags = [{ name: 'UX', count: 0 }, { name: 'Architecture', count: 0 }];
+    const result = prepareVoiceCreate({ ...base, assignee: 'Mark', tags: ['U.X.'] }, h.context(), h.context().members);
+    expect(result.kind).toBe('prepared');
+    if (result.kind !== 'prepared') return;
+    expect(result.value.command.ir.entities.tags).toEqual(['UX']);
+    expect(result.value.command.summary).toContain('Tags: UX');
+    expect(result.value.tagReferenceNormalizationApplied).toBe(true);
+
+    const architecture = prepareVoiceCreate({ ...base, tags: ['architecture'] }, h.context(), []);
+    expect(architecture.kind === 'prepared' && architecture.value.command.ir.entities.tags).toEqual(['Architecture']);
+
+    h.board.tags = [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }];
+    expect(() => prepareVoiceCreate({ ...base, tags: ['R D'] }, h.context(), [])).toThrow('tag');
+  });
+  it('accepts authoritative legacy-style labels exactly when server canonicalization accepts them', () => {
+    const h = harness();
+    h.board.tags = [{ name: 'make space', count: 0 }];
+    const result = prepareVoiceCreate({ ...base, tags: ['make space'] }, h.context(), []);
+    expect(result.kind).toBe('prepared');
+    if (result.kind !== 'prepared') return;
+    expect(result.value.command.ir.entities.tags).toEqual(['make space']);
+    expect(buildMcpCall(result.value.command.ir as never).input.tags).toEqual(['make space']);
+
+    h.board.tags = [{ name: 'R&D', count: 0 }];
+    expect(() => prepareVoiceCreate({ ...base, tags: ['R&D'] }, h.context(), [])).toThrow('invalid_plan');
+  });
   it('blocks unsupported content, missing titles, tags and unauthorized context', () => {
     const h = harness();
     for (const plan of [{ version: 1, kind: 'create' }, { ...base, tags: ['invented'] }, { ...base, unhandled: [{ text: 'schedule it', reason: 'unsupported' }] }]) {
@@ -57,7 +103,8 @@ describe('deterministic enriched create preparation', () => {
     const h = harness();
     const ir = { intent: 'todos.create', projectId: 1, projectSlug: 'alpha', entities: { title: 'Old', columnKey: 'backlog' } };
     expect(validateCommandIR(ir, h.context()).ok).toBe(true);
-    for (const extra of [{ body: '' }, { body: '', tags: [], assigneeUserId: -1 }, { body: '', tags: ['New Tag'], assigneeUserId: null }]) {
+    expect(validateCommandIR({ ...ir, entities: { ...ir.entities, body: '', tags: ['New Tag'], assigneeUserId: null } }, h.context()).ok).toBe(true);
+    for (const extra of [{ body: '' }, { body: '', tags: [], assigneeUserId: -1 }, { body: '', tags: ['R&D'], assigneeUserId: null }]) {
       expect(validateCommandIR({ ...ir, entities: { ...ir.entities, ...extra } }, h.context()).ok).toBe(false);
     }
   });

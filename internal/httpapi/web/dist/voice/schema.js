@@ -1,4 +1,5 @@
 import { renderVoiceMessage } from './i18n.js';
+import { canonicalizeTagName } from './tag-canonicalization.js';
 const COMMAND_FAILURE_MESSAGE = Symbol("voiceCommandFailureMessage");
 function attachFailureMessage(failure, descriptor) {
     Object.defineProperty(failure, COMMAND_FAILURE_MESSAGE, {
@@ -72,7 +73,7 @@ export function validateCommandIR(value, context) {
             if (enriched && (new TextEncoder().encode(title).length > 200
                 || typeof ir.entities.body !== 'string' || new TextEncoder().encode(ir.entities.body).length > 20000
                 || !Array.isArray(ir.entities.tags) || ir.entities.tags.length > 20
-                || ir.entities.tags.some(tag => typeof tag !== 'string' || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(tag))
+                || ir.entities.tags.some(tag => typeof tag !== 'string' || canonicalizeTagName(tag) === null)
                 || !(ir.entities.assigneeUserId === null || isPositiveInteger(ir.entities.assigneeUserId)))) {
                 return localizedFail('invalid_schema', 'voice.errors.schema.createFieldsInvalid', 'Create command fields are invalid.');
             }

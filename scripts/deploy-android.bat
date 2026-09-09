@@ -1,5 +1,5 @@
 @echo off
-setlocal EnableExtensions DisableDelayedExpansion
+setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0.") do set "SCRIPT_DIR=%%~fI"
 for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
 cd /d "%REPO_ROOT%"
@@ -50,9 +50,17 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Checking for an attached Android device...
-adb get-state 1>nul 2>&1
-if errorlevel 1 (
+echo Checking for attached Android devices...
+set "DEVICE_COUNT=0"
+for /f "skip=1 tokens=1,2*" %%A in ('adb devices -l 2^>nul') do (
+  if /I "%%B"=="device" (
+    set /a DEVICE_COUNT+=1
+    set "DEVICE_SERIAL_!DEVICE_COUNT!=%%A"
+    set "DEVICE_INFO_!DEVICE_COUNT!=%%A %%B %%C"
+  )
+)
+
+if !DEVICE_COUNT! equ 0 (
   echo ERROR: no Android device/emulator is ready for adb.
   echo Connect a device with USB debugging enabled, or start an emulator, then re-run.
   echo.
@@ -60,8 +68,36 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Connected device:
-adb devices -l
+set "ANDROID_SERIAL="
+if !DEVICE_COUNT! equ 1 (
+  set "ANDROID_SERIAL=!DEVICE_SERIAL_1!"
+  echo Using device: !DEVICE_INFO_1!
+) else (
+  echo Multiple Android devices found:
+  echo.
+  for /L %%I in (1,1,!DEVICE_COUNT!) do (
+    echo   %%I^) !DEVICE_INFO_%%I!
+  )
+  echo.
+  set "DEVICE_CHOICE="
+  set /p "DEVICE_CHOICE=Select device [1-!DEVICE_COUNT!]: "
+  if not defined DEVICE_CHOICE (
+    echo ERROR: no device selected.
+    exit /b 1
+  )
+  set "CHOICE_OK=0"
+  for /L %%I in (1,1,!DEVICE_COUNT!) do (
+    if "!DEVICE_CHOICE!"=="%%I" (
+      set "ANDROID_SERIAL=!DEVICE_SERIAL_%%I!"
+      set "CHOICE_OK=1"
+      echo Using device: !DEVICE_INFO_%%I!
+    )
+  )
+  if "!CHOICE_OK!"=="0" (
+    echo ERROR: invalid selection "!DEVICE_CHOICE!". Enter a number from 1 to !DEVICE_COUNT!.
+    exit /b 1
+  )
+)
 echo.
 
 if not exist "%REPO_ROOT%\mobile\capacitor\android\gradlew.bat" (
@@ -154,7 +190,7 @@ if not exist "%ANDROID_HOME%\" (
 )
 
 echo.
-echo [5/5] Building and installing debug APK via Gradle/adb...
+echo [5/5] Building and installing debug APK via Gradle/adb ^(device !ANDROID_SERIAL!^)...
 cd /d "%REPO_ROOT%\mobile\capacitor\android"
 call ".\gradlew.bat" installDebug
 if errorlevel 1 (
@@ -164,8 +200,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Launching com.markrai.scrumboy/.MainActivity...
-adb shell am start -n com.markrai.scrumboy/.MainActivity
+echo Launching com.markrai.scrumboy/.MainActivity on !ANDROID_SERIAL!...
+adb -s "!ANDROID_SERIAL!" shell am start -n com.markrai.scrumboy/.MainActivity
 if errorlevel 1 (
   echo ERROR: failed to launch the app on the device.
   exit /b 1

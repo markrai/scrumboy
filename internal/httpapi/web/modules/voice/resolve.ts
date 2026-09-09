@@ -1,7 +1,7 @@
 import { classifyVoiceCommandSafety } from './command-safety.js';
 import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
-import { normalizeLookup } from './normalize.js';
+import { normalizeLookup, spokenReferenceIdentity } from './normalize.js';
 import { cloneCommandFailure, localizedCommandFailure, isCommandFailure, validateCommandIR, type CommandFailure, type CommandIR, type CommandResult, type ParsedCommandDraft, type ResolvedCommand } from './schema.js';
 import type { McpToolName } from './mcp-client.js';
 import { BUILTIN_STATUS_ALIASES } from './vocabulary.js';
@@ -116,11 +116,34 @@ export function matchVoiceMembers(reference: string, members: readonly BoardMemb
   return exact.length ? exact : unique.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
 }
 
-export function matchVoiceTags(reference: string, board: Board): string[] {
+export type VoiceTagMatch = Readonly<{
+  matches: string[];
+  kind: 'stored_exact' | 'normalized_exact' | 'spoken_identity' | 'prefix' | 'none';
+}>;
+
+export function matchVoiceTagsDetailed(reference: string, board: Board): VoiceTagMatch {
   const names = [...new Set((board.tags ?? []).map(tag => tag.name))];
-  const wanted = normalizeLookup(reference);
-  const exact = names.filter(name => normalizeLookup(name) === wanted);
-  return exact.length ? exact : names.filter(name => wanted.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted)));
+  const raw = reference.trim();
+  const storedExact = names.filter(name => name === raw);
+  if (storedExact.length) return { matches: storedExact, kind: 'stored_exact' };
+
+  const wanted = spokenReferenceIdentity(reference);
+  const normalizedExact = names.filter(name => normalizeLookup(name) === wanted.lookup);
+  if (normalizedExact.length) return { matches: normalizedExact, kind: 'normalized_exact' };
+
+  if (wanted.spelled) {
+    const speechExact = names.filter(name => spokenReferenceIdentity(name).spelled === wanted.spelled);
+    if (speechExact.length) return { matches: speechExact, kind: 'spoken_identity' };
+  }
+
+  // Prefix matching is intentionally last. Stronger equality must not become
+  // ambiguous merely because another authoritative label shares a prefix.
+  const prefix = names.filter(name => wanted.lookup.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted.lookup)));
+  return { matches: prefix, kind: prefix.length ? 'prefix' : 'none' };
+}
+
+export function matchVoiceTags(reference: string, board: Board): string[] {
+  return matchVoiceTagsDetailed(reference, board).matches;
 }
 
 async function resolveMember(rawUser: string, context: ResolveContext): Promise<CommandResult<BoardMember>> {

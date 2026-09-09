@@ -3,7 +3,7 @@ import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
 import { buildMcpCall } from './execute.js';
 import { parseCommand } from './parser.js';
-import { resolveCommandDraft } from './resolve.js';
+import { matchVoiceTags, matchVoiceTagsDetailed, resolveCommandDraft } from './resolve.js';
 
 function board(overrides: Partial<Board> = {}): Board {
   return {
@@ -545,5 +545,45 @@ describe('voice command resolution', () => {
       code: 'invalid_schema',
       message: 'Selected todo was not one of the offered choices.',
     });
+  });
+});
+
+describe('spoken tag reference resolution', () => {
+  const taggedBoard = board({
+    tags: [
+      { name: 'Architecture', count: 0 },
+      { name: 'Architectural Debt', count: 0 },
+      { name: 'UX', count: 0 },
+      { name: 'QA', count: 0 },
+      { name: 'API', count: 0 },
+    ],
+  });
+
+  it.each([
+    ['Architecture', 'Architecture'],
+    ['architecture', 'Architecture'],
+    ['ARCHITECTURE', 'Architecture'],
+    ['UX', 'UX'],
+    ['U.X.', 'UX'],
+    ['U X', 'UX'],
+    ['u-x', 'UX'],
+    ['Q.A.', 'QA'],
+    ['A P I', 'API'],
+  ])('maps spoken %s onto authoritative %s', (spoken, authoritative) => {
+    expect(matchVoiceTags(spoken, taggedBoard)).toEqual([authoritative]);
+  });
+
+  it('does not invent semantic aliases', () => {
+    expect(matchVoiceTags('user experience', taggedBoard)).toEqual([]);
+  });
+
+  it('lets strong exact equality beat weaker shared prefixes', () => {
+    expect(matchVoiceTags('Architecture', taggedBoard)).toEqual(['Architecture']);
+  });
+
+  it('returns every collision at the same precedence level instead of choosing by object order', () => {
+    const collision = board({ tags: [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }] });
+    expect(matchVoiceTagsDetailed('R D', collision)).toEqual({ matches: ['RD', 'R&D'], kind: 'spoken_identity' });
+    expect(matchVoiceTags('RD', collision)).toEqual(['RD']);
   });
 });

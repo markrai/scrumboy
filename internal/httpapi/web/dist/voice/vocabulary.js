@@ -1,4 +1,4 @@
-import { normalizeLookup } from './normalize.js';
+import { normalizeLookup, normalizeVoiceReviewUtterance } from './normalize.js';
 export const ENTITY_ALIASES = new Set(["story", "stories", "todo", "todos", "to do", "to dos"]);
 export const ENTITY_ALIAS_PATTERN = "(?:story|stories|todo|todos|to[-\\s]+dos|to[-\\s]+do)";
 export const BUILTIN_STATUS_ALIASES = [
@@ -11,9 +11,21 @@ export const BUILTIN_STATUS_ALIASES = [
     ["to do", "todo"],
     ["todo", "todo"],
 ];
-const YES_ALIASES = new Set(["yes", "yeah", "yep"]);
-const NO_ALIASES = new Set(["no", "nope", "nah"]);
-const CANCEL_ALIASES = new Set(["cancel", "stop"]);
+export const VOICE_REVIEW_CONFIRM_PHRASES = Object.freeze([
+    "yes", "yeah", "yep", "yup", "sure", "okay", "ok", "confirm", "confirmed",
+    "go ahead", "go for it", "proceed", "do it", "please do", "yes please", "sure thing",
+    "sounds good", "looks good", "that's fine", "that is fine", "that's good", "that is good",
+    "absolutely", "correct", "all right", "alright", "approve", "approved", "please proceed",
+]);
+const NO_REVIEW_PHRASES = Object.freeze(["no", "nope", "nah", "no thanks", "not now"]);
+const CANCEL_REVIEW_PHRASES = Object.freeze([
+    "cancel", "stop", "never mind", "nevermind", "don't", "do not", "don't do it", "do not do it",
+    "forget it", "cancel that", "please cancel", "please stop", "abort", "decline",
+]);
+export const VOICE_REVIEW_CANCEL_PHRASES = Object.freeze([...NO_REVIEW_PHRASES, ...CANCEL_REVIEW_PHRASES]);
+const YES_ALIASES = new Set(VOICE_REVIEW_CONFIRM_PHRASES);
+const NO_ALIASES = new Set(NO_REVIEW_PHRASES);
+const CANCEL_ALIASES = new Set(CANCEL_REVIEW_PHRASES);
 const DISAMBIGUATION_ALIASES = new Map([
     ["first one", "option_1"],
     ["number one", "option_1"],
@@ -35,7 +47,7 @@ export function normalizeEntityAlias(input) {
     return ENTITY_ALIASES.has(normalizeLookup(input)) ? "todo" : null;
 }
 export function normalizeConfirmationResponse(input) {
-    const normalized = normalizeLookup(input);
+    const normalized = normalizeVoiceReviewUtterance(input);
     if (YES_ALIASES.has(normalized))
         return "yes";
     if (NO_ALIASES.has(normalized))
@@ -43,6 +55,15 @@ export function normalizeConfirmationResponse(input) {
     if (CANCEL_ALIASES.has(normalized))
         return "cancel";
     return null;
+}
+/** Side-effect-free whole-utterance decision shared by review surfaces. */
+export function classifyVoiceReviewDecision(input) {
+    const normalized = normalizeVoiceReviewUtterance(input);
+    if (YES_ALIASES.has(normalized))
+        return "confirm";
+    if (NO_ALIASES.has(normalized) || CANCEL_ALIASES.has(normalized))
+        return "cancel";
+    return "unknown";
 }
 export function isBuiltinStatusPhrase(input) {
     const normalized = normalizeLookup(input);

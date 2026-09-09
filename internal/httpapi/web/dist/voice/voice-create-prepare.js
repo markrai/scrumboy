@@ -1,5 +1,5 @@
 import { canRunVoiceMutationInContext } from './command-context.js';
-import { matchVoiceMembers, matchVoiceTags, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
+import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { executableCreatePlan, VoiceCreatePlanError } from './voice-create-plan.js';
 /** No execution/UI ports. Caller refreshes and supplies authoritative project data. */
@@ -10,11 +10,11 @@ export function prepareVoiceCreate(planInput, context, members, selection) {
     const { board } = context;
     if (board.project.id !== context.projectId || board.project.slug !== context.projectSlug)
         throw new VoiceCreatePlanError('stale_context');
-    // voiceBoardLanes also has a legacy object-order fallback. V2 deliberately forbids it.
-    if (!board.columnOrder?.length || new Set(board.columnOrder.map(lane => lane.key)).size !== board.columnOrder.length)
+    // Defaults require the same authoritative order rendered by the board. An
+    // explicit reference resolves directly and never depends on ordering metadata.
+    if (plan.lane === undefined && (!board.columnOrder?.length || new Set(board.columnOrder.map(lane => lane.key)).size !== board.columnOrder.length))
         throw new VoiceCreatePlanError('lane');
-    const lanes = voiceBoardLanes(board);
-    const resolvedLane = plan.lane === undefined ? { ok: true, value: lanes[0] } : resolveVoiceLane(plan.lane, board);
+    const resolvedLane = plan.lane === undefined ? { ok: true, value: voiceBoardLanes(board)[0] } : resolveVoiceLane(plan.lane, board);
     if (isCommandFailure(resolvedLane) || !resolvedLane.value?.key || !resolvedLane.value.name)
         throw new VoiceCreatePlanError('lane');
     const lane = resolvedLane.value;
@@ -35,12 +35,20 @@ export function prepareVoiceCreate(planInput, context, members, selection) {
         }
     }
     const tags = [];
+    let tagReferenceNormalizationApplied = false;
     for (const reference of plan.tags ?? []) {
-        const matches = matchVoiceTags(reference, board);
-        if (matches.length !== 1)
-            throw new VoiceCreatePlanError('tag');
-        if (!tags.includes(matches[0]))
-            tags.push(matches[0]);
+        const match = matchVoiceTagsDetailed(reference, board);
+        if (match.matches.length !== 1)
+            throw new VoiceCreatePlanError('tag', {
+                entityType: 'tag',
+                result: match.matches.length === 0 ? 'unavailable' : 'ambiguous',
+                candidateCount: match.matches.length,
+                referenceNormalizationApplied: match.kind === 'spoken_identity',
+            });
+        tagReferenceNormalizationApplied || (tagReferenceNormalizationApplied = match.kind === 'spoken_identity');
+        const authoritative = match.matches[0];
+        if (!tags.includes(authoritative))
+            tags.push(authoritative);
     }
     tags.sort();
     const ir = validateCommandIR({ intent: 'todos.create', projectId: context.projectId, projectSlug: context.projectSlug,
@@ -59,5 +67,5 @@ export function prepareVoiceCreate(planInput, context, members, selection) {
     Object.freeze(command.ir);
     Object.freeze(command);
     const boundMember = member ? Object.freeze({ userId: member.userId, name: member.name, email: member.email }) : undefined;
-    return { kind: 'prepared', value: Object.freeze({ plan, command, fingerprint, member: boundMember }) };
+    return { kind: 'prepared', value: Object.freeze({ plan, command, fingerprint, member: boundMember, tagReferenceNormalizationApplied }) };
 }

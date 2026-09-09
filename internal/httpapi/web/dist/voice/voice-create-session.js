@@ -9,15 +9,9 @@ import { createVoiceFlowTrace } from './trace.js';
 import { executableCreatePlan, guardCreateRequest, VoiceCreatePlanError } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION } from './voice-create-planner.js';
 import { prepareVoiceCreate } from './voice-create-prepare.js';
+import { classifyVoiceReviewDecision } from './vocabulary.js';
 function wholeUtterance(text) { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
-export function voiceCreateDecision(text) {
-    const normalized = wholeUtterance(text);
-    if (['yes', 'yep', 'confirm', 'go ahead', 'do it', 'yes please'].includes(normalized))
-        return 'confirm';
-    if (['no', 'cancel', 'never mind', 'nevermind', 'stop'].includes(normalized))
-        return 'cancel';
-    return null;
-}
+export function voiceCreateDecision(text) { return classifyVoiceReviewDecision(text); }
 function failureText(error) {
     const code = error instanceof VoiceCreatePlanError ? error.code : 'network';
     switch (code) {
@@ -69,6 +63,8 @@ export class VoiceCreateSession {
         this.task = null;
         if (error instanceof VoiceCreatePlanError) {
             const plannerCode = ['invalid_json', 'not_object', 'wrong_version', 'invalid_kind', 'unknown_fields', 'missing_required_field', 'invalid_title', 'invalid_lane', 'invalid_assignee', 'invalid_tags', 'invalid_notes', 'invalid_unhandled', 'output_too_large', 'surrounding_prose'].includes(error.code);
+            if (error.code === 'tag')
+                this.trace().emit('resolve', { entityType: 'tag', ...error.details });
             this.trace().emit('failure', { code: error.code, ...(plannerCode ? { plannerVersion: VOICE_CREATE_PLANNER_VERSION, ...error.details } : {}) });
         }
         else
@@ -103,12 +99,15 @@ export class VoiceCreateSession {
             return { phase: 'error', text: failureText(new VoiceCreatePlanError('stale_context')) };
         const decision = voiceCreateDecision(transcript);
         if (this.task?.prepared) {
+            this.trace().emit('confirmation', { phase: 'decision', result: decision === 'unknown' ? 'revision_or_unknown' : decision });
             if (decision === 'confirm')
                 return this.confirm(signal);
             if (decision === 'cancel')
                 return this.cancel();
             // Revision is out of scope: invalidate consent, retain no executable subset.
-            this.cancel();
+            this.cancelTrace('revision_or_unknown');
+            this.revision++;
+            this.task = null;
             return { phase: 'error', text: voiceText('voice.create.noRevision', 'No changes were made. Please restate the complete create request; revisions are not supported in Create v2 yet.') };
         }
         if (this.task?.choices.length) {
@@ -120,7 +119,7 @@ export class VoiceCreateSession {
             const index = number ? Number(number[1]) - 1 : names.length === 1 ? names[0].index : -1;
             return index >= 0 && index < this.task.choices.length ? this.choose(index, signal) : this.choiceView();
         }
-        if (decision)
+        if (decision !== 'unknown')
             return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
         const revision = ++this.revision;
         this.working = true;
@@ -157,6 +156,9 @@ export class VoiceCreateSession {
         const prepared = this.task.prepared;
         this.trace().command(prepared.command, 'confirmation_preflight');
         this.trace().emit('resolve', { defaultLane: prepared.plan.lane === undefined, defaultAssignee: prepared.plan.assignee === undefined });
+        if (prepared.plan.tags?.length)
+            this.trace().emit('resolve', { entityType: 'tag', result: 'resolved', candidateCount: 1,
+                referenceNormalizationApplied: prepared.tagReferenceNormalizationApplied });
         this.trace().emit('confirmation', { required: true, proposalCount: 1, plannerVersion: VOICE_CREATE_PLANNER_VERSION });
         return this.review();
     }

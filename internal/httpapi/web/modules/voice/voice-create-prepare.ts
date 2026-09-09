@@ -1,11 +1,17 @@
 import type { BoardMember } from '../state/state.js';
 import { canRunVoiceMutationInContext, type VoiceCommandContext } from './command-context.js';
-import { matchVoiceMembers, matchVoiceTags, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
+import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR, type ResolvedCommand } from './schema.js';
 import { executableCreatePlan, VoiceCreatePlanError, type VoiceCreatePlanV1 } from './voice-create-plan.js';
 
 export type CreateMemberChoice = Readonly<Pick<BoardMember, 'userId' | 'name' | 'email'>>;
-export type PreparedVoiceCreate = Readonly<{ plan: VoiceCreatePlanV1; command: ResolvedCommand; fingerprint: string; member?: CreateMemberChoice }>;
+export type PreparedVoiceCreate = Readonly<{
+  plan: VoiceCreatePlanV1;
+  command: ResolvedCommand;
+  fingerprint: string;
+  member?: CreateMemberChoice;
+  tagReferenceNormalizationApplied: boolean;
+}>;
 export type CreatePreparation = { kind: 'prepared'; value: PreparedVoiceCreate }
   | { kind: 'member-choice'; choices: readonly CreateMemberChoice[] };
 
@@ -15,10 +21,10 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
   if (!canRunVoiceMutationInContext(context)) throw new VoiceCreatePlanError('unauthorized');
   const { board } = context;
   if (board.project.id !== context.projectId || board.project.slug !== context.projectSlug) throw new VoiceCreatePlanError('stale_context');
-  // voiceBoardLanes also has a legacy object-order fallback. V2 deliberately forbids it.
-  if (!board.columnOrder?.length || new Set(board.columnOrder.map(lane => lane.key)).size !== board.columnOrder.length) throw new VoiceCreatePlanError('lane');
-  const lanes = voiceBoardLanes(board);
-  const resolvedLane = plan.lane === undefined ? { ok: true as const, value: lanes[0] } : resolveVoiceLane(plan.lane, board);
+  // Defaults require the same authoritative order rendered by the board. An
+  // explicit reference resolves directly and never depends on ordering metadata.
+  if (plan.lane === undefined && (!board.columnOrder?.length || new Set(board.columnOrder.map(lane => lane.key)).size !== board.columnOrder.length)) throw new VoiceCreatePlanError('lane');
+  const resolvedLane = plan.lane === undefined ? { ok: true as const, value: voiceBoardLanes(board)[0] } : resolveVoiceLane(plan.lane, board);
   if (isCommandFailure(resolvedLane) || !resolvedLane.value?.key || !resolvedLane.value.name) throw new VoiceCreatePlanError('lane');
   const lane = resolvedLane.value;
   let member: CreateMemberChoice | undefined;
@@ -34,10 +40,18 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
     }
   }
   const tags: string[] = [];
+  let tagReferenceNormalizationApplied = false;
   for (const reference of plan.tags ?? []) {
-    const matches = matchVoiceTags(reference, board);
-    if (matches.length !== 1) throw new VoiceCreatePlanError('tag');
-    if (!tags.includes(matches[0])) tags.push(matches[0]);
+    const match = matchVoiceTagsDetailed(reference, board);
+    if (match.matches.length !== 1) throw new VoiceCreatePlanError('tag', {
+      entityType: 'tag',
+      result: match.matches.length === 0 ? 'unavailable' : 'ambiguous',
+      candidateCount: match.matches.length,
+      referenceNormalizationApplied: match.kind === 'spoken_identity',
+    });
+    tagReferenceNormalizationApplied ||= match.kind === 'spoken_identity';
+    const authoritative = match.matches[0];
+    if (!tags.includes(authoritative)) tags.push(authoritative);
   }
   tags.sort();
   const ir = validateCommandIR({ intent: 'todos.create', projectId: context.projectId, projectSlug: context.projectSlug,
@@ -52,5 +66,5 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
     tags: tags.map(name => ({ name, ids: board.tags.filter(tag => tag.name === name).map(tag => tag.tagId ?? null).sort() })) });
   Object.freeze(tags); Object.freeze(command.ir.entities); Object.freeze(command.ir); Object.freeze(command);
   const boundMember = member ? Object.freeze({ userId: member.userId, name: member.name, email: member.email }) : undefined;
-  return { kind: 'prepared', value: Object.freeze({ plan, command, fingerprint, member: boundMember }) };
+  return { kind: 'prepared', value: Object.freeze({ plan, command, fingerprint, member: boundMember, tagReferenceNormalizationApplied }) };
 }
