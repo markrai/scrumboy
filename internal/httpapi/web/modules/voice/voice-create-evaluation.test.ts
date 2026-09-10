@@ -77,11 +77,13 @@ describe('Voice Create dry-run v1', () => {
     const evaluationSource = readFileSync(resolve('modules/voice/voice-create-evaluation.ts'), 'utf8');
     const deviceSource = readFileSync(resolve('modules/voice/voice-create-device-evaluation.ts'), 'utf8');
     const sessionSource = readFileSync(resolve('modules/voice/voice-create-session.ts'), 'utf8');
+    const preparationSource = readFileSync(resolve('modules/voice/voice-create-prepare.ts'), 'utf8');
     const boardSource = readFileSync(resolve('modules/views/board.ts'), 'utf8');
     expect(evaluationSource).not.toMatch(/mcp-client|callMcpTool|members_list|apiFetch/);
     expect(deviceSource).toMatch(/readVoiceCreateMembers/);
     expect(deviceSource).toMatch(/readVoiceCreateTags/);
     expect(sessionSource).toMatch(/readVoiceCreateTags/);
+    expect(preparationSource).toMatch(/reconcileVoiceCreateTagReferences/);
     expect(boardSource.match(/getVoiceCreateDryRunBoardPorts[\s\S]*?\n}/)?.[0] ?? '').not.toMatch(/context\.members/);
   });
 
@@ -226,6 +228,20 @@ describe('Voice Create dry-run v1', () => {
     await expect(evaluateVoiceCreateDryRun(`Create Fred and tag it ${reference}`, f.options)).resolves.toMatchObject({
       preparation: { status: 'ready', tags: [authoritative] },
     });
+  });
+
+  it('keeps split Nano tags visible while deterministically preparing one authoritative acronym', async () => {
+    const plan = create({ tags: ['U', 'X'] });
+    const f = harness(plan);
+    await expect(evaluateVoiceCreateDryRun('Create Fred and tag it U X', f.options)).resolves.toMatchObject({
+      outcome: 'ready',
+      planner: { status: 'ok', plan: { tags: ['U', 'X'] } },
+      preparation: { status: 'ready', tags: ['ux'] },
+      confirmationReady: true,
+      plannerCallCount: 1,
+      mutationExecuted: false,
+    });
+    expect(f.planner).toHaveBeenCalledOnce();
   });
 
   it('resolves a personal cross-project tag independently of the current filtered board payload', async () => {

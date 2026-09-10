@@ -249,6 +249,28 @@ describe('Create v2 application interaction', () => {
       projectSlug: 'alpha', title: 'Refactor Navigation', assigneeUserId: 8, tags: ['UX'],
     });
   });
+  it('reconciles split planner tags again against fresh authority before confirmation', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['U', 'X'] } as never);
+    f.readTags.mockResolvedValueOnce([{ name: 'ux' }]).mockResolvedValueOnce([]);
+    await f.controller.submitTranscript('Create Fred and tag it U X');
+    expect(f.controller.getView().phase).toBe('confirmation');
+    expect(f.controller.getView().confirmation?.summary).toContain('Tags: ux');
+    await f.controller.confirm();
+    expect(f.readTags).toHaveBeenCalledTimes(2);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.controller.getView().phase).toBe('error');
+  });
+  it('uses the shared split-tag reconciliation for the production confirmation path', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['U', 'X'] } as never);
+    f.board.tags = [{ name: 'ux', count: 0 }];
+    await f.controller.submitTranscript('Create Fred and tag it U X');
+    expect(f.controller.getView().phase).toBe('confirmation');
+    await f.controller.confirm();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toMatchObject({ tags: ['ux'] });
+  });
   it.each([{ ...all, unhandled: [{ text: 'schedule Tuesday', reason: 'unsupported' }] }, { version: 1, kind: 'not_create' }, { version: 1, kind: 'create' }])('blocks incomplete/unsupported before any query or review %#', async plan => {
     const f = fixture(plan as never); await f.controller.submitTranscript('Create a story');
     expect(f.controller.getView().phase).toBe('error'); expect(f.callTool).not.toHaveBeenCalled(); expect(f.execute).not.toHaveBeenCalled();

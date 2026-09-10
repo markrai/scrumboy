@@ -583,7 +583,7 @@ describe('spoken tag reference resolution', () => {
 
   it('returns every collision at the same precedence level instead of choosing by object order', () => {
     const collision = board({ tags: [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }] });
-    expect(matchVoiceTagsDetailed('R D', collision)).toEqual({ matches: ['RD', 'R&D'], kind: 'spoken_identity' });
+    expect(matchVoiceTagsDetailed('R D', collision.tags)).toEqual({ matches: ['RD', 'R&D'], kind: 'spoken_identity' });
     expect(matchVoiceTags('RD', collision)).toEqual(['RD']);
   });
 });

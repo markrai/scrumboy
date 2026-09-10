@@ -88,6 +88,13 @@ describe('deterministic enriched create preparation', () => {
     const mobile = prepareVoiceCreate({ ...base, tags: ['mobile'] }, h.context(), [], boardTags(h));
     expect(mobile.kind === 'prepared' && mobile.value.command.ir.entities.tags).toEqual(['mobile']);
 
+    const split = prepareVoiceCreate({ ...base, tags: ['U', 'X'] }, h.context(), [], boardTags(h));
+    expect(split.kind).toBe('prepared');
+    if (split.kind !== 'prepared') return;
+    expect(split.value.command.ir.entities.tags).toEqual(['ux']);
+    expect(split.value.tagReferenceNormalizationApplied).toBe(true);
+    expect(h.callTool).not.toHaveBeenCalled();
+
     h.board.tags = [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }];
     expect(() => prepareVoiceCreate({ ...base, tags: ['R D'] }, h.context(), [], boardTags(h))).toThrow('tag');
   });
@@ -108,6 +115,7 @@ describe('deterministic enriched create preparation', () => {
     for (const plan of [{ version: 1, kind: 'create' }, { ...base, tags: ['invented'] }, { ...base, unhandled: [{ text: 'schedule it', reason: 'unsupported' }] }]) {
       expect(() => prepareVoiceCreate(plan as VoiceCreatePlanV1, h.context(), [], boardTags(h))).toThrow();
     }
+    expect(h.callTool).not.toHaveBeenCalled();
     h.context().role = 'viewer'; expect(() => prepareVoiceCreate(base, h.context(), [], [])).toThrow('unauthorized');
   });
   it('keeps legacy creates valid and rejects partial/invalid enriched fields', () => {

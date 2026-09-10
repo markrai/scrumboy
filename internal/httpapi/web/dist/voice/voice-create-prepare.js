@@ -1,7 +1,8 @@
 import { canRunVoiceMutationInContext } from './command-context.js';
-import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
+import { matchVoiceMembers, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { executableCreatePlan, VoiceCreatePlanError } from './voice-create-plan.js';
+import { reconcileVoiceCreateTagReferences } from './voice-create-tag-reconciliation.js';
 export function formatVoiceCreateMember(member) {
     const name = member.name?.trim() ?? '';
     const email = member.email?.trim() ?? '';
@@ -48,22 +49,9 @@ export function prepareVoiceCreate(planInput, context, members, authoritativeTag
             member = matches[0];
         }
     }
-    const tags = [];
-    let tagReferenceNormalizationApplied = false;
-    for (const reference of plan.tags ?? []) {
-        const match = matchVoiceTagsDetailed(reference, authoritativeTags);
-        if (match.matches.length !== 1)
-            throw new VoiceCreatePlanError('tag', {
-                entityType: 'tag',
-                result: match.matches.length === 0 ? 'unavailable' : 'ambiguous',
-                candidateCount: match.matches.length,
-                referenceNormalizationApplied: match.kind === 'spoken_identity',
-            });
-        tagReferenceNormalizationApplied || (tagReferenceNormalizationApplied = match.kind === 'spoken_identity');
-        const authoritative = match.matches[0];
-        if (!tags.includes(authoritative))
-            tags.push(authoritative);
-    }
+    const reconciledTags = reconcileVoiceCreateTagReferences(plan.tags ?? [], authoritativeTags);
+    const tags = [...new Set(reconciledTags.tags)];
+    const tagReferenceNormalizationApplied = reconciledTags.referenceNormalizationApplied;
     tags.sort();
     const ir = validateCommandIR({ intent: 'todos.create', projectId: context.projectId, projectSlug: context.projectSlug,
         entities: { title: plan.title, columnKey: lane.key, assigneeUserId: member?.userId ?? null, tags, body: plan.notes ?? '' } }, context);
