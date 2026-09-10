@@ -36,7 +36,13 @@ export async function prepareVoiceCreateAgainstCurrentContext(plan, signal, port
         if (!Array.isArray(members))
             throw new VoiceCreatePlanError('network');
     }
-    return prepareVoiceCreate(plan, ports.context(signal), members, selection);
+    let tags = [];
+    if (plan.tags?.length) {
+        tags = await ports.readTags(context.projectSlug, signal);
+        if (!Array.isArray(tags))
+            throw new VoiceCreatePlanError('network');
+    }
+    return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection);
 }
 /** The one semantic Create v2 path. It has read ports but deliberately no execute port. */
 export async function evaluateVoiceCreateSemantics(transcript, signal, ports) {
@@ -290,6 +296,7 @@ export async function evaluateVoiceCreateDryRun(input, options) {
                 context,
                 refreshBoard: options.refreshBoard,
                 readMembers: options.readMembers,
+                readTags: options.readTags,
                 onPlan: plan => { observedPlan = plan; },
             });
             if (semantic.preparation.kind === 'member-choice') {

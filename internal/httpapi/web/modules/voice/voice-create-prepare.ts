@@ -3,6 +3,7 @@ import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoard
 import { isCommandFailure, validateCommandIR, type ResolvedCommand } from './schema.js';
 import type { VoiceCreateMember } from './voice-create-members.js';
 import { executableCreatePlan, VoiceCreatePlanError, type VoiceCreatePlanV1 } from './voice-create-plan.js';
+import type { VoiceCreateTag } from './voice-create-tags.js';
 
 export type CreateMemberChoice = Readonly<Pick<VoiceCreateMember, 'userId' | 'name' | 'email'>>;
 export type PreparedVoiceCreate = Readonly<{
@@ -23,7 +24,13 @@ export function formatVoiceCreateMember(member: Readonly<{ userId: number; name?
 }
 
 /** No execution/UI ports. Caller refreshes and supplies authoritative project data. */
-export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceCommandContext, members: readonly VoiceCreateMember[], selection?: CreateMemberChoice): CreatePreparation {
+export function prepareVoiceCreate(
+  planInput: VoiceCreatePlanV1,
+  context: VoiceCommandContext,
+  members: readonly VoiceCreateMember[],
+  authoritativeTags: readonly VoiceCreateTag[],
+  selection?: CreateMemberChoice,
+): CreatePreparation {
   const plan = executableCreatePlan(planInput);
   if (!canRunVoiceMutationInContext(context)) throw new VoiceCreatePlanError('unauthorized');
   const { board } = context;
@@ -57,7 +64,7 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
   const tags: string[] = [];
   let tagReferenceNormalizationApplied = false;
   for (const reference of plan.tags ?? []) {
-    const match = matchVoiceTagsDetailed(reference, board);
+    const match = matchVoiceTagsDetailed(reference, authoritativeTags);
     if (match.matches.length !== 1) throw new VoiceCreatePlanError('tag', {
       entityType: 'tag',
       result: match.matches.length === 0 ? 'unavailable' : 'ambiguous',
@@ -78,7 +85,7 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
   // Compare identity, meaning and policy, not arbitrary board/locale changes or only model phrases.
   const fingerprint = JSON.stringify({ ir: command.ir, lane, defaultLane: plan.lane === undefined,
     member: member ? { userId: member.userId, name: member.name, email: member.email } : null,
-    tags: tags.map(name => ({ name, ids: board.tags.filter(tag => tag.name === name).map(tag => tag.tagId ?? null).sort() })) });
+    tags: tags.map(name => ({ name })) });
   Object.freeze(tags); Object.freeze(command.ir.entities); Object.freeze(command.ir); Object.freeze(command);
   const boundMember = member ? Object.freeze({ userId: member.userId, name: member.name, email: member.email }) : undefined;
   return { kind: 'prepared', value: Object.freeze({ plan, command, fingerprint, member: boundMember, tagReferenceNormalizationApplied }) };

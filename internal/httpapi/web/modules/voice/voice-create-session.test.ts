@@ -18,12 +18,13 @@ function fixture(plan = all, suppliedSpeechInput?: SpeechInputCapability) {
   let origin = 'https://one.test';
   const generate = vi.fn(async request => ({ requestId: request.requestId, text: JSON.stringify(plan) }));
   const execute = vi.fn(async (ir, options) => executeCommandIR(ir, { ...options, callTool: h.callTool as never, recordMutation: () => {} }));
-  const session = new VoiceCreateSession({ ...h.options, planner: createVoiceCreatePlanner({ generate }), callTool: h.callTool as never, execute, serverOrigin: () => origin });
+  const readTags = vi.fn(async () => h.board.tags.map(tag => ({ name: tag.name })));
+  const session = new VoiceCreateSession({ ...h.options, planner: createVoiceCreatePlanner({ generate }), callTool: h.callTool as never, readTags, execute, serverOrigin: () => origin });
   const speechInput = { status: vi.fn(async () => ({ state: 'ready' as const })), listen: vi.fn(async () => { throw new SpeechInputError('no_speech'); }) };
   const onView = vi.fn();
   const controller = createVoiceAgentController({ ...h.options, model: h.model, createSession: session, speechInput: suppliedSpeechInput ?? speechInput, onView, continuationEnabled: false });
   controllers.push(controller);
-  return { ...h, generate, execute, session, controller, onView, speechInput, setOrigin: (value: string) => { origin = value; } };
+  return { ...h, generate, readTags, execute, session, controller, onView, speechInput, setOrigin: (value: string) => { origin = value; } };
 }
 
 function nativeSpeech(result: { transcript: string; segmentCount?: number }): NativeSpeechInputPlugin {
@@ -74,10 +75,12 @@ describe('Create v2 application interaction', () => {
     expect(f.controller.getView().phase).toBe('confirmation');
     expect(f.generate).toHaveBeenCalledOnce(); expect(f.model).not.toHaveBeenCalled();
     expect(f.execute).not.toHaveBeenCalled(); expect(f.options.openTodo).not.toHaveBeenCalled();
+    expect(f.readTags).toHaveBeenCalledOnce();
     expect(f.callTool.mock.calls.every(([name]) => name === 'members_list')).toBe(true);
     if (approval === 'button') await Promise.all([f.controller.confirm(), f.controller.confirm()]); else await f.controller.submitTranscript(approval);
     expect(f.controller.getView().phase).toBe('success');
     expect(f.generate).toHaveBeenCalledOnce(); expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.readTags).toHaveBeenCalledTimes(2);
     expect(f.callTool.mock.calls.filter(([name]) => name === 'todos_create')).toHaveLength(1);
     expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toEqual({ projectSlug: 'alpha', title: 'Big Man', columnKey: 'backlog', assigneeUserId: 8, tags: ['urgent'], body: 'Call tomorrow' });
     await f.controller.confirm(); await f.controller.submitTranscript('yes');

@@ -7,6 +7,7 @@ import type { McpToolName } from './mcp-client.js';
 import { BUILTIN_STATUS_ALIASES } from './vocabulary.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { voiceText } from './i18n.js';
+import type { VoiceCreateTag } from './voice-create-tags.js';
 
 export type ResolveContext = {
   projectId: number;
@@ -121,8 +122,8 @@ export type VoiceTagMatch = Readonly<{
   kind: 'stored_exact' | 'normalized_exact' | 'spoken_identity' | 'prefix' | 'none';
 }>;
 
-export function matchVoiceTagsDetailed(reference: string, board: Board): VoiceTagMatch {
-  const names = [...new Set((board.tags ?? []).map(tag => tag.name))];
+export function matchVoiceTagsDetailed(reference: string, tags: readonly VoiceCreateTag[]): VoiceTagMatch {
+  const names = [...new Set(tags.map(tag => tag.name))];
   const raw = reference.trim();
   const storedExact = names.filter(name => name === raw);
   if (storedExact.length) return { matches: storedExact, kind: 'stored_exact' };
@@ -143,7 +144,7 @@ export function matchVoiceTagsDetailed(reference: string, board: Board): VoiceTa
 }
 
 export function matchVoiceTags(reference: string, board: Board): string[] {
-  return matchVoiceTagsDetailed(reference, board).matches;
+  return matchVoiceTagsDetailed(reference, board.tags ?? []).matches;
 }
 
 async function resolveMember(rawUser: string, context: ResolveContext): Promise<CommandResult<BoardMember>> {

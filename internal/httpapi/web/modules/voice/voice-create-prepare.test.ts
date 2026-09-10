@@ -7,6 +7,7 @@ import { buildMcpCall, executeCommandIR } from './execute.js';
 import { validateCommandIR } from './schema.js';
 
 const base: VoiceCreatePlanV1 = { version: 1, kind: 'create', title: 'Big Man' };
+const boardTags = (h: ReturnType<typeof harness>) => h.board.tags.map(tag => ({ name: tag.name }));
 describe('deterministic enriched create preparation', () => {
   it('never renders a missing member field as literal undefined', () => {
     expect(formatVoiceCreateMember({ userId: 8, name: 'Mark Rai' })).toBe('Mark Rai');
@@ -18,7 +19,7 @@ describe('deterministic enriched create preparation', () => {
   it('uses authoritative leftmost, not Backlog, and suppresses empty default details', () => {
     const h = harness();
     h.board.columnOrder!.unshift({ key: 'triage', name: 'Triage', isDone: false }); h.board.columns.triage = [];
-    const result = prepareVoiceCreate(base, h.context(), []);
+    const result = prepareVoiceCreate(base, h.context(), [], []);
     expect(result.kind).toBe('prepared'); if (result.kind !== 'prepared') return;
     expect(result.value.command.ir).toEqual({ intent: 'todos.create', projectId: 1, projectSlug: 'alpha', entities: { title: 'Big Man', columnKey: 'triage', body: '', tags: [], assigneeUserId: null } });
     expect(result.value.command.summary).toBe('Create "Big Man" in Triage');
@@ -26,13 +27,13 @@ describe('deterministic enriched create preparation', () => {
   });
   it('resolves explicit Done and never defaults an invalid explicit lane', () => {
     const h = harness();
-    const result = prepareVoiceCreate({ ...base, lane: 'Done' }, h.context(), []);
+    const result = prepareVoiceCreate({ ...base, lane: 'Done' }, h.context(), [], []);
     expect(result.kind === 'prepared' && result.value.command.ir.entities.columnKey).toBe('done');
-    expect(() => prepareVoiceCreate({ ...base, lane: 'Unknown' }, h.context(), [])).toThrow('lane');
+    expect(() => prepareVoiceCreate({ ...base, lane: 'Unknown' }, h.context(), [], [])).toThrow('lane');
     h.board.columnOrder = undefined;
-    expect(() => prepareVoiceCreate(base, h.context(), [])).toThrow('lane');
+    expect(() => prepareVoiceCreate(base, h.context(), [], [])).toThrow('lane');
     h.board.columns.testing = [];
-    const explicit = prepareVoiceCreate({ ...base, lane: 'Testing' }, h.context(), []);
+    const explicit = prepareVoiceCreate({ ...base, lane: 'Testing' }, h.context(), [], []);
     expect(explicit.kind === 'prepared' && explicit.value.command.ir.entities.columnKey).toBe('testing');
   });
   it('uses the rendered authoritative lane order for an omitted lane', () => {
@@ -44,7 +45,7 @@ describe('deterministic enriched create preparation', () => {
       { key: 'done', name: 'Done', isDone: true },
     ];
     h.board.columns = { not_started: [], doing: [], testing: [], done: [] };
-    const result = prepareVoiceCreate(base, h.context(), []);
+    const result = prepareVoiceCreate(base, h.context(), [], []);
     expect(result.kind).toBe('prepared');
     if (result.kind !== 'prepared') return;
     expect(result.value.command.ir.entities.columnKey).toBe('not_started');
@@ -54,16 +55,16 @@ describe('deterministic enriched create preparation', () => {
     const h = harness(); h.context().members.push({ userId: 9, name: 'Mark Smith', email: 'ms@example.test', role: 'maintainer' });
     h.context().members[0].name = 'Mark Jones';
     const plan = { ...base, assignee: 'Mark' };
-    const result = prepareVoiceCreate(plan, h.context(), h.context().members);
+    const result = prepareVoiceCreate(plan, h.context(), h.context().members, []);
     expect(result.kind).toBe('member-choice');
     if (result.kind !== 'member-choice') return;
     expect(result.choices).toHaveLength(2);
-    expect(prepareVoiceCreate(plan, h.context(), h.context().members, result.choices[1]).kind).toBe('prepared');
-    expect(() => prepareVoiceCreate(plan, h.context(), h.context().members, { userId: 55, name: 'Fake', email: 'fake' })).toThrow();
+    expect(prepareVoiceCreate(plan, h.context(), h.context().members, [], result.choices[1]).kind).toBe('prepared');
+    expect(() => prepareVoiceCreate(plan, h.context(), h.context().members, [], { userId: 55, name: 'Fake', email: 'fake' })).toThrow();
   });
   it('compiles all fields into exactly one existing MCP create, with no follow-up mutation', async () => {
     const h = harness();
-    const result = prepareVoiceCreate({ ...base, lane: 'Backlog', assignee: 'Mark', tags: ['urgent'], notes: 'Call tomorrow' }, h.context(), h.context().members);
+    const result = prepareVoiceCreate({ ...base, lane: 'Backlog', assignee: 'Mark', tags: ['urgent'], notes: 'Call tomorrow' }, h.context(), h.context().members, boardTags(h));
     if (result.kind !== 'prepared') throw new Error('not prepared');
     expect(buildMcpCall(result.value.command.ir as never)).toEqual({ tool: 'todos_create', input: { projectSlug: 'alpha', title: 'Big Man', columnKey: 'backlog', assigneeUserId: 8, tags: ['urgent'], body: 'Call tomorrow' } });
     expect(result.value.command.summary).toContain('Assign Mark'); expect(result.value.command.summary).toContain('urgent'); expect(result.value.command.summary).toContain('Call tomorrow');
@@ -73,38 +74,41 @@ describe('deterministic enriched create preparation', () => {
   });
   it('resolves acronym speech forms to the exact authoritative tag and rejects normalized collisions', () => {
     const h = harness();
-    h.board.tags = [{ name: 'UX', count: 0 }, { name: 'Architecture', count: 0 }];
-    const result = prepareVoiceCreate({ ...base, assignee: 'Mark', tags: ['U.X.'] }, h.context(), h.context().members);
+    h.board.tags = [{ name: 'ux', count: 0 }, { name: 'architecture', count: 0 }, { name: 'mobile', count: 0 }];
+    const result = prepareVoiceCreate({ ...base, assignee: 'Mark', tags: ['U.X.'] }, h.context(), h.context().members, boardTags(h));
     expect(result.kind).toBe('prepared');
     if (result.kind !== 'prepared') return;
-    expect(result.value.command.ir.entities.tags).toEqual(['UX']);
-    expect(result.value.command.summary).toContain('Tags: UX');
+    expect(result.value.command.ir.entities.tags).toEqual(['ux']);
+    expect(result.value.command.summary).toContain('Tags: ux');
     expect(result.value.tagReferenceNormalizationApplied).toBe(true);
 
-    const architecture = prepareVoiceCreate({ ...base, tags: ['architecture'] }, h.context(), []);
-    expect(architecture.kind === 'prepared' && architecture.value.command.ir.entities.tags).toEqual(['Architecture']);
+    const architecture = prepareVoiceCreate({ ...base, tags: ['architecture'] }, h.context(), [], boardTags(h));
+    expect(architecture.kind === 'prepared' && architecture.value.command.ir.entities.tags).toEqual(['architecture']);
+
+    const mobile = prepareVoiceCreate({ ...base, tags: ['mobile'] }, h.context(), [], boardTags(h));
+    expect(mobile.kind === 'prepared' && mobile.value.command.ir.entities.tags).toEqual(['mobile']);
 
     h.board.tags = [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }];
-    expect(() => prepareVoiceCreate({ ...base, tags: ['R D'] }, h.context(), [])).toThrow('tag');
+    expect(() => prepareVoiceCreate({ ...base, tags: ['R D'] }, h.context(), [], boardTags(h))).toThrow('tag');
   });
   it('accepts authoritative legacy-style labels exactly when server canonicalization accepts them', () => {
     const h = harness();
     h.board.tags = [{ name: 'make space', count: 0 }];
-    const result = prepareVoiceCreate({ ...base, tags: ['make space'] }, h.context(), []);
+    const result = prepareVoiceCreate({ ...base, tags: ['make space'] }, h.context(), [], boardTags(h));
     expect(result.kind).toBe('prepared');
     if (result.kind !== 'prepared') return;
     expect(result.value.command.ir.entities.tags).toEqual(['make space']);
     expect(buildMcpCall(result.value.command.ir as never).input.tags).toEqual(['make space']);
 
     h.board.tags = [{ name: 'R&D', count: 0 }];
-    expect(() => prepareVoiceCreate({ ...base, tags: ['R&D'] }, h.context(), [])).toThrow('invalid_plan');
+    expect(() => prepareVoiceCreate({ ...base, tags: ['R&D'] }, h.context(), [], boardTags(h))).toThrow('invalid_plan');
   });
   it('blocks unsupported content, missing titles, tags and unauthorized context', () => {
     const h = harness();
     for (const plan of [{ version: 1, kind: 'create' }, { ...base, tags: ['invented'] }, { ...base, unhandled: [{ text: 'schedule it', reason: 'unsupported' }] }]) {
-      expect(() => prepareVoiceCreate(plan as VoiceCreatePlanV1, h.context(), [])).toThrow();
+      expect(() => prepareVoiceCreate(plan as VoiceCreatePlanV1, h.context(), [], boardTags(h))).toThrow();
     }
-    h.context().role = 'viewer'; expect(() => prepareVoiceCreate(base, h.context(), [])).toThrow('unauthorized');
+    h.context().role = 'viewer'; expect(() => prepareVoiceCreate(base, h.context(), [], [])).toThrow('unauthorized');
   });
   it('keeps legacy creates valid and rejects partial/invalid enriched fields', () => {
     const h = harness();

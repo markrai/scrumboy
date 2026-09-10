@@ -4,6 +4,7 @@ import { getVoiceCreateDryRunBoardPorts } from '../views/board.js';
 import { createVoiceCreateDryRunSession, evaluateVoiceCreateDryRun, type VoiceCreateDryRunResultV1 } from './voice-create-evaluation.js';
 import { readVoiceCreateMembers } from './voice-create-members.js';
 import { createVoiceCreatePlanner } from './voice-create-planner.js';
+import { readVoiceCreateTags } from './voice-create-tags.js';
 
 async function evaluateOnCurrentBoard(
   transcript: string,
@@ -25,6 +26,11 @@ async function evaluateOnCurrentBoard(
       const context = boardPorts.getContext();
       if (signal.aborted || !context || context.projectSlug !== projectSlug) throw new Error('context_unavailable');
       return readVoiceCreateMembers(projectSlug, signal);
+    },
+    readTags: async (projectSlug, signal) => {
+      const context = boardPorts.getContext();
+      if (signal.aborted || !context || context.projectSlug !== projectSlug) throw new Error('context_unavailable');
+      return readVoiceCreateTags(projectSlug, signal);
     },
     timeoutMs: options.timeoutMs,
   });

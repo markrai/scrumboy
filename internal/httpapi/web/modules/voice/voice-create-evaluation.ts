@@ -11,6 +11,7 @@ import {
 } from './voice-create-plan.js';
 import { VOICE_CREATE_DRY_RUN_OUTPUT_PREVIEW_CODE_UNITS, type VoiceCreatePlanner } from './voice-create-planner.js';
 import type { VoiceCreateMember } from './voice-create-members.js';
+import type { VoiceCreateTag, VoiceCreateTagsReader } from './voice-create-tags.js';
 import {
   prepareVoiceCreate,
   type CreateMemberChoice,
@@ -31,6 +32,7 @@ type SemanticEvaluationPorts = Readonly<{
   context(signal: AbortSignal): VoiceCommandContext;
   refreshBoard(): Promise<void>;
   readMembers: VoiceCreateMembersReader;
+  readTags: VoiceCreateTagsReader;
   onPlannerStart?(): void;
   onPlan?(plan: VoiceCreatePlanResult): void;
 }>;
@@ -99,6 +101,7 @@ export type VoiceCreateDryRunOptions = Readonly<{
   getContext(): VoiceCommandContext | null;
   refreshBoard(): Promise<void>;
   readMembers: VoiceCreateMembersReader;
+  readTags: VoiceCreateTagsReader;
   provider?: Pick<LocalTextGenerationCapability, 'status'>;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -129,7 +132,7 @@ const CONTRACT_CODES = new Set<VoiceCreatePlanError['code']>([
 export async function prepareVoiceCreateAgainstCurrentContext(
   plan: VoiceCreatePlanV1,
   signal: AbortSignal,
-  ports: Pick<SemanticEvaluationPorts, 'context' | 'refreshBoard' | 'readMembers'>,
+  ports: Pick<SemanticEvaluationPorts, 'context' | 'refreshBoard' | 'readMembers' | 'readTags'>,
   selection?: CreateMemberChoice,
 ): Promise<CreatePreparation> {
   ports.context(signal);
@@ -140,7 +143,12 @@ export async function prepareVoiceCreateAgainstCurrentContext(
     members = await ports.readMembers(context.projectSlug, signal);
     if (!Array.isArray(members)) throw new VoiceCreatePlanError('network');
   }
-  return prepareVoiceCreate(plan, ports.context(signal), members, selection);
+  let tags: readonly VoiceCreateTag[] = [];
+  if (plan.tags?.length) {
+    tags = await ports.readTags(context.projectSlug, signal);
+    if (!Array.isArray(tags)) throw new VoiceCreatePlanError('network');
+  }
+  return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection);
 }
 
 /** The one semantic Create v2 path. It has read ports but deliberately no execute port. */
@@ -429,6 +437,7 @@ export async function evaluateVoiceCreateDryRun(
       context,
       refreshBoard: options.refreshBoard,
       readMembers: options.readMembers,
+      readTags: options.readTags,
       onPlan: plan => { observedPlan = plan; },
     });
     if (semantic.preparation.kind === 'member-choice') {

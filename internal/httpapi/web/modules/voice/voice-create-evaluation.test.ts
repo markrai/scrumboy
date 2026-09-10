@@ -18,9 +18,10 @@ function makeBoard(): Board {
   return {
     project: { id: 1, slug: 'alpha', name: 'Alpha', creatorUserId: 7, dominantColor: '#123456' },
     tags: [
-      { tagId: 11, name: 'Architecture', count: 0 },
-      { tagId: 12, name: 'UX', count: 0 },
-      { tagId: 13, name: 'Backend', count: 0 },
+      { tagId: 11, name: 'architecture', count: 0 },
+      { tagId: 12, name: 'ux', count: 0 },
+      { tagId: 13, name: 'backend', count: 0 },
+      { tagId: 14, name: 'mobile', count: 0 },
     ],
     columnOrder: [
       { key: 'not_started', name: 'Not Started', isDone: false },
@@ -44,11 +45,13 @@ function harness(plan: VoiceCreatePlanResult, overrides: Partial<VoiceCreateDryR
   const planner = vi.fn(async () => plan);
   const refreshBoard = vi.fn(async () => undefined);
   const readMembers = vi.fn(async () => members);
+  const readTags = vi.fn(async () => board.tags.map(tag => ({ name: tag.name })));
   const options: VoiceCreateDryRunOptions = {
     planner,
     getContext: () => context,
     refreshBoard,
     readMembers,
+    readTags,
     ...overrides,
   };
   return {
@@ -56,6 +59,7 @@ function harness(plan: VoiceCreatePlanResult, overrides: Partial<VoiceCreateDryR
     planner,
     refreshBoard,
     readMembers,
+    readTags,
     options,
     setContext(value: VoiceCommandContext | null) { context = value; },
   };
@@ -69,12 +73,15 @@ const create = (fields: Partial<VoiceCreatePlanV1> = {}): VoiceCreatePlanV1 => (
 });
 
 describe('Voice Create dry-run v1', () => {
-  it('keeps the evaluator generic-MCP-free while the device adapter uses the shared member reader', () => {
+  it('keeps the evaluator transport-minimal while production and device adapters use the shared readers', () => {
     const evaluationSource = readFileSync(resolve('modules/voice/voice-create-evaluation.ts'), 'utf8');
     const deviceSource = readFileSync(resolve('modules/voice/voice-create-device-evaluation.ts'), 'utf8');
+    const sessionSource = readFileSync(resolve('modules/voice/voice-create-session.ts'), 'utf8');
     const boardSource = readFileSync(resolve('modules/views/board.ts'), 'utf8');
-    expect(evaluationSource).not.toMatch(/mcp-client|callMcpTool|members_list/);
+    expect(evaluationSource).not.toMatch(/mcp-client|callMcpTool|members_list|apiFetch/);
     expect(deviceSource).toMatch(/readVoiceCreateMembers/);
+    expect(deviceSource).toMatch(/readVoiceCreateTags/);
+    expect(sessionSource).toMatch(/readVoiceCreateTags/);
     expect(boardSource.match(/getVoiceCreateDryRunBoardPorts[\s\S]*?\n}/)?.[0] ?? '').not.toMatch(/context\.members/);
   });
 
@@ -107,6 +114,7 @@ describe('Voice Create dry-run v1', () => {
     expect(result.mutationExecuted).toBe(false);
     expect(execute).not.toHaveBeenCalled();
     expect(f.readMembers).not.toHaveBeenCalled();
+    expect(f.readTags).not.toHaveBeenCalled();
   });
 
   it('reports parser failure separately and never exposes raw Nano output', async () => {
@@ -209,12 +217,29 @@ describe('Voice Create dry-run v1', () => {
   });
 
   it.each([
-    ['U.X.', 'UX'],
-    ['Architecture', 'Architecture'],
+    ['mobile', 'mobile'],
+    ['UX', 'ux'],
+    ['U.X.', 'ux'],
+    ['Architecture', 'architecture'],
   ])('resolves spoken tag %s to authoritative %s', async (reference, authoritative) => {
     const f = harness(create({ tags: [reference] }));
     await expect(evaluateVoiceCreateDryRun(`Create Fred and tag it ${reference}`, f.options)).resolves.toMatchObject({
       preparation: { status: 'ready', tags: [authoritative] },
+    });
+  });
+
+  it('resolves a personal cross-project tag independently of the current filtered board payload', async () => {
+    const f = harness(create({ tags: ['Architecture'] }), {
+      readTags: async () => [{ name: 'architecture' }, { name: 'mobile' }],
+    });
+    f.board.tags = [{ tagId: 12, name: 'mobile', count: 0 }];
+    f.board.columns = { not_started: [], testing: [], done: [] };
+
+    await expect(evaluateVoiceCreateDryRun('Create Fred and tag it Architecture', f.options)).resolves.toMatchObject({
+      outcome: 'ready',
+      preparation: { status: 'ready', tags: ['architecture'] },
+      plannerCallCount: 1,
+      mutationExecuted: false,
     });
   });
 
@@ -227,13 +252,14 @@ describe('Voice Create dry-run v1', () => {
         title: 'Refactor Navigation',
         lane: { name: 'Testing', defaulted: false },
         assignee: { userId: 8, name: 'Mark' },
-        tags: ['Architecture', 'UX'],
+        tags: ['architecture', 'ux'],
         notesPresent: true,
       },
       plannerCallCount: 1,
       mutationExecuted: false,
     });
     expect(f.readMembers).toHaveBeenCalledOnce();
+    expect(f.readTags).toHaveBeenCalledOnce();
   });
 
   it('returns parsed planner visibility when unsupported semantics block preparation', async () => {

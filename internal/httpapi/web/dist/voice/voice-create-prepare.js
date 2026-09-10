@@ -10,7 +10,7 @@ export function formatVoiceCreateMember(member) {
     return name || email || String(member.userId);
 }
 /** No execution/UI ports. Caller refreshes and supplies authoritative project data. */
-export function prepareVoiceCreate(planInput, context, members, selection) {
+export function prepareVoiceCreate(planInput, context, members, authoritativeTags, selection) {
     const plan = executableCreatePlan(planInput);
     if (!canRunVoiceMutationInContext(context))
         throw new VoiceCreatePlanError('unauthorized');
@@ -51,7 +51,7 @@ export function prepareVoiceCreate(planInput, context, members, selection) {
     const tags = [];
     let tagReferenceNormalizationApplied = false;
     for (const reference of plan.tags ?? []) {
-        const match = matchVoiceTagsDetailed(reference, board);
+        const match = matchVoiceTagsDetailed(reference, authoritativeTags);
         if (match.matches.length !== 1)
             throw new VoiceCreatePlanError('tag', {
                 entityType: 'tag',
@@ -75,7 +75,7 @@ export function prepareVoiceCreate(planInput, context, members, selection) {
     // Compare identity, meaning and policy, not arbitrary board/locale changes or only model phrases.
     const fingerprint = JSON.stringify({ ir: command.ir, lane, defaultLane: plan.lane === undefined,
         member: member ? { userId: member.userId, name: member.name, email: member.email } : null,
-        tags: tags.map(name => ({ name, ids: board.tags.filter(tag => tag.name === name).map(tag => tag.tagId ?? null).sort() })) });
+        tags: tags.map(name => ({ name })) });
     Object.freeze(tags);
     Object.freeze(command.ir.entities);
     Object.freeze(command.ir);

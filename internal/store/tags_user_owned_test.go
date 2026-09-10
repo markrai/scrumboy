@@ -976,6 +976,25 @@ func TestUserOwnedTags_ListUserTags(t *testing.T) {
 		t.Fatalf("CreateTodo p2: %v", err)
 	}
 
+	// A different user's unrelated personal library must never enter this read.
+	other, err := st.CreateUser(context.Background(), "other@example.com", "password", "Other")
+	if err != nil {
+		t.Fatalf("CreateUser other: %v", err)
+	}
+	otherCtx := WithUserID(context.Background(), other.ID)
+	otherProject, err := st.CreateProject(otherCtx, "Other Project")
+	if err != nil {
+		t.Fatalf("CreateProject other: %v", err)
+	}
+	_, err = st.CreateTodo(otherCtx, otherProject.ID, CreateTodoInput{
+		Title:  "Other Todo",
+		Tags:   []string{"other-private"},
+		ColumnKey: DefaultColumnBacklog,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo other: %v", err)
+	}
+
 	// List user's tags (cross-project)
 	tags, err := st.ListUserTags(ctx, user.ID)
 	if err != nil {
@@ -995,6 +1014,9 @@ func TestUserOwnedTags_ListUserTags(t *testing.T) {
 	}
 	if !tagNames["feature"] {
 		t.Error("Expected 'feature' tag in user's tag library")
+	}
+	if tagNames["other-private"] {
+		t.Error("Did not expect another user's unrelated tag in user's tag library")
 	}
 	if len(tags) != 3 {
 		t.Errorf("Expected 3 tags in user's library, got %d: %v", len(tags), tags)

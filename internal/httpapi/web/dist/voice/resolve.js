@@ -81,8 +81,8 @@ export function matchVoiceMembers(reference, members) {
     const exact = unique.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);
     return exact.length ? exact : unique.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
 }
-export function matchVoiceTagsDetailed(reference, board) {
-    const names = [...new Set((board.tags ?? []).map(tag => tag.name))];
+export function matchVoiceTagsDetailed(reference, tags) {
+    const names = [...new Set(tags.map(tag => tag.name))];
     const raw = reference.trim();
     const storedExact = names.filter(name => name === raw);
     if (storedExact.length)
@@ -102,7 +102,7 @@ export function matchVoiceTagsDetailed(reference, board) {
     return { matches: prefix, kind: prefix.length ? 'prefix' : 'none' };
 }
 export function matchVoiceTags(reference, board) {
-    return matchVoiceTagsDetailed(reference, board).matches;
+    return matchVoiceTagsDetailed(reference, board.tags ?? []).matches;
 }
 async function resolveMember(rawUser, context) {
     let matches = findMatchingMembers(rawUser, context.members);

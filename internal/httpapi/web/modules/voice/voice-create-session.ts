@@ -12,11 +12,12 @@ import { VOICE_CREATE_PLANNER_VERSION, type VoiceCreatePlanner } from './voice-c
 import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
 import { readVoiceCreateMembers } from './voice-create-members.js';
 import { formatVoiceCreateMember, type CreateMemberChoice, type PreparedVoiceCreate } from './voice-create-prepare.js';
+import { readVoiceCreateTags, type VoiceCreateTagsReader } from './voice-create-tags.js';
 import { classifyVoiceReviewDecision, type VoiceReviewDecision } from './vocabulary.js';
 
 function wholeUtterance(text: string): string { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
 export function voiceCreateDecision(text: string): VoiceReviewDecision { return classifyVoiceReviewDecision(text); }
-type Options = VoiceCommandOptions & { planner: VoiceCreatePlanner; callTool?: typeof callMcpTool; execute?: typeof executeCommandIR; serverOrigin?: () => string };
+type Options = VoiceCommandOptions & { planner: VoiceCreatePlanner; callTool?: typeof callMcpTool; readTags?: VoiceCreateTagsReader; execute?: typeof executeCommandIR; serverOrigin?: () => string };
 type Task = { plan: VoiceCreatePlanV1; choices: readonly CreateMemberChoice[]; prepared: PreparedVoiceCreate | null };
 function failureText(error: unknown): string {
   const code = error instanceof VoiceCreatePlanError ? error.code : 'network';
@@ -89,11 +90,15 @@ export class VoiceCreateSession {
   private async readMembers(projectSlug: string, signal: AbortSignal) {
     return readVoiceCreateMembers(projectSlug, signal, this.options.callTool ?? callMcpTool);
   }
+  private async readTags(projectSlug: string, signal: AbortSignal) {
+    return (this.options.readTags ?? readVoiceCreateTags)(projectSlug, signal);
+  }
   private async prepare(plan: VoiceCreatePlanV1, signal: AbortSignal, revision: number, member?: CreateMemberChoice) {
     return prepareVoiceCreateAgainstCurrentContext(plan, signal, {
       context: currentSignal => this.check(currentSignal, revision),
       refreshBoard: this.options.refreshBoard,
       readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+      readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
     }, member);
   }
   async submit(transcript: string, signal: AbortSignal): Promise<AgentLoopView> {
@@ -126,6 +131,7 @@ export class VoiceCreateSession {
         context: currentSignal => this.check(currentSignal, revision),
         refreshBoard: this.options.refreshBoard,
         readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+        readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
         onPlannerStart: () => this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 }),
         onPlan: plan => this.tracePlan(plan),
       });

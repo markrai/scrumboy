@@ -11,6 +11,7 @@ import { VOICE_CREATE_PLANNER_VERSION } from './voice-create-planner.js';
 import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
 import { readVoiceCreateMembers } from './voice-create-members.js';
 import { formatVoiceCreateMember } from './voice-create-prepare.js';
+import { readVoiceCreateTags } from './voice-create-tags.js';
 import { classifyVoiceReviewDecision } from './vocabulary.js';
 function wholeUtterance(text) { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
 export function voiceCreateDecision(text) { return classifyVoiceReviewDecision(text); }
@@ -94,11 +95,15 @@ export class VoiceCreateSession {
     async readMembers(projectSlug, signal) {
         return readVoiceCreateMembers(projectSlug, signal, this.options.callTool ?? callMcpTool);
     }
+    async readTags(projectSlug, signal) {
+        return (this.options.readTags ?? readVoiceCreateTags)(projectSlug, signal);
+    }
     async prepare(plan, signal, revision, member) {
         return prepareVoiceCreateAgainstCurrentContext(plan, signal, {
             context: currentSignal => this.check(currentSignal, revision),
             refreshBoard: this.options.refreshBoard,
             readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+            readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
         }, member);
     }
     async submit(transcript, signal) {
@@ -136,6 +141,7 @@ export class VoiceCreateSession {
                 context: currentSignal => this.check(currentSignal, revision),
                 refreshBoard: this.options.refreshBoard,
                 readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+                readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
                 onPlannerStart: () => this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 }),
                 onPlan: plan => this.tracePlan(plan),
             });
