@@ -1,8 +1,10 @@
 import { canRunVoiceMutationInContext } from './command-context.js';
-import { matchVoiceMembers, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
+import { normalizeLookup } from './normalize.js';
+import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { executableCreatePlan, VoiceCreatePlanError } from './voice-create-plan.js';
 import { reconcileVoiceCreateTagReferences } from './voice-create-tag-reconciliation.js';
+import { findVoiceCreateTagSuggestions } from './voice-create-tag-suggestions.js';
 export function formatVoiceCreateMember(member) {
     const name = member.name?.trim() ?? '';
     const email = member.email?.trim() ?? '';
@@ -11,7 +13,7 @@ export function formatVoiceCreateMember(member) {
     return name || email || String(member.userId);
 }
 /** No execution/UI ports. Caller refreshes and supplies authoritative project data. */
-export function prepareVoiceCreate(planInput, context, members, authoritativeTags, selection) {
+export function prepareVoiceCreate(planInput, context, members, authoritativeTags, selection, tagBindings = []) {
     const plan = executableCreatePlan(planInput);
     if (!canRunVoiceMutationInContext(context))
         throw new VoiceCreatePlanError('unauthorized');
@@ -49,7 +51,56 @@ export function prepareVoiceCreate(planInput, context, members, authoritativeTag
             member = matches[0];
         }
     }
-    const reconciledTags = reconcileVoiceCreateTagReferences(plan.tags ?? [], authoritativeTags);
+    const plannedTagReferences = plan.tags ?? [];
+    const effectiveTagReferences = [...plannedTagReferences];
+    const boundIndexes = new Set();
+    for (const binding of tagBindings) {
+        const authoritativeNames = [...new Set(authoritativeTags.map(tag => tag.name))];
+        const storedExact = authoritativeNames.filter(name => name === binding.tag);
+        const rebound = storedExact.length
+            ? storedExact
+            : authoritativeNames.filter(name => normalizeLookup(name) === normalizeLookup(binding.tag));
+        if (!Number.isInteger(binding.referenceIndex)
+            || binding.referenceIndex < 0
+            || binding.referenceIndex >= plannedTagReferences.length
+            || boundIndexes.has(binding.referenceIndex)
+            || rebound.length !== 1) {
+            throw new VoiceCreatePlanError('stale_context');
+        }
+        boundIndexes.add(binding.referenceIndex);
+        effectiveTagReferences[binding.referenceIndex] = rebound[0];
+    }
+    let reconciledTags;
+    try {
+        reconciledTags = reconcileVoiceCreateTagReferences(effectiveTagReferences, authoritativeTags);
+    }
+    catch (error) {
+        if (!(error instanceof VoiceCreatePlanError) || error.code !== 'tag' || error.details?.result !== 'unavailable')
+            throw error;
+        const referenceIndex = effectiveTagReferences.findIndex((reference, index) => !boundIndexes.has(index) && matchVoiceTagsDetailed(reference, authoritativeTags).matches.length === 0);
+        if (referenceIndex < 0)
+            throw error;
+        const suggestion = findVoiceCreateTagSuggestions(effectiveTagReferences[referenceIndex], authoritativeTags);
+        if (suggestion.matches.length === 0)
+            throw error;
+        if (suggestion.matches.length > 1) {
+            throw new VoiceCreatePlanError('tag', {
+                entityType: 'tag',
+                result: 'ambiguous',
+                candidateCount: suggestion.matches.length,
+                referenceNormalizationApplied: false,
+            });
+        }
+        return {
+            kind: 'tag-suggestion',
+            suggestion: Object.freeze({
+                referenceIndex,
+                reference: plannedTagReferences[referenceIndex],
+                tag: suggestion.matches[0],
+                kind: suggestion.kind,
+            }),
+        };
+    }
     const tags = [...new Set(reconciledTags.tags)];
     const tagReferenceNormalizationApplied = reconciledTags.referenceNormalizationApplied;
     tags.sort();

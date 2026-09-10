@@ -98,6 +98,35 @@ describe('deterministic enriched create preparation', () => {
     h.board.tags = [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }];
     expect(() => prepareVoiceCreate({ ...base, tags: ['R D'] }, h.context(), [], boardTags(h))).toThrow('tag');
   });
+  it('keeps strict tag matches authoritative and returns close matches only as suggestions', () => {
+    const h = harness();
+    const plan = { ...base, tags: ['Bugs'] };
+    const strict = prepareVoiceCreate(plan, h.context(), [], [{ name: 'bug' }, { name: 'bugs' }]);
+    expect(strict.kind).toBe('prepared');
+    if (strict.kind !== 'prepared') return;
+    expect(strict.value.command.ir.entities.tags).toEqual(['bugs']);
+
+    const suggested = prepareVoiceCreate(plan, h.context(), [], [{ name: 'bug' }]);
+    expect(suggested).toEqual({
+      kind: 'tag-suggestion',
+      suggestion: { referenceIndex: 0, reference: 'Bugs', tag: 'bug', kind: 'terminal_s' },
+    });
+    const accepted = prepareVoiceCreate(plan, h.context(), [], [{ name: 'bug' }], undefined, [{ referenceIndex: 0, tag: 'bug' }]);
+    expect(accepted.kind === 'prepared' && accepted.value.command.ir.entities.tags).toEqual(['bug']);
+    const recased = prepareVoiceCreate(plan, h.context(), [], [{ name: 'Bug' }], undefined, [{ referenceIndex: 0, tag: 'bug' }]);
+    expect(recased.kind === 'prepared' && recased.value.command.ir.entities.tags).toEqual(['Bug']);
+    expect(() => prepareVoiceCreate(plan, h.context(), [], [], undefined, [{ referenceIndex: 0, tag: 'bug' }])).toThrow('stale_context');
+    expect(() => prepareVoiceCreate(plan, h.context(), [], [{ name: 'bugs' }], undefined, [{ referenceIndex: 0, tag: 'bug' }])).toThrow('stale_context');
+  });
+  it('fails closed for multiple equally close tag candidates', () => {
+    const h = harness();
+    try {
+      prepareVoiceCreate({ ...base, tags: ['bock'] }, h.context(), [], [{ name: 'book' }, { name: 'back' }]);
+      throw new Error('expected ambiguous tag failure');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'tag', details: { result: 'ambiguous', candidateCount: 2 } });
+    }
+  });
   it('accepts authoritative legacy-style labels exactly when server canonicalization accepts them', () => {
     const h = harness();
     h.board.tags = [{ name: 'make space', count: 0 }];

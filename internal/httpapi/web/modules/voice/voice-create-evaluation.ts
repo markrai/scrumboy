@@ -17,6 +17,7 @@ import {
   type CreateMemberChoice,
   type CreatePreparation,
   type PreparedVoiceCreate,
+  type VoiceCreateTagBinding,
 } from './voice-create-prepare.js';
 
 export const VOICE_CREATE_DRY_RUN_VERSION = 1 as const;
@@ -134,6 +135,7 @@ export async function prepareVoiceCreateAgainstCurrentContext(
   signal: AbortSignal,
   ports: Pick<SemanticEvaluationPorts, 'context' | 'refreshBoard' | 'readMembers' | 'readTags'>,
   selection?: CreateMemberChoice,
+  tagBindings: readonly VoiceCreateTagBinding[] = [],
 ): Promise<CreatePreparation> {
   ports.context(signal);
   await ports.refreshBoard();
@@ -148,7 +150,7 @@ export async function prepareVoiceCreateAgainstCurrentContext(
     tags = await ports.readTags(context.projectSlug, signal);
     if (!Array.isArray(tags)) throw new VoiceCreatePlanError('network');
   }
-  return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection);
+  return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection, tagBindings);
 }
 
 /** The one semantic Create v2 path. It has read ports but deliberately no execute port. */
@@ -444,6 +446,13 @@ export async function evaluateVoiceCreateDryRun(
       return preparationFailure(input, plannerCallCount, semantic.plan, 'member_resolution', 'ambiguous_member', 'resolution_failed', {
         result: 'ambiguous',
         candidateCount: semantic.preparation.choices.length,
+      });
+    }
+    if (semantic.preparation.kind === 'tag-suggestion') {
+      return preparationFailure(input, plannerCallCount, semantic.plan, 'tag_resolution', 'unknown_tag', 'resolution_failed', {
+        result: 'unavailable',
+        candidateCount: 0,
+        referenceNormalizationApplied: false,
       });
     }
     return readyResult(input, plannerCallCount, semantic.plan, semantic.preparation.value);

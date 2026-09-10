@@ -259,6 +259,21 @@ describe('Voice Create dry-run v1', () => {
     });
   });
 
+  it('keeps the single-turn dry-run non-interactive when a session-level tag suggestion is available', async () => {
+    const f = harness(create({ tags: ['Bugs'] }), {
+      readTags: async () => [{ name: 'bug' }],
+    });
+    await expect(evaluateVoiceCreateDryRun('Create Fred and tag it Bugs', f.options)).resolves.toMatchObject({
+      outcome: 'resolution_failed',
+      planner: { status: 'ok', plan: { tags: ['Bugs'] } },
+      preparation: { status: 'failed', stage: 'tag_resolution', code: 'unknown_tag' },
+      confirmationReady: false,
+      plannerCallCount: 1,
+      mutationExecuted: false,
+    });
+    expect(f.planner).toHaveBeenCalledOnce();
+  });
+
   it('returns one combined assignee, tag, lane and notes preparation', async () => {
     const plan = create({ title: 'Refactor Navigation', lane: 'Testing', assignee: 'Mark', tags: ['Architecture', 'UX'], notes: 'revisit the keyboard flow' });
     const f = harness(plan);

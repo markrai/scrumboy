@@ -10,9 +10,9 @@ import { VoiceCreatePlanError } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION } from './voice-create-planner.js';
 import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
 import { readVoiceCreateMembers } from './voice-create-members.js';
-import { formatVoiceCreateMember } from './voice-create-prepare.js';
+import { formatVoiceCreateMember, } from './voice-create-prepare.js';
 import { readVoiceCreateTags } from './voice-create-tags.js';
-import { classifyVoiceReviewDecision } from './vocabulary.js';
+import { classifyVoiceBinaryDecision, classifyVoiceReviewDecision } from './vocabulary.js';
 function wholeUtterance(text) { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
 export function voiceCreateDecision(text) { return classifyVoiceReviewDecision(text); }
 function failureText(error) {
@@ -48,7 +48,7 @@ export class VoiceCreateSession {
         return context.value;
     }
     get pending() { return !!this.task || this.working; }
-    get confirmationPending() { return !!this.task?.prepared && !this.working; }
+    get confirmationPending() { return !!(this.task?.prepared || this.task?.tagSuggestion) && !this.working; }
     trace() {
         if (!this.diagnostic || this.diagnostic.ended)
             this.diagnostic = createVoiceFlowTrace();
@@ -83,6 +83,15 @@ export class VoiceCreateSession {
         const summary = this.task.prepared.command.summary;
         return { phase: 'confirmation', text: summary, danger: false, speechText: summary.length <= SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS ? summary : null };
     }
+    binaryQuestion(pendingDecision) {
+        const text = voiceText('voice.create.yesNo', 'Is that a yes or no?');
+        this.trace().emit('confirmation', { phase: 'binary_clarification', result: 'ambiguous', pendingDecision });
+        return { phase: 'confirmation', text, danger: false, speechText: text };
+    }
+    tagSuggestionView() {
+        const text = voiceText('voice.create.tagSuggestion', 'Did you mean tag `{tag}`?', { tag: this.task.tagSuggestion.tag });
+        return { phase: 'confirmation', text, danger: false, speechText: text };
+    }
     choiceView() {
         return { phase: 'question', text: voiceText('voice.create.whichPerson', 'Which person? Select a name or say its option number.'),
             choices: this.task.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${formatVoiceCreateMember(member)}` })) };
@@ -98,29 +107,89 @@ export class VoiceCreateSession {
     async readTags(projectSlug, signal) {
         return (this.options.readTags ?? readVoiceCreateTags)(projectSlug, signal);
     }
-    async prepare(plan, signal, revision, member) {
+    async prepare(plan, signal, revision, member, tagBindings = []) {
         return prepareVoiceCreateAgainstCurrentContext(plan, signal, {
             context: currentSignal => this.check(currentSignal, revision),
             refreshBoard: this.options.refreshBoard,
             readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
             readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
-        }, member);
+        }, member, tagBindings);
+    }
+    presentPreparation(task, result, member) {
+        if (result.kind === 'member-choice') {
+            this.task = { ...task, choices: result.choices, prepared: null, member, tagSuggestion: null };
+            this.trace().emit('resolve', { result: 'member-choice', choiceCount: result.choices.length });
+            return this.choiceView();
+        }
+        if (result.kind === 'tag-suggestion') {
+            this.task = { ...task, choices: [], prepared: null, member, tagSuggestion: result.suggestion };
+            this.trace().emit('resolve', {
+                entityType: 'tag',
+                result: 'suggestion_pending',
+                candidateCount: 1,
+                suggestionKind: result.suggestion.kind,
+            });
+            return this.tagSuggestionView();
+        }
+        this.task = { ...task, choices: [], prepared: result.value, member: result.value.member, tagSuggestion: null };
+        return this.presentReview();
+    }
+    declineTagSuggestion() {
+        this.trace().emit('resolve', { entityType: 'tag', result: 'suggestion_declined', candidateCount: 1 });
+        return this.fail(new VoiceCreatePlanError('tag', {
+            entityType: 'tag',
+            result: 'unavailable',
+            candidateCount: 0,
+            referenceNormalizationApplied: false,
+        }));
+    }
+    async acceptTagSuggestion(signal) {
+        const task = this.task;
+        const suggestion = task?.tagSuggestion;
+        if (!task || !suggestion || this.working)
+            return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
+        this.working = true;
+        const revision = this.revision;
+        const tagBindings = Object.freeze([...task.tagBindings, Object.freeze({ referenceIndex: suggestion.referenceIndex, tag: suggestion.tag })]);
+        try {
+            this.trace().emit('resolve', {
+                entityType: 'tag',
+                result: 'suggestion_accepted',
+                candidateCount: 1,
+                suggestionKind: suggestion.kind,
+            });
+            const result = await this.prepare(task.plan, signal, revision, task.member, tagBindings);
+            return this.presentPreparation({ ...task, tagBindings, tagSuggestion: null }, result, task.member);
+        }
+        catch (error) {
+            return revision === this.revision ? this.fail(error) : { phase: 'error', text: failureText(error) };
+        }
+        finally {
+            this.working = false;
+        }
     }
     async submit(transcript, signal) {
         if (this.working)
             return { phase: 'error', text: failureText(new VoiceCreatePlanError('stale_context')) };
+        const binaryDecision = classifyVoiceBinaryDecision(transcript);
         const decision = voiceCreateDecision(transcript);
+        if (this.task?.tagSuggestion) {
+            this.trace().emit('confirmation', { phase: 'decision', pendingDecision: 'tag_suggestion', result: binaryDecision });
+            if (binaryDecision === 'yes')
+                return this.acceptTagSuggestion(signal);
+            if (binaryDecision === 'no')
+                return this.declineTagSuggestion();
+            if (binaryDecision === 'cancel')
+                return this.cancel();
+            return this.binaryQuestion('tag_suggestion');
+        }
         if (this.task?.prepared) {
-            this.trace().emit('confirmation', { phase: 'decision', result: decision === 'unknown' ? 'revision_or_unknown' : decision });
+            this.trace().emit('confirmation', { phase: 'decision', pendingDecision: 'final_confirmation', result: binaryDecision });
             if (decision === 'confirm')
                 return this.confirm(signal);
             if (decision === 'cancel')
                 return this.cancel();
-            // Revision is out of scope: invalidate consent, retain no executable subset.
-            this.cancelTrace('revision_or_unknown');
-            this.revision++;
-            this.task = null;
-            return { phase: 'error', text: voiceText('voice.create.noRevision', 'No changes were made. Please restate the complete create request; revisions are not supported in Create v2 yet.') };
+            return this.binaryQuestion('final_confirmation');
         }
         if (this.task?.choices.length) {
             if (decision === 'cancel')
@@ -145,14 +214,8 @@ export class VoiceCreateSession {
                 onPlannerStart: () => this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 }),
                 onPlan: plan => this.tracePlan(plan),
             });
-            const checked = evaluation.plan;
-            const result = evaluation.preparation;
-            this.task = { plan: checked, choices: result.kind === 'member-choice' ? result.choices : [], prepared: result.kind === 'prepared' ? result.value : null };
-            if (result.kind === 'member-choice') {
-                this.trace().emit('resolve', { result: 'member-choice', choiceCount: result.choices.length });
-                return this.choiceView();
-            }
-            return this.presentReview();
+            const task = { plan: evaluation.plan, choices: [], prepared: null, tagBindings: [], tagSuggestion: null };
+            return this.presentPreparation(task, evaluation.preparation);
         }
         catch (error) {
             if (revision !== this.revision)
@@ -181,11 +244,8 @@ export class VoiceCreateSession {
         this.working = true;
         const revision = this.revision;
         try {
-            const result = await this.prepare(task.plan, signal, revision, member);
-            if (result.kind !== 'prepared')
-                throw new VoiceCreatePlanError('stale_context');
-            this.task = { ...task, prepared: result.value, choices: [] };
-            return this.presentReview();
+            const result = await this.prepare(task.plan, signal, revision, member, task.tagBindings);
+            return this.presentPreparation({ ...task, member }, result, member);
         }
         catch (error) {
             return revision === this.revision ? this.fail(error) : { phase: 'error', text: failureText(error) };
@@ -195,7 +255,10 @@ export class VoiceCreateSession {
         }
     }
     async confirm(signal) {
-        const prepared = this.task?.prepared;
+        if (this.task?.tagSuggestion)
+            return this.acceptTagSuggestion(signal);
+        const task = this.task;
+        const prepared = task?.prepared;
         if (!prepared || this.working)
             return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
         this.working = true;
@@ -204,7 +267,7 @@ export class VoiceCreateSession {
         let dispatched = false;
         try {
             this.trace().emit('confirmation', { phase: 'confirm_revalidation', result: 'started' });
-            const fresh = await this.prepare(prepared.plan, signal, revision, prepared.member);
+            const fresh = await this.prepare(prepared.plan, signal, revision, prepared.member, task.tagBindings);
             if (fresh.kind !== 'prepared' || fresh.value.fingerprint !== prepared.fingerprint)
                 throw new VoiceCreatePlanError('stale_context');
             this.check(signal, revision);

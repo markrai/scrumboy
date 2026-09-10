@@ -127,16 +127,19 @@ describe('Create v2 application interaction', () => {
     'sure if you rename it',
     'Yes, but assign Sarah.',
     'Okay, and tag it UX.',
-  ])('invalidates review for mixed response %s without execution or replanning', async reply => {
+  ])('retains review for unresolved response %s without execution or replanning', async reply => {
     const f = fixture({ version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog' } as never);
     await f.controller.submitTranscript('Create Big Man');
     await f.controller.submitTranscript(reply);
-    expect(f.controller.getView().phase).toBe('error');
+    expect(f.controller.getView().phase).toBe('confirmation');
+    expect(f.controller.getView().confirmation?.summary).toBe('Is that a yes or no?');
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.session.confirmationPending).toBe(true);
+    await f.controller.submitTranscript('No.');
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.session.confirmationPending).toBe(false);
-    await f.controller.confirm();
-    expect(f.execute).not.toHaveBeenCalled();
   });
   it('retains exact final ASR text before generation resolves and throughout review/approval', async () => {
     const f = fixture();
@@ -200,7 +203,7 @@ describe('Create v2 application interaction', () => {
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.generate.mock.calls[0][0].input).toBe(result.transcript);
   });
-  it.each(['yes but assign Sarah instead', 'never mind', 'no', 'cancel', 'stop'])('never executes for %s', async reply => {
+  it.each(['never mind', 'no', 'cancel', 'stop'])('never executes for %s', async reply => {
     const f = fixture(); await f.controller.submitTranscript('Create Big Man'); await f.controller.submitTranscript(reply);
     expect(f.execute).not.toHaveBeenCalled(); expect(f.generate).toHaveBeenCalledOnce();
     expect(f.session.confirmationPending).toBe(false); await f.controller.confirm(); expect(f.execute).not.toHaveBeenCalled();
@@ -271,6 +274,99 @@ describe('Create v2 application interaction', () => {
     expect(f.execute).toHaveBeenCalledOnce();
     expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toMatchObject({ tags: ['ux'] });
   });
+  it('keeps one planner call through ambiguous tag suggestion, acceptance, final review and execution', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['Bugs'] } as never);
+    f.board.tags = [{ name: 'bug', count: 0 }];
+
+    await f.controller.submitTranscript('Create Fred and tag it Bugs');
+    expect(f.controller.getView().phase).toBe('confirmation');
+    expect(f.controller.getView().confirmation?.summary).toBe('Did you mean tag `bug`?');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+
+    await f.controller.submitTranscript('Maybe.');
+    expect(f.controller.getView().confirmation?.summary).toBe('Is that a yes or no?');
+    expect(f.generate).toHaveBeenCalledOnce();
+
+    await f.controller.submitTranscript('Yep. Go ahead.');
+    expect(f.controller.getView().phase).toBe('confirmation');
+    expect(f.controller.getView().confirmation?.summary).toContain('Tags: bug');
+    expect(f.controller.getView().confirmation?.summary).not.toContain('Did you mean');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+
+    await f.controller.submitTranscript('Yep. Go ahead.');
+    expect(f.controller.getView().phase).toBe('success');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.readTags).toHaveBeenCalledTimes(3);
+    expect(f.callTool.mock.calls.filter(([name]) => name === 'todos_create')).toHaveLength(1);
+    expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toMatchObject({ tags: ['bug'] });
+  });
+  it('fails closed when a close tag suggestion is declined without replanning or silently dropping the tag', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['Bugs'] } as never);
+    f.board.tags = [{ name: 'bug', count: 0 }];
+    await f.controller.submitTranscript('Create Fred and tag it Bugs');
+    expect(f.controller.getView().confirmation?.summary).toBe('Did you mean tag `bug`?');
+    await f.controller.submitTranscript('No.');
+    expect(f.controller.getView().phase).toBe('error');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.callTool.mock.calls.filter(([name]) => name === 'todos_create')).toHaveLength(0);
+    expect(f.session.pending).toBe(false);
+  });
+  it('rereads accepted tag authority and blocks final execution when the candidate disappears', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['Bugs'] } as never);
+    f.readTags
+      .mockResolvedValueOnce([{ name: 'bug' }])
+      .mockResolvedValueOnce([{ name: 'bug' }])
+      .mockResolvedValueOnce([]);
+    await f.controller.submitTranscript('Create Fred and tag it Bugs');
+    await f.controller.submitTranscript('Yes.');
+    expect(f.controller.getView().confirmation?.summary).toContain('Tags: bug');
+    await f.controller.submitTranscript('Yes.');
+    expect(f.readTags).toHaveBeenCalledTimes(3);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.controller.getView().phase).toBe('error');
+  });
+  it('handles multiple close tags sequentially and requires separate final confirmation', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['Bugs', 'Archtecture'] } as never);
+    f.board.tags = [{ name: 'bug', count: 0 }, { name: 'architecture', count: 0 }];
+    await f.controller.submitTranscript('Create Fred and tag it Bugs and Archtecture');
+    expect(f.controller.getView().confirmation?.summary).toBe('Did you mean tag `bug`?');
+    await f.controller.submitTranscript('Yes.');
+    expect(f.controller.getView().confirmation?.summary).toBe('Did you mean tag `architecture`?');
+    await f.controller.submitTranscript('Yes.');
+    expect(f.controller.getView().confirmation?.summary).toContain('Tags: architecture, bug');
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(f.generate).toHaveBeenCalledOnce();
+  });
+  it('keeps ordinary final-confirmation ambiguity in the same model-free pending decision', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred' } as never);
+    await f.controller.submitTranscript('Create Fred');
+    await f.controller.submitTranscript('Maybe.');
+    expect(f.controller.getView().confirmation?.summary).toBe('Is that a yes or no?');
+    expect(f.session.confirmationPending).toBe(true);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+    await f.controller.submitTranscript('Yep. Go ahead.');
+    expect(f.controller.getView().phase).toBe('success');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).toHaveBeenCalledOnce();
+  });
+  it('keeps conflicting final confirmation pending until a clear decline', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred' } as never);
+    await f.controller.submitTranscript('Create Fred');
+    await f.controller.submitTranscript("Yep, don't do it.");
+    expect(f.controller.getView().confirmation?.summary).toBe('Is that a yes or no?');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+    await f.controller.submitTranscript('No.');
+    expect(f.session.confirmationPending).toBe(false);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+  });
   it.each([{ ...all, unhandled: [{ text: 'schedule Tuesday', reason: 'unsupported' }] }, { version: 1, kind: 'not_create' }, { version: 1, kind: 'create' }])('blocks incomplete/unsupported before any query or review %#', async plan => {
     const f = fixture(plan as never); await f.controller.submitTranscript('Create a story');
     expect(f.controller.getView().phase).toBe('error'); expect(f.callTool).not.toHaveBeenCalled(); expect(f.execute).not.toHaveBeenCalled();
@@ -316,7 +412,7 @@ describe('Create v2 application interaction', () => {
   });
 });
 describe('whole utterance confirmation', () => {
-  it.each([...VOICE_REVIEW_CONFIRM_PHRASES, '  YES!  ', 'That’s fine.', 'Yes, please.', 'Sure, thing.'])('accepts %s', text => expect(voiceCreateDecision(text)).toBe('confirm'));
+  it.each([...VOICE_REVIEW_CONFIRM_PHRASES, '  YES!  ', 'That’s fine.', 'Yes, please.', 'Sure, thing.', 'Yep. Go ahead.', 'Yeah, go ahead.', 'Sure, please do.', 'Okay, go ahead.', 'Absolutely, go ahead.'])('accepts %s', text => expect(voiceCreateDecision(text)).toBe('confirm'));
   it.each([...VOICE_REVIEW_CANCEL_PHRASES, 'No, thanks.'])('cancels %s', text => expect(voiceCreateDecision(text)).toBe('cancel'));
-  it.each(['yes but assign Sarah instead', 'do not confirm', 'add notes yes', 'go ahead and delete Fred', 'not yes', 'yes? but no'])('rejects %s', text => expect(voiceCreateDecision(text)).toBe('unknown'));
+  it.each(['maybe', 'I guess', 'yesterday', 'yes but assign Sarah instead', 'do not confirm', 'add notes yes', 'go ahead and delete Fred', 'not yes', 'yes? but no', "Yep, don't do it", 'No... actually go ahead', 'Go ahead... actually stop'])('rejects %s', text => expect(voiceCreateDecision(text)).toBe('unknown'));
 });

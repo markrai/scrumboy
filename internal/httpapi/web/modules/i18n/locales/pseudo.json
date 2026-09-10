@@ -1300,5 +1300,7 @@
   "voice.create.notes": "[!! Notes: {notes} !!]",
   "voice.create.mode": "[!! VoiceFlow mode !!]",
   "voice.create.allCommands": "[!! All commands !!]",
-  "voice.create.modeLabel": "[!! Create v2 (experimental) !!]"
+  "voice.create.modeLabel": "[!! Create v2 (experimental) !!]",
+  "voice.create.yesNo": "[!! Is that a yes or no? !!]",
+  "voice.create.tagSuggestion": "[!! Did you mean tag `{tag}`? !!]"
 }

@@ -26,7 +26,7 @@ const CONTRACT_CODES = new Set([
     'missing_title',
 ]);
 /** Shared read/prepare path used by initial review, member choice and confirm revalidation. */
-export async function prepareVoiceCreateAgainstCurrentContext(plan, signal, ports, selection) {
+export async function prepareVoiceCreateAgainstCurrentContext(plan, signal, ports, selection, tagBindings = []) {
     ports.context(signal);
     await ports.refreshBoard();
     const context = ports.context(signal);
@@ -42,7 +42,7 @@ export async function prepareVoiceCreateAgainstCurrentContext(plan, signal, port
         if (!Array.isArray(tags))
             throw new VoiceCreatePlanError('network');
     }
-    return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection);
+    return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection, tagBindings);
 }
 /** The one semantic Create v2 path. It has read ports but deliberately no execute port. */
 export async function evaluateVoiceCreateSemantics(transcript, signal, ports) {
@@ -303,6 +303,13 @@ export async function evaluateVoiceCreateDryRun(input, options) {
                 return preparationFailure(input, plannerCallCount, semantic.plan, 'member_resolution', 'ambiguous_member', 'resolution_failed', {
                     result: 'ambiguous',
                     candidateCount: semantic.preparation.choices.length,
+                });
+            }
+            if (semantic.preparation.kind === 'tag-suggestion') {
+                return preparationFailure(input, plannerCallCount, semantic.plan, 'tag_resolution', 'unknown_tag', 'resolution_failed', {
+                    result: 'unavailable',
+                    candidateCount: 0,
+                    referenceNormalizationApplied: false,
                 });
             }
             return readyResult(input, plannerCallCount, semantic.plan, semantic.preparation.value);

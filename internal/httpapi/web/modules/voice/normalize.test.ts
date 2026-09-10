@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeLookup, normalizeTitleReference, normalizeVoiceReviewUtterance, parseSpokenNumber, spokenReferenceIdentity } from './normalize.js';
 import { canonicalizeTagName } from './tag-canonicalization.js';
-import { classifyVoiceReviewDecision, normalizeConfirmationResponse, normalizeDisambiguationChoice, normalizeEntityAlias } from './vocabulary.js';
+import { classifyVoiceBinaryDecision, classifyVoiceReviewDecision, normalizeConfirmationResponse, normalizeDisambiguationChoice, normalizeEntityAlias } from './vocabulary.js';
 
 describe('voice command normalization', () => {
   it('normalizes supported story ID forms', () => {
@@ -32,17 +32,26 @@ describe('voice command normalization', () => {
     expect(normalizeLookup('ＦＵＬＬＷＩＤＴＨ')).toBe('fullwidth');
   });
 
-  it('normalizes review decisions as complete utterances only', () => {
+  it('normalizes and compositionally classifies bounded review phrases', () => {
     expect(normalizeVoiceReviewUtterance('  Sure.  ')).toBe('sure');
     expect(normalizeVoiceReviewUtterance('Yes, please.')).toBe('yes please');
     expect(normalizeVoiceReviewUtterance('No, thanks.')).toBe('no thanks');
     expect(normalizeVoiceReviewUtterance('That’s fine!')).toBe("that's fine");
     expect(classifyVoiceReviewDecision('Go ahead.')).toBe('confirm');
     expect(classifyVoiceReviewDecision('Sure, thing.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Yep. Go ahead.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Yeah, go ahead.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Sure, please do.')).toBe('confirm');
     expect(classifyVoiceReviewDecision('Don’t do it.')).toBe('cancel');
     expect(classifyVoiceReviewDecision('Sure, change the lane first.')).toBe('unknown');
     expect(classifyVoiceReviewDecision('Yes, but assign Sarah.')).toBe('unknown');
     expect(classifyVoiceReviewDecision('Okay, and tag it UX.')).toBe('unknown');
+    expect(classifyVoiceReviewDecision("Yep, don't do it.")).toBe('unknown');
+    expect(classifyVoiceReviewDecision('No... actually go ahead.')).toBe('unknown');
+    expect(classifyVoiceReviewDecision('yes no')).toBe('unknown');
+    expect(classifyVoiceReviewDecision('yesterday')).toBe('unknown');
+    expect(classifyVoiceBinaryDecision('No thanks.')).toBe('no');
+    expect(classifyVoiceBinaryDecision('Stop.')).toBe('cancel');
   });
 
   it('derives a compact identity only for safely spelled alphanumeric references', () => {

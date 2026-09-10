@@ -26,6 +26,11 @@ export const VOICE_REVIEW_CANCEL_PHRASES = Object.freeze([...NO_REVIEW_PHRASES, 
 const YES_ALIASES = new Set(VOICE_REVIEW_CONFIRM_PHRASES);
 const NO_ALIASES = new Set(NO_REVIEW_PHRASES);
 const CANCEL_ALIASES = new Set(CANCEL_REVIEW_PHRASES);
+const DECISION_PHRASES = Object.freeze([
+    ...VOICE_REVIEW_CONFIRM_PHRASES.map(phrase => ({ signal: 'yes', words: normalizeVoiceReviewUtterance(phrase).split(' ') })),
+    ...NO_REVIEW_PHRASES.map(phrase => ({ signal: 'no', words: normalizeVoiceReviewUtterance(phrase).split(' ') })),
+    ...CANCEL_REVIEW_PHRASES.map(phrase => ({ signal: 'cancel', words: normalizeVoiceReviewUtterance(phrase).split(' ') })),
+]);
 const DISAMBIGUATION_ALIASES = new Map([
     ["first one", "option_1"],
     ["number one", "option_1"],
@@ -56,14 +61,43 @@ export function normalizeConfirmationResponse(input) {
         return "cancel";
     return null;
 }
-/** Side-effect-free whole-utterance decision shared by review surfaces. */
-export function classifyVoiceReviewDecision(input) {
+/**
+ * Side-effect-free bounded phrase composition for Create review questions.
+ * Every input word must belong to an allowlisted phrase. Longest matches keep
+ * nested phrases such as "do it" from conflicting with "don't do it".
+ */
+export function classifyVoiceBinaryDecision(input) {
     const normalized = normalizeVoiceReviewUtterance(input);
-    if (YES_ALIASES.has(normalized))
-        return "confirm";
-    if (NO_ALIASES.has(normalized) || CANCEL_ALIASES.has(normalized))
-        return "cancel";
-    return "unknown";
+    if (!normalized)
+        return 'unknown';
+    const words = normalized.split(' ');
+    const signals = new Set();
+    let uncovered = false;
+    for (let index = 0; index < words.length;) {
+        const matches = DECISION_PHRASES.filter(({ words: phrase }) => phrase.every((word, offset) => words[index + offset] === word));
+        const length = matches.reduce((maximum, match) => Math.max(maximum, match.words.length), 0);
+        if (length === 0) {
+            uncovered = true;
+            index += 1;
+            continue;
+        }
+        matches.filter(match => match.words.length === length).forEach(match => signals.add(match.signal));
+        index += length;
+    }
+    if (signals.has('yes') && (signals.has('no') || signals.has('cancel')))
+        return 'unknown';
+    if (uncovered)
+        return 'unknown';
+    if (signals.has('yes'))
+        return 'yes';
+    if (signals.has('cancel'))
+        return 'cancel';
+    return signals.has('no') ? 'no' : 'unknown';
+}
+/** Side-effect-free decision shared by Voice Create review surfaces. */
+export function classifyVoiceReviewDecision(input) {
+    const decision = classifyVoiceBinaryDecision(input);
+    return decision === 'yes' ? 'confirm' : decision === 'no' || decision === 'cancel' ? 'cancel' : 'unknown';
 }
 export function isBuiltinStatusPhrase(input) {
     const normalized = normalizeLookup(input);
