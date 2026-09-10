@@ -15,7 +15,7 @@ curl -X POST http://localhost:8080/mcp \
   -H "Authorization: Bearer sb_YOUR_TOKEN" \
   -d '{"tool":"projects_list","input":{}}'
 
-Example response (success; `data.items` is an array of `projectItem` objects when you have projects; it may be empty `[]`):
+Example first-page response (success; `data.items` is an array of image-free `projectItem` objects when you have projects; it may be empty `[]`):
 
 ```json
 {
@@ -23,9 +23,15 @@ Example response (success; `data.items` is an array of `projectItem` objects whe
   "data": {
     "items": []
   },
-  "meta": {}
+  "meta": {
+    "nextCursor": null,
+    "hasMore": false
+  }
 }
 ```
+
+`projects_list` returns at most 20 projects by default. Pass `limit` (1-100) and
+the prior response's `meta.nextCursor` to continue while `meta.hasMore` is true.
 
 For **`projects_list`**, expect **`ok: false`** when you are not signed in, the instance is in anonymous mode, or (full mode) the DB has no users yet — see **Response Format** / **Error Handling**. An **invalid** `Authorization: Bearer` token returns **401** / **`AUTH_REQUIRED`** / **`Authentication required`** before any tool body runs (including capabilities).
 
@@ -43,7 +49,7 @@ Each tool is invoked by name (e.g. `todos_create`) with a JSON input object and 
 
 Scrumboy exposes a fixed catalog of **named tools** over **HTTP**. Clients call tools by posting JSON and receive JSON success or error envelopes (legacy surface), or use **JSON-RPC 2.0** on a separate path (MCP-style `tools/list` and `tools/call`).
 
-Tool inputs **generally** reject unknown fields where the handler uses **`decodeInput`** (JSON decoding uses **`DisallowUnknownFields`** there and on legacy `POST /mcp` bodies via **`readJSON`** in `internal/mcp/http_handler.go`). The tool catalog roots set **`additionalProperties: false`** in `internal/mcp/tool_catalog.go` to describe that contract. **Exceptions:** handlers that do not call **`decodeInput`** still accept extra keys in `input` / `arguments` without failing decode — today **`system_getCapabilities`**, **`projects_list`**, and **`tags_listMine`**. JSON-RPC **`tools/call`** unmarshals **`params`** with standard **`json.Unmarshal`**, so unknown keys **beside** `name` / `arguments` on `params` are ignored (only **`arguments`** are validated per tool).
+Tool inputs **generally** reject unknown fields where the handler uses **`decodeInput`** (JSON decoding uses **`DisallowUnknownFields`** there and on legacy `POST /mcp` bodies via **`readJSON`** in `internal/mcp/http_handler.go`). The tool catalog roots set **`additionalProperties: false`** in `internal/mcp/tool_catalog.go` to describe that contract. **Exceptions:** handlers that do not call **`decodeInput`** still accept extra keys in `input` / `arguments` without failing decode — today **`system_getCapabilities`** and **`tags_listMine`**. JSON-RPC **`tools/call`** unmarshals **`params`** with standard **`json.Unmarshal`**, so unknown keys **beside** `name` / `arguments` on `params` are ignored (only **`arguments`** are validated per tool).
 
 This is not a stdio-based MCP server. All interactions occur over HTTP. Any client that can send `GET`/`POST` with JSON bodies and cookies or `Authorization` headers can integrate.
 
@@ -535,7 +541,9 @@ Use real values in place of the placeholders (e.g. `"my-project"`, `"Example tit
 }
 ```
 
-**1. `projects_list`** — input: empty object `{}`. Success data (legacy `data`):
+**1. `projects_list`** — optional input: `limit` (integer, default 20,
+minimum 1, maximum 100) and `cursor` (the opaque continuation cursor from the
+previous page). Success data (legacy `data`):
 
 ```json
 {
@@ -544,7 +552,6 @@ Use real values in place of the placeholders (e.g. `"my-project"`, `"Example tit
       "projectSlug": "my-project",
       "projectId": 1,
       "name": "My project",
-      "image": null,
       "dominantColor": "#445566",
       "defaultSprintWeeks": 2,
       "expiresAt": null,
@@ -556,7 +563,12 @@ Use real values in place of the placeholders (e.g. `"my-project"`, `"Example tit
 }
 ```
 
-(`projectItem` in `internal/mcp/types.go`; **`role`** is the project member role string from `store.ProjectRole.String()` — e.g. `maintainer`, `contributor`, `viewer`, lowercase.)
+Legacy pagination metadata is returned separately as
+`"meta":{"nextCursor":"...","hasMore":true}`. Continue passing
+`nextCursor` while `hasMore` is true. Projects are ordered by most recently
+updated first, with project ID descending as the deterministic tie-breaker.
+
+(`projectItem` in `internal/mcp/types.go`; **`role`** is the project member role string from `store.ProjectRole.String()` — e.g. `maintainer`, `contributor`, `viewer`, lowercase.) MCP project summaries never include the project image. The same image-free project representation is returned by `projects_create` and `projects_update`; REST/browser project resources remain unchanged and still include images.
 
 **2. `todos_create`** — required: `projectSlug`, `title`. Optional fields include `body`, `tags`, `columnKey`, `estimationPoints`, `sprintId`, `assigneeUserId`, `position` (`afterLocalId` / `beforeLocalId`). Success data:
 
@@ -604,7 +616,10 @@ Success shape:
   "data": {
     "items": []
   },
-  "meta": {}
+  "meta": {
+    "nextCursor": null,
+    "hasMore": false
+  }
 }
 ```
 
@@ -742,7 +757,7 @@ curl -sS -X POST 'https://YOUR_HOST/mcp/rpc' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-**`result`** contains **`tools`**: an array of objects with **`name`**, **`description`**, **`inputSchema`** (one entry per implemented tool; length matches **`implementedTools`** in capabilities).
+**`result`** contains **`tools`**: an array of objects with **`name`**, **`description`**, and **`inputSchema`** (one entry per implemented tool; length matches **`implementedTools`** in capabilities). Tools may also advertise **`outputSchema`**; `projects_list` does so for its image-free paginated structured result.
 
 **4. `tools/call`** — **`params.name`** is the tool name; **`params.arguments`** is the tool input object (catalog **`required`** keys are checked before the handler; unknown keys in **`arguments`** fail **`decodeInput`** for most tools — see **Overview** for exceptions). Transport authentication has already completed before dispatch.
 
@@ -773,11 +788,13 @@ Example success **`result`** for **`projects_list`** (empty list):
     "content": [
       {
         "type": "text",
-        "text": "{\"items\":[]}"
+        "text": "{\"hasMore\":false,\"items\":[],\"nextCursor\":null}"
       }
     ],
     "structuredContent": {
-      "items": []
+      "items": [],
+      "nextCursor": null,
+      "hasMore": false
     }
   }
 }
@@ -849,8 +866,8 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
   and **`structuredContent`** (parsed tool output). Most tools return their
   legacy `data` unchanged. A narrow allowlist adds already-public legacy
   metadata beside existing JSON-RPC data fields: `system_getCapabilities`
-  adds `adapterVersion`; `sprints_list` adds `unscheduledCount`; and
-  `dashboard_listTodos` adds `nextCursor` and `hasMore`. The JSON text and
+  adds `adapterVersion`; `sprints_list` adds `unscheduledCount`; and both
+  `projects_list` and `dashboard_listTodos` add `nextCursor` and `hasMore`. The JSON text and
   structured object are equivalent. Unapproved metadata is omitted, and
   existing data wins any top-level collision. Legacy `/mcp` keeps its
   `{data,meta}` separation.
@@ -867,7 +884,7 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
 - **Stateless JSON-only transport:** Scrumboy does not issue MCP session IDs, offer an SSE GET stream, resumability, or server-initiated requests. An authenticated GET returns 405.
 - **Protocol versions:** Streamable HTTP supports `2025-03-26`, `2025-06-18`, and `2025-11-25`. Unsupported initialize versions negotiate to `2025-11-25`. A missing post-initialize header defaults to `2025-03-26`; malformed or unsupported headers return 400.
 - **Anonymous mode:** Effectively no authenticated tools; capabilities still describe the server.
-- **Pagination:** Global defaults in capabilities mention `limit` / `cursor` / `nextCursor` / `hasMore`; **`board_get`** uses **`cursorByColumn`** (per column key) and returns `nextCursorByColumn`, `hasMoreByColumn`, and `totalCountByColumn` in JSON-RPC structured/text content (or legacy `meta`) — see `tool_catalog.go` and `pagination.futureSpecialCases` in capabilities.
+- **Pagination:** `projects_list` accepts `limit` (default 20, maximum 100) and an opaque `cursor`; follow `nextCursor` while `hasMore` is true. Global defaults in capabilities mention `limit` / `cursor` / `nextCursor` / `hasMore`; **`board_get`** uses **`cursorByColumn`** (per column key) and returns `nextCursorByColumn`, `hasMoreByColumn`, and `totalCountByColumn` in JSON-RPC structured/text content (or legacy `meta`) — see `tool_catalog.go` and `pagination.futureSpecialCases` in capabilities.
 - **`sprints_update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints_create`).
 - **JSON-RPC `serverInfo.version`:** The value returned by `initialize` is the string **`1.0.0`** in code (`internal/mcp/jsonrpc_handler.go`), not necessarily the Scrumboy app version from `internal/version`.
 - **`plannedTools`:** Currently always empty / omitted; there is no separate catalog of unimplemented tools in responses.

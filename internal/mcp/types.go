@@ -59,13 +59,12 @@ type projectItem struct {
 	ProjectSlug        string     `json:"projectSlug"`
 	ProjectID          int64      `json:"projectId"`
 	Name               string     `json:"name"`
-	Image              *string    `json:"image"`
 	DominantColor      string     `json:"dominantColor"`
 	DefaultSprintWeeks int        `json:"defaultSprintWeeks"`
 	ExpiresAt          *time.Time `json:"expiresAt"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
-	Role               string     `json:"role,omitempty"`
+	Role               string     `json:"role"`
 }
 
 type todoItem struct {

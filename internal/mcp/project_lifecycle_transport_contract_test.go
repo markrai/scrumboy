@@ -265,6 +265,9 @@ func TestProjectLifecycleMCPTransportsCanonicalCreateAndAliasAbsence(t *testing.
 			if project["name"] != "MCP Lifecycle Create" || project["projectSlug"] != "mcp-lifecycle-create" || project["role"] != "maintainer" {
 				t.Fatalf("create projection=%+v", project)
 			}
+			if _, exists := project["image"]; exists {
+				t.Fatalf("create projection must be image-free: %+v", project)
+			}
 			projectID := int64(project["projectId"].(float64))
 			if got := projectLifecycleMCPCount(t, fx.db, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ? AND role = 'maintainer'`, projectID, fx.ownerID); got != 1 {
 				t.Fatalf("creator membership count=%d want=1", got)
@@ -465,6 +468,9 @@ func TestProjectLifecycleMCPUpdateOrderingPostReadFailureAndSilence(t *testing.T
 			returned := data["project"].(map[string]any)
 			if returned["projectSlug"] != project.Slug || returned["name"] != "MCP Updated "+transport || returned["defaultSprintWeeks"] != float64(1) || returned["role"] != "maintainer" {
 				t.Fatalf("updated projection=%+v", returned)
+			}
+			if _, exists := returned["image"]; exists {
+				t.Fatalf("updated projection must be image-free: %+v", returned)
 			}
 			assertProjectLifecycleMCPSilence(t, stream)
 		})

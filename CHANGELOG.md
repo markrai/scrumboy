@@ -32,6 +32,17 @@
   cookie ownership and generation fencing so stale in-flight session delivery
   cannot overwrite a newer selected-server session after a switch or restart.
 
+## [3.33.14] - 2026-09-06
+
+### Fixed
+
+- **Bounded MCP project payloads** - `projects_list` now uses deterministic
+  cursor pagination (default 20, maximum 100) and an image-free database
+  projection. MCP project summaries, including `projects_create` and
+  `projects_update` results, no longer contain image data. REST/browser project
+  resources remain image-capable. JSON-RPC continues to return equivalent text
+  and structured content and now advertises the `projects_list` output schema.
+
 ## [3.33.13] - 2026-09-06
 
 ### Security

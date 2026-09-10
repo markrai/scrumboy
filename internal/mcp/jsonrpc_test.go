@@ -826,8 +826,46 @@ func TestJSONRPC_ToolsList_ProjectsListSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("projects_list expected properties object, got %v", schema["properties"])
 	}
-	if len(props) != 0 {
-		t.Fatalf("projects_list expected empty properties, got %v", props)
+	if len(props) != 2 || props["limit"] == nil || props["cursor"] == nil {
+		t.Fatalf("projects_list input properties=%v, want limit and cursor", props)
+	}
+	limit := props["limit"].(map[string]any)
+	if limit["default"] != float64(20) || limit["minimum"] != float64(1) || limit["maximum"] != float64(100) {
+		t.Fatalf("projects_list limit schema=%v, want default 20 and range 1..100", limit)
+	}
+
+	outputSchema, ok := projectsList["outputSchema"].(map[string]any)
+	if !ok {
+		t.Fatalf("projects_list outputSchema=%T, want object", projectsList["outputSchema"])
+	}
+	if outputSchema["type"] != "object" || outputSchema["additionalProperties"] != false {
+		t.Fatalf("projects_list outputSchema root=%v, want closed object", outputSchema)
+	}
+	outputProps := outputSchema["properties"].(map[string]any)
+	if len(outputProps) != 3 || outputProps["items"] == nil || outputProps["nextCursor"] == nil || outputProps["hasMore"] == nil {
+		t.Fatalf("projects_list output properties=%v, want items/nextCursor/hasMore", outputProps)
+	}
+	itemsSchema := outputProps["items"].(map[string]any)
+	projectSchema := itemsSchema["items"].(map[string]any)
+	if projectSchema["additionalProperties"] != false {
+		t.Fatalf("projects_list item schema=%v, want additionalProperties=false", projectSchema)
+	}
+	projectProps := projectSchema["properties"].(map[string]any)
+	wantProjectProps := map[string]bool{
+		"projectSlug": true, "projectId": true, "name": true,
+		"dominantColor": true, "defaultSprintWeeks": true, "expiresAt": true,
+		"createdAt": true, "updatedAt": true, "role": true,
+	}
+	if len(projectProps) != len(wantProjectProps) {
+		t.Fatalf("projects_list item properties=%v, want exactly %v", projectProps, wantProjectProps)
+	}
+	for name := range wantProjectProps {
+		if _, exists := projectProps[name]; !exists {
+			t.Fatalf("projects_list item schema missing %q: %v", name, projectProps)
+		}
+	}
+	if _, exists := projectProps["image"]; exists {
+		t.Fatalf("projects_list output schema must not advertise image: %v", projectProps)
 	}
 }
 
