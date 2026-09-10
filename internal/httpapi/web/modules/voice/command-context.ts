@@ -23,15 +23,22 @@ export type VoiceCommandOptions = {
   showMessage?: (message: string) => void;
 };
 
-export function getActiveVoiceCommandContext(
-  options: VoiceCommandOptions,
+export type VoiceCommandContextIdentity = Pick<
+  VoiceCommandOptions,
+  'initialUserId' | 'initialProjectId' | 'initialProjectSlug'
+>;
+
+/** Shared identity/policy check for interactive commands and read-only evaluation. */
+export function getVoiceCommandContextForIdentity(
+  identity: VoiceCommandContextIdentity,
+  getContext: () => VoiceCommandContext | null,
 ): CommandResult<VoiceCommandContext> {
-  const context = options.getContext();
+  const context = getContext();
   if (
     !context
-    || context.userId !== options.initialUserId
-    || context.projectId !== options.initialProjectId
-    || context.projectSlug !== options.initialProjectSlug
+    || context.userId !== identity.initialUserId
+    || context.projectId !== identity.initialProjectId
+    || context.projectSlug !== identity.initialProjectSlug
   ) {
     return localizedCommandFailure(
       'stale_context',
@@ -54,6 +61,12 @@ export function getActiveVoiceCommandContext(
     );
   }
   return { ok: true, value: context };
+}
+
+export function getActiveVoiceCommandContext(
+  options: VoiceCommandOptions,
+): CommandResult<VoiceCommandContext> {
+  return getVoiceCommandContextForIdentity(options, options.getContext);
 }
 
 export function canRunVoiceMutationInContext(context: VoiceCommandContext): boolean {

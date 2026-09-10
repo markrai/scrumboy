@@ -1,6 +1,5 @@
 import { getAppRuntime } from '../platform/runtime.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
-import type { BoardMember } from '../state/state.js';
 import type { AgentLoopView } from './agent-loop.js';
 import { getActiveVoiceCommandContext, canRunVoiceMutationInContext, type VoiceCommandOptions } from './command-context.js';
 import { executeCommandIR } from './execute.js';
@@ -8,9 +7,10 @@ import { callMcpTool } from './mcp-client.js';
 import { isCommandFailure } from './schema.js';
 import { voiceText } from './i18n.js';
 import { createVoiceFlowTrace } from './trace.js';
-import { executableCreatePlan, guardCreateRequest, VoiceCreatePlanError, type VoiceCreatePlanV1 } from './voice-create-plan.js';
+import { VoiceCreatePlanError, type VoiceCreatePlanResult, type VoiceCreatePlanV1 } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION, type VoiceCreatePlanner } from './voice-create-planner.js';
-import { prepareVoiceCreate, type CreateMemberChoice, type PreparedVoiceCreate } from './voice-create-prepare.js';
+import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
+import type { CreateMemberChoice, PreparedVoiceCreate } from './voice-create-prepare.js';
 import { classifyVoiceReviewDecision, type VoiceReviewDecision } from './vocabulary.js';
 
 function wholeUtterance(text: string): string { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
@@ -57,7 +57,11 @@ export class VoiceCreateSession {
   setKeepListening(_enabled: boolean) {} // No active-todo/session inference in this slice.
   invalidate() { this.revision++; this.task = null; this.endTrace('controller_invalidated'); }
   cancel(): AgentLoopView { this.cancelTrace('cancelled_by_user'); this.revision++; this.task = null; return { phase: 'success', text: voiceText('voice.status.cancelled', 'Cancelled.') }; }
-  private check(signal: AbortSignal, revision: number) { this.context(signal); if (revision !== this.revision) throw new VoiceCreatePlanError('stale_context'); }
+  private check(signal: AbortSignal, revision: number) {
+    const context = this.context(signal);
+    if (revision !== this.revision) throw new VoiceCreatePlanError('stale_context');
+    return context;
+  }
   private fail(error: unknown): AgentLoopView {
     this.task = null;
     if (error instanceof VoiceCreatePlanError) {
@@ -76,18 +80,22 @@ export class VoiceCreateSession {
     return { phase: 'question', text: voiceText('voice.create.whichPerson', 'Which person? Select a name or say its option number.'),
       choices: this.task!.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${member.name} · ${member.email}` })) };
   }
+  private tracePlan(plan: VoiceCreatePlanResult) {
+    this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
+      ...(plan.kind === 'create' ? { hasTitle: !!plan.title, explicitLane: plan.lane !== undefined, explicitAssignee: plan.assignee !== undefined,
+        tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
+  }
+  private async readMembers(projectSlug: string, signal: AbortSignal) {
+    const result = await (this.options.callTool ?? callMcpTool)<{ items?: import('../state/state.js').BoardMember[] }>('members_list', { projectSlug }, { signal });
+    if (!Array.isArray(result.items)) throw new VoiceCreatePlanError('network');
+    return result.items;
+  }
   private async prepare(plan: VoiceCreatePlanV1, signal: AbortSignal, revision: number, member?: CreateMemberChoice) {
-    this.check(signal, revision);
-    await this.options.refreshBoard();
-    const context = this.context(signal);
-    let members: BoardMember[] = [];
-    if (plan.assignee !== undefined) {
-      const result = await (this.options.callTool ?? callMcpTool)<{ items?: BoardMember[] }>('members_list', { projectSlug: context.projectSlug }, { signal });
-      if (!Array.isArray(result.items)) throw new VoiceCreatePlanError('network');
-      members = result.items;
-    }
-    this.check(signal, revision);
-    return prepareVoiceCreate(plan, this.context(signal), members, member);
+    return prepareVoiceCreateAgainstCurrentContext(plan, signal, {
+      context: currentSignal => this.check(currentSignal, revision),
+      refreshBoard: this.options.refreshBoard,
+      readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+    }, member);
   }
   async submit(transcript: string, signal: AbortSignal): Promise<AgentLoopView> {
     if (this.working) return { phase: 'error', text: failureText(new VoiceCreatePlanError('stale_context')) };
@@ -114,17 +122,16 @@ export class VoiceCreateSession {
     const revision = ++this.revision;
     this.working = true;
     try {
-      this.context(signal);
-      this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 });
-      const plan = await this.options.planner(transcript, signal);
-      this.check(signal, revision);
-      this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
-        ...(plan.kind === 'create' ? { hasTitle: !!plan.title, explicitLane: plan.lane !== undefined, explicitAssignee: plan.assignee !== undefined,
-          tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
-      if (plan.kind !== 'create') throw new VoiceCreatePlanError('incomplete_request');
-      const checked = executableCreatePlan(plan);
-      guardCreateRequest(checked, transcript);
-      const result = await this.prepare(checked, signal, revision);
+      const evaluation = await evaluateVoiceCreateSemantics(transcript, signal, {
+        planner: this.options.planner,
+        context: currentSignal => this.check(currentSignal, revision),
+        refreshBoard: this.options.refreshBoard,
+        readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+        onPlannerStart: () => this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 }),
+        onPlan: plan => this.tracePlan(plan),
+      });
+      const checked = evaluation.plan;
+      const result = evaluation.preparation;
       this.task = { plan: checked, choices: result.kind === 'member-choice' ? result.choices : [], prepared: result.kind === 'prepared' ? result.value : null };
       if (result.kind === 'member-choice') { this.trace().emit('resolve', { result: 'member-choice', choiceCount: result.choices.length }); return this.choiceView(); }
       return this.presentReview();

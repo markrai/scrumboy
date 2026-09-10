@@ -20,6 +20,11 @@ export const mobileBootstrapSource = resolve(
   '.generated',
   'bootstrap.js',
 );
+export const runtimeModuleRoots = Object.freeze([
+  'app.js',
+  // Unreachable from normal product startup; imported only by the native debug bridge.
+  'dist/voice/voice-create-device-evaluation.js',
+]);
 
 const explicitRuntimeFiles = [
   'favicon.ico',
@@ -104,7 +109,7 @@ function moduleSpecifiers(source) {
 }
 
 export async function copyReachableModuleGraph() {
-  const queue = ['app.js'];
+  const queue = [...runtimeModuleRoots];
   const copied = new Set();
   while (queue.length > 0) {
     const relativePath = queue.shift();

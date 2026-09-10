@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "cases": [
+    { "id": "basic-story", "transcript": "Create a story called Fred", "expect": { "confirmationReady": true, "lane": "Not Started" } },
+    { "id": "basic-todo", "transcript": "Create a to-do called Fred", "expect": { "confirmationReady": true, "lane": "Not Started" } },
+    { "id": "basic-short", "transcript": "Create Fred", "expect": { "confirmationReady": true, "lane": "Not Started" } },
+
+    { "id": "assign-mark", "transcript": "Create Fred and assign it to Mark", "expect": { "confirmationReady": true, "assignee": "Mark" } },
+    { "id": "for-mark", "transcript": "Create a story called Fred for Mark", "expect": { "confirmationReady": true, "assignee": "Mark" } },
+    { "id": "give-mark", "transcript": "Create Fred and give it to Mark", "expect": { "confirmationReady": true, "assignee": "Mark" } },
+
+    { "id": "lane-testing", "transcript": "Create Fred in Testing", "expect": { "confirmationReady": true, "lane": "Testing" } },
+    { "id": "put-testing", "transcript": "Create Fred and put it in Testing", "expect": { "confirmationReady": true, "lane": "Testing" } },
+    { "id": "lane-not-started", "transcript": "Create Fred in Not Started", "expect": { "confirmationReady": true, "lane": "Not Started" } },
+
+    { "id": "tag-architecture", "transcript": "Create Fred and tag it Architecture", "expect": { "confirmationReady": true, "tags": ["Architecture"] } },
+    { "id": "add-architecture", "transcript": "Create Fred and add the Architecture tag", "expect": { "confirmationReady": true, "tags": ["Architecture"] } },
+    { "id": "tag-ux", "transcript": "Create Fred and tag it UX", "expect": { "confirmationReady": true, "tags": ["UX"] } },
+    { "id": "tag-ux-periods", "transcript": "Create Fred and tag it U.X.", "expect": { "confirmationReady": true, "tags": ["UX"] } },
+    { "id": "tag-ux-spaces", "transcript": "Create Fred and tag it U X", "expect": { "confirmationReady": true, "tags": ["UX"] } },
+
+    { "id": "combined", "transcript": "Create a story called Refactor Navigation, put it in Testing, assign it to Mark, tag it Architecture and UX, and add a note saying revisit the keyboard flow", "expect": { "confirmationReady": true, "lane": "Testing", "assignee": "Mark", "tags": ["Architecture", "UX"] } },
+
+    { "id": "rambly-big-boy", "transcript": "Hey, I want to create a new story called The Big Boy Who Had It All. Put it in Testing, assign it to Mark, and tag it Architecture.", "expect": { "confirmationReady": true, "lane": "Testing", "assignee": "Mark", "tags": ["Architecture"] } },
+    { "id": "rambly-navigation", "transcript": "So I was thinking we need another story here. Call it Improve Navigation. Give it to Mark and tag it UX.", "expect": { "confirmationReady": true, "assignee": "Mark", "tags": ["UX"] } },
+    { "id": "rambly-filters", "transcript": "Can you make me a story called Better Filters and put it in Testing please?", "expect": { "confirmationReady": true, "lane": "Testing" } },
+
+    { "id": "unsupported-schedule", "transcript": "Create Fred and schedule it for Tuesday", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
+    { "id": "unsupported-reminder", "transcript": "Create Fred and remind me tomorrow", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
+    { "id": "unsupported-move", "transcript": "Create Fred and then move Bob to Done", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
+
+    { "id": "unknown-member", "transcript": "Create Fred and assign it to SomeoneWhoDoesNotExist", "expect": { "confirmationReady": false, "outcome": "resolution_failed", "errorCode": "unknown_member" } },
+    { "id": "unknown-tag", "transcript": "Create Fred and tag it TotallyInventedTag", "expect": { "confirmationReady": false, "outcome": "resolution_failed", "errorCode": "unknown_tag" } },
+    { "id": "unknown-lane", "transcript": "Create Fred in TotallyInventedLane", "expect": { "confirmationReady": false, "outcome": "resolution_failed", "errorCode": "unknown_lane" } }
+  ]
+}

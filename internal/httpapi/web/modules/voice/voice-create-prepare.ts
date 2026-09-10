@@ -23,9 +23,17 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
   if (board.project.id !== context.projectId || board.project.slug !== context.projectSlug) throw new VoiceCreatePlanError('stale_context');
   // Defaults require the same authoritative order rendered by the board. An
   // explicit reference resolves directly and never depends on ordering metadata.
-  if (plan.lane === undefined && (!board.columnOrder?.length || new Set(board.columnOrder.map(lane => lane.key)).size !== board.columnOrder.length)) throw new VoiceCreatePlanError('lane');
+  if (plan.lane === undefined && (!board.columnOrder?.length || new Set(board.columnOrder.map(lane => lane.key)).size !== board.columnOrder.length)) {
+    throw new VoiceCreatePlanError('lane', { result: 'authoritative_order_unavailable' });
+  }
   const resolvedLane = plan.lane === undefined ? { ok: true as const, value: voiceBoardLanes(board)[0] } : resolveVoiceLane(plan.lane, board);
-  if (isCommandFailure(resolvedLane) || !resolvedLane.value?.key || !resolvedLane.value.name) throw new VoiceCreatePlanError('lane');
+  if (isCommandFailure(resolvedLane)) {
+    throw new VoiceCreatePlanError('lane', {
+      result: resolvedLane.code === 'ambiguous_status' ? 'ambiguous' : 'unavailable',
+      ...(resolvedLane.code === 'ambiguous_status' ? {} : { candidateCount: 0 }),
+    });
+  }
+  if (!resolvedLane.value?.key || !resolvedLane.value.name) throw new VoiceCreatePlanError('lane', { result: 'unavailable', candidateCount: 0 });
   const lane = resolvedLane.value;
   let member: CreateMemberChoice | undefined;
   if (plan.assignee !== undefined) {
@@ -34,7 +42,7 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
       member = matches.find(value => value.userId === selection.userId && value.name === selection.name && value.email === selection.email);
       if (!member) throw new VoiceCreatePlanError('stale_context');
     } else {
-      if (!matches.length) throw new VoiceCreatePlanError('member');
+      if (!matches.length) throw new VoiceCreatePlanError('member', { result: 'unavailable', candidateCount: 0 });
       if (matches.length > 1) return { kind: 'member-choice', choices: Object.freeze(matches.map(value => Object.freeze({ userId: value.userId, name: value.name, email: value.email }))) };
       member = matches[0];
     }
@@ -56,7 +64,7 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
   tags.sort();
   const ir = validateCommandIR({ intent: 'todos.create', projectId: context.projectId, projectSlug: context.projectSlug,
     entities: { title: plan.title, columnKey: lane.key, assigneeUserId: member?.userId ?? null, tags, body: plan.notes ?? '' } }, context);
-  if (isCommandFailure(ir)) throw new VoiceCreatePlanError('invalid_plan');
+  if (isCommandFailure(ir)) throw new VoiceCreatePlanError('invalid_plan', { commandCode: ir.code });
   const command: ResolvedCommand = { ir: ir.value, summary: '', confirmLabel: '', danger: false, requiresConfirmation: true,
     statusName: lane.name, assigneeName: member ? `${member.name} · ${member.email}` : undefined };
   Object.assign(command, formatResolvedCommand(command));

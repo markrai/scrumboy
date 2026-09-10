@@ -7,6 +7,7 @@ import {
   artifactRoot,
   buildArtifactManifest,
   extractModuleSpecifiers,
+  runtimeModuleRoots,
   webRoot,
 } from './capacitor-web-artifact-lib.mjs';
 
@@ -43,7 +44,7 @@ async function assertLocalReferencesExist(relativeFile, source, pattern) {
 async function verifyModuleGraph(files) {
   const javascriptFiles = files.filter((file) => file === 'app.js' || (file.startsWith('dist/') && file.endsWith('.js')));
   const reachable = new Set();
-  const queue = ['app.js'];
+  const queue = [...runtimeModuleRoots];
   while (queue.length > 0) {
     const relativeFile = queue.shift();
     if (reachable.has(relativeFile)) continue;

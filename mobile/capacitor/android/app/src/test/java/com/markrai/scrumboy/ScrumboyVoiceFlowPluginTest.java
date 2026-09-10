@@ -4,6 +4,16 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class ScrumboyVoiceFlowPluginTest {
+    @Test public void dryRunBridgeIsDebugOnlyAndStrictlyBoundsRequests() {
+        assertFalse(ScrumboyVoiceFlowPlugin.allowsDryRunBridge(false));
+        assertTrue(ScrumboyVoiceFlowPlugin.allowsDryRunBridge(true));
+        assertTrue(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "case_42", "Create Fred", 45000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(false, "case_42", "Create Fred", 45000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "../escape", "Create Fred", 45000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "case_42", null, 45000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "case_42", "Create Fred", 0));
+    }
+
     @Test public void onlyAcceptsBoundedTraceLinesInDebugBuilds() {
         assertTrue(ScrumboyVoiceFlowPlugin.accepts(true, "VF {\"stage\":\"asr_final\"}"));
         assertFalse(ScrumboyVoiceFlowPlugin.accepts(false, "VF {}"));

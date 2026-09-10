@@ -1,12 +1,13 @@
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { canRunVoiceMutationCommands, canShowVoiceCommands } from '../views/board-command-capabilities.js';
 import { localizedCommandFailure } from './schema.js';
-export function getActiveVoiceCommandContext(options) {
-    const context = options.getContext();
+/** Shared identity/policy check for interactive commands and read-only evaluation. */
+export function getVoiceCommandContextForIdentity(identity, getContext) {
+    const context = getContext();
     if (!context
-        || context.userId !== options.initialUserId
-        || context.projectId !== options.initialProjectId
-        || context.projectSlug !== options.initialProjectSlug) {
+        || context.userId !== identity.initialUserId
+        || context.projectId !== identity.initialProjectId
+        || context.projectSlug !== identity.initialProjectSlug) {
         return localizedCommandFailure('stale_context', 'voice.errors.staleContext', 'The board changed before the command could run.');
     }
     const allowed = canShowVoiceCommands({
@@ -20,6 +21,9 @@ export function getActiveVoiceCommandContext(options) {
         return localizedCommandFailure('stale_context', 'voice.errors.commandsUnavailable', 'Commands are unavailable for this board.');
     }
     return { ok: true, value: context };
+}
+export function getActiveVoiceCommandContext(options) {
+    return getVoiceCommandContextForIdentity(options, options.getContext);
 }
 export function canRunVoiceMutationInContext(context) {
     return canRunVoiceMutationCommands({

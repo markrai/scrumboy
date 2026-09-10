@@ -139,6 +139,23 @@ function getVoiceCommandContext(): {
   };
 }
 
+/** Read-only current-board seam consumed only by the lazily loaded device evaluator. */
+export function getVoiceCreateDryRunBoardPorts() {
+  return Object.freeze({
+    getContext: getVoiceCommandContext,
+    refreshBoard: async () => {
+      const context = getVoiceCommandContext();
+      if (!context) throw new Error('context_unavailable');
+      await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    },
+    readMembers: async (projectSlug: string, signal: AbortSignal) => {
+      const context = getVoiceCommandContext();
+      if (signal.aborted || !context || context.projectSlug !== projectSlug) throw new Error('context_unavailable');
+      return context.members;
+    },
+  });
+}
+
 function canUseVoiceCommandContext(context: ReturnType<typeof getVoiceCommandContext>): boolean {
   return getVoiceFlowEnabledPreference() && !!context && canShowVoiceCommands({
     projectId: context.projectId,

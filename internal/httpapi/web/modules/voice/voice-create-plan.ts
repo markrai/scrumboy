@@ -27,12 +27,20 @@ function keys(value: Record<string, unknown>, allowed: string[], required: strin
 function bounded(value: unknown, max: number, code: VoiceCreatePlanError['code']): asserts value is string {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) throw new VoiceCreatePlanError(code);
 }
+
+function unwrapVoiceCreateJsonFence(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = /^```(?:json)?\r?\n([\s\S]*?)\r?\n```$/i.exec(trimmed);
+  return fenced ? fenced[1].trim() : raw;
+}
+
 export function parseVoiceCreatePlan(raw: string): VoiceCreatePlanResult {
   if (typeof raw !== 'string' || raw.length > VOICE_CREATE_LIMITS.output) throw new VoiceCreatePlanError('output_too_large');
+  const payload = unwrapVoiceCreateJsonFence(raw);
   let value: Record<string, unknown>;
-  if (/^\s*\{/.test(raw) && !/\}\s*$/.test(raw)) throw new VoiceCreatePlanError('invalid_json');
-  if (!/^\s*\{[\s\S]*\}\s*$/.test(raw)) throw new VoiceCreatePlanError('surrounding_prose');
-  try { value = object(JSON.parse(raw)); } catch { throw new VoiceCreatePlanError('invalid_json'); }
+  if (/^\s*\{/.test(payload) && !/\}\s*$/.test(payload)) throw new VoiceCreatePlanError('invalid_json');
+  if (!/^\s*\{[\s\S]*\}\s*$/.test(payload)) throw new VoiceCreatePlanError('surrounding_prose');
+  try { value = object(JSON.parse(payload)); } catch { throw new VoiceCreatePlanError('invalid_json'); }
   if (value.version !== 1) throw new VoiceCreatePlanError('wrong_version');
   if (value.kind === 'not_create') {
     keys(value, ['version', 'kind'], ['version', 'kind']);

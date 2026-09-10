@@ -1,7 +1,8 @@
 import type { LocalTextGenerationCapability } from '../platform/local-text-generation.js';
-import { parseVoiceCreatePlan, guardCreateRequest, VoiceCreatePlanError, VOICE_CREATE_LIMITS, type VoiceCreatePlanResult } from './voice-create-plan.js';
+import { parseVoiceCreatePlan, VoiceCreatePlanError, VOICE_CREATE_LIMITS, type VoiceCreatePlanResult } from './voice-create-plan.js';
 
 export const VOICE_CREATE_PLANNER_VERSION = 'voice-create-plan-v1';
+export const VOICE_CREATE_DRY_RUN_OUTPUT_PREVIEW_CODE_UNITS = 384;
 export const VOICE_CREATE_PROMPT = `Interpret the COMPLETE user utterance. Extract one requested new story/card/todo/task/item; these words are synonyms.
 Return exactly one JSON object, no markdown or prose. Never converse, ask questions, select tools, or emit finish/confirm/decline/cancel actions.
 For one create: {"version":1,"kind":"create","title":"literal title","lane":"specified lane name","assignee":"specified person name or email","tags":["specified tag"],"notes":"literal authored notes"}.
@@ -18,9 +19,27 @@ Create Fred and schedule it for Tuesday. -> {"version":1,"kind":"create","title"
 Create a story. -> {"version":1,"kind":"create"}`;
 
 export type VoiceCreatePlanner = (transcript: string, signal: AbortSignal) => Promise<VoiceCreatePlanResult>;
+export type VoiceCreatePlannerOptions = Readonly<{ includeDryRunParserOutputPreview?: boolean }>;
+const DRY_RUN_PREVIEW_CODES = new Set<VoiceCreatePlanError['code']>([
+  'invalid_json',
+  'not_object',
+  'output_too_large',
+  'surrounding_prose',
+]);
 let nextRequest = 0;
+
+function dryRunOutputPreview(text: string): string {
+  const preview = text.slice(0, VOICE_CREATE_DRY_RUN_OUTPUT_PREVIEW_CODE_UNITS);
+  return preview.length > 0 && /[\uD800-\uDBFF]/.test(preview.charAt(preview.length - 1))
+    ? preview.slice(0, -1)
+    : preview;
+}
+
 /** Only generation is injected. No query, navigation, preparation or commit ports. No retries. */
-export function createVoiceCreatePlanner(capability: Pick<LocalTextGenerationCapability, 'generate'>): VoiceCreatePlanner {
+export function createVoiceCreatePlanner(
+  capability: Pick<LocalTextGenerationCapability, 'generate'>,
+  options: VoiceCreatePlannerOptions = {},
+): VoiceCreatePlanner {
   return async (transcript, signal) => {
     if (signal.aborted) throw new VoiceCreatePlanError('stale_context');
     if (!transcript.trim() || transcript.length > VOICE_CREATE_LIMITS.transcript) throw new VoiceCreatePlanError('invalid_plan');
@@ -32,11 +51,16 @@ export function createVoiceCreatePlanner(capability: Pick<LocalTextGenerationCap
       plan = parseVoiceCreatePlan(result.text);
     } catch (error) {
       if (error instanceof VoiceCreatePlanError) {
-        throw new VoiceCreatePlanError(error.code, { ...error.details, outputLength: result.text.length });
+        throw new VoiceCreatePlanError(error.code, {
+          ...error.details,
+          outputLength: result.text.length,
+          ...(options.includeDryRunParserOutputPreview && DRY_RUN_PREVIEW_CODES.has(error.code)
+            ? { outputPreview: dryRunOutputPreview(result.text) }
+            : {}),
+        });
       }
       throw error;
     }
-    if (plan.kind === 'create') guardCreateRequest(plan, transcript);
     return plan;
   };
 }

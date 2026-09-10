@@ -6,9 +6,9 @@ import { callMcpTool } from './mcp-client.js';
 import { isCommandFailure } from './schema.js';
 import { voiceText } from './i18n.js';
 import { createVoiceFlowTrace } from './trace.js';
-import { executableCreatePlan, guardCreateRequest, VoiceCreatePlanError } from './voice-create-plan.js';
+import { VoiceCreatePlanError } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION } from './voice-create-planner.js';
-import { prepareVoiceCreate } from './voice-create-prepare.js';
+import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
 import { classifyVoiceReviewDecision } from './vocabulary.js';
 function wholeUtterance(text) { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
 export function voiceCreateDecision(text) { return classifyVoiceReviewDecision(text); }
@@ -57,8 +57,12 @@ export class VoiceCreateSession {
     setKeepListening(_enabled) { } // No active-todo/session inference in this slice.
     invalidate() { this.revision++; this.task = null; this.endTrace('controller_invalidated'); }
     cancel() { this.cancelTrace('cancelled_by_user'); this.revision++; this.task = null; return { phase: 'success', text: voiceText('voice.status.cancelled', 'Cancelled.') }; }
-    check(signal, revision) { this.context(signal); if (revision !== this.revision)
-        throw new VoiceCreatePlanError('stale_context'); }
+    check(signal, revision) {
+        const context = this.context(signal);
+        if (revision !== this.revision)
+            throw new VoiceCreatePlanError('stale_context');
+        return context;
+    }
     fail(error) {
         this.task = null;
         if (error instanceof VoiceCreatePlanError) {
@@ -80,19 +84,23 @@ export class VoiceCreateSession {
         return { phase: 'question', text: voiceText('voice.create.whichPerson', 'Which person? Select a name or say its option number.'),
             choices: this.task.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${member.name} · ${member.email}` })) };
     }
+    tracePlan(plan) {
+        this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
+            ...(plan.kind === 'create' ? { hasTitle: !!plan.title, explicitLane: plan.lane !== undefined, explicitAssignee: plan.assignee !== undefined,
+                tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
+    }
+    async readMembers(projectSlug, signal) {
+        const result = await (this.options.callTool ?? callMcpTool)('members_list', { projectSlug }, { signal });
+        if (!Array.isArray(result.items))
+            throw new VoiceCreatePlanError('network');
+        return result.items;
+    }
     async prepare(plan, signal, revision, member) {
-        this.check(signal, revision);
-        await this.options.refreshBoard();
-        const context = this.context(signal);
-        let members = [];
-        if (plan.assignee !== undefined) {
-            const result = await (this.options.callTool ?? callMcpTool)('members_list', { projectSlug: context.projectSlug }, { signal });
-            if (!Array.isArray(result.items))
-                throw new VoiceCreatePlanError('network');
-            members = result.items;
-        }
-        this.check(signal, revision);
-        return prepareVoiceCreate(plan, this.context(signal), members, member);
+        return prepareVoiceCreateAgainstCurrentContext(plan, signal, {
+            context: currentSignal => this.check(currentSignal, revision),
+            refreshBoard: this.options.refreshBoard,
+            readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+        }, member);
     }
     async submit(transcript, signal) {
         if (this.working)
@@ -124,18 +132,16 @@ export class VoiceCreateSession {
         const revision = ++this.revision;
         this.working = true;
         try {
-            this.context(signal);
-            this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 });
-            const plan = await this.options.planner(transcript, signal);
-            this.check(signal, revision);
-            this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
-                ...(plan.kind === 'create' ? { hasTitle: !!plan.title, explicitLane: plan.lane !== undefined, explicitAssignee: plan.assignee !== undefined,
-                    tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
-            if (plan.kind !== 'create')
-                throw new VoiceCreatePlanError('incomplete_request');
-            const checked = executableCreatePlan(plan);
-            guardCreateRequest(checked, transcript);
-            const result = await this.prepare(checked, signal, revision);
+            const evaluation = await evaluateVoiceCreateSemantics(transcript, signal, {
+                planner: this.options.planner,
+                context: currentSignal => this.check(currentSignal, revision),
+                refreshBoard: this.options.refreshBoard,
+                readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+                onPlannerStart: () => this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 }),
+                onPlan: plan => this.tracePlan(plan),
+            });
+            const checked = evaluation.plan;
+            const result = evaluation.preparation;
             this.task = { plan: checked, choices: result.kind === 'member-choice' ? result.choices : [], prepared: result.kind === 'prepared' ? result.value : null };
             if (result.kind === 'member-choice') {
                 this.trace().emit('resolve', { result: 'member-choice', choiceCount: result.choices.length });
