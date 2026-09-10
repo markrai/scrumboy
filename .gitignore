@@ -43,6 +43,7 @@ coverage.out
 *.cover
 *.test
 /.tmp/
+/build/voice-create-*.json
 
 # Development related
 /docs/draft/
