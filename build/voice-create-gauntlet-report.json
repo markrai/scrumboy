@@ -1,0 +1,939 @@
+{
+  "version": 1,
+  "fixture": "C:\\dev\\project\\scrumboy\\scripts\\fixtures\\voice-create-gauntlet.json",
+  "summary": {
+    "cases": 24,
+    "passed": 16,
+    "failed": 8,
+    "ready": 18,
+    "correctlyBlocked": 2,
+    "plannerFailures": 0,
+    "resolutionFailures": 4,
+    "mutations": 0
+  },
+  "execution": {
+    "configuredCases": 24,
+    "started": 24,
+    "completed": 24,
+    "extraCompletedDryRunsBeforeRun": 1,
+    "startedAtUtc": "2026-09-10T01:27:40.2515545Z",
+    "finishedAtUtc": "2026-09-10T01:29:07.8257102Z",
+    "stopCondition": null,
+    "poisonConfirmation": null
+  },
+  "cases": [
+    {
+      "id": "basic-story",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create a story called Fred",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog"
+        }
+      }
+    },
+    {
+      "id": "basic-todo",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create a to-do called Fred",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog"
+        }
+      }
+    },
+    {
+      "id": "basic-short",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog"
+        }
+      }
+    },
+    {
+      "id": "assign-mark",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "assignee expected Mark, got Mark Rai"
+      ],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and assign it to Mark",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "assignee": "Mark"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nAssign Mark Rai · undefined"
+        }
+      }
+    },
+    {
+      "id": "for-mark",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "assignee expected Mark, got Mark Rai"
+      ],
+      "result": {
+        "version": 1,
+        "input": "Create a story called Fred for Mark",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "assignee": "Mark"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nAssign Mark Rai · undefined"
+        }
+      }
+    },
+    {
+      "id": "give-mark",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "assignee expected Mark, got Mark Rai"
+      ],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and give it to Mark",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "assignee": "Mark"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nAssign Mark Rai · undefined"
+        }
+      }
+    },
+    {
+      "id": "lane-testing",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred in Testing",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "lane": "Testing"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "testing",
+            "name": "Testing",
+            "defaulted": false
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Testing"
+        }
+      }
+    },
+    {
+      "id": "put-testing",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and put it in Testing",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "lane": "Testing"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "testing",
+            "name": "Testing",
+            "defaulted": false
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Testing"
+        }
+      }
+    },
+    {
+      "id": "lane-not-started",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred in Backlog",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "lane": "Backlog"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": false
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog"
+        }
+      }
+    },
+    {
+      "id": "tag-architecture",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and tag it mobile",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "mobile"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [
+            "mobile"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nTags: mobile"
+        }
+      }
+    },
+    {
+      "id": "add-architecture",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and add the mobile tag",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "mobile"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [
+            "mobile"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nTags: mobile"
+        }
+      }
+    },
+    {
+      "id": "tag-ux",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and tag it UX",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "UX"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [
+            "ux"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nTags: ux"
+        }
+      }
+    },
+    {
+      "id": "tag-ux-periods",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and tag it U.X.",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "U.X."
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [
+            "ux"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nTags: ux"
+        }
+      }
+    },
+    {
+      "id": "tag-ux-spaces",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "confirmationReady expected True, got False",
+        "tags expected ux, got "
+      ],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and tag it U X",
+        "confirmationReady": false,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "resolution_failed",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "U",
+              "X"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "failed",
+          "stage": "tag_resolution",
+          "code": "unknown_tag",
+          "details": {
+            "result": "unavailable",
+            "candidateCount": 0,
+            "referenceNormalizationApplied": false
+          }
+        }
+      }
+    },
+    {
+      "id": "combined",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "assignee expected Mark, got Mark Rai"
+      ],
+      "result": {
+        "version": 1,
+        "input": "Create a story called Refactor Navigation, put it in Testing, assign it to Mark, tag it mobile and UX, and add a note saying revisit the keyboard flow",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Refactor Navigation",
+            "lane": "Testing",
+            "assignee": "Mark",
+            "tags": [
+              "mobile",
+              "UX"
+            ],
+            "notes": "revisit the keyboard flow"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Refactor Navigation",
+          "lane": {
+            "key": "testing",
+            "name": "Testing",
+            "defaulted": false
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [
+            "mobile",
+            "ux"
+          ],
+          "notesPresent": true,
+          "summary": "Create \"Refactor Navigation\" in Testing\nAssign Mark Rai · undefined\nTags: mobile, ux\nNotes: revisit the keyboard flow"
+        }
+      }
+    },
+    {
+      "id": "rambly-big-boy",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "assignee expected Mark, got Mark Rai"
+      ],
+      "result": {
+        "version": 1,
+        "input": "Hey, I want to create a new story called The Big Boy Who Had It All. Put it in Testing, assign it to Mark, and tag it mobile.",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "The Big Boy Who Had It All",
+            "lane": "Testing",
+            "assignee": "Mark",
+            "tags": [
+              "mobile"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "The Big Boy Who Had It All",
+          "lane": {
+            "key": "testing",
+            "name": "Testing",
+            "defaulted": false
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [
+            "mobile"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"The Big Boy Who Had It All\" in Testing\nAssign Mark Rai · undefined\nTags: mobile"
+        }
+      }
+    },
+    {
+      "id": "rambly-navigation",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "assignee expected Mark, got Mark Rai"
+      ],
+      "result": {
+        "version": 1,
+        "input": "So I was thinking we need another story here. Call it Improve Navigation. Give it to Mark and tag it UX.",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Improve Navigation",
+            "assignee": "Mark",
+            "tags": [
+              "UX"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Improve Navigation",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [
+            "ux"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"Improve Navigation\" in Backlog\nAssign Mark Rai · undefined\nTags: ux"
+        }
+      }
+    },
+    {
+      "id": "rambly-filters",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Can you make me a story called Better Filters and put it in Testing please?",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Better Filters",
+            "lane": "Testing"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Better Filters",
+          "lane": {
+            "key": "testing",
+            "name": "Testing",
+            "defaulted": false
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Better Filters\" in Testing"
+        }
+      }
+    },
+    {
+      "id": "unsupported-schedule",
+      "status": "passed",
+      "classification": "blocked_expected",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and schedule it for Tuesday",
+        "confirmationReady": false,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "blocked",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "unhandled": [
+              {
+                "text": "schedule it for Tuesday",
+                "reason": "unsupported"
+              }
+            ]
+          }
+        },
+        "preparation": {
+          "status": "failed",
+          "stage": "unsupported_request_guard",
+          "code": "incomplete_request"
+        }
+      }
+    },
+    {
+      "id": "unsupported-reminder",
+      "status": "failed",
+      "classification": "expectation_failed",
+      "failures": [
+        "confirmationReady expected False, got True",
+        "outcome expected blocked, got ready",
+        "errorCode expected incomplete_request, got "
+      ],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and remind me tomorrow",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "notes": "remind me tomorrow"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": true,
+          "summary": "Create \"Fred\" in Backlog\nNotes: remind me tomorrow"
+        }
+      }
+    },
+    {
+      "id": "unsupported-move",
+      "status": "passed",
+      "classification": "blocked_expected",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and then move Bob to Done",
+        "confirmationReady": false,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "blocked",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred"
+          }
+        },
+        "preparation": {
+          "status": "failed",
+          "stage": "unsupported_request_guard",
+          "code": "incomplete_request"
+        }
+      }
+    },
+    {
+      "id": "unknown-member",
+      "status": "passed",
+      "classification": "resolution_failed",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and assign it to SomeoneWhoDoesNotExist",
+        "confirmationReady": false,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "resolution_failed",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "assignee": "SomeoneWhoDoesNotExist"
+          }
+        },
+        "preparation": {
+          "status": "failed",
+          "stage": "member_resolution",
+          "code": "unknown_member",
+          "details": {
+            "result": "unavailable",
+            "candidateCount": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "unknown-tag",
+      "status": "passed",
+      "classification": "resolution_failed",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and tag it TotallyInventedTag",
+        "confirmationReady": false,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "resolution_failed",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "TotallyInventedTag"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "failed",
+          "stage": "tag_resolution",
+          "code": "unknown_tag",
+          "details": {
+            "result": "unavailable",
+            "candidateCount": 0,
+            "referenceNormalizationApplied": false
+          }
+        }
+      }
+    },
+    {
+      "id": "unknown-lane",
+      "status": "passed",
+      "classification": "resolution_failed",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred in TotallyInventedLane",
+        "confirmationReady": false,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "resolution_failed",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "lane": "TotallyInventedLane"
+          }
+        },
+        "preparation": {
+          "status": "failed",
+          "stage": "lane_resolution",
+          "code": "unknown_lane",
+          "details": {
+            "result": "unavailable",
+            "candidateCount": 0
+          }
+        }
+      }
+    }
+  ]
+}

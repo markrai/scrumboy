@@ -10,7 +10,8 @@ import { createVoiceFlowTrace } from './trace.js';
 import { VoiceCreatePlanError, type VoiceCreatePlanResult, type VoiceCreatePlanV1 } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION, type VoiceCreatePlanner } from './voice-create-planner.js';
 import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
-import type { CreateMemberChoice, PreparedVoiceCreate } from './voice-create-prepare.js';
+import { readVoiceCreateMembers } from './voice-create-members.js';
+import { formatVoiceCreateMember, type CreateMemberChoice, type PreparedVoiceCreate } from './voice-create-prepare.js';
 import { classifyVoiceReviewDecision, type VoiceReviewDecision } from './vocabulary.js';
 
 function wholeUtterance(text: string): string { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
@@ -78,7 +79,7 @@ export class VoiceCreateSession {
   }
   private choiceView(): AgentLoopView {
     return { phase: 'question', text: voiceText('voice.create.whichPerson', 'Which person? Select a name or say its option number.'),
-      choices: this.task!.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${member.name} · ${member.email}` })) };
+      choices: this.task!.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${formatVoiceCreateMember(member)}` })) };
   }
   private tracePlan(plan: VoiceCreatePlanResult) {
     this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
@@ -86,9 +87,7 @@ export class VoiceCreateSession {
         tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
   }
   private async readMembers(projectSlug: string, signal: AbortSignal) {
-    const result = await (this.options.callTool ?? callMcpTool)<{ items?: import('../state/state.js').BoardMember[] }>('members_list', { projectSlug }, { signal });
-    if (!Array.isArray(result.items)) throw new VoiceCreatePlanError('network');
-    return result.items;
+    return readVoiceCreateMembers(projectSlug, signal, this.options.callTool ?? callMcpTool);
   }
   private async prepare(plan: VoiceCreatePlanV1, signal: AbortSignal, revision: number, member?: CreateMemberChoice) {
     return prepareVoiceCreateAgainstCurrentContext(plan, signal, {

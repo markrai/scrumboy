@@ -3,7 +3,8 @@ import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, Dashboar
 export interface BoardMember {
   userId: number;
   name: string;
-  email: string;
+  /** Intentionally absent from the reduced board-members REST projection. */
+  email?: string;
   image?: string;
   role: string;
 }

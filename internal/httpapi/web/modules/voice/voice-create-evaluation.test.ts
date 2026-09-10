@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { BoardMember } from '../state/state.js';
 import type { Board } from '../types.js';
 import type { VoiceCommandContext } from './command-context.js';
@@ -67,6 +69,15 @@ const create = (fields: Partial<VoiceCreatePlanV1> = {}): VoiceCreatePlanV1 => (
 });
 
 describe('Voice Create dry-run v1', () => {
+  it('keeps the evaluator generic-MCP-free while the device adapter uses the shared member reader', () => {
+    const evaluationSource = readFileSync(resolve('modules/voice/voice-create-evaluation.ts'), 'utf8');
+    const deviceSource = readFileSync(resolve('modules/voice/voice-create-device-evaluation.ts'), 'utf8');
+    const boardSource = readFileSync(resolve('modules/views/board.ts'), 'utf8');
+    expect(evaluationSource).not.toMatch(/mcp-client|callMcpTool|members_list/);
+    expect(deviceSource).toMatch(/readVoiceCreateMembers/);
+    expect(boardSource.match(/getVoiceCreateDryRunBoardPorts[\s\S]*?\n}/)?.[0] ?? '').not.toMatch(/context\.members/);
+  });
+
   it('returns a structured ready create and exact confirmation summary', async () => {
     const f = harness(create());
     const result = await evaluateVoiceCreateDryRun('Create Fred', f.options);
@@ -151,6 +162,25 @@ describe('Voice Create dry-run v1', () => {
     await expect(evaluateVoiceCreateDryRun('Create Fred for SomeoneWhoDoesNotExist', member.options)).resolves.toMatchObject({
       preparation: { stage: 'member_resolution', code: 'unknown_member' },
     });
+  });
+
+  it('resolves an assignee by authoritative email from the injected member reader', async () => {
+    const f = harness(create({ assignee: 'mark.rai@example.test' }), {
+      readMembers: async () => [
+        { userId: 8, name: 'Mark Rai', email: 'mark.rai@example.test', role: 'maintainer' },
+      ],
+    });
+    const result = await evaluateVoiceCreateDryRun('Create Fred for mark.rai@example.test', f.options);
+    expect(result).toMatchObject({
+      outcome: 'ready',
+      preparation: {
+        assignee: { userId: 8, name: 'Mark Rai' },
+        summary: expect.stringContaining('Assign Mark Rai · mark.rai@example.test'),
+      },
+      plannerCallCount: 1,
+      mutationExecuted: false,
+    });
+    expect(JSON.stringify(result)).not.toContain('undefined');
   });
 
   it('reports ambiguous member resolution without asking for a selection', async () => {

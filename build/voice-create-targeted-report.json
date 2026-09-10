@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "fixture": "C:\\dev\\project\\scrumboy\\build\\voice-create-targeted-fixture.json",
+  "summary": {
+    "requested": 3,
+    "cases": 3,
+    "passed": 3,
+    "failed": 0,
+    "ready": 3,
+    "correctlyBlocked": 0,
+    "plannerFailures": 0,
+    "resolutionFailures": 0,
+    "mutations": 0,
+    "completed": true
+  },
+  "stopCondition": null,
+  "cases": [
+    {
+      "id": "basic-story",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create a story called Fred",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog"
+        }
+      }
+    },
+    {
+      "id": "assign-mark",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and assign it to Mark",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "assignee": "Mark"
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": {
+            "userId": 1,
+            "name": "Mark Rai"
+          },
+          "tags": [],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nAssign Mark Rai · markraidc@gmail.com"
+        }
+      }
+    },
+    {
+      "id": "tag-mobile",
+      "status": "passed",
+      "classification": "ready",
+      "failures": [],
+      "result": {
+        "version": 1,
+        "input": "Create Fred and tag it mobile",
+        "confirmationReady": true,
+        "plannerCallCount": 1,
+        "mutationExecuted": false,
+        "outcome": "ready",
+        "planner": {
+          "status": "ok",
+          "plan": {
+            "version": 1,
+            "kind": "create",
+            "title": "Fred",
+            "tags": [
+              "mobile"
+            ]
+          }
+        },
+        "preparation": {
+          "status": "ready",
+          "title": "Fred",
+          "lane": {
+            "key": "backlog",
+            "name": "Backlog",
+            "defaulted": true
+          },
+          "assignee": null,
+          "tags": [
+            "mobile"
+          ],
+          "notesPresent": false,
+          "summary": "Create \"Fred\" in Backlog\nTags: mobile"
+        }
+      }
+    }
+  ]
+}

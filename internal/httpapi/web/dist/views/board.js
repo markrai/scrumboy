@@ -66,12 +66,6 @@ export function getVoiceCreateDryRunBoardPorts() {
                 throw new Error('context_unavailable');
             await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         },
-        readMembers: async (projectSlug, signal) => {
-            const context = getVoiceCommandContext();
-            if (signal.aborted || !context || context.projectSlug !== projectSlug)
-                throw new Error('context_unavailable');
-            return context.members;
-        },
     });
 }
 function canUseVoiceCommandContext(context) {

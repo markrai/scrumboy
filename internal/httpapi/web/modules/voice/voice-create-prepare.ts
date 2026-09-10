@@ -1,10 +1,10 @@
-import type { BoardMember } from '../state/state.js';
 import { canRunVoiceMutationInContext, type VoiceCommandContext } from './command-context.js';
 import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR, type ResolvedCommand } from './schema.js';
+import type { VoiceCreateMember } from './voice-create-members.js';
 import { executableCreatePlan, VoiceCreatePlanError, type VoiceCreatePlanV1 } from './voice-create-plan.js';
 
-export type CreateMemberChoice = Readonly<Pick<BoardMember, 'userId' | 'name' | 'email'>>;
+export type CreateMemberChoice = Readonly<Pick<VoiceCreateMember, 'userId' | 'name' | 'email'>>;
 export type PreparedVoiceCreate = Readonly<{
   plan: VoiceCreatePlanV1;
   command: ResolvedCommand;
@@ -15,8 +15,15 @@ export type PreparedVoiceCreate = Readonly<{
 export type CreatePreparation = { kind: 'prepared'; value: PreparedVoiceCreate }
   | { kind: 'member-choice'; choices: readonly CreateMemberChoice[] };
 
+export function formatVoiceCreateMember(member: Readonly<{ userId: number; name?: string; email?: string }>): string {
+  const name = member.name?.trim() ?? '';
+  const email = member.email?.trim() ?? '';
+  if (name && email) return `${name} · ${email}`;
+  return name || email || String(member.userId);
+}
+
 /** No execution/UI ports. Caller refreshes and supplies authoritative project data. */
-export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceCommandContext, members: readonly BoardMember[], selection?: CreateMemberChoice): CreatePreparation {
+export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceCommandContext, members: readonly VoiceCreateMember[], selection?: CreateMemberChoice): CreatePreparation {
   const plan = executableCreatePlan(planInput);
   if (!canRunVoiceMutationInContext(context)) throw new VoiceCreatePlanError('unauthorized');
   const { board } = context;
@@ -66,7 +73,7 @@ export function prepareVoiceCreate(planInput: VoiceCreatePlanV1, context: VoiceC
     entities: { title: plan.title, columnKey: lane.key, assigneeUserId: member?.userId ?? null, tags, body: plan.notes ?? '' } }, context);
   if (isCommandFailure(ir)) throw new VoiceCreatePlanError('invalid_plan', { commandCode: ir.code });
   const command: ResolvedCommand = { ir: ir.value, summary: '', confirmLabel: '', danger: false, requiresConfirmation: true,
-    statusName: lane.name, assigneeName: member ? `${member.name} · ${member.email}` : undefined };
+    statusName: lane.name, assigneeName: member ? formatVoiceCreateMember(member) : undefined };
   Object.assign(command, formatResolvedCommand(command));
   // Compare identity, meaning and policy, not arbitrary board/locale changes or only model phrases.
   const fingerprint = JSON.stringify({ ir: command.ir, lane, defaultLane: plan.lane === undefined,

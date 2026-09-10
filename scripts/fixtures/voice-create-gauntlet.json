@@ -1,28 +1,28 @@
 {
   "version": 1,
   "cases": [
-    { "id": "basic-story", "transcript": "Create a story called Fred", "expect": { "confirmationReady": true, "lane": "Not Started" } },
-    { "id": "basic-todo", "transcript": "Create a to-do called Fred", "expect": { "confirmationReady": true, "lane": "Not Started" } },
-    { "id": "basic-short", "transcript": "Create Fred", "expect": { "confirmationReady": true, "lane": "Not Started" } },
+    { "id": "basic-story", "transcript": "Create a story called Fred", "expect": { "confirmationReady": true, "lane": "Backlog" } },
+    { "id": "basic-todo", "transcript": "Create a to-do called Fred", "expect": { "confirmationReady": true, "lane": "Backlog" } },
+    { "id": "basic-short", "transcript": "Create Fred", "expect": { "confirmationReady": true, "lane": "Backlog" } },
 
-    { "id": "assign-mark", "transcript": "Create Fred and assign it to Mark", "expect": { "confirmationReady": true, "assignee": "Mark" } },
-    { "id": "for-mark", "transcript": "Create a story called Fred for Mark", "expect": { "confirmationReady": true, "assignee": "Mark" } },
-    { "id": "give-mark", "transcript": "Create Fred and give it to Mark", "expect": { "confirmationReady": true, "assignee": "Mark" } },
+    { "id": "assign-mark", "transcript": "Create Fred and assign it to Mark", "expect": { "confirmationReady": true, "assignee": "Mark Rai" } },
+    { "id": "for-mark", "transcript": "Create a story called Fred for Mark", "expect": { "confirmationReady": true, "assignee": "Mark Rai" } },
+    { "id": "give-mark", "transcript": "Create Fred and give it to Mark", "expect": { "confirmationReady": true, "assignee": "Mark Rai" } },
 
     { "id": "lane-testing", "transcript": "Create Fred in Testing", "expect": { "confirmationReady": true, "lane": "Testing" } },
     { "id": "put-testing", "transcript": "Create Fred and put it in Testing", "expect": { "confirmationReady": true, "lane": "Testing" } },
-    { "id": "lane-not-started", "transcript": "Create Fred in Not Started", "expect": { "confirmationReady": true, "lane": "Not Started" } },
+    { "id": "lane-backlog", "transcript": "Create Fred in Backlog", "expect": { "confirmationReady": true, "lane": "Backlog" } },
 
-    { "id": "tag-architecture", "transcript": "Create Fred and tag it Architecture", "expect": { "confirmationReady": true, "tags": ["Architecture"] } },
-    { "id": "add-architecture", "transcript": "Create Fred and add the Architecture tag", "expect": { "confirmationReady": true, "tags": ["Architecture"] } },
-    { "id": "tag-ux", "transcript": "Create Fred and tag it UX", "expect": { "confirmationReady": true, "tags": ["UX"] } },
-    { "id": "tag-ux-periods", "transcript": "Create Fred and tag it U.X.", "expect": { "confirmationReady": true, "tags": ["UX"] } },
-    { "id": "tag-ux-spaces", "transcript": "Create Fred and tag it U X", "expect": { "confirmationReady": true, "tags": ["UX"] } },
+    { "id": "tag-mobile", "transcript": "Create Fred and tag it mobile", "expect": { "confirmationReady": true, "tags": ["mobile"] } },
+    { "id": "add-mobile", "transcript": "Create Fred and add the mobile tag", "expect": { "confirmationReady": true, "tags": ["mobile"] } },
+    { "id": "tag-ux", "transcript": "Create Fred and tag it UX", "expect": { "confirmationReady": true, "tags": ["ux"] } },
+    { "id": "tag-ux-periods", "transcript": "Create Fred and tag it U.X.", "expect": { "confirmationReady": true, "tags": ["ux"] } },
+    { "id": "tag-ux-spaces", "transcript": "Create Fred and tag it U X", "expect": { "confirmationReady": true, "tags": ["ux"] } },
 
-    { "id": "combined", "transcript": "Create a story called Refactor Navigation, put it in Testing, assign it to Mark, tag it Architecture and UX, and add a note saying revisit the keyboard flow", "expect": { "confirmationReady": true, "lane": "Testing", "assignee": "Mark", "tags": ["Architecture", "UX"] } },
+    { "id": "combined", "transcript": "Create a story called Refactor Navigation, put it in Testing, assign it to Mark, tag it mobile and UX, and add a note saying revisit the keyboard flow", "expect": { "confirmationReady": true, "lane": "Testing", "assignee": "Mark Rai", "tags": ["mobile", "ux"] } },
 
-    { "id": "rambly-big-boy", "transcript": "Hey, I want to create a new story called The Big Boy Who Had It All. Put it in Testing, assign it to Mark, and tag it Architecture.", "expect": { "confirmationReady": true, "lane": "Testing", "assignee": "Mark", "tags": ["Architecture"] } },
-    { "id": "rambly-navigation", "transcript": "So I was thinking we need another story here. Call it Improve Navigation. Give it to Mark and tag it UX.", "expect": { "confirmationReady": true, "assignee": "Mark", "tags": ["UX"] } },
+    { "id": "rambly-big-boy", "transcript": "Hey, I want to create a new story called The Big Boy Who Had It All. Put it in Testing, assign it to Mark, and tag it mobile.", "expect": { "confirmationReady": true, "lane": "Testing", "assignee": "Mark Rai", "tags": ["mobile"] } },
+    { "id": "rambly-navigation", "transcript": "So I was thinking we need another story here. Call it Improve Navigation. Give it to Mark and tag it UX.", "expect": { "confirmationReady": true, "assignee": "Mark Rai", "tags": ["ux"] } },
     { "id": "rambly-filters", "transcript": "Can you make me a story called Better Filters and put it in Testing please?", "expect": { "confirmationReady": true, "lane": "Testing" } },
 
     { "id": "unsupported-schedule", "transcript": "Create Fred and schedule it for Tuesday", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },

@@ -9,6 +9,8 @@ import { createVoiceFlowTrace } from './trace.js';
 import { VoiceCreatePlanError } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION } from './voice-create-planner.js';
 import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
+import { readVoiceCreateMembers } from './voice-create-members.js';
+import { formatVoiceCreateMember } from './voice-create-prepare.js';
 import { classifyVoiceReviewDecision } from './vocabulary.js';
 function wholeUtterance(text) { return text.trim().toLowerCase().replace(/[.!?,]+$/g, '').trim().replace(/\s+/g, ' '); }
 export function voiceCreateDecision(text) { return classifyVoiceReviewDecision(text); }
@@ -82,7 +84,7 @@ export class VoiceCreateSession {
     }
     choiceView() {
         return { phase: 'question', text: voiceText('voice.create.whichPerson', 'Which person? Select a name or say its option number.'),
-            choices: this.task.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${member.name} · ${member.email}` })) };
+            choices: this.task.choices.map((member, index) => ({ id: String(index), label: `${index + 1}. ${formatVoiceCreateMember(member)}` })) };
     }
     tracePlan(plan) {
         this.trace().emit('plan', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, kind: plan.kind,
@@ -90,10 +92,7 @@ export class VoiceCreateSession {
                 tagCount: plan.tags?.length ?? 0, notesLength: plan.notes?.length ?? 0, unhandledCount: plan.unhandled?.length ?? 0 } : {}) });
     }
     async readMembers(projectSlug, signal) {
-        const result = await (this.options.callTool ?? callMcpTool)('members_list', { projectSlug }, { signal });
-        if (!Array.isArray(result.items))
-            throw new VoiceCreatePlanError('network');
-        return result.items;
+        return readVoiceCreateMembers(projectSlug, signal, this.options.callTool ?? callMcpTool);
     }
     async prepare(plan, signal, revision, member) {
         return prepareVoiceCreateAgainstCurrentContext(plan, signal, {

@@ -1,5 +1,4 @@
 import type { LocalTextGenerationCapability, LocalTextGenerationStatus } from '../platform/local-text-generation.js';
-import type { BoardMember } from '../state/state.js';
 import { canRunVoiceMutationInContext, getVoiceCommandContextForIdentity, type VoiceCommandContext } from './command-context.js';
 import { isCommandFailure } from './schema.js';
 import {
@@ -11,6 +10,7 @@ import {
   type VoiceCreatePlanV1,
 } from './voice-create-plan.js';
 import { VOICE_CREATE_DRY_RUN_OUTPUT_PREVIEW_CODE_UNITS, type VoiceCreatePlanner } from './voice-create-planner.js';
+import type { VoiceCreateMember } from './voice-create-members.js';
 import {
   prepareVoiceCreate,
   type CreateMemberChoice,
@@ -24,7 +24,7 @@ export const VOICE_CREATE_DRY_RUN_TIMEOUT_MS = 45_000;
 export type VoiceCreateMembersReader = (
   projectSlug: string,
   signal: AbortSignal,
-) => Promise<readonly BoardMember[]>;
+) => Promise<readonly VoiceCreateMember[]>;
 
 type SemanticEvaluationPorts = Readonly<{
   planner: VoiceCreatePlanner;
@@ -135,7 +135,7 @@ export async function prepareVoiceCreateAgainstCurrentContext(
   ports.context(signal);
   await ports.refreshBoard();
   const context = ports.context(signal);
-  let members: readonly BoardMember[] = [];
+  let members: readonly VoiceCreateMember[] = [];
   if (plan.assignee !== undefined) {
     members = await ports.readMembers(context.projectSlug, signal);
     if (!Array.isArray(members)) throw new VoiceCreatePlanError('network');

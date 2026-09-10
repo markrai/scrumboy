@@ -1,13 +1,20 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { harness } from './agent.test.utils.js';
-import { prepareVoiceCreate } from './voice-create-prepare.js';
+import { formatVoiceCreateMember, prepareVoiceCreate } from './voice-create-prepare.js';
 import type { VoiceCreatePlanV1 } from './voice-create-plan.js';
 import { buildMcpCall, executeCommandIR } from './execute.js';
 import { validateCommandIR } from './schema.js';
 
 const base: VoiceCreatePlanV1 = { version: 1, kind: 'create', title: 'Big Man' };
 describe('deterministic enriched create preparation', () => {
+  it('never renders a missing member field as literal undefined', () => {
+    expect(formatVoiceCreateMember({ userId: 8, name: 'Mark Rai' })).toBe('Mark Rai');
+    expect(formatVoiceCreateMember({ userId: 8, email: 'mark@example.test' })).toBe('mark@example.test');
+    expect(formatVoiceCreateMember({ userId: 8 })).toBe('8');
+    expect(formatVoiceCreateMember({ userId: 8, name: 'Mark Rai' })).not.toContain('undefined');
+  });
+
   it('uses authoritative leftmost, not Backlog, and suppresses empty default details', () => {
     const h = harness();
     h.board.columnOrder!.unshift({ key: 'triage', name: 'Triage', isDone: false }); h.board.columns.triage = [];

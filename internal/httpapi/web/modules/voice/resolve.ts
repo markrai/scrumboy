@@ -109,7 +109,7 @@ function findMatchingMembers(rawUser: string, members: BoardMember[]): BoardMemb
 }
 
 /** Shared conservative matching for local agent skills and semantic create preparation. */
-export function matchVoiceMembers(reference: string, members: readonly BoardMember[]): BoardMember[] {
+export function matchVoiceMembers<T extends BoardMember>(reference: string, members: readonly T[]): T[] {
   const wanted = normalizeLookup(reference);
   const unique = [...new Map(members.map(member => [member.userId, member])).values()];
   const exact = unique.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);

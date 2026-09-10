@@ -2,6 +2,13 @@ import { canRunVoiceMutationInContext } from './command-context.js';
 import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { executableCreatePlan, VoiceCreatePlanError } from './voice-create-plan.js';
+export function formatVoiceCreateMember(member) {
+    const name = member.name?.trim() ?? '';
+    const email = member.email?.trim() ?? '';
+    if (name && email)
+        return `${name} · ${email}`;
+    return name || email || String(member.userId);
+}
 /** No execution/UI ports. Caller refreshes and supplies authoritative project data. */
 export function prepareVoiceCreate(planInput, context, members, selection) {
     const plan = executableCreatePlan(planInput);
@@ -63,7 +70,7 @@ export function prepareVoiceCreate(planInput, context, members, selection) {
     if (isCommandFailure(ir))
         throw new VoiceCreatePlanError('invalid_plan', { commandCode: ir.code });
     const command = { ir: ir.value, summary: '', confirmLabel: '', danger: false, requiresConfirmation: true,
-        statusName: lane.name, assigneeName: member ? `${member.name} · ${member.email}` : undefined };
+        statusName: lane.name, assigneeName: member ? formatVoiceCreateMember(member) : undefined };
     Object.assign(command, formatResolvedCommand(command));
     // Compare identity, meaning and policy, not arbitrary board/locale changes or only model phrases.
     const fingerprint = JSON.stringify({ ir: command.ir, lane, defaultLane: plan.lane === undefined,
