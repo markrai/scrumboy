@@ -26,7 +26,7 @@
     { "id": "rambly-filters", "transcript": "Can you make me a story called Better Filters and put it in Testing please?", "expect": { "confirmationReady": true, "lane": "Testing" } },
 
     { "id": "unsupported-schedule", "transcript": "Create Fred and schedule it for Tuesday", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
-    { "id": "unsupported-reminder", "transcript": "Create Fred and remind me tomorrow", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
+    { "id": "unsupported-delete", "transcript": "Create Fred and delete Bogus", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
     { "id": "unsupported-move", "transcript": "Create Fred and then move Bob to Done", "expect": { "confirmationReady": false, "outcome": "blocked", "errorCode": "incomplete_request" } },
 
     { "id": "unknown-member", "transcript": "Create Fred and assign it to SomeoneWhoDoesNotExist", "expect": { "confirmationReady": false, "outcome": "resolution_failed", "errorCode": "unknown_member" } },

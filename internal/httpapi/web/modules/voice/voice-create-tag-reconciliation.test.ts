@@ -39,6 +39,10 @@ describe('Voice Create planner tag-sequence reconciliation', () => {
     expectTagFailure(['U', 'X'], ['ux', 'U&X'], 'ambiguous', 2);
   });
 
+  it('fails closed instead of partitioning one unresolved run into adjacent acronym repairs', () => {
+    expectTagFailure(['U', 'X', 'A', 'P', 'I'], ['ux', 'api'], 'unavailable', 0);
+  });
+
   it('coalesces only the local unresolved run beside legitimate tags', () => {
     expect(reconcile(['mobile', 'U', 'X'], ['mobile', 'ux']))
       .toEqual({ tags: ['mobile', 'ux'], referenceNormalizationApplied: true });
