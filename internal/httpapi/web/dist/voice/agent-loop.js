@@ -4,6 +4,7 @@ import { AGENT_LIMITS, AgentProtocolError, agentRepairInstruction, interpretAgen
 import { VoiceAgentResourceHandles } from './agent-resources.js';
 import { VoiceAgentProposalStore } from './agent-proposals.js';
 import { renderAgentSkillResult } from './agent-skills.js';
+import { normalizeLookup } from './normalize.js';
 export const agentSafeFailure = () => voiceText('voice.agent.safeFailure', 'I could not finish that safely. Please try again.');
 function batchText(result) {
     if (!result.failed && !result.refreshFailed)
@@ -11,6 +12,69 @@ function batchText(result) {
     return voiceText('voice.agent.batchResult', 'Succeeded: {succeeded}. Failed or unconfirmed: {failed}. Not attempted: {remaining}. Refresh failed: {refresh}.', {
         succeeded: result.succeeded.join('; ') || '—', failed: result.failed || '—', remaining: result.unattempted.join('; ') || '—', refresh: result.refreshFailed ? '✓' : '—',
     });
+}
+const choiceFillers = new Set(['the', 'one', 'story', 'todo', 'card', 'task', 'item', 'option', 'please', 'i', 'choose', 'select', 'offered', 'number', 'in']);
+const choiceOrdinals = new Map([['first', 0], ['second', 1], ['third', 2], ['fourth', 3], ['fifth', 4]]);
+function words(value) { return normalizeLookup(value).match(/[\p{L}\p{N}]+/gu) ?? []; }
+function isStandaloneNamedOpenGoal(goal) {
+    const normalized = normalizeLookup(goal);
+    if (!/^(?:please )?(?:open|find(?: me)?|search for|look up)\s+\S/.test(normalized))
+        return false;
+    if (/\b(?:all|every|everything|multiple|tagged|assigned to)\b/.test(normalized))
+        return false;
+    // Ambiguous punctuation/connectors bias toward continuing the agent so additional work is never dropped.
+    return !/[&,;\n]/.test(goal) && !/\b(?:and|then|also|plus)\b/.test(normalized);
+}
+/** Resolve only an unambiguous reference to the authoritative choices already on screen. */
+function localChoiceCall(task, utterance) {
+    const pending = task.pendingChoice;
+    if (!pending)
+        return null;
+    const choices = pending.result.choices;
+    const normalized = normalizeLookup(utterance);
+    const exactHandle = choices.findIndex(choice => normalized === normalizeLookup(choice.handle));
+    let selectedIndex = exactHandle;
+    if (selectedIndex < 0) {
+        const constraints = [];
+        const ordinals = [...new Set(words(normalized).map(word => choiceOrdinals.get(word)).filter((index) => index !== undefined && index < choices.length))];
+        if (ordinals.length > 1)
+            return null;
+        if (ordinals.length === 1)
+            constraints.push(ordinals[0]);
+        const numerals = [...new Set([...normalized.matchAll(/(?:^|\s|#)(\d+)(?=$|\s)/g)].map(match => Number(match[1])))];
+        for (const numeral of numerals) {
+            const numbered = choices.map((choice, index) => choice.number === numeral ? index : -1).filter(index => index >= 0);
+            if (numbered.length === 1)
+                constraints.push(numbered[0]);
+            else if (!numbered.length && numeral >= 1 && numeral <= choices.length)
+                constraints.push(numeral - 1);
+            else
+                return null;
+        }
+        const terms = words(normalized).filter(word => !choiceFillers.has(word) && !choiceOrdinals.has(word) && !/^\d+$/.test(word));
+        if (terms.length) {
+            const labeled = choices.map((choice, index) => {
+                const candidate = new Set(words(`${choice.label} ${choice.lane ?? ''}`));
+                return terms.every(term => candidate.has(term)) ? index : -1;
+            }).filter(index => index >= 0);
+            if (labeled.length !== 1)
+                return null;
+            constraints.push(labeled[0]);
+        }
+        if (!constraints.length || new Set(constraints).size !== 1)
+            return null;
+        selectedIndex = constraints[0];
+    }
+    const choice = choices[selectedIndex];
+    const args = { ...pending.call.arguments };
+    if (pending.result.resource === 'todo') {
+        delete args.reference;
+        delete args.todoRef;
+        args.todoRef = choice.handle;
+    }
+    else
+        args[pending.result.resource] = choice.handle;
+    return { ...pending.call, arguments: args };
 }
 export class VoiceAgentLoop {
     trace() {
@@ -113,7 +177,7 @@ export class VoiceAgentLoop {
         const choice = this.task?.pendingChoice?.result.choices[index];
         if (!choice)
             return { phase: 'error', text: agentSafeFailure() };
-        return this.submit(`I select the offered option ${choice.handle}: ${choice.label}`, signal);
+        return this.submit(choice.handle, signal);
     }
     async submit(utterance, signal) {
         const diagnostic = this.trace();
@@ -122,18 +186,26 @@ export class VoiceAgentLoop {
             this.registry.context(signal);
             if (!utterance.trim() || utterance.length > AGENT_LIMITS.utterance)
                 throw new AgentProtocolError('Utterance limit');
+            let localSelection = null;
             if (!this.task) {
                 this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, choiceAnswered: false, confirmation: false, clarification: false, modelSteps: 0, skillCalls: 0, results: [] };
             }
-            else if (this.task.pendingChoice)
+            else if (this.task.pendingChoice) {
                 this.task.choiceAnswered = true;
+                localSelection = localChoiceCall(this.task, utterance);
+            }
             const task = this.task;
             this.append(task, { user: utterance });
             while (true) {
                 let envelope;
                 let repair;
                 const state = this.state(task);
-                for (let attempt = 0; attempt < 2; attempt++) {
+                if (localSelection) {
+                    envelope = localSelection;
+                    localSelection = null;
+                    diagnostic.emit('interpret', { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source: 'local_choice', skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) });
+                }
+                for (let attempt = 0; !envelope && attempt < 2; attempt++) {
                     if (task.modelSteps >= AGENT_LIMITS.modelSteps || task.skillCalls >= AGENT_LIMITS.skillCalls)
                         throw new AgentProtocolError('Task limit');
                     task.modelSteps++;
@@ -218,6 +290,13 @@ export class VoiceAgentLoop {
                     }
                     this.append(task, { skillResult: { skill: envelope.skill, result: outcome.result } });
                     task.results.push(outcome.result);
+                    const standaloneOpenComplete = outcome.result.status === 'opened' && isStandaloneNamedOpenGoal(task.goal)
+                        && !task.proposals.count && task.results.every(result => ['choices', 'resolved', 'opened'].includes(result.status));
+                    if (standaloneOpenComplete) {
+                        const text = renderAgentSkillResult(outcome.result);
+                        this.finish(task, 0);
+                        return { phase: 'success', text };
+                    }
                 }
             }
         }

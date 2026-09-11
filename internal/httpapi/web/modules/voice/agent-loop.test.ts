@@ -33,6 +33,130 @@ describe('bounded local agent loop', () => {
     expect(h.options.openTodo).toHaveBeenCalledWith(355); expect(h.execute).not.toHaveBeenCalled();
     expect(h.model.mock.calls[0][0]).toContain(utterance);
   });
+  it('opens one strong named-story match exactly once without mutation or confirmation', async () => {
+    const h = harness([skill('todos.open', { reference: 'Goblin' }), finish]);
+    h.todo.title = 'Goblins in Burtonsville';
+    const view = await h.loop.submit('Find Goblin', h.signal);
+    expect(view.phase).toBe('success');
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(h.options.openTodo).toHaveBeenCalledWith(355);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.loop.confirmationPending).toBe(false);
+  });
+  it('offers all three Goblin matches, then opens only the selected issued todoRef', async () => {
+    const h = harness([skill('todos.open', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Burtonsville';
+    h.board.columns.done.push(
+      { id: 92, localId: 356, title: 'Goblins in Washington', status: 'done', columnKey: 'done' },
+      { id: 93, localId: 357, title: 'Goblins on the way', status: 'done', columnKey: 'done' },
+    );
+    const question = await h.loop.submit('Open the Goblin story', h.signal);
+    expect(question).toMatchObject({
+      phase: 'question',
+      text: 'Which one? #355 · Goblins in Burtonsville · Backlog; #356 · Goblins in Washington · Done; #357 · Goblins on the way · Done',
+      choices: [
+        { label: '#355 · Goblins in Burtonsville · Backlog' },
+        { label: '#356 · Goblins in Washington · Done' },
+        { label: '#357 · Goblins on the way · Done' },
+      ],
+    });
+    expect(question.choices).toHaveLength(3);
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+
+    const opened = await h.loop.submit('the Washington one', h.signal);
+    expect(opened.phase).toBe('success');
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(h.options.openTodo).toHaveBeenCalledWith(356);
+    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.loop.confirmationPending).toBe(false);
+  });
+  it.each(['#374', '374', 'Number 374'])('maps offered story number %s to the same issued todoRef without a choice-model turn', async reply => {
+    const h = harness([skill('todos.open', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Burtonsville'; h.todo.localId = 372;
+    h.board.columns.backlog.push(
+      { id: 92, localId: 373, title: 'Goblins in Washington', status: 'backlog', columnKey: 'backlog' },
+      { id: 93, localId: 374, title: 'Goblins on the way', status: 'backlog', columnKey: 'backlog' },
+    );
+    const question = await h.loop.submit('Open the Goblin story', h.signal);
+    const offeredRef = question.choices![2].id;
+    expect(offeredRef).toMatch(/^todo_/);
+    const run = vi.spyOn(h.registry, 'run');
+    expect((await h.loop.submit(reply, h.signal)).phase).toBe('success');
+    expect(run.mock.calls[0][0]).toEqual(skill('todos.open', { todoRef: offeredRef }));
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(h.options.openTodo).toHaveBeenCalledWith(374);
+    expect(h.model).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    ['the Washington one', 373, 1],
+    ['the first one', 372, 0],
+    ['the second one', 373, 1],
+  ])('resolves unique offered natural choice %s locally', async (reply, localId, choiceIndex) => {
+    const h = harness([skill('todos.open', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Burtonsville'; h.todo.localId = 372;
+    h.board.columns.backlog.push(
+      { id: 92, localId: 373, title: 'Goblins in Washington', status: 'backlog', columnKey: 'backlog' },
+      { id: 93, localId: 374, title: 'Goblins on the way', status: 'backlog', columnKey: 'backlog' },
+    );
+    const question = await h.loop.submit('Open the Goblin story', h.signal);
+    expect(question.choices![choiceIndex].id).toMatch(/^todo_/);
+    expect((await h.loop.submit(reply, h.signal)).phase).toBe('success');
+    expect(h.options.openTodo).toHaveBeenCalledWith(localId);
+    expect(h.model).toHaveBeenCalledTimes(2);
+  });
+  it.each(['Done', 'whatever you want', 'the Washington one #374', 'the first and second one'])('does not locally select a non-unique, unrelated or conflicting choice reply: %s', async reply => {
+    const h = harness([skill('todos.open', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Burtonsville'; h.todo.localId = 372;
+    h.board.columns.done.push(
+      { id: 92, localId: 373, title: 'Goblins in Washington', status: 'done', columnKey: 'done' },
+      { id: 93, localId: 374, title: 'Goblins on the way', status: 'done', columnKey: 'done' },
+    );
+    expect((await h.loop.submit('Open the Goblin story', h.signal)).phase).toBe('question');
+    h.steps.push({ kind: 'ask_user', text: 'Please choose one offered story.' });
+    const stillPending = await h.loop.submit(reply, h.signal);
+    expect(stillPending.phase).toBe('question');
+    expect(stillPending.choices).toHaveLength(3);
+    expect(JSON.parse(h.model.mock.calls[2][0]).pending).toMatchObject({ kind: 'choice', resource: 'todo' });
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+  });
+  it('continues compound work after a deterministic Open choice and confirms the selected Todo mutation', async () => {
+    const h = harness([skill('todos.open', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Burtonsville'; h.todo.localId = 372;
+    const washington = { id: 92, localId: 373, title: 'Goblins in Washington', status: 'done', columnKey: 'done', body: '' };
+    const onTheWay = { id: 93, localId: 374, title: 'Goblins on the way', status: 'done', columnKey: 'done', body: '' };
+    h.board.columns.done.push(washington, onTheWay);
+    const question = await h.loop.submit('Open Goblin and append "call Mark" to its notes', h.signal);
+    const selectedRef = question.choices![2].id;
+    h.steps.push(
+      input => {
+        expect(JSON.parse(input).pending).toEqual({ kind: 'idle' });
+        expect(latestRef(input)).toBe(selectedRef);
+        return skill('todos.append_notes', { todoRef: selectedRef, text: 'call Mark' });
+      },
+      finish,
+      { kind: 'confirm' },
+    );
+    const confirmation = await h.loop.submit('#374', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('call Mark');
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(h.options.openTodo).toHaveBeenCalledWith(374);
+    expect(h.execute).not.toHaveBeenCalled();
+    expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
+    expect(onTheWay.body).toBe('call Mark');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0].entities.localId).toBe(374);
+  });
+  it('returns the existing not-found result without opening or mutation', async () => {
+    const h = harness([skill('todos.open', { reference: 'Purple Elephant' })]);
+    const view = await h.loop.submit('Find Purple Elephant', h.signal);
+    expect(view).toEqual({ phase: 'error', text: 'No strong todo title match was found in this project.' });
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+    expect(h.loop.confirmationPending).toBe(false);
+  });
   it('opens and proposes notes from one compound task, then fresh-confirms exactly once', async () => {
     const h = harness([skill('todos.open', { reference: 'Happy Birthday' }), input => skill('todos.append_notes', { todoRef: latestRef(input), text: 'How are you?' }), finish, { kind: 'confirm' }]);
     const view = await h.loop.submit('Open Happy Birthday and add to the notes section: How are you?', h.signal);
@@ -56,7 +180,7 @@ describe('bounded local agent loop', () => {
     expect(h.events.slice(first)).not.toContain('todos_get');
   });
   it('retains only active identity for rename plus tag and fresh-resolves it', async () => {
-    const h = harness([skill('todos.open', { reference: 'Happy Birthday' }), finish], true);
+    const h = harness([skill('todos.open', { reference: 'Happy Birthday' })], true);
     await h.loop.submit('Open Happy Birthday', h.signal);
     h.steps.push(skill('todos.rename', { reference: 'this', title: 'Login bug' }), skill('todos.add_tag', { reference: 'this', tag: 'urgent' }), finish, { kind: 'confirm' });
     const view = await h.loop.submit('Rename this to Login bug and add the urgent tag', h.signal);
@@ -65,11 +189,11 @@ describe('bounded local agent loop', () => {
     expect(h.execute).toHaveBeenCalledTimes(2);
   });
   it('supports pronoun notes in a retained session, with no prior trace retained', async () => {
-    const h = harness([skill('todos.open', { reference: 'Happy Birthday' }), finish], true);
+    const h = harness([skill('todos.open', { reference: 'Happy Birthday' })], true);
     await h.loop.submit('Open Happy Birthday', h.signal);
     h.steps.push(skill('todos.append_notes', { reference: 'its', text: 'How are you?' }), finish);
     expect((await h.loop.submit('Add How are you to its notes', h.signal)).phase).toBe('confirmation');
-    const nextInput = JSON.parse(h.model.mock.calls[2][0]);
+    const nextInput = JSON.parse(h.model.mock.calls[1][0]);
     expect(nextInput.activeTodoAvailable).toBe(true); expect(nextInput.trace).toHaveLength(1);
     h.todo.id = 999;
     expect((await h.loop.confirm(h.signal)).phase).toBe('error'); expect(h.execute).not.toHaveBeenCalled();
@@ -80,7 +204,6 @@ describe('bounded local agent loop', () => {
     h.board.columns.done.push({ id: 92, localId: 354, title: 'Bogus', status: 'done', columnKey: 'done' });
     const question = await h.loop.submit('Open Bogus', h.signal);
     expect(question.phase).toBe('question'); expect(question.text).not.toContain('imaginary'); expect(h.options.openTodo).not.toHaveBeenCalled();
-    h.steps.push(input => { const choices = JSON.parse(input).pending.choices; return skill('todos.open', { todoRef: choices.find(choice => choice.number === 353).handle }); }, finish);
     expect((await h.loop.submit(reply, h.signal)).phase).toBe('success'); expect(h.options.openTodo).toHaveBeenCalledWith(353);
   });
   it('rejects a previously issued but currently unoffered handle', async () => {
@@ -381,9 +504,18 @@ describe('state-aware voice agent protocol lifecycle', () => {
     h.todo.title = 'Bogus'; h.todo.localId = 353;
     h.board.columns.done.push({ id: 92, localId: 354, title: 'Bogus', status: 'done', columnKey: 'done' });
     expect((await h.loop.submit('Open Bogus', h.signal)).phase).toBe('question');
-    expect((await h.loop.submit('the first one', h.signal)).phase).toBe('error');
+    expect((await h.loop.submit('an unrelated answer', h.signal)).phase).toBe('error');
     expect(JSON.parse(h.model.mock.calls[3][0]).repair).toContain('Envelope confirm is not allowed in state choice');
     expect(h.options.openTodo).not.toHaveBeenCalled();
+  });
+
+  it('repairs an illegal confirm after Open instead of treating the task as finished', async () => {
+    const h = harness([skill('todos.open', { reference: 'Happy Birthday' }), { kind: 'confirm' }, finish]);
+    const view = await h.loop.submit('Open Happy Birthday and continue the requested work', h.signal);
+    expect(view.phase).toBe('success');
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(h.model).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(h.model.mock.calls[2][0]).repair).toContain('Envelope confirm is not allowed in state idle');
   });
 
   it.each(['decline', 'cancel'] as const)('does not coerce proposals_ready %s into finish', async kind => {
@@ -394,13 +526,13 @@ describe('state-aware voice agent protocol lifecycle', () => {
     expect(JSON.parse(h.model.mock.calls[2][0]).repair).toContain(`Envelope ${kind} is not allowed in state proposals_ready`);
   });
 
-  it('reports the choice state to the model while a choice is unresolved', async () => {
+  it('reports the choice state to the model when a reply cannot be matched locally', async () => {
     const h = harness([skill('todos.open', { reference: 'Bogus' }), { kind: 'ask_user', text: 'Which one?' }]);
     h.todo.title = 'Bogus'; h.todo.localId = 353;
     h.board.columns.done.push({ id: 92, localId: 354, title: 'Bogus', status: 'done', columnKey: 'done' });
     expect((await h.loop.submit('Open Bogus', h.signal)).phase).toBe('question');
     h.steps.push(input => skill('todos.open', { todoRef: JSON.parse(input).pending.choices[0].handle }), finish);
-    expect((await h.loop.submit('the first one', h.signal)).phase).toBe('success');
+    expect((await h.loop.submit('pick whichever', h.signal)).phase).toBe('success');
     expect(pendingOf(h, 2)).toMatchObject({ kind: 'choice', resource: 'todo' });
   });
 });

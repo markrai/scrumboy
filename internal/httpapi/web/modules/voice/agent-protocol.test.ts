@@ -8,7 +8,7 @@ const proposalsReady: AgentState = { kind: 'proposals_ready', proposalCount: 1 }
 const confirmation: AgentState = { kind: 'confirmation', proposalCount: 1 };
 const envelopeFor = (kind: string) => kind === 'skill_call' ? '{"kind":"skill_call","skill":"todos.resolve","arguments":{"reference":"x"}}'
   : kind === 'ask_user' ? '{"kind":"ask_user","text":"Which lane?"}' : JSON.stringify({ kind });
-describe('voice-agent-v11 protocol', () => {
+describe('voice-agent-v12 protocol', () => {
   it.each([
     'not JSON', '[]', 'null', '{}',
     'Here: {"kind":"finish"}', '{"kind":"skill_call","skill":"ui.birds_eye_view","arguments":{}}',
@@ -111,9 +111,16 @@ describe('voice-agent-v11 protocol', () => {
     });
   });
   it('conditions literal domain titles and finite authority', () => {
-    expect(VOICE_AGENT_PROMPT_VERSION).toBe('voice-agent-v11');
+    expect(VOICE_AGENT_PROMPT_VERSION).toBe('voice-agent-v12');
     for (const text of ["Bird's Eye View", 'Settings', 'Search', 'story called X', 'card named X', 'PREPARE', 'Only the skills']) expect(VOICE_AGENT_PROMPT).toContain(text);
     expect(VOICE_AGENT_PROMPT.length).toBeLessThan(8192);
+  });
+  it('routes single named-story discovery to open without treating collections as one story', () => {
+    for (const text of ['find X', 'find me X', 'search for X', 'look up X', 'todos.open with X as reference', 'not todos.resolve', 'Find me the Goblin story', 'Look up Goblin']) expect(VOICE_AGENT_PROMPT).toContain(text);
+    for (const text of ['all or multiple todos', 'tag, assignee or text filter', 'Find all Goblin stories is not todos.open', 'No collection-search skill exists']) expect(VOICE_AGENT_PROMPT).toContain(text);
+  });
+  it('treats numbered and labeled choice replies as handle selection rather than confirmation', () => {
+    for (const text of ['pending.kind choice', '#374', 'the Washington one', 'matching offered handle', 'Never emit confirm for a choice reply']) expect(VOICE_AGENT_PROMPT).toContain(text);
   });
   it('derives the prompt state contract from the parser table', () => {
     for (const [state, kinds] of Object.entries(ALLOWED_ENVELOPE_KINDS)) expect(VOICE_AGENT_PROMPT).toContain(`${state}: ${kinds.join(', ')}`);

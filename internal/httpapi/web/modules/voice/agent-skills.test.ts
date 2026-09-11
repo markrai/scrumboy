@@ -40,10 +40,18 @@ describe('bounded skill registry', () => {
     else h.board.tags = [{ name: 'urgent A' }, { name: 'urgent B' }];
     const name = resource === 'member' ? 'todos.assign' : 'todos.add_tag';
     h.steps.push(skill(name, { reference: 'Happy Birthday', [resource]: resource === 'member' ? 'Mark' : 'urgent' }), { kind: 'ask_user', text: 'Which?' });
-    expect((await h.loop.submit('choose resource', h.signal)).choices).toHaveLength(2);
-    h.steps.push(input => skill(name, { reference: 'Happy Birthday', [resource]: JSON.parse(input).pending.choices[1].handle }), finish);
+    const question = await h.loop.submit('choose resource', h.signal);
+    expect(question.choices).toHaveLength(2);
+    const selectedRef = question.choices![1].id;
+    h.steps.push(input => {
+      const selectedCall = [...JSON.parse(input).trace].reverse().find(entry => entry.agent?.kind === 'skill_call').agent;
+      expect(selectedCall.arguments[resource]).toBe(selectedRef);
+      return finish;
+    });
     expect((await h.loop.submit('the second', h.signal)).phase).toBe('confirmation');
     expect((await h.loop.confirm(h.signal)).phase).toBe('success'); expect(h.execute).toHaveBeenCalledOnce();
+    if (resource === 'member') expect(h.execute.mock.calls[0][0].entities.assigneeUserId).toBe(9);
+    else expect(h.execute.mock.calls[0][0].entities.tags).toContain('urgent B');
   });
   it('inspect returns only requested bounded fields', async () => {
     const h = harness([skill('todos.inspect', { reference: 'Happy Birthday', fields: ['notes'] }), finish]); h.todo.body = 'a'.repeat(10000);

@@ -4,6 +4,7 @@ import type { BoardMember } from '../state/state.js';
 import { buildMcpCall } from './execute.js';
 import { parseCommand } from './parser.js';
 import { matchVoiceTags, matchVoiceTagsDetailed, resolveCommandDraft } from './resolve.js';
+import { rankTitleCandidates, resolveTodoTarget } from './target-resolver.js';
 
 function board(overrides: Partial<Board> = {}): Board {
   return {
@@ -425,6 +426,53 @@ describe('voice command resolution', () => {
         { localId: 14, title: 'Fix login button style' },
       ],
       draft: parsed.value,
+    });
+  });
+
+  it('ranks all three Goblin title candidates at 75 and leaves resolution ambiguous', async () => {
+    const candidates = [
+      { localId: 12, title: 'Goblins in Burtonsville' },
+      { localId: 13, title: 'Goblins in Washington' },
+      { localId: 14, title: 'Goblins on the way' },
+    ];
+    expect(rankTitleCandidates('Goblin', candidates)).toEqual(candidates.map(candidate => ({ ...candidate, score: 75 })));
+
+    const resolved = await resolveTodoTarget(
+      { kind: 'title', phrase: 'Goblin', display: 'Goblin' },
+      {
+        projectSlug: 'alpha',
+        board: board({ columns: {
+          backlog: candidates.map(candidate => ({ id: candidate.localId, ...candidate, status: 'backlog' })),
+          not_started: [], doing: [], testing: [], done: [],
+        } }),
+      },
+    );
+    expect(resolved).toEqual({
+      ok: false,
+      code: 'ambiguous_story',
+      message: 'More than one todo matched. Choose one.',
+      candidates,
+    });
+  });
+
+  it('resolves a sole strong Goblin title candidate without changing the scoring threshold', async () => {
+    const todo = { id: 12, localId: 12, title: 'Goblins in Burtonsville', status: 'backlog' };
+    const resolved = await resolveTodoTarget(
+      { kind: 'title', phrase: 'Goblin', display: 'Goblin' },
+      { projectSlug: 'alpha', board: board({ columns: { backlog: [todo], not_started: [], doing: [], testing: [], done: [] } }) },
+    );
+    expect(resolved).toEqual({ ok: true, value: { todo } });
+  });
+
+  it('returns the existing not-found result for an unrelated title reference', async () => {
+    const resolved = await resolveTodoTarget(
+      { kind: 'title', phrase: 'Purple Elephant', display: 'Purple Elephant' },
+      { projectSlug: 'alpha', board: board() },
+    );
+    expect(resolved).toEqual({
+      ok: false,
+      code: 'unknown_story',
+      message: 'No strong todo title match was found in this project.',
     });
   });
 
