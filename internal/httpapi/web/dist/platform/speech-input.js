@@ -73,6 +73,7 @@ export class SpeechInputError extends Error {
     }
 }
 const CAPTURE_CONTEXTS = new Set([
+    'initial_enhanced_voiceflow_capture',
     'initial_create_capture',
     'member_clarification_capture',
     'tag_suggestion_capture',

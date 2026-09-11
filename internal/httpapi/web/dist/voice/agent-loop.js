@@ -82,6 +82,7 @@ export class VoiceAgentLoop {
             this.diagnostic = createVoiceFlowTrace();
         return this.diagnostic;
     }
+    adoptTrace(trace) { this.diagnostic = trace; }
     endTrace(reason) { this.diagnostic?.end(reason); }
     cancelTrace(reason, retained = false) {
         this.diagnostic?.emit('cancel', { reason, interactionRetained: retained });

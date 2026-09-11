@@ -11,12 +11,43 @@ export type ReconciledVoiceCreateTagReferences = Readonly<{
   referenceNormalizationApplied: boolean;
 }>;
 
-function failTagMatch(match: VoiceTagMatch): never {
+export type VoiceCreateTagReferenceMatch = Readonly<{
+  match: VoiceTagMatch;
+  referenceNormalizationApplied: boolean;
+}>;
+
+/**
+ * Keeps the generic matcher language-neutral. The sole Create-specific recovery
+ * strips a leading object-pronoun `it` only after the original reference fails,
+ * and only treats the recovery as successful when one authoritative tag wins.
+ */
+export function matchVoiceCreateTagReferenceDetailed(
+  reference: string,
+  authoritativeTags: readonly VoiceCreateTag[],
+): VoiceCreateTagReferenceMatch {
+  const original = matchVoiceTagsDetailed(reference, authoritativeTags);
+  if (original.matches.length > 0) {
+    return Object.freeze({
+      match: original,
+      referenceNormalizationApplied: original.kind === 'spoken_identity',
+    });
+  }
+  const pronoun = /^\s*it\s+(.+?)\s*$/i.exec(reference);
+  if (!pronoun) return Object.freeze({ match: original, referenceNormalizationApplied: false });
+  const stripped = matchVoiceTagsDetailed(pronoun[1], authoritativeTags);
+  return Object.freeze({
+    match: stripped.matches.length > 0 ? stripped : original,
+    referenceNormalizationApplied: stripped.matches.length === 1,
+  });
+}
+
+function failTagMatch(reference: string, match: VoiceTagMatch, referenceNormalizationApplied = match.kind === 'spoken_identity'): never {
   throw new VoiceCreatePlanError('tag', {
     entityType: 'tag',
+    reference,
     result: match.matches.length === 0 ? 'unavailable' : 'ambiguous',
     candidateCount: match.matches.length,
-    referenceNormalizationApplied: match.kind === 'spoken_identity',
+    referenceNormalizationApplied,
   });
 }
 
@@ -29,16 +60,17 @@ export function reconcileVoiceCreateTagReferences(
   references: readonly string[],
   authoritativeTags: readonly VoiceCreateTag[],
 ): ReconciledVoiceCreateTagReferences {
-  const individual = references.map(reference => matchVoiceTagsDetailed(reference, authoritativeTags));
+  const individual = references.map(reference => matchVoiceCreateTagReferenceDetailed(reference, authoritativeTags));
   const tags: string[] = [];
   let referenceNormalizationApplied = false;
 
   for (let index = 0; index < references.length;) {
-    const match = individual[index];
-    if (match.matches.length > 1) failTagMatch(match);
+    const resolved = individual[index];
+    const match = resolved.match;
+    if (match.matches.length > 1) failTagMatch(references[index], match, resolved.referenceNormalizationApplied);
     if (match.matches.length === 1) {
       tags.push(match.matches[0]);
-      referenceNormalizationApplied ||= match.kind === 'spoken_identity';
+      referenceNormalizationApplied ||= resolved.referenceNormalizationApplied;
       index += 1;
       continue;
     }
@@ -47,13 +79,13 @@ export function reconcileVoiceCreateTagReferences(
     while (
       end < references.length
       && end - index < VOICE_CREATE_TAG_RECONCILIATION_MAX_RUN
-      && individual[end].matches.length === 0
+      && individual[end].match.matches.length === 0
     ) end += 1;
 
     const run = references.slice(index, end);
-    if (run.length < 2 || spokenReferenceIdentity(run.join(' ')).spelled === null) failTagMatch(match);
+    if (run.length < 2 || spokenReferenceIdentity(run.join(' ')).spelled === null) failTagMatch(references[index], match);
     const joined = matchVoiceTagsDetailed(run.join(' '), authoritativeTags);
-    if (joined.matches.length !== 1) failTagMatch(joined);
+    if (joined.matches.length !== 1) failTagMatch(run.join(' '), joined);
     tags.push(joined.matches[0]);
     referenceNormalizationApplied = true;
     index = end;

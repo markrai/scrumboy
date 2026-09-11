@@ -20,6 +20,27 @@ function expectTagFailure(references: string[], names: string[], result: 'unavai
 }
 
 describe('Voice Create planner tag-sequence reconciliation', () => {
+  it('strips only leading object-pronoun glue after the original reference fails', () => {
+    expect(reconcile(['It architecture'], ['architecture']))
+      .toEqual({ tags: ['architecture'], referenceNormalizationApplied: true });
+    expect(reconcile(['It architecture'], ['it architecture', 'architecture']))
+      .toEqual({ tags: ['it architecture'], referenceNormalizationApplied: false });
+    expect(reconcile(['It architecture'], ['IT', 'architecture']))
+      .toEqual({ tags: ['architecture'], referenceNormalizationApplied: true });
+  });
+
+  it('fails closed when the stripped remainder is unavailable or ambiguous', () => {
+    expect(() => reconcile(['It nonexisting'], ['architecture']))
+      .toThrow(expect.objectContaining({ code: 'tag', details: expect.objectContaining({ reference: 'It nonexisting', result: 'unavailable' }) }));
+    expect(() => reconcile(['It R D'], ['RD', 'R&D']))
+      .toThrow(expect.objectContaining({ code: 'tag', details: expect.objectContaining({ reference: 'It R D', result: 'ambiguous', candidateCount: 2 }) }));
+  });
+
+  it('preserves explicit independently planned IT and architecture tags', () => {
+    expect(reconcile(['IT', 'architecture'], ['IT', 'architecture']))
+      .toEqual({ tags: ['IT', 'architecture'], referenceNormalizationApplied: false });
+  });
+
   it('coalesces split two- and three-letter planner output through existing spoken identity', () => {
     expect(VOICE_CREATE_TAG_RECONCILIATION_MAX_RUN).toBe(5);
     expect(reconcile(['U', 'X'], ['ux'])).toEqual({ tags: ['ux'], referenceNormalizationApplied: true });

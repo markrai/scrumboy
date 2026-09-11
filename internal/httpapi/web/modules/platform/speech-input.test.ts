@@ -13,6 +13,7 @@ describe('speech-input contract', () => {
       language: 'en-US',
     })).not.toThrow();
     expect(() => validateSpeechInputListenOptions({ maxDurationMs: 45_000 })).not.toThrow();
+    expect(() => validateSpeechInputListenOptions({ maxDurationMs: 45_000, aggregationMode: 'create_v2', postFinalGraceMs: 4_000, captureContext: 'initial_enhanced_voiceflow_capture' })).not.toThrow();
     expect(() => validateSpeechInputListenOptions({ maxDurationMs: 45_000, captureContext: 'binary_clarification_capture' })).not.toThrow();
     expect(() => validateSpeechInputListenOptions({ maxDurationMs: 45_001 }))
       .toThrowError(expect.objectContaining({ code: 'invalid_request' }));

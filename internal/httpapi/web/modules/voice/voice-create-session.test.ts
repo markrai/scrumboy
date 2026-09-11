@@ -9,6 +9,7 @@ import { executeCommandIR } from './execute.js';
 import type { NativeSpeechInputPlugin } from '../../../../../mobile/capacitor/shell/native-speech-input-plugin.js';
 import { createSpeechInputComposition } from '../../../../../mobile/capacitor/shell/speech-input-capability.js';
 import { VOICE_REVIEW_CANCEL_PHRASES, VOICE_REVIEW_CONFIRM_PHRASES } from './vocabulary.js';
+import { createVoiceCreateTagSemanticRepair, VOICE_CREATE_TAG_REPAIR_VERSION } from './voice-create-tag-semantic-repair.js';
 
 const all = { version: 1, kind: 'create', title: 'Big Man', lane: 'Backlog', assignee: 'Mark', tags: ['urgent'], notes: 'Call tomorrow' };
 const controllers: ReturnType<typeof createVoiceAgentController>[] = [];
@@ -25,6 +26,28 @@ function fixture(plan = all, suppliedSpeechInput?: SpeechInputCapability) {
   const controller = createVoiceAgentController({ ...h.options, model: h.model, createSession: session, speechInput: suppliedSpeechInput ?? speechInput, onView, continuationEnabled: false });
   controllers.push(controller);
   return { ...h, generate, readTags, execute, session, controller, onView, speechInput, setOrigin: (value: string) => { origin = value; } };
+}
+
+function tagRepairFixture(plan: object, repairOutput: string, tags: readonly string[]) {
+  const h = harness();
+  const generate = vi.fn(async (request: { requestId: string }) => ({
+    requestId: request.requestId,
+    text: request.requestId.startsWith(VOICE_CREATE_TAG_REPAIR_VERSION)
+      ? repairOutput
+      : JSON.stringify(plan),
+  }));
+  const execute = vi.fn(async () => undefined);
+  const readTags = vi.fn(async () => tags.map(name => ({ name })));
+  const session = new VoiceCreateSession({
+    ...h.options,
+    planner: createVoiceCreatePlanner({ generate }),
+    tagRepair: createVoiceCreateTagSemanticRepair({ generate }),
+    callTool: h.callTool as never,
+    readTags,
+    execute: execute as never,
+    serverOrigin: () => 'https://one.test',
+  });
+  return { ...h, generate, execute, readTags, session };
 }
 
 function nativeSpeech(result: { transcript: string; segmentCount?: number }): NativeSpeechInputPlugin {
@@ -273,6 +296,82 @@ describe('Create v2 application interaction', () => {
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.execute).toHaveBeenCalledOnce();
     expect(f.callTool.mock.calls.find(([name]) => name === 'todos_create')?.[1]).toMatchObject({ tags: ['ux'] });
+  });
+  it('repairs the exact physical It-architecture planner reference deterministically without a second model call', async () => {
+    const plan = { version: 1, kind: 'create', title: 'Quasar', assignee: 'mark', tags: ['It architecture'] };
+    const f = tagRepairFixture(plan, '{"version":1,"selections":[]}', ['architecture']);
+    const result = await f.session.submit('create a story called Quasar assigned to mark and tag It architecture.', f.signal);
+    expect(result.phase).toBe('confirmation');
+    expect(result.text).toContain('Tags: architecture');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+  it('uses one closed-set repair call for broader glue and revalidates without a third model call', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    vi.spyOn(console, 'debug').mockImplementation((name, fields) => {
+      if (name === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    const plan = { version: 1, kind: 'create', title: 'Quasar', assignee: 'mark', tags: ['tag it architecture'] };
+    const repair = JSON.stringify({ version: 1, selections: [{ referenceIndex: 0, tagId: 'candidate-1' }] });
+    const f = tagRepairFixture(plan, repair, ['architecture', 'IT']);
+    const result = await f.session.submit('create a story called Quasar assigned to mark and tag It architecture.', f.signal);
+    expect(result.phase).toBe('confirmation');
+    expect(result.text).toContain('Tags: architecture');
+    expect(result.text).not.toContain('Tags: IT');
+    expect(f.generate).toHaveBeenCalledTimes(2);
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({
+      stage: 'resolve',
+      entityType: 'tag',
+      repairAttempted: true,
+      repairCandidateCount: 2,
+      repairResult: 'selected',
+    }));
+    expect((await f.session.confirm(f.signal)).phase).toBe('success');
+    expect(f.generate).toHaveBeenCalledTimes(2);
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.execute.mock.calls[0][0]).toMatchObject({ entities: { tags: ['architecture'] } });
+  });
+  it.each([
+    ['unknown candidate', JSON.stringify({ version: 1, selections: [{ referenceIndex: 0, tagId: 'security' }] })],
+    ['malformed output', '{"version":1,'],
+  ])('fails closed for semantic repair %s', async (_name, repairOutput) => {
+    const plan = { version: 1, kind: 'create', title: 'Quasar', tags: ['tag it architecture'] };
+    const f = tagRepairFixture(plan, repairOutput, ['architecture', 'IT']);
+    expect((await f.session.submit('create a story called Quasar and tag it architecture', f.signal)).phase).toBe('error');
+    expect(f.generate).toHaveBeenCalledTimes(2);
+    expect(f.execute).not.toHaveBeenCalled();
+  });
+  it('does not invoke repair for a normal authoritative tag or an explicit two-tag plan', async () => {
+    for (const tags of [['architecture'], ['IT', 'architecture']] as const) {
+      const plan = { version: 1, kind: 'create', title: 'Quasar', tags };
+      const f = tagRepairFixture(plan, '{"version":1,"selections":[]}', ['IT', 'architecture']);
+      const result = await f.session.submit('create a story called Quasar and tag it IT and architecture', f.signal);
+      expect(result.phase).toBe('confirmation');
+      expect(f.generate).toHaveBeenCalledOnce();
+      expect(f.execute).not.toHaveBeenCalled();
+    }
+  });
+  it('keeps Create atomic when one requested tag resolves and another has no safe repair candidates', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    vi.spyOn(console, 'debug').mockImplementation((name, fields) => {
+      if (name === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    const plan = { version: 1, kind: 'create', title: 'Quasar', tags: ['architecture', 'It nonexisting'] };
+    const f = tagRepairFixture(plan, '{"version":1,"selections":[]}', ['architecture']);
+    expect((await f.session.submit('create Quasar and tag it architecture and nonexisting', f.signal)).phase).toBe('error');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({
+      stage: 'resolve',
+      entityType: 'tag',
+      reference: 'It nonexisting',
+      result: 'unavailable',
+      candidateCount: 0,
+      referenceNormalizationApplied: false,
+    }));
   });
   it('keeps one planner call through ambiguous tag suggestion, acceptance, final review and execution', async () => {
     const f = fixture({ version: 1, kind: 'create', title: 'Fred', tags: ['Bugs'] } as never);

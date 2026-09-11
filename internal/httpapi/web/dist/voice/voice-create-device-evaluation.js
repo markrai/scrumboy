@@ -4,6 +4,7 @@ import { getVoiceCreateDryRunBoardPorts } from '../views/board.js';
 import { createVoiceCreateDryRunSession, evaluateVoiceCreateDryRun } from './voice-create-evaluation.js';
 import { readVoiceCreateMembers } from './voice-create-members.js';
 import { createVoiceCreatePlanner } from './voice-create-planner.js';
+import { createVoiceCreateTagSemanticRepair } from './voice-create-tag-semantic-repair.js';
 import { readVoiceCreateTags } from './voice-create-tags.js';
 async function evaluateOnCurrentBoard(transcript, options = {}) {
     const capability = getAppRuntime().capability(LOCAL_TEXT_GENERATION_CAPABILITY);
@@ -16,6 +17,7 @@ async function evaluateOnCurrentBoard(transcript, options = {}) {
         planner: capability
             ? createVoiceCreatePlanner(capability, { includeDryRunParserOutputPreview: true })
             : async () => { throw Object.assign(new Error('provider_unavailable'), { code: 'unsupported' }); },
+        tagRepair: capability ? createVoiceCreateTagSemanticRepair(capability) : undefined,
         provider,
         ...boardPorts,
         readMembers: async (projectSlug, signal) => {

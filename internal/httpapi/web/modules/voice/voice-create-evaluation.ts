@@ -19,6 +19,12 @@ import {
   type PreparedVoiceCreate,
   type VoiceCreateTagBinding,
 } from './voice-create-prepare.js';
+import { matchVoiceCreateTagReferenceDetailed } from './voice-create-tag-reconciliation.js';
+import {
+  createVoiceCreateTagRepairRequest,
+  type VoiceCreateTagRepairResult,
+  type VoiceCreateTagSemanticRepair,
+} from './voice-create-tag-semantic-repair.js';
 
 export const VOICE_CREATE_DRY_RUN_VERSION = 1 as const;
 export const VOICE_CREATE_DRY_RUN_TIMEOUT_MS = 45_000;
@@ -34,13 +40,17 @@ type SemanticEvaluationPorts = Readonly<{
   refreshBoard(): Promise<void>;
   readMembers: VoiceCreateMembersReader;
   readTags: VoiceCreateTagsReader;
+  tagRepair?: VoiceCreateTagSemanticRepair;
   onPlannerStart?(): void;
   onPlan?(plan: VoiceCreatePlanResult): void;
+  onTagRepair?(result: VoiceCreateTagRepairResult): void;
 }>;
 
 export type VoiceCreateSemanticEvaluation = Readonly<{
   plan: VoiceCreatePlanV1;
   preparation: CreatePreparation;
+  tagBindings: readonly VoiceCreateTagBinding[];
+  tagRepairAttempted: boolean;
 }>;
 
 export type VoiceCreateDryRunFailureStage =
@@ -103,6 +113,7 @@ export type VoiceCreateDryRunOptions = Readonly<{
   refreshBoard(): Promise<void>;
   readMembers: VoiceCreateMembersReader;
   readTags: VoiceCreateTagsReader;
+  tagRepair?: VoiceCreateTagSemanticRepair;
   provider?: Pick<LocalTextGenerationCapability, 'status'>;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -129,14 +140,17 @@ const CONTRACT_CODES = new Set<VoiceCreatePlanError['code']>([
   'missing_title',
 ]);
 
-/** Shared read/prepare path used by initial review, member choice and confirm revalidation. */
-export async function prepareVoiceCreateAgainstCurrentContext(
+type VoiceCreatePreparationAuthority = Readonly<{
+  context: VoiceCommandContext;
+  members: readonly VoiceCreateMember[];
+  tags: readonly VoiceCreateTag[];
+}>;
+
+async function readVoiceCreatePreparationAuthority(
   plan: VoiceCreatePlanV1,
   signal: AbortSignal,
   ports: Pick<SemanticEvaluationPorts, 'context' | 'refreshBoard' | 'readMembers' | 'readTags'>,
-  selection?: CreateMemberChoice,
-  tagBindings: readonly VoiceCreateTagBinding[] = [],
-): Promise<CreatePreparation> {
+): Promise<VoiceCreatePreparationAuthority> {
   ports.context(signal);
   await ports.refreshBoard();
   const context = ports.context(signal);
@@ -150,7 +164,89 @@ export async function prepareVoiceCreateAgainstCurrentContext(
     tags = await ports.readTags(context.projectSlug, signal);
     if (!Array.isArray(tags)) throw new VoiceCreatePlanError('network');
   }
-  return prepareVoiceCreate(plan, ports.context(signal), members, tags, selection, tagBindings);
+  return Object.freeze({ context: ports.context(signal), members, tags });
+}
+
+/** Shared read/prepare path used by member choice and confirm revalidation. */
+export async function prepareVoiceCreateAgainstCurrentContext(
+  plan: VoiceCreatePlanV1,
+  signal: AbortSignal,
+  ports: Pick<SemanticEvaluationPorts, 'context' | 'refreshBoard' | 'readMembers' | 'readTags'>,
+  selection?: CreateMemberChoice,
+  tagBindings: readonly VoiceCreateTagBinding[] = [],
+): Promise<CreatePreparation> {
+  const authority = await readVoiceCreatePreparationAuthority(plan, signal, ports);
+  return prepareVoiceCreate(plan, authority.context, authority.members, authority.tags, selection, tagBindings);
+}
+
+export type VoiceCreateContextPreparation = Readonly<{
+  preparation: CreatePreparation;
+  tagBindings: readonly VoiceCreateTagBinding[];
+  tagRepairAttempted: boolean;
+}>;
+
+function unavailableTagError(error: unknown): error is VoiceCreatePlanError {
+  return error instanceof VoiceCreatePlanError
+    && error.code === 'tag'
+    && error.details?.result === 'unavailable';
+}
+
+/**
+ * Optional second-pass repair exists only at the Create authority seam. A
+ * selected candidate is rebound through a fresh full preparation before it can
+ * reach review; malformed, incomplete, or unavailable repair falls back to the
+ * existing suggestion/failure result.
+ */
+export async function prepareVoiceCreateWithTagRepairAgainstCurrentContext(
+  plan: VoiceCreatePlanV1,
+  transcript: string,
+  signal: AbortSignal,
+  ports: Pick<SemanticEvaluationPorts, 'context' | 'refreshBoard' | 'readMembers' | 'readTags' | 'tagRepair' | 'onTagRepair'>,
+  selection?: CreateMemberChoice,
+  tagBindings: readonly VoiceCreateTagBinding[] = [],
+): Promise<VoiceCreateContextPreparation> {
+  const authority = await readVoiceCreatePreparationAuthority(plan, signal, ports);
+  let initialPreparation: CreatePreparation | null = null;
+  let initialError: unknown;
+  try {
+    initialPreparation = prepareVoiceCreate(plan, authority.context, authority.members, authority.tags, selection, tagBindings);
+    if (initialPreparation.kind !== 'tag-suggestion') {
+      return Object.freeze({ preparation: initialPreparation, tagBindings, tagRepairAttempted: false });
+    }
+  } catch (error) {
+    if (!unavailableTagError(error)) throw error;
+    initialError = error;
+  }
+
+  const plannedReferences = plan.tags ?? [];
+  const boundIndexes = new Set(tagBindings.map(binding => binding.referenceIndex));
+  const unresolvedIndexes = plannedReferences
+    .map((reference, index) => ({ index, resolved: matchVoiceCreateTagReferenceDetailed(reference, authority.tags) }))
+    .filter(value => !boundIndexes.has(value.index) && value.resolved.match.matches.length === 0)
+    .map(value => value.index);
+  const request = ports.tagRepair
+    ? createVoiceCreateTagRepairRequest(transcript, plannedReferences, unresolvedIndexes, authority.tags)
+    : null;
+  if (!request) {
+    if (initialPreparation) return Object.freeze({ preparation: initialPreparation, tagBindings, tagRepairAttempted: false });
+    throw initialError;
+  }
+
+  let repair: VoiceCreateTagRepairResult;
+  try {
+    repair = await ports.tagRepair!(request, signal);
+  } catch {
+    repair = Object.freeze({ result: 'invalid', candidateCount: 0, bindings: Object.freeze([]) });
+  }
+  ports.onTagRepair?.(repair);
+  if (repair.result !== 'selected') {
+    if (initialPreparation) return Object.freeze({ preparation: initialPreparation, tagBindings, tagRepairAttempted: true });
+    throw initialError;
+  }
+
+  const repairedBindings = Object.freeze([...tagBindings, ...repair.bindings]);
+  const preparation = await prepareVoiceCreateAgainstCurrentContext(plan, signal, ports, selection, repairedBindings);
+  return Object.freeze({ preparation, tagBindings: repairedBindings, tagRepairAttempted: true });
 }
 
 /** The one semantic Create v2 path. It has read ports but deliberately no execute port. */
@@ -169,8 +265,8 @@ export async function evaluateVoiceCreateSemantics(
   }
   const plan = executableCreatePlan(result);
   guardCreateRequest(plan, transcript);
-  const preparation = await prepareVoiceCreateAgainstCurrentContext(plan, signal, ports);
-  return Object.freeze({ plan, preparation });
+  const prepared = await prepareVoiceCreateWithTagRepairAgainstCurrentContext(plan, transcript, signal, ports);
+  return Object.freeze({ plan, ...prepared });
 }
 
 function baseResult(input: string, plannerCallCount: number) {
@@ -190,6 +286,10 @@ function safeDetails(value: unknown, allowOutputPreview: boolean): Readonly<Reco
     'result',
     'candidateCount',
     'referenceNormalizationApplied',
+    'reference',
+    'repairAttempted',
+    'repairCandidateCount',
+    'repairResult',
     'outputLength',
     'unexpectedFields',
     'commandCode',
@@ -440,6 +540,7 @@ export async function evaluateVoiceCreateDryRun(
       refreshBoard: options.refreshBoard,
       readMembers: options.readMembers,
       readTags: options.readTags,
+      tagRepair: options.tagRepair,
       onPlan: plan => { observedPlan = plan; },
     });
     if (semantic.preparation.kind === 'member-choice') {

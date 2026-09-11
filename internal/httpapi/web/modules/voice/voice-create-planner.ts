@@ -9,12 +9,15 @@ For one create: {"version":1,"kind":"create","title":"literal title","lane":"spe
 Only version and kind are always required. Omit every unspecified field. Do not invent values, defaults, project, IDs, keys, permissions or summaries.
 Preserve literal title content after called/named/titled/call it. Done, Backlog and Settings may be titles. Extract lane/status/column only when specified as a destination, not from a title. A request to use the usual place for new cards does not specify a lane: omit lane.
 Extract a singular assignee only if specified. Extract tags only if specified. Preserve authored notes. Ignore conversational filler.
+In constructions such as "tag it X", "it" refers to the Todo being created and is not part of the tag name.
 Include every material unsupported or unclear request in "unhandled":[{"text":"the unsupported request","reason":"unsupported"}] (or reason "unclear"). Scheduling, cross-project requests, multiple creates, updates to existing todos and multiple assignees are unsupported. Never silently drop them.
 If this is not a create request, return {"version":1,"kind":"not_create"} only.
 Examples:
 Create Big Man. -> {"version":1,"kind":"create","title":"Big Man"}
 Create a story called Done. -> {"version":1,"kind":"create","title":"Done"}
 Hey, make a card. Call it Settings, put it in Backlog, give it to Mark, tag urgent, and add a note saying Call tomorrow. -> {"version":1,"kind":"create","title":"Settings","lane":"Backlog","assignee":"Mark","tags":["urgent"],"notes":"Call tomorrow"}
+create a story called Quasar assigned to mark and tag It architecture. -> {"version":1,"kind":"create","title":"Quasar","assignee":"mark","tags":["architecture"]}
+Create Quasar and tag it urgent and backend. -> {"version":1,"kind":"create","title":"Quasar","tags":["urgent","backend"]}
 Create Fred and schedule it for Tuesday. -> {"version":1,"kind":"create","title":"Fred","unhandled":[{"text":"schedule it for Tuesday","reason":"unsupported"}]}
 Create a story. -> {"version":1,"kind":"create"}`;
 

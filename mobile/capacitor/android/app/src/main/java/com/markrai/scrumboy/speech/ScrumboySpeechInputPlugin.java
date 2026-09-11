@@ -30,7 +30,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
     private static final String LISTENING_EVENT = "listening";
     private static final String CAPABILITY_EVENT = "asrCapability";
     // Request validation bound. The shell owns the deadline and exact cancellation;
-    // product controllers independently choose 10s (agent) or 45s (Create v2).
+    // legacy/basic uses 10s while enhanced AI VoiceFlow uses 45s.
     private static final int MAX_DURATION_MS = 45_000;
 
     private final SpeechInputOperationRegistry operations = new SpeechInputOperationRegistry();
@@ -657,7 +657,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
     private static String diagnosticCaptureContext(PluginCall call) {
         String value = call.getString("captureContext");
         if (
-            "initial_create_capture".equals(value)
+            "initial_enhanced_voiceflow_capture".equals(value)
+            || "initial_create_capture".equals(value)
             || "member_clarification_capture".equals(value)
             || "tag_suggestion_capture".equals(value)
             || "binary_clarification_capture".equals(value)

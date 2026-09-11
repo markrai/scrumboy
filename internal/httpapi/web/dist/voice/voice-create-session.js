@@ -8,7 +8,7 @@ import { voiceText } from './i18n.js';
 import { createVoiceFlowTrace } from './trace.js';
 import { VoiceCreatePlanError } from './voice-create-plan.js';
 import { VOICE_CREATE_PLANNER_VERSION } from './voice-create-planner.js';
-import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext } from './voice-create-evaluation.js';
+import { evaluateVoiceCreateSemantics, prepareVoiceCreateAgainstCurrentContext, prepareVoiceCreateWithTagRepairAgainstCurrentContext, } from './voice-create-evaluation.js';
 import { readVoiceCreateMembers } from './voice-create-members.js';
 import { formatVoiceCreateMember, } from './voice-create-prepare.js';
 import { readVoiceCreateTags } from './voice-create-tags.js';
@@ -19,7 +19,7 @@ function failureText(error) {
     const code = error instanceof VoiceCreatePlanError ? error.code : 'network';
     switch (code) {
         case 'missing_title': return voiceText('voice.create.missingTitle', 'Please restate the create request with a title.');
-        case 'incomplete_request': return voiceText('voice.create.incomplete', 'The complete request could not be prepared. Create v2 supports one new story with a lane, one assignee, existing tags and notes. Restate it or switch to All commands.');
+        case 'incomplete_request': return voiceText('voice.create.incomplete', 'The complete create request could not be prepared safely. Please restate the complete request.');
         case 'lane': return voiceText('voice.create.laneError', 'The requested lane or authoritative lane order is unavailable or ambiguous. No create was prepared.');
         case 'member': return voiceText('voice.errors.assigneeNotFound', 'Assignee was not found in this project.');
         case 'tag': return voiceText('voice.create.tagError', 'A requested tag is unavailable or ambiguous. The complete request was not prepared.');
@@ -66,6 +66,7 @@ export class VoiceCreateSession {
             this.diagnostic = createVoiceFlowTrace();
         return this.diagnostic;
     }
+    adoptTrace(trace) { this.diagnostic = trace; }
     endTrace(reason, fields = {}) { this.diagnostic?.end(reason, fields); }
     cancelTrace(reason, retained = false) { this.diagnostic?.emit('cancel', { reason, interactionRetained: retained }); if (!retained)
         this.endTrace(reason); }
@@ -121,13 +122,23 @@ export class VoiceCreateSession {
     async readTags(projectSlug, signal) {
         return (this.options.readTags ?? readVoiceCreateTags)(projectSlug, signal);
     }
-    async prepare(plan, signal, revision, member, tagBindings = []) {
-        return prepareVoiceCreateAgainstCurrentContext(plan, signal, {
+    async prepare(transcript, plan, signal, revision, member, tagBindings = []) {
+        return prepareVoiceCreateWithTagRepairAgainstCurrentContext(plan, transcript, signal, {
             context: currentSignal => this.check(currentSignal, revision),
             refreshBoard: this.options.refreshBoard,
             readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
             readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
+            tagRepair: this.options.tagRepair,
+            onTagRepair: result => this.traceTagRepair(result),
         }, member, tagBindings);
+    }
+    traceTagRepair(result) {
+        this.trace().emit('resolve', {
+            entityType: 'tag',
+            repairAttempted: true,
+            repairCandidateCount: result.candidateCount,
+            repairResult: result.result,
+        });
     }
     presentPreparation(task, result, member) {
         this.binaryClarification = null;
@@ -173,8 +184,9 @@ export class VoiceCreateSession {
                 candidateCount: 1,
                 suggestionKind: suggestion.kind,
             });
-            const result = await this.prepare(task.plan, signal, revision, task.member, tagBindings);
-            return this.presentPreparation({ ...task, tagBindings, tagSuggestion: null }, result, task.member);
+            const result = await this.prepare(task.transcript, task.plan, signal, revision, task.member, tagBindings);
+            return this.presentPreparation({ ...task, tagBindings: result.tagBindings, tagSuggestion: null,
+                modelCalls: task.modelCalls + (result.tagRepairAttempted ? 1 : 0) }, result.preparation, task.member);
         }
         catch (error) {
             return revision === this.revision ? this.fail(error) : { phase: 'error', text: failureText(error) };
@@ -227,10 +239,13 @@ export class VoiceCreateSession {
                 refreshBoard: this.options.refreshBoard,
                 readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
                 readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
+                tagRepair: this.options.tagRepair,
                 onPlannerStart: () => this.trace().emit('planner_start', { plannerVersion: VOICE_CREATE_PLANNER_VERSION, transcriptLength: transcript.length, modelCall: 1 }),
                 onPlan: plan => this.tracePlan(plan),
+                onTagRepair: result => this.traceTagRepair(result),
             });
-            const task = { plan: evaluation.plan, choices: [], prepared: null, tagBindings: [], tagSuggestion: null };
+            const task = { transcript, plan: evaluation.plan, choices: [], prepared: null, tagBindings: evaluation.tagBindings,
+                tagSuggestion: null, modelCalls: 1 + (evaluation.tagRepairAttempted ? 1 : 0) };
             return this.presentPreparation(task, evaluation.preparation);
         }
         catch (error) {
@@ -260,8 +275,9 @@ export class VoiceCreateSession {
         this.working = true;
         const revision = this.revision;
         try {
-            const result = await this.prepare(task.plan, signal, revision, member, task.tagBindings);
-            return this.presentPreparation({ ...task, member }, result, member);
+            const result = await this.prepare(task.transcript, task.plan, signal, revision, member, task.tagBindings);
+            return this.presentPreparation({ ...task, member, tagBindings: result.tagBindings,
+                modelCalls: task.modelCalls + (result.tagRepairAttempted ? 1 : 0) }, result.preparation, member);
         }
         catch (error) {
             return revision === this.revision ? this.fail(error) : { phase: 'error', text: failureText(error) };
@@ -284,7 +300,12 @@ export class VoiceCreateSession {
         let dispatched = false;
         try {
             this.trace().emit('confirmation', { phase: 'confirm_revalidation', result: 'started' });
-            const fresh = await this.prepare(prepared.plan, signal, revision, prepared.member, task.tagBindings);
+            const fresh = await prepareVoiceCreateAgainstCurrentContext(prepared.plan, signal, {
+                context: currentSignal => this.check(currentSignal, revision),
+                refreshBoard: this.options.refreshBoard,
+                readMembers: (projectSlug, currentSignal) => this.readMembers(projectSlug, currentSignal),
+                readTags: (projectSlug, currentSignal) => this.readTags(projectSlug, currentSignal),
+            }, prepared.member, task.tagBindings);
             if (fresh.kind !== 'prepared' || fresh.value.fingerprint !== prepared.fingerprint)
                 throw new VoiceCreatePlanError('stale_context');
             this.check(signal, revision);
@@ -300,7 +321,7 @@ export class VoiceCreateSession {
             catch {
                 refreshFailed = true;
             }
-            this.endTrace(refreshFailed ? 'refresh_failure' : 'success', { modelCalls: 1, mutationsExecuted: 1 });
+            this.endTrace(refreshFailed ? 'refresh_failure' : 'success', { modelCalls: task.modelCalls, mutationsExecuted: 1 });
             return { phase: 'success', text: refreshFailed ? voiceText('voice.create.refreshFailed', 'Story created. The board could not refresh; refresh it before trying another create.') : voiceText('voice.status.done', 'Done.') };
         }
         catch (error) {

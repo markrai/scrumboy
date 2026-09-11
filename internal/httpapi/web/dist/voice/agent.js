@@ -5,17 +5,12 @@ import { createVoiceAgentController, } from './local-agent-controller.js';
 import { renderVoiceMessage } from './i18n.js';
 import { createVoiceAgentModel } from './agent-model.js';
 import { createVoiceCreatePlanner } from './voice-create-planner.js';
+import { createVoiceCreateTagSemanticRepair } from './voice-create-tag-semantic-repair.js';
 import { VoiceCreateSession } from './voice-create-session.js';
+import { VoiceAgentLoop } from './agent-loop.js';
+import { VoiceAgentSkillRegistry } from './agent-skills.js';
+import { EnhancedVoiceSession } from './enhanced-voice-session.js';
 const CHANGE_SERVER_EVENT = 'scrumboy:mobile-change-server';
-const CREATE_V2_SELECTION = 'scrumboy_voice_create_v2';
-export function voiceCreateV2Selected() {
-    try {
-        return globalThis.localStorage?.getItem(CREATE_V2_SELECTION) === '1';
-    }
-    catch {
-        return false;
-    }
-}
 let activeAgent = null;
 function renderMessage(message) {
     return 'kind' in message ? message.text : renderVoiceMessage(message);
@@ -51,10 +46,6 @@ function createSurface() {
       </div>
     </div>
     <div class="voice-agent__controls">
-      <select data-voice-agent-mode aria-label="VoiceFlow mode" data-i18n-aria-label="voice.create.mode" data-i18n-fallback-aria-label="VoiceFlow mode">
-        <option value="agent" data-i18n-text="voice.create.allCommands" data-i18n-fallback="All commands">All commands</option>
-        <option value="create-v2" data-i18n-text="voice.create.modeLabel" data-i18n-fallback="Create v2 (experimental)">Create v2 (experimental)</option>
-      </select>
       <button type="button" class="btn" data-voice-agent-listen data-i18n-text="voice.action.listen" data-i18n-fallback="Listen">Listen</button>
       <button type="button" class="btn btn--ghost" data-voice-agent-stop data-i18n-text="voice.action.stop" data-i18n-fallback="Stop" hidden>Stop</button>
       <button type="button" class="btn btn--ghost" data-voice-agent-basic data-i18n-text="voice.ai.useBasic" data-i18n-fallback="Use basic commands">Use basic commands</button>
@@ -75,23 +66,20 @@ export function closeVoiceAgent() {
     removeCurrentAgent();
 }
 export function openVoiceAgent(options) {
-    const createMode = options.createMode ?? voiceCreateV2Selected();
     const existing = activeAgent?.controller;
-    if (existing?.matchesContext(options) && activeAgent?.root.dataset.experience === (createMode ? 'create-v2' : 'agent')) {
+    if (existing?.matchesContext(options)) {
         void existing.startListening();
         return;
     }
     removeCurrentAgent();
     const root = createSurface();
-    root.dataset.experience = createMode ? 'create-v2' : 'agent';
+    root.dataset.experience = 'enhanced-agent';
     document.body.appendChild(root);
     hydrateI18n(root);
     const status = root.querySelector('[data-voice-agent-status]');
     const activity = root.querySelector('[data-voice-agent-activity]');
     const transcript = root.querySelector('[data-voice-agent-transcript]');
     transcript.style.whiteSpace = 'pre-wrap';
-    const mode = root.querySelector('[data-voice-agent-mode]');
-    mode.value = createMode ? 'create-v2' : 'agent';
     const clarification = root.querySelector('[data-voice-agent-clarification]');
     const choices = root.querySelector('[data-voice-agent-choices]');
     const confirmation = root.querySelector('[data-voice-agent-confirmation]');
@@ -116,7 +104,6 @@ export function openVoiceAgent(options) {
         transcript.textContent = view.capturedTranscript ?? '';
         const isAcquiring = view.activity === 'starting-microphone' || view.activity === 'listening';
         const isProcessing = view.activity === 'processing';
-        mode.disabled = isProcessing;
         listen.hidden = isAcquiring;
         listen.disabled = isProcessing || view.phase === 'closed';
         stop.hidden = !isAcquiring;
@@ -137,10 +124,18 @@ export function openVoiceAgent(options) {
             confirm.classList.toggle('btn--danger', view.confirmation.danger);
         }
     };
+    const model = createVoiceAgentModel(options.localTextGeneration, getLocale);
+    const agent = new VoiceAgentLoop(model, new VoiceAgentSkillRegistry(options), continuation.checked);
+    const create = new VoiceCreateSession({
+        ...options,
+        planner: createVoiceCreatePlanner(options.localTextGeneration),
+        tagRepair: createVoiceCreateTagSemanticRepair(options.localTextGeneration),
+    });
+    const session = new EnhancedVoiceSession({ create, agent });
     const controller = createVoiceAgentController({
         ...options,
-        model: createVoiceAgentModel(options.localTextGeneration, getLocale),
-        ...(createMode ? { createSession: new VoiceCreateSession({ ...options, planner: createVoiceCreatePlanner(options.localTextGeneration) }) } : {}),
+        model,
+        session,
         continuationEnabled: continuation.checked,
         speechOutput: options.speechOutput,
         onView: render,
@@ -181,15 +176,6 @@ export function openVoiceAgent(options) {
             activeAgent = null;
     };
     listen.addEventListener('click', () => void controller.startListening());
-    mode.addEventListener('change', () => {
-        const enabled = mode.value === 'create-v2';
-        try {
-            globalThis.localStorage?.setItem(CREATE_V2_SELECTION, enabled ? '1' : '0');
-        }
-        catch { /* Selection still applies to this surface. */ }
-        closeAgent();
-        openVoiceAgent({ ...options, createMode: enabled });
-    });
     stop.addEventListener('click', () => controller.stopListening());
     close.addEventListener('click', closeAgent);
     basic.addEventListener('click', () => {
@@ -226,7 +212,6 @@ export function openVoiceAgentNotReady(options) {
     root.dataset.state = 'error';
     root.querySelector('[data-voice-agent-status]').textContent = options.status;
     root.querySelector('[data-voice-agent-listen]').hidden = true;
-    root.querySelector('[data-voice-agent-mode]').hidden = true;
     root.querySelector('.voice-agent__continue').hidden = true;
     root.querySelector('[data-voice-agent-stop]').hidden = true;
     root.querySelector('[data-voice-agent-close]').addEventListener('click', removeCurrentAgent);

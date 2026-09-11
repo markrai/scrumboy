@@ -131,6 +131,7 @@ export type SpeechInputStatusOptions = Readonly<{
 }>;
 
 export type SpeechInputCaptureContext =
+  | 'initial_enhanced_voiceflow_capture'
   | 'initial_create_capture'
   | 'member_clarification_capture'
   | 'tag_suggestion_capture'
@@ -138,6 +139,7 @@ export type SpeechInputCaptureContext =
   | 'final_confirmation_capture';
 
 const CAPTURE_CONTEXTS = new Set<SpeechInputCaptureContext>([
+  'initial_enhanced_voiceflow_capture',
   'initial_create_capture',
   'member_clarification_capture',
   'tag_suggestion_capture',

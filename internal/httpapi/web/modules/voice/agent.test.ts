@@ -40,7 +40,7 @@ vi.mock('./local-agent-controller.js', () => ({
   }),
 }));
 
-import { closeVoiceAgent, openVoiceAgent } from './agent.js';
+import { closeVoiceAgent, openVoiceAgent, openVoiceAgentNotReady } from './agent.js';
 
 const localTextGeneration: LocalTextGenerationCapability = {
   status: vi.fn(),
@@ -67,7 +67,6 @@ function open() {
 }
 
 beforeEach(async () => {
-  localStorage.removeItem('scrumboy_voice_create_v2');
   await initI18n({ locale: 'en', loadLocale: async locale => locale === 'de' ? de : en });
   document.body.replaceChildren();
   controller.startListening.mockClear();
@@ -80,18 +79,24 @@ beforeEach(async () => {
 afterEach(() => { closeVoiceAgent(); localStorage.removeItem('scrumboy_voice_create_v2'); });
 
 describe('floating VoiceFlow agent surface', () => {
-  it('explicitly selects Create v2 and can return to the existing agent without a routing model', () => {
+  it.each(['0', '1'])('renders one enhanced VoiceFlow surface and ignores old persisted mode %s', staleMode => {
+    localStorage.setItem('scrumboy_voice_create_v2', staleMode);
     open();
-    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('agent');
-    const mode = document.querySelector<HTMLSelectElement>('[data-voice-agent-mode]')!;
-    mode.value = 'create-v2'; mode.dispatchEvent(new Event('change'));
-    expect(localStorage.getItem('scrumboy_voice_create_v2')).toBe('1');
-    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('create-v2');
-    expect(controller.close).toHaveBeenCalled();
+    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('enhanced-agent');
+    expect(document.querySelector('[data-voice-agent-mode]')).toBeNull();
+    expect(document.body.textContent).not.toContain('All commands');
+    expect(document.body.textContent).not.toContain('Create v2');
+    expect(localStorage.getItem('scrumboy_voice_create_v2')).toBe(staleMode);
+    expect(controller.close).not.toHaveBeenCalled();
     expect(localTextGeneration.generate).not.toHaveBeenCalled();
-    const back = document.querySelector<HTMLSelectElement>('[data-voice-agent-mode]')!;
-    back.value = 'agent'; back.dispatchEvent(new Event('change'));
-    expect(document.getElementById('voiceAgent')?.dataset.experience).toBe('agent');
+  });
+  it('keeps the enhanced-not-ready fallback surface and Use basic commands escape', () => {
+    const useBasic = vi.fn();
+    openVoiceAgentNotReady({ status: 'Preparing', onUseBasic: useBasic });
+    expect(document.querySelector('[data-voice-agent-mode]')).toBeNull();
+    expect(document.querySelector<HTMLButtonElement>('[data-voice-agent-basic]')?.textContent).toBe('Use basic commands');
+    document.querySelector<HTMLButtonElement>('[data-voice-agent-basic]')!.click();
+    expect(useBasic).toHaveBeenCalledOnce();
   });
   it('renders captured transcript as literal text, retaining whitespace', () => {
     open();

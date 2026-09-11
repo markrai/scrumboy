@@ -9,8 +9,9 @@ export const VOICE_CREATE_POST_FINAL_GRACE_MS = 4000;
 const literal = (text) => ({ kind: 'literal', text });
 /** Owns only UI, microphone/TTS sequencing, cancellation and lifecycle. */
 export function createVoiceAgentController(options) {
-    const legacyLoop = options.createSession ? null : options.loop ?? new VoiceAgentLoop(options.model, new VoiceAgentSkillRegistry(options), options.continuationEnabled);
-    const loop = options.createSession ?? legacyLoop;
+    const legacyLoop = options.session || options.createSession ? null : options.loop ?? new VoiceAgentLoop(options.model, new VoiceAgentSkillRegistry(options), options.continuationEnabled);
+    const loop = options.session ?? options.createSession ?? legacyLoop;
+    const enhancedCapture = !!options.session || !!options.createSession;
     let view = { phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null };
     let operation = null;
     let closed = false;
@@ -21,7 +22,9 @@ export function createVoiceAgentController(options) {
     const contextCurrent = () => {
         try {
             const signal = new AbortController().signal;
-            if (options.createSession)
+            if (options.session)
+                options.session.context(signal);
+            else if (options.createSession)
                 options.createSession.context(signal);
             else
                 legacyLoop.registry.context(signal);
@@ -71,7 +74,7 @@ export function createVoiceAgentController(options) {
             voice = false;
     };
     const interpret = async (text, owner) => {
-        if (options.createSession && !loop.pending)
+        if (enhancedCapture && !loop.pending)
             emit({ capturedTranscript: text });
         emit({ activity: 'processing', activityStatus: { key: 'voice.agent.processing', fallback: 'Processing…' } });
         const result = await loop.submit(text, owner.signal);
@@ -81,8 +84,8 @@ export function createVoiceAgentController(options) {
     const listen = async (owner, automatic) => {
         if (!owns(owner))
             return;
-        const maxDurationMs = options.createSession ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
-        const captureContext = options.createSession?.captureContext;
+        const maxDurationMs = enhancedCapture ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
+        const captureContext = options.session?.captureContext ?? options.createSession?.captureContext;
         const pendingBefore = loop.pending;
         loop.trace();
         if (captureContext) {
@@ -112,7 +115,7 @@ export function createVoiceAgentController(options) {
             }
             emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
             const result = await options.speechInput.listen({ maxDurationMs, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
-                ...(options.createSession ? { aggregationMode: 'create_v2', postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
+                ...(enhancedCapture ? { aggregationMode: 'create_v2', postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
                 onListening: () => {
                     if (owns(owner)) {
                         if (captureContext)
@@ -213,7 +216,8 @@ export function createVoiceAgentController(options) {
     };
     // Pending tasks and retained references must expire even while the UI is waiting for a typed reply.
     const contextMonitor = globalThis.setInterval(() => {
-        if (closed || (!operation && !loop.pending && !legacyLoop?.session.activeTodo) || contextCurrent())
+        const retainsContext = options.session?.retainsContext ?? !!legacyLoop?.session.activeTodo;
+        if (closed || (!operation && !loop.pending && !retainsContext) || contextCurrent())
             return;
         loop.endTrace('stale_context');
         controller.invalidate();

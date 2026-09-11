@@ -8,6 +8,7 @@ import type { VoiceCommandContext } from './command-context.js';
 import { createVoiceCreateDryRunSession, evaluateVoiceCreateDryRun, type VoiceCreateDryRunOptions } from './voice-create-evaluation.js';
 import type { VoiceCreatePlanResult, VoiceCreatePlanV1 } from './voice-create-plan.js';
 import { createVoiceCreatePlanner, VOICE_CREATE_DRY_RUN_OUTPUT_PREVIEW_CODE_UNITS } from './voice-create-planner.js';
+import { createVoiceCreateTagSemanticRepair } from './voice-create-tag-semantic-repair.js';
 
 const members: BoardMember[] = [
   { userId: 8, name: 'Mark', email: 'mark@example.test', role: 'maintainer' },
@@ -228,6 +229,48 @@ describe('Voice Create dry-run v1', () => {
     await expect(evaluateVoiceCreateDryRun(`Create Fred and tag it ${reference}`, f.options)).resolves.toMatchObject({
       preparation: { status: 'ready', tags: [authoritative] },
     });
+  });
+
+  it('prepares the exact physical It-architecture planner reference deterministically in dry-run', async () => {
+    const tagRepair = vi.fn();
+    const plan = create({ title: 'Quasar', assignee: 'mark', tags: ['It architecture'] });
+    const f = harness(plan, { tagRepair });
+    const transcript = 'create a story called Quasar assigned to mark and tag It architecture.';
+
+    await expect(evaluateVoiceCreateDryRun(transcript, f.options)).resolves.toMatchObject({
+      outcome: 'ready',
+      planner: { status: 'ok', plan },
+      preparation: { status: 'ready', title: 'Quasar', assignee: { userId: 8, name: 'Mark' }, tags: ['architecture'] },
+      confirmationReady: true,
+      plannerCallCount: 1,
+      mutationExecuted: false,
+    });
+    expect(f.planner).toHaveBeenCalledOnce();
+    expect(tagRepair).not.toHaveBeenCalled();
+  });
+
+  it('uses one closed-set semantic repair in dry-run and binds the selected authoritative candidate', async () => {
+    const plan = create({ title: 'Quasar', assignee: 'mark', tags: ['tag it architecture'] });
+    const generate = vi.fn(async (request: { requestId: string }) => ({
+      requestId: request.requestId,
+      text: JSON.stringify({ version: 1, selections: [{ referenceIndex: 0, tagId: 'candidate-1' }] }),
+    }));
+    const f = harness(plan, { tagRepair: createVoiceCreateTagSemanticRepair({ generate }) });
+    f.board.tags.push({ tagId: 15, name: 'IT', count: 0 });
+
+    await expect(evaluateVoiceCreateDryRun(
+      'create a story called Quasar assigned to mark and tag It architecture.',
+      f.options,
+    )).resolves.toMatchObject({
+      outcome: 'ready',
+      preparation: { status: 'ready', tags: ['architecture'] },
+      confirmationReady: true,
+      plannerCallCount: 1,
+      mutationExecuted: false,
+    });
+    expect(f.planner).toHaveBeenCalledOnce();
+    expect(generate).toHaveBeenCalledOnce();
+    expect(generate.mock.calls[0][0].input).toContain('create a story called Quasar assigned to mark and tag It architecture.');
   });
 
   it('keeps split Nano tags visible while deterministically preparing one authoritative acronym', async () => {

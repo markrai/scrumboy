@@ -10,6 +10,7 @@ import { VoiceAgentLoop, agentSafeFailure, type AgentLoopView } from './agent-lo
 import { VoiceAgentSkillRegistry } from './agent-skills.js';
 import type { VoiceAgentModel } from './agent-model.js';
 import type { VoiceCreateSession } from './voice-create-session.js';
+import type { EnhancedVoiceSessionPort } from './enhanced-voice-session.js';
 
 /** Safety ceiling only; an owned ASR final still resolves acquisition immediately. */
 export const VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS = 45_000;
@@ -18,14 +19,16 @@ export const VOICE_CREATE_POST_FINAL_GRACE_MS = 4_000;
 type ControllerOptions = VoiceCommandOptions & {
   model: VoiceAgentModel; speechInput: SpeechInputCapability; speechOutput?: SpeechOutputCapability | null;
   continuationEnabled: boolean; onView(view: VoiceAgentView): void;
+  session?: EnhancedVoiceSessionPort;
   loop?: VoiceAgentLoop;
   createSession?: VoiceCreateSession;
 };
 const literal = (text: string): VoiceAgentMessage => ({ kind: 'literal', text });
 /** Owns only UI, microphone/TTS sequencing, cancellation and lifecycle. */
 export function createVoiceAgentController(options: ControllerOptions) {
-  const legacyLoop = options.createSession ? null : options.loop ?? new VoiceAgentLoop(options.model, new VoiceAgentSkillRegistry(options), options.continuationEnabled);
-  const loop = options.createSession ?? legacyLoop!;
+  const legacyLoop = options.session || options.createSession ? null : options.loop ?? new VoiceAgentLoop(options.model, new VoiceAgentSkillRegistry(options), options.continuationEnabled);
+  const loop = options.session ?? options.createSession ?? legacyLoop!;
+  const enhancedCapture = !!options.session || !!options.createSession;
   let view: VoiceAgentView = { phase: 'ready', status: { key: 'voice.agent.ready', fallback: 'Ready' }, activity: 'idle', activityStatus: null, confirmation: null, clarification: null };
   let operation: AbortController | null = null;
   let closed = false;
@@ -36,7 +39,9 @@ export function createVoiceAgentController(options: ControllerOptions) {
   const contextCurrent = () => {
     try {
       const signal = new AbortController().signal;
-      if (options.createSession) options.createSession.context(signal); else legacyLoop!.registry.context(signal);
+      if (options.session) options.session.context(signal);
+      else if (options.createSession) options.createSession.context(signal);
+      else legacyLoop!.registry.context(signal);
       return true;
     } catch { return false; }
   };
@@ -68,15 +73,15 @@ export function createVoiceAgentController(options: ControllerOptions) {
     else if (terminal) voice = false;
   };
   const interpret = async (text: string, owner: AbortController) => {
-    if (options.createSession && !loop.pending) emit({ capturedTranscript: text });
+    if (enhancedCapture && !loop.pending) emit({ capturedTranscript: text });
     emit({ activity: 'processing', activityStatus: { key: 'voice.agent.processing', fallback: 'Processing…' } });
     const result = await loop.submit(text, owner.signal);
     if (owns(owner)) await show(result, owner);
   };
   const listen = async (owner: AbortController, automatic: boolean) => {
     if (!owns(owner)) return;
-    const maxDurationMs = options.createSession ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
-    const captureContext = options.createSession?.captureContext;
+    const maxDurationMs = enhancedCapture ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
+    const captureContext = options.session?.captureContext ?? options.createSession?.captureContext;
     const pendingBefore = loop.pending;
     loop.trace();
     if (captureContext) {
@@ -104,7 +109,7 @@ export function createVoiceAgentController(options: ControllerOptions) {
       }
       emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
       const result = await options.speechInput.listen({ maxDurationMs, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
-        ...(options.createSession ? { aggregationMode: 'create_v2' as const, postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
+        ...(enhancedCapture ? { aggregationMode: 'create_v2' as const, postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
         onListening: () => { if (owns(owner)) {
           if (captureContext) loop.trace().emit('capture', { phase: 'listening', captureContext, pendingBefore });
           emit({ activity: 'listening', activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' } });
@@ -163,7 +168,8 @@ export function createVoiceAgentController(options: ControllerOptions) {
   };
   // Pending tasks and retained references must expire even while the UI is waiting for a typed reply.
   const contextMonitor = globalThis.setInterval(() => {
-    if (closed || (!operation && !loop.pending && !legacyLoop?.session.activeTodo) || contextCurrent()) return;
+    const retainsContext = options.session?.retainsContext ?? !!legacyLoop?.session.activeTodo;
+    if (closed || (!operation && !loop.pending && !retainsContext) || contextCurrent()) return;
     loop.endTrace('stale_context');
     controller.invalidate();
     emit({ phase: 'error', status: { key: 'voice.errors.staleContext', fallback: 'The board changed before the command could run.' } });

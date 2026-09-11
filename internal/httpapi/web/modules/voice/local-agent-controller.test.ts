@@ -4,6 +4,7 @@ import { createVoiceAgentController } from './local-agent-controller.js';
 import { harness, skill, finish, latestRef } from './agent.test.utils.js';
 import { SpeechInputError } from '../platform/speech-input.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
+import { createVoiceFlowTrace } from './trace.js';
 
 function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListening = false) {
   let speaking = false;
@@ -19,7 +20,80 @@ function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListe
   return { controller, speechInput, speechOutput, onView };
 }
 describe('VoiceAgentController local skill production path', () => {
-  it('keeps the All Commands acquisition window at 10 seconds', async () => {
+  it('uses the enhanced fresh 45-second Create-compatible capture policy and context', async () => {
+    const h = harness();
+    const trace = createVoiceFlowTrace();
+    const session = {
+      pending: false,
+      confirmationPending: false,
+      captureContext: 'initial_enhanced_voiceflow_capture' as const,
+      retainsContext: false,
+      trace: () => trace,
+      endTrace: vi.fn(),
+      cancelTrace: vi.fn(),
+      context: vi.fn(),
+      submit: vi.fn(async () => ({ phase: 'success' as const, text: 'Opened.' })),
+      confirm: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      cancel: vi.fn(() => ({ phase: 'success' as const, text: 'Cancelled.' })),
+      choose: vi.fn(async () => ({ phase: 'success' as const, text: 'Opened.' })),
+      setKeepListening: vi.fn(),
+      invalidate: vi.fn(),
+    };
+    const speechInput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      listen: vi.fn(async (options: any) => { options.onListening?.(); return { transcript: 'Open Goblin', provider: 'android_on_device' as const }; }),
+    };
+    const controller = createVoiceAgentController({ ...h.options, model: h.model, session, speechInput, continuationEnabled: false, onView: vi.fn() });
+    await controller.startListening();
+    expect(speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({
+      maxDurationMs: 45_000,
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: 4_000,
+      captureContext: 'initial_enhanced_voiceflow_capture',
+    }));
+    expect(session.submit).toHaveBeenCalledWith('Open Goblin', expect.any(AbortSignal));
+    controller.close();
+  });
+
+  it.each([
+    ['fresh enhanced', false, 'initial_enhanced_voiceflow_capture'],
+    ['Create-owned pending', true, 'initial_create_capture'],
+    ['Agent-owned pending', true, undefined],
+  ] as const)('keeps the enhanced %s capture policy explicit', async (_label, pending, captureContext) => {
+    const h = harness();
+    const trace = createVoiceFlowTrace();
+    const session = {
+      pending,
+      confirmationPending: pending,
+      ...(captureContext ? { captureContext } : {}),
+      retainsContext: false,
+      trace: () => trace,
+      endTrace: vi.fn(),
+      cancelTrace: vi.fn(),
+      context: vi.fn(),
+      submit: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      confirm: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      cancel: vi.fn(() => ({ phase: 'success' as const, text: 'Cancelled.' })),
+      choose: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      setKeepListening: vi.fn(),
+      invalidate: vi.fn(),
+    };
+    const speechInput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      listen: vi.fn(async (options: any) => { options.onListening?.(); return { transcript: 'reply', provider: 'android_on_device' as const }; }),
+    };
+    const controller = createVoiceAgentController({ ...h.options, model: h.model, session, speechInput, continuationEnabled: false, onView: vi.fn() });
+    await controller.startListening();
+    expect(speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({
+      maxDurationMs: 45_000,
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: 4_000,
+      ...(captureContext ? { captureContext } : { captureContext: undefined }),
+    }));
+    controller.close();
+  });
+
+  it('keeps the legacy/basic acquisition window at 10 seconds', async () => {
     const s = surface(harness(), []);
     await s.controller.startListening();
     expect(s.speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({ maxDurationMs: 10_000 }));
@@ -147,7 +221,7 @@ describe('production VoiceFlow traces', () => {
     const s = surface(h, []);
     s.speechInput.listen.mockResolvedValueOnce({ transcript: '  open Happy Birthday  ', provider } as never);
     await s.controller.startListening();
-    expect(events.map(e => e.stage)).toEqual(['asr_final', 'interpret', 'resolve', 'safety', 'execute', 'execute', 'interpret', 'terminal']);
+    expect(events.map(e => e.stage)).toEqual(['asr_final', 'interpret', 'resolve', 'safety', 'execute', 'execute', 'terminal']);
     expect(events[0]).toMatchObject({ provider, modality: 'voice', transcript: 'open Happy Birthday' });
     expect(events[3]).toMatchObject({ danger: false, reason: 'non_delete_command' });
     expect(events.at(-1)).toMatchObject({ outcome: 'success' });

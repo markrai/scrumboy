@@ -97,6 +97,21 @@ describe('one inference provider', () => {
     expect(generate.mock.calls[0][0]).toMatchObject({ input: transcript, maximumOutputTokens: 256 });
     expect(generate.mock.calls[0][0].requestId).toContain(VOICE_CREATE_PLANNER_VERSION);
   });
+  it('hardens the exact physical tag-it utterance toward the intended tag reference', async () => {
+    const expected = { version: 1, kind: 'create', title: 'Quasar', assignee: 'mark', tags: ['architecture'] } as const;
+    const generate = vi.fn(async request => ({ requestId: request.requestId, text: JSON.stringify(expected) }));
+    const transcript = 'create a story called Quasar assigned to mark and tag It architecture.';
+
+    await expect(createVoiceCreatePlanner({ generate })(transcript, new AbortController().signal)).resolves.toEqual(expected);
+
+    expect(generate).toHaveBeenCalledOnce();
+    expect(generate.mock.calls[0][0]).toMatchObject({ input: transcript, maximumOutputTokens: 256 });
+    expect(generate.mock.calls[0][0].instructions).toContain('"tag it X", "it" refers to the Todo');
+    expect(generate.mock.calls[0][0].instructions).toContain(`${transcript} ->`);
+    expect(generate.mock.calls[0][0].instructions).toContain('"tags":["architecture"]');
+    expect(generate.mock.calls[0][0].instructions).toContain('tag it urgent and backend. ->');
+    expect(generate.mock.calls[0][0].instructions).toContain('"tags":["urgent","backend"]');
+  });
   it('rejects stale IDs and malformed output without repair inference', async () => {
     for (const response of [{ requestId: 'wrong', text: JSON.stringify(base) }, { text: 'bad' }]) {
       const generate = vi.fn(async request => ({ requestId: request.requestId, ...response }));
