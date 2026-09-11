@@ -284,6 +284,7 @@ export function createSpeechInputComposition(
         return Promise.reject(new SpeechInputError('invalid_request', { recoverable: false }));
       }
       if (activeListening !== null) return Promise.reject(new SpeechInputError('busy'));
+      const captureFields = listenOptions.captureContext ? { captureContext: listenOptions.captureContext } : {};
       activeListening = 'starting';
       activeProvider = null;
       return run(
@@ -291,7 +292,7 @@ export function createSpeechInputComposition(
         listenOptions.maxDurationMs,
         async (operationId) => {
           activeListening = operationId;
-          voiceFlowDiagnostic('ASR start', { operationId });
+          voiceFlowDiagnostic('ASR start', { operationId, ...captureFields });
           let announced = false;
           const listener = await plugin.addListener(NATIVE_SPEECH_LISTENING_EVENT, (event: NativeSpeechListeningEvent) => {
             if (
@@ -306,6 +307,7 @@ export function createSpeechInputComposition(
             }
             voiceFlowDiagnostic('ASR ready', {
               operationId,
+              ...captureFields,
               ...(activeProvider ? { provider: activeProvider } : {}),
             });
             try {
@@ -320,6 +322,7 @@ export function createSpeechInputComposition(
               operationId,
               maxDurationMs: listenOptions.maxDurationMs,
               ...(listenOptions.aggregationMode ? { aggregationMode: listenOptions.aggregationMode } : {}),
+              ...captureFields,
               ...(listenOptions.postFinalGraceMs === undefined ? {} : { postFinalGraceMs: listenOptions.postFinalGraceMs }),
               language: effectiveSpeechInputLanguage(listenOptions.language),
             });
@@ -332,6 +335,7 @@ export function createSpeechInputComposition(
         const transcript = result.transcript.trim();
         voiceFlowDiagnostic('ASR result', {
           operationId: activeListening,
+          ...captureFields,
           transcript,
           ...(activeProvider ? { provider: activeProvider } : {}),
         });
@@ -340,6 +344,7 @@ export function createSpeechInputComposition(
         const failure = nativeError(error);
         voiceFlowDiagnostic('ASR failure', {
           operationId: activeListening,
+          ...captureFields,
           normalizedCode: failure.code,
           maxDurationMs: listenOptions.maxDurationMs,
           ...(activeProvider ? { provider: activeProvider } : {}),

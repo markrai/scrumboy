@@ -66,6 +66,26 @@ describe('bounded semantic create contract', () => {
     expect(() => guardCreateRequest(base as VoiceCreatePlanV1, 'Create Big Man and schedule it for Tuesday')).toThrow();
     expect(() => guardCreateRequest({ ...base, title: 'Schedule Tuesday', notes: 'Remind the customer' } as VoiceCreatePlanV1, 'Create a card called Schedule Tuesday with notes Remind the customer')).not.toThrow();
   });
+  it.each([
+    'Create Jonas and make the tag architecture',
+    'Create Jonas and also make the tag architecture',
+    'Create Jonas and make it architecture',
+    'Create Jonas and add the architecture tag',
+    'Create Jonas and assign it to Mark',
+    'uh, create a story called Jonas, and assigned to Mark and also make the tag architecture',
+  ])('does not mistake field wording for another mutation: %s', transcript => {
+    expect(() => guardCreateRequest({ ...base, title: 'Jonas' } as VoiceCreatePlanV1, transcript)).not.toThrow();
+  });
+  it.each([
+    'Create Big Man and delete Bob',
+    'Create Big Man and move Bob to Done',
+    'Create Big Man and open Bob',
+    'Create Big Man and rename Bob',
+    'Create Big Man and make another story called Alice',
+    'Create Big Man and create another todo called Alice',
+  ])('still blocks an additional Todo mutation: %s', transcript => {
+    expect(() => guardCreateRequest(base as VoiceCreatePlanV1, transcript)).toThrow(expect.objectContaining({ code: 'incomplete_request' }));
+  });
 });
 describe('one inference provider', () => {
   it('sends the complete thought once, no board facts, no iterative completion', async () => {

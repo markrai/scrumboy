@@ -1,4 +1,5 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import type { SpeechInputCaptureContext } from '../../../internal/httpapi/web/modules/platform/speech-input.js';
 
 export const NATIVE_SPEECH_LISTENING_EVENT = 'listening' as const;
 export const NATIVE_SPEECH_CAPABILITY_EVENT = 'asrCapability' as const;
@@ -29,6 +30,7 @@ export interface NativeSpeechInputPlugin {
     operationId: string;
     maxDurationMs: number;
     aggregationMode?: 'single' | 'create_v2';
+    captureContext?: SpeechInputCaptureContext;
     postFinalGraceMs?: number;
     language?: string;
   }): Promise<{ transcript: string; segmentCount?: number }>;

@@ -246,7 +246,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                 @Override
                 public void onListening() {
                     if (!operations.isActive(operation)) return;
-                    notifyListening(call.getString("operationId"), decision.providerId);
+                    notifyListening(call.getString("operationId"), decision.providerId, diagnosticCaptureContext(call));
                 }
 
                 @Override
@@ -254,6 +254,14 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                     if (!operations.claimCompletion(operation)) return;
                     PlatformRecognitionHandle handle = handleSlot[0];
                     if (handle != null) handle.destroy();
+                    SpeechInputDiagnostics.emit(
+                        "product-terminal",
+                        "operationId", call.getString("operationId"),
+                        "captureContext", diagnosticCaptureContext(call),
+                        "provider", decision.providerId.diagnosticName(),
+                        "product-terminal", "final",
+                        "length", transcript == null ? 0 : transcript.trim().length()
+                    );
                     JSObject result = new JSObject();
                     result.put("transcript", transcript);
                     call.resolve(result);
@@ -307,7 +315,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                     @Override
                     public void onListening() {
                         if (!operations.isActive(operation)) return;
-                        notifyListening(call.getString("operationId"), decision.providerId);
+                        notifyListening(call.getString("operationId"), decision.providerId, diagnosticCaptureContext(call));
                     }
 
                     @Override
@@ -315,6 +323,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         if (!operations.isActive(operation)) return;
                         SpeechInputDiagnostics.emit(
                             "response",
+                            "operationId", call.getString("operationId"),
+                            "captureContext", diagnosticCaptureContext(call),
                             "provider", decision.providerId.diagnosticName(),
                             "response", "partial"
                         );
@@ -340,6 +350,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                             () -> {
                                 SpeechInputDiagnostics.emit(
                                     "turn-final",
+                                    "operationId", call.getString("operationId"),
+                                    "captureContext", diagnosticCaptureContext(call),
                                     "provider", decision.providerId.diagnosticName(),
                                     "segments", lifecycle.segmentCount(),
                                     "length", lifecycle.transcript().length(),
@@ -353,6 +365,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         );
                         SpeechInputDiagnostics.emit(
                             "response",
+                            "operationId", call.getString("operationId"),
+                            "captureContext", diagnosticCaptureContext(call),
                             "provider", decision.providerId.diagnosticName(),
                             "response", "final",
                             "productTerminal", outcome == AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT,
@@ -361,6 +375,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         if (aggregateSegments && outcome == AdvancedUtteranceLifecycle.Outcome.SEGMENT_FINAL) {
                             SpeechInputDiagnostics.emit(
                                 "segment-final",
+                                "operationId", call.getString("operationId"),
+                                "captureContext", diagnosticCaptureContext(call),
                                 "provider", decision.providerId.diagnosticName(),
                                 "segment", lifecycle.segmentCount(),
                                 "length", text == null ? 0 : text.trim().length()
@@ -370,6 +386,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         if (outcome != AdvancedUtteranceLifecycle.Outcome.RESOLVE_TRANSCRIPT) return;
                         SpeechInputDiagnostics.emit(
                             "product-terminal",
+                            "operationId", call.getString("operationId"),
+                            "captureContext", diagnosticCaptureContext(call),
                             "provider", decision.providerId.diagnosticName(),
                             "product-terminal", "final",
                             "length", lifecycle.transcript().length()
@@ -391,6 +409,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                             lifecycle.onCompleted(operations, operation, () -> {});
                         SpeechInputDiagnostics.emit(
                             "response",
+                            "operationId", call.getString("operationId"),
+                            "captureContext", diagnosticCaptureContext(call),
                             "provider", decision.providerId.diagnosticName(),
                             "response", "completed",
                             "productTerminal", outcome != AdvancedUtteranceLifecycle.Outcome.IGNORE
@@ -404,7 +424,15 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         result.put("transcript", lifecycle.transcript());
                         if (aggregateSegments) {
                             result.put("segmentCount", lifecycle.segmentCount());
-                            SpeechInputDiagnostics.emit("turn-final", "provider", decision.providerId.diagnosticName(), "segments", lifecycle.segmentCount(), "length", lifecycle.transcript().length(), "completion", "sdk_completed");
+                            SpeechInputDiagnostics.emit(
+                                "turn-final",
+                                "operationId", call.getString("operationId"),
+                                "captureContext", diagnosticCaptureContext(call),
+                                "provider", decision.providerId.diagnosticName(),
+                                "segments", lifecycle.segmentCount(),
+                                "length", lifecycle.transcript().length(),
+                                "completion", "sdk_completed"
+                            );
                         }
                         call.resolve(result);
                     }
@@ -416,6 +444,8 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                         }
                         SpeechInputDiagnostics.emit(
                             "response",
+                            "operationId", call.getString("operationId"),
+                            "captureContext", diagnosticCaptureContext(call),
                             "provider", decision.providerId.diagnosticName(),
                             "response", "error",
                             "captureHandedToSdk", captureHandedToSdk
@@ -611,12 +641,29 @@ public class ScrumboySpeechInputPlugin extends Plugin {
         notifyListeners(CAPABILITY_EVENT, event);
     }
 
-    private void notifyListening(String operationId, SpeechInputProviderId providerId) {
-        SpeechInputDiagnostics.emit("listening", "provider", providerId.diagnosticName());
+    private void notifyListening(String operationId, SpeechInputProviderId providerId, String captureContext) {
+        SpeechInputDiagnostics.emit(
+            "listening",
+            "operationId", operationId,
+            "captureContext", captureContext,
+            "provider", providerId.diagnosticName()
+        );
         JSObject event = new JSObject();
         event.put("operationId", operationId);
         event.put("provider", providerId.diagnosticName());
         notifyListeners(LISTENING_EVENT, event);
+    }
+
+    private static String diagnosticCaptureContext(PluginCall call) {
+        String value = call.getString("captureContext");
+        if (
+            "initial_create_capture".equals(value)
+            || "member_clarification_capture".equals(value)
+            || "tag_suggestion_capture".equals(value)
+            || "binary_clarification_capture".equals(value)
+            || "final_confirmation_capture".equals(value)
+        ) return value;
+        return "unspecified_capture";
     }
 
     private void rejectCurrent(

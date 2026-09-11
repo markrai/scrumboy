@@ -130,9 +130,25 @@ export type SpeechInputStatusOptions = Readonly<{
   signal?: AbortSignal;
 }>;
 
+export type SpeechInputCaptureContext =
+  | 'initial_create_capture'
+  | 'member_clarification_capture'
+  | 'tag_suggestion_capture'
+  | 'binary_clarification_capture'
+  | 'final_confirmation_capture';
+
+const CAPTURE_CONTEXTS = new Set<SpeechInputCaptureContext>([
+  'initial_create_capture',
+  'member_clarification_capture',
+  'tag_suggestion_capture',
+  'binary_clarification_capture',
+  'final_confirmation_capture',
+]);
+
 export type SpeechInputListenOptions = Readonly<{
   maxDurationMs: number;
   aggregationMode?: 'single' | 'create_v2';
+  captureContext?: SpeechInputCaptureContext;
   postFinalGraceMs?: number;
   language?: string;
   signal?: AbortSignal;
@@ -158,6 +174,7 @@ export function validateSpeechInputListenOptions(options: SpeechInputListenOptio
     || options.maxDurationMs < 1
     || options.maxDurationMs > SPEECH_INPUT_DURATION_CEILING_MS
     || (options.aggregationMode !== undefined && options.aggregationMode !== 'single' && options.aggregationMode !== 'create_v2')
+    || (options.captureContext !== undefined && !CAPTURE_CONTEXTS.has(options.captureContext))
     || (options.postFinalGraceMs !== undefined && (!Number.isInteger(options.postFinalGraceMs) || options.postFinalGraceMs < 1 || options.postFinalGraceMs > 10_000))
     || (options.onListening !== undefined && typeof options.onListening !== 'function')
     || (

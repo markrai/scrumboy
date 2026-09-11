@@ -293,6 +293,27 @@ describe('Voice Create dry-run v1', () => {
     expect(f.readTags).toHaveBeenCalledOnce();
   });
 
+  it('prepares the physically observed Jonas field wording with a controlled planner result', async () => {
+    const plan = create({ title: 'Jonas', assignee: 'Mark', tags: ['architecture'] });
+    const f = harness(plan);
+    const transcript = 'uh, create a story called Jonas, and assigned to Mark and also make the tag architecture';
+
+    await expect(evaluateVoiceCreateDryRun(transcript, f.options)).resolves.toMatchObject({
+      outcome: 'ready',
+      planner: { status: 'ok', plan },
+      preparation: {
+        status: 'ready',
+        title: 'Jonas',
+        assignee: { userId: 8, name: 'Mark' },
+        tags: ['architecture'],
+      },
+      confirmationReady: true,
+      plannerCallCount: 1,
+      mutationExecuted: false,
+    });
+    expect(f.planner).toHaveBeenCalledOnce();
+  });
+
   it('returns parsed planner visibility when unsupported semantics block preparation', async () => {
     const plan = create({ unhandled: [{ text: 'schedule it for Tuesday', reason: 'unsupported' }] });
     const f = harness(plan);

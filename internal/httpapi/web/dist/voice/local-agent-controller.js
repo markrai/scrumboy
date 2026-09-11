@@ -82,22 +82,46 @@ export function createVoiceAgentController(options) {
         if (!owns(owner))
             return;
         const maxDurationMs = options.createSession ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
+        const captureContext = options.createSession?.captureContext;
+        const pendingBefore = loop.pending;
         loop.trace();
+        if (captureContext) {
+            loop.trace().emit('capture', {
+                phase: 'starting',
+                captureContext,
+                automatic,
+                pendingBefore,
+                confirmationPendingBefore: loop.confirmationPending,
+            });
+        }
         try {
             if (automatic) {
                 const status = await options.speechInput.status({ signal: owner.signal });
                 if (!owns(owner))
                     return;
+                if (captureContext) {
+                    loop.trace().emit('capture', {
+                        phase: 'provider_status',
+                        captureContext,
+                        providerState: status.state,
+                        ...('reason' in status ? { providerReason: status.reason } : {}),
+                    });
+                }
                 if (status.state !== 'ready')
                     throw new SpeechInputError('not_ready');
             }
             emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
             const result = await options.speechInput.listen({ maxDurationMs, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
-                ...(options.createSession ? { aggregationMode: 'create_v2', postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS } : {}),
-                onListening: () => { if (owns(owner))
-                    emit({ activity: 'listening', activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' } }); } });
+                ...(options.createSession ? { aggregationMode: 'create_v2', postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
+                onListening: () => {
+                    if (owns(owner)) {
+                        if (captureContext)
+                            loop.trace().emit('capture', { phase: 'listening', captureContext, pendingBefore });
+                        emit({ activity: 'listening', activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' } });
+                    }
+                } });
             if (owns(owner)) {
-                loop.trace().emit('asr_final', { modality: 'voice', transcript: result.transcript.trim(), transcriptLength: result.transcript.trim().length, provider: result.provider, ...(result.segmentCount === undefined ? {} : { segmentCount: result.segmentCount }) });
+                loop.trace().emit('asr_final', { modality: 'voice', ...(captureContext ? { captureContext } : {}), transcript: result.transcript.trim(), transcriptLength: result.transcript.trim().length, provider: result.provider, ...(result.segmentCount === undefined ? {} : { segmentCount: result.segmentCount }) });
                 await interpret(result.transcript, owner);
             }
         }
@@ -108,7 +132,7 @@ export function createVoiceAgentController(options) {
             // Preserve only allowlisted codes across that boundary, not instanceof identity.
             const suppliedCode = error && typeof error === 'object' ? error.code : undefined;
             const code = isSpeechInputErrorCode(suppliedCode) ? suppliedCode : 'recognition_failed';
-            loop.trace().emit(code === 'cancelled' ? 'cancel' : 'failure', { source: 'speech', code, maxDurationMs, interactionRetained: loop.pending });
+            loop.trace().emit(code === 'cancelled' ? 'cancel' : 'failure', { source: 'speech', ...(captureContext ? { captureContext } : {}), code, maxDurationMs, pendingBefore, interactionRetained: loop.pending });
             if (!loop.pending)
                 loop.endTrace(code === 'cancelled' ? 'speech_cancelled' : 'speech_failure');
             const status = code === 'permission_denied' ? { key: 'voice.agent.permissionDenied', fallback: 'Microphone permission was denied.' }

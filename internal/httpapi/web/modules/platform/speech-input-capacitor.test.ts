@@ -85,6 +85,47 @@ describe('Capacitor speech-input composition', () => {
     });
   });
 
+  it('correlates scoped Create capture diagnostics and native ownership without changing recognition policy', async () => {
+    const native = plugin();
+    let listeningListener!: (event: { operationId: string; provider?: 'mlkit_genai_advanced' }) => void;
+    vi.mocked(native.addListener).mockImplementation(async (name, listener) => {
+      if (name === 'listening') listeningListener = listener as typeof listeningListener;
+      return { remove: vi.fn().mockResolvedValue(undefined) };
+    });
+    vi.mocked(native.listen).mockImplementation(async () => {
+      listeningListener({ operationId: 'speech-confirm', provider: 'mlkit_genai_advanced' });
+      return { transcript: 'Yeah, go ahead' };
+    });
+    vi.stubGlobal('localStorage', { getItem: vi.fn().mockReturnValue('1') });
+    const debug = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const capability = createSpeechInputComposition({ plugin: native, operationIdFactory: () => 'speech-confirm' })
+      .registry.get(SPEECH_INPUT_CAPABILITY)!;
+
+    await capability.listen({ maxDurationMs: 45_000, aggregationMode: 'create_v2', postFinalGraceMs: 4_000, captureContext: 'binary_clarification_capture' });
+
+    expect(native.listen).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'speech-confirm',
+      captureContext: 'binary_clarification_capture',
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: 4_000,
+    }));
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR start', {
+      operationId: 'speech-confirm',
+      captureContext: 'binary_clarification_capture',
+    });
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR ready', {
+      operationId: 'speech-confirm',
+      captureContext: 'binary_clarification_capture',
+      provider: 'mlkit_genai_advanced',
+    });
+    expect(debug).toHaveBeenCalledWith('VoiceFlow ASR result', {
+      operationId: 'speech-confirm',
+      captureContext: 'binary_clarification_capture',
+      transcript: 'Yeah, go ahead',
+      provider: 'mlkit_genai_advanced',
+    });
+  });
+
   it('owns the 10-second deadline, cancels native work, and ignores a late result', async () => {
     const native = plugin();
     const first = deferred<{ transcript: string }>();

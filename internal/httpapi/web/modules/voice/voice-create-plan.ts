@@ -88,7 +88,11 @@ export function guardCreateRequest(plan: VoiceCreatePlanV1, transcript: string):
   for (const literal of [plan.title, plan.notes]) {
     if (literal) remainder = remainder.replace(literal.toLocaleLowerCase('en-US'), ' ');
   }
-  if (/\b(schedule|remind|deadline|due date|priority|sprint|estimate)\b|\b(?:in|to) (?:the )?(?:project|board)\b|\b(?:two|three|2|3) (?:stories|cards|todos|tasks|items)\b|\b(?:and|then|also) (?:create|make|delete|move|open|rename)\b/i.test(remainder)) {
+  const additionalNonCreateMutation = /\b(?:and|then|also)\s+(?:delete|move|open|rename)\b/i;
+  const additionalCreateMutation = /\b(?:and|then|also)\s+(?:create|make)\s+(?:(?:me|us)\s+)?(?:(?:a|an|the)\s+)?(?:another\s+)?(?:story|card|todo|task|item)s?\b/i;
+  if (/\b(schedule|remind|deadline|due date|priority|sprint|estimate)\b|\b(?:in|to) (?:the )?(?:project|board)\b|\b(?:two|three|2|3) (?:stories|cards|todos|tasks|items)\b/i.test(remainder)
+    || additionalNonCreateMutation.test(remainder)
+    || additionalCreateMutation.test(remainder)) {
     throw new VoiceCreatePlanError('incomplete_request');
   }
 }

@@ -281,6 +281,7 @@ describe('Create v2 application interaction', () => {
     await f.controller.submitTranscript('Create Fred and tag it Bugs');
     expect(f.controller.getView().phase).toBe('confirmation');
     expect(f.controller.getView().confirmation?.summary).toBe('Did you mean tag `bug`?');
+    expect(f.session.captureContext).toBe('tag_suggestion_capture');
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.execute).not.toHaveBeenCalled();
 
@@ -354,6 +355,51 @@ describe('Create v2 application interaction', () => {
     expect(f.controller.getView().phase).toBe('success');
     expect(f.generate).toHaveBeenCalledOnce();
     expect(f.execute).toHaveBeenCalledOnce();
+  });
+  it('retains a binary clarification across ASR failure and retries it without another planner call', async () => {
+    const f = fixture({ version: 1, kind: 'create', title: 'Fred' } as never);
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    vi.spyOn(console, 'debug').mockImplementation((name, fields) => {
+      if (name === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+
+    expect(f.session.captureContext).toBe('initial_create_capture');
+    await f.controller.submitTranscript('Create Fred');
+    expect(f.session.captureContext).toBe('final_confirmation_capture');
+    await f.controller.submitTranscript('Maybe.');
+    expect(f.controller.getView().confirmation?.summary).toBe('Is that a yes or no?');
+    expect(f.session.captureContext).toBe('binary_clarification_capture');
+
+    f.speechInput.listen.mockRejectedValueOnce(new SpeechInputError('recognition_failed'));
+    await f.controller.startListening();
+
+    expect(f.speechInput.listen).toHaveBeenLastCalledWith(expect.objectContaining({
+      maxDurationMs: 45_000,
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: 4_000,
+      captureContext: 'binary_clarification_capture',
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      stage: 'failure',
+      source: 'speech',
+      captureContext: 'binary_clarification_capture',
+      pendingBefore: true,
+      interactionRetained: true,
+      code: 'recognition_failed',
+    }));
+    expect(f.session.captureContext).toBe('binary_clarification_capture');
+    expect(f.session.confirmationPending).toBe(true);
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).not.toHaveBeenCalled();
+
+    f.speechInput.listen.mockResolvedValueOnce({ transcript: 'Yes.' });
+    await f.controller.startListening();
+
+    expect(f.controller.getView().phase).toBe('success');
+    expect(f.generate).toHaveBeenCalledOnce();
+    expect(f.execute).toHaveBeenCalledOnce();
+    expect(f.callTool.mock.calls.filter(([name]) => name === 'todos_create')).toHaveLength(1);
   });
   it('keeps conflicting final confirmation pending until a clear decline', async () => {
     const f = fixture({ version: 1, kind: 'create', title: 'Fred' } as never);

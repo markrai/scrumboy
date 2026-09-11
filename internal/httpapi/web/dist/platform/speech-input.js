@@ -72,6 +72,13 @@ export class SpeechInputError extends Error {
             this.providerReason = options.providerReason;
     }
 }
+const CAPTURE_CONTEXTS = new Set([
+    'initial_create_capture',
+    'member_clarification_capture',
+    'tag_suggestion_capture',
+    'binary_clarification_capture',
+    'final_confirmation_capture',
+]);
 export function validateSpeechInputListenOptions(options) {
     if (!options
         || typeof options !== 'object'
@@ -79,6 +86,7 @@ export function validateSpeechInputListenOptions(options) {
         || options.maxDurationMs < 1
         || options.maxDurationMs > SPEECH_INPUT_DURATION_CEILING_MS
         || (options.aggregationMode !== undefined && options.aggregationMode !== 'single' && options.aggregationMode !== 'create_v2')
+        || (options.captureContext !== undefined && !CAPTURE_CONTEXTS.has(options.captureContext))
         || (options.postFinalGraceMs !== undefined && (!Number.isInteger(options.postFinalGraceMs) || options.postFinalGraceMs < 1 || options.postFinalGraceMs > 10000))
         || (options.onListening !== undefined && typeof options.onListening !== 'function')
         || (options.language !== undefined

@@ -34,6 +34,7 @@ export class VoiceCreateSession {
         this.options = options;
         this.task = null;
         this.diagnostic = null;
+        this.binaryClarification = null;
         this.revision = 0;
         this.working = false;
         this.origin = this.serverOrigin();
@@ -49,6 +50,17 @@ export class VoiceCreateSession {
     }
     get pending() { return !!this.task || this.working; }
     get confirmationPending() { return !!(this.task?.prepared || this.task?.tagSuggestion) && !this.working; }
+    get captureContext() {
+        if (this.binaryClarification)
+            return 'binary_clarification_capture';
+        if (this.task?.tagSuggestion)
+            return 'tag_suggestion_capture';
+        if (this.task?.prepared)
+            return 'final_confirmation_capture';
+        if (this.task?.choices.length)
+            return 'member_clarification_capture';
+        return 'initial_create_capture';
+    }
     trace() {
         if (!this.diagnostic || this.diagnostic.ended)
             this.diagnostic = createVoiceFlowTrace();
@@ -58,8 +70,8 @@ export class VoiceCreateSession {
     cancelTrace(reason, retained = false) { this.diagnostic?.emit('cancel', { reason, interactionRetained: retained }); if (!retained)
         this.endTrace(reason); }
     setKeepListening(_enabled) { } // No active-todo/session inference in this slice.
-    invalidate() { this.revision++; this.task = null; this.endTrace('controller_invalidated'); }
-    cancel() { this.cancelTrace('cancelled_by_user'); this.revision++; this.task = null; return { phase: 'success', text: voiceText('voice.status.cancelled', 'Cancelled.') }; }
+    invalidate() { this.revision++; this.task = null; this.binaryClarification = null; this.endTrace('controller_invalidated'); }
+    cancel() { this.cancelTrace('cancelled_by_user'); this.revision++; this.task = null; this.binaryClarification = null; return { phase: 'success', text: voiceText('voice.status.cancelled', 'Cancelled.') }; }
     check(signal, revision) {
         const context = this.context(signal);
         if (revision !== this.revision)
@@ -68,6 +80,7 @@ export class VoiceCreateSession {
     }
     fail(error) {
         this.task = null;
+        this.binaryClarification = null;
         if (error instanceof VoiceCreatePlanError) {
             const plannerCode = ['invalid_json', 'not_object', 'wrong_version', 'invalid_kind', 'unknown_fields', 'missing_required_field', 'invalid_title', 'invalid_lane', 'invalid_assignee', 'invalid_tags', 'invalid_notes', 'invalid_unhandled', 'output_too_large', 'surrounding_prose'].includes(error.code);
             if (error.code === 'tag')
@@ -84,6 +97,7 @@ export class VoiceCreateSession {
         return { phase: 'confirmation', text: summary, danger: false, speechText: summary.length <= SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS ? summary : null };
     }
     binaryQuestion(pendingDecision) {
+        this.binaryClarification = pendingDecision;
         const text = voiceText('voice.create.yesNo', 'Is that a yes or no?');
         this.trace().emit('confirmation', { phase: 'binary_clarification', result: 'ambiguous', pendingDecision });
         return { phase: 'confirmation', text, danger: false, speechText: text };
@@ -116,6 +130,7 @@ export class VoiceCreateSession {
         }, member, tagBindings);
     }
     presentPreparation(task, result, member) {
+        this.binaryClarification = null;
         if (result.kind === 'member-choice') {
             this.task = { ...task, choices: result.choices, prepared: null, member, tagSuggestion: null };
             this.trace().emit('resolve', { result: 'member-choice', choiceCount: result.choices.length });
@@ -202,6 +217,7 @@ export class VoiceCreateSession {
         }
         if (decision !== 'unknown')
             return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
+        this.binaryClarification = null;
         const revision = ++this.revision;
         this.working = true;
         try {
@@ -262,6 +278,7 @@ export class VoiceCreateSession {
         if (!prepared || this.working)
             return { phase: 'error', text: voiceText('voice.create.noReview', 'There is no create awaiting confirmation.') };
         this.working = true;
+        this.binaryClarification = null;
         this.task = null; // Consume consent before any asynchronous work; no retries after a sent write.
         const revision = this.revision;
         let dispatched = false;
