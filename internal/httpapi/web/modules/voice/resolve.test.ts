@@ -4,7 +4,7 @@ import type { BoardMember } from '../state/state.js';
 import { buildMcpCall } from './execute.js';
 import { parseCommand } from './parser.js';
 import { matchVoiceTags, matchVoiceTagsDetailed, resolveCommandDraft } from './resolve.js';
-import { rankTitleCandidates, resolveTodoTarget } from './target-resolver.js';
+import { rankTitleCandidates, resolveExactTodoTitle, resolveTodoTarget } from './target-resolver.js';
 
 function board(overrides: Partial<Board> = {}): Board {
   return {
@@ -390,6 +390,29 @@ describe('voice command resolution', () => {
       ok: true,
       value: { ir: { intent: 'todos.move', entities: { localId: 12, toColumnKey: 'done' } } },
     });
+  });
+
+  it('finds an exact original title through authoritative search without accepting its fuzzy neighbor', async () => {
+    const callTool = vi.fn(async (tool: string, input: Record<string, unknown>) => {
+      if (tool === 'todos_search') return { items: [
+        { projectSlug: 'alpha', localId: 369, title: 'the story Goblins in Washington' },
+        { projectSlug: 'alpha', localId: 410, title: 'The Story of Goblins in Washington' },
+      ] };
+      if (tool === 'todos_get' && input.localId === 369) {
+        return { todo: { id: 369, localId: 369, title: 'the story Goblins in Washington', status: 'backlog' } };
+      }
+      throw new Error('unexpected call');
+    });
+
+    const resolved = await resolveExactTodoTitle('the story Goblins in Washington', {
+      projectSlug: 'alpha',
+      board: board({ columns: { backlog: [], not_started: [], doing: [], testing: [], done: [] } }),
+      callTool,
+    });
+
+    expect(resolved).toMatchObject({ ok: true, value: { todo: { localId: 369 } } });
+    expect(callTool).toHaveBeenCalledWith('todos_search', { projectSlug: 'alpha', query: 'the story Goblins in Washington', limit: 10 });
+    expect(callTool).toHaveBeenCalledWith('todos_get', { projectSlug: 'alpha', localId: 369 });
   });
 
   it('returns top three ambiguous title candidates without guessing', async () => {

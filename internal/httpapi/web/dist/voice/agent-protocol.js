@@ -1,10 +1,10 @@
 export const AGENT_LIMITS = Object.freeze({ modelSteps: 8, skillCalls: 6, proposals: 4, choices: 5, resultText: 2048, ask: 320, trace: 16, utterance: 2000 });
-const ENVELOPE_KINDS = Object.freeze(['skill_call', 'ask_user', 'finish', 'confirm', 'decline', 'cancel']);
+const ENVELOPE_KINDS = Object.freeze(['skill_call', 'clarify_skill', 'ask_user', 'finish', 'confirm', 'decline', 'cancel']);
 export const ALLOWED_ENVELOPE_KINDS = Object.freeze({
-    idle: Object.freeze(['skill_call', 'ask_user', 'finish']),
-    clarification: Object.freeze(['skill_call', 'ask_user']),
+    idle: Object.freeze(['skill_call', 'clarify_skill', 'ask_user', 'finish']),
+    clarification: Object.freeze(['skill_call', 'clarify_skill', 'ask_user']),
     choice: Object.freeze(['skill_call', 'ask_user']),
-    proposals_ready: Object.freeze(['skill_call', 'ask_user', 'finish']),
+    proposals_ready: Object.freeze(['skill_call', 'clarify_skill', 'ask_user', 'finish']),
     confirmation: Object.freeze(['skill_call', 'confirm', 'decline', 'cancel']),
 });
 export function allowedEnvelopeKinds(state) {
@@ -12,11 +12,13 @@ export function allowedEnvelopeKinds(state) {
 }
 export function agentStateGuidance(state) {
     const count = state.proposalCount ?? 0;
-    const detail = state.kind === 'clarification' ? 'The user reply answers the pending question and is ordinary content, such as the lane named Done; it is never a protocol action.'
-        : state.kind === 'choice' ? 'A choice is unresolved: repeat the same skill with exactly one offered handle.'
-            : state.kind === 'proposals_ready' ? `${count} mutation(s) are prepared and not yet shown. Emit another skill_call while requested work remains, otherwise finish.`
-                : state.kind === 'confirmation' ? `${count} prepared mutation(s) await the user decision.`
-                    : 'No work is prepared yet.';
+    const detail = state.kind === 'clarification' && state.skillClarification
+        ? `The user reply fills the retained ${state.skillClarification.missing} argument for ${state.skillClarification.skill}; Scrumboy handles this locally.`
+        : state.kind === 'clarification' ? 'The user reply answers the pending question and is ordinary content, such as the lane named Done; it is never a protocol action.'
+            : state.kind === 'choice' ? 'A choice is unresolved: repeat the same skill with exactly one offered handle.'
+                : state.kind === 'proposals_ready' ? `${count} mutation(s) are prepared and not yet shown. Emit another skill_call while requested work remains, otherwise finish.`
+                    : state.kind === 'confirmation' ? `${count} prepared mutation(s) await the user decision.`
+                        : 'No work is prepared yet.';
     return `Current state: ${state.kind}. ${detail} Allowed envelope kinds: ${allowedEnvelopeKinds(state).join(', ')}.`;
 }
 /** Repair carries only application-owned reasons and state, never the rejected model output. */
@@ -43,6 +45,74 @@ function keys(value, allowed, required = allowed) {
 function text(value, max) {
     if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value))
         invalid('Invalid bounded string');
+}
+function validateSkillCallEnvelope(envelope) {
+    keys(envelope, ['kind', 'skill', 'arguments']);
+    if (!SKILL_NAMES.includes(envelope.skill))
+        invalid('Unknown skill');
+    const args = object(envelope.arguments);
+    const skill = envelope.skill;
+    if (skill === 'analytics.count_completed') {
+        keys(args, ['range']);
+        if (args.range !== 'this_week')
+            invalid('Invalid range');
+    }
+    else if (skill === 'todos.create') {
+        keys(args, ['title', 'lane'], ['title']);
+        text(args.title, 200);
+        if ('lane' in args)
+            text(args.lane, 200);
+    }
+    else {
+        if (('reference' in args) === ('todoRef' in args))
+            invalid('Supply reference OR todoRef');
+        const target = 'reference' in args ? 'reference' : 'todoRef';
+        if (skill === 'todos.resolve' && target !== 'reference')
+            invalid('Resolve requires reference');
+        text(args[target], target === 'todoRef' ? 80 : 200);
+        const extra = skill === 'todos.move' ? 'lane' : skill === 'todos.rename' ? 'title'
+            : ['todos.append_notes', 'todos.replace_notes'].includes(skill) ? 'text'
+                : ['todos.assign', 'todos.unassign'].includes(skill) ? 'member'
+                    : ['todos.add_tag', 'todos.remove_tag'].includes(skill) ? 'tag' : skill === 'todos.inspect' ? 'fields' : null;
+        const required = extra && !['fields'].includes(extra) && skill !== 'todos.unassign' ? [target, extra] : [target];
+        keys(args, extra ? [target, extra] : [target], required);
+        if (extra === 'fields' && extra in args) {
+            const fields = args.fields;
+            if (!Array.isArray(fields) || !fields.length || fields.length > 5 || new Set(fields).size !== fields.length
+                || fields.some(field => !['title', 'lane', 'assignees', 'tags', 'notes'].includes(field)))
+                invalid('Invalid inspect fields');
+        }
+        else if (extra && extra in args)
+            text(args[extra], extra === 'text' ? 1000 : 200);
+    }
+}
+function validateSkillClarificationEnvelope(envelope) {
+    keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
+    if (envelope.skill !== 'todos.move')
+        invalid('Unsupported skill clarification');
+    text(envelope.text, AGENT_LIMITS.ask);
+    const args = object(envelope.arguments);
+    if (envelope.missing === 'reference') {
+        keys(args, ['lane']);
+        text(args.lane, 200);
+        return;
+    }
+    if (envelope.missing !== 'lane')
+        invalid('Invalid missing skill argument');
+    if (('reference' in args) === ('todoRef' in args))
+        invalid('Supply reference OR todoRef');
+    const target = 'reference' in args ? 'reference' : 'todoRef';
+    keys(args, [target]);
+    text(args[target], target === 'todoRef' ? 80 : 200);
+}
+/** Completes only the declared missing slot; the result is a normal validated skill call. */
+export function completeSkillClarification(clarification, reply) {
+    text(reply, 200);
+    const value = clarification.missing === 'reference'
+        ? { kind: 'skill_call', skill: clarification.skill, arguments: { ...clarification.arguments, reference: reply.trim() } }
+        : { kind: 'skill_call', skill: clarification.skill, arguments: { ...clarification.arguments, lane: reply.trim() } };
+    validateSkillCallEnvelope(value);
+    return value;
 }
 export function parseAgentEnvelope(raw, state) {
     return interpretAgentEnvelope(raw, state).envelope;
@@ -83,6 +153,9 @@ export function interpretAgentEnvelope(raw, state) {
         keys(envelope, ['kind', 'text']);
         text(envelope.text, AGENT_LIMITS.ask);
     }
+    else if (kind === 'clarify_skill') {
+        validateSkillClarificationEnvelope(envelope);
+    }
     else if (kind === 'finish') {
         // An accompanying human-readable text is bounded, ignored and never renders; it must not discard prepared proposals.
         keys(envelope, ['kind', 'text'], ['kind']);
@@ -93,44 +166,7 @@ export function interpretAgentEnvelope(raw, state) {
         keys(envelope, ['kind']);
     }
     else {
-        keys(envelope, ['kind', 'skill', 'arguments']);
-        if (!SKILL_NAMES.includes(envelope.skill))
-            invalid('Unknown skill');
-        const args = object(envelope.arguments);
-        const skill = envelope.skill;
-        if (skill === 'analytics.count_completed') {
-            keys(args, ['range']);
-            if (args.range !== 'this_week')
-                invalid('Invalid range');
-        }
-        else if (skill === 'todos.create') {
-            keys(args, ['title', 'lane'], ['title']);
-            text(args.title, 200);
-            if ('lane' in args)
-                text(args.lane, 200);
-        }
-        else {
-            if (('reference' in args) === ('todoRef' in args))
-                invalid('Supply reference OR todoRef');
-            const target = 'reference' in args ? 'reference' : 'todoRef';
-            if (skill === 'todos.resolve' && target !== 'reference')
-                invalid('Resolve requires reference');
-            text(args[target], target === 'todoRef' ? 80 : 200);
-            const extra = skill === 'todos.move' ? 'lane' : skill === 'todos.rename' ? 'title'
-                : ['todos.append_notes', 'todos.replace_notes'].includes(skill) ? 'text'
-                    : ['todos.assign', 'todos.unassign'].includes(skill) ? 'member'
-                        : ['todos.add_tag', 'todos.remove_tag'].includes(skill) ? 'tag' : skill === 'todos.inspect' ? 'fields' : null;
-            const required = extra && !['fields'].includes(extra) && skill !== 'todos.unassign' ? [target, extra] : [target];
-            keys(args, extra ? [target, extra] : [target], required);
-            if (extra === 'fields' && extra in args) {
-                const fields = args.fields;
-                if (!Array.isArray(fields) || !fields.length || fields.length > 5 || new Set(fields).size !== fields.length
-                    || fields.some(field => !['title', 'lane', 'assignees', 'tags', 'notes'].includes(field)))
-                    invalid('Invalid inspect fields');
-            }
-            else if (extra && extra in args)
-                text(args[extra], extra === 'text' ? 1000 : 200);
-        }
+        validateSkillCallEnvelope(envelope);
     }
     return { envelope: value, recoveredFrom };
 }

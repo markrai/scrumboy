@@ -119,26 +119,42 @@ export function rankTitleCandidates(phrase, candidates) {
         return a.localId - b.localId;
     });
 }
-async function resolveTodoByTitle(target, context) {
+async function rankedTitleCandidates(phrase, context) {
     const candidates = new Map();
     mergeCandidates(candidates, localTitleCandidates(context.board));
-    mergeCandidates(candidates, await remoteTitleCandidates(target.phrase, context));
-    const ranked = rankTitleCandidates(target.phrase, Array.from(candidates.values()));
-    if (ranked.length === 0) {
-        return localizedCommandFailure("unknown_story", "voice.errors.noStrongTitleMatch", "No strong todo title match was found in this project.");
-    }
+    mergeCandidates(candidates, await remoteTitleCandidates(phrase, context));
+    return rankTitleCandidates(phrase, Array.from(candidates.values()));
+}
+async function resolveExactRankedTitle(ranked, context) {
     const exactMatches = ranked.filter((candidate) => candidate.score === 100);
+    if (exactMatches.length === 0)
+        return null;
     if (exactMatches.length === 1) {
         const resolved = await resolveTodoByLocalId(exactMatches[0].localId, context);
         if (isCommandFailure(resolved))
             return resolved;
         return { ok: true, value: { todo: resolved.value } };
     }
-    if (exactMatches.length > 1) {
-        return localizedCommandFailure("ambiguous_story", "voice.errors.todoAmbiguous", "More than one todo matched. Choose one.", {}, {
-            candidates: exactMatches.slice(0, 3).map(({ localId, title }) => ({ localId, title })),
-        });
+    return localizedCommandFailure("ambiguous_story", "voice.errors.todoAmbiguous", "More than one todo matched. Choose one.", {}, {
+        candidates: exactMatches.slice(0, 3).map(({ localId, title }) => ({ localId, title })),
+    });
+}
+/**
+ * Resolves only an exact/normalized-exact title across the board snapshot and
+ * authoritative search fallback. A null result means no exact title exists;
+ * normal fuzzy resolution has not run.
+ */
+export async function resolveExactTodoTitle(phrase, context) {
+    return resolveExactRankedTitle(await rankedTitleCandidates(phrase, context), context);
+}
+async function resolveTodoByTitle(target, context) {
+    const ranked = await rankedTitleCandidates(target.phrase, context);
+    if (ranked.length === 0) {
+        return localizedCommandFailure("unknown_story", "voice.errors.noStrongTitleMatch", "No strong todo title match was found in this project.");
     }
+    const exact = await resolveExactRankedTitle(ranked, context);
+    if (exact)
+        return exact;
     const [first, second] = ranked;
     const hasClearSingle = !second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE;
     const hasClearWinner = !!second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE && first.score - second.score >= CLEAR_WIN_SCORE_GAP;

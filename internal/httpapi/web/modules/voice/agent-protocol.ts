@@ -20,17 +20,20 @@ export type SkillArguments = {
 };
 export type VoiceAgentSkillName = keyof SkillArguments;
 export type SkillCall = { [K in VoiceAgentSkillName]: { kind: 'skill_call'; skill: K; arguments: SkillArguments[K] } }[VoiceAgentSkillName];
-export type AgentEnvelope = SkillCall | { kind: 'ask_user'; text: string } | { kind: 'finish'; text?: string } | { kind: 'confirm' | 'decline' | 'cancel' };
+export type SkillClarification =
+  | { kind: 'clarify_skill'; skill: 'todos.move'; arguments: { lane: string }; missing: 'reference'; text: string }
+  | { kind: 'clarify_skill'; skill: 'todos.move'; arguments: Target; missing: 'lane'; text: string };
+export type AgentEnvelope = SkillCall | SkillClarification | { kind: 'ask_user'; text: string } | { kind: 'finish'; text?: string } | { kind: 'confirm' | 'decline' | 'cancel' };
 export type AgentEnvelopeKind = AgentEnvelope['kind'];
 export type AgentStateKind = 'idle' | 'clarification' | 'choice' | 'proposals_ready' | 'confirmation';
 /** The single application state the prompt, the parser and the repair guidance all read. */
-export type AgentState = { kind: AgentStateKind; proposalCount?: number };
-const ENVELOPE_KINDS: readonly AgentEnvelopeKind[] = Object.freeze(['skill_call', 'ask_user', 'finish', 'confirm', 'decline', 'cancel'] as const);
+export type AgentState = { kind: AgentStateKind; proposalCount?: number; skillClarification?: Omit<SkillClarification, 'kind' | 'text'> };
+const ENVELOPE_KINDS: readonly AgentEnvelopeKind[] = Object.freeze(['skill_call', 'clarify_skill', 'ask_user', 'finish', 'confirm', 'decline', 'cancel'] as const);
 export const ALLOWED_ENVELOPE_KINDS: Readonly<Record<AgentStateKind, readonly AgentEnvelopeKind[]>> = Object.freeze({
-  idle: Object.freeze(['skill_call', 'ask_user', 'finish'] as const),
-  clarification: Object.freeze(['skill_call', 'ask_user'] as const),
+  idle: Object.freeze(['skill_call', 'clarify_skill', 'ask_user', 'finish'] as const),
+  clarification: Object.freeze(['skill_call', 'clarify_skill', 'ask_user'] as const),
   choice: Object.freeze(['skill_call', 'ask_user'] as const),
-  proposals_ready: Object.freeze(['skill_call', 'ask_user', 'finish'] as const),
+  proposals_ready: Object.freeze(['skill_call', 'clarify_skill', 'ask_user', 'finish'] as const),
   confirmation: Object.freeze(['skill_call', 'confirm', 'decline', 'cancel'] as const),
 });
 export function allowedEnvelopeKinds(state: AgentState): readonly AgentEnvelopeKind[] {
@@ -38,7 +41,9 @@ export function allowedEnvelopeKinds(state: AgentState): readonly AgentEnvelopeK
 }
 export function agentStateGuidance(state: AgentState): string {
   const count = state.proposalCount ?? 0;
-  const detail = state.kind === 'clarification' ? 'The user reply answers the pending question and is ordinary content, such as the lane named Done; it is never a protocol action.'
+  const detail = state.kind === 'clarification' && state.skillClarification
+    ? `The user reply fills the retained ${state.skillClarification.missing} argument for ${state.skillClarification.skill}; Scrumboy handles this locally.`
+    : state.kind === 'clarification' ? 'The user reply answers the pending question and is ordinary content, such as the lane named Done; it is never a protocol action.'
     : state.kind === 'choice' ? 'A choice is unresolved: repeat the same skill with exactly one offered handle.'
     : state.kind === 'proposals_ready' ? `${count} mutation(s) are prepared and not yet shown. Emit another skill_call while requested work remains, otherwise finish.`
     : state.kind === 'confirmation' ? `${count} prepared mutation(s) await the user decision.`
@@ -65,6 +70,59 @@ function keys(value: Record<string, unknown>, allowed: string[], required = allo
 }
 function text(value: unknown, max: number): void {
   if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value)) invalid('Invalid bounded string');
+}
+function validateSkillCallEnvelope(envelope: Record<string, unknown>): void {
+  keys(envelope, ['kind', 'skill', 'arguments']);
+  if (!SKILL_NAMES.includes(envelope.skill as VoiceAgentSkillName)) invalid('Unknown skill');
+  const args = object(envelope.arguments);
+  const skill = envelope.skill as VoiceAgentSkillName;
+  if (skill === 'analytics.count_completed') {
+    keys(args, ['range']); if (args.range !== 'this_week') invalid('Invalid range');
+  } else if (skill === 'todos.create') {
+    keys(args, ['title', 'lane'], ['title']); text(args.title, 200);
+    if ('lane' in args) text(args.lane, 200);
+  } else {
+    if (('reference' in args) === ('todoRef' in args)) invalid('Supply reference OR todoRef');
+    const target = 'reference' in args ? 'reference' : 'todoRef';
+    if (skill === 'todos.resolve' && target !== 'reference') invalid('Resolve requires reference');
+    text(args[target], target === 'todoRef' ? 80 : 200);
+    const extra = skill === 'todos.move' ? 'lane' : skill === 'todos.rename' ? 'title'
+      : ['todos.append_notes', 'todos.replace_notes'].includes(skill) ? 'text'
+      : ['todos.assign', 'todos.unassign'].includes(skill) ? 'member'
+      : ['todos.add_tag', 'todos.remove_tag'].includes(skill) ? 'tag' : skill === 'todos.inspect' ? 'fields' : null;
+    const required = extra && !['fields'].includes(extra) && skill !== 'todos.unassign' ? [target, extra] : [target];
+    keys(args, extra ? [target, extra] : [target], required);
+    if (extra === 'fields' && extra in args) {
+      const fields = args.fields;
+      if (!Array.isArray(fields) || !fields.length || fields.length > 5 || new Set(fields).size !== fields.length
+        || fields.some(field => !['title', 'lane', 'assignees', 'tags', 'notes'].includes(field))) invalid('Invalid inspect fields');
+    } else if (extra && extra in args) text(args[extra], extra === 'text' ? 1000 : 200);
+  }
+}
+function validateSkillClarificationEnvelope(envelope: Record<string, unknown>): void {
+  keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
+  if (envelope.skill !== 'todos.move') invalid('Unsupported skill clarification');
+  text(envelope.text, AGENT_LIMITS.ask);
+  const args = object(envelope.arguments);
+  if (envelope.missing === 'reference') {
+    keys(args, ['lane']);
+    text(args.lane, 200);
+    return;
+  }
+  if (envelope.missing !== 'lane') invalid('Invalid missing skill argument');
+  if (('reference' in args) === ('todoRef' in args)) invalid('Supply reference OR todoRef');
+  const target = 'reference' in args ? 'reference' : 'todoRef';
+  keys(args, [target]);
+  text(args[target], target === 'todoRef' ? 80 : 200);
+}
+/** Completes only the declared missing slot; the result is a normal validated skill call. */
+export function completeSkillClarification(clarification: SkillClarification, reply: string): SkillCall {
+  text(reply, 200);
+  const value = clarification.missing === 'reference'
+    ? { kind: 'skill_call', skill: clarification.skill, arguments: { ...clarification.arguments, reference: reply.trim() } }
+    : { kind: 'skill_call', skill: clarification.skill, arguments: { ...clarification.arguments, lane: reply.trim() } };
+  validateSkillCallEnvelope(value);
+  return value as SkillCall;
 }
 export function parseAgentEnvelope(raw: string, state: AgentState): AgentEnvelope {
   return interpretAgentEnvelope(raw, state).envelope;
@@ -94,6 +152,8 @@ export function interpretAgentEnvelope(raw: string, state: AgentState): { envelo
   }
   if (kind === 'ask_user') {
     keys(envelope, ['kind', 'text']); text(envelope.text, AGENT_LIMITS.ask);
+  } else if (kind === 'clarify_skill') {
+    validateSkillClarificationEnvelope(envelope);
   } else if (kind === 'finish') {
     // An accompanying human-readable text is bounded, ignored and never renders; it must not discard prepared proposals.
     keys(envelope, ['kind', 'text'], ['kind']);
@@ -101,32 +161,7 @@ export function interpretAgentEnvelope(raw: string, state: AgentState): { envelo
   } else if (kind !== 'skill_call') {
     keys(envelope, ['kind']);
   } else {
-    keys(envelope, ['kind', 'skill', 'arguments']);
-    if (!SKILL_NAMES.includes(envelope.skill as VoiceAgentSkillName)) invalid('Unknown skill');
-    const args = object(envelope.arguments);
-    const skill = envelope.skill as VoiceAgentSkillName;
-    if (skill === 'analytics.count_completed') {
-      keys(args, ['range']); if (args.range !== 'this_week') invalid('Invalid range');
-    } else if (skill === 'todos.create') {
-      keys(args, ['title', 'lane'], ['title']); text(args.title, 200);
-      if ('lane' in args) text(args.lane, 200);
-    } else {
-      if (('reference' in args) === ('todoRef' in args)) invalid('Supply reference OR todoRef');
-      const target = 'reference' in args ? 'reference' : 'todoRef';
-      if (skill === 'todos.resolve' && target !== 'reference') invalid('Resolve requires reference');
-      text(args[target], target === 'todoRef' ? 80 : 200);
-      const extra = skill === 'todos.move' ? 'lane' : skill === 'todos.rename' ? 'title'
-        : ['todos.append_notes', 'todos.replace_notes'].includes(skill) ? 'text'
-        : ['todos.assign', 'todos.unassign'].includes(skill) ? 'member'
-        : ['todos.add_tag', 'todos.remove_tag'].includes(skill) ? 'tag' : skill === 'todos.inspect' ? 'fields' : null;
-      const required = extra && !['fields'].includes(extra) && skill !== 'todos.unassign' ? [target, extra] : [target];
-      keys(args, extra ? [target, extra] : [target], required);
-      if (extra === 'fields' && extra in args) {
-        const fields = args.fields;
-        if (!Array.isArray(fields) || !fields.length || fields.length > 5 || new Set(fields).size !== fields.length
-          || fields.some(field => !['title', 'lane', 'assignees', 'tags', 'notes'].includes(field))) invalid('Invalid inspect fields');
-      } else if (extra && extra in args) text(args[extra], extra === 'text' ? 1000 : 200);
-    }
+    validateSkillCallEnvelope(envelope);
   }
   return { envelope: value as AgentEnvelope, recoveredFrom };
 }

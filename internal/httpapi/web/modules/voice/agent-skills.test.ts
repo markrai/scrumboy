@@ -21,6 +21,79 @@ describe('bounded skill registry', () => {
     expect((await h.loop.submit('Move Bogus to Done', h.signal)).phase).toBe('confirmation');
     await h.loop.confirm(h.signal); expect(h.execute.mock.calls[0][0].entities.localId).toBe(355);
   });
+  it.each([
+    'Goblins in Washington',
+    'goblins in washington',
+    '"Goblins in Washington"',
+    'story Goblins in Washington',
+    'the story Goblins in Washington',
+    'the todo Goblins in Washington',
+    'the to-do Goblins in Washington',
+    'the card named Goblins in Washington',
+    'the task titled Goblins in Washington',
+    'the item Goblins in Washington',
+    '#369',
+    '369',
+    'number 369',
+    'Number 369',
+    'story number 369',
+    'todo number 369',
+  ])('prepares the exact #369 move from Agent reference %s without executing before confirmation', async reference => {
+    const h = harness([skill('todos.move', { reference, lane: 'Done' }), finish]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+
+    const view = await h.loop.submit('mark it done', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain('Goblins in Washington');
+    expect(view.text).toContain('Done');
+    expect(h.execute).not.toHaveBeenCalled();
+
+    expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.move', entities: { localId: 369, toColumnKey: 'done' } });
+  });
+  it('does not let a fuzzy raw wrapper shadow the exact stripped title', async () => {
+    const h = harness([skill('todos.move', { reference: 'the story Goblins in Washington', lane: 'Done' }), finish]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 410, title: 'The Story of Goblins in Washington', status: 'backlog', columnKey: 'backlog' });
+
+    expect((await h.loop.submit('mark it done', h.signal)).phase).toBe('confirmation');
+    expect(h.execute).not.toHaveBeenCalled();
+    await h.loop.confirm(h.signal);
+    expect(h.execute.mock.calls[0][0].entities.localId).toBe(369);
+  });
+  it('lets an original literal wrapper-prefixed title win before wrapper normalization', async () => {
+    const h = harness([skill('todos.move', { reference: 'the story Goblins in Washington', lane: 'Done' }), finish]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 410, title: 'the story Goblins in Washington', status: 'backlog', columnKey: 'backlog' });
+
+    const view = await h.loop.submit('mark it done', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(h.execute).not.toHaveBeenCalled();
+    await h.loop.confirm(h.signal);
+    expect(h.execute.mock.calls[0][0].entities.localId).toBe(410);
+  });
+  it('fails closed when wrapper stripping leaves only an equally fuzzy shadow title', async () => {
+    const h = harness([skill('todos.move', { reference: 'the story Goblins in Washington', lane: 'Done' })]);
+    h.todo.title = 'The Story of Goblins in Washington';
+    h.todo.localId = 410;
+
+    const view = await h.loop.submit('mark it done', h.signal);
+    expect(view).toMatchObject({ phase: 'error' });
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('retains normal fuzzy resolution when the stripped reference is strictly stronger', async () => {
+    const h = harness([skill('todos.move', { reference: 'the story Goblins in Washington', lane: 'Done' }), finish]);
+    h.todo.title = 'Goblins in Washington Today';
+    h.todo.localId = 369;
+
+    expect((await h.loop.submit('mark it done', h.signal)).phase).toBe('confirmation');
+    await h.loop.confirm(h.signal);
+    expect(h.execute.mock.calls[0][0].entities.localId).toBe(369);
+  });
   it.each(['todos.move', 'todos.assign', 'todos.unassign', 'todos.add_tag', 'todos.remove_tag', 'todos.rename', 'todos.replace_notes'])('%s preserves no-op behavior', async name => {
     const args = name === 'todos.move' ? { lane: 'Backlog' } : name === 'todos.assign' ? { member: 'Mark' }
       : name.includes('tag') ? { tag: 'urgent' } : name === 'todos.rename' ? { title: 'Happy Birthday' } : name === 'todos.replace_notes' ? { text: 'Existing' } : {};

@@ -121,6 +121,141 @@ describe('bounded local agent loop', () => {
     expect(JSON.parse(h.model.mock.calls[2][0]).pending).toMatchObject({ kind: 'choice', resource: 'todo' });
     expect(h.options.openTodo).not.toHaveBeenCalled();
   });
+  it('prepares the exact physical mark-as-Done move when Nano emits the contracted skill', async () => {
+    const expected = skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' });
+    const h = harness([expected, finish]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    const run = vi.spyOn(h.registry, 'run');
+
+    const view = await h.loop.submit('Mark the story "Goblins in Washington" as "Done"', h.signal);
+
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain('Goblins in Washington');
+    expect(view.text).toContain('Done');
+    expect(run.mock.calls[0][0]).toEqual(expected);
+    expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('keeps real move ambiguity as pendingChoice and resolves an offered number locally', async () => {
+    const h = harness([skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 370, title: 'Goblins in Washington', status: 'backlog', columnKey: 'backlog' });
+    const run = vi.spyOn(h.registry, 'run');
+
+    const question = await h.loop.submit('Mark Goblins in Washington as Done', h.signal);
+    expect(question.phase).toBe('question');
+    expect(question.choices).toHaveLength(2);
+    expect(h.loop.currentState).toEqual({ kind: 'choice' });
+    const offeredRef = question.choices![0].id;
+    h.steps.push(finish);
+    h.events.length = 0;
+
+    const confirmation = await h.loop.submit('#369', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(run.mock.calls[1][0]).toEqual(skill('todos.move', { todoRef: offeredRef, lane: 'Done' }));
+    expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
+    expect(h.model).toHaveBeenCalledTimes(3);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('retains a structured missing move reference and fills #369 locally', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    const debug = vi.spyOn(console, 'debug').mockImplementation((name, fields) => {
+      if (name === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    try {
+      const h = harness([
+        { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
+        finish,
+      ]);
+      h.todo.title = 'Goblins in Washington';
+      h.todo.localId = 369;
+      const run = vi.spyOn(h.registry, 'run');
+
+      const question = await h.loop.submit('Mark a story as Done', h.signal);
+      expect(question).toEqual({ phase: 'question', text: 'Which story?' });
+      expect(h.loop.currentState).toEqual({
+        kind: 'clarification',
+        skillClarification: { skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference' },
+      });
+      expect(run).not.toHaveBeenCalled();
+      expect(h.model).toHaveBeenCalledOnce();
+      h.events.length = 0;
+
+      const confirmation = await h.loop.submit('#369', h.signal);
+      expect(confirmation.phase).toBe('confirmation');
+      expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { lane: 'Done', reference: '#369' }));
+      expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
+      expect(h.model).toHaveBeenCalledTimes(2);
+      expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
+      expect(h.execute).not.toHaveBeenCalled();
+      expect(events).toContainEqual(expect.objectContaining({
+        stage: 'resolve', clarificationKind: 'skill_argument', skill: 'todos.move', missing: 'reference',
+      }));
+      expect(events).toContainEqual(expect.objectContaining({
+        stage: 'interpret', source: 'local_clarification', clarificationKind: 'skill_argument', skill: 'todos.move', missing: 'reference', clarificationResolved: true,
+      }));
+    } finally {
+      debug.mockRestore();
+      localStorage.removeItem('scrumboy_debug_voiceflow');
+    }
+  });
+  it('retains a structured move reference and fills the missing lane locally', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: 'Goblins in Washington' }, missing: 'lane', text: 'Which lane?' },
+      finish,
+    ]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    const run = vi.spyOn(h.registry, 'run');
+
+    expect((await h.loop.submit('Move Goblins in Washington', h.signal)).phase).toBe('question');
+    expect(h.loop.currentState).toEqual({
+      kind: 'clarification',
+      skillClarification: { skill: 'todos.move', arguments: { reference: 'Goblins in Washington' }, missing: 'lane' },
+    });
+    const confirmation = await h.loop.submit('Done', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' }));
+    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('hands ambiguity from a locally completed clarification to pendingChoice', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
+      { kind: 'ask_user', text: 'Which one?' },
+    ]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 370, title: 'Goblins in Burtonsville', status: 'backlog', columnKey: 'backlog' });
+
+    expect((await h.loop.submit('Mark a story as Done', h.signal)).phase).toBe('question');
+    const choices = await h.loop.submit('Goblin', h.signal);
+    expect(choices.phase).toBe('question');
+    expect(choices.choices).toHaveLength(2);
+    expect(h.loop.currentState).toEqual({ kind: 'choice' });
+
+    h.steps.push(finish);
+    const confirmation = await h.loop.submit('#369', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('gives a plain ask_user no local entity-selection authority', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which story?' },
+      { kind: 'ask_user', text: 'Please describe the story.' },
+    ]);
+    const run = vi.spyOn(h.registry, 'run');
+
+    expect(await h.loop.submit('Mark a story as Done', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
+    expect(h.loop.currentState).toEqual({ kind: 'clarification' });
+    expect(await h.loop.submit('#369', h.signal)).toEqual({ phase: 'question', text: 'Please describe the story.' });
+    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(run).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
   it('continues compound work after a deterministic Open choice and confirms the selected Todo mutation', async () => {
     const h = harness([skill('todos.open', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
     h.todo.title = 'Goblins in Burtonsville'; h.todo.localId = 372;
@@ -328,7 +463,7 @@ describe('state-aware voice agent protocol lifecycle', () => {
     const repair = JSON.parse(h.model.mock.calls[2][0]).repair;
     expect(repair).toContain('Envelope confirm is not allowed in state clarification');
     expect(repair).toContain('Current state: clarification');
-    expect(repair).toContain('Allowed envelope kinds: skill_call, ask_user');
+    expect(repair).toContain('Allowed envelope kinds: skill_call, clarify_skill, ask_user');
     expect(repair).not.toContain('"kind":"confirm"');
   });
 
@@ -348,7 +483,7 @@ describe('state-aware voice agent protocol lifecycle', () => {
     const repair = JSON.parse(h.model.mock.calls[2][0]).repair;
     expect(repair).toContain('Envelope finish is not allowed in state clarification');
     expect(repair).toContain('Current state: clarification');
-    expect(repair).toContain('Allowed envelope kinds: skill_call, ask_user');
+    expect(repair).toContain('Allowed envelope kinds: skill_call, clarify_skill, ask_user');
     expect(pendingOf(h, 3)).toEqual({ kind: 'proposals_ready', proposalCount: 1 });
   });
 

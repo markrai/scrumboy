@@ -5,8 +5,8 @@ import type { BoardMember } from '../state/state.js';
 import { canRunVoiceMutationInContext, getActiveVoiceCommandContext, type VoiceCommandOptions, type VoiceCommandContext } from './command-context.js';
 import { callMcpTool, type McpToolName } from './mcp-client.js';
 import { executeCommandIR } from './execute.js';
-import { resolveTodoTarget } from './target-resolver.js';
-import { normalizeLookup } from './normalize.js';
+import { rankTitleCandidates, resolveExactTodoTitle, resolveTodoTarget } from './target-resolver.js';
+import { normalizeLookup, parseSpokenNumber, stripWrappingQuotes } from './normalize.js';
 import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, matchVoiceMembers, matchVoiceTags } from './resolve.js';
 import { isCommandFailure, validateCommandIR, type CommandIR, type ResolvedCommand } from './schema.js';
 import { voiceText } from './i18n.js';
@@ -40,6 +40,19 @@ type SkillDefinition = { effect: 'read' | 'open' | 'proposal'; run(call: SkillCa
 const short = (value: string, max = 200) => value.slice(0, max);
 const resourceLike = (value: string) => /^(todo|member|lane|tag|proposal)_/.test(value);
 const fail = (status: 'not_found' | 'stale' | 'denied' | 'invalid', resource: AgentResource['kind'] = 'todo'): SkillOutcome => ({ result: status === 'not_found' ? { status, resource } : { status } });
+const TODO_REFERENCE_WRAPPER = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
+
+function unwrapTodoReference(reference: string): string | null {
+  const match = TODO_REFERENCE_WRAPPER.exec(stripWrappingQuotes(reference.trim()));
+  return match?.[1]?.trim() || null;
+}
+
+function strippedReferenceIsStronger(reference: string, stripped: string, todo: Todo): boolean {
+  const candidate = [{ localId: todo.localId, title: todo.title }];
+  const originalScore = rankTitleCandidates(reference, candidate)[0]?.score ?? 0;
+  const strippedScore = rankTitleCandidates(stripped, candidate)[0]?.score ?? 0;
+  return strippedScore > originalScore;
+}
 
 export class VoiceAgentSkillRegistry {
   readonly skills: ReadonlyMap<VoiceAgentSkillName, SkillDefinition>;
@@ -94,14 +107,28 @@ export class VoiceAgentSkillRegistry {
     if (['this', 'it', 'its', 'current', 'this todo', 'this story', 'the current story', 'the current todo'].includes(reference.toLowerCase().trim())) {
       return task.session.activeTodo ? [await this.fresh(task.session.activeTodo, signal)] : [];
     }
-    const number = /^(?:(?:story |todo )?(?:number |#))?(\d+)$/.exec(reference.trim());
-    const target = number
-      ? { kind: 'id' as const, localId: Number(number[1]), display: reference }
+    const unwrapped = unwrapTodoReference(reference);
+    const number = parseSpokenNumber(reference) ?? (unwrapped ? parseSpokenNumber(unwrapped) : null);
+    let target = number
+      ? { kind: 'id' as const, localId: number.value, ambiguousId: number.ambiguous, display: reference }
       : { kind: 'title' as const, phrase: reference, display: reference };
-    const resolved = await resolveTodoTarget(target, {
+    const resolveContext = {
       projectSlug: context.projectSlug, board: context.board,
       callTool: <T>(name: McpToolName, input: Record<string, unknown>) => this.tool<T>(name, input, signal),
-    });
+    };
+    let resolved;
+    if (target.kind === 'title' && unwrapped) {
+      // A literal exact title owns the wrapped phrase. Otherwise the wrapper is
+      // grammatical: resolve only its payload and never fall back to a fuzzy
+      // raw match. A stripped fuzzy interpretation must be strictly stronger.
+      const exactOriginal = await resolveExactTodoTitle(target.phrase, resolveContext);
+      if (exactOriginal) resolved = exactOriginal;
+      else {
+        target = { kind: 'title' as const, phrase: unwrapped, display: reference };
+        resolved = await resolveTodoTarget(target, resolveContext);
+        if (!isCommandFailure(resolved) && !strippedReferenceIsStronger(reference, unwrapped, resolved.value.todo)) return [];
+      }
+    } else resolved = await resolveTodoTarget(target, resolveContext);
     this.context(signal);
     const candidates = isCommandFailure(resolved) ? resolved.candidates ?? [] : [resolved.value.todo];
     const values: Todo[] = [];
