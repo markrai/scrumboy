@@ -881,6 +881,8 @@
   "settings.backup.trello.toast.imported": "Đã nhập bảng Trello: {name}",
   "settings.customization.voiceFlow.title": "VoiceFlow",
   "settings.customization.voiceFlow.toggleLabel": "Dùng lệnh giọng nói để di chuyển, tạo và xóa todo.",
+  "settings.customization.voiceFlow.speechSpeed.title": "Speech speed",
+  "settings.customization.voiceFlow.speechSpeed.helper": "How fast Scrumboy speaks during VoiceFlow.",
   "settings.customization.voiceFlow.speechWait.title": "Wait after I stop speaking",
   "settings.customization.voiceFlow.speechWait.helper": "How long Scrumboy should wait before it decides you are done. Applies to AI VoiceFlow on this device.",
   "settings.customization.voiceFlow.speechWait.fast": "Fast — 2 seconds",

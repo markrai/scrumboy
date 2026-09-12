@@ -117,8 +117,10 @@ public class ScrumboySpeechOutputPlugin extends Plugin {
         String operationId = call.getString("operationId");
         String text = call.getString("text");
         String language = call.getString("language", "en-US");
+        Object requestedRate = call.hasOption("rate") ? call.getData().opt("rate") : null;
+        final float rate;
         try {
-            SpeechOutputRequestValidator.validate(text, language);
+            rate = SpeechOutputRequestValidator.validate(text, language, requestedRate);
         } catch (SpeechOutputException error) {
             reject(call, error);
             return;
@@ -141,6 +143,9 @@ public class ScrumboySpeechOutputPlugin extends Plugin {
                     throw new SpeechOutputException("no_local_voice", false);
                 }
                 if (!operations.isActive(operation)) return;
+                if (engine.setSpeechRate(rate) != TextToSpeech.SUCCESS) {
+                    throw new SpeechOutputException("synthesis_failed", true);
+                }
                 int result = engine.speak(text.trim(), TextToSpeech.QUEUE_FLUSH, null, operationId);
                 if (result != TextToSpeech.SUCCESS) {
                     throw new SpeechOutputException("synthesis_failed", true);

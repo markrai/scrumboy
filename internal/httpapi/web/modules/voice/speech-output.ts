@@ -1,3 +1,5 @@
+import { getVoiceSpeechRate } from '../core/voice-speech-rate-preferences.js';
+
 export function prepareTextForSpeechSynthesis(text: string): string {
   const value = String(text ?? "");
   const leadingCommand = value.replace(
@@ -20,6 +22,7 @@ export function speak(text: string, options: { signal?: AbortSignal } = {}): Pro
 
     let settled = false;
     const utterance = new SpeechSynthesisUtterance(prepareTextForSpeechSynthesis(text));
+    utterance.rate = getVoiceSpeechRate();
     const cleanup = () => {
       utterance.onend = null;
       utterance.onerror = null;

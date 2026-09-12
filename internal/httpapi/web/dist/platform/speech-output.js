@@ -41,6 +41,11 @@ export function validateSpeechOutputSpeakOptions(options) {
         || options.text.trim().length === 0
         || options.text.length > SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS
         || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/.test(options.text)
+        || (options.rate !== undefined
+            && (typeof options.rate !== 'number'
+                || !Number.isFinite(options.rate)
+                || options.rate < 0.5
+                || options.rate > 3))
         || (options.language !== undefined
             && (typeof options.language !== 'string'
                 || options.language.length === 0

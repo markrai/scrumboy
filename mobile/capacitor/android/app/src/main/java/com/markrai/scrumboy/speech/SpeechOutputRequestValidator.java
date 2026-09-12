@@ -7,7 +7,11 @@ final class SpeechOutputRequestValidator {
     private static final int MAX_LANGUAGE_CODE_UNITS = 64;
     private static final Pattern LANGUAGE = Pattern.compile("^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$");
 
-    static void validate(String text, String language) throws SpeechOutputException {
+    static float validate(String text, String language) throws SpeechOutputException {
+        return validate(text, language, null);
+    }
+
+    static float validate(String text, String language, Object rate) throws SpeechOutputException {
         if (
             text == null
             || text.trim().isEmpty()
@@ -20,6 +24,13 @@ final class SpeechOutputRequestValidator {
         ) {
             throw new SpeechOutputException("invalid_request", false);
         }
+        if (rate == null) return 1.0f;
+        if (!(rate instanceof Number)) throw new SpeechOutputException("invalid_request", false);
+        double numericRate = ((Number) rate).doubleValue();
+        if (!Double.isFinite(numericRate) || numericRate < 0.5d || numericRate > 3.0d) {
+            throw new SpeechOutputException("invalid_request", false);
+        }
+        return (float) numericRate;
     }
 
     private static boolean containsDisallowedControl(String text) {

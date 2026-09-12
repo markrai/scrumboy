@@ -244,6 +244,8 @@ const enCatalog = {
   'settings.customization.keybindings.actions.openSettings': 'Open Settings',
   'settings.customization.voiceFlow.title': 'VoiceFlow',
   'settings.customization.voiceFlow.toggleLabel': 'Use voice commands to move, create and delete todos.',
+  'settings.customization.voiceFlow.speechSpeed.title': 'Speech speed',
+  'settings.customization.voiceFlow.speechSpeed.helper': 'How fast Scrumboy speaks during VoiceFlow.',
   'settings.customization.push.title': 'Background notifications (PWA)',
   'settings.customization.push.description': 'Alerts when someone assigns you a todo while this app is in the background or closed.',
   'settings.customization.push.toggleLabel': 'Web Push on this device',

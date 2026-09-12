@@ -13,6 +13,7 @@ import type { VoiceAgentModel } from './agent-model.js';
 import type { VoiceCreateSession } from './voice-create-session.js';
 import type { EnhancedVoiceSessionPort } from './enhanced-voice-session.js';
 import { getEnhancedSpeechWaitMs } from '../core/enhanced-speech-wait-preferences.js';
+import { getVoiceSpeechRate } from '../core/voice-speech-rate-preferences.js';
 
 /** Enhanced capture safety ceiling; aggregate turn completion uses its separately sampled wait. */
 export const VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS = 45_000;
@@ -55,7 +56,12 @@ export function createVoiceAgentController(options: ControllerOptions) {
       const status = await options.speechOutput.status({ signal: owner.signal });
       if (!owns(owner) || status.state !== 'ready') return false;
       emit({ activity: 'speaking', activityStatus: null });
-      await options.speechOutput.speak({ text: spokenText, language: 'en-US', signal: owner.signal });
+      await options.speechOutput.speak({
+        text: spokenText,
+        language: 'en-US',
+        rate: getVoiceSpeechRate(),
+        signal: owner.signal,
+      });
       if (!owns(owner)) return false;
       emit({ activity: 'idle', activityStatus: null });
       return true;

@@ -11,6 +11,7 @@ import { renderVoiceMessage } from './i18n.js';
 import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError, } from '../platform/speech-input.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { prepareTextForSpeechSynthesis } from './speech-output.js';
+import { getVoiceSpeechRate } from '../core/voice-speech-rate-preferences.js';
 import { createVoiceFlowTrace, summarizeVoiceInterpretation } from './trace.js';
 import { classifyVoiceCommandSafety } from './command-safety.js';
 const MAX_DIALOGUE_TURNS = 8;
@@ -309,6 +310,7 @@ export function createVoiceAgentController(options) {
             await speechOutput.speak({
                 text: spokenText,
                 language: 'en-US',
+                rate: getVoiceSpeechRate(),
                 signal: operation.signal,
             });
             if (!owns(owner, operation))

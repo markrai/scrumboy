@@ -18,6 +18,7 @@ import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/
 import { getAppRuntime } from '../platform/runtime.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import { getEnhancedSpeechWaitPreset, setEnhancedSpeechWaitPreset, } from '../core/enhanced-speech-wait-preferences.js';
+import { VOICE_SPEECH_RATE_PRESETS, getVoiceSpeechRate, setVoiceSpeechRate, sliderPositionForVoiceSpeechRate, voiceSpeechRateDisplayLabel, voiceSpeechRateFromSliderPosition, } from '../core/voice-speech-rate-preferences.js';
 import { getWrapLanesPreference, setWrapLanesPreference, syncOpenBoardWrapLanesClass, } from '../core/wrap-lanes-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref } from '../core/email-notify-preferences.js';
 import { bindWorkflowTabInteractions, clearWorkflowDraftState, invalidateWorkflowLaneCountsCache, isWorkflowDraftDirty, loadWorkflowTabContent, resetWorkflowDraftToBaseline, } from './settings-workflow.js';
@@ -570,6 +571,9 @@ export function renderBackupTabHTML() {
 }
 function renderVoiceFlowCustomizationHTML() {
     const enabled = getVoiceFlowEnabledPreference();
+    const speechRate = getVoiceSpeechRate();
+    const speechRatePosition = sliderPositionForVoiceSpeechRate(speechRate);
+    const speechRateLabel = voiceSpeechRateDisplayLabel(speechRate);
     const enhancedSpeechWaitPreset = getEnhancedSpeechWaitPreset();
     const enhancedSpeechWaitHTML = getAppRuntime().kind === 'capacitor' ? `
       <div id="enhancedSpeechWaitControls" ${enabled ? '' : 'hidden'} style="margin:12px 0 0 24px;">
@@ -598,6 +602,26 @@ function renderVoiceFlowCustomizationHTML() {
         <input type="checkbox" id="voiceFlowEnabledToggle" ${enabled ? "checked" : ""} />
         <span data-i18n-text="settings.customization.voiceFlow.toggleLabel">Use voice commands to move, create and delete todos.</span>
       </label>
+      <div id="voiceSpeechSpeedControls" class="voice-speech-speed" ${enabled ? '' : 'hidden'}>
+        <div class="voice-speech-speed__heading">
+          <label for="voiceSpeechSpeedSlider" class="settings-section__title" data-i18n-text="settings.customization.voiceFlow.speechSpeed.title">Speech speed</label>
+          <output id="voiceSpeechSpeedValue" for="voiceSpeechSpeedSlider">${speechRateLabel}</output>
+        </div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.voiceFlow.speechSpeed.helper">How fast Scrumboy speaks during VoiceFlow.</div>
+        <input
+          id="voiceSpeechSpeedSlider"
+          class="voice-speech-speed__slider"
+          type="range"
+          min="0"
+          max="4"
+          step="1"
+          value="${speechRatePosition}"
+          aria-valuetext="${speechRateLabel}"
+        />
+        <div class="voice-speech-speed__ticks" aria-hidden="true">
+          ${VOICE_SPEECH_RATE_PRESETS.map(rate => `<span>${voiceSpeechRateDisplayLabel(rate)}</span>`).join('')}
+        </div>
+      </div>
       ${enhancedSpeechWaitHTML}
     </div>
   `;
@@ -2259,10 +2283,25 @@ export async function renderSettingsModal(options) {
         if (voiceFlowEnabledToggle) {
             voiceFlowEnabledToggle.addEventListener("change", () => {
                 setVoiceFlowEnabledPreference(voiceFlowEnabledToggle.checked);
+                const voiceSpeechSpeedControls = document.getElementById("voiceSpeechSpeedControls");
+                if (voiceSpeechSpeedControls)
+                    voiceSpeechSpeedControls.hidden = !voiceFlowEnabledToggle.checked;
                 const enhancedSpeechWaitControls = document.getElementById("enhancedSpeechWaitControls");
                 if (enhancedSpeechWaitControls)
                     enhancedSpeechWaitControls.hidden = !voiceFlowEnabledToggle.checked;
                 emit("voiceflow:enabled-changed", voiceFlowEnabledToggle.checked);
+            }, { signal });
+        }
+        const voiceSpeechSpeedSlider = document.getElementById("voiceSpeechSpeedSlider");
+        if (voiceSpeechSpeedSlider) {
+            voiceSpeechSpeedSlider.addEventListener("input", () => {
+                const rate = voiceSpeechRateFromSliderPosition(Number(voiceSpeechSpeedSlider.value));
+                const label = voiceSpeechRateDisplayLabel(rate);
+                voiceSpeechSpeedSlider.setAttribute("aria-valuetext", label);
+                const currentValue = document.getElementById("voiceSpeechSpeedValue");
+                if (currentValue)
+                    currentValue.textContent = label;
+                setVoiceSpeechRate(rate);
             }, { signal });
         }
         document.querySelectorAll('input[name="enhancedSpeechWaitPreset"]').forEach((option) => {

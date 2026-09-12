@@ -9,6 +9,11 @@ import {
   ENHANCED_SPEECH_WAIT_STORAGE_KEY,
   setEnhancedSpeechWaitPreset,
 } from '../core/enhanced-speech-wait-preferences.js';
+import {
+  VOICE_SPEECH_RATE_STORAGE_KEY,
+  setVoiceSpeechRate,
+  type VoiceSpeechRate,
+} from '../core/voice-speech-rate-preferences.js';
 
 function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListening = false) {
   let speaking = false;
@@ -45,7 +50,10 @@ function enhancedSession() {
 }
 
 describe('VoiceAgentController local skill production path', () => {
-  beforeEach(() => localStorage.removeItem(ENHANCED_SPEECH_WAIT_STORAGE_KEY));
+  beforeEach(() => {
+    localStorage.removeItem(ENHANCED_SPEECH_WAIT_STORAGE_KEY);
+    localStorage.removeItem(VOICE_SPEECH_RATE_STORAGE_KEY);
+  });
 
   it('uses the enhanced fresh 45-second Create-compatible capture policy and context', async () => {
     const h = harness();
@@ -204,6 +212,100 @@ describe('VoiceAgentController local skill production path', () => {
       aggregationMode: 'create_v2',
       postFinalGraceMs: 7_000,
     }));
+    controller.close();
+  });
+
+  it.each([
+    ['default', undefined, 1],
+    ['1.25x', 1.25, 1.25],
+    ['1.50x', 1.5, 1.5],
+    ['1.75x', 1.75, 1.75],
+    ['2.0x', 2, 2],
+  ] as const)('passes the %s product rate to Enhanced speech', async (_label, selected, expected) => {
+    if (selected !== undefined) setVoiceSpeechRate(selected as VoiceSpeechRate);
+    const h = harness();
+    const session = enhancedSession();
+    const speechOutput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      speak: vi.fn(async () => ({ completed: true as const })),
+      stop: vi.fn(async () => undefined),
+      invalidate: vi.fn(async () => undefined),
+    };
+    const controller = createVoiceAgentController({
+      ...h.options,
+      model: h.model,
+      session,
+      speechInput: { status: vi.fn(), listen: vi.fn() },
+      speechOutput,
+      continuationEnabled: false,
+      onView: vi.fn(),
+    });
+
+    await controller.submitTranscript('open');
+
+    expect(speechOutput.speak).toHaveBeenCalledWith(expect.objectContaining({ rate: expected }));
+    controller.close();
+  });
+
+  it('samples a changed product rate for the next Enhanced utterance', async () => {
+    const h = harness();
+    const session = enhancedSession();
+    const speechOutput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      speak: vi.fn(async () => ({ completed: true as const })),
+      stop: vi.fn(async () => undefined),
+      invalidate: vi.fn(async () => undefined),
+    };
+    const controller = createVoiceAgentController({
+      ...h.options,
+      model: h.model,
+      session,
+      speechInput: { status: vi.fn(), listen: vi.fn() },
+      speechOutput,
+      continuationEnabled: false,
+      onView: vi.fn(),
+    });
+
+    setVoiceSpeechRate(1.25);
+    await controller.submitTranscript('first');
+    setVoiceSpeechRate(1.75);
+    await controller.submitTranscript('second');
+
+    expect(speechOutput.speak.mock.calls.map(([request]) => request.rate)).toEqual([1.25, 1.75]);
+    controller.close();
+  });
+
+  it('keeps Enhanced input grace independent from the selected speech rate', async () => {
+    setVoiceSpeechRate(1.5);
+    const h = harness();
+    const session = enhancedSession();
+    const speechInput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      listen: vi.fn(async (options: any) => {
+        options.onListening?.();
+        return { transcript: 'Open Goblin', provider: 'android_on_device' as const };
+      }),
+    };
+    const speechOutput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      speak: vi.fn(async () => ({ completed: true as const })),
+      stop: vi.fn(async () => undefined),
+      invalidate: vi.fn(async () => undefined),
+    };
+    const controller = createVoiceAgentController({
+      ...h.options,
+      model: h.model,
+      session,
+      speechInput,
+      speechOutput,
+      continuationEnabled: false,
+      onView: vi.fn(),
+    });
+
+    await controller.startListening();
+
+    expect(speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({ postFinalGraceMs: 4_000 }));
+    expect(speechOutput.speak).toHaveBeenCalledWith(expect.objectContaining({ rate: 1.5 }));
     controller.close();
   });
   it('solicits yes only after every effect in a >600-character visual batch has been spoken', async () => {

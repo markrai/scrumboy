@@ -54,6 +54,7 @@ import {
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { prepareTextForSpeechSynthesis } from './speech-output.js';
+import { getVoiceSpeechRate } from '../core/voice-speech-rate-preferences.js';
 import { createVoiceFlowTrace, summarizeVoiceInterpretation } from './trace.js';
 import { classifyVoiceCommandSafety } from './command-safety.js';
 
@@ -461,6 +462,7 @@ export function createVoiceAgentController(
       await speechOutput.speak({
         text: spokenText,
         language: 'en-US',
+        rate: getVoiceSpeechRate(),
         signal: operation.signal,
       });
       if (!owns(owner, operation)) return false;

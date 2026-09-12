@@ -193,6 +193,7 @@ export function createSpeechOutputComposition(
           operationId: id,
           text: speakOptions.text.trim(),
           ...(speakOptions.language ? { language: speakOptions.language } : {}),
+          ...(speakOptions.rate !== undefined ? { rate: speakOptions.rate } : {}),
         }).then(
           (result) => {
             if (active !== operation || operation.settled) return;

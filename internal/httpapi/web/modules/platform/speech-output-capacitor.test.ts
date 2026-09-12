@@ -44,17 +44,41 @@ describe('Capacitor speech-output composition', () => {
     });
     const capability = composition.registry.get(SPEECH_OUTPUT_CAPABILITY)!;
 
-    await expect(capability.speak({ text: 'Done.', language: 'en-US' }))
+    await expect(capability.speak({ text: 'Done.', language: 'en-US', rate: 1.75 }))
       .resolves.toEqual({ completed: true });
     expect(native.speak).toHaveBeenCalledWith({
       operationId: 'speech-output-1',
       text: 'Done.',
       language: 'en-US',
+      rate: 1.75,
     });
 
     vi.mocked(native.speak).mockResolvedValueOnce({ operationId: 'wrong-operation' });
     await expect(capability.speak({ text: 'Again.' }))
       .rejects.toMatchObject({ code: 'synthesis_failed' });
+  });
+
+  it('forwards each product preset exactly and keeps omission valid', async () => {
+    const native = plugin();
+    vi.mocked(native.speak).mockImplementation(async ({ operationId }) => ({ operationId }));
+    let nextId = 0;
+    const composition = createSpeechOutputComposition({
+      plugin: native,
+      operationIdFactory: () => `speech-output-${++nextId}`,
+    });
+    const capability = composition.registry.get(SPEECH_OUTPUT_CAPABILITY)!;
+
+    for (const rate of [1, 1.25, 1.5, 1.75, 2]) {
+      await capability.speak({ text: 'Done.', rate });
+    }
+    await capability.speak({ text: 'Default.' });
+
+    expect(vi.mocked(native.speak).mock.calls.map(([request]) => request.rate))
+      .toEqual([1, 1.25, 1.5, 1.75, 2, undefined]);
+    expect(native.speak).toHaveBeenLastCalledWith({
+      operationId: 'speech-output-6',
+      text: 'Default.',
+    });
   });
 
   it('uses a named stop on abort, rejects cancelled, and ignores late completion', async () => {

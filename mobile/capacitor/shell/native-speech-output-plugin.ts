@@ -12,6 +12,7 @@ export interface NativeSpeechOutputPlugin {
     operationId: string;
     text: string;
     language?: string;
+    rate?: number;
   }): Promise<{ operationId: string }>;
   stop(options: { operationId?: string }): Promise<void>;
   invalidate(): Promise<void>;

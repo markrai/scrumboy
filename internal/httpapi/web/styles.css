@@ -2513,6 +2513,47 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   font-size: var(--fs-13);
 }
 
+.voice-speech-speed {
+  margin: 12px 0 0 24px;
+}
+
+.voice-speech-speed__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.voice-speech-speed__heading output {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.voice-speech-speed__slider {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.voice-speech-speed__ticks {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.voice-speech-speed__ticks span {
+  text-align: center;
+}
+
+.voice-speech-speed__ticks span:first-child {
+  text-align: left;
+}
+
+.voice-speech-speed__ticks span:last-child {
+  text-align: right;
+}
+
 .settings-push-vapid-notice {
   margin: 0 0 var(--s-16) 0;
   padding: var(--s-10) var(--s-12);

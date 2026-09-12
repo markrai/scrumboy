@@ -887,6 +887,8 @@
   "settings.backup.trello.toast.imported": "Imported Trello board: {name}",
   "settings.customization.voiceFlow.title": "VoiceFlow",
   "settings.customization.voiceFlow.toggleLabel": "Use voice commands to move, create and delete todos.",
+  "settings.customization.voiceFlow.speechSpeed.title": "Speech speed",
+  "settings.customization.voiceFlow.speechSpeed.helper": "How fast Scrumboy speaks during VoiceFlow.",
   "settings.customization.voiceFlow.speechWait.title": "Wait after I stop speaking",
   "settings.customization.voiceFlow.speechWait.helper": "How long Scrumboy should wait before it decides you are done. Applies to AI VoiceFlow on this device.",
   "settings.customization.voiceFlow.speechWait.fast": "Fast — 2 seconds",

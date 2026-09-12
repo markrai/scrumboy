@@ -15,6 +15,27 @@ describe('speech-output contract', () => {
     })).not.toThrow();
   });
 
+  it.each([undefined, 0.5, 1, 1.25, 1.5, 1.75, 2, 3])(
+    'accepts provider-neutral rate %s',
+    (rate) => {
+      expect(() => validateSpeechOutputSpeakOptions({ text: 'Done.', rate })).not.toThrow();
+    },
+  );
+
+  it.each([
+    '1.5',
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    0,
+    -1,
+    0.49,
+    3.01,
+  ])('rejects invalid provider-neutral rate %s', (rate) => {
+    expect(() => validateSpeechOutputSpeakOptions({ text: 'Done.', rate } as never))
+      .toThrowError(expect.objectContaining({ code: 'invalid_request', recoverable: false }));
+  });
+
   it.each([
     { text: '' },
     { text: '   ' },

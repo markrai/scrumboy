@@ -8,8 +8,41 @@ import org.junit.Test;
 public class SpeechOutputRequestValidatorTest {
     @Test
     public void acceptsBoundedTextAndLanguage() throws Exception {
-        SpeechOutputRequestValidator.validate("Done.", "en-US");
-        SpeechOutputRequestValidator.validate("x".repeat(600), "en-US-x-local");
+        assertEquals(1.0f, SpeechOutputRequestValidator.validate("Done.", "en-US"), 0.0f);
+        assertEquals(1.0f, SpeechOutputRequestValidator.validate("x".repeat(600), "en-US-x-local"), 0.0f);
+    }
+
+    @Test
+    public void resolvesEveryProductPresetExactly() throws Exception {
+        assertEquals(1.0f, validateRate(1.0d), 0.0f);
+        assertEquals(1.25f, validateRate(1.25d), 0.0f);
+        assertEquals(1.5f, validateRate(1.5d), 0.0f);
+        assertEquals(1.75f, validateRate(1.75d), 0.0f);
+        assertEquals(2.0f, validateRate(2.0d), 0.0f);
+    }
+
+    @Test
+    public void acceptsGenericProtocolBoundaries() throws Exception {
+        assertEquals(0.5f, validateRate(0.5d), 0.0f);
+        assertEquals(3.0f, validateRate(3.0d), 0.0f);
+    }
+
+    @Test
+    public void omittedRateAlwaysResolvesBackToOne() throws Exception {
+        assertEquals(2.0f, validateRate(2.0d), 0.0f);
+        assertEquals(1.0f, validateRate(null), 0.0f);
+    }
+
+    @Test
+    public void rejectsInvalidRates() {
+        assertInvalidRate("1.5");
+        assertInvalidRate(0.0d);
+        assertInvalidRate(-1.0d);
+        assertInvalidRate(0.49d);
+        assertInvalidRate(3.01d);
+        assertInvalidRate(Double.NaN);
+        assertInvalidRate(Double.POSITIVE_INFINITY);
+        assertInvalidRate(Double.NEGATIVE_INFINITY);
     }
 
     @Test
@@ -37,6 +70,18 @@ public class SpeechOutputRequestValidatorTest {
         SpeechOutputException error = assertThrows(
             SpeechOutputException.class,
             () -> SpeechOutputRequestValidator.validate("Done.", language)
+        );
+        assertEquals("invalid_request", error.code());
+    }
+
+    private static float validateRate(Object rate) throws SpeechOutputException {
+        return SpeechOutputRequestValidator.validate("Done.", "en-US", rate);
+    }
+
+    private static void assertInvalidRate(Object rate) {
+        SpeechOutputException error = assertThrows(
+            SpeechOutputException.class,
+            () -> validateRate(rate)
         );
         assertEquals("invalid_request", error.code());
     }
