@@ -5,6 +5,10 @@ import { harness, skill, finish, latestRef } from './agent.test.utils.js';
 import { SpeechInputError } from '../platform/speech-input.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { createVoiceFlowTrace } from './trace.js';
+import {
+  ENHANCED_SPEECH_WAIT_STORAGE_KEY,
+  setEnhancedSpeechWaitPreset,
+} from '../core/enhanced-speech-wait-preferences.js';
 
 function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListening = false) {
   let speaking = false;
@@ -19,7 +23,30 @@ function surface(h: ReturnType<typeof harness>, transcripts: string[], keepListe
   const controller = createVoiceAgentController({ ...h.options, model: h.model, loop: h.loop, speechInput, speechOutput, continuationEnabled: keepListening, onView });
   return { controller, speechInput, speechOutput, onView };
 }
+
+function enhancedSession() {
+  const trace = createVoiceFlowTrace();
+  return {
+    pending: false,
+    confirmationPending: false,
+    captureContext: 'initial_enhanced_voiceflow_capture' as const,
+    retainsContext: false,
+    trace: () => trace,
+    endTrace: vi.fn(),
+    cancelTrace: vi.fn(),
+    context: vi.fn(),
+    submit: vi.fn(async () => ({ phase: 'success' as const, text: 'Opened.' })),
+    confirm: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+    cancel: vi.fn(() => ({ phase: 'success' as const, text: 'Cancelled.' })),
+    choose: vi.fn(async () => ({ phase: 'success' as const, text: 'Opened.' })),
+    setKeepListening: vi.fn(),
+    invalidate: vi.fn(),
+  };
+}
+
 describe('VoiceAgentController local skill production path', () => {
+  beforeEach(() => localStorage.removeItem(ENHANCED_SPEECH_WAIT_STORAGE_KEY));
+
   it('uses the enhanced fresh 45-second Create-compatible capture policy and context', async () => {
     const h = harness();
     const trace = createVoiceFlowTrace();
@@ -96,8 +123,88 @@ describe('VoiceAgentController local skill production path', () => {
   it('keeps the legacy/basic acquisition window at 10 seconds', async () => {
     const s = surface(harness(), []);
     await s.controller.startListening();
-    expect(s.speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({ maxDurationMs: 10_000 }));
+    const options = s.speechInput.listen.mock.calls[0][0];
+    expect(options).toEqual(expect.objectContaining({ maxDurationMs: 10_000 }));
+    expect(options).not.toHaveProperty('aggregationMode');
+    expect(options).not.toHaveProperty('postFinalGraceMs');
     s.controller.close();
+  });
+
+  it.each([
+    ['fast', 2_000],
+    ['patient', 7_000],
+  ] as const)('passes the %s device wait to Enhanced capture', async (preset, expectedMs) => {
+    setEnhancedSpeechWaitPreset(preset);
+    const h = harness();
+    const session = enhancedSession();
+    const speechInput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      listen: vi.fn(async (options: any) => {
+        options.onListening?.();
+        return { transcript: 'Open Goblin', provider: 'android_on_device' as const };
+      }),
+    };
+    const controller = createVoiceAgentController({
+      ...h.options,
+      model: h.model,
+      session,
+      speechInput,
+      continuationEnabled: false,
+      onView: vi.fn(),
+    });
+
+    await controller.startListening();
+
+    expect(speechInput.listen).toHaveBeenCalledWith(expect.objectContaining({
+      maxDurationMs: 45_000,
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: expectedMs,
+    }));
+    controller.close();
+  });
+
+  it('samples the device wait for each Enhanced acquisition without retiming one in flight', async () => {
+    setEnhancedSpeechWaitPreset('fast');
+    const h = harness();
+    const session = enhancedSession();
+    let finishFirst!: (value: { transcript: string; provider: 'android_on_device' }) => void;
+    const speechInput = {
+      status: vi.fn(async () => ({ state: 'ready' as const })),
+      listen: vi.fn()
+        .mockImplementationOnce((options: any) => {
+          options.onListening?.();
+          return new Promise(resolve => { finishFirst = resolve; });
+        })
+        .mockImplementationOnce(async (options: any) => {
+          options.onListening?.();
+          return { transcript: 'Second', provider: 'android_on_device' as const };
+        }),
+    };
+    const controller = createVoiceAgentController({
+      ...h.options,
+      model: h.model,
+      session,
+      speechInput,
+      continuationEnabled: false,
+      onView: vi.fn(),
+    });
+
+    const firstAcquisition = controller.startListening();
+    await vi.waitFor(() => expect(speechInput.listen).toHaveBeenCalledOnce());
+    const firstOptions = speechInput.listen.mock.calls[0][0];
+    expect(firstOptions.postFinalGraceMs).toBe(2_000);
+
+    setEnhancedSpeechWaitPreset('patient');
+    expect(firstOptions.postFinalGraceMs).toBe(2_000);
+    finishFirst({ transcript: 'First', provider: 'android_on_device' });
+    await firstAcquisition;
+
+    await controller.startListening();
+    expect(speechInput.listen.mock.calls[1][0]).toEqual(expect.objectContaining({
+      aggregationMode: 'create_v2',
+      postFinalGraceMs: 7_000,
+    }));
+    controller.close();
   });
   it('solicits yes only after every effect in a >600-character visual batch has been spoken', async () => {
     const notes = 'Long dictated paragraph. '.repeat(32);

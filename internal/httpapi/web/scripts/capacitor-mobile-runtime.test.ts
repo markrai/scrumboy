@@ -128,6 +128,7 @@ describe('C2 Capacitor runtime', () => {
     localStorage.setItem('scrumboy_theme', 'dark');
     localStorage.setItem('scrumboy.keybindings', '{}');
     localStorage.setItem('scrumboy_assignment_notify_muted', '1');
+    localStorage.setItem('scrumboy.voiceEnhancedSpeechWait', 'patient');
     localStorage.setItem('scrumboy.current-user', 'private');
     sessionStorage.setItem('scrumboy.temp', 'private');
 
@@ -137,6 +138,7 @@ describe('C2 Capacitor runtime', () => {
     expect(localStorage.getItem('scrumboy_theme')).toBe('dark');
     expect(localStorage.getItem('scrumboy.keybindings')).toBe('{}');
     expect(localStorage.getItem('scrumboy_assignment_notify_muted')).toBe('1');
+    expect(localStorage.getItem('scrumboy.voiceEnhancedSpeechWait')).toBe('patient');
     expect(localStorage.getItem('scrumboy.current-user')).toBeNull();
     expect(sessionStorage.length).toBe(0);
   });

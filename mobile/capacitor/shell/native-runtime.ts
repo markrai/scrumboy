@@ -11,6 +11,7 @@ const DEVICE_GLOBAL_KEYS = new Set([
   'scrumboy_theme',
   'scrumboy.keybindings',
   'scrumboy_assignment_notify_muted',
+  'scrumboy.voiceEnhancedSpeechWait',
 ]);
 
 export function clearScrumboyWebState(): void {

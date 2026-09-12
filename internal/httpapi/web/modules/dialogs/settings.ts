@@ -85,6 +85,11 @@ import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/
 import { getAppRuntime } from '../platform/runtime.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import {
+  getEnhancedSpeechWaitPreset,
+  setEnhancedSpeechWaitPreset,
+  type EnhancedSpeechWaitPreset,
+} from '../core/enhanced-speech-wait-preferences.js';
+import {
   getWrapLanesPreference,
   setWrapLanesPreference,
   syncOpenBoardWrapLanesClass,
@@ -720,6 +725,27 @@ export function renderBackupTabHTML(): string {
 
 function renderVoiceFlowCustomizationHTML(): string {
   const enabled = getVoiceFlowEnabledPreference();
+  const enhancedSpeechWaitPreset = getEnhancedSpeechWaitPreset();
+  const enhancedSpeechWaitHTML = getAppRuntime().kind === 'capacitor' ? `
+      <div id="enhancedSpeechWaitControls" ${enabled ? '' : 'hidden'} style="margin:12px 0 0 24px;">
+        <div class="settings-section__title" data-i18n-text="settings.customization.voiceFlow.speechWait.title">Wait after I stop speaking</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.voiceFlow.speechWait.helper">How long Scrumboy should wait before it decides you are done. Applies to AI VoiceFlow on this device.</div>
+        <div style="display:grid;gap:8px;margin-top:10px;">
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="enhancedSpeechWaitPreset" value="fast" ${enhancedSpeechWaitPreset === 'fast' ? 'checked' : ''} />
+            <span data-i18n-text="settings.customization.voiceFlow.speechWait.fast">Fast — 2 seconds</span>
+          </label>
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="enhancedSpeechWaitPreset" value="normal" ${enhancedSpeechWaitPreset === 'normal' ? 'checked' : ''} />
+            <span data-i18n-text="settings.customization.voiceFlow.speechWait.normal">Normal — 4 seconds</span>
+          </label>
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="enhancedSpeechWaitPreset" value="patient" ${enhancedSpeechWaitPreset === 'patient' ? 'checked' : ''} />
+            <span data-i18n-text="settings.customization.voiceFlow.speechWait.patient">Patient — 7 seconds</span>
+          </label>
+        </div>
+      </div>
+  ` : '';
   return `
     <div class="settings-section">
       <div class="settings-section__title" data-i18n-text="settings.customization.voiceFlow.title">VoiceFlow</div>
@@ -727,6 +753,7 @@ function renderVoiceFlowCustomizationHTML(): string {
         <input type="checkbox" id="voiceFlowEnabledToggle" ${enabled ? "checked" : ""} />
         <span data-i18n-text="settings.customization.voiceFlow.toggleLabel">Use voice commands to move, create and delete todos.</span>
       </label>
+      ${enhancedSpeechWaitHTML}
     </div>
   `;
 }
@@ -2465,11 +2492,23 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         "change",
         () => {
           setVoiceFlowEnabledPreference(voiceFlowEnabledToggle.checked);
+          const enhancedSpeechWaitControls = document.getElementById("enhancedSpeechWaitControls");
+          if (enhancedSpeechWaitControls) enhancedSpeechWaitControls.hidden = !voiceFlowEnabledToggle.checked;
           emit("voiceflow:enabled-changed", voiceFlowEnabledToggle.checked);
         },
         { signal }
       );
     }
+
+    document.querySelectorAll<HTMLInputElement>('input[name="enhancedSpeechWaitPreset"]').forEach((option) => {
+      option.addEventListener(
+        "change",
+        () => {
+          if (option.checked) setEnhancedSpeechWaitPreset(option.value as EnhancedSpeechWaitPreset);
+        },
+        { signal }
+      );
+    });
 
     const wrapLanesToggle = document.getElementById("wrapLanesToggle") as HTMLInputElement | null;
     if (wrapLanesToggle) {

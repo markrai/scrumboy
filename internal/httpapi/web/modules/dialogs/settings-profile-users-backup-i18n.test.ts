@@ -170,6 +170,27 @@ async function initI18nFor(locale: 'en' | 'de' = 'en') {
   return i18n;
 }
 
+async function installCapacitorRuntime(): Promise<void> {
+  const runtime = await import('../platform/runtime.js');
+  runtime.installAppRuntime({
+    kind: 'capacitor',
+    capability: () => null,
+    assetOrigin: () => 'capacitor://localhost',
+    serverOrigin: () => 'https://selected.example',
+    publicLinkOrigin: () => 'https://selected.example',
+    supportsPWA: () => false,
+    supportsWebPush: () => false,
+    supportsInteractiveOIDC: () => false,
+    startInteractiveOIDC: vi.fn(async () => undefined),
+    transport: () => ({
+      request: vi.fn(),
+      openEventStream: vi.fn(),
+      acquireResource: vi.fn(),
+      logout: vi.fn(),
+    } as any),
+  });
+}
+
 async function setupSettingsView(options: {
   activeTab: string;
   user?: Record<string, unknown> | null;
@@ -212,6 +233,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
   beforeEach(() => {
     vi.resetModules();
     installBaseDOM();
+    localStorage.clear();
     window.history.replaceState({}, '', '/');
     apiFetchMock.mockReset();
     fetchProjectMembersMock.mockReset();
@@ -283,24 +305,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
 	});
 
   it('shows selected server/change action and gates interactive OIDC in the Capacitor profile', async () => {
-    const runtime = await import('../platform/runtime.js');
-    runtime.installAppRuntime({
-      kind: 'capacitor',
-      capability: () => null,
-      assetOrigin: () => 'capacitor://localhost',
-      serverOrigin: () => 'https://selected.example',
-      publicLinkOrigin: () => 'https://selected.example',
-      supportsPWA: () => false,
-      supportsWebPush: () => false,
-      supportsInteractiveOIDC: () => false,
-      startInteractiveOIDC: vi.fn(async () => undefined),
-      transport: () => ({
-        request: vi.fn(),
-        openEventStream: vi.fn(),
-        acquireResource: vi.fn(),
-        logout: vi.fn(),
-      } as any),
-    });
+    await installCapacitorRuntime();
     const user = {
       id: 1,
       name: 'Mobile User',
@@ -863,6 +868,54 @@ describe('settings i18n (profile / users / backup / customization)', () => {
   });
 
   // ---- Customization residuals (VoiceFlow + Push) -----------------------
+
+  it('shows and directly persists the Capacitor-only Enhanced speech wait controls', async () => {
+    await installCapacitorRuntime();
+    state.voiceFlowEnabled = true;
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    const controls = document.getElementById('enhancedSpeechWaitControls') as HTMLElement;
+    const options = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="enhancedSpeechWaitPreset"]'));
+    expect(controls).not.toBeNull();
+    expect(controls.hidden).toBe(false);
+    expect(options.map(option => option.value)).toEqual(['fast', 'normal', 'patient']);
+    expect(options.find(option => option.value === 'normal')?.checked).toBe(true);
+
+    apiFetchMock.mockClear();
+    const patient = options.find(option => option.value === 'patient')!;
+    patient.checked = true;
+    patient.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(localStorage.getItem('scrumboy.voiceEnhancedSpeechWait')).toBe('patient');
+    expect(apiFetchMock).not.toHaveBeenCalled();
+
+    const voiceToggle = document.getElementById('voiceFlowEnabledToggle') as HTMLInputElement;
+    voiceToggle.checked = false;
+    voiceToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(controls.hidden).toBe(true);
+    voiceToggle.checked = true;
+    voiceToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(controls.hidden).toBe(false);
+    expect(setVoiceFlowEnabledPreferenceMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it.each(['fast', 'patient'] as const)('selects the stored %s Enhanced speech wait preset', async preset => {
+    await installCapacitorRuntime();
+    localStorage.setItem('scrumboy.voiceEnhancedSpeechWait', preset);
+    state.voiceFlowEnabled = true;
+
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    expect(document.querySelector<HTMLInputElement>(`input[name="enhancedSpeechWaitPreset"][value="${preset}"]`)?.checked).toBe(true);
+  });
+
+  it('omits Enhanced speech wait controls from browser/PWA Settings', async () => {
+    state.voiceFlowEnabled = true;
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    expect(document.getElementById('voiceFlowEnabledToggle')).not.toBeNull();
+    expect(document.getElementById('enhancedSpeechWaitControls')).toBeNull();
+    expect(document.querySelector('input[name="enhancedSpeechWaitPreset"]')).toBeNull();
+  });
 
   it('relocalizes VoiceFlow + Push/PWA copy on locale change while preserving toggle state and triggering no push/preference side effects', async () => {
     const user = { id: 1, name: 'Eve', email: 'eve@example.com', systemRole: 'owner', twoFactorEnabled: false };

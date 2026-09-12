@@ -12,10 +12,10 @@ import { VoiceAgentSkillRegistry } from './agent-skills.js';
 import type { VoiceAgentModel } from './agent-model.js';
 import type { VoiceCreateSession } from './voice-create-session.js';
 import type { EnhancedVoiceSessionPort } from './enhanced-voice-session.js';
+import { getEnhancedSpeechWaitMs } from '../core/enhanced-speech-wait-preferences.js';
 
-/** Safety ceiling only; an owned ASR final still resolves acquisition immediately. */
+/** Enhanced capture safety ceiling; aggregate turn completion uses its separately sampled wait. */
 export const VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS = 45_000;
-export const VOICE_CREATE_POST_FINAL_GRACE_MS = 4_000;
 
 type ControllerOptions = VoiceCommandOptions & {
   model: VoiceAgentModel; speechInput: SpeechInputCapability; speechOutput?: SpeechOutputCapability | null;
@@ -84,6 +84,7 @@ export function createVoiceAgentController(options: ControllerOptions) {
   const listen = async (owner: AbortController, automatic: boolean) => {
     if (!owns(owner)) return;
     const maxDurationMs = enhancedCapture ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
+    const postFinalGraceMs = enhancedCapture ? getEnhancedSpeechWaitMs() : undefined;
     const captureContext = options.session?.captureContext ?? options.createSession?.captureContext;
     const pendingBefore = loop.pending;
     loop.trace();
@@ -112,7 +113,7 @@ export function createVoiceAgentController(options: ControllerOptions) {
       }
       emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
       const result = await options.speechInput.listen({ maxDurationMs, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
-        ...(enhancedCapture ? { aggregationMode: 'create_v2' as const, postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
+        ...(enhancedCapture ? { aggregationMode: 'create_v2' as const, postFinalGraceMs, captureContext } : {}),
         onListening: () => { if (owns(owner)) {
           if (captureContext) loop.trace().emit('capture', { phase: 'listening', captureContext, pendingBefore });
           emit({ activity: 'listening', activityStatus: { key: 'voice.agent.listening', fallback: 'Listening…' } });

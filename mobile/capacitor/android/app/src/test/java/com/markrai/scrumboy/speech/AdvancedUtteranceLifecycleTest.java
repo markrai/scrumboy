@@ -23,6 +23,32 @@ import org.junit.Test;
  * therefore the only response that can terminate a VoiceFlow utterance in practice.
  */
 public class AdvancedUtteranceLifecycleTest {
+    private static final class FakeScheduler implements AdvancedUtteranceScheduler {
+        Runnable pending;
+        long requestedDelayMs = -1;
+        int posts;
+        int removals;
+
+        @Override
+        public void post(Runnable runnable, long delayMs) {
+            pending = runnable;
+            requestedDelayMs = delayMs;
+            posts += 1;
+        }
+
+        @Override
+        public void remove(Runnable runnable) {
+            if (pending == runnable) pending = null;
+            removals += 1;
+        }
+
+        void fire() {
+            Runnable runnable = pending;
+            pending = null;
+            if (runnable != null) runnable.run();
+        }
+    }
+
     /** Records JavaScript settlements and native teardowns for one utterance. */
     private static final class Utterance {
         final SpeechInputOperationRegistry operations = new SpeechInputOperationRegistry();
@@ -47,6 +73,125 @@ public class AdvancedUtteranceLifecycleTest {
                 case IGNORE -> { }
             }
         }
+
+        AdvancedUtteranceLifecycle.Outcome aggregateFinal(
+            String text,
+            long graceMs,
+            FakeScheduler scheduler
+        ) {
+            return lifecycle.onFinal(
+                text,
+                operations,
+                operation,
+                teardown(),
+                true,
+                graceMs,
+                scheduler,
+                () -> js.add("resolve:" + lifecycle.transcript())
+            );
+        }
+    }
+
+    @Test
+    public void aggregateFinalWaitsForFastGraceBeforeResolving() throws Exception {
+        Utterance utterance = new Utterance();
+        FakeScheduler scheduler = new FakeScheduler();
+
+        AdvancedUtteranceLifecycle.Outcome outcome = utterance.aggregateFinal(
+            "create Big Man",
+            2_000,
+            scheduler
+        );
+
+        assertEquals(AdvancedUtteranceLifecycle.Outcome.SEGMENT_FINAL, outcome);
+        assertTrue(utterance.js.isEmpty());
+        assertEquals(2_000, scheduler.requestedDelayMs);
+        assertEquals(1, scheduler.posts);
+
+        scheduler.fire();
+
+        assertEquals(List.of("resolve:create Big Man"), utterance.js);
+        assertEquals(1, utterance.nativeTeardowns.get());
+    }
+
+    @Test
+    public void patientGraceChangesOnlyTheRequestedDelay() throws Exception {
+        Utterance utterance = new Utterance();
+        FakeScheduler scheduler = new FakeScheduler();
+
+        assertEquals(
+            AdvancedUtteranceLifecycle.Outcome.SEGMENT_FINAL,
+            utterance.aggregateFinal("create Big Man", 7_000, scheduler)
+        );
+        assertEquals(7_000, scheduler.requestedDelayMs);
+        assertEquals("create Big Man", utterance.lifecycle.transcript());
+
+        scheduler.fire();
+        assertEquals(List.of("resolve:create Big Man"), utterance.js);
+    }
+
+    @Test
+    public void secondAggregateFinalCancelsAndReschedulesWithJoinedTranscript() throws Exception {
+        Utterance utterance = new Utterance();
+        FakeScheduler scheduler = new FakeScheduler();
+
+        utterance.aggregateFinal("create Big Man", 4_000, scheduler);
+        Runnable firstGrace = scheduler.pending;
+        utterance.aggregateFinal("put it in Backlog", 4_000, scheduler);
+
+        assertEquals(1, scheduler.removals);
+        assertEquals(2, scheduler.posts);
+        assertFalse(firstGrace == scheduler.pending);
+        assertEquals("create Big Man put it in Backlog", utterance.lifecycle.transcript());
+        assertTrue(utterance.js.isEmpty());
+
+        scheduler.fire();
+        assertEquals(List.of("resolve:create Big Man put it in Backlog"), utterance.js);
+    }
+
+    @Test
+    public void nonEmptyPartialAfterFinalReschedulesGrace() throws Exception {
+        Utterance utterance = new Utterance();
+        FakeScheduler scheduler = new FakeScheduler();
+
+        utterance.aggregateFinal("create Big Man", 4_000, scheduler);
+        Runnable firstGrace = scheduler.pending;
+        utterance.lifecycle.onPartial("put it in");
+
+        assertEquals(1, scheduler.removals);
+        assertEquals(2, scheduler.posts);
+        assertFalse(firstGrace == scheduler.pending);
+        assertEquals(4_000, scheduler.requestedDelayMs);
+    }
+
+    @Test
+    public void emptyPartialAfterFinalDoesNotRescheduleGrace() throws Exception {
+        Utterance utterance = new Utterance();
+        FakeScheduler scheduler = new FakeScheduler();
+
+        utterance.aggregateFinal("create Big Man", 4_000, scheduler);
+        Runnable firstGrace = scheduler.pending;
+        utterance.lifecycle.onPartial("");
+        utterance.lifecycle.onPartial("   ");
+
+        assertEquals(0, scheduler.removals);
+        assertEquals(1, scheduler.posts);
+        assertTrue(firstGrace == scheduler.pending);
+    }
+
+    @Test
+    public void cancellationBeforeAggregateGracePreventsLateResolution() throws Exception {
+        Utterance utterance = new Utterance();
+        FakeScheduler scheduler = new FakeScheduler();
+
+        utterance.aggregateFinal("create Big Man", 4_000, scheduler);
+        SpeechInputOperationRegistry.Operation cancelled = utterance.operations.cancel("speech-1");
+        assertNotNull(cancelled);
+        cancelled.deliverCancellation();
+
+        scheduler.fire();
+
+        assertEquals(List.of("reject:cancelled"), utterance.js);
     }
 
     /**

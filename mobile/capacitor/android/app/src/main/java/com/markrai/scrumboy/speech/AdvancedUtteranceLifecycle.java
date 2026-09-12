@@ -29,7 +29,7 @@ final class AdvancedUtteranceLifecycle {
     private final AdvancedSpeechTranscriptAccumulator accumulator = new AdvancedSpeechTranscriptAccumulator();
     private final AdvancedUtteranceTerminal terminal = new AdvancedUtteranceTerminal();
     private final Object aggregationLock = new Object();
-    private android.os.Handler handler;
+    private AdvancedUtteranceScheduler scheduler;
     private Runnable grace;
     private boolean aggregate;
     private long graceMs;
@@ -63,11 +63,33 @@ final class AdvancedUtteranceLifecycle {
         android.os.Handler handler,
         Runnable resolve
     ) {
+        return onFinal(
+            text,
+            operations,
+            operation,
+            nativeTeardown,
+            aggregate,
+            graceMs,
+            handler == null ? null : new HandlerAdvancedUtteranceScheduler(handler),
+            resolve
+        );
+    }
+
+    Outcome onFinal(
+        String text,
+        SpeechInputOperationRegistry operations,
+        SpeechInputOperationRegistry.Operation operation,
+        Runnable nativeTeardown,
+        boolean aggregate,
+        long graceMs,
+        AdvancedUtteranceScheduler scheduler,
+        Runnable resolve
+    ) {
         if (!aggregate && accumulator.hasFinal()) return Outcome.IGNORE;
         if (!accumulator.onFinal(text)) return Outcome.IGNORE;
         if (aggregate) {
             synchronized (aggregationLock) {
-                this.aggregate = true; this.graceMs = graceMs; this.handler = handler;
+                this.aggregate = true; this.graceMs = graceMs; this.scheduler = scheduler;
                 this.operations = operations; this.operation = operation; this.nativeTeardown = nativeTeardown; this.resolve = resolve;
                 scheduleGraceLocked();
             }
@@ -87,7 +109,7 @@ final class AdvancedUtteranceLifecycle {
         SpeechInputOperationRegistry.Operation operation,
         Runnable nativeTeardown
     ) {
-        synchronized (aggregationLock) { if (handler != null && grace != null) handler.removeCallbacks(grace); }
+        synchronized (aggregationLock) { if (scheduler != null && grace != null) scheduler.remove(grace); }
         if (!terminal.claimProductCompletion(operations, operation, nativeTeardown)) return Outcome.IGNORE;
         return accumulator.hasFinal() ? Outcome.RESOLVE_TRANSCRIPT : Outcome.REJECT_NO_SPEECH;
     }
@@ -98,12 +120,12 @@ final class AdvancedUtteranceLifecycle {
         SpeechInputOperationRegistry.Operation operation,
         Runnable nativeTeardown
     ) {
-        return onFinal(text, operations, operation, nativeTeardown, false, 0, null, null);
+        return onFinal(text, operations, operation, nativeTeardown, false, 0, (AdvancedUtteranceScheduler) null, null);
     }
 
     private void scheduleGraceLocked() {
-        if (handler == null) return;
-        if (grace != null) handler.removeCallbacks(grace);
+        if (scheduler == null) return;
+        if (grace != null) scheduler.remove(grace);
         grace = () -> {
             SpeechInputOperationRegistry.Operation op;
             SpeechInputOperationRegistry ops;
@@ -112,7 +134,7 @@ final class AdvancedUtteranceLifecycle {
             synchronized (aggregationLock) { op = operation; ops = operations; teardown = nativeTeardown; complete = resolve; grace = null; }
             if (op != null && terminal.claimProductCompletion(ops, op, teardown) && complete != null) complete.run();
         };
-        handler.postDelayed(grace, graceMs);
+        scheduler.post(grace, graceMs);
     }
 
     /**
@@ -148,4 +170,29 @@ final class AdvancedUtteranceLifecycle {
     }
 
     int segmentCount() { return accumulator.segmentCount(); }
+}
+
+/** The two timer operations owned by one aggregate utterance. */
+interface AdvancedUtteranceScheduler {
+    void post(Runnable runnable, long delayMs);
+    void remove(Runnable runnable);
+}
+
+/** Keeps Android Handler details at the production edge of the lifecycle. */
+final class HandlerAdvancedUtteranceScheduler implements AdvancedUtteranceScheduler {
+    private final android.os.Handler handler;
+
+    HandlerAdvancedUtteranceScheduler(android.os.Handler handler) {
+        this.handler = handler;
+    }
+
+    @Override
+    public void post(Runnable runnable, long delayMs) {
+        handler.postDelayed(runnable, delayMs);
+    }
+
+    @Override
+    public void remove(Runnable runnable) {
+        handler.removeCallbacks(runnable);
+    }
 }

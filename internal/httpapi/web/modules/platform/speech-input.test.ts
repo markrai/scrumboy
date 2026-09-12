@@ -23,6 +23,23 @@ describe('speech-input contract', () => {
       .toThrowError(expect.objectContaining({ code: 'invalid_request' }));
   });
 
+  it('keeps the aggregate wait protocol bounded independently of product presets', () => {
+    for (const postFinalGraceMs of [2_000, 4_000, 7_000]) {
+      expect(() => validateSpeechInputListenOptions({
+        maxDurationMs: 45_000,
+        aggregationMode: 'create_v2',
+        postFinalGraceMs,
+      })).not.toThrow();
+    }
+    for (const postFinalGraceMs of [0, 10_001]) {
+      expect(() => validateSpeechInputListenOptions({
+        maxDurationMs: 45_000,
+        aggregationMode: 'create_v2',
+        postFinalGraceMs,
+      })).toThrowError(expect.objectContaining({ code: 'invalid_request' }));
+    }
+  });
+
   it.each([
     { transcript: 'Open story 355' },
     { transcript: 'Create Big Man', segmentCount: 1 },

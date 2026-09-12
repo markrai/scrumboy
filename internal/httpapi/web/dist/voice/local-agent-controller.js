@@ -4,9 +4,9 @@ import { voiceText } from './i18n.js';
 import { prepareTextForSpeechSynthesis } from './speech-output.js';
 import { VoiceAgentLoop, agentSafeFailure } from './agent-loop.js';
 import { VoiceAgentSkillRegistry } from './agent-skills.js';
-/** Safety ceiling only; an owned ASR final still resolves acquisition immediately. */
+import { getEnhancedSpeechWaitMs } from '../core/enhanced-speech-wait-preferences.js';
+/** Enhanced capture safety ceiling; aggregate turn completion uses its separately sampled wait. */
 export const VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS = 45000;
-export const VOICE_CREATE_POST_FINAL_GRACE_MS = 4000;
 const literal = (text) => ({ kind: 'literal', text });
 /** Owns only UI, microphone/TTS sequencing, cancellation and lifecycle. */
 export function createVoiceAgentController(options) {
@@ -88,6 +88,7 @@ export function createVoiceAgentController(options) {
         if (!owns(owner))
             return;
         const maxDurationMs = enhancedCapture ? VOICE_CREATE_SPEECH_INPUT_MAX_DURATION_MS : SPEECH_INPUT_MAX_DURATION_MS;
+        const postFinalGraceMs = enhancedCapture ? getEnhancedSpeechWaitMs() : undefined;
         const captureContext = options.session?.captureContext ?? options.createSession?.captureContext;
         const pendingBefore = loop.pending;
         loop.trace();
@@ -118,7 +119,7 @@ export function createVoiceAgentController(options) {
             }
             emit({ activity: 'starting-microphone', activityStatus: { key: 'voice.agent.startingMicrophone', fallback: 'Starting microphone…' } });
             const result = await options.speechInput.listen({ maxDurationMs, language: globalThis.navigator?.language || 'en-US', signal: owner.signal,
-                ...(enhancedCapture ? { aggregationMode: 'create_v2', postFinalGraceMs: VOICE_CREATE_POST_FINAL_GRACE_MS, captureContext } : {}),
+                ...(enhancedCapture ? { aggregationMode: 'create_v2', postFinalGraceMs, captureContext } : {}),
                 onListening: () => {
                     if (owns(owner)) {
                         if (captureContext)
