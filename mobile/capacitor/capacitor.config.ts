@@ -7,6 +7,12 @@ const config: CapacitorConfig = {
   android: {
     loggingBehavior: 'none',
   },
+  plugins: {
+    SystemBars: {
+      hidden: true,
+      insetsHandling: 'css',
+    },
+  },
 };
 
 export default config;
