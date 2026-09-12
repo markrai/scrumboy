@@ -166,8 +166,15 @@ describe('VoiceAgentController local skill production path', () => {
     await s.controller.startListening(); expect(s.speechInput.listen).toHaveBeenCalledTimes(2); expect(h.options.openTodo).toHaveBeenCalledOnce(); s.controller.close();
   });
   it('UI confirmation executes once, without needing a model call', async () => {
-    const h = harness([skill('todos.delete', { reference: 'Happy Birthday' }), finish]); const s = surface(h, []);
-    await s.controller.submitTranscript('delete Happy Birthday'); expect(s.controller.getView().phase).toBe('confirmation');
+    const h = harness([skill('todos.delete', { reference: 'Billy Mongoose' }), finish]);
+    h.todo.title = 'Billy Mongoose'; h.todo.localId = 369;
+    const s = surface(h, []);
+    await s.controller.submitTranscript('I want you to delete Billy Mongoose');
+    expect(s.controller.getView()).toMatchObject({
+      phase: 'confirmation',
+      confirmation: { summary: 'Delete todo #369: Billy Mongoose?', confirmLabel: 'Delete', danger: true },
+    });
+    expect(h.options.openTodo).not.toHaveBeenCalled(); expect(h.execute).not.toHaveBeenCalled();
     await Promise.all([s.controller.confirm(), s.controller.confirm()]); expect(h.execute).toHaveBeenCalledOnce(); expect(h.model).toHaveBeenCalledTimes(2); s.controller.close();
   });
   it('typed tasks never automatically acquire the microphone', async () => {

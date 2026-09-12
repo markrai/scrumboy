@@ -59,7 +59,7 @@ export function createVoiceAgentController(options) {
         if (!owns(owner))
             return;
         emit({ phase: result.phase, status: literal(result.text), activity: 'idle', activityStatus: null,
-            confirmation: result.phase === 'confirmation' ? { summary: result.text, confirmLabel: voiceText('common.confirm', 'Confirm'), danger: !!result.danger } : null,
+            confirmation: result.phase === 'confirmation' ? { summary: result.text, confirmLabel: result.confirmLabel ?? voiceText('common.confirm', 'Confirm'), danger: !!result.danger } : null,
             clarification: result.phase === 'question' ? { options: result.choices ?? [] } : null });
         // Confirmation speech must cover the whole batch. Null leaves visual/tap/manual Listen available.
         const speechText = result.phase === 'confirmation' ? result.speechText : result.text.slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);

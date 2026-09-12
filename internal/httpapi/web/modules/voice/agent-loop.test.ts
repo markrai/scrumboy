@@ -137,6 +137,123 @@ describe('bounded local agent loop', () => {
     expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
     expect(h.execute).not.toHaveBeenCalled();
   });
+  it('prepares the physical named delete directly without opening the story', async () => {
+    const expected = skill('todos.delete', { reference: 'Billy Mongoose' });
+    const h = harness([expected, finish]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+    const run = vi.spyOn(h.registry, 'run');
+
+    const view = await h.loop.submit('I want you to delete Billy Mongoose', h.signal);
+
+    expect(view).toEqual({
+      phase: 'confirmation',
+      text: 'Delete todo #369: Billy Mongoose?',
+      speechText: 'Delete todo #369: Billy Mongoose?',
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    expect(run.mock.calls[0][0]).toEqual(expected);
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('recovers a complete delete target disguised as clarification and still requires confirmation', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.delete', arguments: { reference: 'Billy Mongoose' }, missing: 'confirmation', text: 'Are you sure?' },
+      finish,
+    ]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+    const run = vi.spyOn(h.registry, 'run');
+
+    const view = await h.loop.submit('Delete Billy Mongoose', h.signal);
+
+    expect(view).toMatchObject({ phase: 'confirmation', text: 'Delete todo #369: Billy Mongoose?', danger: true, confirmLabel: 'Delete' });
+    expect(run.mock.calls[0][0]).toEqual(skill('todos.delete', { reference: 'Billy Mongoose' }));
+    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+
+    expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+  });
+  it('cancels a recovered delete proposal without executing it', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.delete', arguments: { reference: 'Billy Mongoose' }, missing: 'approval', text: 'Please confirm.' },
+      finish,
+    ]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+
+    expect((await h.loop.submit('Delete Billy Mongoose', h.signal)).phase).toBe('confirmation');
+    expect(h.loop.confirmationPending).toBe(true);
+    expect(h.loop.cancel().phase).toBe('success');
+    expect(h.loop.confirmationPending).toBe(false);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('keeps real delete ambiguity as pendingChoice and resolves an offered number locally', async () => {
+    const h = harness([skill('todos.delete', { reference: 'Goblin' }), { kind: 'ask_user', text: 'Which one?' }]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 370, title: 'Goblins in Burtonsville', status: 'backlog', columnKey: 'backlog' });
+    const run = vi.spyOn(h.registry, 'run');
+
+    const question = await h.loop.submit('Delete Goblin', h.signal);
+    expect(question.phase).toBe('question');
+    expect(question.choices).toHaveLength(2);
+    expect(h.loop.currentState).toEqual({ kind: 'choice' });
+    const offeredRef = question.choices![0].id;
+    h.steps.push(finish);
+    h.events.length = 0;
+
+    const confirmation = await h.loop.submit('#369', h.signal);
+    expect(confirmation).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
+    expect(run.mock.calls[1][0]).toEqual(skill('todos.delete', { todoRef: offeredRef }));
+    expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
+    expect(h.model).toHaveBeenCalledTimes(3);
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('retains a structured missing delete reference and fills #369 locally', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.delete', arguments: {}, missing: 'reference', text: 'Which story?' },
+      finish,
+    ]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+    const run = vi.spyOn(h.registry, 'run');
+
+    expect(await h.loop.submit('Delete a story', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
+    expect(h.loop.currentState).toEqual({
+      kind: 'clarification',
+      skillClarification: { skill: 'todos.delete', arguments: {}, missing: 'reference' },
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(h.model).toHaveBeenCalledOnce();
+    h.events.length = 0;
+
+    const confirmation = await h.loop.submit('#369', h.signal);
+    expect(confirmation).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
+    expect(run.mock.calls[0][0]).toEqual(skill('todos.delete', { reference: '#369' }));
+    expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
+    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it('gives plain ask_user no local delete-selection authority', async () => {
+    const h = harness([
+      { kind: 'ask_user', text: 'Which story?' },
+      { kind: 'ask_user', text: 'Please name the story.' },
+    ]);
+    const run = vi.spyOn(h.registry, 'run');
+
+    expect(await h.loop.submit('Delete a story', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
+    expect(await h.loop.submit('#369', h.signal)).toEqual({ phase: 'question', text: 'Please name the story.' });
+    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(run).not.toHaveBeenCalled();
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
   it('keeps real move ambiguity as pendingChoice and resolves an offered number locally', async () => {
     const h = harness([skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' }), { kind: 'ask_user', text: 'Which one?' }]);
     h.todo.title = 'Goblins in Washington';
@@ -304,6 +421,25 @@ describe('bounded local agent loop', () => {
     expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('execute:todos.append_notes'));
     await h.loop.confirm(h.signal); expect(h.execute).toHaveBeenCalledOnce();
   });
+  it('allows an explicitly requested Open before a separately confirmed Delete', async () => {
+    const h = harness([
+      skill('todos.open', { reference: 'Billy Mongoose' }),
+      input => skill('todos.delete', { todoRef: latestRef(input) }),
+      finish,
+    ]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+
+    const view = await h.loop.submit('Open Billy Mongoose and delete it', h.signal);
+    expect(view).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(h.options.openTodo).toHaveBeenCalledWith(369);
+    expect(h.execute).not.toHaveBeenCalled();
+
+    expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.delete', entities: { localId: 369 } });
+  });
   it('move plus assign has one combined confirmation and preflights both before either executes', async () => {
     const h = harness([skill('todos.move', { reference: 'Happy Birthday', lane: 'Done' }), skill('todos.assign', { reference: 'Happy Birthday', member: 'Mark' }), finish, { kind: 'confirm' }]);
     const view = await h.loop.submit('Move Happy Birthday to Done and assign it to Mark', h.signal);
@@ -362,6 +498,37 @@ describe('bounded local agent loop', () => {
     const h = harness(['broken', valid ? finish : 'still broken']);
     expect((await h.loop.submit('hello', h.signal)).phase).toBe(valid ? 'success' : 'error');
     expect(h.model).toHaveBeenCalledTimes(2); expect(JSON.parse(h.model.mock.calls[1][0]).repair).toContain('Expected strict JSON');
+  });
+  it('traces only safe structural metadata for a rejected model envelope', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    const debug = vi.spyOn(console, 'debug').mockImplementation((name, fields) => {
+      if (name === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    const raw = '{"kind":"skill_call","skill":"todos.delete","arguments":{"reference":"PRIVATE_MODEL_VALUE"},"danger":true}';
+    try {
+      const h = harness([raw, raw]);
+      expect((await h.loop.submit('delete PRIVATE_USER_TRANSCRIPT', h.signal)).phase).toBe('error');
+      const failure = events.find(event => event.stage === 'interpret' && event.result === 'failure');
+      expect(failure).toMatchObject({
+        reason: 'Unexpected or missing fields',
+        protocolEnvelopeKind: 'skill_call',
+        protocolSkill: 'todos.delete',
+        protocolScope: 'envelope',
+        protocolTopLevelKeys: ['arguments', 'danger', 'kind', 'skill'],
+        protocolArgumentKeys: ['reference'],
+        protocolUnexpectedKeys: ['danger'],
+      });
+      const serialized = JSON.stringify(events);
+      expect(serialized).not.toContain('PRIVATE_MODEL_VALUE');
+      expect(serialized).not.toContain('PRIVATE_USER_TRANSCRIPT');
+      expect(serialized).not.toContain(raw);
+      expect(h.execute).not.toHaveBeenCalled();
+      expect(h.options.openTodo).not.toHaveBeenCalled();
+    } finally {
+      debug.mockRestore();
+      localStorage.removeItem('scrumboy_debug_voiceflow');
+    }
   });
   it('stops repeated resolve calls at the skill limit with no further model invocation', async () => {
     const h = harness(Array.from({ length: 20 }, () => skill('todos.resolve', { reference: 'Happy Birthday' })));

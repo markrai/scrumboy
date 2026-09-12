@@ -278,7 +278,7 @@ export class VoiceAgentLoop {
                         task.confirmation = true;
                         task.clarification = false;
                         diagnostic.emit('confirmation', { phase: 'initial', required: true, ...task.proposals.diagnosticSummary() });
-                        return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, speechText: task.proposals.confirmationSpeech(), danger: task.proposals.danger };
+                        return { phase: 'confirmation', text: `${task.proposals.summaries().join('; ')}?`, speechText: task.proposals.confirmationSpeech(), danger: task.proposals.danger, confirmLabel: task.proposals.confirmationLabel() };
                     }
                     const text = task.results.filter(result => result.status !== 'choices').map(renderAgentSkillResult).join('; ') || voiceText('voice.agent.noChanges', 'No changes needed.');
                     this.finish(task, 0);
@@ -325,7 +325,7 @@ export class VoiceAgentLoop {
             }
         }
         catch (error) {
-            diagnostic.emit(stage === 'interpret' ? 'interpret' : 'failure', { result: 'failure', source: stage, reason: error instanceof AgentProtocolError ? error.message : stage + '_exception' });
+            diagnostic.emit(stage === 'interpret' ? 'interpret' : 'failure', { result: 'failure', source: stage, reason: error instanceof AgentProtocolError ? error.message : stage + '_exception', ...(error instanceof AgentProtocolError ? error.diagnostic : {}) });
             diagnostic.end(stage + '_failure');
             this.invalidate();
             return { phase: 'error', text: agentSafeFailure() };

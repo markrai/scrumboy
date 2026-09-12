@@ -53,6 +53,43 @@ describe('bounded skill registry', () => {
     expect(h.execute).toHaveBeenCalledOnce();
     expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.move', entities: { localId: 369, toColumnKey: 'done' } });
   });
+  it.each([
+    'Billy Mongoose',
+    'billy mongoose',
+    '"Billy Mongoose"',
+    'story Billy Mongoose',
+    'the story Billy Mongoose',
+    'the story called Billy Mongoose',
+    '#369',
+    '369',
+    'Number 369',
+  ])('prepares a dangerous #369 delete from Agent reference %s without opening or executing', async reference => {
+    const h = harness([skill('todos.delete', { reference }), finish]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+
+    const view = await h.loop.submit('I want you to delete Billy Mongoose', h.signal);
+    expect(view).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
+    expect(view.text).toBe('Delete todo #369: Billy Mongoose?');
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+
+    expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+    expect(h.execute).toHaveBeenCalledOnce();
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.delete', entities: { localId: 369 } });
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+  });
+  it('uses stripped-title precedence for delete instead of a fuzzy wrapped shadow', async () => {
+    const h = harness([skill('todos.delete', { reference: 'the story Billy Mongoose' }), finish]);
+    h.todo.title = 'Billy Mongoose';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 410, title: 'The Story of Billy Mongoose', status: 'backlog', columnKey: 'backlog' });
+
+    expect((await h.loop.submit('delete it', h.signal)).phase).toBe('confirmation');
+    await h.loop.confirm(h.signal);
+    expect(h.execute.mock.calls[0][0].entities.localId).toBe(369);
+    expect(h.options.openTodo).not.toHaveBeenCalled();
+  });
   it('does not let a fuzzy raw wrapper shadow the exact stripped title', async () => {
     const h = harness([skill('todos.move', { reference: 'the story Goblins in Washington', lane: 'Done' }), finish]);
     h.todo.title = 'Goblins in Washington';

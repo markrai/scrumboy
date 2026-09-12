@@ -18,6 +18,12 @@ export class VoiceAgentProposalStore {
     }
     get count() { return this.proposals.length; }
     summaries() { return this.proposals.map(proposal => proposal.command.summary); }
+    confirmationLabel() {
+        const proposal = this.proposals.length === 1 ? this.proposals[0] : null;
+        return proposal?.command.ir.intent === 'todos.delete'
+            ? proposal.command.confirmLabel
+            : voiceText('common.confirm', 'Confirm');
+    }
     /** All effects are represented, or speech confirmation is unavailable. Never truncate a batch. */
     confirmationSpeech() {
         const summaries = this.proposals.map(({ command }) => {
