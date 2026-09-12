@@ -2,35 +2,59 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
 
-## [3.34.0] - 2026-08-28
+## [3.34.0] - 2026-09-12
 
 ### Added
 
-- **Android Capacitor shell** - New `mobile/capacitor` workspace packages a
-  thin Android shell that loads signed web assets from a generated `www/`
-  artifact. A packaged server selector and native `ScrumboyTransport` plugin
-  own the selected origin, authenticated cookie jar, REST, SSE, and acquired
-  resource networking. Session cookies stay native and are never exposed to
-  JavaScript; changing servers clears the native session and related state.
-  See [mobile/capacitor/README.md](mobile/capacitor/README.md).
-- **Android native OIDC handoff** - Packaged Android SSO opens the existing
-  configured IdP in an external browser/Custom Tab, returns through the
-  ordinary HTTPS Scrumboy OIDC callback, and completes a short-lived one-time
-  handoff into `com.markrai.scrumboy://oidc/callback`. The app exchanges an
-  app-held S256 verifier for a normal `scrumboy_session` cookie via the native
-  transport cookie jar. Browser/PWA OIDC is unchanged; no second IdP client is
-  required. Push, generic deep links, and iOS remain later phases. See
-  [docs/oidc.md](docs/oidc.md) and [mobile/capacitor/README.md](mobile/capacitor/README.md).
+- **Android Capacitor shell** - `mobile/capacitor` packages a thin Android
+  shell that loads signed web assets from generated `www/`. A server selector
+  and native `ScrumboyTransport` own origin, cookie jar, REST, SSE, and
+  acquired-resource networking. Session cookies stay native (never exposed to
+  JS); changing servers clears session and related state. Settings shows the
+  selected server with Change server; immersive system bars use CSS insets for
+  cutouts. See [mobile/capacitor/README.md](mobile/capacitor/README.md).
+- **Android native OIDC handoff** - Packaged SSO opens the configured IdP in an
+  external browser/Custom Tab, returns via the ordinary HTTPS OIDC callback,
+  then completes a one-time handoff to `com.markrai.scrumboy://oidc/callback`.
+  An app-held S256 verifier exchanges for a normal `scrumboy_session` in the
+  native cookie jar. Browser/PWA OIDC is unchanged; no second IdP client.
+  Push, generic deep links, and iOS remain later. See [docs/oidc.md](docs/oidc.md)
+  and [mobile/capacitor/README.md](mobile/capacitor/README.md).
+- **On-device AI VoiceFlow** - On English, enhanced-capable Android devices,
+  VoiceFlow interprets on device: clear creates use a Create planner; other
+  requests use a skill agent (open, inspect, create, move, rename, note,
+  assign/unassign, tag, delete, count completed this week). Mutations require
+  confirmation; text/models stay on device. **Keep Listening** (off by
+  default) opens one extra listen window after a spoken result. Browser/basic
+  VoiceFlow is unchanged. See [docs/voiceflow.md](docs/voiceflow.md).
+- **Advanced on-device speech + local generation** - Supported devices use ML
+  Kit advanced ASR (multi-segment finals, configurable post-final wait,
+  45s ceiling) and an ML Kit / Gemini Nano text-generation bridge with
+  readiness, cancellation, privacy, and quota handling—no cloud AI fallback.
+  Basic VoiceFlow keeps first-final / 10s acquisition. Runtimes advertise
+  speech I/O, local generation, push, and transport capabilities so enhanced
+  features gate correctly.
+- **VoiceFlow speech preferences** - Settings → Customization: Speech speed
+  (1.0x–2.0x) and Wait after I stop speaking (Fast 2s / Normal 4s /
+  Patient 7s) for AI VoiceFlow on this device.
 
 ### Changed
 
-- **Web runtime platform boundary** - Browser networking, PWA/push, wallpaper
-  resources, and related feature gates go through an `AppRuntime` /
-  `ServerTransport` abstraction so the same packaged web app can run under
-  Capacitor without loading the remote server UI into the WebView.
-- **Native session fencing** - The Android transport uses crash-consistent
-  cookie ownership and generation fencing so stale in-flight session delivery
-  cannot overwrite a newer selected-server session after a switch or restart.
+- **Web runtime platform boundary** - Networking, PWA/push, wallpaper, and
+  feature gates go through `AppRuntime` / `ServerTransport` so the packaged
+  web app runs under Capacitor without loading the remote server UI.
+- **Native session fencing** - Crash-consistent cookie ownership and
+  generation fencing prevent stale in-flight session delivery from overwriting
+  a newer selected-server session after switch or restart.
+
+### Fixed
+
+- **Enhanced VoiceFlow hardening** - More reliable Create tag/member
+  resolution, split-acronym tags, story moves/deletes, spoken batch
+  confirmations, dialogue state across replies, and todo pronunciation;
+  ambiguous or unsupported requests fail closed.
+- **Android project thumbnails** - Default thumbnails render correctly in the
+  packaged shell instead of broken remote image URLs.
 
 ## [3.33.14] - 2026-09-06
 
