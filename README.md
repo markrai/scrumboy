@@ -26,13 +26,6 @@
 - [Features](#features)
 - [Optional Configuration](#optional-configuration)
   - [Environment variables](#environment-variables)
-  - [Server and data](#server-and-data)
-  - [Encryption and TLS](#encryption-and-tls)
-  - [OIDC / SSO](#oidc--sso)
-  - [Feature flags](#feature-flags)
-  - [Web Push (VAPID)](#web-push-vapid)
-  - [SMTP (self-service password reset)](#smtp-self-service-password-reset-via-email)
-  - [Public URL and reverse proxy](#public-url-and-reverse-proxy)
   - [Encryption key for 2FA/password reset](#encryption-key-for-2fapassword-reset)
   - [SMTP for self-service password reset (optional)](#smtp-for-self-service-password-reset-optional)
   - [OIDC / SSO login (optional)](#oidc--sso-login-optional)
@@ -204,98 +197,11 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 
 ### Environment variables
 
-- The app does **not** automatically load `.env` files.
-- On Linux/macOS, export variables manually (for example: `export SCRUMBOY_ENCRYPTION_KEY=...`).
-- On Windows, `win_run_full.bat` and `win_run_anonymous.bat` manage `data/scrumboy.env` automatically for local convenience.
-- Precedence on Windows is: existing process env var `SCRUMBOY_ENCRYPTION_KEY`, then `data/scrumboy.env`, then legacy root `scrumboy.env`.
-- The canonical Windows-managed local file format is `SCRUMBOY_ENCRYPTION_KEY=<base64-32-byte-key>`.
-- Windows helper scripts still accept legacy raw single-line key files for backward compatibility.
-- Env vars and defaults are defined in `internal/config/config.go`. ResolveDataDir uses `DATA_DIR` and `SQLITE_PATH` as documented there. None of these are required for basic startup.
+A fresh Scrumboy install needs no environment variables. Set them only when you want to change deployment defaults or turn on optional features (SSO, email, Web Push, TLS, encryption, and similar).
 
-### Server and data
+Scrumboy does **not** automatically load `.env` files. Inject variables through your shell, process manager, Docker/Compose, or another launcher.
 
-
-| Variable                  | Default                                                                                          |
-| ------------------------- | ------------------------------------------------------------------------------------------------ |
-| `BIND_ADDR`               | `:8080`                                                                                          |
-| `DATA_DIR`                | `./data` - Instance data directory for SQLite and file-backed uploads such as `user-wallpapers/` |
-| `SQLITE_PATH`             | (empty; then `$DATA_DIR/app.db`)                                                                 |
-| `SQLITE_BUSY_TIMEOUT_MS`  | `30000`                                                                                          |
-| `SQLITE_JOURNAL_MODE`     | `WAL`                                                                                            |
-| `SQLITE_SYNCHRONOUS`      | `FULL`                                                                                           |
-| `MAX_REQUEST_BODY_BYTES`  | `1048576` (1 MiB)                                                                                |
-| `MAX_TRELLO_IMPORT_BYTES` | `33554432` (32 MiB) - Max Trello JSON import upload size                                         |
-| `SCRUMBOY_MODE`           | `full` (or `anonymous`)                                                                          |
-| `SCRUMBOY_INTRANET_IP`    | `192.168.1.250` - LAN IP to log for intranet access                                              |
-
-
-### Encryption and TLS
-
-
-| Variable                  | Default                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_ENCRYPTION_KEY` | (empty) - **Required for 2FA, password reset, and ICS calendar feeds.** Base64-encoded 32-byte key. Generate with `openssl rand -base64 32`. Without it, 2FA setup returns 503, password-reset tokens cannot be issued, and Agenda feeds cannot be stored. Back this key up with the instance `DATA_DIR` (including `data/app.db`); do not replace it casually once encrypted auth/security or calendar data exists. |
-| `SCRUMBOY_TLS_CERT`       | `./cert.pem` - TLS cert for HTTPS                                                                                                                                                                                                                                                                                                                   |
-| `SCRUMBOY_TLS_KEY`        | `./key.pem` - TLS key for HTTPS                                                                                                                                                                                                                                                                                                                     |
-
-
-### OIDC / SSO
-
-
-| Variable                            | Default                                                                                                                         |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_OIDC_ISSUER`              | (empty) - **OIDC / SSO.** Issuer URL. All four OIDC fields below must be set to enable SSO. See `[docs/oidc.md](docs/oidc.md)`. |
-| `SCRUMBOY_OIDC_CLIENT_ID`           | (empty) - OIDC confidential client ID                                                                                           |
-| `SCRUMBOY_OIDC_CLIENT_SECRET`       | (empty) - OIDC client secret                                                                                                    |
-| `SCRUMBOY_OIDC_REDIRECT_URL`        | (empty) - Absolute callback URL (must match IdP registration), e.g. `https://scrumboy.example.com/api/auth/oidc/callback`       |
-| `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED` | (empty) - Set to `true` to disable local password login/bootstrap when OIDC is configured                                       |
-
-
-### Feature flags
-
-
-| Variable                          | Default                                                                                                                                                                 |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_WALL_ENABLED`           | (on) - Sticky-note wall. Unset/empty keeps wall enabled; `0`/`false`/`off`/`no` disables. Durable projects only. See `[docs/wall.md](docs/wall.md)`.                    |
-| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | (off) - Todo notes Markdown preview. Set to `1`/`true`/`on`/`yes` to enable. See `[FAQ.md](FAQ.md)` and `[docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)`. |
-| `SCRUMBOY_MERMAID_NOTES_ENABLED`  | (off) - Mermaid diagrams in notes preview. Set to `1`/`true`/`on`/`yes`; effective only when Markdown notes are also enabled.                                           |
-
-
-### Web Push (VAPID)
-
-
-| Variable                     | Default                                                                                                                                                                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_VAPID_PUBLIC_KEY`  | (empty) - **Web Push.** VAPID public key (URL-safe base64). Required together with private key for PWA background assignment notifications and for post-login auto-subscribe in the SPA.                                              |
-| `SCRUMBOY_VAPID_PRIVATE_KEY` | (empty) - VAPID private key (URL-safe base64).                                                                                                                                                                                        |
-| `SCRUMBOY_VAPID_SUBSCRIBER`  | (empty) - Contact for VAPID JWT `sub` (not tied to IdP). Use a **plain email** (e.g. `ops@example.com`); the server adds `mailto:`. Or set a full `mailto:...` or `https://...` URL explicitly. If unset, a built-in default is used. |
-| `SCRUMBOY_DEBUG_PUSH`        | (empty) - Set to `1` to log push send/prune on the server.                                                                                                                                                                            |
-
-
-### SMTP (self-service password reset)
-
-
-| Variable                 | Default                                                                                         |
-| ------------------------ | ----------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_SMTP_HOST`     | (empty) - **Self-service password reset.** SMTP relay hostname. Required with From.             |
-| `SCRUMBOY_SMTP_PORT`     | `587` - Defaults to 587 when omitted. If explicitly set, must be 1–65535.                       |
-| `SCRUMBOY_SMTP_USERNAME` | (empty) - SMTP auth username; omit for relays allowing unauthenticated submission.              |
-| `SCRUMBOY_SMTP_PASSWORD` | (empty) - SMTP auth password. Never logged.                                                     |
-| `SCRUMBOY_SMTP_FROM`     | (empty) - Envelope + header `From`, e.g. `Scrumboy <no-reply@example.com>`. Required with Host. |
-| `SCRUMBOY_SMTP_TLS_MODE` | `starttls` (or `implicit`, `none`) - see `[docs/smtp.md](docs/smtp.md)`.                        |
-| `SCRUMBOY_SMTP_DEBUG`    | (empty) - Set to `1` to log SMTP send attempts (never credentials/body).                        |
-
-
-### Public URL and reverse proxy
-
-
-| Variable                   | Default                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SCRUMBOY_PUBLIC_BASE_URL` | (empty) - **Required for self-service password-reset email.** Canonical public origin (e.g. `https://scrumboy.example.com`). Must be absolute `http`/`https` with hostname; no path, query, fragment, or userinfo. Missing or invalid → self-service emails disabled (generic API response only). Also used for admin-generated reset links and as the canonical OAuth discovery issuer when set. For **OAuth**, non-loopback issuers must be **HTTPS**; plain `http` is accepted only for loopback (`localhost` / `127.0.0.0/8` / `::1`). See `[docs/smtp.md](docs/smtp.md#reset-link-url)` and `[docs/oauth.md](docs/oauth.md#issuer--discovery-origin)`. |
-| `SCRUMBOY_TRUST_PROXY`     | (empty) - Set to `1`/`true`/`on`/`yes` to honor `X-Forwarded-For` for auth/OAuth rate-limit IP keys and (for OAuth issuer discovery) trusted `X-Forwarded-Proto` / `X-Forwarded-Host` / `CF-Visitor`. Default off: use `RemoteAddr` only for IP keys. Enable only behind a reverse proxy that **overwrites or strips client-supplied** values for all of those headers — not only XFF. When enabled, OAuth issuer discovery requires either `SCRUMBOY_PUBLIC_BASE_URL` or a proxy-provided `X-Forwarded-Host` together with a forwarded HTTPS indication; `X-Forwarded-Proto` alone (or multi-value forwarded scheme/host fields) results in 503.           |
-
-
-`docker-compose.yml` overrides some of these (e.g. `SQLITE_BUSY_TIMEOUT_MS=5000`).
+Full names, defaults, requirements, and interactions: [`docs/environment-variables.md`](docs/environment-variables.md).
 
 ---
 
