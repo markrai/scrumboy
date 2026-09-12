@@ -103,6 +103,7 @@ function submitOrigin(origin: string): void {
 
 beforeEach(() => {
   document.head.innerHTML = '<meta name="scrumboy-runtime" content="capacitor">';
+  document.documentElement.removeAttribute('data-theme');
   document.body.innerHTML = [
     '<div id="app"></div>',
     '<dialog id="todoDialog"></dialog>',
@@ -111,6 +112,16 @@ beforeEach(() => {
   ].join('');
   localStorage.clear();
   sessionStorage.clear();
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })));
 });
 
 describe('C2 server selection bootstrap', () => {
@@ -119,7 +130,7 @@ describe('C2 server selection bootstrap', () => {
     ['saved-unreachable', {
       kind: 'saved-unreachable',
       origin: 'https://offline.example',
-      message: 'Could not connect.',
+      failure: { code: 'connect_failure' },
     } as const],
   ])('renders the %s selector only inside the authoritative product mount', (_name, mode) => {
     const body = document.body;
@@ -136,6 +147,72 @@ describe('C2 server selection bootstrap', () => {
     expect(document.getElementById('todoDialog')).toBe(todoDialog);
     expect(toast?.isConnected).toBe(true);
     expect(todoDialog?.isConnected).toBe(true);
+  });
+
+  it('renders the polished entry presentation and mobile URL safeguards', () => {
+    renderServerSelector({ kind: 'entry' }, { connect: vi.fn(async () => undefined) });
+
+    const shell = document.getElementById('scrumboy-mobile-bootstrap');
+    const wordmark = shell?.querySelector<HTMLImageElement>('img.brand-text');
+    const title = document.getElementById('scrumboy-mobile-bootstrap-title');
+    const input = document.getElementById('scrumboy-mobile-server-origin') as HTMLInputElement;
+    const label = shell?.querySelector<HTMLLabelElement>('label[for="scrumboy-mobile-server-origin"]');
+    const connect = shell?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const warning = document.getElementById('scrumboy-mobile-insecure-http') as HTMLParagraphElement;
+
+    expect(shell?.classList.contains('page--mobile-bootstrap')).toBe(true);
+    expect(shell?.querySelector('.container .brand')).toBeInstanceOf(HTMLElement);
+    expect(shell?.querySelector('.panel .panel__header')).toBeInstanceOf(HTMLElement);
+    expect(wordmark?.getAttribute('src')).toBe('/scrumboytext.png');
+    expect(wordmark?.alt).toBe('Scrumboy');
+    expect(title?.textContent).toBe('Connect to your server');
+    expect(shell?.textContent).toContain('Enter the address of your Scrumboy instance. You’ll sign in next.');
+    expect(label?.textContent).toBe('Server address');
+    expect(label?.classList.contains('field__label')).toBe(true);
+    expect(input.type).toBe('url');
+    expect(input.inputMode).toBe('url');
+    expect(input.autocomplete).toBe('url');
+    expect(input.required).toBe(true);
+    expect(input.placeholder).toBe('https://scrumboy.example.com');
+    expect(input.getAttribute('autocapitalize')).toBe('none');
+    expect(input.getAttribute('autocorrect')).toBe('off');
+    expect(input.getAttribute('spellcheck')).toBe('false');
+    expect(input.getAttribute('enterkeyhint')).toBe('go');
+    expect(connect?.classList.contains('btn')).toBe(true);
+    expect(connect?.classList.contains('mobile-bootstrap__action')).toBe(true);
+    expect(shell?.textContent).toContain('This address is stored only on this device.');
+    expect(warning.hidden).toBe(true);
+
+    input.value = 'http://debug.example';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(warning.hidden).toBe(false);
+    expect(warning.textContent).toContain('HTTP is insecure');
+
+    input.value = 'https://secure.example';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(warning.hidden).toBe(true);
+    expect(warning.textContent).toBe('');
+  });
+
+  it('renders the polished saved-unreachable presentation', () => {
+    renderServerSelector(
+      {
+        kind: 'saved-unreachable',
+        origin: 'https://offline.example',
+        failure: { code: 'timeout' },
+      },
+      { connect: vi.fn(async () => undefined) },
+    );
+
+    const shell = document.getElementById('scrumboy-mobile-bootstrap');
+    const buttons = [...shell!.querySelectorAll('button')];
+    expect(shell?.querySelector<HTMLImageElement>('img.brand-text')?.alt).toBe('Scrumboy');
+    expect(document.getElementById('scrumboy-mobile-bootstrap-title')?.textContent).toBe('Can’t reach your server');
+    expect(shell?.querySelector('.mobile-bootstrap__origin')?.textContent).toBe('https://offline.example');
+    expect(buttons.map((button) => button.textContent)).toEqual(['Try again', 'Change server']);
+    expect([...buttons[0].classList]).toEqual(expect.arrayContaining(['btn', 'mobile-bootstrap__action']));
+    expect([...buttons[1].classList]).toEqual(expect.arrayContaining(['btn', 'btn--ghost', 'mobile-bootstrap__action']));
+    expect(document.getElementById('scrumboy-mobile-server-status')?.textContent).toContain('did not respond in time');
   });
 
   it('shows the selector when no server is saved', async () => {
@@ -193,15 +270,94 @@ describe('C2 server selection bootstrap', () => {
     expect(capabilityAtAppImport).toBe(localTextGeneration);
   });
 
-  it('shows Retry and Change server without importing app when a saved server fails', async () => {
+  it('shows Try again and Change server without importing app when a saved server fails', async () => {
     const plugin = pluginFake({ configure: vi.fn(async () => { throw new Error('offline'); }) });
     const deps = dependencies({ saved: 'https://offline.example', plugin });
 
     await startMobileBootstrap(deps);
 
     expect(document.body.textContent).toContain('https://offline.example');
-    expect([...document.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Retry', 'Change server']);
+    expect([...document.querySelectorAll('button')].map((button) => button.textContent)).toEqual(['Try again', 'Change server']);
     expect(deps.importer).not.toHaveBeenCalled();
+  });
+
+  it('shows a mapped safe reason for a coded saved-server startup failure', async () => {
+    const plugin = pluginFake({ configure: vi.fn(async () => { throw { code: 'dns_failure' }; }) });
+    const deps = dependencies({ saved: 'https://missing.example', plugin });
+
+    await startMobileBootstrap(deps);
+
+    expect(document.getElementById('scrumboy-mobile-server-status')?.textContent).toBe(
+      'The server name could not be resolved.',
+    );
+    expect(deps.importer).not.toHaveBeenCalled();
+  });
+
+  it('updates the saved-server reason when retry observes a different coded failure', async () => {
+    const plugin = pluginFake({
+      configure: vi.fn()
+        .mockRejectedValueOnce({ code: 'timeout' })
+        .mockResolvedValueOnce(undefined),
+      probeServer: vi.fn(async () => { throw { code: 'tls_failure' }; }),
+    });
+    const deps = dependencies({ saved: 'https://offline.example', plugin });
+
+    await startMobileBootstrap(deps);
+    expect(document.getElementById('scrumboy-mobile-server-status')?.textContent).toContain('did not respond in time');
+    [...document.querySelectorAll('button')].find((button) => button.textContent === 'Try again')?.click();
+
+    await vi.waitFor(() => expect(document.getElementById('scrumboy-mobile-server-status')?.textContent).toContain('certificate'));
+    expect(deps.importer).not.toHaveBeenCalled();
+  });
+
+  it('prefills the saved origin when changing from saved-unreachable', async () => {
+    const plugin = pluginFake({ configure: vi.fn(async () => { throw { code: 'connect_failure' }; }) });
+    const deps = dependencies({ saved: 'https://offline.example:9443', plugin });
+
+    await startMobileBootstrap(deps);
+    [...document.querySelectorAll('button')].find((button) => button.textContent === 'Change server')?.click();
+
+    expect((document.getElementById('scrumboy-mobile-server-origin') as HTMLInputElement).value).toBe(
+      'https://offline.example:9443',
+    );
+    expect(deps.preferences.remove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['light', 'light'],
+    ['dark', null],
+  ])('applies a stored %s theme before reading Preferences', async (stored, expected) => {
+    localStorage.setItem('scrumboy_theme', stored);
+    const deps = dependencies();
+    deps.preferences.get = vi.fn(async () => {
+      expect(document.documentElement.getAttribute('data-theme')).toBe(expected);
+      return { value: null };
+    });
+
+    await startMobileBootstrap(deps);
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe(expected);
+  });
+
+  it.each([
+    [false, 'light'],
+    [true, null],
+  ])('resolves a stored system theme when dark preference is %s', async (systemIsDark, expected) => {
+    localStorage.setItem('scrumboy_theme', 'system');
+    vi.mocked(globalThis.matchMedia).mockImplementation((query: string) => ({
+      matches: systemIsDark,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    await startMobileBootstrap(dependencies());
+
+    expect(document.documentElement.getAttribute('data-theme')).toBe(expected);
   });
 
   it('persists a normalized candidate before configuring, then installs runtime and imports app', async () => {
@@ -334,7 +490,7 @@ describe('C2 server selection bootstrap', () => {
     });
 
     await startMobileBootstrap(deps);
-    [...document.querySelectorAll('button')].find((button) => button.textContent === 'Retry')?.click();
+    [...document.querySelectorAll('button')].find((button) => button.textContent === 'Try again')?.click();
 
     await vi.waitFor(() => expect(document.getElementById('packaged-auth-ui')).toBeInstanceOf(HTMLElement));
     expect(document.getElementById('scrumboy-mobile-bootstrap')).toBeNull();
@@ -350,6 +506,8 @@ describe('C2 server selection bootstrap', () => {
     submitOrigin('https://bad.example');
     await vi.waitFor(() => expect(document.getElementById('scrumboy-mobile-server-status')?.textContent).toContain('certificate'));
 
+    expect((document.getElementById('scrumboy-mobile-server-origin') as HTMLInputElement).value).toBe('https://bad.example');
+    expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
     expect(deps.preferences.set).not.toHaveBeenCalled();
     expect(plugin.configure).not.toHaveBeenCalled();
     expect(deps.importer).not.toHaveBeenCalled();

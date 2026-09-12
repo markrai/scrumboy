@@ -9,6 +9,7 @@ import { renderServerSelector } from './server-selection.js';
 
 export const SELECTED_SERVER_KEY = 'scrumboy.server.origin.v1';
 export const CHANGE_SERVER_EVENT = 'scrumboy:mobile-change-server';
+const THEME_STORAGE_KEY = 'scrumboy_theme';
 
 type PreferenceStore = Pick<typeof Preferences, 'get' | 'set' | 'remove'>;
 type Importer = (path: string) => Promise<unknown>;
@@ -36,6 +37,19 @@ const defaults: BootstrapDependencies = {
 };
 
 let removeServerChangeHandler: (() => void) | null = null;
+
+export function applyMobileBootstrapTheme(): void {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY) || 'system';
+  const systemIsDark = typeof globalThis.matchMedia === 'function'
+    ? globalThis.matchMedia('(prefers-color-scheme: dark)').matches
+    : true;
+  const effective = stored === 'system' ? (systemIsDark ? 'dark' : 'light') : stored;
+  if (effective === 'light') {
+    document.documentElement.dataset.theme = 'light';
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+}
 
 async function invalidateCapabilitiesBestEffort(deps: BootstrapDependencies): Promise<void> {
   await deps.invalidateCapabilities().catch(() => undefined);
@@ -117,17 +131,17 @@ function showEntry(previousOrigin: string | null, deps: BootstrapDependencies): 
   );
 }
 
-function showSavedUnavailable(origin: string, deps: BootstrapDependencies): void {
+function showSavedUnavailable(origin: string, failure: unknown, deps: BootstrapDependencies): void {
   renderServerSelector(
-    { kind: 'saved-unreachable', origin, message: 'Could not connect.' },
+    { kind: 'saved-unreachable', origin, failure },
     {
       retry: async () => {
         try {
           await deps.plugin.configure({ origin, resetSession: false });
           const probe = await deps.plugin.probeServer({ origin });
           await startProduct(probe.normalizedOrigin, deps);
-        } catch {
-          showSavedUnavailable(origin, deps);
+        } catch (error) {
+          showSavedUnavailable(origin, error, deps);
         }
       },
       change: () => showEntry(origin, deps),
@@ -137,6 +151,7 @@ function showSavedUnavailable(origin: string, deps: BootstrapDependencies): void
 }
 
 export async function startMobileBootstrap(overrides: Partial<BootstrapDependencies> = {}): Promise<void> {
+  applyMobileBootstrapTheme();
   assertPackagedRuntime();
   const deps = { ...defaults, ...overrides };
   const saved = (await deps.preferences.get({ key: SELECTED_SERVER_KEY })).value?.trim() || null;
@@ -148,7 +163,7 @@ export async function startMobileBootstrap(overrides: Partial<BootstrapDependenc
     await deps.plugin.configure({ origin: saved, resetSession: false });
     const probe = await deps.plugin.probeServer({ origin: saved });
     await startProduct(probe.normalizedOrigin, deps);
-  } catch {
-    showSavedUnavailable(saved, deps);
+  } catch (error) {
+    showSavedUnavailable(saved, error, deps);
   }
 }

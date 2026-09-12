@@ -9,6 +9,8 @@ import { formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, localizeCommandFailure, } from './schema.js';
 import { renderVoiceMessage } from './i18n.js';
 import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError, } from '../platform/speech-input.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
+import { prepareTextForSpeechSynthesis } from './speech-output.js';
 import { createVoiceFlowTrace, summarizeVoiceInterpretation } from './trace.js';
 import { classifyVoiceCommandSafety } from './command-safety.js';
 const MAX_DIALOGUE_TURNS = 8;
@@ -297,6 +299,7 @@ export function createVoiceAgentController(options) {
         const speechOutput = options.speechOutput;
         if (!speechOutput || !text.trim() || !owns(owner, operation))
             return false;
+        const spokenText = prepareTextForSpeechSynthesis(text).slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
         try {
             const status = await speechOutput.status({ signal: operation.signal });
             if (!owns(owner, operation) || status.state !== 'ready')
@@ -304,7 +307,7 @@ export function createVoiceAgentController(options) {
             speaking = true;
             emitActivity('speaking', null);
             await speechOutput.speak({
-                text: text.slice(0, 600),
+                text: spokenText,
                 language: 'en-US',
                 signal: operation.signal,
             });

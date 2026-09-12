@@ -87,6 +87,118 @@
   }
 }
 
+/* ==========================================================================
+   Capacitor server-selection bootstrap
+   Scoped so the normal web/PWA and product auth shells remain unchanged.
+   ========================================================================== */
+#scrumboy-mobile-bootstrap {
+  background: var(--bg);
+  height: auto;
+  inset: auto;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__container {
+  background: var(--bg);
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 auto;
+  max-width: 432px;
+  min-height: 100dvh;
+  overflow: visible;
+  padding:
+    max(var(--s-24), env(safe-area-inset-top))
+    max(var(--s-16), env(safe-area-inset-right))
+    max(var(--s-24), env(safe-area-inset-bottom))
+    max(var(--s-16), env(safe-area-inset-left));
+  width: 100%;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__brand {
+  margin-bottom: var(--s-16);
+}
+
+#scrumboy-mobile-bootstrap .brand-text {
+  height: var(--s-24);
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__panel {
+  width: 100%;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__helper {
+  line-height: 1.5;
+  margin: calc(-1 * var(--s-6)) 0 var(--s-16);
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__field {
+  display: flex;
+  flex-direction: column;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__field .input {
+  min-height: 44px;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__http-warning {
+  color: color-mix(in srgb, var(--danger) 78%, var(--muted));
+  font-size: var(--fs-12);
+  line-height: 1.4;
+  margin: var(--s-6) 0 0;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__status {
+  line-height: 1.4;
+  margin: 0;
+  min-height: 2.8em;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__status--error {
+  color: var(--danger);
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__action {
+  min-height: 44px;
+  width: 100%;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__privacy {
+  margin: 0;
+  text-align: center;
+}
+
+#scrumboy-mobile-bootstrap .mobile-bootstrap__origin {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  line-height: 1.45;
+  margin: 0 0 var(--s-12);
+  overflow-wrap: anywhere;
+  padding: var(--s-10) 12px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+@media (max-width: 620px) {
+  #scrumboy-mobile-bootstrap:focus-within .mobile-bootstrap__container {
+    justify-content: flex-start;
+    min-height: 140dvh;
+  }
+}
+
+@media (max-height: 640px) {
+  #scrumboy-mobile-bootstrap .mobile-bootstrap__container {
+    justify-content: flex-start;
+  }
+}
+
 /* Density hooks: no UI yet; override --ui-scale only */
 [data-density="comfortable"] {
   --ui-scale: 1.2;
