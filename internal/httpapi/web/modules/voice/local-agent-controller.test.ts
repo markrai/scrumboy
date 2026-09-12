@@ -174,8 +174,59 @@ describe('VoiceAgentController local skill production path', () => {
       phase: 'confirmation',
       confirmation: { summary: 'Delete todo #369: Billy Mongoose?', confirmLabel: 'Delete', danger: true },
     });
+    expect(s.speechOutput.speak).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Delete to do #369: Billy Mongoose?',
+    }));
     expect(h.options.openTodo).not.toHaveBeenCalled(); expect(h.execute).not.toHaveBeenCalled();
     await Promise.all([s.controller.confirm(), s.controller.confirm()]); expect(h.execute).toHaveBeenCalledOnce(); expect(h.model).toHaveBeenCalledTimes(2); s.controller.close();
+  });
+  it('keeps confirmation speech all-or-nothing when rendering crosses the 600-code-unit limit', async () => {
+    const h = harness();
+    const text = `Delete todo #369: ${'X'.repeat(581)}?`;
+    expect(text).toHaveLength(SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+    const trace = createVoiceFlowTrace();
+    const session = {
+      pending: true, confirmationPending: true, retainsContext: false,
+      trace: () => trace, endTrace: vi.fn(), cancelTrace: vi.fn(), context: vi.fn(),
+      submit: vi.fn(async () => ({ phase: 'confirmation' as const, text, speechText: text, danger: true, confirmLabel: 'Delete' })),
+      confirm: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      cancel: vi.fn(() => ({ phase: 'success' as const, text: 'Cancelled.' })),
+      choose: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      setKeepListening: vi.fn(), invalidate: vi.fn(),
+    };
+    const speechOutput = { status: vi.fn(async () => ({ state: 'ready' as const })), speak: vi.fn(async () => ({ completed: true as const })),
+      stop: vi.fn(async () => undefined), invalidate: vi.fn(async () => undefined) };
+    const controller = createVoiceAgentController({ ...h.options, model: h.model, session, speechInput: { status: vi.fn(), listen: vi.fn() }, speechOutput, continuationEnabled: false, onView: vi.fn() });
+
+    await controller.submitTranscript('delete');
+
+    expect(controller.getView().confirmation?.summary).toBe(text);
+    expect(speechOutput.speak).not.toHaveBeenCalled();
+    controller.close();
+  });
+  it('renders before truncating non-confirmation speech to 600 code units', async () => {
+    const h = harness();
+    const text = `Delete todo ${'X'.repeat(700)}`;
+    const trace = createVoiceFlowTrace();
+    const session = {
+      pending: false, confirmationPending: false, retainsContext: false,
+      trace: () => trace, endTrace: vi.fn(), cancelTrace: vi.fn(), context: vi.fn(),
+      submit: vi.fn(async () => ({ phase: 'success' as const, text })),
+      confirm: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      cancel: vi.fn(() => ({ phase: 'success' as const, text: 'Cancelled.' })),
+      choose: vi.fn(async () => ({ phase: 'success' as const, text: 'Done.' })),
+      setKeepListening: vi.fn(), invalidate: vi.fn(),
+    };
+    const speechOutput = { status: vi.fn(async () => ({ state: 'ready' as const })), speak: vi.fn(async () => ({ completed: true as const })),
+      stop: vi.fn(async () => undefined), invalidate: vi.fn(async () => undefined) };
+    const controller = createVoiceAgentController({ ...h.options, model: h.model, session, speechInput: { status: vi.fn(), listen: vi.fn() }, speechOutput, continuationEnabled: false, onView: vi.fn() });
+
+    await controller.submitTranscript('delete');
+
+    const spoken = speechOutput.speak.mock.calls[0][0].text;
+    expect(spoken).toHaveLength(SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
+    expect(spoken).toBe(`Delete to do ${'X'.repeat(587)}`);
+    controller.close();
   });
   it('typed tasks never automatically acquire the microphone', async () => {
     const h = harness([skill('todos.open', { reference: 'Happy Birthday' }), finish], true); const s = surface(h, [], true);

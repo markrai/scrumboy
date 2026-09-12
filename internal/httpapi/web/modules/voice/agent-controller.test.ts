@@ -127,6 +127,30 @@ beforeEach(() => {
 });
 
 describe('VoiceAgentController', () => {
+  it('keeps a delete confirmation visible as todo while speech says to do', async () => {
+    const context = makeContext();
+    context.board.columns.backlog[0] = { id: 369, localId: 369, title: 'Billy Mongoose', status: 'backlog' };
+    const output = speechOutput();
+    const interpreter: VoiceCommandInterpreter = {
+      interpret: vi.fn().mockResolvedValue({
+        kind: 'semantic',
+        intent: { kind: 'delete-todo', target: { kind: 'local-id', localId: 369 } },
+      }),
+    };
+    const controller = createVoiceAgentController(options(speech(), interpreter, {
+      getContext: vi.fn(() => context),
+      speechOutput: output,
+    }));
+
+    await controller.submitTranscript('Delete Billy Mongoose');
+
+    expect(controller.getView().confirmation?.summary).toBe('Delete todo #369: Billy Mongoose');
+    expect(output.speak).toHaveBeenCalledWith(expect.objectContaining({
+      text: 'Delete to do #369: Billy Mongoose?',
+    }));
+    controller.close();
+  });
+
   it('hands one bounded native transcript to AI exactly once and uses normal open resolution', async () => {
     const speechInput = speech('Open story number 355');
     const interpreter: VoiceCommandInterpreter = {

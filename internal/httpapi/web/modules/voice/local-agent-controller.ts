@@ -6,6 +6,7 @@ import { SPEECH_INPUT_MAX_DURATION_MS, SpeechInputError, isSpeechInputErrorCode 
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
 import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
 import { voiceText } from './i18n.js';
+import { prepareTextForSpeechSynthesis } from './speech-output.js';
 import { VoiceAgentLoop, agentSafeFailure, type AgentLoopView } from './agent-loop.js';
 import { VoiceAgentSkillRegistry } from './agent-skills.js';
 import type { VoiceAgentModel } from './agent-model.js';
@@ -46,13 +47,15 @@ export function createVoiceAgentController(options: ControllerOptions) {
     } catch { return false; }
   };
   const abort = () => { operation?.abort(); operation = null; };
-  const speak = async (text: string | null, owner: AbortController): Promise<boolean> => {
-    if (!text?.trim() || text.length > SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS || !options.speechOutput || !owns(owner)) return false;
+  const speak = async (text: string | null, owner: AbortController, allowTruncation: boolean): Promise<boolean> => {
+    const preparedText = text == null ? '' : prepareTextForSpeechSynthesis(text);
+    const spokenText = allowTruncation ? preparedText.slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS) : preparedText;
+    if (!spokenText.trim() || spokenText.length > SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS || !options.speechOutput || !owns(owner)) return false;
     try {
       const status = await options.speechOutput.status({ signal: owner.signal });
       if (!owns(owner) || status.state !== 'ready') return false;
       emit({ activity: 'speaking', activityStatus: null });
-      await options.speechOutput.speak({ text, language: 'en-US', signal: owner.signal });
+      await options.speechOutput.speak({ text: spokenText, language: 'en-US', signal: owner.signal });
       if (!owns(owner)) return false;
       emit({ activity: 'idle', activityStatus: null });
       return true;
@@ -64,8 +67,8 @@ export function createVoiceAgentController(options: ControllerOptions) {
       confirmation: result.phase === 'confirmation' ? { summary: result.text, confirmLabel: result.confirmLabel ?? voiceText('common.confirm', 'Confirm'), danger: !!result.danger } : null,
       clarification: result.phase === 'question' ? { options: result.choices ?? [] } : null });
     // Confirmation speech must cover the whole batch. Null leaves visual/tap/manual Listen available.
-    const speechText = result.phase === 'confirmation' ? result.speechText : result.text.slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
-    const spoken = await speak(speechText, owner);
+    const speechText = result.phase === 'confirmation' ? result.speechText : result.text;
+    const spoken = await speak(speechText, owner, result.phase !== 'confirmation');
     if (!owns(owner)) return;
     const terminal = result.phase === 'success' || result.phase === 'error';
     // Each result schedules at most one bounded window. Clarification/confirmation do not depend on the toggle.

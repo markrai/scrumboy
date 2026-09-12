@@ -52,6 +52,8 @@ import {
   type SpeechInputCapability,
 } from '../platform/speech-input.js';
 import type { SpeechOutputCapability } from '../platform/speech-output.js';
+import { SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS } from '../platform/speech-output.js';
+import { prepareTextForSpeechSynthesis } from './speech-output.js';
 import { createVoiceFlowTrace, summarizeVoiceInterpretation } from './trace.js';
 import { classifyVoiceCommandSafety } from './command-safety.js';
 
@@ -450,13 +452,14 @@ export function createVoiceAgentController(
   ): Promise<boolean> => {
     const speechOutput = options.speechOutput;
     if (!speechOutput || !text.trim() || !owns(owner, operation)) return false;
+    const spokenText = prepareTextForSpeechSynthesis(text).slice(0, SPEECH_OUTPUT_MAX_TEXT_CODE_UNITS);
     try {
       const status = await speechOutput.status({ signal: operation.signal });
       if (!owns(owner, operation) || status.state !== 'ready') return false;
       speaking = true;
       emitActivity('speaking', null);
       await speechOutput.speak({
-        text: text.slice(0, 600),
+        text: spokenText,
         language: 'en-US',
         signal: operation.signal,
       });
