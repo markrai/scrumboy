@@ -215,7 +215,7 @@ Optional SMTP enables self-service password-reset email (**Forgot your Scrumboy 
 
 ### Email notifications (optional)
 
-The same SMTP config above also enables opt-in email notifications: users choose per-category (card assigned to them, card/sprint/project activity, added to a project) under Settings → Customization, off by default. No `SCRUMBOY_ENCRYPTION_KEY` required. Setup and category/recipient details: [`docs/notifications.md`](docs/notifications.md).
+Optional email notifications use the same SMTP configuration as password-reset email. They are opt-in per user under Settings → Customization, including per-category choices, and do not require `SCRUMBOY_ENCRYPTION_KEY`. Setup and category/recipient details: [`docs/notifications.md`](docs/notifications.md).
 
 ### OIDC / SSO login (optional)
 
