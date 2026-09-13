@@ -283,105 +283,11 @@ Then run `docker compose up --build` (local image build) or `go run ./cmd/scrumb
 
 ## Integrations & API Access
 
-Scrumboy supports API access tokens for automation, integrations, and programmatic MCP access (legacy HTTP and JSON-RPC - see below). Full MCP guide for developers and agents: `[docs/mcp.md](docs/mcp.md)`.
-
-You can create a token from the API and use it to call MCP endpoints directly - no browser session or cookies required.
-
-**Create a token (requires login session):**
-
-```bash
-curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
-  -H "Content-Type: application/json" \
-  -H "X-Scrumboy: 1" \
-  -d '{"name":"cli"}'
-```
-
-Response includes a one-time token (starts with sb_).
-
-Use it with MCP:
-
-```bash
-curl -X POST http://localhost:8080/mcp \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sb_your_token_here" \
-  -d '{"tool":"projects_list","input":{}}'
-```
+Scrumboy supports API access tokens for automation and integrations, including programmatic MCP and API access without a browser session. Both the legacy HTTP MCP interface and the native JSON-RPC MCP interface are supported. See [docs/mcp.md](docs/mcp.md) and [API.md](API.md).
 
 ### MCP (JSON-RPC) for AI agents
 
-Scrumboy exposes a standards-based, JSON-only Streamable HTTP endpoint for native MCP clients such as Cursor and Claude Code.
-
-**Endpoint:** `POST /mcp/rpc`
-
-This is separate from the `/mcp` HTTP endpoint above and follows **JSON-RPC 2.0** (`initialize`, `tools/list`, `tools/call`, etc.). See `[docs/mcp.md](docs/mcp.md)` for tools, auth, response shapes, and examples; `[API.md](API.md)` for the full HTTP/MCP behavior reference.
-
-Native clients must be configured directly with `/mcp/rpc`. It is the sole OAuth protected resource; `/mcp` remains the legacy Scrumboy `{tool,input}` API.
-
-```bash
-claude mcp add --transport http scrumboy https://scrumboy.example.com/mcp/rpc
-```
-
-#### Example: `initialize`
-
-```bash
-curl -X POST http://localhost:8080/mcp/rpc \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer sb_your_token_here" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
-```
-
-#### Example: list tools
-
-```bash
-curl -X POST http://localhost:8080/mcp/rpc \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "MCP-Protocol-Version: 2025-11-25" \
-  -H "Authorization: Bearer sb_your_token_here" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-```
-
-#### Example: call a tool
-
-```bash
-curl -X POST http://localhost:8080/mcp/rpc \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "MCP-Protocol-Version: 2025-11-25" \
-  -H "Authorization: Bearer sb_your_token_here" \
-  -d '{
-    "jsonrpc":"2.0",
-    "id":3,
-    "method":"tools/call",
-    "params":{
-      "name":"todos_create",
-      "arguments":{
-        "projectSlug":"my-project",
-        "title":"Created via MCP"
-      }
-    }
-  }'
-```
-
-**Notes**
-
-- Compatible with MCP clients that support **HTTP JSON-RPC** to this URL.
-- Some MCP clients expect **stdio**-based servers - those are **not** supported here.
-- `/mcp/rpc` accepts a **session cookie**, a static `sb_…` **Bearer** token, or a Scrumboy OAuth token bound to this exact resource. `/mcp` accepts cookies and static tokens only.
-- In full mode, unauthenticated `/mcp/rpc` requests receive an empty 401 with RFC 9728 protected-resource discovery metadata.
-- Compatible Codex/Claude-style agent workspaces that support local or manual
-plugin loading can use the Scrumboy Board Operator plugin package in
-`[plugins/scrumboy-board-operator](plugins/scrumboy-board-operator)`. The
-package contains a focused Skill workflow guide; each harness still needs to
-be configured to load it.
-
-This enables:
-
-- CLI usage
-- CI/CD automation
-- AI agents and MCP clients (use `POST /mcp/rpc` for JSON-RPC; `POST /mcp` remains available for the legacy `{ "tool", "input" }` envelope)
-- Scripting/integrations without login flows
+Scrumboy supports native MCP clients such as Cursor and Claude Code over **HTTP** Streamable JSON-RPC at `/mcp/rpc` (stdio is not supported). The older `/mcp` HTTP interface remains available for legacy and programmatic use. Details: [docs/mcp.md](docs/mcp.md), [docs/oauth.md](docs/oauth.md), and [API.md](API.md). Compatible agent workspaces can also use the optional Board Operator package in [plugins/scrumboy-board-operator](plugins/scrumboy-board-operator).
 
 ### Webhooks (outbound HTTP)
 
