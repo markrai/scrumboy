@@ -46,7 +46,7 @@ cd mobile/capacitor/android
 
 The debug APK is generated under `android/app/build/outputs/apk/debug/` and must not be committed.
 
-Android launcher icons (`ic_launcher`, `ic_launcher_round`, and adaptive `ic_launcher_foreground`) are derived from the PWA source `internal/httpapi/web/icon-512.png`. The cold-start splash reuses that generated `ic_launcher_foreground` plus the separately maintained `@color/ic_launcher_background`. After changing the PWA icon, regenerate the mipmaps from the repository root:
+Android launcher icons (`ic_launcher`, `ic_launcher_round`, and adaptive `ic_launcher_foreground`) are derived from the PWA source `internal/httpapi/web/icon-512.png`. The generator also samples that artwork's canvas gray into `@color/ic_launcher_background`, which the cold-start splash and adaptive icon background reuse. After changing the PWA icon, regenerate from the repository root:
 
 ```powershell
 powershell -File mobile/capacitor/scripts/generate-android-icons.ps1
