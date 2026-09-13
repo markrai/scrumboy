@@ -260,30 +260,13 @@ Project access requires project membership. Per-project roles are **Maintainer**
 
 # Export scope
 
-- **Full**: All projects the user can access (full mode: projects where the user is a member, or temporary boards they created; anonymous mode: not applicable for full export).
-- **Single project**: One board/project only (e.g. current board in anonymous mode).
+Scrumboy supports **Full** and **Single-project** JSON export. In Full mode, Full export includes durable projects where you are a **Maintainer** and temporary/expiring boards you created; Anonymous mode uses single-board export instead of Full. Details: [`docs/backup-and-import.md`](docs/backup-and-import.md).
 
 ---
 
 # Import modes
 
-When importing a backup JSON, you choose how it is applied:
-
-
-| Mode            | Description                                                                                                                                                                                                                                                                                        |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Replace**     | Replace all: delete every project in your current export scope, then create projects from the backup. Effect is “nuke and restore” so the instance matches the backup. Not available in anonymous mode.                                                                                            |
-| **Merge**       | Merge/update: for each project in the backup, match by slug. If a project with that slug exists (and you have access), update its todos, tags, and links to match the backup; otherwise create a new project. In anonymous mode, merge behaves like Create Copy (all projects are created as new). |
-| **Create copy** | Create copy: create new projects for every project in the backup. Slugs are made unique (e.g. `name-imported-2`), so nothing is overwritten; you get duplicates.                                                                                                                                   |
-
-
-In **anonymous mode**, full-scope import is not allowed; you can only import into the current board (todos and tags are added to that board).
-
-Backup format 1.1 remains backward-compatible with backups created before
-priorities existed. New exports explicitly emit `priorityTiers` (`[]` means
-the canonical defaults) and todo `priorityKey` (`null` means no priority).
-During matched-project merge, absent legacy fields preserve target definitions
-or assignments, while explicit `null` clears a todo assignment.
+Scrumboy supports three JSON import modes: **Replace** (destructive; makes the applicable scope match the backup), **Merge** (matches existing projects by slug when you are a **Maintainer**, otherwise may create new projects), and **Create copy** (always creates new projects without overwriting). Anonymous mode has more limited import behavior. Details: [`docs/backup-and-import.md`](docs/backup-and-import.md).
 
 ---
 
