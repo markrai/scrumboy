@@ -23,6 +23,7 @@ See also [CONTRIBUTING.md](../CONTRIBUTING.md) (documentation-impact gate).
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
 | [recovery.md](recovery.md) | Operators / owners | `cmd/scrumboy` recover-owner; `DATA_DIR` | current |
+| [backup-and-import.md](backup-and-import.md) | Operators / users | JSON export scope, Replace/Merge/Create copy, anonymous-mode behavior, format compatibility; distinct from full `DATA_DIR` disaster-recovery backup | current |
 | [smtp.md](smtp.md) | Operators | `internal/mailer`, SMTP env vars | current |
 | [vapid.md](vapid.md) | Operators | `prepareWebPushConfiguration` / push status | current |
 | [pwa.md](pwa.md) | Operators / UX | `sw.js`, push client, Compose env | current |

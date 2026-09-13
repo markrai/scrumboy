@@ -272,17 +272,7 @@ Scrumboy supports three JSON import modes: **Replace** (destructive; makes the a
 
 # Documentation
 
-- **Docs index:** `[docs/README.md](docs/README.md)` - audience-grouped index (ops, features, security, integrations, architecture, manual checks) and `node docs/scripts/verify-docs.mjs`
-- **Security architecture:** `[docs/security.md](docs/security.md)` - authentication, authorization, data protection, scanning, and supply-chain practices (disclosure: `[SECURITY.md](SECURITY.md)`)
-- **i18n architecture:** `[docs/i18n.md](docs/i18n.md)` - catalogs, locales, landings, change gates (rules SoT: `[AGENTS.md](AGENTS.md)`)
-- **Architecture diagrams:** `[docs/diagrams/](docs/diagrams/)` - Mermaid sources and self-contained viewer (`serve-diagrams.bat` or `python serve.py` in that folder, then open `http://127.0.0.1:8775/`)
-- **MCP (HTTP tools + JSON-RPC):** `[docs/mcp.md](docs/mcp.md)` - tool catalog, auth, legacy vs `/mcp/rpc`, examples (agents & automation). See also `[API.md](API.md)` for exhaustive MCP HTTP detail.
-- **OAuth 2.1 for MCP clients:** `[docs/oauth.md](docs/oauth.md)` - resource discovery, Dynamic Client Registration, PKCE, and resource-bound authorize/token/revoke flows for native clients such as Cursor and Claude Code.
-- **Remote MCP/OAuth release acceptance:** `[docs/mcp-oauth-acceptance.md](docs/mcp-oauth-acceptance.md)` - Vega/Keycloak evidence record plus Cursor, Claude Code, cookie/static, legacy, and negative-resource gates.
-- **Agent plugin package:** `[plugins/scrumboy-board-operator](plugins/scrumboy-board-operator)` - local/manual plugin metadata, board-operator Skill, and seed eval cases for MCP/Agoragentic agent workflows.
-- **PWA / Web Push (VAPID):** `[docs/pwa.md](docs/pwa.md)` - keys, subscriber contact, post-login auto-subscribe when VAPID is configured, Settings opt-out, tradeoffs.
-- **Roles and permissions:** `[docs/roles-and-permissions.md](docs/roles-and-permissions.md)` - project roles, backend authorization, anonymous boards.
-- **Audit trail:** `[docs/audit-trail.md](docs/audit-trail.md)` - action vocabulary, event model, integration points.
+The full documentation set is organized by audience in [`docs/README.md`](docs/README.md) (operator, feature, security, integration, architecture, and manual-check docs).
 
 ---
 
