@@ -223,13 +223,7 @@ Optional OpenID Connect / SSO with a standards-compliant identity provider. Acco
 
 ### Owner disaster recovery
 
-If the identity provider is unavailable, a host operator can recover an existing owner's local password without starting the HTTP server or applying migrations:
-
-```sh
-./scrumboy recover-owner --email owner@example.com
-```
-
-Stop Scrumboy and back up the SQLite database/volume first. Container, bind-mount, named-volume, stdin automation, schema-compatibility, session-revocation, and local-auth-disabled instructions are in `[docs/recovery.md](docs/recovery.md)`.
+If the identity provider is unavailable, a host operator can recover an existing owner's local password via an offline, host-side break-glass path. Stop Scrumboy and back up the database first. Instructions: [`docs/recovery.md`](docs/recovery.md).
 
 ### TLS / HTTPS (optional)
 
