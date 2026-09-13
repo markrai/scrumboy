@@ -1,6 +1,7 @@
 # Regenerates Android launcher mipmaps from the PWA icon.
 # Source of truth: internal/httpapi/web/icon-512.png
-# Does not touch splash drawables or write local.properties.
+# Launch splash reuses these mipmaps + @color/ic_launcher_background (no separate splash PNGs).
+# Does not write local.properties.
 
 $ErrorActionPreference = "Stop"
 
