@@ -219,7 +219,7 @@ Optional email notifications use the same SMTP configuration as password-reset e
 
 ### OIDC / SSO login (optional)
 
-Optional OpenID Connect SSO with any standards-compliant IdP (Keycloak, Authentik, Auth0, Entra ID, etc.). Accounts may use a local password, SSO, or both. Local users connect SSO explicitly from Settings; SSO-only users can establish a local recovery password after fresh provider reauthentication. Matching email never silently links an identity, and `users.email` remains the canonical Scrumboy email. Local login stays available unless `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`. See `[docs/oidc.md](docs/oidc.md)`, `[SECURITY.md](SECURITY.md)`, `[docs/authentication-api.md](docs/authentication-api.md)`, and `[docs/recovery.md](docs/recovery.md)`.
+Optional OpenID Connect / SSO with a standards-compliant identity provider. Accounts may use a local password, SSO, or both; existing local users connect SSO explicitly, and matching emails are not silently linked. Local authentication remains available unless explicitly disabled. See [`docs/oidc.md`](docs/oidc.md), [`docs/authentication-api.md`](docs/authentication-api.md), [`docs/recovery.md`](docs/recovery.md), and [`docs/security.md`](docs/security.md).
 
 ### Owner disaster recovery
 
