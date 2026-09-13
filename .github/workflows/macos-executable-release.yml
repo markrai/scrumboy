@@ -74,10 +74,10 @@ jobs:
               exit 1
             fi
 
-            if ! gh api "repos/${GH_REPO}/git/ref/tags/${effective_tag}" >/dev/null; then
+            tag_ref_json="$(gh api "repos/${GH_REPO}/git/ref/tags/${effective_tag}")" || {
               echo "Git tag '$effective_tag' does not exist in the repository." >&2
               exit 1
-            fi
+            }
 
             if ! gh release view "$effective_tag" --repo "$GH_REPO" >/dev/null; then
               echo "No GitHub Release exists for tag '$effective_tag'." >&2
@@ -85,11 +85,34 @@ jobs:
               exit 1
             fi
 
-            checkout_ref="$effective_tag"
-            echo "Manual repair mode: will build and attach assets for existing release '$effective_tag'."
+            # Resolve lightweight vs annotated tags to the peeled commit SHA (never the tag object SHA).
+            object_type="$(printf '%s' "$tag_ref_json" | jq -r '.object.type')"
+            object_sha="$(printf '%s' "$tag_ref_json" | jq -r '.object.sha')"
+            if [ "$object_type" = "commit" ]; then
+              checkout_ref="$object_sha"
+            elif [ "$object_type" = "tag" ]; then
+              tag_obj_json="$(gh api "repos/${GH_REPO}/git/tags/${object_sha}")"
+              peeled_type="$(printf '%s' "$tag_obj_json" | jq -r '.object.type')"
+              checkout_ref="$(printf '%s' "$tag_obj_json" | jq -r '.object.sha')"
+              if [ "$peeled_type" != "commit" ]; then
+                echo "Annotated tag '$effective_tag' does not point at a commit (object type: ${peeled_type})." >&2
+                exit 1
+              fi
+            else
+              echo "Git tag '$effective_tag' has unexpected object type '${object_type}'." >&2
+              exit 1
+            fi
+
+            if ! [[ "$checkout_ref" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Resolved commit for tag '$effective_tag' is not a 40-char SHA: '${checkout_ref}'." >&2
+              exit 1
+            fi
+
+            echo "Manual repair mode: will build commit ${checkout_ref} and attach assets for existing release '$effective_tag'."
           elif [ "$attach_release" = "true" ]; then
-            checkout_ref="$effective_tag"
-            echo "Release event mode: attaching assets for '$effective_tag'."
+            # Preserve normal release-event checkout: the immutable commit for this run.
+            checkout_ref="$DEFAULT_REF"
+            echo "Release event mode: attaching assets for '$effective_tag' (checkout ${checkout_ref})."
           else
             checkout_ref="$DEFAULT_REF"
             echo "Ordinary manual build: no release attachment (checkout ${checkout_ref})."
@@ -124,8 +147,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
-          # Release + manual repair: the release tag. Ordinary manual: the dispatched commit SHA.
+          # Always an immutable commit SHA (release event / ordinary manual: github.sha;
+          # manual repair: peeled commit SHA for the requested tag).
           ref: ${{ needs.prepare-release-context.outputs.checkout_ref }}
+
+      - name: Verify checkout commit for release attachment
+        if: needs.prepare-release-context.outputs.attach_release == 'true'
+        env:
+          EXPECTED_SHA: ${{ needs.prepare-release-context.outputs.checkout_ref }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "Checkout mismatch: HEAD is '${actual}', expected '${EXPECTED_SHA}'." >&2
+            exit 1
+          fi
+          echo "Verified HEAD matches expected commit ${EXPECTED_SHA}."
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
