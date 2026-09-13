@@ -1,7 +1,8 @@
 ![scrumboy logo](internal/httpapi/web/githublogo.png)  
 ![version](https://img.shields.io/badge/version-v3.34.0-blue)![license](https://img.shields.io/badge/license-AGPL--v3-orange)![i18n](https://img.shields.io/badge/i18n-23%20languages-yellow)![CI](https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main)![snyk monitored](https://img.shields.io/badge/Snyk-monitored-8A2BE2?logo=snyk&logoColor=white)![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/markrai/scrumboy/badge)
 
-#### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP-compatible client support
+#### Self-hosted project management & issue-tracking solution + instant shareable & customizable boards + realtime collaboration, automation, API access and MCP-compatible client support and zero SaaS lock-in  
+
 
 ![image](internal/httpapi/web/github_preview.jpg)
 
@@ -13,13 +14,16 @@
   - [Run from source](#run-from-source)
   - [Run the Windows executable](#run-the-windows-executable)
   - [Run the macOS executable](#run-the-macos-executable)
-- [Why Scrumboy?](#why-scrumboy)
-- [Modes](#modes)
 - [Features](#features)
+- [Modes](#modes)
+- [Roles](#roles)
+  - [System roles (instance-wide)](#system-roles-instance-wide)
+  - [Project roles (per project)](#project-roles-per-project)
 - [Optional Configuration](#optional-configuration)
   - [Environment variables](#environment-variables)
   - [Encryption key for 2FA/password reset](#encryption-key-for-2fapassword-reset)
   - [SMTP for self-service password reset (optional)](#smtp-for-self-service-password-reset-optional)
+  - [Email notifications (optional)](#email-notifications-optional)
   - [OIDC / SSO login (optional)](#oidc--sso-login-optional)
   - [Owner disaster recovery](#owner-disaster-recovery)
   - [TLS / HTTPS (optional)](#tls--https-optional)
@@ -27,13 +31,12 @@
 - [Integrations & API Access](#integrations--api-access)
   - [MCP (JSON-RPC) for AI agents](#mcp-json-rpc-for-ai-agents)
   - [Webhooks (outbound HTTP)](#webhooks-outbound-http)
-- [Roles](#roles)
-  - [System roles (instance-wide)](#system-roles-instance-wide)
-  - [Project roles (per project)](#project-roles-per-project)
 - [Export scope](#export-scope)
 - [Import modes](#import-modes)
 - [Documentation](#documentation)
 - [License and Contributions](#license-and-contributions)
+
+
 
 ## Quick Start
 
@@ -87,15 +90,6 @@ macOS users can download Apple Silicon or Intel builds from [GitHub Releases](ht
 
 ---
 
-# Why Scrumboy?
-
-Simplicity of a light Kanban, with the power of structured systems: Roles, sprints, audit trails & customizable workflows - without being locked into SaaS tools.  Centered around the self-hosted & privacy-focused community, as well as small to medium-sized teams & solo builders
-
-# Modes
-
-- **Full** (`SCRUMBOY_MODE=full`, default): Auth can be enabled. First user via bootstrap; then login/session. Backup/export, tags, multi-project. Projects can be user-owned (project_members) or anonymous (shareable by URL): `/anon` (or `/temp`) creates a throwaway board and redirects to `/{slug}`.
-- **Anonymous** (`SCRUMBOY_MODE=anonymous`): No auth. Landing at `/`; live deployment at: [https://scrumboy.com/](https://scrumboy.com/)
-
 # Features
 
 - Custom Workflows: You can create any combination of workflow you want, per project, with user-defined "Done" lane.
@@ -108,18 +102,40 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
 - Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit-trail.md](docs/audit-trail.md)).
-- Backup: export/import JSON; merge or replace; scope full or single project. JSON export is not a complete `DATA_DIR` disaster-recovery backup (uploaded wallpapers and `audit_events` are omitted); see `[docs/diagrams/scrumboy_deployment_ops.md](docs/diagrams/scrumboy_deployment_ops.md)`.
+- Backup: export/import JSON; merge or replace; scope full or single project. JSON export is not a complete `DATA_DIR` disaster-recovery backup (uploaded wallpapers and `audit_events` are omitted); see [docs/diagrams/scrumboy_deployment_ops.md](docs/diagrams/scrumboy_deployment_ops.md).
+- Trello import: migrate an existing Trello board from its JSON export, with a preview before anything is imported (see [docs/backup-and-import.md](docs/backup-and-import.md)).
 - Mobile: Native Android app (or PWA) for an excellent mobile UX.
 - Multi-language Support: English, 简体中文, हिन्दी, Español (Latinoamérica), العربية, Français, বাংলা, Português (Brasil), Bahasa Indonesia, اردو, Русский, Deutsch, 日本語, Kiswahili, Tiếng Việt, Türkçe, 한국어, فارسی, ไทย, Italiano, Bahasa Melayu, Polski, and Українська.
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
 - VoiceFlow - deterministic voice commands in the browser; on supported Android devices, **AI VoiceFlow** adds on-device speech and Gemini Nano planning with confirmation before mutations (see [docs/voiceflow.md](docs/voiceflow.md), [docs/enhanced-voiceflow.md](docs/enhanced-voiceflow.md)).
 - Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see [docs/wall.md](docs/wall.md)).
 - Agenda - today's events from subscribed ICS feeds on durable boards (see [docs/calendar.md](docs/calendar.md)). Requires `SCRUMBOY_ENCRYPTION_KEY`.
-- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ````mermaid`blocks in preview only (see`[FAQ.md](FAQ.md)`,` [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)`).
+- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ````mermaid`blocks in preview only (see [FAQ.md](FAQ.md), [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)).
+
+# Modes
+
+- **Full** (`SCRUMBOY_MODE=full`, default): Auth can be enabled. First user via bootstrap; then login/session. Backup/export, tags, multi-project. Projects can be user-owned (project_members) or anonymous (shareable by URL): `/anon` (or `/temp`) creates a throwaway board and redirects to `/{slug}`.
+- **Anonymous** (`SCRUMBOY_MODE=anonymous`): No auth. Landing at `/`; live deployment at: [https://scrumboy.com/](https://scrumboy.com/)
+
+# Roles
+
+In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
+
+### System roles (instance-wide)
+
+Owner, Admin, and User control instance-wide capabilities such as user management. Assignment rules and permissions: [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
+
+### Project roles (per project)
+
+Project access requires project membership. Per-project roles are **Maintainer** (full project management), **Contributor** (limited edits, including body editing on cards assigned to them), and **Viewer** (read-only). Temporary/anonymous boards use a separate link-based permission model instead of these roles. Details: [docs/roles-and-permissions.md](docs/roles-and-permissions.md).
 
 ---
 
+
+
 ## Optional Configuration
+
+
 
 ### Environment variables
 
@@ -127,33 +143,35 @@ A fresh Scrumboy install needs no environment variables. Set them only when you 
 
 Scrumboy does **not** automatically load `.env` files. Inject variables through your shell, process manager, Docker/Compose, or another launcher.
 
-Full names, defaults, requirements, and interactions: `[docs/environment-variables.md](docs/environment-variables.md)`.
+Full names, defaults, requirements, and interactions: [docs/environment-variables.md](docs/environment-variables.md).
 
 ---
 
+
+
 ### Encryption key for 2FA/password reset
 
-`SCRUMBOY_ENCRYPTION_KEY` is **not** required for basic Scrumboy startup. It is required for features that store encrypted authentication/security or calendar data, including 2FA and Agenda calendar feeds. Once encrypted data exists, back up and restore the key with the Scrumboy data; do not casually replace it. Details: `[docs/environment-variables.md](docs/environment-variables.md#scrumboy_encryption_key)` and `[FAQ.md](FAQ.md#how-do-i-generate-scrumboy_encryption_key)`.
+`SCRUMBOY_ENCRYPTION_KEY` is **not** required for basic Scrumboy startup. It is required for features that store encrypted authentication/security or calendar data, including 2FA and Agenda calendar feeds. Once encrypted data exists, back up and restore the key with the Scrumboy data; do not casually replace it. Details: [docs/environment-variables.md](docs/environment-variables.md#scrumboy_encryption_key) and [FAQ.md](FAQ.md#how-do-i-generate-scrumboy_encryption_key).
 
 ### SMTP for self-service password reset (optional)
 
-Optional SMTP enables self-service password-reset email (**Forgot your Scrumboy password?**) for users with a usable Scrumboy-local password; it also depends on `SCRUMBOY_ENCRYPTION_KEY` and a valid `SCRUMBOY_PUBLIC_BASE_URL`. SSO credential recovery remains the identity provider's responsibility. Setup and troubleshooting: `[docs/smtp.md](docs/smtp.md)`.
+Optional SMTP enables self-service password-reset email (**Forgot your Scrumboy password?**) for users with a usable Scrumboy-local password; it also depends on `SCRUMBOY_ENCRYPTION_KEY` and a valid `SCRUMBOY_PUBLIC_BASE_URL`. SSO credential recovery remains the identity provider's responsibility. Setup and troubleshooting: [docs/smtp.md](docs/smtp.md).
 
 ### Email notifications (optional)
 
-Optional email notifications use the same SMTP configuration as password-reset email. They are opt-in per user under Settings → Customization, including per-category choices, and do not require `SCRUMBOY_ENCRYPTION_KEY`. Setup and category/recipient details: `[docs/notifications.md](docs/notifications.md)`.
+Optional email notifications use the same SMTP configuration as password-reset email. They are opt-in per user under Settings → Customization, including per-category choices, and do not require `SCRUMBOY_ENCRYPTION_KEY`. Setup and category/recipient details: [docs/notifications.md](docs/notifications.md).
 
 ### OIDC / SSO login (optional)
 
-Optional OpenID Connect / SSO with a standards-compliant identity provider. Accounts may use a local password, SSO, or both; existing local users connect SSO explicitly, and matching emails are not silently linked. Local authentication remains available unless explicitly disabled. See `[docs/oidc.md](docs/oidc.md)`, `[docs/authentication-api.md](docs/authentication-api.md)`, `[docs/recovery.md](docs/recovery.md)`, and `[docs/security.md](docs/security.md)`.
+Optional OpenID Connect / SSO with a standards-compliant identity provider. Accounts may use a local password, SSO, or both; existing local users connect SSO explicitly, and matching emails are not silently linked. Local authentication remains available unless explicitly disabled. See [docs/oidc.md](docs/oidc.md), [docs/authentication-api.md](docs/authentication-api.md), [docs/recovery.md](docs/recovery.md), and [docs/security.md](docs/security.md).
 
 ### Owner disaster recovery
 
-If the identity provider is unavailable, a host operator can recover an existing owner's local password via an offline, host-side break-glass path. Stop Scrumboy and back up the database first. Instructions: `[docs/recovery.md](docs/recovery.md)`.
+If the identity provider is unavailable, a host operator can recover an existing owner's local password via an offline, host-side break-glass path. Stop Scrumboy and back up the database first. Instructions: [docs/recovery.md](docs/recovery.md).
 
 ### TLS / HTTPS (optional)
 
-App-level TLS / HTTPS is optional: Scrumboy enables HTTPS when both `SCRUMBOY_TLS_CERT` and `SCRUMBOY_TLS_KEY` are configured and their files exist; otherwise it runs over HTTP. Details: `[docs/environment-variables.md](docs/environment-variables.md)`.
+App-level TLS / HTTPS is optional: Scrumboy enables HTTPS when both `SCRUMBOY_TLS_CERT` and `SCRUMBOY_TLS_KEY` are configured and their files exist; otherwise it runs over HTTP. Details: [docs/environment-variables.md](docs/environment-variables.md).
 
 ### PWA / Web Push (optional)
 
@@ -171,37 +189,29 @@ Scrumboy supports native MCP clients such as Cursor and Claude Code over **HTTP*
 
 Scrumboy can POST JSON event payloads to URLs you register for **server-side integrations** (your script, gateway, queue worker, and similar). Webhooks are available in **Full mode**; project **maintainers** configure them through the HTTP API. They are separate from in-app notifications, browser/Web Push notifications, and realtime board updates via SSE. Full operator and integration details are in [docs/webhooks.md](docs/webhooks.md).
 
-# Roles
-
-In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
-
-### System roles (instance-wide)
-
-Owner, Admin, and User control instance-wide capabilities such as user management. Assignment rules and permissions: `[docs/roles-and-permissions.md](docs/roles-and-permissions.md)`.
-
-### Project roles (per project)
-
-Project access requires project membership. Per-project roles are **Maintainer** (full project management), **Contributor** (limited edits, including body editing on cards assigned to them), and **Viewer** (read-only). Temporary/anonymous boards use a separate link-based permission model instead of these roles. Details: `[docs/roles-and-permissions.md](docs/roles-and-permissions.md)`.
-
----
-
 # Export scope
 
-Scrumboy supports **Full** and **Single-project** JSON export. In Full mode, Full export includes durable projects where you are a **Maintainer** and temporary/expiring boards you created; Anonymous mode uses single-board export instead of Full. Details: `[docs/backup-and-import.md](docs/backup-and-import.md)`.
+Scrumboy supports **Full** and **Single-project** JSON export. In Full mode, Full export includes durable projects where you are a **Maintainer** and temporary/expiring boards you created; Anonymous mode uses single-board export instead of Full. Details: [docs/backup-and-import.md](docs/backup-and-import.md).
 
 ---
+
+
 
 # Import modes
 
-Scrumboy supports three JSON import modes: **Replace** (destructive; makes the applicable scope match the backup), **Merge** (matches existing projects by slug when you are a **Maintainer**, otherwise may create new projects), and **Create copy** (always creates new projects without overwriting). Anonymous mode has more limited import behavior. Details: `[docs/backup-and-import.md](docs/backup-and-import.md)`.
+Scrumboy supports three JSON import modes: **Replace** (destructive; makes the applicable scope match the backup), **Merge** (matches existing projects by slug when you are a **Maintainer**, otherwise may create new projects), and **Create copy** (always creates new projects without overwriting). Anonymous mode has more limited import behavior. Details: [docs/backup-and-import.md](docs/backup-and-import.md).
 
 ---
+
+
 
 # Documentation
 
-The full documentation set is organized by audience in `[docs/README.md](docs/README.md)` (operator, feature, security, integration, architecture, and manual-check docs).
+The full documentation set is organized by audience in [docs/README.md](docs/README.md) (operator, feature, security, integration, architecture, and manual-check docs).
 
 ---
+
+
 
 # License and Contributions
 
@@ -217,4 +227,4 @@ Scrumboy is licensed under the **GNU Affero General Public License v3** (AGPL v3
 
 For any other feedback, questions, or inquiries, please contact the maintainer at [markraidc@gmail.com](mailto:markraidc@gmail.com)
 
-Scrumboy is an independent open-source project and is not affiliated with, sponsored by, or endorsed by Scrum.org, Scrum Alliance, Inc., or any other organization associated with Scrum training or certification. Any reference to "scrum" is made solely to describe the project management methodology that the software is intended to support. Google Calendar is a trademark of Google LLC. Apple and iCloud are trademarks of Apple Inc. Scrumboy is an independent project and is not affiliated with, sponsored by, or endorsed by Google LLC or Apple Inc. Provider names and icons are used only to identify the inferred host of a configured ICS feed. Third-party trademarks remain the property of their respective owners.
+Scrumboy is an independent open-source project and is not affiliated with, sponsored by, or endorsed by Scrum.org, Scrum Alliance, Inc., or any other organization associated with Scrum training or certification. Any reference to "scrum" is made solely to describe the project management methodology that the software is intended to support. Google Calendar is a trademark of Google LLC. Apple and iCloud are trademarks of Apple Inc. Trello is a registered trademark of Atlassian Pty Ltd. Scrumboy is an independent project and is not affiliated with, sponsored by, or endorsed by Google LLC, Apple Inc., Atlassian, or Trello, Inc. Provider names and icons are used only to identify the inferred host of a configured ICS feed. Third-party trademarks remain the property of their respective owners.
