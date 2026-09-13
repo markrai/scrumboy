@@ -34,7 +34,7 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `MAX_REQUEST_BODY_BYTES`  | `1048576` (1 MiB)          | Optional  | Max request body size for ordinary API requests                                    |
 | `MAX_TRELLO_IMPORT_BYTES` | `33554432` (32 MiB)        | Optional  | Max Trello JSON import upload size                                                 |
 | `SCRUMBOY_MODE`           | `full`                     | Optional  | `full` (auth-capable) or `anonymous`                                               |
-| `SCRUMBOY_INTRANET_IP`    | `192.168.1.250`            | Optional  | LAN IP printed in startup logs for intranet access hints                           |
+| `SCRUMBOY_INTRANET_IP`    | empty                      | Optional  | LAN IP for optional startup intranet URL / certificate hints (does not bind)       |
 
 
 ### Encryption and TLS
@@ -124,8 +124,10 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 
 ### `SCRUMBOY_INTRANET_IP`
 
-- **Default:** `192.168.1.250`
-- **Purpose:** Value used only in startup log lines that suggest an intranet URL and mkcert subject hints. It does not bind the listener by itself.
+- **Default:** empty (unset)
+- **Required?** Optional
+- **Purpose:** Operator/developer convenience only. When set, startup logs may include an intranet URL and HTTP-mode mkcert subject hints that include this value. It does **not** control `BIND_ADDR` or otherwise change how the server listens.
+- **When to set:** Set it explicitly to the machine’s LAN IP when LAN access guidance is useful. Leave it unset if you do not need those hints.
 
 ### `SCRUMBOY_TLS_CERT` / `SCRUMBOY_TLS_KEY`
 

@@ -29,7 +29,8 @@ type Config struct {
 	// TLS (optional). If both TLSCertFile and TLSKeyFile exist, server uses HTTPS. Used by f.bat/a.bat with mkcert.
 	TLSCertFile string // default ./cert.pem
 	TLSKeyFile  string // default ./key.pem
-	// IntranetIP is the LAN IP to log for intranet access (e.g. 192.168.1.250). Set via SCRUMBOY_INTRANET_IP.
+	// IntranetIP is an optional LAN IP for startup intranet URL / mkcert hints
+	// (e.g. 192.0.2.10). Set via SCRUMBOY_INTRANET_IP; empty when unset. Does not bind.
 	IntranetIP string
 
 	// OIDC (optional). All four required fields must be set to enable OIDC login.
@@ -121,7 +122,7 @@ func FromEnv() Config {
 
 		TLSCertFile: getenv("SCRUMBOY_TLS_CERT", "./cert.pem"),
 		TLSKeyFile:  getenv("SCRUMBOY_TLS_KEY", "./key.pem"),
-		IntranetIP:  getenv("SCRUMBOY_INTRANET_IP", "192.168.1.250"),
+		IntranetIP:  getenv("SCRUMBOY_INTRANET_IP", ""),
 
 		OIDCIssuer:            strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
 		OIDCIssuerCanonical:   normalizeIssuer(os.Getenv("SCRUMBOY_OIDC_ISSUER")),

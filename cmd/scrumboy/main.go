@@ -181,12 +181,14 @@ func main() {
 		}
 		logger.Printf("listening on %s", cfg.BindAddr)
 		logger.Printf("  Local:    %s://127.0.0.1:%s/", protocol, port)
-		logger.Printf("  Intranet: %s://%s:%s/", protocol, cfg.IntranetIP, port)
+		if cfg.IntranetIP != "" {
+			logger.Printf("  Intranet: %s://%s:%s/", protocol, cfg.IntranetIP, port)
+		}
 		if useTLS {
 			logger.Printf("HTTPS enabled (secure context).")
 			logger.Printf("Plain http:// on this port is redirected to https:// (same host and path).")
-		} else {
-			logger.Printf("HTTP mode. To enable HTTPS for intranet: install mkcert, run mkcert -install, then mkcert %s localhost", cfg.IntranetIP)
+		} else if cfg.IntranetIP != "" {
+			logger.Printf("HTTP mode. To enable HTTPS for intranet: install mkcert, run mkcert -install, then mkcert %s localhost 127.0.0.1", cfg.IntranetIP)
 		}
 		var err error
 		if useTLS {
