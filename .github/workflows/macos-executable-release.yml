@@ -2,6 +2,11 @@ name: Build macOS executables
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag to repair, e.g. v3.34.0
+        required: false
+        type: string
   release:
     types: [published]
 
@@ -9,8 +14,96 @@ permissions:
   contents: read
 
 jobs:
+  prepare-release-context:
+    name: Prepare release context
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      effective_tag: ${{ steps.ctx.outputs.effective_tag }}
+      attach_release: ${{ steps.ctx.outputs.attach_release }}
+      checkout_ref: ${{ steps.ctx.outputs.checkout_ref }}
+
+    steps:
+      - name: Resolve and validate release context
+        id: ctx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG_EVENT: ${{ github.event.release.tag_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+          DEFAULT_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          effective_tag=""
+          attach_release="false"
+
+          if [ "$EVENT_NAME" = "release" ]; then
+            effective_tag="${RELEASE_TAG_EVENT:-}"
+            if [ -z "$effective_tag" ]; then
+              echo "Release event did not provide a tag name." >&2
+              exit 1
+            fi
+            attach_release="true"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Trim whitespace from the optional repair input.
+            effective_tag="$(printf '%s' "${RELEASE_TAG_INPUT:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            if [ -n "$effective_tag" ]; then
+              attach_release="true"
+            fi
+          else
+            echo "Unsupported event: ${EVENT_NAME}" >&2
+            exit 1
+          fi
+
+          if [ "$attach_release" = "true" ]; then
+            case "$effective_tag" in
+              *[!A-Za-z0-9._-]*)
+                echo "Release tag '$effective_tag' contains characters that are invalid in artifact filenames." >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$attach_release" = "true" ]; then
+            if ! [[ "$effective_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Release tag '$effective_tag' must match repository convention vMAJOR.MINOR.PATCH (e.g. v3.34.0)." >&2
+              exit 1
+            fi
+
+            if ! gh api "repos/${GH_REPO}/git/ref/tags/${effective_tag}" >/dev/null; then
+              echo "Git tag '$effective_tag' does not exist in the repository." >&2
+              exit 1
+            fi
+
+            if ! gh release view "$effective_tag" --repo "$GH_REPO" >/dev/null; then
+              echo "No GitHub Release exists for tag '$effective_tag'." >&2
+              echo "Repair mode only attaches assets to an existing release; it will not create one." >&2
+              exit 1
+            fi
+
+            checkout_ref="$effective_tag"
+            echo "Manual repair mode: will build and attach assets for existing release '$effective_tag'."
+          elif [ "$attach_release" = "true" ]; then
+            checkout_ref="$effective_tag"
+            echo "Release event mode: attaching assets for '$effective_tag'."
+          else
+            checkout_ref="$DEFAULT_REF"
+            echo "Ordinary manual build: no release attachment (checkout ${checkout_ref})."
+          fi
+
+          {
+            echo "effective_tag=${effective_tag}"
+            echo "attach_release=${attach_release}"
+            echo "checkout_ref=${checkout_ref}"
+          } >> "$GITHUB_OUTPUT"
+
   build-macos-executable:
     name: Build and smoke-test ${{ matrix.platform }}
+    needs: prepare-release-context
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 30
     permissions:
@@ -31,6 +124,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
+          # Release + manual repair: the release tag. Ordinary manual: the dispatched commit SHA.
+          ref: ${{ needs.prepare-release-context.outputs.checkout_ref }}
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -68,7 +163,8 @@ jobs:
       - name: Prepare artifact names
         id: names
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EFFECTIVE_TAG: ${{ needs.prepare-release-context.outputs.effective_tag }}
+          ATTACH_RELEASE: ${{ needs.prepare-release-context.outputs.attach_release }}
           RUN_NUMBER: ${{ github.run_number }}
           PLATFORM: ${{ matrix.platform }}
         run: |
@@ -76,18 +172,12 @@ jobs:
           artifact_dir="${RUNNER_TEMP}/scrumboy-artifacts"
           mkdir -p "$artifact_dir"
 
-          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
-            tag="$RELEASE_TAG"
+          if [ "$ATTACH_RELEASE" = "true" ]; then
+            tag="$EFFECTIVE_TAG"
             if [ -z "$tag" ]; then
-              echo "Release event did not provide a tag name." >&2
+              echo "Release attachment requested but effective tag is empty." >&2
               exit 1
             fi
-            case "$tag" in
-              *[!A-Za-z0-9._-]*)
-                echo "Release tag '$tag' contains characters that are invalid in artifact filenames." >&2
-                exit 1
-                ;;
-            esac
             artifact_stem="scrumboy-${tag}-${PLATFORM}"
           else
             artifact_stem="scrumboy-manual-${RUN_NUMBER}-${PLATFORM}"
@@ -283,8 +373,10 @@ jobs:
 
   upload-release-assets:
     name: Attach assets to GitHub Release
-    if: github.event_name == 'release'
-    needs: build-macos-executable
+    if: needs.prepare-release-context.outputs.attach_release == 'true'
+    needs:
+      - prepare-release-context
+      - build-macos-executable
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -430,7 +522,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ needs.prepare-release-context.outputs.effective_tag }}
           ARM64_ARCHIVE: ${{ steps.resolve.outputs.arm64_archive }}
           AMD64_ARCHIVE: ${{ steps.resolve.outputs.amd64_archive }}
           ARM64_SHA: ${{ steps.resolve.outputs.arm64_sha }}
@@ -439,6 +531,11 @@ jobs:
           AMD64_PROVENANCE: ${{ steps.resolve.outputs.amd64_provenance }}
         run: |
           set -e
+
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "Effective release tag is empty; refusing to upload." >&2
+            exit 1
+          fi
 
           for path in \
             "$ARM64_ARCHIVE" "$ARM64_SHA" "$ARM64_PROVENANCE" \
@@ -450,6 +547,9 @@ jobs:
             fi
           done
 
+          # --clobber replaces only assets whose filenames match the files being
+          # uploaded (e.g. scrumboy-vX.Y.Z-darwin-*.tar.gz[.sha256|.intoto.jsonl]).
+          # Unrelated release assets (Windows binaries, notes, etc.) are left intact.
           gh release upload "$RELEASE_TAG" \
             "$ARM64_ARCHIVE" \
             "$ARM64_SHA" \
