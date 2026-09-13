@@ -53,13 +53,7 @@ Scrumboy creates runtime data under `./data` by default. The default SQLite data
 
 ### Run the official Docker image
 
-Scrumboy is distributed as a container image on GitHub Container Registry:
-
-`ghcr.io/markrai/scrumboy:latest`
-
-Published images are multi-arch for `linux/amd64` and `linux/arm64`; Docker pulls the variant that matches your host.
-
-**Docker run** (named volume for persistent SQLite data under `/data`):
+Pull `ghcr.io/markrai/scrumboy:latest` (Docker selects the published architecture for your host):
 
 ```bash
 docker run -d \
@@ -69,27 +63,7 @@ docker run -d \
   ghcr.io/markrai/scrumboy:latest
 ```
 
-The image defaults to `DATA_DIR=/data` and `SQLITE_PATH=/data/app.db`. Mount a volume or host directory on `/data` so the database **and** file-backed uploads (for example `user-wallpapers/`) survive container recreation. Back up the whole `/data` volume (or at least `app.db` plus WAL/SHM sidecars **and** `user-wallpapers/`); see `[docs/diagrams/scrumboy_deployment_ops.md](docs/diagrams/scrumboy_deployment_ops.md)`.
-
-**Docker Compose** (minimal example; save as `docker-compose.yml`):
-
-```yaml
-services:
-  scrumboy:
-    image: ghcr.io/markrai/scrumboy:latest
-    container_name: scrumboy
-    ports:
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-```
-
-```bash
-docker compose up -d
-```
-
-Open [http://localhost:8080](http://localhost:8080).  
+The mounted `/data` volume preserves Scrumboy data across container recreation. Open [http://localhost:8080](http://localhost:8080). For Compose using the published image, persistence, backup, and configuration details, see [docs/docker.md](docs/docker.md).
 
 ### Build locally from source
 

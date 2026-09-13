@@ -23,6 +23,7 @@ See also [CONTRIBUTING.md](../CONTRIBUTING.md) (documentation-impact gate).
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
 | [install-from-releases.md](install-from-releases.md) | Operators / users | Windows and macOS GitHub Release binaries; checksum and provenance verification; runtime-data location; macOS signing/notarization and Gatekeeper troubleshooting | current |
+| [docker.md](docker.md) | Operators / users | Published GHCR image; `docker run`; Compose with published image; `/data` persistence; Docker-facing backup; container environment configuration | current |
 | [recovery.md](recovery.md) | Operators / owners | `cmd/scrumboy` recover-owner; `DATA_DIR` | current |
 | [backup-and-import.md](backup-and-import.md) | Operators / users | JSON export scope, Replace/Merge/Create copy, anonymous-mode behavior, format compatibility; distinct from full `DATA_DIR` disaster-recovery backup | current |
 | [smtp.md](smtp.md) | Operators | `internal/mailer`, SMTP env vars | current |
