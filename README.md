@@ -227,9 +227,7 @@ If the identity provider is unavailable, a host operator can recover an existing
 
 ### TLS / HTTPS (optional)
 
-- TLS is optional.
-- HTTPS is enabled only when both `SCRUMBOY_TLS_CERT` and `SCRUMBOY_TLS_KEY` files exist.
-- Otherwise, the server runs on HTTP by default.
+App-level TLS / HTTPS is optional: Scrumboy enables HTTPS when both `SCRUMBOY_TLS_CERT` and `SCRUMBOY_TLS_KEY` are configured and their files exist; otherwise it runs over HTTP. Details: [`docs/environment-variables.md`](docs/environment-variables.md).
 
 ### PWA / Web Push (optional)
 
