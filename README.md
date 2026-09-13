@@ -385,23 +385,7 @@ This enables:
 
 ### Webhooks (outbound HTTP)
 
-Scrumboy can **POST JSON to URLs you register** when certain events occur. This is for **server-side integrations** (your script, gateway, queue worker, etc.). It does **not** add notifications inside the Scrumboy UI; live boards still update via **SSE** as before.
-
-- **Availability:** **Full mode only** (endpoints are disabled in anonymous mode).
-- **Who can configure:** Project **maintainers**, via the HTTP API only - there is **no settings screen** for webhooks yet.
-- **API:** `POST /api/webhooks` (create), `GET /api/webhooks` (list yours), `DELETE /api/webhooks/{id}` - same session cookie / CSRF header rules as other mutating `/api/`* calls.
-- **Events:** Subscribe to specific types (e.g. `todo.assigned`) or `*` for all delivered types. The set may grow over time; unused types in your list are harmless.
-- **Security:** Optional per-webhook **secret**; when set, requests include an `X-Scrumboy-Signature` header (`sha256=` HMAC of the raw JSON body). Destinations must be publicly routable `http` or `https` URLs. Loopback, private, link-local, and metadata addresses are refused at delivery time (including URLs stored before upgrade). Redirects are not followed. Webhook delivery ignores environment `HTTP_PROXY`/`HTTPS_PROXY` settings so proxy routing cannot bypass destination validation.
-- **Semantics:** Best-effort delivery with retries on failure; not a durable external queue - design for idempotent receivers using the event `id` in the JSON body.
-
-Example create (replace cookie / project id / URL):
-
-```bash
-curl -b cookies.txt -X POST http://localhost:8080/api/webhooks \
-  -H "Content-Type: application/json" \
-  -H "X-Scrumboy: 1" \
-  -d '{"projectId":1,"url":"https://example.com/scrumboy-hook","events":["todo.assigned"],"secret":"optional-shared-secret"}'
-```
+Scrumboy can POST JSON event payloads to URLs you register for **server-side integrations** (your script, gateway, queue worker, and similar). Webhooks are available in **Full mode**; project **maintainers** configure them through the HTTP API. They are separate from in-app notifications, browser/Web Push notifications, and realtime board updates via SSE. Full operator and integration details are in [docs/webhooks.md](docs/webhooks.md).
 
 # Roles
 
