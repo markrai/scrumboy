@@ -113,50 +113,11 @@ Open [http://localhost:8080](http://localhost:8080).
 
 ### Run the Windows executable
 
-Windows users can download `scrumboy-*-windows-amd64.exe` from [GitHub Releases](https://github.com/markrai/scrumboy/releases). The matching `.sha256` file is published beside it for checksum verification. Release builds also publish a matching `.intoto.jsonl` provenance bundle.
-
-The `.sha256` file checks file integrity. The attestation verifies the artifact's signed build provenance and expected repository identity:
-
-```bash
-gh attestation verify scrumboy-<tag>-windows-amd64.exe -R markrai/scrumboy
-```
-
-Put the exe in a dedicated writable folder before running it, for example `%USERPROFILE%\Scrumboy`. The exe starts a local Scrumboy server; open [http://localhost:8080](http://localhost:8080) after it starts.  
+Windows users can download the `windows-amd64` executable from [GitHub Releases](https://github.com/markrai/scrumboy/releases). Run it from a dedicated writable folder (for example `%USERPROFILE%\Scrumboy`); it starts a local Scrumboy server at [http://localhost:8080](http://localhost:8080). For exact artifact filenames, checksum and provenance verification, runtime-data location, and other release-install details, see [docs/install-from-releases.md](docs/install-from-releases.md).
 
 ### Run the macOS executable
 
-macOS users can download architecture-specific archives from [GitHub Releases](https://github.com/markrai/scrumboy/releases):
-
-- Apple Silicon: `scrumboy-<tag>-darwin-arm64.tar.gz`
-- Intel: `scrumboy-<tag>-darwin-amd64.tar.gz`
-
-These binaries require **macOS 12 Monterey or later** (the Go 1.26 Darwin floor). That minimum is not raised by the GitHub Actions runner that produced the build.
-
-The matching `.sha256` file is published beside each archive for checksum verification. Release builds also publish a matching `.intoto.jsonl` provenance bundle. The macOS archives are not Apple-signed or notarized.
-
-The `.sha256` file checks file integrity. The attestation verifies the artifact's signed build provenance and expected repository identity:
-
-```bash
-shasum -a 256 -c scrumboy-<tag>-darwin-arm64.tar.gz.sha256
-gh attestation verify scrumboy-<tag>-darwin-arm64.tar.gz -R markrai/scrumboy
-```
-
-Extract the archive, then run the `scrumboy` binary from a dedicated writable folder (runtime data defaults to `./data`, including `app.db`):
-
-```bash
-tar -xzf scrumboy-<tag>-darwin-arm64.tar.gz
-./scrumboy
-```
-
-Open [http://localhost:8080](http://localhost:8080) after it starts. Set `DATA_DIR` if you want the database and uploads in a different directory.
-
-**Troubleshooting:** if macOS blocks launch of a binary you downloaded from GitHub Releases **after** checksum and attestation verification, clear quarantine for that file only:
-
-```bash
-xattr -d com.apple.quarantine ./scrumboy
-```
-
-Do not disable Gatekeeper or other system-wide protections.
+macOS users can download Apple Silicon or Intel builds from [GitHub Releases](https://github.com/markrai/scrumboy/releases). These binaries require **macOS 12 Monterey or later**. Extract and run `./scrumboy` from a dedicated writable folder; it starts a local Scrumboy server at [http://localhost:8080](http://localhost:8080). Current macOS release binaries are not Apple-signed or notarized. For exact artifact filenames, checksum and provenance verification, runtime-data location, Gatekeeper/quarantine troubleshooting, and other release-install details, see [docs/install-from-releases.md](docs/install-from-releases.md).
 
 ---
 
