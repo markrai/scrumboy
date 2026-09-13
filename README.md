@@ -246,39 +246,15 @@ Scrumboy can POST JSON event payloads to URLs you register for **server-side int
 
 # Roles
 
-In **full mode**, access is governed by two separate role systems. System roles do not grant project access; project access comes only from project membership.
+In **full mode**, access is governed by two separate role systems: instance-wide system roles (**Owner**, **Admin**, **User**) and per-project roles. System roles do not grant project access; project access comes only from project membership.
 
 ### System roles (instance-wide)
 
-
-| Role      | Who has it                                               | Allowed actions                                                                                                                                      |
-| --------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Owner** | Bootstrap (first) user; can be assigned by another owner | List all users; create users (admin-only API); update any user’s system role (owner/admin/user); delete users (except cannot delete the last owner). |
-| **Admin** | Assigned by an owner                                     | List all users; create users. Cannot change system roles or delete users.                                                                            |
-| **User**  | Default for new users; assigned by owner                 | No system-level user management. Access to projects only via project membership.                                                                     |
-
+Owner, Admin, and User control instance-wide capabilities such as user management. Assignment rules and permissions: [`docs/roles-and-permissions.md`](docs/roles-and-permissions.md).
 
 ### Project roles (per project)
 
-A user must be a member of a project to access it; system role alone does not grant access.
-
-
-| Role            | View board & todos | Create/edit/move/delete todos | Edit body when assigned | Manage members | Delete project | Tag delete/color (project-scoped) |
-| --------------- | ------------------ | ----------------------------- | ----------------------- | -------------- | -------------- | --------------------------------- |
-| **Maintainer**  | ✓                  | ✓                             | ✓                       | ✓              | ✓              | ✓ (maintainer)                    |
-| **Contributor** | ✓                  | -                             | ✓ (body only)           | -              | -              | -                                 |
-| **Viewer**      | ✓                  | -                             | -                       | -              | -              | -                                 |
-
-
-- **View** (board, backlog, burndown, charts, etc.): Any project role (Viewer or above).
-- **Create/edit/move/delete todos, assign, sprints, priorities**: Maintainer only. Contributor cannot create, delete, move, assign, or configure priorities; cannot edit title, tags, sprint, priority, or estimation.
-- **Edit body when assigned**: Contributor can edit the body field only when the todo is assigned to them. Maintainer has full edit.
-- **Manage members** (add/remove members, change role): Maintainer only.
-- **Delete project**: Maintainer only.
-- **Delete/update tag** (project-scoped tags): Maintainer only. User-owned tags: owner of the tag or maintainer in all projects where the tag is used.
-- **Create tags**: Contributor or Maintainer.
-
-Temporary/anonymous boards (shareable by URL, no auth) do not use project roles; anyone with the link can view and edit. New Todo and drag-and-drop are enabled for anonymous boards.
+Project access requires project membership. Per-project roles are **Maintainer** (full project management), **Contributor** (limited edits, including body editing on cards assigned to them), and **Viewer** (read-only). Temporary/anonymous boards use a separate link-based permission model instead of these roles. Details: [`docs/roles-and-permissions.md`](docs/roles-and-permissions.md).
 
 ---
 

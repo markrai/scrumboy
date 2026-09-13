@@ -8,6 +8,16 @@
 
 **Important:** System roles (Owner, Admin, User) **never** grant project permissions. Project access is solely via `project_members`. A system Admin or Owner cannot access, modify, or delete a project without an explicit project membership.
 
+### System role matrix
+
+| Role | How assigned / obtained | Instance-wide capabilities |
+|------|-------------------------|----------------------------|
+| **Owner** | First user on an empty instance (local bootstrap or first OIDC sign-in). There is **no** supported public path to promote another user to Owner. | List users; create users; change a user’s system role to **admin** or **user**; delete users. Cannot delete or demote the last remaining Owner. Does **not** grant project access. |
+| **Admin** | An Owner sets the user’s system role to **admin** via the admin Users UI / admin API. | List users; create users. Cannot change system roles or delete users. Does **not** grant project access. |
+| **User** | Default system role for newly created users (admin-created accounts and non-bootstrap OIDC provisioned users). | No instance-wide user management. Project access only via project membership. |
+
+Public system-role updates accept only `admin` and `user`. Setting `owner` through that interface is rejected.
+
 ---
 
 ## Project Role Hierarchy
@@ -36,6 +46,10 @@
 | Self-assign todo               | Maintainer    | Contributor cannot self-assign          |
 | Assign todo to others          | Maintainer    |                                        |
 | Create tags                    | Contributor+  |                                        |
+| Delete project-scoped tag      | Maintainer+   | Shared board tag; not a personal/user-owned tag |
+| Update project-scoped tag color | Maintainer+  | Shared `tags.color` for everyone on the board |
+| Delete personal/user-owned tag | Tag owner only | No Maintainer override to delete another user’s personal tag |
+| Update personal tag color      | Per-user preference | Each user sets their own color for personal tags; does not change others’ colors |
 | Delete project                 | Maintainer+   |                                        |
 | Update project name/image      | Maintainer+   |                                        |
 | Update default sprint weeks    | Maintainer+   |                                        |
