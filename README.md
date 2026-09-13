@@ -120,7 +120,7 @@ Simplicity of a light Kanban, with the power of structured systems: Roles, sprin
 - PWA: Excellent UX for mobile users.
 - Multi-language Support: English, 简体中文, हिन्दी, Español (Latinoamérica), العربية, Français, বাংলা, Português (Brasil), Bahasa Indonesia, اردو, Русский, Deutsch, 日本語, Kiswahili, Tiếng Việt, Türkçe, 한국어, فارسی, ไทย, Italiano, Bahasa Melayu, Polski, and Українська.
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
-- VoiceFlow - deterministic voice commands (see [docs/voiceflow.md](docs/voiceflow.md)).
+- VoiceFlow - deterministic voice commands in the browser; on supported Android devices, **AI VoiceFlow** adds on-device speech and Gemini Nano planning with confirmation before mutations (see [docs/voiceflow.md](docs/voiceflow.md), [docs/enhanced-voiceflow.md](docs/enhanced-voiceflow.md)).
 - Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see [docs/wall.md](docs/wall.md)).
 - Agenda - today's events from subscribed ICS feeds on durable boards (see [docs/calendar.md](docs/calendar.md)). Requires `SCRUMBOY_ENCRYPTION_KEY`.
 - Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ````mermaid`blocks in preview only (see`[FAQ.md](FAQ.md)`,` [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)`).
