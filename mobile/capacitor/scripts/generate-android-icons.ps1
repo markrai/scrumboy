@@ -1,8 +1,8 @@
 # Regenerates Android launcher mipmaps from the PWA icon.
 # Source of truth: internal/httpapi/web/icon-512.png
 # Canvas/safe-zone padding uses the source artwork's corner gray (not white).
-# Also refreshes values/ic_launcher_background.xml to that same gray for adaptive
-# icon + cold-start splash backgrounds. Does not write local.properties.
+# Also refreshes values/ic_launcher_background.xml to that same gray for the adaptive
+# icon / splash icon-disk background only (not the full-screen splash). Does not write local.properties.
 
 $ErrorActionPreference = "Stop"
 
