@@ -267,7 +267,7 @@ Stop Scrumboy and back up the SQLite database/volume first. Container, bind-moun
 
 ### PWA / Web Push (optional)
 
-Install the app from the browser for a standalone window and better mobile UX. **Background assignment alerts** use the **Web Push API** with **VAPID** keys on the server. When Web Push is **effectively enabled** (validated matching key pair in full mode — not merely non-empty env strings), signed-in clients attempt to subscribe automatically (browser permission may be prompted). Docker users must pass the VAPID variables into the container environment and recreate the container after changes. Details, validation/status, Docker verification, and subscriber contact semantics: `[docs/vapid.md](docs/vapid.md)`, `[docs/pwa.md](docs/pwa.md)`.
+Install Scrumboy from the browser as a **PWA** for a standalone, mobile-friendly experience. Background assignment notifications are available through **Web Push**, which requires server-side **VAPID** configuration and browser notification permission. See [docs/pwa.md](docs/pwa.md) and [docs/vapid.md](docs/vapid.md).
 
 ### Frontend build note
 
