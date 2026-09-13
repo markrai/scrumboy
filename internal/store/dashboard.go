@@ -772,6 +772,36 @@ func encodeDashboardBoardCursor(projectID, wcPos, rank, todoID int64) string {
 	return strconv.FormatInt(projectID, 10) + ":" + strconv.FormatInt(wcPos, 10) + ":" + strconv.FormatInt(rank, 10) + ":" + strconv.FormatInt(todoID, 10)
 }
 
+const (
+	dashboardTodoDefaultPageSize = 20
+	dashboardTodoMaxPageSize     = 100
+	dashboardTodoMaxFetchSize    = dashboardTodoMaxPageSize + 1 // 101
+)
+
+// normalizeDashboardTodoPageLimits clamps limit to the dashboard page contract.
+//
+// Invariants:
+//   - pageLimit is always in [1, 100] (default 20)
+//   - fetchLimit is always pageLimit+1, therefore in [2, 101]
+func normalizeDashboardTodoPageLimits(limit int) (pageLimit, fetchLimit int) {
+	switch {
+	case limit <= 0:
+		pageLimit = dashboardTodoDefaultPageSize
+	case limit > dashboardTodoMaxPageSize:
+		pageLimit = dashboardTodoMaxPageSize
+	default:
+		pageLimit = limit
+	}
+
+	// Explicit arithmetic guard: never add 1 to an unbounded / max-range value.
+	// When already at the max page size, return the compile-time fetch constant.
+	if pageLimit >= dashboardTodoMaxPageSize {
+		return dashboardTodoMaxPageSize, dashboardTodoMaxFetchSize
+	}
+	fetchLimit = pageLimit + 1
+	return pageLimit, fetchLimit
+}
+
 func (s *Store) ListDashboardTodos(ctx context.Context, userID int64, limit int, cursor *string, sort string) ([]DashboardTodo, *string, error) {
 	if NormalizeDashboardTodoSort(sort) == dashboardTodoSortBoard {
 		return s.listDashboardTodosBoard(ctx, userID, limit, cursor)
@@ -780,12 +810,7 @@ func (s *Store) ListDashboardTodos(ctx context.Context, userID int64, limit int,
 }
 
 func (s *Store) listDashboardTodosActivity(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	pageLimit, fetchLimit := normalizeDashboardTodoPageLimits(limit)
 
 	raw := dashboardCursorRaw(cursor)
 	var (
@@ -809,7 +834,7 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0
   AND (t.updated_at < ? OR (t.updated_at = ? AND t.id < ?))
 ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
-`, userID, updatedAtCursor, updatedAtCursor, idCursor, limit+1)
+`, userID, updatedAtCursor, updatedAtCursor, idCursor, fetchLimit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
@@ -822,14 +847,14 @@ JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.
 WHERE t.assignee_user_id = ? AND wc.is_done = 0
 ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
-`, userID, limit+1)
+`, userID, fetchLimit)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("list dashboard todos: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]DashboardTodo, 0, limit+1)
+	out := make([]DashboardTodo, 0, pageLimit)
 	for rows.Next() {
 		var (
 			t           DashboardTodo
@@ -883,11 +908,11 @@ LIMIT ?
 		return nil, nil, fmt.Errorf("rows dashboard todos: %w", err)
 	}
 
-	if len(out) <= limit {
+	if len(out) <= pageLimit {
 		return out, nil, nil
 	}
 
-	page := out[:limit]
+	page := out[:pageLimit]
 	last := page[len(page)-1]
 	next := encodeDashboardCursor(last.UpdatedAt.UnixMilli(), last.ID)
 	return page, &next, nil
@@ -900,12 +925,7 @@ type dashboardBoardRow struct {
 }
 
 func (s *Store) listDashboardTodosBoard(ctx context.Context, userID int64, limit int, cursor *string) ([]DashboardTodo, *string, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	pageLimit, fetchLimit := normalizeDashboardTodoPageLimits(limit)
 
 	raw := dashboardCursorRaw(cursor)
 	var (
@@ -930,7 +950,7 @@ WHERE t.assignee_user_id = ? AND wc.is_done = 0
   AND (t.project_id, wc.position, t.rank, t.id) > (?, ?, ?, ?)
 ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
 LIMIT ?
-`, userID, pid, wcPos, rank, todoID, limit+1)
+`, userID, pid, wcPos, rank, todoID, fetchLimit)
 	} else {
 		rows, err = s.db.QueryContext(ctx, `
 SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.estimation_points,
@@ -944,14 +964,14 @@ JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.
 WHERE t.assignee_user_id = ? AND wc.is_done = 0
 ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
 LIMIT ?
-`, userID, limit+1)
+`, userID, fetchLimit)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("list dashboard todos: %w", err)
 	}
 	defer rows.Close()
 
-	out := make([]dashboardBoardRow, 0, limit+1)
+	out := make([]dashboardBoardRow, 0, pageLimit)
 	for rows.Next() {
 		var (
 			t           DashboardTodo
@@ -1009,7 +1029,7 @@ LIMIT ?
 		return nil, nil, fmt.Errorf("rows dashboard todos: %w", err)
 	}
 
-	if len(out) <= limit {
+	if len(out) <= pageLimit {
 		todos := make([]DashboardTodo, len(out))
 		for i := range out {
 			todos[i] = out[i].todo
@@ -1017,7 +1037,7 @@ LIMIT ?
 		return todos, nil, nil
 	}
 
-	pageRows := out[:limit]
+	pageRows := out[:pageLimit]
 	todos := make([]DashboardTodo, len(pageRows))
 	for i := range pageRows {
 		todos[i] = pageRows[i].todo

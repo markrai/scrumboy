@@ -657,3 +657,42 @@ func TestListDashboardTodos_CursorSortMismatch(t *testing.T) {
 		t.Fatalf("activity sort + board-shaped cursor: want ErrValidation, got %v", err)
 	}
 }
+
+func TestNormalizeDashboardTodoPageLimits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		limit          int
+		wantPageLimit  int
+		wantFetchLimit int
+	}{
+		{name: "zero defaults", limit: 0, wantPageLimit: 20, wantFetchLimit: 21},
+		{name: "negative defaults", limit: -1, wantPageLimit: 20, wantFetchLimit: 21},
+		{name: "min page", limit: 1, wantPageLimit: 1, wantFetchLimit: 2},
+		{name: "near max", limit: 99, wantPageLimit: 99, wantFetchLimit: 100},
+		{name: "exact max", limit: 100, wantPageLimit: 100, wantFetchLimit: 101},
+		{name: "above max clamps", limit: 101, wantPageLimit: 100, wantFetchLimit: 101},
+		{name: "far above max clamps", limit: 1000, wantPageLimit: 100, wantFetchLimit: 101},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pageLimit, fetchLimit := normalizeDashboardTodoPageLimits(tt.limit)
+			if pageLimit != tt.wantPageLimit || fetchLimit != tt.wantFetchLimit {
+				t.Fatalf("normalizeDashboardTodoPageLimits(%d) = (%d, %d); want (%d, %d)",
+					tt.limit, pageLimit, fetchLimit, tt.wantPageLimit, tt.wantFetchLimit)
+			}
+			if fetchLimit != pageLimit+1 {
+				t.Fatalf("fetchLimit %d is not pageLimit+1 (%d)", fetchLimit, pageLimit+1)
+			}
+			if pageLimit < 1 || pageLimit > 100 {
+				t.Fatalf("pageLimit %d outside [1,100]", pageLimit)
+			}
+			if fetchLimit < 2 || fetchLimit > 101 {
+				t.Fatalf("fetchLimit %d outside [2,101]", fetchLimit)
+			}
+		})
+	}
+}
