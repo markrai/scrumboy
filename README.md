@@ -32,7 +32,6 @@
   - [Owner disaster recovery](#owner-disaster-recovery)
   - [TLS / HTTPS (optional)](#tls--https-optional)
   - [PWA / Web Push (optional)](#pwa--web-push-optional)
-  - [Frontend build note](#frontend-build-note)
 - [Integrations & API Access](#integrations--api-access)
   - [MCP (JSON-RPC) for AI agents](#mcp-json-rpc-for-ai-agents)
   - [Webhooks (outbound HTTP)](#webhooks-outbound-http)
@@ -232,18 +231,6 @@ App-level TLS / HTTPS is optional: Scrumboy enables HTTPS when both `SCRUMBOY_TL
 ### PWA / Web Push (optional)
 
 Install Scrumboy from the browser as a **PWA** for a standalone, mobile-friendly experience. Background assignment notifications are available through **Web Push**, which requires server-side **VAPID** configuration and browser notification permission. See [docs/pwa.md](docs/pwa.md) and [docs/vapid.md](docs/vapid.md).
-
-### Frontend build note
-
-The Docker image and `go run` embed prebuilt assets under `internal/httpapi/web/dist`. If they are missing, build them:
-
-```bash
-cd internal/httpapi/web
-npm install
-npm run build
-```
-
-Then run `docker compose up --build` (local image build) or `go run ./cmd/scrumboy` again from the repository root.
 
 ## Integrations & API Access
 
