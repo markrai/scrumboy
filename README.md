@@ -211,7 +211,7 @@ Full names, defaults, requirements, and interactions: [`docs/environment-variabl
 
 ### SMTP for self-service password reset (optional)
 
-Optional SMTP lets users who already have a Scrumboy-local password request a reset email (**Forgot your Scrumboy password?**). You need a relay (`SCRUMBOY_SMTP_`*), `SCRUMBOY_ENCRYPTION_KEY`, a valid `SCRUMBOY_PUBLIC_BASE_URL`, and local authentication enabled. Owners can generate links only for users with a usable local password; SSO credential recovery belongs to the identity provider. Setup and troubleshooting: `[docs/smtp.md](docs/smtp.md)`.
+Optional SMTP enables self-service password-reset email (**Forgot your Scrumboy password?**) for users with a usable Scrumboy-local password; it also depends on `SCRUMBOY_ENCRYPTION_KEY` and a valid `SCRUMBOY_PUBLIC_BASE_URL`. SSO credential recovery remains the identity provider's responsibility. Setup and troubleshooting: [`docs/smtp.md`](docs/smtp.md).
 
 ### Email notifications (optional)
 
