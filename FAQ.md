@@ -274,6 +274,19 @@ export SCRUMBOY_ENCRYPTION_KEY='paste-the-openssl-output-here'
 
 Your process manager, Compose file, or systemd unit must inject the same value when Scrumboy starts. The server does **not** auto-load `.env` files.
 
+Docker Compose example (the variable must already exist in the environment Compose uses):
+
+```yaml
+environment:
+  - SCRUMBOY_ENCRYPTION_KEY=${SCRUMBOY_ENCRYPTION_KEY}
+```
+
+systemd example (replace `...` with the generated key):
+
+```ini
+Environment="SCRUMBOY_ENCRYPTION_KEY=..."
+```
+
 ### Windows
 
 **Option A - PowerShell (no extra software):** open PowerShell and run:
@@ -288,7 +301,7 @@ Copy the one-line result. For a manual env var in that same session before you s
 $env:SCRUMBOY_ENCRYPTION_KEY = 'paste-the-output-here'
 ```
 
-**Option B - official helpers:** `win_run_full.bat` / `win_run_anonymous.bat` can create and store a key in `data/scrumboy.env` (format `SCRUMBOY_ENCRYPTION_KEY=<base64…>`) and inject it for you. See [`README.md`](README.md#encryption-key-optional).
+**Option B - official helpers:** `win_run_full.bat` / `win_run_anonymous.bat` can create and store a key in `data/scrumboy.env` (format `SCRUMBOY_ENCRYPTION_KEY=<base64…>`) and inject it for you. See [`docs/environment-variables.md`](docs/environment-variables.md#scrumboy_encryption_key).
 
 If OpenSSL is installed on Windows, `openssl rand -base64 32` works the same as on Linux.
 
@@ -296,7 +309,7 @@ If OpenSSL is installed on Windows, `openssl rand -base64 32` works the same as 
 
 - Back it up **with** `data/app.db`. Losing or replacing the key after 2FA or password-reset data exists can break those features.
 - Do **not** regenerate the key casually on an instance that already uses encrypted auth data.
-- More detail: [`README.md`](README.md#encryption-key-optional) and [`docs/smtp.md`](docs/smtp.md#required-env-vars) (SMTP needs this key among others).
+- More detail: [`docs/environment-variables.md`](docs/environment-variables.md#scrumboy_encryption_key) and [`docs/smtp.md`](docs/smtp.md#required-env-vars) (SMTP needs this key among others).
 
 ## Do I need to configure SMTP? What happens if I don't?
 

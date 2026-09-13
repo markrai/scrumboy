@@ -207,35 +207,7 @@ Full names, defaults, requirements, and interactions: [`docs/environment-variabl
 
 ### Encryption key for 2FA/password reset
 
-- `SCRUMBOY_ENCRYPTION_KEY` is **not** required for basic startup.
-- It becomes required for encrypted auth/security and calendar features, including:
-  - 2FA
-  - Password reset flows
-  - ICS calendar feed URLs (Agenda)
-- If an existing database already has 2FA-enabled users or stored calendar feeds, startup fails without this key.
-- The key is part of the same backup/restore unit as the instance `DATA_DIR` (including `data/app.db`). Back them up together.
-- Do **not** regenerate or replace the key casually after encrypted auth/security or calendar data exists, or you can break access to 2FA/password-reset data and Agenda feeds.
-- If a bad key is configured before any encrypted auth/security or calendar data exists, Scrumboy may warn and continue with 2FA setup, password reset, and calendar URL encryption disabled until you configure a valid key.
-
-Generate a key with: `openssl rand -base64 32`
-
-Example for Docker Compose secret injection:
-
-```yaml
-services:
-  scrumboy:
-    environment:
-      - SCRUMBOY_ENCRYPTION_KEY=${SCRUMBOY_ENCRYPTION_KEY}
-```
-
-Example for systemd secret injection:
-
-```ini
-[Service]
-Environment="SCRUMBOY_ENCRYPTION_KEY=REPLACE_WITH_BASE64_32_BYTE_KEY"
-```
-
-In both cases, the deployment manager is injecting the environment variable. Scrumboy itself does not auto-load these files.
+`SCRUMBOY_ENCRYPTION_KEY` is **not** required for basic Scrumboy startup. It is required for features that store encrypted authentication/security or calendar data, including 2FA and Agenda calendar feeds. Once encrypted data exists, back up and restore the key with the Scrumboy data; do not casually replace it. Details: [`docs/environment-variables.md`](docs/environment-variables.md#scrumboy_encryption_key) and [`FAQ.md`](FAQ.md#how-do-i-generate-scrumboy_encryption_key).
 
 ### SMTP for self-service password reset (optional)
 
