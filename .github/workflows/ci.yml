@@ -64,7 +64,7 @@ jobs:
         working-directory: internal/httpapi/web
         run: rm -rf dist && npm run build
 
-      - name: Verify committed dist matches sources
+      - name: Verify committed generated files match sources
         run: |
-          git diff --exit-code -- internal/httpapi/web/dist
-          test -z "$(git status --porcelain internal/httpapi/web/dist)"
+          git diff --exit-code -- internal/httpapi/web/dist internal/httpapi/web/vendor
+          test -z "$(git status --porcelain internal/httpapi/web/dist internal/httpapi/web/vendor)"
