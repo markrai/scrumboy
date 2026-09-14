@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "[!! Your Scrumboy session changed during SSO verification. Start again. !!]",
   "auth.oidc.error.identity_mismatch": "[!! The SSO identity did not match the account being verified. !!]",
   "auth.oidc.error.link_rejected": "[!! SSO could not be connected. Verify that the provider email matches your Scrumboy email. !!]",
+  "auth.oidc.error.domain_not_allowed": "[!! Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access. !!]",
   "settings.profile.authentication.local": "[!! Local password !!]",
   "settings.profile.authentication.sso": "[!! SSO !!]",
   "settings.profile.authentication.dual": "[!! Local password + SSO !!]",

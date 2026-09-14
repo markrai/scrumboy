@@ -57,6 +57,7 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `SCRUMBOY_OIDC_CLIENT_SECRET`       | empty                                         | Conditionally required (OIDC) | OIDC client secret                                                              |
 | `SCRUMBOY_OIDC_REDIRECT_URL`        | empty                                         | Conditionally required (OIDC) | Absolute OIDC callback URL                                                      |
 | `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED` | empty (local auth stays on when OIDC enabled) | Optional                      | Set to `true` to disable local password login/bootstrap when OIDC is configured |
+| `SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS` | empty (new-account signup is unrestricted)  | Optional                      | Comma-separated exact domains allowed to auto-provision new OIDC users          |
 
 
 ### Wall (Sticky Note), Markdown, & Mermaid
@@ -256,6 +257,14 @@ See [oidc.md](oidc.md).
 - **Enable disablement:** value must equal `true` after trim + lowercasing. Unlike feature flags, `1` / `yes` / `on` are **not** accepted.
 - When true **and** OIDC is configured, local password login/bootstrap and related local-only reset surfaces stay unavailable.
 
+### `SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS`
+
+- **Default:** empty / unset → automatic creation of new users through OIDC is unrestricted, preserving existing behavior.
+- **Format:** comma-separated exact domains; entries are trimmed and lowercased, a leading `@` is optional, and empty entries are ignored. Subdomains are not implicitly included.
+- **Scope:** applies only when an unlinked OIDC identity would create a new Scrumboy user. Existing linked identities and explicit Connect SSO flows are not re-checked.
+- **Bootstrap:** the first user on an empty instance is exempt and retains the existing owner-assignment behavior. Later disallowed signups receive `domain_not_allowed`.
+- See [oidc.md](oidc.md#restricting-auto-provisioned-signup-by-email-domain) for setup and behavior details.
+
 ---
 
 ## Feature flags
@@ -353,5 +362,3 @@ Normative setup: [smtp.md](smtp.md), [notifications.md](notifications.md).
 | Wall                  | [wall.md](wall.md)                                                         |
 | Calendar / Agenda     | [calendar.md](calendar.md)                                                 |
 | Persistence / backup  | [diagrams/scrumboy_deployment_ops.md](diagrams/scrumboy_deployment_ops.md) |
-
-

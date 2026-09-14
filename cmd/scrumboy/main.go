@@ -108,13 +108,17 @@ func main() {
 	var oidcSvc *oidc.Service
 	if cfg.OIDCEnabled() {
 		oidcSvc = oidc.New(oidc.Config{
-			IssuerCanonical:   cfg.OIDCIssuerCanonical,
-			ClientID:          cfg.OIDCClientID,
-			ClientSecret:      cfg.OIDCClientSecret,
-			RedirectURL:       cfg.OIDCRedirectURL,
-			LocalAuthDisabled: cfg.OIDCLocalAuthDisabled,
+			IssuerCanonical:     cfg.OIDCIssuerCanonical,
+			ClientID:            cfg.OIDCClientID,
+			ClientSecret:        cfg.OIDCClientSecret,
+			RedirectURL:         cfg.OIDCRedirectURL,
+			LocalAuthDisabled:   cfg.OIDCLocalAuthDisabled,
+			AllowedEmailDomains: cfg.OIDCAllowedEmailDomains,
 		})
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
+		if len(cfg.OIDCAllowedEmailDomains) > 0 {
+			logger.Printf("OIDC signup restricted to domains: %s", strings.Join(cfg.OIDCAllowedEmailDomains, ", "))
+		}
 	}
 	logWebPushConfiguration(logger, cfg.ScrumboyMode, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey)
 	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom, cfg.SMTPPortExplicit, cfg.PublicBaseURL)

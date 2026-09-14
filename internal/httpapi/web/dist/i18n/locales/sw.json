@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Kikao chako cha Scrumboy kilibadilika wakati wa uthibitishaji wa SSO. Anza tena.",
   "auth.oidc.error.identity_mismatch": "Utambulisho wa SSO haukulingana na akaunti iliyokuwa ikithibitishwa.",
   "auth.oidc.error.link_rejected": "SSO haikuweza kuunganishwa. Hakikisha barua pepe ya mtoa huduma inalingana na barua pepe yako ya Scrumboy.",
+  "auth.oidc.error.domain_not_allowed": "Usajili umewekewa mipaka kwa vikoa maalum vya barua pepe, na barua pepe ya akaunti yako haipo kwenye orodha. Wasiliana na msimamizi ili kupata ufikiaji.",
   "settings.profile.authentication.local": "Nenosiri la ndani",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Nenosiri la ndani + SSO",

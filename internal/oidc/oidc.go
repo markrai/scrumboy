@@ -24,6 +24,30 @@ type Config struct {
 	ClientSecret      string
 	RedirectURL       string // absolute callback URL
 	LocalAuthDisabled bool
+	// AllowedEmailDomains restricts which email domains may auto-provision a new
+	// account on first SSO login. Lowercase, no leading "@". Empty means unrestricted.
+	AllowedEmailDomains []string
+}
+
+// EmailDomainAllowed reports whether email's domain may sign up a new account,
+// per the configured AllowedEmailDomains allowlist. An empty allowlist permits
+// any domain. The check is case-insensitive and only inspects the portion
+// after the final "@".
+func (c Config) EmailDomainAllowed(email string) bool {
+	if len(c.AllowedEmailDomains) == 0 {
+		return true
+	}
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return false
+	}
+	domain := strings.ToLower(email[at+1:])
+	for _, allowed := range c.AllowedEmailDomains {
+		if domain == allowed {
+			return true
+		}
+	}
+	return false
 }
 
 // Service manages OIDC discovery, state, and token validation.

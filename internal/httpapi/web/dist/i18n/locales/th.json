@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "เซสชัน Scrumboy ของคุณเปลี่ยนไประหว่างการตรวจสอบ SSO โปรดเริ่มใหม่",
   "auth.oidc.error.identity_mismatch": "ข้อมูลประจำตัว SSO ไม่ตรงกับบัญชีที่กำลังตรวจสอบ",
   "auth.oidc.error.link_rejected": "ไม่สามารถเชื่อมต่อ SSO ได้ โปรดตรวจสอบว่าอีเมลจากผู้ให้บริการตรงกับอีเมล Scrumboy ของคุณ",
+  "auth.oidc.error.domain_not_allowed": "การสมัครสมาชิกจำกัดเฉพาะโดเมนอีเมลบางแห่ง และอีเมลของบัญชีคุณไม่อยู่ในรายการ โปรดติดต่อผู้ดูแลระบบเพื่อขอสิทธิ์เข้าใช้งาน",
   "settings.profile.authentication.local": "รหัสผ่านภายใน",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "รหัสผ่านภายใน + SSO",

@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "تغيّرت جلسة Scrumboy أثناء التحقق عبر تسجيل الدخول الموحّد. ابدأ من جديد.",
   "auth.oidc.error.identity_mismatch": "لم تتطابق هوية تسجيل الدخول الموحّد مع الحساب الجاري التحقق منه.",
   "auth.oidc.error.link_rejected": "تعذّر ربط تسجيل الدخول الموحّد. تأكد من أن بريد الموفّر يطابق بريد Scrumboy.",
+  "auth.oidc.error.domain_not_allowed": "التسجيل مقتصر على نطاقات بريد إلكتروني محددة، وبريدك الإلكتروني ليس ضمن القائمة. تواصل مع المسؤول للحصول على الوصول.",
   "settings.profile.authentication.local": "كلمة مرور محلية",
   "settings.profile.authentication.sso": "تسجيل الدخول الموحّد",
   "settings.profile.authentication.dual": "كلمة مرور محلية + تسجيل الدخول الموحّد",

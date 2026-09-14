@@ -285,6 +285,7 @@ function renderOidcErrorToast(): boolean {
 	"auth.oidc.error.link_rejected",
 	"auth.oidc.error.link_required",
 	"auth.oidc.error.session_changed",
+	"auth.oidc.error.domain_not_allowed",
   ]);
   showToast(t(knownKeys.has(key) ? key : "auth.oidc.error.generic"));
   params.delete("oidc_error");

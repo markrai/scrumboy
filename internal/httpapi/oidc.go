@@ -268,15 +268,27 @@ func (s *Server) resolveOIDCLoginIdentity(ctx context.Context, result *oidc.Call
 			return store.User{}, "token"
 		}
 
-		// New identity: create user. Pass configured issuer so the store
-		// only grants owner when issuer matches (plan section I).
+		// New identity: create user. Pass configured issuer so the store only
+		// grants owner when issuer matches (plan section I). The store applies the
+		// domain decision with its authoritative user count in the same transaction,
+		// so exactly the first user is exempt even under concurrent signups.
 		configuredIssuer := s.oidcService.Config().IssuerCanonical
-		u, err = s.store.CreateUserOIDC(ctx, configuredIssuer, result.Issuer, result.Subject, result.Email, result.Name)
+		u, err = s.store.CreateUserOIDCWithDomainPolicy(
+			ctx,
+			configuredIssuer,
+			result.Issuer,
+			result.Subject,
+			result.Email,
+			result.Name,
+			s.oidcService.Config().EmailDomainAllowed(result.Email),
+		)
 		if err != nil {
 			if errors.Is(err, store.ErrConflict) {
 				// Do not identify or attach identities by email. The response is
 				// intentionally generic while still directing the legitimate user.
 				return store.User{}, "link_required"
+			} else if errors.Is(err, store.ErrOIDCSignupDomainNotAllowed) {
+				return store.User{}, "domain_not_allowed"
 			} else {
 				s.logger.Printf("oidc: create user: %v", err)
 				return store.User{}, "token"

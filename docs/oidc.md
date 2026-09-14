@@ -21,6 +21,21 @@ SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true
 
 All four OIDC settings are required. The redirect URL must exactly match the provider registration. The issuer is trimmed and normalized without a trailing slash; discovery may accept that issuer's single trailing-slash form, but no unrelated issuer.
 
+### Restricting auto-provisioned signup by email domain
+
+By default, any successful SSO login for an identity Scrumboy hasn't seen before auto-provisions a new account. To restrict *new* signups to specific email domains:
+
+```sh
+SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS=example.com,example.org
+```
+
+Comma-separated, case-insensitive, leading `@` optional. Leaving it unset (the default) allows any domain. This only gates the creation of brand-new accounts — an existing user's email domain is never re-checked at login, so changing this list never locks out someone who already has an account.
+
+A few edge cases worth knowing:
+
+- **The very first user is always exempt.** If this list is set before the instance has any users at all, the first SSO login still succeeds (and still becomes owner) regardless of its email domain — otherwise a restrictive list configured on day one, combined with `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`, could permanently lock out the only way in. Set the list correctly (or leave local auth enabled) before onboarding anyone past the first admin if you want the restriction enforced from the start.
+- **Linking SSO to an existing local account is not gated by this list.** An already-signed-in user connecting SSO from Settings (or completing the sensitive step-up flow) can link any OIDC identity to their account, including one on a disallowed domain — this setting only controls whether a *new* account gets auto-created, not which identities an existing account may link.
+
 ## Account authentication methods
 
 A user can have:
@@ -115,6 +130,7 @@ The `first_password_grants` table may be present in full SQLite backups. Grant v
 - **`oidc_error=link_required`**: the identity is unlinked and its email collides with a canonical Scrumboy account. Sign in locally and use Connect SSO.
 - **`oidc_error=auth_time`**: the provider did not honor the sensitive reauthentication contract. Confirm support for `max_age=0` and a valid `auth_time` claim.
 - **`oidc_error=identity_mismatch` or `session_changed`**: the provider identity or Scrumboy session changed during a sensitive operation; start again from Settings.
+- **`oidc_error=domain_not_allowed`**: `SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS` is set and the signing-in identity's email domain isn't on the list. Only applies to first-time signup, not existing accounts.
 
 ## Android packaged app (native handoff)
 

@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "SSO تصدیق کے دوران آپ کا Scrumboy سیشن بدل گیا۔ دوبارہ شروع کریں۔",
   "auth.oidc.error.identity_mismatch": "SSO شناخت تصدیق کیے جانے والے اکاؤنٹ سے مماثل نہیں تھی۔",
   "auth.oidc.error.link_rejected": "SSO منسلک نہیں ہو سکا۔ یقینی بنائیں کہ فراہم کنندہ کا ای میل آپ کے Scrumboy ای میل سے مماثل ہے۔",
+  "auth.oidc.error.domain_not_allowed": "سائن اپ مخصوص ای میل ڈومینز تک محدود ہے، اور آپ کے اکاؤنٹ کا ای میل فہرست میں نہیں ہے۔ رسائی کے لیے منتظم سے رابطہ کریں۔",
   "settings.profile.authentication.local": "مقامی پاس ورڈ",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "مقامی پاس ورڈ + SSO",

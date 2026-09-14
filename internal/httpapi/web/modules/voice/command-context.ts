@@ -78,4 +78,3 @@ export function canRunVoiceMutationInContext(context: VoiceCommandContext): bool
     isAnonymous: isAnonymousBoard(context.board),
   });
 }
-

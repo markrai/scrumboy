@@ -55,6 +55,7 @@ const enCatalog = {
   "auth.login.failed": "Login failed.",
   "auth.oidc.button": "Continue with SSO",
   "auth.oidc.error.email": "A verified email address is required.",
+  "auth.oidc.error.domain_not_allowed": "Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access.",
   "auth.oidc.error.generic": "Authentication failed.",
   "auth.oidc.error.provider": "The identity provider returned an error.",
   "auth.oidc.error.state_invalid": "Login session expired or invalid. Please try again.",
@@ -1683,6 +1684,17 @@ describe("auth view i18n", () => {
     await flushPromises();
 
     expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the specific browser error for a domain-restricted OIDC signup", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+    window.history.replaceState({}, "", "/?oidc_error=domain_not_allowed");
+
+    auth.renderAuth({ next: "/", oidcEnabled: true, localAuthEnabled: true });
+
+    expect(showToastMock).toHaveBeenCalledWith("Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access.");
+    expect(window.location.search).toBe("");
   });
 
   it("preserves explicit next exactly and strips oidc_error from derived SSO return_to", async () => {

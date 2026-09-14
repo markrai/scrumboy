@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Sesi Scrumboy anda berubah semasa pengesahan SSO. Mulakan semula.",
   "auth.oidc.error.identity_mismatch": "Identiti SSO tidak sepadan dengan akaun yang sedang disahkan.",
   "auth.oidc.error.link_rejected": "SSO tidak dapat disambungkan. Pastikan e-mel penyedia sepadan dengan e-mel Scrumboy anda.",
+  "auth.oidc.error.domain_not_allowed": "Pendaftaran dihadkan kepada domain e-mel tertentu, dan e-mel akaun anda tiada dalam senarai. Hubungi pentadbir untuk mendapatkan akses.",
   "settings.profile.authentication.local": "Kata laluan setempat",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Kata laluan setempat + SSO",

@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "نشست Scrumboy شما هنگام بررسی SSO تغییر کرد. دوباره شروع کنید.",
   "auth.oidc.error.identity_mismatch": "هویت SSO با حسابی که بررسی می‌شد مطابقت نداشت.",
   "auth.oidc.error.link_rejected": "اتصال SSO ممکن نشد. بررسی کنید ایمیل ارائه‌دهنده با ایمیل Scrumboy شما یکسان باشد.",
+  "auth.oidc.error.domain_not_allowed": "ثبت‌نام فقط برای دامنه‌های ایمیل خاصی مجاز است و ایمیل حساب شما در فهرست نیست. برای دسترسی با یک مدیر تماس بگیرید.",
   "settings.profile.authentication.local": "گذرواژه محلی",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "گذرواژه محلی + SSO",

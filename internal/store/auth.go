@@ -685,12 +685,25 @@ WHERE oi.issuer = ? AND oi.subject = ?
 }
 
 // CreateUserOIDC creates a new user from an OIDC login and links the identity.
+// It preserves the unrestricted creation contract used by existing store callers.
+func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (User, error) {
+	return s.createUserOIDC(ctx, configuredIssuer, issuer, subject, email, name, true)
+}
+
+// CreateUserOIDCWithDomainPolicy creates a new OIDC user subject to the supplied
+// email-domain decision. The first user remains exempt.
+func (s *Store) CreateUserOIDCWithDomainPolicy(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (User, error) {
+	return s.createUserOIDC(ctx, configuredIssuer, issuer, subject, email, name, emailDomainAllowed)
+}
+
 // If CountUsers==0 AND issuer==configuredIssuer, the user becomes owner (plan section I).
 // configuredIssuer is the canonical issuer from config; ownership is only granted
 // when the identity's issuer matches it, preventing a misconfigured or rogue issuer
 // from claiming the first-owner slot.
+// emailDomainAllowed gates non-bootstrap creation inside the same transaction as
+// the authoritative user count. The first user is always exempt.
 // Returns ErrConflict if the email is already taken by another user.
-func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (User, error) {
+func (s *Store) createUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (User, error) {
 	email = normalizeEmail(email)
 	if email == "" || !strings.Contains(email, "@") {
 		return User{}, fmt.Errorf("%w: invalid email", ErrValidation)
@@ -716,6 +729,9 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 	}
 	if canonicalOwners != 0 {
 		return User{}, ErrConflict
+	}
+	if n > 0 && !emailDomainAllowed {
+		return User{}, ErrOIDCSignupDomainNotAllowed
 	}
 
 	role := SystemRoleUser
