@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "在 SSO 验证期间，您的 Scrumboy 会话发生了变化。请重新开始。",
   "auth.oidc.error.identity_mismatch": "SSO 身份与正在验证的账户不匹配。",
   "auth.oidc.error.link_rejected": "无法连接 SSO。请确认提供商邮箱与您的 Scrumboy 邮箱一致。",
+  "auth.oidc.error.domain_not_allowed": "注册仅限于特定的邮箱域名,您账户的邮箱不在允许列表中。请联系管理员以获取访问权限。",
   "settings.profile.authentication.local": "本地密码",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "本地密码 + SSO",

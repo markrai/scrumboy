@@ -2,6 +2,12 @@ name: Build macOS executables
 
 on:
   workflow_dispatch:
+    inputs:
+      repair_v3_34_0:
+        description: Rebuild and replace missing macOS assets for existing v3.34.0 release
+        required: false
+        default: false
+        type: boolean
   release:
     types: [published]
 
@@ -28,19 +34,106 @@ jobs:
 
     steps:
       - name: Checkout repository
+        if: github.event_name == 'release' || inputs.repair_v3_34_0 != true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           clean: true
+
+      - name: Checkout v3.34.0 release source
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+          ref: 6ada7879e9529725422ad79b4333f6be2e5eff37
+
+      - name: Verify checkout commit for release event
+        if: github.event_name == 'release'
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "Checkout mismatch: HEAD is '${actual}', expected '${EXPECTED_SHA}'." >&2
+            exit 1
+          fi
+          echo "Verified HEAD matches release-event commit ${EXPECTED_SHA}."
+
+      - name: Verify checkout commit for v3.34.0 repair
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "6ada7879e9529725422ad79b4333f6be2e5eff37" ]; then
+            echo "Checkout mismatch: HEAD is '${actual}', expected '6ada7879e9529725422ad79b4333f6be2e5eff37'." >&2
+            exit 1
+          fi
+          echo "Verified HEAD matches reviewed v3.34.0 commit 6ada7879e9529725422ad79b4333f6be2e5eff37."
+
+      - name: Verify live v3.34.0 tag matches reviewed SHA
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Verification only. Literals below are the reviewed repair identity;
+          # API results never influence checkout, naming, or upload tag selection.
+          expected_sha="6ada7879e9529725422ad79b4333f6be2e5eff37"
+          release_tag="v3.34.0"
+
+          if ! gh release view "$release_tag" --repo "$GH_REPO" >/dev/null; then
+            echo "No GitHub Release exists for tag '${release_tag}'." >&2
+            echo "Repair mode only attaches assets to an existing release; it will not create one." >&2
+            exit 1
+          fi
+
+          tag_ref_json="$(gh api "repos/${GH_REPO}/git/ref/tags/${release_tag}")" || {
+            echo "Git tag '${release_tag}' does not exist in the repository." >&2
+            exit 1
+          }
+          object_type="$(printf '%s' "$tag_ref_json" | jq -r '.object.type')"
+          object_sha="$(printf '%s' "$tag_ref_json" | jq -r '.object.sha')"
+          if [ "$object_type" = "commit" ]; then
+            current_tag_commit="$object_sha"
+          elif [ "$object_type" = "tag" ]; then
+            tag_obj_json="$(gh api "repos/${GH_REPO}/git/tags/${object_sha}")"
+            peeled_type="$(printf '%s' "$tag_obj_json" | jq -r '.object.type')"
+            current_tag_commit="$(printf '%s' "$tag_obj_json" | jq -r '.object.sha')"
+            if [ "$peeled_type" != "commit" ]; then
+              echo "Annotated tag '${release_tag}' does not point at a commit (object type: ${peeled_type})." >&2
+              exit 1
+            fi
+          else
+            echo "Git tag '${release_tag}' has unexpected object type '${object_type}'." >&2
+            exit 1
+          fi
+
+          if [ "$current_tag_commit" != "$expected_sha" ]; then
+            echo "Tag '${release_tag}' currently resolves to '${current_tag_commit}'," >&2
+            echo "but the reviewed repair SHA is '${expected_sha}'." >&2
+            echo "Refusing to continue; update the reviewed repair checkout after investigating the mismatch." >&2
+            exit 1
+          fi
+
+          echo "Live tag '${release_tag}' still resolves to reviewed commit ${expected_sha}."
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: internal/httpapi/web/package-lock.json
+          cache-dependency-path: |
+            internal/httpapi/web/package-lock.json
+            mobile/capacitor/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: internal/httpapi/web
+        run: npm ci
+
+      - name: Install Capacitor dependencies for frontend tests
+        working-directory: mobile/capacitor
         run: npm ci
 
       - name: Build frontend
@@ -62,7 +155,8 @@ jobs:
       - name: Prepare artifact names
         id: names
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG_EVENT: ${{ github.event.release.tag_name }}
+          REPAIR_V3_34_0: ${{ inputs.repair_v3_34_0 }}
           RUN_NUMBER: ${{ github.run_number }}
           PLATFORM: ${{ matrix.platform }}
         run: |
@@ -71,7 +165,7 @@ jobs:
           mkdir -p "$artifact_dir"
 
           if [ "$GITHUB_EVENT_NAME" = "release" ]; then
-            tag="$RELEASE_TAG"
+            tag="$RELEASE_TAG_EVENT"
             if [ -z "$tag" ]; then
               echo "Release event did not provide a tag name." >&2
               exit 1
@@ -82,6 +176,10 @@ jobs:
                 exit 1
                 ;;
             esac
+            artifact_stem="scrumboy-${tag}-${PLATFORM}"
+          elif [ "$REPAIR_V3_34_0" = "true" ]; then
+            # Reviewed constant — not derived from workflow inputs.
+            tag="v3.34.0"
             artifact_stem="scrumboy-${tag}-${PLATFORM}"
           else
             artifact_stem="scrumboy-manual-${RUN_NUMBER}-${PLATFORM}"
@@ -277,7 +375,7 @@ jobs:
 
   upload-release-assets:
     name: Attach assets to GitHub Release
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true)
     needs: build-macos-executable
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -424,7 +522,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG_EVENT: ${{ github.event.release.tag_name }}
+          REPAIR_V3_34_0: ${{ inputs.repair_v3_34_0 }}
           ARM64_ARCHIVE: ${{ steps.resolve.outputs.arm64_archive }}
           AMD64_ARCHIVE: ${{ steps.resolve.outputs.amd64_archive }}
           ARM64_SHA: ${{ steps.resolve.outputs.arm64_sha }}
@@ -433,6 +533,20 @@ jobs:
           AMD64_PROVENANCE: ${{ steps.resolve.outputs.amd64_provenance }}
         run: |
           set -e
+
+          if [ "$EVENT_NAME" = "release" ]; then
+            release_tag="$RELEASE_TAG_EVENT"
+            if [ -z "$release_tag" ]; then
+              echo "Release event did not provide a tag name." >&2
+              exit 1
+            fi
+          elif [ "$REPAIR_V3_34_0" = "true" ]; then
+            # Reviewed constant — not derived from workflow inputs.
+            release_tag="v3.34.0"
+          else
+            echo "Upload job ran without a release event or approved repair mode." >&2
+            exit 1
+          fi
 
           for path in \
             "$ARM64_ARCHIVE" "$ARM64_SHA" "$ARM64_PROVENANCE" \
@@ -444,7 +558,10 @@ jobs:
             fi
           done
 
-          gh release upload "$RELEASE_TAG" \
+          # --clobber replaces only assets whose filenames match the files being
+          # uploaded (e.g. scrumboy-vX.Y.Z-darwin-*.tar.gz[.sha256|.intoto.jsonl]).
+          # Unrelated release assets (Windows binaries, notes, etc.) are left intact.
+          gh release upload "$release_tag" \
             "$ARM64_ARCHIVE" \
             "$ARM64_SHA" \
             "$ARM64_PROVENANCE" \

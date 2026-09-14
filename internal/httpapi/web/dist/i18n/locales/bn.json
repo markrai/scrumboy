@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "SSO যাচাইয়ের সময় আপনার Scrumboy সেশন বদলে গেছে। আবার শুরু করুন।",
   "auth.oidc.error.identity_mismatch": "SSO পরিচয়টি যাচাই করা অ্যাকাউন্টের সঙ্গে মেলেনি।",
   "auth.oidc.error.link_rejected": "SSO সংযুক্ত করা যায়নি। প্রদানকারীর ইমেইল আপনার Scrumboy ইমেইলের সঙ্গে মেলে কি না যাচাই করুন।",
+  "auth.oidc.error.domain_not_allowed": "সাইন-আপ নির্দিষ্ট ইমেইল ডোমেইনে সীমাবদ্ধ, এবং আপনার অ্যাকাউন্টের ইমেইল তালিকায় নেই। অ্যাক্সেসের জন্য একজন প্রশাসকের সাথে যোগাযোগ করুন।",
   "settings.profile.authentication.local": "স্থানীয় পাসওয়ার্ড",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "স্থানীয় পাসওয়ার্ড + SSO",

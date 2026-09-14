@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "SSO の確認中に Scrumboy セッションが変更されました。もう一度開始してください。",
   "auth.oidc.error.identity_mismatch": "SSO ID が確認対象のアカウントと一致しませんでした。",
   "auth.oidc.error.link_rejected": "SSO を接続できませんでした。プロバイダーのメールアドレスが Scrumboy のメールアドレスと一致することを確認してください。",
+  "auth.oidc.error.domain_not_allowed": "サインアップは特定のメールドメインに制限されており、あなたのアカウントのメールアドレスはリストにありません。アクセスするには管理者に連絡してください。",
   "settings.profile.authentication.local": "ローカルパスワード",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "ローカルパスワード + SSO",

@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Votre session Scrumboy a changé pendant la vérification SSO. Recommencez.",
   "auth.oidc.error.identity_mismatch": "L’identité SSO ne correspond pas au compte en cours de vérification.",
   "auth.oidc.error.link_rejected": "Impossible de connecter le SSO. Vérifiez que l’adresse e-mail du fournisseur correspond à votre adresse e-mail Scrumboy.",
+  "auth.oidc.error.domain_not_allowed": "L’inscription est limitée à certains domaines d’e-mail, et l’adresse e-mail de votre compte n’est pas sur la liste. Contactez un administrateur pour obtenir l’accès.",
   "settings.profile.authentication.local": "Mot de passe local",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Mot de passe local + SSO",

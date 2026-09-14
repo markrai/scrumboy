@@ -18,6 +18,7 @@ var (
 	ErrEncryptionNotConfigured    = errs.ErrEncryptionNotConfigured
 	ErrSprintsDisabled            = errors.New("sprints are disabled for this project")
 	ErrSnapshotSuperseded         = errors.New("calendar snapshot configuration changed")
+	ErrOIDCSignupDomainNotAllowed = errors.New("OIDC signup email domain is not allowed")
 )
 
 const (

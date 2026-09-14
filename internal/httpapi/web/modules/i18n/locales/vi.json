@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Phiên Scrumboy của bạn đã thay đổi trong khi xác minh SSO. Hãy bắt đầu lại.",
   "auth.oidc.error.identity_mismatch": "Danh tính SSO không khớp với tài khoản đang được xác minh.",
   "auth.oidc.error.link_rejected": "Không thể kết nối SSO. Hãy kiểm tra email của nhà cung cấp có khớp với email Scrumboy của bạn hay không.",
+  "auth.oidc.error.domain_not_allowed": "Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access.",
   "settings.profile.authentication.local": "Mật khẩu cục bộ",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Mật khẩu cục bộ + SSO",

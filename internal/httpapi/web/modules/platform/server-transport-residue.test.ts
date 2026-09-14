@@ -29,7 +29,7 @@ function locationsFor(pattern: RegExp): string[] {
 describe('server transport residue', () => {
   it('allows direct fetch only for the browser transport and packaged assets', () => {
     expect(locationsFor(/\bfetch\s*\(/g)).toEqual([
-      'i18n/index.ts:678',
+      'i18n/index.ts:679',
       'mermaid-semantic-edges.ts:110',
       'platform/browser-server-transport.ts:13',
       'views/board-prefetch-cache.ts:22',

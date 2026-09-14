@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Sesi Scrumboy Anda berubah selama verifikasi SSO. Mulai lagi.",
   "auth.oidc.error.identity_mismatch": "Identitas SSO tidak cocok dengan akun yang sedang diverifikasi.",
   "auth.oidc.error.link_rejected": "SSO tidak dapat dihubungkan. Pastikan email dari penyedia cocok dengan email Scrumboy Anda.",
+  "auth.oidc.error.domain_not_allowed": "Pendaftaran dibatasi untuk domain email tertentu, dan email akun Anda tidak ada dalam daftar. Hubungi administrator untuk mendapatkan akses.",
   "settings.profile.authentication.local": "Kata sandi lokal",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Kata sandi lokal + SSO",

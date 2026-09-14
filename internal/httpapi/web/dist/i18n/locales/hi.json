@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "SSO सत्यापन के दौरान आपका Scrumboy सत्र बदल गया। फिर से शुरू करें।",
   "auth.oidc.error.identity_mismatch": "SSO पहचान सत्यापित किए जा रहे खाते से मेल नहीं खाती।",
   "auth.oidc.error.link_rejected": "SSO कनेक्ट नहीं किया जा सका। जाँचें कि प्रदाता का ईमेल आपके Scrumboy ईमेल से मेल खाता है।",
+  "auth.oidc.error.domain_not_allowed": "साइन-अप केवल विशिष्ट ईमेल डोमेन तक सीमित है, और आपके खाते का ईमेल सूची में नहीं है। पहुँच के लिए किसी प्रशासक से संपर्क करें।",
   "settings.profile.authentication.local": "स्थानीय पासवर्ड",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "स्थानीय पासवर्ड + SSO",

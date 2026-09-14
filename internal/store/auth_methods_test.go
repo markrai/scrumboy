@@ -7,6 +7,72 @@ import (
 	"time"
 )
 
+func TestCreateUserOIDCWithDomainPolicy(t *testing.T) {
+	const issuer = "https://idp.example"
+
+	t.Run("first user is exempt and becomes bootstrap owner", func(t *testing.T) {
+		st, _, cleanup := newTestStoreWithSQL(t)
+		defer cleanup()
+		st.configuredOIDCIssuer = issuer
+
+		u, err := st.CreateUserOIDCWithDomainPolicy(
+			context.Background(), issuer, issuer, "first-sub", "first@disallowed.example", "First", false,
+		)
+		if err != nil {
+			t.Fatalf("create first OIDC user: %v", err)
+		}
+		if !u.IsBootstrap || u.SystemRole != SystemRoleOwner {
+			t.Fatalf("first OIDC user = %+v, want bootstrap owner", u)
+		}
+	})
+
+	t.Run("subsequent disallowed user is rejected without creation", func(t *testing.T) {
+		st, _, cleanup := newTestStoreWithSQL(t)
+		defer cleanup()
+		st.configuredOIDCIssuer = issuer
+		ctx := context.Background()
+		if _, err := st.BootstrapUser(ctx, "owner@example.com", "Password123!", "Owner"); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := st.CreateUserOIDCWithDomainPolicy(
+			ctx, issuer, issuer, "blocked-sub", "blocked@disallowed.example", "Blocked", false,
+		)
+		if !errors.Is(err, ErrOIDCSignupDomainNotAllowed) {
+			t.Fatalf("create disallowed OIDC user error = %v, want ErrOIDCSignupDomainNotAllowed", err)
+		}
+		if n, countErr := st.CountUsers(ctx); countErr != nil || n != 1 {
+			t.Fatalf("user count after rejection = %d, err=%v, want 1", n, countErr)
+		}
+		if _, lookupErr := st.GetUserByOIDCIdentity(ctx, issuer, "blocked-sub"); !errors.Is(lookupErr, ErrNotFound) {
+			t.Fatalf("rejected OIDC identity lookup error = %v, want ErrNotFound", lookupErr)
+		}
+	})
+
+	t.Run("canonical email collision keeps conflict precedence", func(t *testing.T) {
+		st, _, cleanup := newTestStoreWithSQL(t)
+		defer cleanup()
+		st.configuredOIDCIssuer = issuer
+		ctx := context.Background()
+		if _, err := st.BootstrapUser(ctx, "owner@example.com", "Password123!", "Owner"); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := st.CreateUserOIDCWithDomainPolicy(
+			ctx, issuer, issuer, "collision-sub", "owner@example.com", "Collision", false,
+		)
+		if !errors.Is(err, ErrConflict) {
+			t.Fatalf("create colliding OIDC user error = %v, want ErrConflict", err)
+		}
+		if n, countErr := st.CountUsers(ctx); countErr != nil || n != 1 {
+			t.Fatalf("user count after collision = %d, err=%v, want 1", n, countErr)
+		}
+		if _, lookupErr := st.GetUserByOIDCIdentity(ctx, issuer, "collision-sub"); !errors.Is(lookupErr, ErrNotFound) {
+			t.Fatalf("colliding OIDC identity lookup error = %v, want ErrNotFound", lookupErr)
+		}
+	})
+}
+
 func TestDerivedAuthenticationMethodsUseConfiguredIssuer(t *testing.T) {
 	st, _, cleanup := newTestStoreWithSQL(t)
 	defer cleanup()

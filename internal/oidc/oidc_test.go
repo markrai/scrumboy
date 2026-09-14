@@ -186,6 +186,35 @@ func TestNormalizeIssuer(t *testing.T) {
 	}
 }
 
+func TestConfigEmailDomainAllowed(t *testing.T) {
+	tests := []struct {
+		name    string
+		domains []string
+		email   string
+		want    bool
+	}{
+		{"no allowlist permits anything", nil, "user@anything.example", true},
+		{"empty allowlist permits anything", []string{}, "user@anything.example", true},
+		{"matching domain", []string{"example.com"}, "user@example.com", true},
+		{"matching domain case-insensitive", []string{"example.com"}, "USER@EXAMPLE.COM", true},
+		{"non-matching domain", []string{"example.com"}, "user@other.example", false},
+		{"subdomain is not an exact match", []string{"example.com"}, "user@sub.example.com", false},
+		{"suffix attack is not a match", []string{"example.com"}, "user@evil-example.com", false},
+		{"one of several domains", []string{"example.com", "example.org"}, "user@example.org", true},
+		{"missing @", []string{"example.com"}, "not-an-email", false},
+		{"trailing @", []string{"example.com"}, "user@", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{AllowedEmailDomains: tt.domains}
+			got := cfg.EmailDomainAllowed(tt.email)
+			if got != tt.want {
+				t.Errorf("EmailDomainAllowed(%q) with domains %v = %v, want %v", tt.email, tt.domains, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsEmailVerified(t *testing.T) {
 	tests := []struct {
 		name string

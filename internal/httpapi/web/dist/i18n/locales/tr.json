@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "SSO doğrulaması sırasında Scrumboy oturumunuz değişti. Yeniden başlayın.",
   "auth.oidc.error.identity_mismatch": "SSO kimliği doğrulanan hesapla eşleşmedi.",
   "auth.oidc.error.link_rejected": "SSO bağlanamadı. Sağlayıcı e-postasının Scrumboy e-postanızla eşleştiğini doğrulayın.",
+  "auth.oidc.error.domain_not_allowed": "Kayıt, belirli e-posta alan adlarıyla sınırlıdır ve hesabınızın e-postası listede değil. Erişim için bir yöneticiyle iletişime geçin.",
   "settings.profile.authentication.local": "Yerel parola",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Yerel parola + SSO",

@@ -104,6 +104,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "auth.oidc.error.auth_time": "Your SSO provider did not supply a valid recent-authentication time. Ask the operator to verify max_age and auth_time support.",
   "auth.oidc.error.identity_mismatch": "The SSO identity did not match the account being verified.",
   "auth.oidc.error.link_rejected": "SSO could not be connected. Verify that the provider email matches your Scrumboy email.",
+  "auth.oidc.error.domain_not_allowed": "Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access.",
   "auth.oidc.error.link_required": "This SSO identity cannot be signed in automatically. Sign in with your Scrumboy password and use Connect SSO.",
   "auth.oidc.error.session_changed": "Your Scrumboy session changed during SSO verification. Start again.",
   "auth.oidc.error.generic": "Authentication failed.",

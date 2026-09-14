@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Sua sessão do Scrumboy mudou durante a verificação por SSO. Comece novamente.",
   "auth.oidc.error.identity_mismatch": "A identidade SSO não corresponde à conta que estava sendo verificada.",
   "auth.oidc.error.link_rejected": "Não foi possível conectar o SSO. Verifique se o e-mail do provedor corresponde ao seu e-mail do Scrumboy.",
+  "auth.oidc.error.domain_not_allowed": "O cadastro é restrito a domínios de e-mail específicos, e o e-mail da sua conta não está na lista. Entre em contato com um administrador para obter acesso.",
   "settings.profile.authentication.local": "Senha local",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Senha local + SSO",

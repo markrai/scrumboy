@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "SSO 확인 중 Scrumboy 세션이 변경되었습니다. 다시 시작하세요.",
   "auth.oidc.error.identity_mismatch": "SSO ID가 확인 중인 계정과 일치하지 않습니다.",
   "auth.oidc.error.link_rejected": "SSO를 연결할 수 없습니다. 공급자 이메일이 Scrumboy 이메일과 일치하는지 확인하세요.",
+  "auth.oidc.error.domain_not_allowed": "가입은 특정 이메일 도메인으로 제한되어 있으며, 회원님 계정의 이메일은 목록에 없습니다. 접근 권한을 얻으려면 관리자에게 문의하세요.",
   "settings.profile.authentication.local": "로컬 비밀번호",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "로컬 비밀번호 + SSO",

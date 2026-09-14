@@ -1254,6 +1254,7 @@
   "auth.oidc.error.session_changed": "Сеанс Scrumboy змінився під час перевірки SSO. Почніть знову.",
   "auth.oidc.error.identity_mismatch": "Ідентичність SSO не відповідає обліковому запису, що перевіряється.",
   "auth.oidc.error.link_rejected": "Не вдалося підключити SSO. Переконайтеся, що адреса електронної пошти постачальника збігається з адресою Scrumboy.",
+  "auth.oidc.error.domain_not_allowed": "Реєстрація обмежена певними доменами електронної пошти, а електронна адреса вашого облікового запису відсутня у списку. Зверніться до адміністратора, щоб отримати доступ.",
   "settings.profile.authentication.local": "Локальний пароль",
   "settings.profile.authentication.sso": "SSO",
   "settings.profile.authentication.dual": "Локальний пароль + SSO",
