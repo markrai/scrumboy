@@ -68,7 +68,9 @@ describe('SseConnectionManager stream boundary', () => {
 
   it('uses browser EventSource through the browser transport', () => {
     const source = new FakeStream();
-    const EventSourceMock = vi.fn(() => source);
+    const EventSourceMock = vi.fn(function EventSourceMock() {
+      return source;
+    });
     vi.stubGlobal('EventSource', EventSourceMock);
     installAppRuntime(getBrowserRuntimeForTests());
     const onMessage = vi.fn();
