@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 
 const root = process.cwd();
 const targets = [
@@ -8,16 +9,29 @@ const targets = [
 ];
 
 const violations = [];
+const dialogNames = new Set(["alert", "confirm", "prompt"]);
+
+function isBrowserDialogCall(expression) {
+  if (ts.isIdentifier(expression)) return dialogNames.has(expression.text);
+  return ts.isPropertyAccessExpression(expression)
+    && ts.isIdentifier(expression.expression)
+    && expression.expression.text === "window"
+    && dialogNames.has(expression.name.text);
+}
 
 function scanFile(filePath) {
   const content = readFileSync(filePath, "utf8");
-  const lines = content.split(/\r?\n/);
-  const pattern = /\b(?:window\.)?(?:alert|confirm|prompt)\s*\(/;
-  lines.forEach((line, idx) => {
-    if (pattern.test(line)) {
-      violations.push(`${filePath}:${idx + 1}`);
+  const source = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true);
+
+  function visit(node) {
+    if (ts.isCallExpression(node) && isBrowserDialogCall(node.expression)) {
+      const { line } = source.getLineAndCharacterOfPosition(node.expression.getStart(source));
+      violations.push(`${filePath}:${line + 1}`);
     }
-  });
+    ts.forEachChild(node, visit);
+  }
+
+  visit(source);
 }
 
 function scanPath(pathValue) {

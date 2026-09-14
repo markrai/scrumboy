@@ -199,6 +199,7 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_get",
     "todos_search",
     "todos_update",
+    "todos_countCompleted",
     "todos_delete",
     "todos_move",
     "todos_linksList",
@@ -279,6 +280,7 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
 - `todos_get`
 - `todos_search`
 - `todos_update`
+- `todos_countCompleted`
 - `todos_delete`
 - `todos_move`
 - `todos_linksList`
@@ -472,6 +474,7 @@ todos_create
 todos_get
 todos_search
 todos_update
+todos_countCompleted
 todos_delete
 todos_move
 todos_linksList

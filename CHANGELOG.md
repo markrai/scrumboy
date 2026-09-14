@@ -2,6 +2,20 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
 
+## [3.34.2] - 2026-09-14
+
+### Changed
+
+- **Frontend dependency upgrades** - Bump `dompurify` to `3.4.15`, `mermaid` to
+  `11.17.2`, `@playwright/test` to `^1.63.0`, and `happy-dom` to `^20.14.0`;
+  sync vendored `/vendor` browser assets and documentation pins.
+
+### Security
+
+- **Vitest CVE-2026-84373** - Upgrade `vitest` to `4.1.11` so the web test
+  toolchain resolves the patched release; adjust SSE client tests for Vitest 4
+  compatibility. Dev/test tooling only; no production runtime dependency change.
+
 ## [3.34.1] - 2026-09-14
 
 ### Added
