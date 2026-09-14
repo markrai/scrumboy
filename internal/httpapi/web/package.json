@@ -20,7 +20,7 @@
     "build:capacitor-web": "node scripts/build-capacitor-web.mjs",
     "verify:capacitor-web": "node scripts/verify-capacitor-web.mjs",
     "build": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run generate:landing && tsc && npm run copy:i18n",
-    "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && vitest run",
+    "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && node scripts/run-vitest.mjs run",
     "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"
   },
   "devDependencies": {
