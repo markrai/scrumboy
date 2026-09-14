@@ -114,7 +114,9 @@ describe('BrowserServerTransport parity', () => {
 
   it('constructs the same absolute browser EventSource URL and exposes close', () => {
     const close = vi.fn();
-    const EventSourceMock = vi.fn(() => ({ onopen: null, onmessage: null, onerror: null, close }));
+    const EventSourceMock = vi.fn(function EventSourceMock() {
+      return { onopen: null, onmessage: null, onerror: null, close };
+    });
     vi.stubGlobal('EventSource', EventSourceMock);
 
     const stream = new BrowserServerTransport().openEventStream('/api/me/realtime');
