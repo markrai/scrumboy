@@ -1,6 +1,28 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+def envRaw = { String name ->
+    def value = System.getenv(name)
+    return value != null ? value : ""
+}
+def envPresent = { String value ->
+    return !value.trim().isEmpty()
+}
+def uploadStoreFile = envRaw("SCRUMBOY_UPLOAD_STORE_FILE")
+def uploadStorePassword = envRaw("SCRUMBOY_UPLOAD_STORE_PASSWORD")
+def uploadKeyAlias = envRaw("SCRUMBOY_UPLOAD_KEY_ALIAS")
+def uploadKeyPassword = envRaw("SCRUMBOY_UPLOAD_KEY_PASSWORD")
+def uploadSigningEnabled =
+        envPresent(uploadStoreFile) &&
+        envPresent(uploadStorePassword) &&
+        envPresent(uploadKeyAlias) &&
+        envPresent(uploadKeyPassword)
+if (uploadSigningEnabled) {
+    logger.lifecycle("Release upload signing is enabled from environment variables.")
+} else {
+    logger.lifecycle("Release upload signing is not enabled; the release build remains unsigned.")
+}
+
 android {
     namespace = "com.markrai.scrumboy"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -17,10 +39,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    if (uploadSigningEnabled) {
+        signingConfigs {
+            release {
+                storeFile file(uploadStoreFile)
+                storePassword uploadStorePassword
+                keyAlias uploadKeyAlias
+                keyPassword uploadKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (uploadSigningEnabled) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
