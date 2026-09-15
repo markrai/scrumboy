@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
 
@@ -52,22 +53,64 @@ public class DashboardWidgetSnapshotStoreTest {
     }
 
     @Test
-    public void truncatesItemCountAndTitles() {
+    public void truncatesTitlesButNotAssignedItemCount() {
         StringBuilder title = new StringBuilder();
         for (int i = 0; i < 200; i++) title.append('a');
-        List<DashboardWidgetSnapshot.Item> items = List.of(
-            item(1, title.toString()),
-            item(2, "two"),
-            item(3, "three"),
-            item(4, "four"),
-            item(5, "five")
-        );
+        List<DashboardWidgetSnapshot.Item> items = new ArrayList<>();
+        for (int i = 1; i <= 25; i++) {
+            items.add(item(i, i == 1 ? title.toString() : "t" + i));
+        }
         DashboardWidgetSnapshot snapshot = DashboardWidgetSnapshot.sanitize(
-            new DashboardWidgetSnapshot("https://scrumboy.example", 1, 10, 5, 5, items)
+            new DashboardWidgetSnapshot("https://scrumboy.example", 1, 10, 25, 5, items)
         );
         assertNotNull(snapshot);
-        assertEquals(4, snapshot.items.size());
+        assertEquals(25, snapshot.items.size());
         assertEquals(DashboardWidgetSnapshot.MAX_TITLE_CHARS, snapshot.items.get(0).title.length());
+        assertEquals(25, snapshot.items.get(24).localId);
+    }
+
+    @Test
+    public void storesTwentyFiveAssignedTodosInOrder() {
+        MemoryWidgetStore memory = new MemoryWidgetStore();
+        DashboardWidgetSnapshotStore store = new DashboardWidgetSnapshotStore(memory);
+        store.setCurrentUserId(1);
+        List<DashboardWidgetSnapshot.Item> items = new ArrayList<>();
+        for (int i = 1; i <= 25; i++) items.add(item(i, "Todo " + i));
+        DashboardWidgetSnapshot snapshot = new DashboardWidgetSnapshot(
+            "https://scrumboy.example",
+            1,
+            10,
+            25,
+            5,
+            items
+        );
+        assertTrue(store.saveSnapshot(snapshot));
+        DashboardWidgetSnapshot loaded = store.loadSnapshot();
+        assertNotNull(loaded);
+        assertEquals(25, loaded.items.size());
+        assertEquals(1, loaded.items.get(0).localId);
+        assertEquals("Todo 25", loaded.items.get(24).title);
+    }
+
+    @Test
+    public void failedSaveKeepsPreviousCompleteSnapshot() {
+        MemoryWidgetStore memory = new MemoryWidgetStore();
+        DashboardWidgetSnapshotStore store = new DashboardWidgetSnapshotStore(memory);
+        store.setCurrentUserId(1);
+        assertTrue(store.saveSnapshot(snapshot("https://scrumboy.example", 1, "Complete")));
+        memory.failNextSnapshotWrite = true;
+        List<DashboardWidgetSnapshot.Item> items = new ArrayList<>();
+        for (int i = 1; i <= 25; i++) items.add(item(i, "Partial " + i));
+        assertFalse(store.saveSnapshot(new DashboardWidgetSnapshot(
+            "https://scrumboy.example",
+            1,
+            11,
+            25,
+            5,
+            items
+        )));
+        assertEquals("Complete", store.loadSnapshot().items.get(0).title);
+        assertEquals(1, store.loadSnapshot().items.size());
     }
 
     @Test
@@ -91,6 +134,12 @@ public class DashboardWidgetSnapshotStoreTest {
         store.setCurrentUserId(2);
         assertNull(store.loadSnapshot());
         assertEquals(Long.valueOf(2L), store.currentUserId());
+        assertTrue(DashboardWidgetCollection.rows(DashboardWidgetViewModel.resolve(
+            "https://scrumboy.example",
+            true,
+            store.currentUserId(),
+            store.loadSnapshot()
+        )).isEmpty());
     }
 
     @Test

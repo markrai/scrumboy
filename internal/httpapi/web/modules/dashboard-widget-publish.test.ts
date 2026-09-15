@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   hydrateDashboardWidgetFromNetwork,
+  publishCompleteDashboardWidgetSnapshot,
   publishDashboardWidgetSnapshot,
   setDashboardWidgetCurrentUser,
 } from './dashboard-widget-publish.js';
@@ -147,5 +148,116 @@ describe('dashboard widget publication', () => {
     await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(1));
     expect(identityReady).toBe(true);
     expect(apiFetchMock).toHaveBeenCalled();
+  });
+
+  it('follows Dashboard pagination until the complete ordered list is published', async () => {
+    const { publish } = installMobile(undefined);
+    getUserMock.mockReturnValue({ id: 7 });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      const url = String(path);
+      if (url.includes('/summary')) return { assignedCount: 3, totalAssignedStoryPoints: 3, wipCount: 1 };
+      if (url.includes('sort=board')) throw new Error('unexpected board sort');
+      if (!url.includes('cursor=')) {
+        return {
+          items: [
+            { ...todos[0], localId: 1, title: 'A' },
+            { ...todos[0], localId: 2, title: 'B' },
+          ],
+          nextCursor: 'page-2',
+        };
+      }
+      if (url.includes('cursor=page-2')) {
+        return { items: [{ ...todos[0], localId: 3, title: 'C' }], nextCursor: null };
+      }
+      throw new Error(`unexpected todos url ${url}`);
+    });
+
+    await publishCompleteDashboardWidgetSnapshot(7);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].items.map((item: { localId: number }) => item.localId)).toEqual([1, 2, 3]);
+    expect(apiFetchMock.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/todos'))).toEqual([
+      '/api/dashboard/todos?limit=20',
+      '/api/dashboard/todos?limit=20&cursor=page-2',
+    ]);
+  });
+
+  it('keeps the previous snapshot when a later Dashboard page fails', async () => {
+    const { publish } = installMobile(undefined);
+    getUserMock.mockReturnValue({ id: 7 });
+    apiFetchMock.mockImplementation(async (path: string) => {
+      const url = String(path);
+      if (url.includes('/summary')) return summary;
+      if (!url.includes('cursor=')) {
+        return { items: todos, nextCursor: 'page-2' };
+      }
+      throw new Error('page two failed');
+    });
+
+    await publishCompleteDashboardWidgetSnapshot(7);
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it('preserves board sort across every Dashboard todos page', async () => {
+    const { publish } = installMobile(undefined);
+    getUserMock.mockReturnValue({ id: 7 });
+    getDashboardTodoSortMock.mockReturnValue('board');
+    apiFetchMock.mockImplementation(async (path: string) => {
+      const url = String(path);
+      if (url.includes('/summary')) return summary;
+      if (!url.includes('sort=board')) throw new Error(`missing board sort: ${url}`);
+      if (!url.includes('cursor=')) return { items: todos, nextCursor: 'b2' };
+      return { items: [{ ...todos[0], localId: 8, title: 'Next' }], nextCursor: null };
+    });
+
+    await publishCompleteDashboardWidgetSnapshot(7);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].items).toHaveLength(2);
+  });
+
+  it('latest complete refresh wins when an older refresh finishes later', async () => {
+    const { publish } = installMobile(undefined);
+    getUserMock.mockReturnValue({ id: 7 });
+    getDashboardTodoSortMock.mockReturnValue('activity');
+
+    let releaseActivityTodos: () => void = () => undefined;
+    const activityTodosGate = new Promise<void>((resolve) => {
+      releaseActivityTodos = resolve;
+    });
+    let activityTodosStarted = false;
+
+    apiFetchMock.mockImplementation(async (path: string) => {
+      const url = String(path);
+      if (url.includes('/summary')) {
+        return { assignedCount: 1, totalAssignedStoryPoints: 1, wipCount: 1 };
+      }
+      if (url.includes('sort=board')) {
+        return { items: [{ ...todos[0], localId: 20, title: 'Board-order' }], nextCursor: null };
+      }
+      // Activity (default) todos page: hold so refresh A stays in flight.
+      activityTodosStarted = true;
+      await activityTodosGate;
+      return { items: [{ ...todos[0], localId: 10, title: 'Activity-order' }], nextCursor: null };
+    });
+
+    const refreshA = publishCompleteDashboardWidgetSnapshot(7);
+    await vi.waitFor(() => expect(activityTodosStarted).toBe(true));
+
+    getDashboardTodoSortMock.mockReturnValue('board');
+    await publishCompleteDashboardWidgetSnapshot(7);
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].items.map((item: { localId: number; title: string }) => ({
+      localId: item.localId,
+      title: item.title,
+    }))).toEqual([{ localId: 20, title: 'Board-order' }]);
+
+    releaseActivityTodos();
+    await refreshA;
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0][0].items.map((item: { localId: number; title: string }) => ({
+      localId: item.localId,
+      title: item.title,
+    }))).toEqual([{ localId: 20, title: 'Board-order' }]);
   });
 });

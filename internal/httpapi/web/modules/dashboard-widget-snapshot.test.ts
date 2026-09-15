@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import {
-  DASHBOARD_WIDGET_MAX_ITEMS,
   mapDashboardWidgetSnapshot,
 } from './dashboard-widget-snapshot.js';
 import type { DashboardSummary, DashboardTodo } from './types.js';
@@ -86,7 +85,7 @@ describe('mapDashboardWidgetSnapshot', () => {
     expect(payload?.items[0]).not.toHaveProperty('projectImage');
   });
 
-  it('maps empty todos and caps persisted items', () => {
+  it('maps empty todos and keeps the full assigned collection in order', () => {
     expect(mapDashboardWidgetSnapshot({
       userId: 1,
       fetchedAtMs: 10,
@@ -94,14 +93,17 @@ describe('mapDashboardWidgetSnapshot', () => {
       todos: [],
     })?.items).toEqual([]);
 
-    const todos = Array.from({ length: 8 }, (_, index) => todo({ localId: index + 1, title: `T${index + 1}` }));
+    const todos = Array.from({ length: 25 }, (_, index) => todo({ localId: index + 1, title: `T${index + 1}` }));
     const payload = mapDashboardWidgetSnapshot({
       userId: 1,
       fetchedAtMs: 10,
-      summary: summary({ assignedCount: 8, wipCount: 8 }),
+      summary: summary({ assignedCount: 25, wipCount: 8 }),
       todos,
     });
-    expect(payload?.items).toHaveLength(DASHBOARD_WIDGET_MAX_ITEMS);
+    expect(payload?.items).toHaveLength(25);
+    expect(payload?.items.map((item) => item.localId)).toEqual(
+      Array.from({ length: 25 }, (_, index) => index + 1),
+    );
   });
 
   it('drops unsafe status colors', () => {

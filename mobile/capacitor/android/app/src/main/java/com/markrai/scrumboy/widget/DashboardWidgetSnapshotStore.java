@@ -2,15 +2,24 @@ package com.markrai.scrumboy.widget;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 /**
  * Persists a sanitized Dashboard widget snapshot and an independently stored current-user id.
- * Snapshot userId must be checked against {@link #currentUserId()}, never against itself.
+ * Snapshot JSON lives in an app-private file so an unbounded assigned-work collection
+ * is not forced through SharedPreferences. Snapshot userId must be checked against
+ * {@link #currentUserId()}, never against itself.
  */
 public final class DashboardWidgetSnapshotStore {
     static final String PREFERENCES_NAME = "scrumboy_dashboard_widget_v1";
     static final String SNAPSHOT_KEY = "snapshot";
     static final String CURRENT_USER_ID_KEY = "current_user_id";
+    static final String SNAPSHOT_FILE_NAME = "scrumboy_dashboard_widget_snapshot.json";
 
     interface Store {
         String getString(String key, String fallback);
@@ -19,13 +28,21 @@ public final class DashboardWidgetSnapshotStore {
         void putString(String key, String value);
         void putLong(String key, long value);
         void remove(String key);
+        String readSnapshotJson();
+        boolean writeSnapshotJson(String json);
+        void deleteSnapshotJson();
     }
 
-    private static final class SharedPreferencesStore implements Store {
+    private static final class SharedPreferencesMetadata implements Store {
         private final SharedPreferences preferences;
+        private final File snapshotFile;
 
-        SharedPreferencesStore(SharedPreferences preferences) {
+        SharedPreferencesMetadata(SharedPreferences preferences, File snapshotFile) {
             this.preferences = preferences;
+            this.snapshotFile = snapshotFile;
+            if (preferences.contains(SNAPSHOT_KEY)) {
+                preferences.edit().remove(SNAPSHOT_KEY).apply();
+            }
         }
 
         @Override
@@ -57,12 +74,65 @@ public final class DashboardWidgetSnapshotStore {
         public void remove(String key) {
             preferences.edit().remove(key).apply();
         }
+
+        @Override
+        public String readSnapshotJson() {
+            if (snapshotFile == null || !snapshotFile.isFile()) return null;
+            try {
+                return new String(Files.readAllBytes(snapshotFile.toPath()), StandardCharsets.UTF_8);
+            } catch (IOException error) {
+                return null;
+            }
+        }
+
+        @Override
+        public boolean writeSnapshotJson(String json) {
+            if (snapshotFile == null || json == null) return false;
+            File tmp = new File(snapshotFile.getAbsolutePath() + ".tmp");
+            try {
+                File parent = snapshotFile.getParentFile();
+                if (parent != null) Files.createDirectories(parent.toPath());
+                Files.write(tmp.toPath(), json.getBytes(StandardCharsets.UTF_8));
+                try {
+                    Files.move(
+                        tmp.toPath(),
+                        snapshotFile.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                    );
+                } catch (AtomicMoveNotSupportedException error) {
+                    Files.move(tmp.toPath(), snapshotFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+                return true;
+            } catch (IOException error) {
+                try {
+                    Files.deleteIfExists(tmp.toPath());
+                } catch (IOException ignored) {
+                    // Previous complete snapshot file is left in place.
+                }
+                return false;
+            }
+        }
+
+        @Override
+        public void deleteSnapshotJson() {
+            if (snapshotFile == null) return;
+            try {
+                Files.deleteIfExists(snapshotFile.toPath());
+                Files.deleteIfExists(new File(snapshotFile.getAbsolutePath() + ".tmp").toPath());
+            } catch (IOException ignored) {
+                // Best-effort delete; metadata clear still proceeds.
+            }
+        }
     }
 
     private final Store store;
 
     public DashboardWidgetSnapshotStore(Context context) {
-        this(new SharedPreferencesStore(context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)));
+        this(new SharedPreferencesMetadata(
+            context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE),
+            new File(context.getFilesDir(), SNAPSHOT_FILE_NAME)
+        ));
     }
 
     DashboardWidgetSnapshotStore(Store store) {
@@ -95,23 +165,23 @@ public final class DashboardWidgetSnapshotStore {
             return false;
         }
         try {
-            store.putString(SNAPSHOT_KEY, sanitized.toJson());
-            return true;
+            return store.writeSnapshotJson(sanitized.toJson());
         } catch (Exception error) {
             return false;
         }
     }
 
     public synchronized DashboardWidgetSnapshot loadSnapshot() {
-        return DashboardWidgetSnapshot.parse(store.getString(SNAPSHOT_KEY, null));
+        return DashboardWidgetSnapshot.parse(store.readSnapshotJson());
     }
 
     public synchronized void clearSnapshot() {
+        store.deleteSnapshotJson();
         store.remove(SNAPSHOT_KEY);
     }
 
     public synchronized void clearAll() {
-        store.remove(SNAPSHOT_KEY);
+        clearSnapshot();
         store.remove(CURRENT_USER_ID_KEY);
         clearPendingOpenPath();
     }

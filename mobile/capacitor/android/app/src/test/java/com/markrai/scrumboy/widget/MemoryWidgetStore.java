@@ -9,6 +9,7 @@ final class MemoryWidgetStore implements DashboardWidgetSnapshotStore.Store, Das
     private final Map<String, String> strings = new HashMap<>();
     private final Map<String, Long> longs = new HashMap<>();
     private final Set<String> present = new HashSet<>();
+    boolean failNextSnapshotWrite;
 
     @Override
     public String getString(String key, String fallback) {
@@ -54,5 +55,25 @@ final class MemoryWidgetStore implements DashboardWidgetSnapshotStore.Store, Das
     @Override
     public void put(String key, String value) {
         putString(key, value);
+    }
+
+    @Override
+    public String readSnapshotJson() {
+        return getString(DashboardWidgetSnapshotStore.SNAPSHOT_KEY, null);
+    }
+
+    @Override
+    public boolean writeSnapshotJson(String json) {
+        if (failNextSnapshotWrite) {
+            failNextSnapshotWrite = false;
+            return false;
+        }
+        putString(DashboardWidgetSnapshotStore.SNAPSHOT_KEY, json);
+        return true;
+    }
+
+    @Override
+    public void deleteSnapshotJson() {
+        remove(DashboardWidgetSnapshotStore.SNAPSHOT_KEY);
     }
 }

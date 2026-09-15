@@ -36,6 +36,24 @@ public class DashboardWidgetPrivacyLifecycleTest {
         );
         assertEquals(DashboardWidgetViewModel.State.SIGNED_OUT, model.state);
         assertNull(model.snapshot);
+        assertTrue(DashboardWidgetCollection.rows(model).isEmpty());
+    }
+
+    @Test
+    public void leftoverSnapshotWithoutSessionCookieExposesZeroCollectionRows() {
+        MemoryWidgetStore memory = new MemoryWidgetStore();
+        DashboardWidgetSnapshotStore store = new DashboardWidgetSnapshotStore(memory);
+        store.setCurrentUserId(11);
+        assertTrue(store.saveSnapshot(snapshot("https://scrumboy.example", 11)));
+        DashboardWidgetViewModel model = DashboardWidgetViewModel.resolve(
+            "https://scrumboy.example",
+            false,
+            store.currentUserId(),
+            store.loadSnapshot()
+        );
+        assertEquals(DashboardWidgetViewModel.State.SIGNED_OUT, model.state);
+        assertNull(model.snapshot);
+        assertTrue(DashboardWidgetCollection.rows(model).isEmpty());
     }
 
     @Test
@@ -54,6 +72,7 @@ public class DashboardWidgetPrivacyLifecycleTest {
         assertEquals(DashboardWidgetViewModel.State.NOT_LOADED, model.state);
         assertTrue(model.discardSnapshot);
         assertNull(model.snapshot);
+        assertTrue(DashboardWidgetCollection.rows(model).isEmpty());
     }
 
     @Test
@@ -68,5 +87,11 @@ public class DashboardWidgetPrivacyLifecycleTest {
         assertNull(store.loadSnapshot());
         assertNull(store.currentUserId());
         assertNull(pending.peek());
+        assertTrue(DashboardWidgetCollection.rows(DashboardWidgetViewModel.resolve(
+            "https://scrumboy.example",
+            false,
+            store.currentUserId(),
+            store.loadSnapshot()
+        )).isEmpty());
     }
 }

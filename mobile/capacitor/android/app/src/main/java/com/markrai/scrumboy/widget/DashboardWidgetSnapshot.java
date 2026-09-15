@@ -11,7 +11,6 @@ import org.json.JSONObject;
 /** Sanitized Dashboard widget snapshot. Schema version 1. */
 public final class DashboardWidgetSnapshot {
     public static final int SCHEMA_VERSION = 1;
-    public static final int MAX_ITEMS = 4;
     public static final int MAX_TITLE_CHARS = 120;
     public static final int MAX_NAME_CHARS = 80;
     private static final Pattern HEX_COLOR = Pattern.compile("^#[0-9a-fA-F]{6}$");
@@ -111,8 +110,7 @@ public final class DashboardWidgetSnapshot {
             JSONArray itemsJson = root.optJSONArray("items");
             if (itemsJson == null) return null;
             List<Item> items = new ArrayList<>();
-            int limit = Math.min(MAX_ITEMS, itemsJson.length());
-            for (int i = 0; i < limit; i++) {
+            for (int i = 0; i < itemsJson.length(); i++) {
                 JSONObject row = itemsJson.optJSONObject(i);
                 Item item = parseItem(row);
                 if (item != null) items.add(item);
@@ -138,8 +136,7 @@ public final class DashboardWidgetSnapshot {
     public static DashboardWidgetSnapshot sanitize(DashboardWidgetSnapshot snapshot) {
         if (snapshot == null) return null;
         List<Item> items = new ArrayList<>();
-        int limit = Math.min(MAX_ITEMS, snapshot.items.size());
-        for (int i = 0; i < limit; i++) {
+        for (int i = 0; i < snapshot.items.size(); i++) {
             Item item = sanitizeItem(snapshot.items.get(i));
             if (item != null) items.add(item);
         }

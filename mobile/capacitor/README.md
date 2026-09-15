@@ -44,7 +44,7 @@ Sequence:
 
 Logout still calls ordinary server logout, clears native session cookies, and retains the selected server. Browser/PWA OIDC is unchanged and does not use the mobile handoff. iOS native OIDC is not implemented.
 
-Android `allowBackup` is disabled; Capacitor Preferences (`CapacitorStorage`), the native cookie jar (`scrumboy_transport_cookies_v1`), and the Dashboard widget snapshot (`scrumboy_dashboard_widget_v1`) are excluded from cloud backup and device-to-device transfer rules.
+Android `allowBackup` is disabled; Capacitor Preferences (`CapacitorStorage`), the native cookie jar (`scrumboy_transport_cookies_v1`), the Dashboard widget metadata (`scrumboy_dashboard_widget_v1`), and the widget snapshot file (`scrumboy_dashboard_widget_snapshot.json`) are excluded from cloud backup and device-to-device transfer rules.
 
 ## Native on-device capabilities
 

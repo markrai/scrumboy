@@ -131,7 +131,7 @@ The selected origin is stored on device. Changing servers clears the native sess
 
 ## Home-screen widget
 
-Android launchers can add **Scrumboy Dashboard**, a native home-screen widget. It is a compact projection of the in-app Dashboard (assigned, non-done work): counts on a small size, plus two or three assigned todos when the widget is wide and tall enough.
+Android launchers can add **Scrumboy Dashboard**, a native home-screen widget. It is a compact projection of the in-app Dashboard (assigned, non-done work): counts on a small size, and a scrollable list of every assigned todo when the widget is wide and tall enough. Height controls how many rows are on screen at once, not how many todos exist.
 
 The widget renders a sanitized on-device snapshot. It does not use a WebView, WorkManager, or its own login flow. The running app publishes the snapshot after Dashboard data loads (and after Capacitor login hydration). Logout and server change clear the snapshot immediately. If no server is selected, it asks you to connect. If a server is selected but you are signed out, it stays private and does not show assigned titles.
 

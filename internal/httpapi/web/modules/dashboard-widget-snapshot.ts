@@ -2,7 +2,6 @@ import type { DashboardSummary, DashboardTodo } from './types.js';
 import type { DashboardWidgetSnapshotItem, DashboardWidgetSnapshotPayload } from './platform/dashboard-widget.js';
 
 export const DASHBOARD_WIDGET_SCHEMA_VERSION = 1;
-export const DASHBOARD_WIDGET_MAX_ITEMS = 4;
 export const DASHBOARD_WIDGET_MAX_TITLE_CHARS = 120;
 export const DASHBOARD_WIDGET_MAX_NAME_CHARS = 80;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -22,7 +21,6 @@ export function mapDashboardWidgetSnapshot(input: DashboardWidgetSnapshotInput):
   }
   const items: DashboardWidgetSnapshotItem[] = [];
   for (const todo of input.todos) {
-    if (items.length >= DASHBOARD_WIDGET_MAX_ITEMS) break;
     const item = mapItem(todo, input.summary);
     if (item) items.push(item);
   }

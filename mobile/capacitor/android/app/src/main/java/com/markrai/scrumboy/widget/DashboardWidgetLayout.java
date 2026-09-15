@@ -7,28 +7,21 @@ public final class DashboardWidgetLayout {
         MEDIUM
     }
 
-    /** Below this width, todo rows cannot be shown reliably. */
+    /** Below this width, a todo collection cannot be shown reliably. */
     static final int MEDIUM_MIN_WIDTH_DP = 180;
-    /** Normal 4x2 height: header + two guaranteed rows. */
-    static final int TWO_ROW_MIN_HEIGHT_DP = 110;
-    /** Taller widgets may show a third row. */
-    static final int THREE_ROW_MIN_HEIGHT_DP = 180;
+    /** Below this height, compact count-only chrome is used. */
+    static final int MEDIUM_MIN_HEIGHT_DP = 110;
 
     public final Kind kind;
-    public final int visibleRows;
 
-    DashboardWidgetLayout(Kind kind, int visibleRows) {
+    DashboardWidgetLayout(Kind kind) {
         this.kind = kind;
-        this.visibleRows = visibleRows;
     }
 
     public static DashboardWidgetLayout fromSize(int minWidthDp, int minHeightDp) {
-        boolean wideEnough = minWidthDp >= MEDIUM_MIN_WIDTH_DP;
-        boolean tallEnoughForTwoRows = minHeightDp >= TWO_ROW_MIN_HEIGHT_DP;
-        if (!wideEnough || !tallEnoughForTwoRows) {
-            return new DashboardWidgetLayout(Kind.COMPACT, 0);
+        if (minWidthDp >= MEDIUM_MIN_WIDTH_DP && minHeightDp >= MEDIUM_MIN_HEIGHT_DP) {
+            return new DashboardWidgetLayout(Kind.MEDIUM);
         }
-        int rows = minHeightDp >= THREE_ROW_MIN_HEIGHT_DP ? 3 : 2;
-        return new DashboardWidgetLayout(Kind.MEDIUM, rows);
+        return new DashboardWidgetLayout(Kind.COMPACT);
     }
 }

@@ -7,10 +7,10 @@
 ### Added
 
 - **Scrumboy Dashboard Android widget** - Native home-screen widget that
-  projects assigned Dashboard work (counts plus a short todo list) from a
-  sanitized on-device snapshot. Logout and server change clear it. Taps open
-  existing `/dashboard` and `/{slug}/t/{localId}` routes through an internal
-  activity extra, not a public URL scheme.
+  projects assigned Dashboard work (counts plus a scrollable list of all
+  assigned todos) from a sanitized on-device snapshot. Logout and server
+  change clear it. Taps open existing `/dashboard` and `/{slug}/t/{localId}`
+  routes through an internal activity extra, not a public URL scheme.
 
 ## [3.34.2] - 2026-09-14
 

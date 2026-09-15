@@ -27,7 +27,7 @@ import { ingestProjectsFromApp } from '../core/notifications.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { DashboardProject, DashboardSummary, DashboardTodo, DashboardTodosResponse, Project, SprintSectionInfo } from '../types.js';
 import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
-import { publishDashboardWidgetSnapshot } from '../dashboard-widget-publish.js';
+import { publishCompleteDashboardWidgetSnapshot } from '../dashboard-widget-publish.js';
 
 const BOUND_FLAG = Symbol('bound');
 const DASHBOARD_MOBILE_BREAKPOINT = 767;
@@ -516,7 +516,7 @@ function bindDashboardSort(): void {
       setDashboardSummary(summary);
       setDashboardTodos(todosResp.items || []);
       setDashboardNextCursor(todosResp.nextCursor || null);
-      void publishDashboardWidgetSnapshot(summary, todosResp.items || [], getUser()?.id);
+      void publishCompleteDashboardWidgetSnapshot(getUser()?.id);
     } catch (err: unknown) {
       setDashboardTodoSort(prev);
       console.error('Dashboard refetch failed:', err);
@@ -579,7 +579,7 @@ export async function renderDashboard(): Promise<void> {
     setDashboardSummary(summary);
     setDashboardTodos(todosResp.items || []);
     setDashboardNextCursor(todosResp.nextCursor || null);
-    void publishDashboardWidgetSnapshot(summary, todosResp.items || [], getUser()?.id);
+    void publishCompleteDashboardWidgetSnapshot(getUser()?.id);
     if (projects) {
       setProjects(projects);
       ingestProjectsFromApp(projects);

@@ -3,6 +3,7 @@ package com.markrai.scrumboy.widget;
 import android.appwidget.AppWidgetManager;
 import android.content.ComponentName;
 import android.content.Context;
+import com.markrai.scrumboy.R;
 
 public final class DashboardWidgetUpdater {
     private DashboardWidgetUpdater() {}
@@ -13,5 +14,6 @@ public final class DashboardWidgetUpdater {
         int[] ids = manager.getAppWidgetIds(component);
         if (ids == null || ids.length == 0) return;
         DashboardWidgetProvider.updateAppWidgets(context, manager, ids);
+        manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_dashboard_list);
     }
 }

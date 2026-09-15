@@ -6,13 +6,14 @@
     android:orientation="vertical"
     android:padding="12dp">
 
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/widget_dashboard_full_title"
-        android:textColor="@color/widget_dashboard_title"
-        android:textSize="15sp"
-        android:textStyle="bold" />
+    <ImageView
+        android:layout_width="wrap_content"
+        android:layout_height="20dp"
+        android:layout_gravity="end"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/app_name"
+        android:scaleType="fitEnd"
+        android:src="@drawable/scrumboytext" />
 
     <TextView
         android:layout_width="match_parent"

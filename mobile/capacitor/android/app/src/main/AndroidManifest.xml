@@ -57,6 +57,11 @@
                 android:resource="@xml/scrumboy_dashboard_widget_info" />
         </receiver>
 
+        <service
+            android:name=".widget.DashboardWidgetRemoteViewsService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
