@@ -36,6 +36,14 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 
 ---
 
+## Developer / mobile
+
+| Doc | Audience | Source of truth | Status |
+|-----|----------|-----------------|--------|
+| [android.md](android.md) | Developers / contributors | `mobile/capacitor`, Android Gradle project, `internal/httpapi/web` Capacitor web artifact scripts | current |
+
+---
+
 ## User features
 
 | Doc | Audience | Source of truth | Status |

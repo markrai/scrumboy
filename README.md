@@ -23,6 +23,7 @@
   - [Run from source](#run-from-source)
   - [Run the Windows executable](#run-the-windows-executable)
   - [Run the macOS executable](#run-the-macos-executable)
+  - [Build the Android app](#build-the-android-app)
 - [Features](#features)
 - [Modes](#modes)
 - [Roles](#roles)
@@ -97,6 +98,10 @@ Windows users can download the `windows-amd64` executable from [GitHub Releases]
 
 macOS users can download Apple Silicon or Intel builds from [GitHub Releases](https://github.com/markrai/scrumboy/releases). These binaries require **macOS 12 Monterey or later**. Extract and run `./scrumboy` from a dedicated writable folder; it starts a local Scrumboy server at [http://localhost:8080](http://localhost:8080). Current macOS release binaries are not Apple-signed or notarized. For exact artifact filenames, checksum and provenance verification, runtime-data location, Gatekeeper/quarantine troubleshooting, and other release-install details, see [docs/install-from-releases.md](docs/install-from-releases.md).
 
+### Build the Android app
+
+Scrumboy includes a native Android client, implemented with Capacitor, under `mobile/capacitor`. It connects to a running Scrumboy server; it does not replace or start the server. Build it from source. Release builds require HTTPS to that server. Prerequisites, web-payload packaging, Gradle commands, device connection, and optional signing are in [docs/android.md](docs/android.md).
+
 ---
 
 # Features
@@ -113,7 +118,7 @@ macOS users can download Apple Silicon or Intel builds from [GitHub Releases](ht
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit-trail.md](docs/audit-trail.md)).
 - Backup: export/import JSON; merge or replace; scope full or single project. JSON export is not a complete `DATA_DIR` disaster-recovery backup (uploaded wallpapers and `audit_events` are omitted); see [docs/diagrams/scrumboy_deployment_ops.md](docs/diagrams/scrumboy_deployment_ops.md).
 - Trello import: migrate an existing Trello board from its JSON export, with a preview before anything is imported (see [docs/backup-and-import.md](docs/backup-and-import.md)).
-- Mobile: Native Android app (or PWA) for an excellent mobile UX.
+- Mobile: Native Android app (Capacitor client; build from source — [docs/android.md](docs/android.md)) with native VoiceFlow on supported devices, or install the [PWA](docs/pwa.md) from the browser.
 - Multi-language Support: English, 简体中文, हिन्दी, Español (Latinoamérica), العربية, Français, বাংলা, Português (Brasil), Bahasa Indonesia, اردو, Русский, Deutsch, 日本語, Kiswahili, Tiếng Việt, Türkçe, 한국어, فارسی, ไทย, Italiano, Bahasa Melayu, Polski, and Українська.
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
 - VoiceFlow - deterministic voice commands in the browser; on supported Android devices, **AI VoiceFlow** adds on-device speech and Gemini Nano planning with confirmation before mutations (see [docs/voiceflow.md](docs/voiceflow.md), [docs/enhanced-voiceflow.md](docs/enhanced-voiceflow.md)).
