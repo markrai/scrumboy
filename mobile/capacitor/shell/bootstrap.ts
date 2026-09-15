@@ -14,9 +14,6 @@ import { SPEECH_OUTPUT_CAPABILITY } from '../../../internal/httpapi/web/modules/
 import { createSpeechOutputComposition } from './speech-output-capability.js';
 import { installVoiceCreateDryRunBridge } from './voice-create-dry-run-bridge.js';
 
-// Temporary local testing: enable VoiceFlow diagnostics in Capacitor Android without WebView console access.
-localStorage.setItem('scrumboy_debug_voiceflow', '1');
-
 const localTextGeneration = createLocalTextGenerationComposition();
 const speechInput = createSpeechInputComposition();
 const speechOutput = createSpeechOutputComposition();

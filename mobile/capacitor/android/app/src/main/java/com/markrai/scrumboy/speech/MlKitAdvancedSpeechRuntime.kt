@@ -1,5 +1,7 @@
 package com.markrai.scrumboy.speech
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
@@ -133,6 +135,7 @@ internal class MlKitAdvancedSpeechRuntime(
         scope.cancel()
     }
 
+    @RequiresApi(Build.VERSION_CODES.S)
     fun prepareRecognition(
         localeTag: String,
         callbacks: RecognitionCallbacks,
@@ -140,6 +143,7 @@ internal class MlKitAdvancedSpeechRuntime(
         ensureOpen()
         val locale = Locale.forLanguageTag(localeTag)
         val handle = RecognitionHandle()
+        val micSource = micAudioSource()
         val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             var sessionTeardown: CompletableFuture<Void>? = null
             var recognizer: SpeechRecognizer? = null
@@ -152,7 +156,7 @@ internal class MlKitAdvancedSpeechRuntime(
                 recognizer = createClient(locale)
                 handle.recognizer = recognizer
                 val request = speechRecognizerRequest {
-                    audioSource = AudioSource.fromMic()
+                    audioSource = micSource
                 }
                 // Invoking startRecognition with fromMic may start capture on collect.
                 val flow = recognizer.startRecognition(request)
@@ -303,6 +307,9 @@ internal class MlKitAdvancedSpeechRuntime(
         }
         return SpeechRecognition.getClient(options)
     }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun micAudioSource(): AudioSource = AudioSource.fromMic()
 
     private fun ensureOpen() {
         check(!closed.get()) { "advanced speech runtime closed" }
