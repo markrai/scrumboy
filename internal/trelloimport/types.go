@@ -648,6 +648,11 @@ func TransformBoard(board *Board, now time.Time) (*Bundle, error) {
 			return nil, err
 		}
 		todoMetadataByLocalID[localID] = string(metadataJSON)
+		var archivedAt *int64
+		if converted.card.Closed {
+			ms := now.UnixMilli()
+			archivedAt = &ms
+		}
 		todoExports = append(todoExports, store.TodoExport{
 			LocalID:            localID,
 			Title:              converted.title,
@@ -658,6 +663,8 @@ func TransformBoard(board *Board, now time.Time) (*Bundle, error) {
 			CreatedAt:          now,
 			UpdatedAt:          now,
 			PriorityKeyPresent: true,
+			ArchivedAt:         archivedAt,
+			ArchivedAtPresent:  true,
 		})
 	}
 

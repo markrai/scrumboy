@@ -45,6 +45,8 @@ type storeAPI interface {
 	todoapp.UpdateStore
 	todoapp.CompletedTodoCountStore
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
+	ArchiveTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
 	todoapp.MoveStore
 	todoapp.MCPMoveLaneStore
 	ListSprintsWithTodoCount(ctx context.Context, projectID int64) ([]store.SprintWithTodoCount, error)
@@ -100,6 +102,7 @@ type Adapter struct {
 	todoMoves            *todoapp.MCPMoveService
 	todoUpdates          *todoapp.MCPUpdateService
 	todoCompletionCounts *todoapp.MCPCompletionCountService
+	todoArchival         *todoapp.MCPArchiveService
 	todoLinkMutations    *todolinkapp.MCPMutationService
 	workflowMutations    *workflowapp.MCPMutationService
 	priorityMutations    *priorityapp.MCPMutationService
@@ -168,6 +171,10 @@ func New(st storeAPI, opts Options) *Adapter {
 		todoCompletionCounts: todoapp.NewMCPCompletionCountService(todoapp.MCPCompletionCountServiceDependencies{
 			Access: st,
 			Counts: st,
+		}),
+		todoArchival: todoapp.NewMCPArchiveService(todoapp.MCPArchiveServiceDependencies{
+			Access:  st,
+			Archive: st,
 		}),
 		todoLinkMutations: todolinkapp.NewMCPMutationService(todolinkapp.MCPMutationServiceDependencies{
 			Access:    st,
@@ -424,6 +431,8 @@ func (a *Adapter) implementedTools() []string {
 		"todos_update",
 		"todos_countCompleted",
 		"todos_delete",
+		"todos_archive",
+		"todos_restore",
 		"todos_move",
 		"todos_linksList",
 		"todos_linkAdd",

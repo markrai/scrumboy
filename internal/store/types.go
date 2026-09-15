@@ -316,6 +316,7 @@ type Todo struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DoneAt          *time.Time // Last completion time (Unix ms). Set on transition into DONE; never cleared on reopen.
+	ArchivedAt      *time.Time // Orthogonal archival timestamp; NULL means active.
 
 	// AssignmentChanged is set when this mutation changed assignee handling: CreateTodo (initial assignee on create)
 	// or UpdateTodo (assignee field changed). Not persisted; used by callers to gate SSE emissions.
@@ -339,9 +340,10 @@ const EstimationModeModifiedFibonacci = "MODIFIED_FIBONACCI"
 
 // TodoLinkTarget holds minimal todo info for link API responses.
 type TodoLinkTarget struct {
-	LocalID  int64
-	Title    string
-	LinkType string
+	LocalID    int64
+	Title      string
+	LinkType   string
+	ArchivedAt *time.Time
 }
 
 type TagCount struct {

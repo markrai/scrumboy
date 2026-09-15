@@ -136,6 +136,8 @@ type Server struct {
 	todoLegacyDeletes             *todoapp.LegacyDeleteService
 	todoLegacyMoves               *todoapp.LegacyMoveService
 	todoLegacyUpdates             *todoapp.LegacyUpdateService
+	todoArchival                  *todoapp.RESTArchiveService
+	todoArchiveReads              *todoapp.ArchiveReadService
 	creatorNotificationAuthorizer *todoapp.CreatorNotificationAuthorizationService
 	todoLinkMutations             *todolinkapp.RESTMutationService
 	sprintDefinitions             *sprintapp.RESTDefinitionService
@@ -342,6 +344,11 @@ type storeAPI interface {
 	GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, error)
 	MoveTodo(ctx context.Context, todoID int64, toColumnKey string, afterID, beforeID *int64, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
+	ArchiveTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	ArchiveTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	ListArchivedTodos(ctx context.Context, projectID int64, limit int, afterArchivedAtMs, afterID *int64, mode store.Mode) ([]store.Todo, string, bool, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	todoapp.CreateStore
 	todoapp.UpdateStore
@@ -707,6 +714,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh:         boardRefreshPublisher,
 		CreatorRequests: creatorRequestPublisher,
 	})
+	server.todoArchival = todoapp.NewRESTArchiveService(todoapp.RESTArchiveServiceDependencies{
+		Archive: st,
+		Refresh: boardRefreshPublisher,
+	})
+	server.todoArchiveReads = todoapp.NewArchiveReadService(st)
 	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
 		Projects: st,
 		Delete:   st,

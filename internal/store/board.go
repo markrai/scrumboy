@@ -195,6 +195,13 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
 	}
+	active, err := s.activeBoardTagCounts(ctx, projectID)
+	if err != nil {
+		return Project{}, nil, nil, nil, nil, err
+	}
+	for i := range tags {
+		tags[i].Count = active[TagGroupKey(tags[i].Name)]
+	}
 	workflow, err := s.GetProjectWorkflow(ctx, projectID)
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
@@ -271,6 +278,13 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 	if err != nil {
 		return Project{}, nil, nil, nil, err
 	}
+	active, err := s.activeBoardTagCounts(ctx, projectID)
+	if err != nil {
+		return Project{}, nil, nil, nil, err
+	}
+	for i := range tags {
+		tags[i].Count = active[TagGroupKey(tags[i].Name)]
+	}
 	workflow, err := s.GetProjectWorkflow(ctx, projectID)
 	if err != nil {
 		return Project{}, nil, nil, nil, err
@@ -331,10 +345,11 @@ func (s *Store) listAllTodosForBoard(ctx context.Context, projectID int64, tagFi
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at, t.archived_at
 FROM todos t
 WHERE
   t.project_id = ?
+  AND t.archived_at IS NULL
   `+sprintCond+assigneeCond+priorityCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 ORDER BY `+orderBy+`
@@ -361,11 +376,12 @@ WITH tagged_todos AS (
   WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at, t.archived_at
 FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
 WHERE
   t.project_id = ?
+  AND t.archived_at IS NULL
   `+sprintCond+assigneeCond+priorityCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 ORDER BY `+orderBy+`
@@ -391,7 +407,8 @@ ORDER BY `+orderBy+`
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+		var archivedAtMs sql.NullInt64
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &archivedAtMs); err != nil {
 			return nil, fmt.Errorf("scan todo: %w", err)
 		}
 		if !localID.Valid {
@@ -424,6 +441,10 @@ ORDER BY `+orderBy+`
 		if doneAtMs.Valid {
 			dt := time.UnixMilli(doneAtMs.Int64).UTC()
 			t.DoneAt = &dt
+		}
+		if archivedAtMs.Valid {
+			at := time.UnixMilli(archivedAtMs.Int64).UTC()
+			t.ArchivedAt = &at
 		}
 		todoIDs = append(todoIDs, t.ID)
 		out = append(out, t)
@@ -457,7 +478,7 @@ func (s *Store) countTodosForBoard(ctx context.Context, projectID int64, tagFilt
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*) FROM todos t
-WHERE t.project_id = ?
+WHERE t.project_id = ? AND t.archived_at IS NULL
 `+sprintCond+assigneeCond+priorityCond+`
 AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 `, args...).Scan(&count)
@@ -484,7 +505,7 @@ WITH tagged_todos AS (
 )
 SELECT COUNT(*) FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
-WHERE t.project_id = ?
+WHERE t.project_id = ? AND t.archived_at IS NULL
 `+sprintCond+assigneeCond+priorityCond+`
 AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 `, args...).Scan(&count)
@@ -514,11 +535,12 @@ func (s *Store) listAllTodosForBoardWithCounts(ctx context.Context, projectID in
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at, t.archived_at,
   COUNT(*) OVER (PARTITION BY t.column_key) AS lane_total
 FROM todos t
 WHERE
   t.project_id = ?
+  AND t.archived_at IS NULL
 `+sprintCond+assigneeCond+priorityCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 ORDER BY `+orderBy+`
@@ -542,12 +564,13 @@ WITH tagged_todos AS (
   WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at,
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at, t.archived_at,
   COUNT(*) OVER (PARTITION BY t.column_key) AS lane_total
 FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
 WHERE
   t.project_id = ?
+  AND t.archived_at IS NULL
 `+sprintCond+assigneeCond+priorityCond+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 ORDER BY `+orderBy+`
@@ -571,8 +594,9 @@ ORDER BY `+orderBy+`
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
+		var archivedAtMs sql.NullInt64
 		var laneTotal int
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &laneTotal); err != nil {
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &archivedAtMs, &laneTotal); err != nil {
 			return nil, fmt.Errorf("scan todo: %w", err)
 		}
 		if !localID.Valid {
@@ -605,6 +629,10 @@ ORDER BY `+orderBy+`
 		if doneAtMs.Valid {
 			dt := time.UnixMilli(doneAtMs.Int64).UTC()
 			t.DoneAt = &dt
+		}
+		if archivedAtMs.Valid {
+			at := time.UnixMilli(archivedAtMs.Int64).UTC()
+			t.ArchivedAt = &at
 		}
 		todoIDs = append(todoIDs, t.ID)
 		out = append(out, todoWithLaneTotal{Todo: t, LaneTotal: laneTotal})
@@ -672,10 +700,11 @@ func (s *Store) listTodosForBoardLaneResolved(ctx context.Context, projectID int
 		args = append(args, afterA, afterB, searchFilter, searchFilter, searchFilter, fetchLimit)
 		rows, err = s.db.QueryContext(ctx, `
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at, t.archived_at
 FROM todos t
 WHERE
   t.project_id = ? AND t.column_key = ?
+  AND t.archived_at IS NULL
   `+sprintCond+assigneeCond+priorityCond+`
   `+cursorPredicate+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
@@ -704,11 +733,12 @@ WITH tagged_todos AS (
   WHERE tt.tag_id IN (`+idPH+`)
 )
 SELECT
-  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at
+  t.id, t.project_id, t.local_id, t.title, t.body, t.column_key, t.rank, t.estimation_points, t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key, t.created_at, t.updated_at, t.done_at, t.archived_at
 FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
 WHERE
   t.project_id = ? AND t.column_key = ?
+  AND t.archived_at IS NULL
   `+sprintCond+assigneeCond+priorityCond+`
   `+cursorPredicate+`
   AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
@@ -736,7 +766,8 @@ LIMIT ?
 		var sprintID sql.NullInt64
 		var priorityKey sql.NullString
 		var doneAtMs sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &rowColumnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+		var archivedAtMs sql.NullInt64
+		if err := rows.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &rowColumnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &archivedAtMs); err != nil {
 			return nil, "", false, fmt.Errorf("scan todo: %w", err)
 		}
 		if !localID.Valid {
@@ -769,6 +800,10 @@ LIMIT ?
 		if doneAtMs.Valid {
 			dt := time.UnixMilli(doneAtMs.Int64).UTC()
 			t.DoneAt = &dt
+		}
+		if archivedAtMs.Valid {
+			at := time.UnixMilli(archivedAtMs.Int64).UTC()
+			t.ArchivedAt = &at
 		}
 		todoIDs = append(todoIDs, t.ID)
 		out = append(out, t)
@@ -826,7 +861,7 @@ func (s *Store) countTodosForBoardLaneResolved(ctx context.Context, projectID in
 		args = append(args, searchFilter, searchFilter, searchFilter)
 		err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(*) FROM todos t
-WHERE t.project_id = ? AND t.column_key = ?
+WHERE t.project_id = ? AND t.column_key = ? AND t.archived_at IS NULL
 `+sprintCond+assigneeCond+priorityCond+`
 AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 `,
@@ -856,7 +891,7 @@ WITH tagged_todos AS (
 )
 SELECT COUNT(*) FROM todos t
 INNER JOIN tagged_todos ft ON ft.todo_id = t.id
-WHERE t.project_id = ? AND t.column_key = ?
+WHERE t.project_id = ? AND t.column_key = ? AND t.archived_at IS NULL
 `+sprintCond+assigneeCond+priorityCond+`
 AND (? = '' OR LOWER(t.title) LIKE '%' || LOWER(?) || '%' OR LOWER(t.body) LIKE '%' || LOWER(?) || '%')
 `,

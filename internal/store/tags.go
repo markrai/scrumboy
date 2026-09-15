@@ -289,6 +289,39 @@ func (s *Store) listTagCounts(ctx context.Context, projectID int64, viewerUserID
 	return s.listTagCountsGrouped(ctx, projectID, viewerUserID, viewerRole)
 }
 
+// activeBoardTagCounts overlays board-payload usage counts without changing the
+// historical tag catalog returned by ListTagCounts and tag-management APIs.
+func (s *Store) activeBoardTagCounts(ctx context.Context, projectID int64) (map[string]int, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.name, t.id
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ? AND t.archived_at IS NULL
+`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list active board tag counts: %w", err)
+	}
+	defer rows.Close()
+	sets := make(map[string]map[int64]struct{})
+	for rows.Next() {
+		var name string
+		var id int64
+		if err := rows.Scan(&name, &id); err != nil {
+			return nil, err
+		}
+		key := TagGroupKey(name)
+		if sets[key] == nil {
+			sets[key] = make(map[int64]struct{})
+		}
+		sets[key][id] = struct{}{}
+	}
+	out := make(map[string]int, len(sets))
+	for key, ids := range sets {
+		out[key] = len(ids)
+	}
+	return out, rows.Err()
+}
+
 // listTagCountsRowLevel returns one TagCount per tag row, always with a real TagID.
 // This is the projection temporary boards keep: their mutation surface is tag_id-based
 // (plus board-scoped name resolution), so every listed entry must carry an addressable row.

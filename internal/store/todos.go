@@ -443,10 +443,6 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 
 	isAnonymousBoard := isAnonymousTemporaryBoard(p)
-	if isAnonymousBoard && in.AssigneeUserID != nil {
-		return Todo{}, fmt.Errorf("%w: assignment is not allowed in anonymous mode", ErrValidation)
-	}
-
 	userID, ok := UserIDFromContext(ctx)
 	var actorRole ProjectRole
 	if ok {
@@ -455,6 +451,12 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			return Todo{}, err
 		}
 		actorRole = role
+	}
+	if existing.ArchivedAt != nil {
+		return Todo{}, todoArchivedError()
+	}
+	if isAnonymousBoard && in.AssigneeUserID != nil {
+		return Todo{}, fmt.Errorf("%w: assignment is not allowed in anonymous mode", ErrValidation)
 	}
 
 	// Durable projects only: contributor/view edit scope. Temporary boards (any expires_at) use link collaboration
@@ -495,7 +497,6 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			}
 		}
 	}
-
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" || len(in.Title) > 200 {
 		return Todo{}, fmt.Errorf("%w: invalid title", ErrValidation)
@@ -957,6 +958,9 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 			}
 		}
 	}
+	if existing.ArchivedAt != nil {
+		return Todo{}, todoArchivedError()
+	}
 
 	targetCol, err := validateProjectColumnKeyTx(ctx, tx, existing.ProjectID, toColumnKey)
 	if err != nil {
@@ -1021,7 +1025,7 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 }
 
 func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at FROM todos WHERE id=?`, todoID)
+	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at, archived_at FROM todos WHERE id=?`, todoID)
 	var t Todo
 	var columnKey string
 	var createdAtMs, updatedAtMs int64
@@ -1032,7 +1036,8 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 	var sprintID sql.NullInt64
 	var priorityKey sql.NullString
 	var doneAtMs sql.NullInt64
-	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+	var archivedAtMs sql.NullInt64
+	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &archivedAtMs); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Todo{}, ErrNotFound
 		}
@@ -1076,6 +1081,10 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 	if doneAtMs.Valid {
 		dt := time.UnixMilli(doneAtMs.Int64).UTC()
 		t.DoneAt = &dt
+	}
+	if archivedAtMs.Valid {
+		at := time.UnixMilli(archivedAtMs.Int64).UTC()
+		t.ArchivedAt = &at
 	}
 
 	tags, err := listTodoTagsTx(ctx, tx, t.ID)
@@ -1160,6 +1169,36 @@ func (s *Store) MoveTodoByLocalID(ctx context.Context, projectID, localID int64,
 	todoID, err := getTodoIDByLocalIDTx(ctx, tx, projectID, localID)
 	if err != nil {
 		return Todo{}, err
+	}
+	project, err := s.getProjectForReadTx(ctx, tx, projectID, mode)
+	if err != nil {
+		return Todo{}, err
+	}
+	if project.ExpiresAt == nil {
+		enabled, e := authEnabledTx(ctx, tx)
+		if e != nil {
+			return Todo{}, e
+		}
+		if enabled {
+			uid, ok := UserIDFromContext(ctx)
+			if !ok {
+				return Todo{}, ErrUnauthorized
+			}
+			role, e := s.getProjectRoleTx(ctx, tx, projectID, uid)
+			if e != nil {
+				return Todo{}, e
+			}
+			if !CanMoveTodo(role) {
+				return Todo{}, ErrUnauthorized
+			}
+		}
+	}
+	var archivedAt sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM todos WHERE id = ? AND project_id = ?`, todoID, projectID).Scan(&archivedAt); err != nil {
+		return Todo{}, err
+	}
+	if archivedAt.Valid {
+		return Todo{}, todoArchivedError()
 	}
 	var afterID, beforeID *int64
 	if afterLocalID != nil {

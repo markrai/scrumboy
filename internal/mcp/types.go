@@ -82,6 +82,7 @@ type todoItem struct {
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	DoneAt           *time.Time `json:"doneAt"`
+	ArchivedAt       *time.Time `json:"archivedAt"`
 }
 
 type todoSearchItem struct {
@@ -91,9 +92,10 @@ type todoSearchItem struct {
 }
 
 type todoLinkItem struct {
-	LocalID  int64  `json:"localId"`
-	Title    string `json:"title"`
-	LinkType string `json:"linkType"`
+	LocalID    int64      `json:"localId"`
+	Title      string     `json:"title"`
+	LinkType   string     `json:"linkType"`
+	ArchivedAt *time.Time `json:"archivedAt"`
 }
 
 type sprintItem struct {

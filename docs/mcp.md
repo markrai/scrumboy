@@ -891,3 +891,5 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
 - **`sprints_update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints_create`).
 - **JSON-RPC `serverInfo.version`:** The value returned by `initialize` is the string **`1.0.0`** in code (`internal/mcp/jsonrpc_handler.go`), not necessarily the Scrumboy app version from `internal/version`.
 - **`plannedTools`:** Currently always empty / omitted; there is no separate catalog of unimplemented tools in responses.
+
+- `todos_archive` and `todos_restore` archive or restore up to 500 project-local todos. Archival is orthogonal to workflow state; archived todos are omitted from board/search reads and remain available through `todos_get`. Requires maintainer access on durable projects.

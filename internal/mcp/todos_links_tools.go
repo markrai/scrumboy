@@ -31,9 +31,10 @@ func todoLinkTargetsToItems(targets []store.TodoLinkTarget) []todoLinkItem {
 	out := make([]todoLinkItem, 0, len(targets))
 	for _, t := range targets {
 		out = append(out, todoLinkItem{
-			LocalID:  t.LocalID,
-			Title:    t.Title,
-			LinkType: t.LinkType,
+			LocalID:    t.LocalID,
+			Title:      t.Title,
+			LinkType:   t.LinkType,
+			ArchivedAt: t.ArchivedAt,
 		})
 	}
 	return out

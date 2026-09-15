@@ -104,6 +104,7 @@ func TestMCPBoardGetTransportContract_LegacySuccessEnvelope(t *testing.T) {
 		t.Fatalf("backlog items = %#v, want first page of 2", items)
 	}
 	if got, want := sortedMapKeys(items[0].(map[string]any)), []string{
+		"archivedAt",
 		"assigneeUserId",
 		"body",
 		"columnKey",

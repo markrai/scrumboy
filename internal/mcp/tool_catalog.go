@@ -149,6 +149,22 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"localId":     jsonProp("integer", "Project-scoped todo ID"),
 			}, []string{"projectSlug", "localId"}),
 		},
+		"todos_archive": {
+			Name:        "todos_archive",
+			Description: "Archive one or more todos without changing their workflow state or historical timestamps. Requires maintainer access.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"localIds":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "minItems": 1, "maxItems": 500, "uniqueItems": true},
+			}, []string{"projectSlug", "localIds"}),
+		},
+		"todos_restore": {
+			Name:        "todos_restore",
+			Description: "Restore one or more archived todos, preserving their workflow state and historical timestamps.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"localIds":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "minItems": 1, "maxItems": 500, "uniqueItems": true},
+			}, []string{"projectSlug", "localIds"}),
+		},
 		"todos_move": {
 			Name:        "todos_move",
 			Description: "Move a todo to another workflow column, optionally relative to a neighbor.",

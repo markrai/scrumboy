@@ -293,6 +293,7 @@ type todoJSON struct {
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	DoneAt           *time.Time `json:"doneAt,omitempty"`
+	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
 }
 
 func todoToJSON(t store.Todo) todoJSON {
@@ -314,6 +315,7 @@ func todoToJSON(t store.Todo) todoJSON {
 		CreatedAt:        t.CreatedAt,
 		UpdatedAt:        t.UpdatedAt,
 		DoneAt:           t.DoneAt,
+		ArchivedAt:       t.ArchivedAt,
 	}
 }
 
@@ -798,6 +800,7 @@ type todoExportJSON struct {
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 	DoneAt           *int64    `json:"doneAt,omitempty"`
+	ArchivedAt       *int64    `json:"archivedAt"`
 }
 
 type tagExportJSON struct {
@@ -830,6 +833,7 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 				CreatedAt:        t.CreatedAt,
 				UpdatedAt:        t.UpdatedAt,
 				DoneAt:           t.DoneAt,
+				ArchivedAt:       t.ArchivedAt,
 			})
 		}
 

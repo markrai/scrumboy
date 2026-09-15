@@ -78,17 +78,21 @@ In Anonymous mode:
 
 ## Backup format compatibility
 
-Backup format **1.1** remains backward-compatible with backups created before priorities existed.
+Backup format **1.2** adds additive story archival state and remains backward-compatible with
+format **1.1** imports. Older applications that only understand 1.1 should reject 1.2 files
+rather than silently dropping archive state.
 
 New exports explicitly include:
 
 - Project `priorityTiers` — `[]` means the canonical/default priority tiers
 - Todo `priorityKey` — `null` means no priority assigned
+- Todo `archivedAt` — a Unix-millisecond timestamp for archived stories, or explicit `null` for active stories
 
 During **matched-project merge**:
 
 - **Absent** legacy priority fields preserve the target project’s existing tier definitions or todo assignments
 - An explicit todo `priorityKey` of `null` **clears** that todo’s assignment
+- An absent `archivedAt` preserves the target story’s archive state; explicit `null` clears it, and a timestamp sets it
 - Explicit `priorityTiers` arrays replace definitions; a string `priorityKey` assigns against the effective project tier set
 
 Import commits only when every non-null todo priority key resolves to a tier in the same project.

@@ -135,7 +135,7 @@ func assertTodoSearchItem(t *testing.T, item map[string]any, wantLocalID int64, 
 func assertTodoLinkItem(t *testing.T, item map[string]any, wantLocalID int64, wantTitle, wantLinkType string) {
 	t.Helper()
 
-	assertExactJSONKeys(t, item, "localId", "title", "linkType")
+	assertExactJSONKeys(t, item, "localId", "title", "linkType", "archivedAt")
 	gotLocalID, ok := item["localId"].(float64)
 	if !ok || int64(gotLocalID) != wantLocalID {
 		t.Fatalf("expected link item localId=%d, got %+v", wantLocalID, item)
