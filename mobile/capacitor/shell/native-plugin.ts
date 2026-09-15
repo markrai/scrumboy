@@ -1,6 +1,7 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 export const TRANSPORT_EVENT = 'scrumboyTransportEvent';
+export const PENDING_OPEN_PATH_EVENT = 'scrumboyPendingOpenPath';
 
 export type ProbeErrorCode =
   | 'invalid_url'
@@ -60,10 +61,35 @@ export interface ScrumboyTransportPlugin {
   releaseResource(options: { handle: string }): Promise<void>;
   logout(): Promise<void>;
   resetForServerChange(): Promise<void>;
+  setDashboardWidgetCurrentUser(options: { userId: number }): Promise<void>;
+  publishDashboardWidgetSnapshot(options: DashboardWidgetSnapshotNativePayload): Promise<void>;
+  clearDashboardWidgetSnapshot(): Promise<void>;
+  consumePendingOpenPath(): Promise<{ path?: string }>;
   addListener(
     eventName: typeof TRANSPORT_EVENT,
     listener: (event: NativeTransportEvent) => void,
   ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: typeof PENDING_OPEN_PATH_EVENT,
+    listener: (event: { path?: string }) => void,
+  ): Promise<PluginListenerHandle>;
+}
+
+export interface DashboardWidgetSnapshotNativePayload {
+  userId: number;
+  fetchedAtMs: number;
+  assignedCount: number;
+  wipCount: number;
+  items: Array<{
+    localId: number;
+    title: string;
+    projectName: string;
+    projectSlug: string;
+    statusName: string;
+    statusColor?: string;
+    estimationPoints?: number;
+    sprintName?: string;
+  }>;
 }
 
 export const ScrumboyTransport = registerPlugin<ScrumboyTransportPlugin>('ScrumboyTransport');

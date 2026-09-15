@@ -44,7 +44,7 @@ Sequence:
 
 Logout still calls ordinary server logout, clears native session cookies, and retains the selected server. Browser/PWA OIDC is unchanged and does not use the mobile handoff. iOS native OIDC is not implemented.
 
-Android `allowBackup` is disabled; Capacitor Preferences (`CapacitorStorage`) and the native cookie jar (`scrumboy_transport_cookies_v1`) are excluded from cloud backup and device-to-device transfer rules.
+Android `allowBackup` is disabled; Capacitor Preferences (`CapacitorStorage`), the native cookie jar (`scrumboy_transport_cookies_v1`), and the Dashboard widget snapshot (`scrumboy_dashboard_widget_v1`) are excluded from cloud backup and device-to-device transfer rules.
 
 ## Native on-device capabilities
 
@@ -54,6 +54,6 @@ The shell installs native speech input/output and local text-generation plugins 
 
 C2 supports one selected Scrumboy server. Server selection is stored with Capacitor Preferences; session cookies remain native and are never exposed to JavaScript. Changing servers clears the native session, active streams, acquired resources, and user-scoped WebView state.
 
-Shipped in this shell: server selector, native transport, native OIDC handoff, on-device speech I/O, and local text generation.
+Shipped in this shell: server selector, native transport, native OIDC handoff, on-device speech I/O, local text generation, and the **Scrumboy Dashboard** home-screen widget (snapshot-backed `AppWidgetProvider`; internal `MainActivity` extras, not generic public deep links).
 
 Android back-button behavior (C3.1), push, generic deep links beyond the OIDC callback, sharing/filesystem polish, multiple-server profiles, and iOS remain later phases.

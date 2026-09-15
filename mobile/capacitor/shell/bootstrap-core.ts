@@ -4,7 +4,7 @@ import type { AppCapabilityRegistry } from '../../../internal/httpapi/web/module
 import { NativeServerTransport } from './native-server-transport.js';
 import { clearScrumboyWebState, installRuntimeAndStartProduct } from './native-runtime.js';
 import { nativeOIDC, type NativeOIDCCoordinator } from './native-oidc.js';
-import { ScrumboyTransport, type ScrumboyTransportPlugin } from './native-plugin.js';
+import { ScrumboyTransport, PENDING_OPEN_PATH_EVENT, type ScrumboyTransportPlugin } from './native-plugin.js';
 import { renderServerSelector } from './server-selection.js';
 
 export const SELECTED_SERVER_KEY = 'scrumboy.server.origin.v1';
@@ -81,6 +81,7 @@ async function startProduct(origin: string, deps: BootstrapDependencies): Promis
     deps.capabilities,
   );
   deps.oidc.markProductReady();
+  await installWidgetOpenPathHandoff(deps.plugin);
   let serverChangeStarted = false;
   const handleServerChange = () => {
     if (serverChangeStarted || !deps.confirmChange()) return;
@@ -101,6 +102,45 @@ async function startProduct(origin: string, deps: BootstrapDependencies): Promis
   removeServerChangeHandler?.();
   window.addEventListener(CHANGE_SERVER_EVENT, handleServerChange);
   removeServerChangeHandler = () => window.removeEventListener(CHANGE_SERVER_EVENT, handleServerChange);
+}
+
+export function sanitizeWidgetOpenPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\') || raw.includes('://')) return null;
+  if (raw.includes('?') || raw.includes('#') || raw.includes('..')) return null;
+  if (raw.includes('/oidc/') || raw.includes('/callback') || raw.startsWith('/auth/')) return null;
+  const path = raw.length > 1 && raw.endsWith('/') ? raw.slice(0, -1) : raw;
+  if (path === '/dashboard') return path;
+  if (/^\/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\/t\/[1-9]\d*$/.test(path) && !path.includes('--')) return path;
+  return null;
+}
+
+function applyWidgetOpenPath(path: string): void {
+  const sanitized = sanitizeWidgetOpenPath(path);
+  if (!sanitized || typeof history === 'undefined' || typeof window === 'undefined') return;
+  history.replaceState({}, '', sanitized);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+async function consumeWidgetOpenPath(plugin: ScrumboyTransportPlugin): Promise<void> {
+  try {
+    const result = await plugin.consumePendingOpenPath();
+    if (result?.path) applyWidgetOpenPath(result.path);
+  } catch {
+    // Widget navigation is best-effort and must not block product startup.
+  }
+}
+
+async function installWidgetOpenPathHandoff(plugin: ScrumboyTransportPlugin): Promise<void> {
+  try {
+    await plugin.addListener(PENDING_OPEN_PATH_EVENT, () => {
+      void consumeWidgetOpenPath(plugin);
+    });
+  } catch {
+    // Cold start still consumes the pending path below.
+  }
+  await consumeWidgetOpenPath(plugin);
 }
 
 async function connectCandidate(

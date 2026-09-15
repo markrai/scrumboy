@@ -129,6 +129,14 @@ After connect, sign in with that server's normal auth (local account and/or SSO)
 
 The selected origin is stored on device. Changing servers clears the native session.
 
+## Home-screen widget
+
+Android launchers can add **Scrumboy Dashboard**, a native home-screen widget. It is a compact projection of the in-app Dashboard (assigned, non-done work): counts on a small size, plus two or three assigned todos when the widget is wide and tall enough.
+
+The widget renders a sanitized on-device snapshot. It does not use a WebView, WorkManager, or its own login flow. The running app publishes the snapshot after Dashboard data loads (and after Capacitor login hydration). Logout and server change clear the snapshot immediately. If no server is selected, it asks you to connect. If a server is selected but you are signed out, it stays private and does not show assigned titles.
+
+Taps open the existing app routes `/dashboard` or `/{slug}/t/{localId}` through an internal `MainActivity` extra, not a public deep-link scheme.
+
 ## VoiceFlow and on-device capabilities
 
 On Android, VoiceFlow can use native speech I/O. On supported English devices that report ready on-device speech **and** local text generation, the app may open **AI VoiceFlow** (on-device recognition and Gemini Nano planning, with confirmation before mutations). Otherwise it uses **Basic VoiceFlow**.

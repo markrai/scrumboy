@@ -4,4 +4,17 @@
     <string name="title_activity_main">Scrumboy</string>
     <string name="package_name">com.markrai.scrumboy</string>
     <string name="custom_url_scheme">com.markrai.scrumboy</string>
+    <string name="widget_dashboard_brand">Scrumboy</string>
+    <string name="widget_dashboard_title">Dashboard</string>
+    <string name="widget_dashboard_full_title">Scrumboy Dashboard</string>
+    <string name="widget_dashboard_description">Assigned work from your Scrumboy Dashboard</string>
+    <string name="widget_dashboard_counts">%1$d assigned · %2$d WIP</string>
+    <string name="widget_dashboard_empty">No todos assigned to you</string>
+    <string name="widget_dashboard_connect_server">Connect to your server</string>
+    <string name="widget_dashboard_signed_out">Open Scrumboy</string>
+    <string name="widget_dashboard_not_loaded">Open Dashboard to load your work</string>
+    <string name="widget_dashboard_view_work">Open Dashboard to view your work</string>
+    <string name="widget_dashboard_updated">Updated %1$s</string>
+    <string name="widget_dashboard_item_title">#%1$d %2$s</string>
+    <string name="widget_dashboard_item_description">Todo #%1$d %2$s, %3$s, %4$s</string>
 </resources>

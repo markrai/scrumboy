@@ -9,6 +9,8 @@ import com.markrai.scrumboy.localai.ScrumboyLocalTextGenerationPlugin;
 import com.markrai.scrumboy.speech.ScrumboySpeechInputPlugin;
 import com.markrai.scrumboy.speech.ScrumboySpeechOutputPlugin;
 import com.markrai.scrumboy.transport.ScrumboyTransportPlugin;
+import com.markrai.scrumboy.widget.DashboardWidgetIntents;
+import com.markrai.scrumboy.widget.DashboardWidgetPendingOpenPath;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -23,6 +25,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScrumboySpeechOutputPlugin.class);
         registerPlugin(ScrumboyTransportPlugin.class);
         super.onCreate(savedInstanceState);
+        dispatchWidgetOpen(getIntent());
         dispatchDryRunIntent(getIntent());
     }
 
@@ -30,7 +33,29 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        dispatchWidgetOpen(intent);
         dispatchDryRunIntent(intent);
+    }
+
+    private void dispatchWidgetOpen(Intent intent) {
+        if (intent == null) return;
+        String path = intent.getStringExtra(DashboardWidgetIntents.EXTRA_OPEN_PATH);
+        if (path == null || path.isEmpty()) return;
+        if (new DashboardWidgetPendingOpenPath(getApplicationContext()).offer(path) == null) return;
+        intent.removeExtra(DashboardWidgetIntents.EXTRA_OPEN_PATH);
+        tryNotifyWidgetOpenPath();
+    }
+
+    private void tryNotifyWidgetOpenPath() {
+        try {
+            if (bridge == null) return;
+            PluginHandle handle = bridge.getPlugin("ScrumboyTransport");
+            if (handle != null && handle.getInstance() instanceof ScrumboyTransportPlugin plugin) {
+                plugin.emitPendingOpenPath();
+            }
+        } catch (RuntimeException ignored) {
+            // Cold start may run before the transport plugin exists. The pending-path holder is authoritative.
+        }
     }
 
     private boolean isDebuggable() {

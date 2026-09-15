@@ -42,6 +42,7 @@ import {
   isBoardTodoSortUrlParam,
   loadBoardTodoSortPreferenceFromServer,
 } from './core/board-sort-preferences.js';
+import { hydrateDashboardWidgetFromNetwork, setDashboardWidgetCurrentUser } from './dashboard-widget-publish.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -152,11 +153,13 @@ async function routeOnceBody(): Promise<void> {
     const newUser = st && st.user ? st.user : null;
     const oldUserId = oldUser?.id || null;
     const newUserId = newUser?.id || null;
+    let widgetIdentity = Promise.resolve();
     
     if (oldUserId !== newUserId) {
       // User changed (logout, login as different user, or initial load)
       resetUserScopedState();
       stopGlobalRealtime();
+      widgetIdentity = setDashboardWidgetCurrentUser(newUserId);
     }
 
     setUser(newUser);
@@ -286,8 +289,9 @@ async function routeOnceBody(): Promise<void> {
         apiFetch<{ value: string }>(`/api/user/preferences?key=${BOARD_TODO_SORT_PREFERENCE_KEY}`),
       );
 
-      // Load email notification preferences
       await loadUserEmailNotifyPref();
+      await widgetIdentity;
+      hydrateDashboardWidgetFromNetwork({ skipIfDashboardRoute: true });
     }
 
     if (getAuthStatusAvailable()) {

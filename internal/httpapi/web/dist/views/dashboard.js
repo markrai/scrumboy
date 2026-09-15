@@ -8,6 +8,7 @@ import { appendDashboardTodos, setDashboardLoading, setDashboardNextCursor, setD
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
+import { publishDashboardWidgetSnapshot } from '../dashboard-widget-publish.js';
 const BOUND_FLAG = Symbol('bound');
 const DASHBOARD_MOBILE_BREAKPOINT = 767;
 let dashboardI18nBound = false;
@@ -455,6 +456,7 @@ function bindDashboardSort() {
             setDashboardSummary(summary);
             setDashboardTodos(todosResp.items || []);
             setDashboardNextCursor(todosResp.nextCursor || null);
+            void publishDashboardWidgetSnapshot(summary, todosResp.items || [], getUser()?.id);
         }
         catch (err) {
             setDashboardTodoSort(prev);
@@ -516,6 +518,7 @@ export async function renderDashboard() {
         setDashboardSummary(summary);
         setDashboardTodos(todosResp.items || []);
         setDashboardNextCursor(todosResp.nextCursor || null);
+        void publishDashboardWidgetSnapshot(summary, todosResp.items || [], getUser()?.id);
         if (projects) {
             setProjects(projects);
             ingestProjectsFromApp(projects);

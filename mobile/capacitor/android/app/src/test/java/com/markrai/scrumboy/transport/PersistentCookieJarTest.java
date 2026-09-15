@@ -165,4 +165,36 @@ public class PersistentCookieJarTest {
         assertTrue(oldJar.loadForRequest(oldUrl).isEmpty());
         assertTrue(new PersistentCookieJar(store).loadForRequest(oldUrl).isEmpty());
     }
+
+    @Test
+    public void authenticatedSessionRequiresScrumboySessionCookieForSelectedOrigin() {
+        MemoryStore store = new MemoryStore();
+        PersistentCookieJar jar = new PersistentCookieJar(store);
+        String origin = "https://scrumboy.example";
+        jar.ensureOwner(origin);
+        jar.saveFromResponse(HttpUrl.get(origin + "/"), List.of(
+            new Cookie.Builder()
+                .name("locale")
+                .value("en")
+                .hostOnlyDomain("scrumboy.example")
+                .path("/")
+                .expiresAt(System.currentTimeMillis() + 60_000)
+                .build()
+        ));
+        assertFalse(jar.hasAuthenticatedSessionCookie(origin));
+
+        jar.saveFromResponse(HttpUrl.get(origin + "/api/auth/login"), List.of(
+            new Cookie.Builder()
+                .name(ScrumboySessionCookie.NAME)
+                .value("secret-session")
+                .hostOnlyDomain("scrumboy.example")
+                .path("/")
+                .expiresAt(System.currentTimeMillis() + 60_000)
+                .build()
+        ));
+        assertTrue(jar.hasAuthenticatedSessionCookie(origin));
+        assertFalse(jar.hasAuthenticatedSessionCookie("https://other.example"));
+        assertFalse(jar.hasAuthenticatedSessionCookie(null));
+        assertFalse(jar.hasAuthenticatedSessionCookie(""));
+    }
 }
