@@ -7,6 +7,8 @@ import realEnCatalog from "../i18n/locales/en.json";
 const apiFetchMock = vi.hoisted(() => vi.fn());
 const initDnDMock = vi.hoisted(() => vi.fn());
 const setDnDColumnsMock = vi.hoisted(() => vi.fn());
+const canShowVoiceCommandsMock = vi.hoisted(() => vi.fn(() => true));
+const voiceFlowEnabled = vi.hoisted(() => ({ value: false }));
 const customBootstrapBackLabel = vi.hoisted(() => ({ value: null as string | null }));
 const domElements = vi.hoisted(() => ({
   app: document.createElement("div"),
@@ -82,11 +84,6 @@ vi.mock("../features/context-menu-button.js", () => ({
   setContextMenuRole: vi.fn(),
 }));
 
-vi.mock("../events.js", () => ({
-  on: vi.fn(),
-  off: vi.fn(),
-}));
-
 vi.mock("../realtime/guard.js", () => ({
   recordLocalMutation: vi.fn(),
 }));
@@ -124,11 +121,11 @@ vi.mock("./board-realtime.js", () => ({
 }));
 
 vi.mock("./board-command-capabilities.js", () => ({
-  canShowVoiceCommands: vi.fn(() => false),
+  canShowVoiceCommands: canShowVoiceCommandsMock,
 }));
 
 vi.mock("../core/voiceflow-preferences.js", () => ({
-  getVoiceFlowEnabledPreference: vi.fn(() => false),
+  getVoiceFlowEnabledPreference: () => voiceFlowEnabled.value,
 }));
 
 vi.mock("../dialogs/bulk-edit.js", () => ({
@@ -259,6 +256,8 @@ describe("board i18n locale switching", () => {
     apiFetchMock.mockResolvedValue(null);
     initDnDMock.mockReset();
     setDnDColumnsMock.mockReset();
+    canShowVoiceCommandsMock.mockReset().mockReturnValue(true);
+    voiceFlowEnabled.value = false;
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
       value: 1024,
@@ -285,6 +284,9 @@ describe("board i18n locale switching", () => {
     const mutations = await import("../state/mutations.js");
     mutations.setUser(null);
     mutations.setAuthStatusAvailable(false);
+    mutations.setTag("");
+    mutations.setSearch("");
+    voiceFlowEnabled.value = false;
     document.body.innerHTML = "";
     localStorage.clear();
     vi.restoreAllMocks();
@@ -423,6 +425,55 @@ describe("board i18n locale switching", () => {
     expect(document.querySelector('[data-omni-clear-tag]')?.getAttribute('aria-label')).toBe('[!! Clear tag bug !!]');
     expect(document.querySelector(".board > .no-results")?.textContent).toBe('[!! No todos found matching "needle" !!]');
     expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it("switches Omni and Legacy surfaces in place without changing URL filters or moving VoiceFlow outside the topbar", async () => {
+    const originalPath = "/alpha?tag=bug&search=query&sprintId=7&assignee=me&sort=newest&priority=high";
+    window.history.replaceState({}, "", originalPath);
+    localStorage.setItem("scrumboy.boardFilterLayout", "omni");
+    const i18n = await import("../i18n/index.js");
+    await i18n.initI18n({ locale: "en", loadLocale: vi.fn(async () => enCatalog) });
+    const mutations = await import("../state/mutations.js");
+    mutations.setTag("bug");
+    mutations.setSearch("query");
+    const mod = await import("./board.js");
+
+    await mod.renderBoard("alpha", "bug", "query", "7", "me", "newest", "high", null, null, {
+      prefetchedBoard: board(),
+    });
+    await flushPromises();
+
+    expect(document.querySelector(".topbar #searchInput")).toBeNull();
+    expect(document.querySelector(".container > .filters--omni #searchInput")).not.toBeNull();
+    expect(document.querySelector(".container > .filters--omni #omniTagPills")).not.toBeNull();
+    expect(document.querySelectorAll("#searchInput")).toHaveLength(1);
+
+    voiceFlowEnabled.value = true;
+    const events = await import("../events.js");
+    events.emit("voiceflow:enabled-changed");
+    const voiceButton = document.getElementById("voiceCommandBtn");
+    const topbar = document.querySelector(".topbar");
+    expect(voiceButton).not.toBeNull();
+    expect(topbar?.contains(voiceButton)).toBe(true);
+    expect(document.querySelector(".filters--omni")?.contains(voiceButton)).toBe(false);
+    expect(voiceButton?.nextElementSibling?.id).toBe("archiveBtn");
+
+    const preferences = await import("../core/board-filter-layout-preferences.js");
+    preferences.setBoardFilterLayoutPreference("legacy", { skipRemote: true });
+
+    expect(document.querySelector(".topbar #searchInput")).not.toBeNull();
+    expect(document.querySelector(".container > .filters #tagChips")).not.toBeNull();
+    expect(document.querySelector("#omniTagPills")).toBeNull();
+    expect(document.querySelectorAll("#searchInput")).toHaveLength(1);
+    expect(window.location.pathname + window.location.search).toBe(originalPath);
+
+    preferences.setBoardFilterLayoutPreference("omni", { skipRemote: true });
+
+    expect(document.querySelector(".topbar #searchInput")).toBeNull();
+    expect(document.querySelector(".container > .filters--omni #searchInput")).not.toBeNull();
+    expect(document.querySelector("#tagChips")).toBeNull();
+    expect(document.querySelectorAll("#searchInput")).toHaveLength(1);
+    expect(window.location.pathname + window.location.search).toBe(originalPath);
   });
 
   it("relocalizes an open Manage Members dialog without refetching or losing add-member selections", async () => {

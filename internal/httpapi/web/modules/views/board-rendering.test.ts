@@ -1,13 +1,19 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
-import { buildBoardColumnsHtml, buildTopbarHtml, getBoardColumns, renderTodoCard } from './board-rendering.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildBoardColumnsHtml, buildFiltersHtml, buildOmniFilterRowHtml, buildTopbarHtml, getBoardColumns, renderTodoCard } from './board-rendering.js';
 import {
   buildBoardColumnsHtml as buildBoardColumnsHtmlDist,
+  buildOmniFilterRowHtml as buildOmniFilterRowHtmlDist,
   buildTopbarHtml as buildTopbarHtmlDist,
 } from '../../dist/views/board-rendering.js';
 import enCatalog from '../i18n/locales/en.json';
 import pseudoCatalog from '../i18n/locales/pseudo.json';
+
+const stylesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles.css'), 'utf8');
 
 function board(): Board {
   return {
@@ -134,7 +140,7 @@ describe('board topbar rendering', () => {
     expect(distHtml.indexOf('id="voiceCommandBtn"')).toBeLessThan(distHtml.indexOf('id="searchInput"'));
   });
 
-  it('renders the Omni host beside search and keeps Legacy markup opt-in', () => {
+  it('keeps Legacy search in the topbar and tag chips in the second row', () => {
     const base = {
       board: board(),
       minimalTopbar: false,
@@ -146,13 +152,64 @@ describe('board topbar rendering', () => {
       user: null,
       backLabel: 'Projects',
     };
-    const omni = buildTopbarHtml({ ...base, boardFilterLayout: 'omni' });
-    expect(omni).toContain('class="omni-bar"');
-    expect(omni).toContain('id="omniTagPills"');
+    const host = document.createElement('div');
+    host.innerHTML = buildTopbarHtml({ ...base, boardFilterLayout: 'legacy' }) + buildFiltersHtml('<button data-tag="bug">bug</button>');
 
-    const legacy = buildTopbarHtml({ ...base, boardFilterLayout: 'legacy' });
-    expect(legacy).not.toContain('id="omniTagPills"');
-    expect(legacy).toContain('data-board-filter-layout="legacy"');
+    const topbar = host.querySelector('.topbar');
+    const secondRow = host.querySelector('.filters');
+    expect(topbar?.querySelector('#searchInput')).not.toBeNull();
+    expect(secondRow?.querySelector('#tagChips')).not.toBeNull();
+    expect(secondRow?.querySelector('#omniTagPills')).toBeNull();
+    expect(host.querySelectorAll('#searchInput')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchClear')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchFilterToggle')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchFilterPanel')).toHaveLength(1);
+    expect(host.querySelector('[data-tag="bug"]')).not.toBeNull();
+  });
+
+  it('renders Omni search and tag suggestions only in the second-row filter surface', () => {
+    const base = {
+      board: board(),
+      search: 'andr',
+      searchPlaceholder: 'Search',
+      isMobile: false,
+      isAnonymousTempBoard: false,
+      currentUserProjectRole: 'maintainer',
+      user: null,
+      backLabel: 'Projects',
+    };
+    const host = document.createElement('div');
+    const topbarHtml = buildTopbarHtml({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' });
+    const omniRowHtml = buildOmniFilterRowHtml(base);
+    host.innerHTML = topbarHtml + omniRowHtml;
+
+    const topbar = host.querySelector('.topbar');
+    const secondRow = host.querySelector('.filters--omni');
+    expect(topbar?.querySelector('#searchInput')).toBeNull();
+    expect(topbar?.querySelector('.omni-bar')).toBeNull();
+    expect(secondRow?.querySelector('#searchInput')).not.toBeNull();
+    expect(secondRow?.querySelector('#omniTagPills')).not.toBeNull();
+    expect(secondRow?.querySelector('#tagChips')).toBeNull();
+    expect(host.querySelectorAll('#searchInput')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchClear')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchFilterToggle')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchFilterPanel')).toHaveLength(1);
+    expect(topbar?.contains(secondRow)).toBe(false);
+    expect(Array.from(host.children).indexOf(secondRow as Element)).toBeGreaterThan(Array.from(host.children).indexOf(topbar as Element));
+
+    const distHost = document.createElement('div');
+    distHost.innerHTML = buildTopbarHtmlDist({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' })
+      + buildOmniFilterRowHtmlDist(base);
+    expect(distHost.querySelector('.topbar #searchInput')).toBeNull();
+    expect(distHost.querySelector('.filters--omni #searchInput')).not.toBeNull();
+    expect(distHost.querySelectorAll('#searchInput')).toHaveLength(1);
+  });
+
+  it('styles Omni as a non-wrapping, horizontally scrollable filter row instead of a topbar child', () => {
+    expect(stylesSource).not.toMatch(/\.topbar\s+\.omni-bar/);
+    expect(stylesSource).toMatch(/\.filters--omni\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s);
+    expect(stylesSource).toMatch(/\.filters--omni\s+\.omni-bar\s*\{[^}]*width:\s*100%[^}]*max-width:\s*none/s);
+    expect(stylesSource).toMatch(/\.omni-tag-pills\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/s);
   });
 
   it('renders plain escaped titles on cards and never renders markdown from todo bodies', () => {

@@ -60,6 +60,7 @@ import {
   buildBoardColumnsHtml,
   buildFiltersHtml,
   buildNoResultsHtml,
+  buildOmniFilterRowHtml,
   buildTopbarHtml,
   buildPriorityTierMap,
   getBoardColumns,
@@ -253,11 +254,8 @@ function syncVoiceCommandPreferenceInTopbar(): void {
   }
   if (!existing) {
     const wallBtn = document.getElementById("wallBtn");
-    if (wallBtn) {
-      wallBtn.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
-    } else {
-      (topbar.querySelector(".omni-bar") ?? topbar.querySelector(".search-input-wrapper"))?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
-    }
+    const anchor = wallBtn ?? topbar.querySelector("#archiveBtn");
+    anchor?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
   }
   bindVoiceCommandButton();
 }
@@ -1091,6 +1089,21 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     boardFilterLayout,
     sprintData: getSprintChipDataForSlug(getSlug()),
   });
+  const filterRowHTML = boardFilterLayout === 'legacy'
+    ? buildFiltersHtml(chipsHTML)
+    : buildOmniFilterRowHtml({
+        board,
+        search,
+        searchPlaceholder,
+        searchPlaceholderKey,
+        assignee,
+        sort,
+        priority,
+        boardMembers: getBoardMembers(),
+        user: getUser(),
+        sprintId,
+        sprintData: getSprintChipDataForSlug(getSlug()),
+      });
   const membersByUserId = getMembersByUserId();
   const showPointsMode = isModifiedFibonacciModeEnabled();
   const cardOpts: RenderTodoCardOpts = {
@@ -1105,7 +1118,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
       ${topbarHTML}
 
       <div class="container">
-        ${boardFilterLayout === 'legacy' ? buildFiltersHtml(chipsHTML) : ''}
+        ${filterRowHTML}
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">

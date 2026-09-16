@@ -5386,19 +5386,31 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   font-weight: 600;
 }
 
-.omni-bar {
+.filters--omni {
+  width: 100%;
+  min-width: 0;
+}
+
+.filters--omni .omni-bar {
   display: flex;
   align-items: center;
   gap: var(--s-8);
-  flex: 1 1 360px;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
-  max-width: min(54vw, 720px);
+  max-width: none;
 }
 
-.omni-bar .search-input-wrapper {
-  flex: 0 1 auto;
-  min-width: 120px;
+.filters--omni .search-input-wrapper {
+  flex: 0 1 250px;
+  width: 250px;
+  min-width: 160px;
   margin-right: 0;
+}
+
+.filters--omni .search-input {
+  width: 100%;
+  max-width: none;
 }
 
 .omni-tag-pills {
@@ -5606,26 +5618,21 @@ button.omni-tag-pill:focus-visible {
 
 @media (max-width: 767px) {
 
-  .topbar .omni-bar {
-    order: 4;
-    flex: 1 1 100%;
+  .filters--omni .omni-bar {
     width: 100%;
     max-width: none;
     min-width: 0;
-    margin-top: var(--s-8);
-    margin-right: var(--s-4);
   }
 
-  .topbar .omni-bar .search-input-wrapper {
-    order: initial;
+  .filters--omni .search-input-wrapper {
     flex: 0 1 clamp(120px, 42vw, 250px);
-    width: auto;
+    width: clamp(120px, 42vw, 250px);
     min-width: 120px;
     max-width: 250px;
     margin: 0;
   }
 
-  .topbar .omni-bar .search-input {
+  .filters--omni .search-input {
     width: 100% !important;
   }
 

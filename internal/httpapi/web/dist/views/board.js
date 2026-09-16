@@ -19,7 +19,7 @@ import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneF
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { on, off } from '../events.js';
 import { recordLocalMutation, } from '../realtime/guard.js';
-import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, visibleBoardLaneCount, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
+import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildOmniFilterRowHtml, buildTopbarHtml, buildPriorityTierMap, getBoardColumns, visibleBoardLaneCount, renderVoiceCommandTriggerHtml, renderTodoCard, } from './board-rendering.js';
 import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, agendaMobileTabAriaLabel, agendaMobileTabInnerHtml, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
@@ -161,12 +161,8 @@ function syncVoiceCommandPreferenceInTopbar() {
     }
     if (!existing) {
         const wallBtn = document.getElementById("wallBtn");
-        if (wallBtn) {
-            wallBtn.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
-        }
-        else {
-            (topbar.querySelector(".omni-bar") ?? topbar.querySelector(".search-input-wrapper"))?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
-        }
+        const anchor = wallBtn ?? topbar.querySelector("#archiveBtn");
+        anchor?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
     }
     bindVoiceCommandButton();
 }
@@ -967,6 +963,21 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
         boardFilterLayout,
         sprintData: getSprintChipDataForSlug(getSlug()),
     });
+    const filterRowHTML = boardFilterLayout === 'legacy'
+        ? buildFiltersHtml(chipsHTML)
+        : buildOmniFilterRowHtml({
+            board,
+            search,
+            searchPlaceholder,
+            searchPlaceholderKey,
+            assignee,
+            sort,
+            priority,
+            boardMembers: getBoardMembers(),
+            user: getUser(),
+            sprintId,
+            sprintData: getSprintChipDataForSlug(getSlug()),
+        });
     const membersByUserId = getMembersByUserId();
     const showPointsMode = isModifiedFibonacciModeEnabled();
     const cardOpts = {
@@ -980,7 +991,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
       ${topbarHTML}
 
       <div class="container">
-        ${boardFilterLayout === 'legacy' ? buildFiltersHtml(chipsHTML) : ''}
+        ${filterRowHTML}
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">

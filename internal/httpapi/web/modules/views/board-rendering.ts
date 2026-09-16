@@ -302,6 +302,74 @@ export function buildFiltersHtml(chipsHTML: string, opts?: { innerOnly?: boolean
   return opts?.innerOnly ? inner : `<div class="filters">${inner}</div>`;
 }
 
+type BuildSearchFilterControlArgs = Pick<BuildTopbarHtmlArgs,
+  | 'board'
+  | 'search'
+  | 'searchPlaceholder'
+  | 'searchPlaceholderKey'
+  | 'assignee'
+  | 'sort'
+  | 'priority'
+  | 'boardMembers'
+  | 'user'
+  | 'sprintId'
+  | 'sprintData'
+> & { layout: BoardFilterLayout };
+
+function buildSearchFilterControlHtml(args: BuildSearchFilterControlArgs): string {
+  const {
+    board,
+    search,
+    searchPlaceholder,
+    searchPlaceholderKey,
+    assignee,
+    sort,
+    priority,
+    boardMembers,
+    user,
+    sprintId,
+    sprintData,
+    layout,
+  } = args;
+  const filterPanelHTML = buildFilterPanelHtml(
+    assignee ?? null,
+    sort ?? null,
+    boardMembers ?? [],
+    user,
+    priority ?? null,
+    board.priorityOrder ?? [],
+    {
+      layout,
+      sprintId: sprintId ?? null,
+      sprintsEnabled: board.project.sprintsEnabled !== false,
+      sprintData: sprintData ?? null,
+    },
+  );
+  const searchPlaceholderAttr = searchPlaceholderKey ? ` data-i18n-placeholder="${searchPlaceholderKey}"` : "";
+  const clearSearchLabel = escapeHTML(t("board.actions.clearSearch"));
+  return `
+          <input
+            type="text"
+            id="searchInput"
+            class="search-input"
+            placeholder="${searchPlaceholder}"
+            ${searchPlaceholderAttr}
+            value="${escapeHTML(search || "")}"
+            ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
+          />
+          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
+          ${filterPanelHTML}`;
+}
+
+export function buildOmniFilterRowHtml(args: Omit<BuildSearchFilterControlArgs, 'layout'>): string {
+  return `<div class="filters filters--omni" data-board-filter-layout="omni">
+    <div class="omni-bar">
+      <div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>
+      <div class="omni-tag-pills" id="omniTagPills" aria-live="polite"></div>
+    </div>
+  </div>`;
+}
+
 export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
   const {
     board,
@@ -321,25 +389,10 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     sort,
     priority,
     boardMembers,
-    tag,
     sprintId,
     boardFilterLayout = 'legacy',
     sprintData,
   } = args;
-  const filterPanelHTML = buildFilterPanelHtml(
-    assignee ?? null,
-    sort ?? null,
-    boardMembers ?? [],
-    user,
-    priority ?? null,
-    board.priorityOrder ?? [],
-    {
-      layout: boardFilterLayout,
-      sprintId: sprintId ?? null,
-      sprintsEnabled: board.project.sprintsEnabled !== false,
-      sprintData: sprintData ?? null,
-    },
-  );
   const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
   const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
   // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
@@ -351,9 +404,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
     (currentUserProjectRole === "maintainer" || currentUserProjectRole === "contributor")
       ? `<button class="btn btn--ghost" type="button" id="wallBtn" title="${escapeHTML(t("board.actions.openWall"))}" aria-label="${escapeHTML(t("board.actions.openWall"))}" data-i18n-title="board.actions.openWall" data-i18n-aria-label="board.actions.openWall"><img src="/postit.svg" alt="" width="20" height="20" decoding="async" /></button>`
       : "";
-  const searchPlaceholderAttr = searchPlaceholderKey ? ` data-i18n-placeholder="${searchPlaceholderKey}"` : "";
   const backLabelAttr = backLabelKey ? ` data-i18n-text="${backLabelKey}"` : "";
-  const clearSearchLabel = escapeHTML(t("board.actions.clearSearch"));
   const renameProjectLabel = escapeHTML(t("board.actions.renameProject"));
   const newTodoLabel = escapeHTML(t("board.actions.newTodo"));
   const manageMembersLabel = escapeHTML(t("board.actions.manageMembers"));
@@ -361,24 +412,22 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
   const archiveLabel = escapeHTML(hasI18nKey("board.actions.openArchive") ? t("board.actions.openArchive") : "Archive");
   const changeProjectImageLabel = escapeHTML(t("board.actions.changeProjectImage"));
   const deleteProjectLabel = escapeHTML(t("board.actions.deleteProject"));
-  const searchInputHTML = `
-          <input
-            type="text"
-            id="searchInput"
-            class="search-input"
-            placeholder="${searchPlaceholder}"
-            ${searchPlaceholderAttr}
-            value="${escapeHTML(search || "")}"
-            ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
-          ${filterPanelHTML}`;
-  const searchControlsHTML = boardFilterLayout === 'omni'
-    ? `<div class="omni-bar" data-board-filter-layout="omni">
-        <div class="search-input-wrapper">${searchInputHTML}</div>
-        <div class="omni-tag-pills" id="omniTagPills" aria-live="polite"></div>
-      </div>`
-    : `<div class="search-input-wrapper" data-board-filter-layout="legacy">${searchInputHTML}</div>`;
+  const searchControlsHTML = boardFilterLayout === 'legacy'
+    ? `<div class="search-input-wrapper" data-board-filter-layout="legacy">${buildSearchFilterControlHtml({
+        board,
+        search,
+        searchPlaceholder,
+        searchPlaceholderKey,
+        assignee,
+        sort,
+        priority,
+        boardMembers,
+        user,
+        sprintId,
+        sprintData,
+        layout: 'legacy',
+      })}</div>`
+    : '';
 
   if (minimalTopbar) {
     return `
