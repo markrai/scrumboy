@@ -2,7 +2,6 @@ package todo
 
 import (
 	"context"
-	"errors"
 
 	"scrumboy/internal/store"
 )
@@ -11,8 +10,6 @@ const (
 	RefreshReasonTodoArchived = "todo_archived"
 	RefreshReasonTodoRestored = "todo_restored"
 )
-
-var ErrArchiveMaintainerRequired = errors.New("todo archival maintainer required")
 
 type ArchiveBatchCommand struct{ LocalIDs []int64 }
 

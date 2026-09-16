@@ -265,13 +265,13 @@ func TestBuildImportBundle_ComprehensiveFixture(t *testing.T) {
 	}
 
 	var openTodoBody string
-	var archivedTodoTitle string
+	var archivedTodo *store.TodoExport
 	for _, todo := range project.Todos {
 		switch {
 		case todo.Title == "Real open card":
 			openTodoBody = todo.Body
 		case strings.Contains(todo.Title, "Archived from closed list"):
-			archivedTodoTitle = todo.Title
+			archivedTodo = &todo
 		}
 	}
 	if !strings.Contains(openTodoBody, "## Trello dates") {
@@ -292,8 +292,11 @@ func TestBuildImportBundle_ComprehensiveFixture(t *testing.T) {
 	if !strings.Contains(openTodoBody, "## Trello custom fields") || !strings.Contains(openTodoBody, "Priority: High") || !strings.Contains(openTodoBody, "Estimate: 8") {
 		t.Fatalf("expected custom fields section, body=%q", openTodoBody)
 	}
-	if !strings.HasPrefix(archivedTodoTitle, "[Archived] [Closed List] ") {
-		t.Fatalf("expected archived + closed-list markers, got %q", archivedTodoTitle)
+	if archivedTodo == nil || !strings.HasPrefix(archivedTodo.Title, "[Closed List] ") {
+		t.Fatalf("expected only the closed-list marker, got %+v", archivedTodo)
+	}
+	if archivedTodo.ArchivedAt == nil || !archivedTodo.ArchivedAtPresent {
+		t.Fatalf("expected closed Trello card to use first-class archival, got %+v", archivedTodo)
 	}
 
 	var projectMeta map[string]any

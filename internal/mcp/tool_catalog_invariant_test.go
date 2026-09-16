@@ -123,6 +123,35 @@ func TestToolCatalog_OutputSchemasAreOptionalObjectRoots(t *testing.T) {
 	}
 }
 
+func TestToolCatalog_TodoArchivalSchemasAdvertiseBoundedUniqueIDs(t *testing.T) {
+	implemented := make(map[string]bool)
+	for _, name := range New(nil, Options{Mode: "full"}).implementedTools() {
+		implemented[name] = true
+	}
+	for _, name := range []string{"todos_archive", "todos_restore"} {
+		def, ok := toolCatalogDefinitions()[name]
+		if !ok || !implemented[name] {
+			t.Fatalf("%s must be both implemented and cataloged", name)
+		}
+		schema, ok := def.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema type=%T", name, def.InputSchema)
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s properties=%#v", name, schema["properties"])
+		}
+		ids, ok := properties["localIds"].(map[string]any)
+		if !ok || ids["type"] != "array" || ids["minItems"] != 1 || ids["maxItems"] != 500 || ids["uniqueItems"] != true {
+			t.Fatalf("%s localIds schema=%#v", name, properties["localIds"])
+		}
+		required := requiredFieldNamesFromSchema(schema)
+		if len(required) != 2 || required[0] != "projectSlug" || required[1] != "localIds" {
+			t.Fatalf("%s required=%v", name, required)
+		}
+	}
+}
+
 func TestToolCatalog_BoardGetAssigneeIsDocumentedStringUnion(t *testing.T) {
 	def, ok := toolCatalogDefinitions()["board_get"]
 	if !ok {

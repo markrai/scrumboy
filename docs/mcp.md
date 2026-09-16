@@ -201,6 +201,8 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_update",
     "todos_countCompleted",
     "todos_delete",
+    "todos_archive",
+    "todos_restore",
     "todos_move",
     "todos_linksList",
     "todos_linkAdd",
@@ -250,7 +252,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (52 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -282,6 +284,8 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
 - `todos_update`
 - `todos_countCompleted`
 - `todos_delete`
+- `todos_archive`
+- `todos_restore`
 - `todos_move`
 - `todos_linksList`
 - `todos_linkAdd`
@@ -476,6 +480,8 @@ todos_search
 todos_update
 todos_countCompleted
 todos_delete
+todos_archive
+todos_restore
 todos_move
 todos_linksList
 todos_linkAdd

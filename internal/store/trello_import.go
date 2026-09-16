@@ -6,16 +6,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"scrumboy/internal/version"
 )
 
 func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, projectImportMetadata string, todoImportMetadataByLocalID map[int64]string, mode Mode) (Project, error) {
 	if data == nil || len(data.Projects) != 1 {
 		return Project{}, fmt.Errorf("%w: Trello import requires exactly one project payload", ErrValidation)
 	}
-	if !supportedExportVersion(data.Version) {
-		return Project{}, fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
+	if err := validateBackupVersionAndArchiveFields(data); err != nil {
+		return Project{}, err
 	}
 	if err := s.validateImportPreflight(ctx, data, mode, "copy"); err != nil {
 		return Project{}, err

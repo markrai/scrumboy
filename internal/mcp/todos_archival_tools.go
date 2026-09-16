@@ -55,9 +55,6 @@ func (a *Adapter) handleTodosArchiveState(ctx context.Context, input any, archiv
 	}
 	prepared, storeErr := a.todoArchival.Prepare(ctx, todoapp.MCPArchiveTarget{ProjectSlug: in.ProjectSlug, Mode: a.storeMode()})
 	if storeErr != nil {
-		if errors.Is(storeErr, todoapp.ErrArchiveMaintainerRequired) {
-			return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-		}
 		return nil, nil, mapStoreError(storeErr)
 	}
 	var result store.TodoArchiveBatchResult

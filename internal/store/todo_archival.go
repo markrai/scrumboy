@@ -78,10 +78,10 @@ func (s *Store) archiveTodosByLocalID(ctx context.Context, projectID int64, ids 
 	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
 		return result, err
 	}
-	// Resolve ordinary project visibility first, then apply the stricter
-	// maintainer requirement below so authenticated viewers/contributors receive
-	// a forbidden result rather than being mistaken for a missing project.
-	p, err := s.getProjectForReadTx(ctx, tx, projectID, mode)
+	// Reuse the ordinary todo write boundary (including temporary-board expiry
+	// and capability semantics), then apply archival's stricter durable-project
+	// maintainer rule.
+	p, err := s.getProjectForWriteTx(ctx, tx, projectID, mode)
 	if err != nil {
 		return result, err
 	}
@@ -211,14 +211,19 @@ func (s *Store) ListArchivedTodos(ctx context.Context, projectID int64, limit in
 	if limit > 100 {
 		limit = 100
 	}
-	if _, err := s.getProjectForRead(ctx, projectID, mode); err != nil {
-		return nil, "", false, err
-	}
 	if (afterArchivedAtMs == nil) != (afterID == nil) {
 		return nil, "", false, fmt.Errorf("%w: archive cursor requires timestamp and id", ErrValidation)
 	}
 	if afterArchivedAtMs != nil && (*afterArchivedAtMs < 0 || *afterID <= 0) {
 		return nil, "", false, fmt.Errorf("%w: invalid archive cursor", ErrValidation)
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, "", false, fmt.Errorf("begin archive page read: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := s.getProjectForReadTx(ctx, tx, projectID, mode); err != nil {
+		return nil, "", false, err
 	}
 	args := []any{projectID}
 	cursor := ""
@@ -227,46 +232,90 @@ func (s *Store) ListArchivedTodos(ctx context.Context, projectID int64, limit in
 		args = append(args, *afterArchivedAtMs, *afterArchivedAtMs, *afterID)
 	}
 	args = append(args, limit+1)
-	rows, err := s.db.QueryContext(ctx, "SELECT id FROM todos WHERE project_id = ? AND archived_at IS NOT NULL"+cursor+" ORDER BY archived_at DESC, id DESC LIMIT ?", args...)
+	rows, err := tx.QueryContext(ctx, `
+SELECT id, project_id, local_id, title, body, column_key, rank,
+       estimation_points, assignee_user_id, created_by_user_id, sprint_id,
+       priority_key, created_at, updated_at, done_at, archived_at
+FROM todos
+WHERE project_id = ? AND archived_at IS NOT NULL`+cursor+`
+ORDER BY archived_at DESC, id DESC
+LIMIT ?`, args...)
 	if err != nil {
 		return nil, "", false, err
 	}
-	var ids []int64
+	out := make([]Todo, 0, limit+1)
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var t Todo
+		var localID sql.NullInt64
+		var estimationPoints, assigneeUserID, createdByUserID, sprintID sql.NullInt64
+		var priorityKey sql.NullString
+		var createdAtMs, updatedAtMs int64
+		var doneAtMs, archivedAtMs sql.NullInt64
+		if err := rows.Scan(
+			&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &t.ColumnKey, &t.Rank,
+			&estimationPoints, &assigneeUserID, &createdByUserID, &sprintID,
+			&priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &archivedAtMs,
+		); err != nil {
 			rows.Close()
 			return nil, "", false, err
 		}
-		ids = append(ids, id)
+		if !localID.Valid || !archivedAtMs.Valid {
+			rows.Close()
+			return nil, "", false, fmt.Errorf("%w: invalid archived todo projection", ErrConflict)
+		}
+		t.LocalID = localID.Int64
+		if estimationPoints.Valid {
+			v := estimationPoints.Int64
+			t.EstimationPoints = &v
+		}
+		if assigneeUserID.Valid {
+			v := assigneeUserID.Int64
+			t.AssigneeUserID = &v
+		}
+		if createdByUserID.Valid {
+			v := createdByUserID.Int64
+			t.CreatedByUserID = &v
+		}
+		if sprintID.Valid {
+			v := sprintID.Int64
+			t.SprintID = &v
+		}
+		if priorityKey.Valid {
+			v := priorityKey.String
+			t.PriorityKey = &v
+		}
+		t.CreatedAt = time.UnixMilli(createdAtMs).UTC()
+		t.UpdatedAt = time.UnixMilli(updatedAtMs).UTC()
+		if doneAtMs.Valid {
+			v := time.UnixMilli(doneAtMs.Int64).UTC()
+			t.DoneAt = &v
+		}
+		v := time.UnixMilli(archivedAtMs.Int64).UTC()
+		t.ArchivedAt = &v
+		out = append(out, t)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return nil, "", false, err
 	}
 	rows.Close()
-	var out []Todo
-	for _, id := range ids {
-		tx, e := s.db.BeginTx(ctx, &sql.TxOptions{})
-		if e != nil {
-			return nil, "", false, e
-		}
-		t, e := getTodoTx(ctx, tx, id)
-		_ = tx.Rollback()
-		if e != nil {
-			return nil, "", false, e
-		}
-		// A concurrent restore may clear the state between the ID page query and
-		// this projection read. Do not leak that row into the archive view (or
-		// dereference a nil timestamp while constructing the cursor).
-		if t.ArchivedAt == nil {
-			continue
-		}
-		out = append(out, t)
-	}
 	hasMore := len(out) > limit
 	if hasMore {
 		out = out[:limit]
+	}
+	todoIDs := make([]int64, len(out))
+	for i := range out {
+		todoIDs[i] = out[i].ID
+	}
+	tagMap, err := listTagsForTodosQueryer(ctx, tx, todoIDs)
+	if err != nil {
+		return nil, "", false, err
+	}
+	for i := range out {
+		out[i].Tags = tagMap[out[i].ID]
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, "", false, fmt.Errorf("commit archive page read: %w", err)
 	}
 	if hasMore && len(out) > 0 {
 		last := out[len(out)-1]

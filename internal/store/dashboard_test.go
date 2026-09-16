@@ -103,6 +103,55 @@ func TestDashboardSummary_CustomDoneKey(t *testing.T) {
 	}
 }
 
+func TestDashboardArchivalSeparatesCurrentWorkFromHistory(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx, user := dashboardTestContext(t, st)
+	project, err := st.CreateProject(ctx, "Archived dashboard semantics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "active", ColumnKey: DefaultColumnDoing, AssigneeUserID: &user.ID}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedWIP, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived wip", ColumnKey: DefaultColumnTesting, AssigneeUserID: &user.ID}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := int64(5)
+	archivedDone, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived done", ColumnKey: DefaultColumnDone, AssigneeUserID: &user.ID, EstimationPoints: &points}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := time.Now().UTC().Add(-48 * time.Hour)
+	setTodoTimes(t, st, archivedDone.ID, created, created)
+	if _, err := st.db.ExecContext(ctx, `UPDATE todos SET done_at = ? WHERE id = ?`, time.Now().UTC().Add(-time.Hour).UnixMilli(), archivedDone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodosByLocalID(ctx, project.ID, []int64{archivedWIP.LocalID, archivedDone.LocalID}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := st.GetDashboardSummary(ctx, user.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.AssignedCount != 1 || summary.WipCount != 1 || summary.WipInProgressCount != 1 || summary.WipTestingCount != 0 {
+		t.Fatalf("current dashboard summary=%+v", summary)
+	}
+	if summary.StoriesCompletedThisWeek != 1 || summary.PointsCompletedThisWeek != points || summary.AvgLeadTimeDays == nil {
+		t.Fatalf("historical dashboard summary=%+v", summary)
+	}
+	items, _, err := st.ListDashboardTodos(ctx, user.ID, 20, nil, "activity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].LocalID != active.LocalID {
+		t.Fatalf("dashboard items=%+v want active todo only", items)
+	}
+}
+
 func TestDashboardSummary_CustomWIPKeys_AllNonDoneCountAsWipWithoutLegacySplit(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()

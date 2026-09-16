@@ -36,9 +36,6 @@ func (s *MCPArchiveService) Prepare(ctx context.Context, target MCPArchiveTarget
 	if err != nil {
 		return nil, err
 	}
-	if pc.Project.ExpiresAt == nil && pc.AuthEnabled && !store.CanArchiveTodo(pc.Role) {
-		return nil, ErrArchiveMaintainerRequired
-	}
 	return &PreparedMCPArchive{ctx: ctx, service: s, project: pc, mode: target.Mode}, nil
 }
 func (p *PreparedMCPArchive) Archive(ids []int64) (store.TodoArchiveBatchResult, error) {

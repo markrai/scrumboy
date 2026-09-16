@@ -26,6 +26,8 @@ export interface Todo {
   priorityKey?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  doneAt?: string;
+  archivedAt?: string;
 }
 
 export interface PriorityTier {

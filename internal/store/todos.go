@@ -1170,36 +1170,6 @@ func (s *Store) MoveTodoByLocalID(ctx context.Context, projectID, localID int64,
 	if err != nil {
 		return Todo{}, err
 	}
-	project, err := s.getProjectForReadTx(ctx, tx, projectID, mode)
-	if err != nil {
-		return Todo{}, err
-	}
-	if project.ExpiresAt == nil {
-		enabled, e := authEnabledTx(ctx, tx)
-		if e != nil {
-			return Todo{}, e
-		}
-		if enabled {
-			uid, ok := UserIDFromContext(ctx)
-			if !ok {
-				return Todo{}, ErrUnauthorized
-			}
-			role, e := s.getProjectRoleTx(ctx, tx, projectID, uid)
-			if e != nil {
-				return Todo{}, e
-			}
-			if !CanMoveTodo(role) {
-				return Todo{}, ErrUnauthorized
-			}
-		}
-	}
-	var archivedAt sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM todos WHERE id = ? AND project_id = ?`, todoID, projectID).Scan(&archivedAt); err != nil {
-		return Todo{}, err
-	}
-	if archivedAt.Valid {
-		return Todo{}, todoArchivedError()
-	}
 	var afterID, beforeID *int64
 	if afterLocalID != nil {
 		id, err := getTodoIDByLocalIDTx(ctx, tx, projectID, *afterLocalID)

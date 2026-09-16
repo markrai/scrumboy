@@ -159,6 +159,12 @@ ORDER BY g.name`, todoID)
 // tag joins in the main todo query. Returns map[todoID][]tagNames (sorted, deduped).
 // Empty todoIDs returns empty map. Batches at 500 IDs to stay under SQLite placeholder limit.
 func (s *Store) listTagsForTodos(ctx context.Context, todoIDs []int64) (map[int64][]string, error) {
+	return listTagsForTodosQueryer(ctx, s.db, todoIDs)
+}
+
+// listTagsForTodosQueryer keeps callers that already hold a transaction on the
+// same database snapshot as their todo page query.
+func listTagsForTodosQueryer(ctx context.Context, q sqlRowsQueryer, todoIDs []int64) (map[int64][]string, error) {
 	if len(todoIDs) == 0 {
 		return map[int64][]string{}, nil
 	}
@@ -176,7 +182,7 @@ func (s *Store) listTagsForTodos(ctx context.Context, todoIDs []int64) (map[int6
 			ph[j] = "?"
 			args[j] = id
 		}
-		rows, err := s.db.QueryContext(ctx, `
+		rows, err := q.QueryContext(ctx, `
 SELECT tt.todo_id, g.name
 FROM todo_tags tt
 JOIN tags g ON g.id = tt.tag_id

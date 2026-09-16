@@ -586,10 +586,6 @@ func TransformBoard(board *Board, now time.Time) (*Bundle, error) {
 		if list.Closed {
 			title = "[Closed List] " + title
 		}
-		if card.Closed {
-			title = "[Archived] " + title
-		}
-
 		body := buildTodoBody(card, list, memberByID, checklistsByCardID, commentsByCardID, customFieldByID, customFieldOptionText)
 		convertedCards = append(convertedCards, convertedCard{
 			card:            card,

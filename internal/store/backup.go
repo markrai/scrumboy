@@ -114,6 +114,26 @@ type TodoExport struct {
 
 func supportedExportVersion(v string) bool { return v == "1.1" || v == "1.2" }
 
+func validateBackupVersionAndArchiveFields(data *ExportData) error {
+	if data == nil {
+		return fmt.Errorf("%w: missing export data", ErrValidation)
+	}
+	if !supportedExportVersion(data.Version) {
+		return fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
+	}
+	for _, project := range data.Projects {
+		for _, todo := range project.Todos {
+			if data.Version == "1.1" && todo.ArchivedAtPresent {
+				return fmt.Errorf("%w: format 1.1 todo %d contains 1.2 archivedAt data", ErrValidation, todo.LocalID)
+			}
+			if todo.ArchivedAt != nil && *todo.ArchivedAt < 0 {
+				return fmt.Errorf("%w: todo %d archivedAt must be non-negative", ErrValidation, todo.LocalID)
+			}
+		}
+	}
+	return nil
+}
+
 func (p ProjectExport) MarshalJSON() ([]byte, error) {
 	type alias ProjectExport
 	raw, err := json.Marshal(alias(p))
@@ -1282,8 +1302,8 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 // ImportProjectsWithTarget imports with an optional target slug for merging into existing board
 func (s *Store) ImportProjectsWithTarget(ctx context.Context, data *ExportData, mode Mode, importMode string, targetSlug string) (*ImportResult, error) {
 	// Validate JSON structure and version
-	if !supportedExportVersion(data.Version) {
-		return nil, fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
+	if err := validateBackupVersionAndArchiveFields(data); err != nil {
+		return nil, err
 	}
 
 	// Validate scope compatibility
@@ -2628,15 +2648,16 @@ VALUES (?, ?, ?)`, projectID, tagID, nowMs)
 func (s *Store) PreviewImport(ctx context.Context, data *ExportData, mode Mode, importMode string) (*PreviewResult, error) {
 	// CRITICAL: Must use exact same resolution logic as import handlers
 	// We'll use an in-memory resolver approach for safety
-
-	log.Printf("PreviewImport: mode=%s, importMode=%s, projects=%d", mode, importMode, len(data.Projects))
 	result := &PreviewResult{Warnings: []string{}}
 
 	// Validate JSON structure and version
-	if !supportedExportVersion(data.Version) {
-		log.Printf("PreviewImport: Version mismatch: got %s, expected %s", data.Version, version.ExportFormatVersion)
-		return nil, fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
+	if err := validateBackupVersionAndArchiveFields(data); err != nil {
+		if data != nil {
+			log.Printf("PreviewImport: Version/archive validation failed for version %s: %v", data.Version, err)
+		}
+		return nil, err
 	}
+	log.Printf("PreviewImport: mode=%s, importMode=%s, projects=%d", mode, importMode, len(data.Projects))
 
 	// Validate scope compatibility
 	if data.Scope == "full" && mode == ModeAnonymous {

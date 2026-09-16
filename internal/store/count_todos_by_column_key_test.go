@@ -86,3 +86,27 @@ func TestCountTodosByColumnKey_MissingKeyMeansZero(t *testing.T) {
 		t.Fatalf("expected no row for empty lane %q (missing key => 0)", added.Key)
 	}
 }
+
+func TestCountTodosByColumnKeyIncludesArchivedReferences(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "count archived references")
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: "archived", ColumnKey: DefaultColumnDoing}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodoByLocalID(ctx, p.ID, todo.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := st.CountTodosByColumnKey(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts[DefaultColumnDoing] != 1 {
+		t.Fatalf("archived workflow reference count=%d want 1", counts[DefaultColumnDoing])
+	}
+}

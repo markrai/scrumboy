@@ -16,7 +16,7 @@ flowchart TB
   Mode --> Replace[replace plus confirmation REPLACE]
   Mode --> Merge[merge]
   Mode --> Copy[copy]
-  Merge --> Presence["Priority presence: absent preserve, null clear, string assign"]
+  Merge --> Presence["Presence-aware priority and archive merge"]
   Presence --> Invariant["In-transaction project/todo priority anti-join"]
   Replace --> Native["store.ImportProjectsWithTarget"]
   Merge --> Native
@@ -32,13 +32,17 @@ flowchart TB
 
 Native backup: preview via `PreviewImport`; mutate via `ImportProjectsWithTarget` (`replace` / `merge` / `copy`). Replace requires `confirmation: "REPLACE"`.
 
-Export format 1.1 uses syntactic presence for priorities without a version
-bump. New exports write `priorityTiers` for every project (`[]` means the four
+Export format 1.2 adds presence-aware `archivedAt` while retaining the
+presence-aware priority behavior introduced in 1.1. New exports write
+`priorityTiers` for every project (`[]` means the four
 canonical defaults) and `priorityKey` for every todo (`null` means no
-assignment). A legacy 1.1 backup may omit these fields. On a matched-project
+assignment), plus `archivedAt` for every todo (`null` means active). A legacy
+1.1 backup may omit these fields. On a matched-project
 merge, omitted project definitions and todo assignments are preserved;
 explicit arrays replace definitions, explicit todo `null` clears, and a string
-assigns. Replacement and merge run under project-writer serialization and
+assigns. An omitted archival field preserves target state, explicit null
+restores, and a non-negative Unix-millisecond timestamp archives. Replacement
+and merge run under project-writer serialization and
 abort if any effective non-null todo key would not resolve in the project.
 
 Todo exports may include `createdByUserId` as additive historical metadata;
@@ -65,6 +69,6 @@ flowchart LR
   TrelloJSON --> Map --> Notes --> Proj
 ```
 
-Trello members do **not** become Scrumboy assignees automatically; member information is preserved in note text where applicable (see Trello import warnings).
+Trello members do **not** become Scrumboy assignees automatically; member information is preserved in note text where applicable (see Trello import warnings). A closed card becomes a first-class archived story without an `[Archived]` title prefix; a card in a closed list retains the distinct closed-list/Done mapping.
 
 Backup and Trello import paths do **not** append import audit events. Do not treat imports as audited actions unless product code adds that later.

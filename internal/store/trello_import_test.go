@@ -115,6 +115,38 @@ func TestImportTrelloProject_PersistsImportMetadata(t *testing.T) {
 	}
 }
 
+func TestImportTrelloProject_PersistsClosedCardAsFirstClassArchiveWithoutTitleMarker(t *testing.T) {
+	st, sqlDB, cleanup := newTrelloTestStore(t)
+	defer cleanup()
+	raw := []byte(`{
+		"id":"board-closed-card",
+		"name":"Closed Card Import",
+		"lists":[
+			{"id":"list-open","name":"Doing","pos":10,"closed":false},
+			{"id":"list-done","name":"Done","pos":20,"closed":false}
+		],
+		"cards":[
+			{"id":"card-closed","name":"Original title","idList":"list-open","pos":10,"closed":true,"idLabels":[],"idMembers":[]}
+		]
+	}`)
+	bundle, err := trelloimport.BuildImportBundle(raw, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := st.ImportTrelloProject(context.Background(), bundle.ExportData, bundle.ProjectImportMetadata, bundle.TodoImportMetadataByLocalID, store.ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var title string
+	var archivedAt sql.NullInt64
+	if err := sqlDB.QueryRow(`SELECT title, archived_at FROM todos WHERE project_id = ? AND local_id = 1`, project.ID).Scan(&title, &archivedAt); err != nil {
+		t.Fatal(err)
+	}
+	if title != "Original title" || !archivedAt.Valid {
+		t.Fatalf("closed card title=%q archivedAt=%+v", title, archivedAt)
+	}
+}
+
 func TestImportTrelloProject_RollsBackOnMetadataMismatch(t *testing.T) {
 	st, sqlDB, cleanup := newTrelloTestStore(t)
 	defer cleanup()

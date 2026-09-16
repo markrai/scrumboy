@@ -82,6 +82,9 @@ Backup format **1.2** adds additive story archival state and remains backward-co
 format **1.1** imports. Older applications that only understand 1.1 should reject 1.2 files
 rather than silently dropping archive state.
 
+A payload labeled 1.1 that contains `archivedAt` is rejected as mislabeled newer data;
+format 1.1 never acquires archival semantics from an unknown field.
+
 New exports explicitly include:
 
 - Project `priorityTiers` — `[]` means the canonical/default priority tiers
