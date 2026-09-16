@@ -218,8 +218,13 @@ export function buildFiltersHtml(chipsHTML, opts) {
     return opts?.innerOnly ? inner : `<div class="filters">${inner}</div>`;
 }
 export function buildTopbarHtml(args) {
-    const { board, minimalTopbar, search, searchPlaceholder, searchPlaceholderKey, isMobile, isAnonymousTempBoard, currentUserProjectRole, showVoiceCommands, user, backLabel, backLabelKey, wallEnabled, assignee, sort, priority, boardMembers, } = args;
-    const filterPanelHTML = buildFilterPanelHtml(assignee ?? null, sort ?? null, boardMembers ?? [], user, priority ?? null, board.priorityOrder ?? []);
+    const { board, minimalTopbar, search, searchPlaceholder, searchPlaceholderKey, isMobile, isAnonymousTempBoard, currentUserProjectRole, showVoiceCommands, user, backLabel, backLabelKey, wallEnabled, assignee, sort, priority, boardMembers, tag, sprintId, boardFilterLayout = 'legacy', sprintData, } = args;
+    const filterPanelHTML = buildFilterPanelHtml(assignee ?? null, sort ?? null, boardMembers ?? [], user, priority ?? null, board.priorityOrder ?? [], {
+        layout: boardFilterLayout,
+        sprintId: sprintId ?? null,
+        sprintsEnabled: board.project.sprintsEnabled !== false,
+        sprintData: sprintData ?? null,
+    });
     const voiceCommandClass = showVoiceCommands ? "topbar--voice-commands-on" : "topbar--voice-commands-off";
     const voiceCommandTriggerHTML = showVoiceCommands ? renderVoiceCommandTriggerHtml() : "";
     // Scrumbaby is durable-projects-only; temp/anonymous boards never see the entry point.
@@ -240,6 +245,24 @@ export function buildTopbarHtml(args) {
     const archiveLabel = escapeHTML(hasI18nKey("board.actions.openArchive") ? t("board.actions.openArchive") : "Archive");
     const changeProjectImageLabel = escapeHTML(t("board.actions.changeProjectImage"));
     const deleteProjectLabel = escapeHTML(t("board.actions.deleteProject"));
+    const searchInputHTML = `
+          <input
+            type="text"
+            id="searchInput"
+            class="search-input"
+            placeholder="${searchPlaceholder}"
+            ${searchPlaceholderAttr}
+            value="${escapeHTML(search || "")}"
+            ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
+          />
+          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
+          ${filterPanelHTML}`;
+    const searchControlsHTML = boardFilterLayout === 'omni'
+        ? `<div class="omni-bar" data-board-filter-layout="omni">
+        <div class="search-input-wrapper">${searchInputHTML}</div>
+        <div class="omni-tag-pills" id="omniTagPills" aria-live="polite"></div>
+      </div>`
+        : `<div class="search-input-wrapper" data-board-filter-layout="legacy">${searchInputHTML}</div>`;
     if (minimalTopbar) {
         return `
       <div class="topbar ${voiceCommandClass}">
@@ -256,19 +279,7 @@ export function buildTopbarHtml(args) {
         ${voiceCommandTriggerHTML}
         ${wallButtonHTML}
         <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive"><img src="/archive.svg" alt="" width="20" height="20" decoding="async" /></button>
-        <div class="search-input-wrapper">
-          <input
-            type="text"
-            id="searchInput"
-            class="search-input"
-            placeholder="${searchPlaceholder}"
-            ${searchPlaceholderAttr}
-            value="${escapeHTML(search || "")}"
-            ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
-          ${filterPanelHTML}
-        </div>
+        ${searchControlsHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--ghost" id="manageMembersBtn" title="${manageMembersLabel}" data-i18n-title="board.actions.manageMembers" data-i18n-text="board.actions.manageMembers">${manageMembersLabel}</button>` : ''}
@@ -293,19 +304,7 @@ export function buildTopbarHtml(args) {
         ${voiceCommandTriggerHTML}
         ${wallButtonHTML}
         <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive"><img src="/archive.svg" alt="" width="20" height="20" decoding="async" /></button>
-        <div class="search-input-wrapper">
-          <input
-            type="text"
-            id="searchInput"
-            class="search-input"
-            placeholder="${searchPlaceholder}"
-            ${searchPlaceholderAttr}
-            value="${escapeHTML(search || "")}"
-            ${titleAttr(FIELD_TOOLTIPS.boardSearch)}
-          />
-          ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
-          ${filterPanelHTML}
-        </div>
+        ${searchControlsHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn" title="${deleteProjectLabel}" aria-label="${deleteProjectLabel}" data-i18n-title="board.actions.deleteProject" data-i18n-aria-label="board.actions.deleteProject"><img src="/trash.svg" alt="" width="20" height="20" /></button>` : ''}
@@ -376,21 +375,58 @@ function priorityFilterOptionsHtml(priority, tiers) {
       ${tierOptions}
   `;
 }
+export function buildSprintFilterSectionHtml(sprintId, sprintData) {
+    const current = sprintId === 'assigned' ? 'scheduled' : (sprintId || '');
+    const optionClass = (value, sprint) => {
+        const stateClass = sprint?.state === 'ACTIVE'
+            ? ' search-filter-option--active-sprint'
+            : sprint?.state === 'CLOSED'
+                ? ' search-filter-option--closed-sprint'
+                : sprint?.state === 'PLANNED'
+                    ? ' search-filter-option--planned-sprint'
+                    : '';
+        return `search-filter-option${current === value ? ' is-active' : ''}${stateClass}`;
+    };
+    const nameCount = new Map();
+    for (const sprint of sprintData?.sprints ?? []) {
+        nameCount.set(sprint.name, (nameCount.get(sprint.name) ?? 0) + 1);
+    }
+    const seen = new Set();
+    const namedOptions = (sprintData?.sprints ?? []).map((sprint) => {
+        if (seen.has(sprint.id))
+            return '';
+        seen.add(sprint.id);
+        const label = (nameCount.get(sprint.name) ?? 0) > 1 ? `${sprint.name} (${sprint.number})` : sprint.name;
+        return `<button type="button" class="${optionClass(String(sprint.number), sprint)}" data-sprint-option="${escapeHTML(String(sprint.number))}">${escapeHTML(label)}</button>`;
+    }).join('');
+    return `
+      <div class="search-filter-panel__section" data-sprint-filter-section>
+        <div class="search-filter-panel__label" data-i18n-text="board.filters.sprint">${escapeHTML(t('board.filters.sprint'))}</div>
+        <button type="button" class="${optionClass('')}" data-sprint-option="" data-i18n-text="board.filters.allSprints">${escapeHTML(t('board.filters.allSprints'))}</button>
+        <button type="button" class="${optionClass('scheduled')}" data-sprint-option="scheduled" data-i18n-text="board.filters.scheduled">${escapeHTML(t('board.filters.scheduled'))}</button>
+        <button type="button" class="${optionClass('unscheduled')}" data-sprint-option="unscheduled" data-i18n-text="board.filters.unscheduled">${escapeHTML(t('board.filters.unscheduled'))}</button>
+        ${namedOptions}
+      </div>`;
+}
 // isBoardFilterActive is true whenever a non-default assignee filter, a
 // non-default (manual) sort order, or a priority filter is applied. Used to
 // drive the toggle's pulse animation, both on initial render and after the
 // user picks an option.
-export function isBoardFilterActive(assignee, sort, priority) {
-    return !!assignee || !!sort || !!priority;
+export function isBoardFilterActive(assignee, sort, priority, sprintId = null, layout = 'legacy') {
+    return !!assignee || !!sort || !!priority || (layout === 'omni' && !!sprintId);
 }
 // buildFilterPanelHtml is the single source of truth for the assignee/sort/priority
 // option lists (labels + i18n + active-state) rendered inside the expandable
 // search-filter popover. It replaces the old standalone <select> (assignee
 // only) with a button-list panel that also carries the sort and priority
 // options, dual-purposing the search input instead of adding another topbar control.
-export function buildFilterPanelHtml(assignee, sort, boardMembers, user, priority = null, priorityTiers = []) {
+export function buildFilterPanelHtml(assignee, sort, boardMembers, user, priority = null, priorityTiers = [], options = {}) {
+    const layout = options.layout ?? 'legacy';
     const filtersLabel = escapeHTML(t("board.filters.openFilters"));
-    const toggleActiveClass = isBoardFilterActive(assignee, sort, priority) ? " search-filter-toggle--active" : "";
+    const toggleActiveClass = isBoardFilterActive(assignee, sort, priority, options.sprintId ?? null, layout) ? " search-filter-toggle--active" : "";
+    const sprintSection = layout === 'omni' && options.sprintsEnabled
+        ? buildSprintFilterSectionHtml(options.sprintId ?? null, options.sprintData ?? null)
+        : '';
     return `
     <button
       type="button"
@@ -408,6 +444,7 @@ export function buildFilterPanelHtml(assignee, sort, boardMembers, user, priorit
       </svg>
     </button>
     <div class="search-filter-panel" id="searchFilterPanel" hidden>
+      ${sprintSection}
       <div class="search-filter-panel__section">
         <div class="search-filter-panel__label" data-i18n-text="board.filters.assignee">${escapeHTML(t("board.filters.assignee"))}</div>
         ${assigneeFilterOptionsHtml(assignee, boardMembers, user)}

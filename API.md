@@ -455,8 +455,14 @@ Conventions:
 - **Tag filter:** on durable projects, `tag` is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
 - **Assignee filter:** `assignee` is a **string**. Use `"me"` for the authenticated caller, `"unassigned"` for todos with no assignee, or a positive user ID encoded as a string such as `"42"`. Sentinels are case-sensitive after surrounding whitespace is trimmed. Unknown/non-member positive IDs return an empty board; malformed values return `VALIDATION_ERROR` with `field: "assignee"`. A JSON number such as `42` is invalid.
 - **Priority filter:** omit `priority` or send an empty string for all priorities, use `"**none**"` for todos without a priority, or use a literal priority-tier key. Tier keys contain only lowercase letters, digits, and underscores, while the no-priority sentinel contains `*`, so a real key such as `"none"` remains unambiguous. An unknown tier key returns an empty board.
-- **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.columns`
+- **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.tags`, `data.columns`
   (each: `key`, `name`, `isDone`, `items` as todo-shaped objects).
+  `data.tags` is the board's **current-work projection**: it includes canonical tags used
+  by at least one non-archived todo and counts unique non-archived todos only. When the
+  request's `tag` filter names a catalog/historical tag with no active uses, that selected
+  tag is additionally returned with `count: 0`, preserving a visible, clearable deep-link
+  filter. Archive-only and unused names are otherwise omitted. This does not change the
+  archive-inclusive project catalog exposed by `tags_listProject` and the REST tag catalog.
   Successful project and todo `projectSlug` fields always use the persisted
   canonical slug. Lookup accepts normalization-equivalent input such as
   uppercase or surrounding whitespace, but the response does not echo that
@@ -571,6 +577,11 @@ Shared inputs: many tools use `projectSlug` only or `projectSlug` + `sprintId` (
 Activate/close enforce sprint state (e.g. planned vs active); violations return `VALIDATION_ERROR` with details.
 
 ### Tags
+
+Project tag catalog operations remain archive-inclusive and are distinct from the active
+`data.tags` projection returned by board reads. They are the source for tag management,
+explicit **Show all project tags** in story editing, Settings/MCP catalog workflows, and
+export; selecting a tag from the catalog does not delete or detach historical associations.
 
 | Tool | Input | Output |
 |------|-------|--------|

@@ -83,10 +83,13 @@ import {
   clearSprintChipDataIfSlugChanged,
   computeBoardChipsRender,
   ensureSprintSubscription,
+  getSprintChipDataForSlug,
   hasSprintChipDataForSlug,
+  cancelPendingSearchReload,
   resetBoardFilterUiState,
   setSprintChipDataForSlug,
   updateChipsOnly,
+  updateOmniTagPills,
 } from './board-filters.js';
 export { notifySprintStateChanged } from './board-filters.js';
 import {
@@ -102,6 +105,10 @@ import {
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import { applyWrapLanesClass } from '../core/wrap-lanes-preferences.js';
+import {
+  BOARD_FILTER_LAYOUT_CHANGED_EVENT,
+  getBoardFilterLayoutPreference,
+} from '../core/board-filter-layout-preferences.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
@@ -249,7 +256,7 @@ function syncVoiceCommandPreferenceInTopbar(): void {
     if (wallBtn) {
       wallBtn.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
     } else {
-      topbar.querySelector(".search-input-wrapper")?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
+      (topbar.querySelector(".omni-bar") ?? topbar.querySelector(".search-input-wrapper"))?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
     }
   }
   bindVoiceCommandButton();
@@ -383,7 +390,13 @@ function rerenderBoardForLocaleChange(): void {
   });
 }
 
+on(BOARD_FILTER_LAYOUT_CHANGED_EVENT, () => {
+  cancelPendingSearchReload();
+  rerenderBoardForLocaleChange();
+});
+
 export function stopBoardEvents(): void {
+  cancelPendingSearchReload();
   disconnectBoardEvents();
 }
 
@@ -899,18 +912,22 @@ function updateBoardContent(board: Board, tag: string, search: string, sprintId:
   setTagColors(tagColors);
 
   const isAnonymousTempBoard = isAnonymousBoard(board);
-  const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
+  if (getBoardFilterLayoutPreference() === 'legacy') {
+    const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
 
-  // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
-  if (!chipsUnchanged) {
-    const filtersEl = document.querySelector(".filters");
-    if (filtersEl) {
-      filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
-      bindBoardFilterUi({
-        reloadBoard: loadBoardBySlug,
-        showError: (message) => showToast(message),
-      });
+    // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
+    if (!chipsUnchanged) {
+      const filtersEl = document.querySelector(".filters");
+      if (filtersEl) {
+        filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
+        bindBoardFilterUi({
+          reloadBoard: loadBoardBySlug,
+          showError: (message) => showToast(message),
+        });
+      }
     }
+  } else {
+    updateOmniTagPills(board);
   }
 
   // Precompute for card render loop
@@ -1044,7 +1061,10 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
 
   // Anonymous temporary board: expiresAt set, no creator (pastebin-style). Rename + New Todo without login — see isAnonymousBoard() / backend.
   const isAnonymousTempBoard = isAnonymousBoard(board);
-  const { chipsHTML } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
+  const boardFilterLayout = getBoardFilterLayoutPreference();
+  const chipsHTML = boardFilterLayout === 'legacy'
+    ? computeBoardChipsRender(board, tag || "", sprintId ?? null).chipsHTML
+    : '';
   const showVoiceCommands = canShowVoiceCommandsForBoard(projectId, board);
 
   // Minimal topbar (used for temporary/anonymous boards): logo, project name, rename (if anonymous temp), New Todo, Settings
@@ -1066,6 +1086,10 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     sort,
     priority,
     boardMembers: getBoardMembers(),
+    tag,
+    sprintId,
+    boardFilterLayout,
+    sprintData: getSprintChipDataForSlug(getSlug()),
   });
   const membersByUserId = getMembersByUserId();
   const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -1081,7 +1105,7 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
       ${topbarHTML}
 
       <div class="container">
-        ${buildFiltersHtml(chipsHTML)}
+        ${boardFilterLayout === 'legacy' ? buildFiltersHtml(chipsHTML) : ''}
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">
@@ -1949,6 +1973,7 @@ export async function renderBoard(
   opts: { skipLoad?: boolean; prefetchedBoard?: Board } = {}
 ): Promise<void> {
   ensureBoardI18nBinding();
+  cancelPendingSearchReload();
   if (!slug) throw new Error("Slug is required");
   debugLog("renderBoard start", slug);
   if (opts.skipLoad) {

@@ -12,6 +12,7 @@ import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
+import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions } from './todo-tag-suggestions.js';
 export { getTodoFormPermissions, } from './todo-permissions.js';
 export { getTagsFromChips, normalizeTagName, removeTag, renderTagAutocomplete, renderTagsChips, setupTagAutocomplete, } from './todo-tags.js';
 let todoNotesMode = "markdown";
@@ -299,6 +300,7 @@ export function __isTodoDialogDirtyForTest() {
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
     const isArchived = mode === "edit" && !!todo?.archivedAt;
+    const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
     setEditingTodo(mode === "edit" ? todo : null);
     bindTodoDialogCloseGuards();
     bindTodoDialogLinkLifecycle();
@@ -311,37 +313,38 @@ export async function openTodoDialog(opts) {
         role: opts.role,
     });
     setTodoFormPermissions(permissions);
-    if (getSlug()) {
-        try {
-            let tagsResponse;
-            if (getUser()) {
-                tagsResponse = (await apiFetch(`/api/tags/mine`));
-            }
-            else {
-                tagsResponse = (await apiFetch(`/api/board/${getSlug()}/tags`));
-            }
-            setAvailableTags(tagsResponse.map((tag) => (typeof tag === "string" ? tag : tag.name)));
-            const tagsMap = {};
-            tagsResponse.forEach((tag) => {
-                const tagName = typeof tag === "string" ? tag : tag.name;
-                tagsMap[tagName.toLowerCase()] = tagName;
-                if (tag.color) {
-                    const tagColors = { ...getTagColors() };
-                    tagColors[tagName] = tag.color;
-                    setTagColors(tagColors);
-                }
-            });
-            setAvailableTagsMap(tagsMap);
+    const installTagSuggestions = (suggestions) => {
+        setAvailableTags(suggestions.map((tag) => tag.name));
+        const tagsMap = {};
+        const tagColors = { ...getTagColors() };
+        for (const tag of suggestions) {
+            tagsMap[tag.name.toLocaleLowerCase()] = tag.name;
+            if (tag.color)
+                tagColors[tag.name] = tag.color;
         }
-        catch (err) {
-            console.error("Failed to fetch tags:", err);
-            setAvailableTags([]);
-            setAvailableTagsMap({});
-        }
-    }
-    else {
-        setAvailableTags([]);
-        setAvailableTagsMap({});
+        setAvailableTagsMap(tagsMap);
+        setTagColors(tagColors);
+    };
+    installTagSuggestions(defaultTodoTagSuggestions(board, tagsToShow));
+    const showAllProjectTagsBtn = document.getElementById("showAllProjectTagsBtn");
+    if (showAllProjectTagsBtn) {
+        showAllProjectTagsBtn.hidden = !getSlug() || !permissions.canEditTags;
+        showAllProjectTagsBtn.disabled = false;
+        showAllProjectTagsBtn.onclick = async () => {
+            const slug = getSlug();
+            if (!slug)
+                return;
+            showAllProjectTagsBtn.disabled = true;
+            try {
+                installTagSuggestions(await loadAllProjectTagSuggestions(slug, getTagsFromChips()));
+                showAllProjectTagsBtn.hidden = true;
+                setupTagAutocomplete();
+            }
+            catch (err) {
+                console.error("Failed to fetch project tag catalog:", err);
+                showAllProjectTagsBtn.disabled = false;
+            }
+        };
     }
     const assigneeField = document.getElementById("todoAssigneeField");
     const assigneeSelect = document.getElementById("todoAssignee");
@@ -601,7 +604,6 @@ export async function openTodoDialog(opts) {
     const tagsChips = document.getElementById("tagsChips");
     if (tagsChips)
         tagsChips.innerHTML = "";
-    const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
     renderTagsChips(tagsToShow, { canRemove: permissions.canEditTags });
     if (permissions.canEditTags) {
         setupTagAutocomplete();

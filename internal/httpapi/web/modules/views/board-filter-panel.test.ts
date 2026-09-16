@@ -73,11 +73,17 @@ function makeTiers(): PriorityTier[] {
   ];
 }
 
-function renderFilterShell(assignee: string | null, sort: string | null, user: any = { id: 1, name: 'Me', email: 'me@example.com' }, priority: string | null = null): void {
+function renderFilterShell(
+  assignee: string | null,
+  sort: string | null,
+  user: any = { id: 1, name: 'Me', email: 'me@example.com' },
+  priority: string | null = null,
+  panelOptions: Parameters<typeof buildFilterPanelHtml>[6] = {},
+): void {
   document.body.innerHTML = `
     <div class="search-input-wrapper">
       <input id="searchInput" type="text" />
-      ${buildFilterPanelHtml(assignee, sort, makeMembers(), user, priority, makeTiers())}
+      ${buildFilterPanelHtml(assignee, sort, makeMembers(), user, priority, makeTiers(), panelOptions)}
     </div>
   `;
 }
@@ -87,10 +93,10 @@ async function loadModules() {
   return { boardFilters };
 }
 
-async function setupState(url: string, opts?: { tag?: string; search?: string; assignee?: string | null; sort?: string | null; priority?: string | null; user?: any }) {
+async function setupState(url: string, opts?: { tag?: string; search?: string; assignee?: string | null; sort?: string | null; priority?: string | null; user?: any; panelOptions?: Parameters<typeof buildFilterPanelHtml>[6] }) {
   toastMock.mockClear();
   window.history.replaceState({}, '', url);
-  renderFilterShell(opts?.assignee ?? null, opts?.sort ?? null, opts?.user, opts?.priority ?? null);
+  renderFilterShell(opts?.assignee ?? null, opts?.sort ?? null, opts?.user, opts?.priority ?? null, opts?.panelOptions);
 
   const { boardFilters } = await loadModules();
   selectorState.board = null;
@@ -145,6 +151,31 @@ describe('board filter panel (assignee + sort)', () => {
       expect(html).toContain('data-sort-option=""');
       expect(html).toContain('data-sort-option="newest"');
       expect(html).toContain('data-sort-option="oldest"');
+    });
+
+    it('renders Sprint controls only for Omni boards with sprints enabled', () => {
+      const omni = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
+        layout: 'omni',
+        sprintsEnabled: true,
+        sprintId: '3',
+        sprintData: { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'ACTIVE' }] },
+      });
+      expect(omni).toContain('data-sprint-option=""');
+      expect(omni).toContain('data-sprint-option="scheduled"');
+      expect(omni).toContain('data-sprint-option="unscheduled"');
+      expect(omni).toContain('class="search-filter-option is-active search-filter-option--active-sprint" data-sprint-option="3"');
+
+      const legacy = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
+        layout: 'legacy',
+        sprintsEnabled: true,
+        sprintId: '3',
+      });
+      expect(legacy).not.toContain('data-sprint-option');
+    });
+
+    it('marks the chevron active for Sprint only in Omni', () => {
+      expect(isBoardFilterActive(null, null, null, '3', 'omni')).toBe(true);
+      expect(isBoardFilterActive(null, null, null, '3', 'legacy')).toBe(false);
     });
 
     it('omits the "Assigned to me" option when there is no logged-in user (anonymous/temp boards)', () => {
@@ -305,6 +336,57 @@ describe('board filter panel (assignee + sort)', () => {
   });
 
   describe('URL param round-trip and reload wiring', () => {
+    it('refreshes the Omni Sprint section when sprint data arrives asynchronously', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const { boardFilters } = await setupState('/alpha?sprintId=4', {
+        panelOptions: {
+          layout: 'omni',
+          sprintsEnabled: true,
+          sprintId: '4',
+          sprintData: null,
+        },
+      });
+      selectorState.board = {
+        project: { slug: 'alpha', sprintsEnabled: true },
+        tags: [],
+        columns: {},
+      } as Board;
+
+      boardFilters.setSprintChipDataForSlug('alpha', {
+        sprints: [{ id: 41, number: 4, name: 'Async Sprint', state: 'ACTIVE' }],
+      });
+      boardFilters.updateChipsOnly('4');
+
+      const option = document.querySelector('[data-sprint-option="4"]');
+      expect(option?.textContent).toContain('Async Sprint');
+      expect(option?.classList.contains('is-active')).toBe(true);
+      expect(option?.classList.contains('search-filter-option--active-sprint')).toBe(true);
+      expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
+    });
+
+    it('picking an Omni Sprint preserves the selected tag and composes every filter', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const { boardFilters } = await setupState('/alpha?tag=bug&search=query&assignee=me&sort=newest&priority=high', {
+        tag: 'bug',
+        search: 'query',
+        panelOptions: {
+          layout: 'omni',
+          sprintsEnabled: true,
+          sprintData: { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'PLANNED' }] },
+        },
+      });
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+      (document.querySelector('[data-sprint-option="3"]') as HTMLButtonElement).click();
+
+      const params = new URL(window.location.href).searchParams;
+      expect(params.get('tag')).toBe('bug');
+      expect(params.get('sprintId')).toBe('3');
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', 'bug', 'query', '3', 'me', 'newest', 'high');
+      expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
+    });
+
     it('picking an assignee option sets the URL param and reloads with all 6 positional args', async () => {
       const { boardFilters } = await setupState('/alpha?tag=bug&search=query&sprintId=7', { tag: 'bug', search: 'query' });
       const reloadBoard = vi.fn().mockResolvedValue(undefined);

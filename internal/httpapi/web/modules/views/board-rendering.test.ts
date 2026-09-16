@@ -134,6 +134,27 @@ describe('board topbar rendering', () => {
     expect(distHtml.indexOf('id="voiceCommandBtn"')).toBeLessThan(distHtml.indexOf('id="searchInput"'));
   });
 
+  it('renders the Omni host beside search and keeps Legacy markup opt-in', () => {
+    const base = {
+      board: board(),
+      minimalTopbar: false,
+      search: 'andr',
+      searchPlaceholder: 'Search',
+      isMobile: false,
+      isAnonymousTempBoard: false,
+      currentUserProjectRole: 'maintainer',
+      user: null,
+      backLabel: 'Projects',
+    };
+    const omni = buildTopbarHtml({ ...base, boardFilterLayout: 'omni' });
+    expect(omni).toContain('class="omni-bar"');
+    expect(omni).toContain('id="omniTagPills"');
+
+    const legacy = buildTopbarHtml({ ...base, boardFilterLayout: 'legacy' });
+    expect(legacy).not.toContain('id="omniTagPills"');
+    expect(legacy).toContain('data-board-filter-layout="legacy"');
+  });
+
   it('renders plain escaped titles on cards and never renders markdown from todo bodies', () => {
     const html = renderTodoCard({
       id: 7,

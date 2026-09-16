@@ -200,6 +200,17 @@ describe('todo-tags', () => {
     expect(document.querySelector('.tag-chip-remove')).toBeNull();
   });
 
+  it('renders an attached historical tag with a catalog-populated color', async () => {
+    selectorState.tagColors = { historical: '#123456' };
+    const mod = await loadTodoTagsModule();
+
+    mod.renderTagsChips(['historical'], { canRemove: false });
+
+    const chip = document.querySelector('.tag-chip[data-tag="historical"]');
+    expect(chip?.getAttribute('style')).toContain('#123456');
+    expect(chip?.textContent).toContain('historical');
+  });
+
   it('localizes remove tag aria labels', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({
@@ -225,6 +236,39 @@ describe('todo-tags', () => {
     mod.renderTagsChips(['Feature'], { canRemove: true });
     expect(mod.normalizeTagName('feature')).toBe('Feature');
     expect(mod.normalizeTagName('unknown')).toBe('unknown');
+  });
+
+  it('defaults suggestions to active project tags plus the story own historical tags', async () => {
+    const mod = await import('./todo-tag-suggestions.js');
+    const suggestions = mod.defaultTodoTagSuggestions({
+      project: { id: 1, name: 'Alpha', slug: 'alpha', dominantColor: '#000000' },
+      tags: [
+        { name: 'active', count: 2, color: '#ff0000' },
+        { name: 'archive-only', count: 0 },
+      ],
+      columns: {},
+    }, ['archive-only', 'story-only']);
+
+    expect(suggestions).toEqual([
+      { name: 'active', color: '#ff0000' },
+      { name: 'archive-only' },
+      { name: 'story-only' },
+    ]);
+  });
+
+  it('Show all loads the full current-project catalog and never the Mine library', async () => {
+    const mod = await import('./todo-tag-suggestions.js');
+    const fetcher = vi.fn(async () => [
+      { name: 'historical', count: 0 },
+      { name: 'active', count: 2 },
+    ]);
+
+    await expect(mod.loadAllProjectTagSuggestions('alpha team', ['story-only'], fetcher)).resolves.toEqual([
+      { name: 'historical' },
+      { name: 'active' },
+      { name: 'story-only' },
+    ]);
+    expect(fetcher).toHaveBeenCalledWith('/api/board/alpha%20team/tags');
   });
 
   it('adds typed tags, accepts autocomplete suggestions, and ignores case-insensitive duplicates', async () => {

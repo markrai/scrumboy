@@ -5,8 +5,8 @@ import { on, off } from '../events.js';
 import { apiErrorMessage, formatDate, t } from '../i18n/index.js';
 import { SseConnectionManager } from '../core/sse-client.js';
 import { recordLocalMutation, setBulkUpdating } from '../realtime/guard.js';
-import { getAuthStatusAvailable, getBoard, getBoardMembers, getEditingTodo, getProjectId, getSlug, getUser, } from '../state/selectors.js';
-import { setBoard, setBoardMembers, setOpenTodoSegment } from '../state/mutations.js';
+import { getAuthStatusAvailable, getBoard, getBoardMembers, getEditingTodo, getProjectId, getSlug, getTagColors, getUser, } from '../state/selectors.js';
+import { setBoard, setBoardMembers, setOpenTodoSegment, setTagColors } from '../state/mutations.js';
 import { escapeHTML, isTemporaryBoard, renderAvatarContent, renderUserAvatar, sanitizeHexColor, showToast } from '../utils.js';
 import { navigate } from '../router.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
@@ -26,6 +26,7 @@ let archiveEscapeBound = false;
 let archiveAnonSseManager = null;
 let archiveEventsSlug = null;
 let archiveRefreshTimer = null;
+let archiveTagColors = new Map();
 function canMutateArchive() {
     return currentRole === 'maintainer' || isTemporaryBoard(getBoard());
 }
@@ -45,10 +46,28 @@ function archivedDate(todo) {
         minute: '2-digit',
     });
 }
+function installArchiveTagCatalog(catalog) {
+    const colors = { ...getTagColors() };
+    const catalogColors = new Map();
+    for (const tag of catalog) {
+        if (!tag || typeof tag.name !== 'string' || !tag.name.trim())
+            continue;
+        const key = tag.name.toLocaleLowerCase();
+        for (const existingName of Object.keys(colors)) {
+            if (existingName.toLocaleLowerCase() === key)
+                delete colors[existingName];
+        }
+        if (typeof tag.color === 'string' && tag.color) {
+            catalogColors.set(key, tag.color);
+            colors[tag.name] = tag.color;
+        }
+    }
+    archiveTagColors = catalogColors;
+    setTagColors(colors);
+}
 function archiveTagHtml(todo) {
-    const colors = new Map((getBoard()?.tags || []).map((tag) => [tag.name, tag.color || '']));
     return (todo.tags || []).map((name) => {
-        const color = sanitizeHexColor(colors.get(name));
+        const color = sanitizeHexColor(archiveTagColors.get(name.toLocaleLowerCase()));
         const style = color ? ` style="border-color:${color};background:${color}20;color:${color}"` : '';
         return `<span class="tag"${style}>${escapeHTML(name)}</span>`;
     }).join('');
@@ -437,11 +456,17 @@ export async function renderArchive(slug, openTodoSegment = null) {
     archiveNextCursor = null;
     archiveHasMore = false;
     archiveLoadFailed = false;
+    archiveTagColors = new Map();
     archiveSelectedLocalIds.clear();
     app.innerHTML = `<div class="page page--archive"><main class="container archive-container"><div class="archive-state" role="status">${escapeHTML(t('archive.loading'))}</div></main></div>`;
-    const board = await apiFetch(`/api/board/${encodeURIComponent(slug)}?limitPerLane=1`);
+    const encodedSlug = encodeURIComponent(slug);
+    const [board, catalogResponse] = await Promise.all([
+        apiFetch(`/api/board/${encodedSlug}?limitPerLane=1`),
+        apiFetch(`/api/board/${encodedSlug}/tags`).catch(() => []),
+    ]);
     if (sequence !== archiveRenderSequence)
         return;
+    installArchiveTagCatalog(Array.isArray(catalogResponse) ? catalogResponse : []);
     const rendered = await bootstrapLoadedBoardView({
         board,
         slug,

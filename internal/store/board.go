@@ -191,16 +191,9 @@ func (s *Store) GetBoardPaged(ctx context.Context, pc *ProjectContext, tagFilter
 	}
 
 	durable := pc.Project.ExpiresAt == nil
-	tags, err := s.listTagCounts(ctx, projectID, viewerUserID, &pc.Role, durable)
+	tags, err := s.listActiveBoardTags(ctx, projectID, viewerUserID, &pc.Role, durable, tagFilter)
 	if err != nil {
 		return Project{}, nil, nil, nil, nil, err
-	}
-	active, err := s.activeBoardTagCounts(ctx, projectID)
-	if err != nil {
-		return Project{}, nil, nil, nil, nil, err
-	}
-	for i := range tags {
-		tags[i].Count = active[TagGroupKey(tags[i].Name)]
 	}
 	workflow, err := s.GetProjectWorkflow(ctx, projectID)
 	if err != nil {
@@ -274,16 +267,9 @@ func (s *Store) GetBoard(ctx context.Context, pc *ProjectContext, tagFilter stri
 	}
 
 	durable := pc.Project.ExpiresAt == nil
-	tags, err := s.listTagCounts(ctx, projectID, viewerUserID, &pc.Role, durable)
+	tags, err := s.listActiveBoardTags(ctx, projectID, viewerUserID, &pc.Role, durable, tagFilter)
 	if err != nil {
 		return Project{}, nil, nil, nil, err
-	}
-	active, err := s.activeBoardTagCounts(ctx, projectID)
-	if err != nil {
-		return Project{}, nil, nil, nil, err
-	}
-	for i := range tags {
-		tags[i].Count = active[TagGroupKey(tags[i].Name)]
 	}
 	workflow, err := s.GetProjectWorkflow(ctx, projectID)
 	if err != nil {

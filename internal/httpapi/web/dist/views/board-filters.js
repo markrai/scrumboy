@@ -1,10 +1,11 @@
 import { on } from '../events.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
 import { normalizeBoardTodoSort, setBoardTodoSortPreference } from '../core/board-sort-preferences.js';
-import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag, getTagColors, getUser, } from '../state/selectors.js';
+import { getBoardFilterLayoutPreference } from '../core/board-filter-layout-preferences.js';
+import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag, getTagColors, getUser, } from '../state/selectors.js';
 import { boardSprintsEnabled } from '../sprints.js';
-import { isAnonymousBoard, showToast } from '../utils.js';
-import { buildChipsHTML, getCombinedChipData, isBoardFilterActive, } from './board-rendering.js';
+import { escapeHTML, sanitizeHexColor, showToast } from '../utils.js';
+import { buildSprintFilterSectionHtml, buildChipsHTML, getCombinedChipData, isBoardFilterActive, } from './board-rendering.js';
 let lastDisplayChipData = [];
 let lastSprintsData = null;
 let lastSprintsDataSlug = null;
@@ -14,6 +15,7 @@ let mobileTagPageBoundaries = [];
 let mobileTagPaginationResizeBound = false;
 let sprintEventSubscribed = false;
 let filterPanelDelegationBound = false;
+let searchTimeout = null;
 const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
@@ -67,12 +69,111 @@ function setPriorityParam(priority) {
         url.searchParams.delete("priority");
     history.replaceState({}, "", url.pathname + url.search);
 }
+function urlFilter(name) {
+    return new URL(window.location.href).searchParams.get(name);
+}
 function reloadBoardWithCurrentFilters() {
     if (!reloadBoardFn)
         return;
-    reloadBoardFn(getSlug(), new URL(window.location.href).searchParams.get("tag") ?? "", getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
+    reloadBoardFn(getSlug(), urlFilter("tag") ?? "", urlFilter("search"), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
         showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
     });
+}
+export function cancelPendingSearchReload() {
+    if (searchTimeout !== null) {
+        clearTimeout(searchTimeout);
+        searchTimeout = null;
+    }
+}
+export function matchOmniTags(query, tags, appliedTag = '') {
+    const needle = query.trim().toLowerCase();
+    if (!needle)
+        return [];
+    const applied = appliedTag.toLowerCase();
+    return tags
+        .filter((tag) => tag.count > 0 && tag.name.toLowerCase() !== applied)
+        .map((tag) => {
+        const name = tag.name.toLowerCase();
+        const rank = name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 : 3;
+        return { tag, rank };
+    })
+        .filter((entry) => entry.rank < 3)
+        .sort((a, b) => {
+        if (a.rank !== b.rank)
+            return a.rank - b.rank;
+        const left = a.tag.name.toLowerCase();
+        const right = b.tag.name.toLowerCase();
+        return left < right ? -1 : left > right ? 1 : a.tag.name < b.tag.name ? -1 : a.tag.name > b.tag.name ? 1 : 0;
+    })
+        .map((entry) => entry.tag);
+}
+function renderOmniTagPills(board = getBoard()) {
+    const pills = document.getElementById('omniTagPills');
+    const input = document.getElementById('searchInput');
+    if (!pills || !input || !board)
+        return;
+    const selectedTag = urlFilter('tag') ?? getTag() ?? '';
+    const selectedFromBoard = board.tags.find((tag) => tag.name.toLocaleLowerCase() === selectedTag.toLocaleLowerCase());
+    const selectedColor = selectedFromBoard?.color || getTagColors()[selectedTag];
+    const selectedSafeColor = sanitizeHexColor(selectedColor);
+    const selectedStyle = selectedSafeColor
+        ? ` style="border-color:${escapeHTML(selectedSafeColor)};background:${escapeHTML(selectedSafeColor)}20;color:${escapeHTML(selectedSafeColor)}"`
+        : '';
+    const selectedHTML = selectedTag
+        ? `<span class="omni-tag-pill omni-tag-pill--applied"${selectedStyle}>
+        <span>${escapeHTML(selectedTag)}</span>
+        <button type="button" class="omni-tag-pill__clear" data-omni-clear-tag aria-label="${escapeHTML(t('board.filters.clearTag', { name: selectedTag }))}">×</button>
+      </span>`
+        : '';
+    const suggestionsHTML = matchOmniTags(input.value, board.tags, selectedTag).map((tag) => {
+        const color = sanitizeHexColor(tag.color || getTagColors()[tag.name]);
+        const style = color ? ` style="border-color:${escapeHTML(color)};background:${escapeHTML(color)}20;color:${escapeHTML(color)}"` : '';
+        return `<button type="button" class="omni-tag-pill omni-tag-pill--suggestion" data-omni-tag="${escapeHTML(tag.name)}"${style}>${escapeHTML(tag.name)}</button>`;
+    }).join('');
+    pills.innerHTML = selectedHTML + suggestionsHTML;
+}
+export function updateOmniTagPills(board = getBoard()) {
+    if (getBoardFilterLayoutPreference() !== 'omni')
+        return;
+    renderOmniTagPills(board);
+}
+function bindOmniTagPills() {
+    const pills = document.getElementById('omniTagPills');
+    if (!pills)
+        return;
+    pills.onkeydown = (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ')
+            return;
+        const target = event.target instanceof Element
+            ? event.target.closest('[data-omni-tag], [data-omni-clear-tag]')
+            : null;
+        if (!target)
+            return;
+        event.preventDefault();
+        target.click();
+    };
+    pills.onclick = (event) => {
+        const target = event.target instanceof Element ? event.target.closest('[data-omni-tag], [data-omni-clear-tag]') : null;
+        if (!target)
+            return;
+        const input = document.getElementById('searchInput');
+        if (target.hasAttribute('data-omni-clear-tag')) {
+            setTagParam('');
+        }
+        else {
+            cancelPendingSearchReload();
+            const nextTag = target.getAttribute('data-omni-tag') ?? '';
+            if (input)
+                input.value = '';
+            document.getElementById('searchClear')?.remove();
+            setSearchParam('');
+            setTagParam(nextTag);
+        }
+        renderOmniTagPills();
+        input?.focus();
+        reloadBoardWithCurrentFilters();
+    };
+    renderOmniTagPills();
 }
 function attachChipsDelegatedHandler() {
     const tagChipsEl = document.getElementById("tagChips");
@@ -121,16 +222,17 @@ function bindSearchInput() {
     const searchInput = document.getElementById("searchInput");
     if (!searchInput || searchInput[FILTER_BOUND_FLAG])
         return;
-    let searchTimeout = null;
     const handleClearClick = () => {
+        cancelPendingSearchReload();
         searchInput.value = "";
         setSearchParam("");
         if (!reloadBoardFn)
             return;
-        reloadBoardFn(getSlug(), getTag(), null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
+        reloadBoardFn(getSlug(), urlFilter('tag') ?? '', null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
             showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
         });
         updateClearButton();
+        renderOmniTagPills();
     };
     const updateClearButton = () => {
         const clearBtn = document.getElementById("searchClear");
@@ -159,13 +261,15 @@ function bindSearchInput() {
         const input = e.target;
         const value = input.value;
         updateClearButton();
-        clearTimeout(searchTimeout);
+        renderOmniTagPills();
+        cancelPendingSearchReload();
         searchTimeout = setTimeout(() => {
+            searchTimeout = null;
             const trimmedValue = value.trim();
             setSearchParam(trimmedValue);
             if (!reloadBoardFn)
                 return;
-            reloadBoardFn(getSlug(), getTag(), trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
+            reloadBoardFn(getSlug(), urlFilter('tag') ?? '', trimmedValue || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
                 showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
             });
         }, 300);
@@ -204,7 +308,7 @@ function openFilterPanel(panel, toggle) {
 // pulse/glow @keyframes animation on the chevron whenever a non-default
 // assignee filter or sort order is currently applied (from the URL).
 function updateFilterToggleActiveState(toggle) {
-    const active = isBoardFilterActive(getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    const active = isBoardFilterActive(getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), getSprintIdFromUrl(), getBoardFilterLayoutPreference());
     toggle.classList.toggle("search-filter-toggle--active", active);
 }
 function getFilterPanelElements() {
@@ -228,15 +332,23 @@ function handleFilterPanelDocumentClick(e) {
         return;
     }
     const optionEl = target instanceof Element
-        ? target.closest("[data-assignee-option], [data-sort-option], [data-priority-option]")
+        ? target.closest("[data-assignee-option], [data-sort-option], [data-priority-option], [data-sprint-option]")
         : null;
     if (optionEl && panel.contains(optionEl)) {
         const kind = optionEl.hasAttribute("data-assignee-option")
             ? "assignee"
             : optionEl.hasAttribute("data-sort-option")
                 ? "sort"
-                : "priority";
-        const attr = kind === "assignee" ? "data-assignee-option" : kind === "sort" ? "data-sort-option" : "data-priority-option";
+                : optionEl.hasAttribute("data-priority-option")
+                    ? "priority"
+                    : "sprint";
+        const attr = kind === "assignee"
+            ? "data-assignee-option"
+            : kind === "sort"
+                ? "data-sort-option"
+                : kind === "priority"
+                    ? "data-priority-option"
+                    : "data-sprint-option";
         const value = optionEl.getAttribute(attr) || null;
         const label = optionEl.textContent?.trim() || "";
         if (kind === "assignee") {
@@ -250,9 +362,13 @@ function handleFilterPanelDocumentClick(e) {
             }
             panel.querySelectorAll("[data-sort-option]").forEach((el) => el.classList.remove("is-active"));
         }
-        else {
+        else if (kind === "priority") {
             setPriorityParam(value);
             panel.querySelectorAll("[data-priority-option]").forEach((el) => el.classList.remove("is-active"));
+        }
+        else {
+            setSprintParam(value);
+            panel.querySelectorAll("[data-sprint-option]").forEach((el) => el.classList.remove("is-active"));
         }
         optionEl.classList.add("is-active");
         if (value) {
@@ -260,7 +376,7 @@ function handleFilterPanelDocumentClick(e) {
         }
         updateFilterToggleActiveState(toggle);
         closeFilterPanel(panel, toggle);
-        reloadBoardFn?.(getSlug(), getTag(), getSearch() || null, getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
+        reloadBoardFn?.(getSlug(), urlFilter('tag') ?? '', urlFilter('search'), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
             showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
         });
         return;
@@ -414,10 +530,10 @@ function initMobileTagPagination() {
     attachChipsDelegatedHandler();
 }
 export function computeBoardChipsRender(board, tag, sprintId) {
-    const isAnonymousTempBoard = isAnonymousBoard(board);
-    const displayTags = isAnonymousTempBoard
-        ? board.tags.filter((t) => t.count > 0)
-        : board.tags;
+    const displayTags = board.tags.filter((candidate) => candidate.count > 0 || candidate.name === tag);
+    if (tag && !displayTags.some((candidate) => candidate.name === tag)) {
+        displayTags.push({ name: tag, count: 0 });
+    }
     const sprintData = boardSprintsEnabled(board) ? lastSprintsData : null;
     const effectiveSprintId = boardSprintsEnabled(board) ? sprintId : null;
     const combinedChipData = getCombinedChipData(displayTags, tag || "", sprintData, effectiveSprintId, getTagColors());
@@ -433,6 +549,7 @@ export function bindBoardFilterUi(args) {
     attachChipsDelegatedHandler();
     initMobileTagPagination();
     bindSearchInput();
+    bindOmniTagPills();
     bindFilterPanel();
 }
 export function resetBoardFilterUiState() {
@@ -453,6 +570,9 @@ export function setSprintChipDataForSlug(slug, data) {
     lastSprintsDataSlug = slug;
     lastSprintsData = data;
 }
+export function getSprintChipDataForSlug(slug) {
+    return slug && slug === lastSprintsDataSlug ? lastSprintsData : null;
+}
 export function clearSprintChipData() {
     lastSprintsData = null;
     lastSprintsDataSlug = null;
@@ -461,6 +581,17 @@ export function updateChipsOnly(sprintId) {
     const board = getBoard();
     if (!board)
         return;
+    if (getBoardFilterLayoutPreference() === 'omni') {
+        const section = document.querySelector('[data-sprint-filter-section]');
+        if (section && boardSprintsEnabled(board)) {
+            section.outerHTML = buildSprintFilterSectionHtml(sprintId, lastSprintsData);
+        }
+        const toggle = document.getElementById('searchFilterToggle');
+        if (toggle)
+            updateFilterToggleActiveState(toggle);
+        renderOmniTagPills(board);
+        return;
+    }
     const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, getTag() || "", sprintId ?? null);
     if (chipsUnchanged)
         return;

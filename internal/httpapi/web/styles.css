@@ -5386,6 +5386,89 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   font-weight: 600;
 }
 
+.omni-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex: 1 1 360px;
+  min-width: 0;
+  max-width: min(54vw, 720px);
+}
+
+.omni-bar .search-input-wrapper {
+  flex: 0 1 auto;
+  min-width: 120px;
+  margin-right: 0;
+}
+
+.omni-tag-pills {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: var(--s-6);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.omni-tag-pills:empty {
+  display: none;
+}
+
+.omni-tag-pill {
+  flex: 0 0 auto;
+  min-height: calc(30px * var(--ui-scale));
+  padding: var(--s-4) var(--s-10);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+button.omni-tag-pill {
+  cursor: pointer;
+}
+
+button.omni-tag-pill:hover,
+button.omni-tag-pill:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.omni-tag-pill--applied {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-6);
+}
+
+.omni-tag-pill__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  margin: calc(-1 * var(--s-4)) calc(-1 * var(--s-6)) calc(-1 * var(--s-4)) 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: var(--fs-16);
+}
+
+.omni-tag-pill__clear:hover,
+.omni-tag-pill__clear:focus-visible {
+  background: color-mix(in srgb, currentColor 15%, transparent);
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -5522,6 +5605,29 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 }
 
 @media (max-width: 767px) {
+
+  .topbar .omni-bar {
+    order: 4;
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    margin-top: var(--s-8);
+    margin-right: var(--s-4);
+  }
+
+  .topbar .omni-bar .search-input-wrapper {
+    order: initial;
+    flex: 0 1 clamp(120px, 42vw, 250px);
+    width: auto;
+    min-width: 120px;
+    max-width: 250px;
+    margin: 0;
+  }
+
+  .topbar .omni-bar .search-input {
+    width: 100% !important;
+  }
 
   /* JS already slices chips to 2 rows per page; no CSS clipping needed */
   .chips-wrapper {
@@ -5727,6 +5833,18 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   border-color: rgba(96, 165, 250, 0.8);
   color: var(--accent);
   font-weight: 600;
+}
+
+.search-filter-option--active-sprint {
+  border-left-color: var(--success);
+}
+
+.search-filter-option--closed-sprint {
+  opacity: 0.72;
+}
+
+.search-filter-option--planned-sprint {
+  border-left-color: var(--muted);
 }
 
 .no-results {

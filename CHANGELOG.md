@@ -6,6 +6,22 @@
 
 ### Added
 
+- **Compact Omni board filtering** - Boards now default to an Omni presentation that
+  keeps the existing debounced text search and shows deterministic matching active-tag
+  suggestions beside it. Selecting a suggestion consumes the discovery text, while an
+  applied tag remains independently visible and clearable and composes with Sprint and
+  every other existing URL filter. Settings → Customization offers **Legacy pills** for
+  users who prefer the previous permanent tag/sprint strip; both layouts control the same
+  URL and backend filters.
+
+  Board payload `tags` are now a current-work projection: canonical tags used by at least
+  one non-archived story, counted by unique active story. An explicitly selected inactive
+  tag is included with count zero so deep-linked filters never become invisible. Full,
+  archive-inclusive tag catalogs remain unchanged in tag management, the project catalog
+  APIs/MCP tools, and exports. Story editing starts from active project tags plus the
+  current story's own tags and can explicitly load the full project catalog; Voice Create
+  uses only active project tags by default.
+
 - **Story archival** - Stories can be archived and restored without changing their
   workflow state. Archival is orthogonal to Done: `columnKey`, `rank`, `doneAt`, the
   story's `updatedAt`, tags, links, sprint, priority, assignment and creator attribution

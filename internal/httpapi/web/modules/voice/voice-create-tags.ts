@@ -1,6 +1,6 @@
-import { apiFetch } from '../api.js';
 import { canonicalizeTagName } from './tag-canonicalization.js';
 import { VoiceCreatePlanError } from './voice-create-plan.js';
+import { getBoard, getSlug } from '../state/selectors.js';
 
 /** The only tag data Create v2 needs: an authoritative, addressable label. */
 export type VoiceCreateTag = Readonly<{ name: string }>;
@@ -9,8 +9,6 @@ export type VoiceCreateTagsReader = (
   projectSlug: string,
   signal: AbortSignal,
 ) => Promise<readonly VoiceCreateTag[]>;
-
-type VoiceCreateTagsFetch = <T = unknown>(path: string, options?: RequestInit) => Promise<T>;
 
 function isTagWire(value: unknown): value is Readonly<{ name: string }> {
   return !!value
@@ -30,31 +28,24 @@ function tagGroupKey(name: string): string {
  */
 export function combineVoiceCreateTags(
   projectTags: readonly unknown[],
-  personalTags: readonly unknown[],
 ): readonly VoiceCreateTag[] {
-  if (!projectTags.every(isTagWire) || !personalTags.every(isTagWire)) {
+  if (!projectTags.every(isTagWire)) {
     throw new VoiceCreatePlanError('network');
   }
   const byKey = new Map<string, VoiceCreateTag>();
-  for (const tag of [...projectTags, ...personalTags]) {
+  for (const tag of projectTags) {
     const entry = Object.freeze({ name: tag.name });
     if (!byKey.has(tagGroupKey(entry.name))) byKey.set(tagGroupKey(entry.name), entry);
   }
   return Object.freeze([...byKey.values()].sort((a, b) => a.name === b.name ? 0 : a.name < b.name ? -1 : 1));
 }
 
-/** Shared production/device adapter for project labels plus the caller's personal library. */
+/** Shared production/device adapter for the loaded board's active tag projection. */
 export async function readVoiceCreateTags(
   projectSlug: string,
   signal: AbortSignal,
-  fetcher: VoiceCreateTagsFetch = apiFetch,
 ): Promise<readonly VoiceCreateTag[]> {
-  const [projectTags, personalTags] = await Promise.all([
-    fetcher<unknown>(`/api/board/${encodeURIComponent(projectSlug)}/tags`, { signal }),
-    fetcher<unknown>('/api/tags/mine', { signal }),
-  ]);
-  if (!Array.isArray(projectTags) || !Array.isArray(personalTags)) {
-    throw new VoiceCreatePlanError('network');
-  }
-  return combineVoiceCreateTags(projectTags, personalTags);
+  const board = getBoard();
+  if (signal.aborted || getSlug() !== projectSlug || !board) throw new VoiceCreatePlanError('network');
+  return combineVoiceCreateTags(board.tags.filter((tag) => tag.count > 0));
 }

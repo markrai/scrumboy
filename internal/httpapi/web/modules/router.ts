@@ -26,6 +26,10 @@ import {
   WRAP_LANES_PREFERENCE_KEY,
 } from './core/wrap-lanes-preferences.js';
 import {
+  BOARD_FILTER_LAYOUT_PREFERENCE_KEY,
+  loadBoardFilterLayoutPreferenceFromServer,
+} from './core/board-filter-layout-preferences.js';
+import {
   AGENDA_START_OF_DAY_PREFERENCE_KEY,
   loadAgendaStartOfDayPreferenceFromServer,
   onAgendaStartOfDayAuthUserChanged,
@@ -281,6 +285,10 @@ async function routeOnceBody(): Promise<void> {
 
       await loadWrapLanesPreferenceFromServer(() =>
         apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`),
+      );
+
+      await loadBoardFilterLayoutPreferenceFromServer(() =>
+        apiFetch<{ value: string }>(`/api/user/preferences?key=${BOARD_FILTER_LAYOUT_PREFERENCE_KEY}`),
       );
 
       await loadAgendaStartOfDayPreferenceFromServer(() =>

@@ -446,7 +446,7 @@ describe('router wrap lanes hydration', () => {
     };
   }
 
-  function installSignedInAuth(user: ReturnType<typeof userStatus>, wrapLanesValue: string): void {
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, wrapLanesValue: string, boardFilterLayoutValue = ''): void {
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/auth/status') {
         return {
@@ -467,6 +467,9 @@ describe('router wrap lanes hydration', () => {
       }
       if (url.includes('key=wrapLanes')) {
         return { value: wrapLanesValue };
+      }
+      if (url.includes('key=boardFilterLayout')) {
+        return { value: boardFilterLayoutValue };
       }
       if (url.startsWith('/api/user/preferences?key=')) {
         return { value: '' };
@@ -518,6 +521,21 @@ describe('router wrap lanes hydration', () => {
     await mod.router();
 
     expect(prefs.getWrapLanesPreference()).toBe(false);
+  });
+
+  it('hydrates the signed-in board filter layout and defaults invalid server values to Omni', async () => {
+    const prefs = await import('./core/board-filter-layout-preferences.js');
+    installSignedInAuth(userBob(), '', 'legacy');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+    expect(prefs.getBoardFilterLayoutPreference()).toBe('legacy');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userStatus(), '', 'not-a-layout');
+    await mod.router();
+    expect(prefs.getBoardFilterLayoutPreference()).toBe('omni');
   });
 });
 

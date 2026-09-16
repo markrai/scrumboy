@@ -45,6 +45,7 @@ import {
   resetTodoTagAutocompleteBindings,
   setupTagAutocomplete,
 } from './todo-tags.js';
+import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions } from './todo-tag-suggestions.js';
 
 export {
   getTodoFormPermissions,
@@ -405,6 +406,7 @@ export async function openTodoDialog(opts: {
 }): Promise<void> {
   const { mode, todo, status, onNavigateToLinkedTodo } = opts;
   const isArchived = mode === "edit" && !!todo?.archivedAt;
+  const tagsToShow: string[] = mode === "create" ? [] : (todo?.tags || []);
   setEditingTodo(mode === "edit" ? todo : null);
   bindTodoDialogCloseGuards();
   bindTodoDialogLinkLifecycle();
@@ -419,35 +421,36 @@ export async function openTodoDialog(opts: {
   });
   setTodoFormPermissions(permissions);
 
-  if (getSlug()) {
-    try {
-      let tagsResponse: any[];
-      if (getUser()) {
-        tagsResponse = (await apiFetch(`/api/tags/mine`)) as any[];
-      } else {
-        tagsResponse = (await apiFetch(`/api/board/${getSlug()}/tags`)) as any[];
-      }
-
-      setAvailableTags(tagsResponse.map((tag: any) => (typeof tag === "string" ? tag : tag.name)));
-      const tagsMap: Record<string, string> = {};
-      tagsResponse.forEach((tag: any) => {
-        const tagName = typeof tag === "string" ? tag : tag.name;
-        tagsMap[tagName.toLowerCase()] = tagName;
-        if (tag.color) {
-          const tagColors = { ...getTagColors() };
-          tagColors[tagName] = tag.color;
-          setTagColors(tagColors);
-        }
-      });
-      setAvailableTagsMap(tagsMap);
-    } catch (err: any) {
-      console.error("Failed to fetch tags:", err);
-      setAvailableTags([]);
-      setAvailableTagsMap({});
+  const installTagSuggestions = (suggestions: Array<{ name: string; color?: string }>) => {
+    setAvailableTags(suggestions.map((tag) => tag.name));
+    const tagsMap: Record<string, string> = {};
+    const tagColors = { ...getTagColors() };
+    for (const tag of suggestions) {
+      tagsMap[tag.name.toLocaleLowerCase()] = tag.name;
+      if (tag.color) tagColors[tag.name] = tag.color;
     }
-  } else {
-    setAvailableTags([]);
-    setAvailableTagsMap({});
+    setAvailableTagsMap(tagsMap);
+    setTagColors(tagColors);
+  };
+  installTagSuggestions(defaultTodoTagSuggestions(board, tagsToShow));
+
+  const showAllProjectTagsBtn = document.getElementById("showAllProjectTagsBtn") as HTMLButtonElement | null;
+  if (showAllProjectTagsBtn) {
+    showAllProjectTagsBtn.hidden = !getSlug() || !permissions.canEditTags;
+    showAllProjectTagsBtn.disabled = false;
+    showAllProjectTagsBtn.onclick = async () => {
+      const slug = getSlug();
+      if (!slug) return;
+      showAllProjectTagsBtn.disabled = true;
+      try {
+        installTagSuggestions(await loadAllProjectTagSuggestions(slug, getTagsFromChips()));
+        showAllProjectTagsBtn.hidden = true;
+        setupTagAutocomplete();
+      } catch (err) {
+        console.error("Failed to fetch project tag catalog:", err);
+        showAllProjectTagsBtn.disabled = false;
+      }
+    };
   }
 
   const assigneeField = document.getElementById("todoAssigneeField");
@@ -697,7 +700,6 @@ export async function openTodoDialog(opts: {
 
   const tagsChips = document.getElementById("tagsChips");
   if (tagsChips) tagsChips.innerHTML = "";
-  const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
   renderTagsChips(tagsToShow, { canRemove: permissions.canEditTags });
 
   if (permissions.canEditTags) {

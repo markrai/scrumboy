@@ -149,6 +149,20 @@ VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?)`, p.ID, i, fmt.Sprintf("scale %d", i), co
 		t.Fatalf("active tagged todo count=%d want 11", counts["scale"])
 	}
 
+	// The normal board tag projection must begin from active todos rather than
+	// materializing the project's historical/archive todo-tag pairs.
+	t.Run("active board tag projection", func(t *testing.T) {
+		plan := explainTodoArchivalPlan(t, st, `
+SELECT DISTINCT g.id, g.name, t.id
+FROM todos t INDEXED BY idx_todos_active_project_updated_local_id
+JOIN todo_tags tt ON tt.todo_id = t.id
+JOIN tags g ON g.id = tt.tag_id
+WHERE t.project_id = ? AND t.archived_at IS NULL`, p.ID)
+		if !strings.Contains(plan, "idx_todos_active_project_updated_local_id") {
+			t.Fatalf("active board tags lost active-todo index: %q", plan)
+		}
+	})
+
 	// The tag-filtered lane read is the shape most at risk of losing its index,
 	// because it drives through the tagged_todos CTE rather than straight off
 	// todos. Assert it still reaches a todos index rather than scanning the table.

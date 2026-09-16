@@ -328,6 +328,251 @@ JOIN todos t ON t.id = tt.todo_id AND t.project_id = ? AND t.archived_at IS NULL
 	return out, rows.Err()
 }
 
+// listActiveBoardTags returns the board payload's current-work tag projection.
+// Unlike listTagCounts it never enumerates archived associations during an
+// ordinary board read. selectedTag is the sole historical exception: when a URL
+// explicitly filters on an inactive catalog tag, that tag remains in the payload
+// with count zero so clients can expose and clear the otherwise invisible filter.
+func (s *Store) listActiveBoardTags(
+	ctx context.Context,
+	projectID int64,
+	viewerUserID *int64,
+	viewerRole *ProjectRole,
+	groupByName bool,
+	selectedTag string,
+) ([]TagCount, error) {
+	viewerID := int64(0)
+	if viewerUserID != nil {
+		viewerID = *viewerUserID
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.id, g.name, g.user_id, g.project_id, g.color, utc.color, t.id
+FROM todos t INDEXED BY idx_todos_active_project_updated_local_id
+JOIN todo_tags tt ON tt.todo_id = t.id
+JOIN tags g ON g.id = tt.tag_id
+LEFT JOIN user_tag_colors utc ON utc.tag_id = g.id AND utc.user_id = ?
+WHERE t.project_id = ? AND t.archived_at IS NULL
+ORDER BY g.id, t.id`, viewerID, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list active board tags: %w", err)
+	}
+
+	metaByID := make(map[int64]tagRowMeta)
+	todosByID := make(map[int64]map[int64]struct{})
+	for rows.Next() {
+		var m tagRowMeta
+		var todoID int64
+		if err := rows.Scan(&m.tagID, &m.name, &m.userID, &m.projectID, &m.boardColor, &m.viewerColor, &todoID); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan active board tag: %w", err)
+		}
+		metaByID[m.tagID] = m
+		if todosByID[m.tagID] == nil {
+			todosByID[m.tagID] = make(map[int64]struct{})
+		}
+		todosByID[m.tagID][todoID] = struct{}{}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows active board tags: %w", err)
+	}
+
+	selectedKey := normalizeTagFilter(selectedTag, groupByName)
+	selectedAlreadyActive := false
+	for _, m := range metaByID {
+		name := m.name
+		if groupByName {
+			name = TagGroupKey(name)
+		}
+		if name == selectedKey {
+			selectedAlreadyActive = true
+			break
+		}
+	}
+	if selectedKey != "" && !selectedAlreadyActive {
+		selectedIDs, err := s.selectedBoardTagRowIDs(ctx, projectID, selectedKey, groupByName)
+		if err != nil {
+			return nil, err
+		}
+		missingIDs := make([]int64, 0, len(selectedIDs))
+		for _, tagID := range selectedIDs {
+			if _, exists := metaByID[tagID]; !exists {
+				missingIDs = append(missingIDs, tagID)
+			}
+		}
+		if len(missingIDs) > 0 {
+			placeholders, args := tagFilterPlaceholders(missingIDs)
+			args = append([]any{viewerID}, args...)
+			selectedRows, err := s.db.QueryContext(ctx, `
+SELECT g.id, g.name, g.user_id, g.project_id, g.color, utc.color
+FROM tags g
+LEFT JOIN user_tag_colors utc ON utc.tag_id = g.id AND utc.user_id = ?
+WHERE g.id IN (`+placeholders+`)
+ORDER BY g.id`, args...)
+			if err != nil {
+				return nil, fmt.Errorf("list selected board tag metadata: %w", err)
+			}
+			for selectedRows.Next() {
+				var m tagRowMeta
+				if err := selectedRows.Scan(&m.tagID, &m.name, &m.userID, &m.projectID, &m.boardColor, &m.viewerColor); err != nil {
+					selectedRows.Close()
+					return nil, fmt.Errorf("scan selected board tag metadata: %w", err)
+				}
+				metaByID[m.tagID] = m
+			}
+			selectedRows.Close()
+			if err := selectedRows.Err(); err != nil {
+				return nil, fmt.Errorf("rows selected board tag metadata: %w", err)
+			}
+		}
+	}
+
+	if !groupByName {
+		isMaintainer := viewerRole != nil && viewerRole.HasMinimumRole(RoleMaintainer)
+		out := make([]TagCount, 0, len(metaByID))
+		for tagID, m := range metaByID {
+			tc := TagCount{TagID: tagID, Name: m.name, Count: len(todosByID[tagID]), CanUpdateColor: true}
+			if m.userID.Valid {
+				tc.CanDeleteMine = viewerUserID != nil && m.userID.Int64 == *viewerUserID
+				if m.viewerColor.Valid && m.viewerColor.String != "" {
+					color := m.viewerColor.String
+					tc.Color = &color
+				}
+			} else {
+				tc.CanDeleteProject = isMaintainer
+				if m.boardColor.Valid && m.boardColor.String != "" {
+					color := m.boardColor.String
+					tc.Color = &color
+				}
+			}
+			out = append(out, tc)
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].Name == out[j].Name {
+				return out[i].TagID < out[j].TagID
+			}
+			return out[i].Name < out[j].Name
+		})
+		return out, nil
+	}
+
+	grouped := make(map[string][]tagRowMeta)
+	todosByKey := make(map[string]map[int64]struct{})
+	for tagID, m := range metaByID {
+		key := TagGroupKey(m.name)
+		grouped[key] = append(grouped[key], m)
+		if todosByKey[key] == nil {
+			todosByKey[key] = make(map[int64]struct{})
+		}
+		for todoID := range todosByID[tagID] {
+			todosByKey[key][todoID] = struct{}{}
+		}
+	}
+
+	var projectLinkedViewerPrefs map[string]string
+	if viewerUserID != nil {
+		projectLinkedViewerPrefs, err = s.viewerProjectLinkedTagColorPrefs(ctx, projectID, *viewerUserID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	isMaintainer := viewerRole != nil && viewerRole.HasMinimumRole(RoleMaintainer)
+	out := make([]TagCount, 0, len(grouped))
+	for key, rowsForName := range grouped {
+		sort.Slice(rowsForName, func(i, j int) bool { return rowsForName[i].tagID < rowsForName[j].tagID })
+		personal := false
+		for _, row := range rowsForName {
+			personal = personal || row.userID.Valid
+		}
+		historicalViewerPref := ""
+		if personal {
+			historicalViewerPref = projectLinkedViewerPrefs[key]
+		}
+		tc := TagCount{
+			Name:  key,
+			Count: len(todosByKey[key]),
+			Color: pickGroupedTagColor(rowsForName, viewerUserID, historicalViewerPref),
+		}
+		if personal {
+			if viewerUserID != nil {
+				tc.CanUpdateColor = true
+				for _, row := range rowsForName {
+					if row.userID.Valid && row.userID.Int64 == *viewerUserID {
+						tc.CanDeleteMine = true
+						break
+					}
+				}
+			}
+		} else {
+			tc.TagID = rowsForName[0].tagID
+			tc.CanDeleteProject = isMaintainer
+			tc.CanUpdateColor = isMaintainer
+		}
+		out = append(out, tc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// selectedBoardTagRowIDs resolves the selected-tag exception. Historical
+// association scans are intentionally isolated here and run only when the
+// request actually carries a tag filter.
+func (s *Store) selectedBoardTagRowIDs(ctx context.Context, projectID int64, selectedKey string, durable bool) ([]int64, error) {
+	seen := make(map[int64]struct{})
+	var out []int64
+	add := func(ids []int64) {
+		for _, id := range ids {
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+
+	boardRows, err := s.db.QueryContext(ctx, `
+SELECT id, name
+FROM tags
+WHERE project_id = ? AND user_id IS NULL
+ORDER BY id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve selected board-scoped tag: %w", err)
+	}
+	for boardRows.Next() {
+		var id int64
+		var name string
+		if err := boardRows.Scan(&id, &name); err != nil {
+			boardRows.Close()
+			return nil, err
+		}
+		match := name == selectedKey
+		if durable {
+			match = TagGroupKey(name) == selectedKey
+		}
+		if match {
+			add([]int64{id})
+		}
+	}
+	boardRows.Close()
+	if err := boardRows.Err(); err != nil {
+		return nil, err
+	}
+
+	usedIDs, err := s.resolveTagFilterRowIDs(ctx, projectID, selectedKey, durable)
+	if err != nil {
+		return nil, err
+	}
+	add(usedIDs)
+	if durable {
+		linkedIDs, err := s.projectLinkedPersonalTagRowsForName(ctx, projectID, selectedKey)
+		if err != nil {
+			return nil, err
+		}
+		add(linkedIDs)
+	}
+	return out, nil
+}
+
 // listTagCountsRowLevel returns one TagCount per tag row, always with a real TagID.
 // This is the projection temporary boards keep: their mutation surface is tag_id-based
 // (plus board-scoped name resolution), so every listed entry must carry an addressable row.

@@ -23,12 +23,13 @@ import { buildBoardColumnsHtml, buildFiltersHtml, buildNoResultsHtml, buildTopba
 import { AGENDA_COLUMN_KEY, agendaEvents, agendaLaneColor, agendaLaneTitle, agendaMobileTabAriaLabel, agendaMobileTabInnerHtml, applyAgendaScrollAfterRender, buildAgendaColumnHtml, captureAgendaListScroll, flushAgendaInitialScroll, isAgendaEnabled } from './board-agenda.js';
 import { clearTodoMultiSelection, ensureBulkEditUi, getSelectedTodoIds, toggleTodoSelection, } from './board-selection.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
-import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, hasSprintChipDataForSlug, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, } from './board-filters.js';
+import { bindBoardFilterUi, clearSprintChipData, clearSprintChipDataIfSlugChanged, computeBoardChipsRender, ensureSprintSubscription, getSprintChipDataForSlug, hasSprintChipDataForSlug, cancelPendingSearchReload, resetBoardFilterUiState, setSprintChipDataForSlug, updateChipsOnly, updateOmniTagPills, } from './board-filters.js';
 export { notifySprintStateChanged } from './board-filters.js';
 import { attachBoardInteractionListeners, clearPendingRealtimeRefresh, connectBoardEvents, debugLog, disconnectBoardEvents, markBoardLoadSucceeded, runWhileTodoDialogOpening, setInitialBoardLoadInFlight, } from './board-realtime.js';
 import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import { applyWrapLanesClass } from '../core/wrap-lanes-preferences.js';
+import { BOARD_FILTER_LAYOUT_CHANGED_EVENT, getBoardFilterLayoutPreference, } from '../core/board-filter-layout-preferences.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -164,7 +165,7 @@ function syncVoiceCommandPreferenceInTopbar() {
             wallBtn.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
         }
         else {
-            topbar.querySelector(".search-input-wrapper")?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
+            (topbar.querySelector(".omni-bar") ?? topbar.querySelector(".search-input-wrapper"))?.insertAdjacentHTML("beforebegin", renderVoiceCommandTriggerHtml());
         }
     }
     bindVoiceCommandButton();
@@ -280,7 +281,12 @@ function rerenderBoardForLocaleChange() {
         forceFullRender: true,
     });
 }
+on(BOARD_FILTER_LAYOUT_CHANGED_EVENT, () => {
+    cancelPendingSearchReload();
+    rerenderBoardForLocaleChange();
+});
 export function stopBoardEvents() {
+    cancelPendingSearchReload();
     disconnectBoardEvents();
 }
 function isModifiedFibonacciModeEnabled() {
@@ -800,17 +806,22 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort, priori
     });
     setTagColors(tagColors);
     const isAnonymousTempBoard = isAnonymousBoard(board);
-    const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
-    // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
-    if (!chipsUnchanged) {
-        const filtersEl = document.querySelector(".filters");
-        if (filtersEl) {
-            filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
-            bindBoardFilterUi({
-                reloadBoard: loadBoardBySlug,
-                showError: (message) => showToast(message),
-            });
+    if (getBoardFilterLayoutPreference() === 'legacy') {
+        const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
+        // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
+        if (!chipsUnchanged) {
+            const filtersEl = document.querySelector(".filters");
+            if (filtersEl) {
+                filtersEl.innerHTML = buildFiltersHtml(chipsHTML, { innerOnly: true });
+                bindBoardFilterUi({
+                    reloadBoard: loadBoardBySlug,
+                    showError: (message) => showToast(message),
+                });
+            }
         }
+    }
+    else {
+        updateOmniTagPills(board);
     }
     // Precompute for card render loop
     const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -927,7 +938,10 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     setTagColors(tagColors);
     // Anonymous temporary board: expiresAt set, no creator (pastebin-style). Rename + New Todo without login — see isAnonymousBoard() / backend.
     const isAnonymousTempBoard = isAnonymousBoard(board);
-    const { chipsHTML } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
+    const boardFilterLayout = getBoardFilterLayoutPreference();
+    const chipsHTML = boardFilterLayout === 'legacy'
+        ? computeBoardChipsRender(board, tag || "", sprintId ?? null).chipsHTML
+        : '';
     const showVoiceCommands = canShowVoiceCommandsForBoard(projectId, board);
     // Minimal topbar (used for temporary/anonymous boards): logo, project name, rename (if anonymous temp), New Todo, Settings
     const topbarHTML = buildTopbarHtml({
@@ -948,6 +962,10 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
         sort,
         priority,
         boardMembers: getBoardMembers(),
+        tag,
+        sprintId,
+        boardFilterLayout,
+        sprintData: getSprintChipDataForSlug(getSlug()),
     });
     const membersByUserId = getMembersByUserId();
     const showPointsMode = isModifiedFibonacciModeEnabled();
@@ -962,7 +980,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
       ${topbarHTML}
 
       <div class="container">
-        ${buildFiltersHtml(chipsHTML)}
+        ${boardFilterLayout === 'legacy' ? buildFiltersHtml(chipsHTML) : ''}
 
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="mobileTabs">
@@ -1803,6 +1821,7 @@ async function openTodoFromPath(slug, openTodoSegment) {
 // Main render function for board view
 export async function renderBoard(slug, tag, search, sprintId, assignee = null, sort = null, priority = null, openTodoId = null, openTodoSegment = null, opts = {}) {
     ensureBoardI18nBinding();
+    cancelPendingSearchReload();
     if (!slug)
         throw new Error("Slug is required");
     debugLog("renderBoard start", slug);

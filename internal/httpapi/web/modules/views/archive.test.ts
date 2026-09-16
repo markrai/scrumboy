@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
     projectId: 1,
     members: [] as any[],
     editingTodo: null as any,
+    tagColors: {} as Record<string, string>,
   },
 }));
 
@@ -46,12 +47,14 @@ vi.mock('../state/selectors.js', () => ({
   getEditingTodo: () => h.state.editingTodo,
   getProjectId: () => h.state.projectId,
   getSlug: () => h.state.slug,
+  getTagColors: () => h.state.tagColors,
   getUser: () => ({ id: 7, name: 'Ada' }),
 }));
 vi.mock('../state/mutations.js', () => ({
   setBoard: (board: any) => { h.state.board = board; },
   setBoardMembers: (members: any[]) => { h.state.members = members; },
   setOpenTodoSegment: vi.fn(),
+  setTagColors: (colors: Record<string, string>) => { h.state.tagColors = colors; },
 }));
 vi.mock('../dom/elements.js', () => ({
   get app() { return document.getElementById('app'); },
@@ -61,7 +64,7 @@ vi.mock('../utils.js', () => ({
   isTemporaryBoard: () => h.temporary,
   renderAvatarContent: () => '',
   renderUserAvatar: () => '<button id="userAvatarBtn"></button>',
-  sanitizeHexColor: () => null,
+  sanitizeHexColor: (value?: string | null) => value && /^#[0-9a-f]{6}$/i.test(value) ? value : null,
   showToast: h.showToast,
 }));
 vi.mock('../router.js', () => ({ navigate: h.navigate }));
@@ -120,7 +123,7 @@ describe('archive view', () => {
     vi.resetModules();
     document.body.innerHTML = '<div id="app"></div>';
     window.history.replaceState({}, '', '/alpha/archive');
-    h.apiFetch.mockReset().mockResolvedValue(board);
+    h.apiFetch.mockReset().mockImplementation(async (path: string) => path.endsWith('/tags') ? [] : board);
     h.listArchivedTodos.mockReset();
     h.restoreTodos.mockReset();
     h.openTodoDialog.mockReset();
@@ -132,6 +135,7 @@ describe('archive view', () => {
     h.state.board = null;
     h.state.members = [];
     h.state.editingTodo = null;
+    h.state.tagColors = {};
   });
 
   it('lets a viewer browse archived stories without mutation controls', async () => {
@@ -143,6 +147,54 @@ describe('archive view', () => {
     expect(document.querySelector('[data-archive-open="12"]')?.textContent).toContain('archive.done');
     expect(document.querySelector('[data-archive-select]')).toBeNull();
     expect(document.getElementById('archiveSelectAllBtn')?.hidden).toBe(true);
+  });
+
+  it('uses one historical catalog load for archive rows and opened story tag colors', async () => {
+    const archived = { ...todo(1, 12, 'Historical story'), tags: ['historical'] };
+    const activeBoard = { ...board, tags: [] };
+    h.apiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/board/alpha?limitPerLane=1') return activeBoard;
+      if (path === '/api/board/alpha/tags') return [{ name: 'historical', count: 1, color: '#123456' }];
+      if (path === '/api/board/alpha/todos/12') return archived;
+      throw new Error(`unexpected API path: ${path}`);
+    });
+    h.listArchivedTodos.mockResolvedValue({ todos: [archived], nextCursor: null, hasMore: false });
+    h.openTodoDialog.mockImplementation(async () => {
+      expect(h.state.tagColors.historical).toBe('#123456');
+    });
+    const { renderArchive } = await import('./archive.js');
+
+    await renderArchive('alpha', '12');
+
+    expect(activeBoard.tags).toEqual([]);
+    const renderedTag = document.querySelector('.archive-row__tags .tag');
+    expect(renderedTag?.textContent).toBe('historical');
+    expect(renderedTag?.getAttribute('style')).toContain('#123456');
+    expect(h.apiFetch.mock.calls.filter(([path]) => path === '/api/board/alpha/tags')).toHaveLength(1);
+    expect(h.openTodoDialog).toHaveBeenCalledWith(expect.objectContaining({
+      mode: 'edit',
+      todo: archived,
+    }));
+    expect(h.state.tagColors.historical).toBe('#123456');
+  });
+
+  it('still renders archived rows when the optional historical tag catalog fails', async () => {
+    const archived = { ...todo(1, 12, 'Historical story'), tags: ['historical'] };
+    h.apiFetch.mockImplementation(async (path: string) => {
+      if (path === '/api/board/alpha?limitPerLane=1') return board;
+      if (path === '/api/board/alpha/tags') throw new Error('catalog unavailable');
+      throw new Error(`unexpected API path: ${path}`);
+    });
+    h.listArchivedTodos.mockResolvedValue({ todos: [archived], nextCursor: null, hasMore: false });
+    const { renderArchive } = await import('./archive.js');
+
+    await renderArchive('alpha');
+
+    expect(document.querySelector('[data-archive-open="12"]')?.textContent).toContain('Historical story');
+    const renderedTag = document.querySelector('.archive-row__tags .tag');
+    expect(renderedTag?.textContent).toBe('historical');
+    expect(renderedTag?.hasAttribute('style')).toBe(false);
+    expect(h.listArchivedTodos).toHaveBeenCalledWith('alpha', { limit: 50, afterCursor: null });
   });
 
   it('returns to the board on Escape when no dialog is open', async () => {

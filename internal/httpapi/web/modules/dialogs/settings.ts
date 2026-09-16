@@ -102,6 +102,11 @@ import {
   setWrapLanesPreference,
   syncOpenBoardWrapLanesClass,
 } from '../core/wrap-lanes-preferences.js';
+import {
+  getBoardFilterLayoutPreference,
+  setBoardFilterLayoutPreference,
+  type BoardFilterLayout,
+} from '../core/board-filter-layout-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref, type EmailNotifyCategory } from '../core/email-notify-preferences.js';
 import {
   bindWorkflowTabInteractions,
@@ -1754,6 +1759,24 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
     `;
 
+  const boardFilterLayout = getBoardFilterLayoutPreference();
+  const boardFilterLayoutSectionHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.customization.boardFilterLayout.title">Board filter layout</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.boardFilterLayout.description">Choose compact search-based tag discovery or the permanent tag and sprint pills.</div>
+        <div class="theme-selector theme-selector--inline" style="margin-top:10px;">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="omni" ${boardFilterLayout === "omni" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.omni">Omni / compact filtering</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="legacy" ${boardFilterLayout === "legacy" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.legacy">Legacy pills</span>
+          </label>
+        </div>
+      </div>
+    `;
+
   let pushPwaDisabledNoticeKey = "";
   let pushPwaDisabledNoticeText = "";
   if (!pushVapidServerReady) {
@@ -1858,6 +1881,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
       ${wallpaperSectionHTML}
       ${cardsPerLaneSectionHTML}
+      ${boardFilterLayoutSectionHTML}
       ${wrapLanesSectionHTML}
       ${getAuthStatusAvailable() ? renderVoiceFlowCustomizationHTML() : ""}
       ${hasUser ? `
@@ -2570,6 +2594,16 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         { signal }
       );
     }
+
+    document.querySelectorAll<HTMLInputElement>('input[name="boardFilterLayout"]').forEach((option) => {
+      option.addEventListener(
+        "change",
+        () => {
+          if (option.checked) setBoardFilterLayoutPreference(option.value as BoardFilterLayout);
+        },
+        { signal }
+      );
+    });
 
     const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
     if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {

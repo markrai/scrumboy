@@ -27,9 +27,9 @@ func TestAnonymousBoard_CreateTodoWithTags(t *testing.T) {
 
 	// Create todo with tags (no userID in context)
 	todo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Body:   "Test body",
-		Tags:   []string{"bug", "urgent"},
+		Title:     "Test Todo",
+		Body:      "Test body",
+		Tags:      []string{"bug", "urgent"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -62,9 +62,9 @@ func TestAnonymousBoard_UpdateTodoTags(t *testing.T) {
 
 	// Create todo with tags
 	todo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Body:   "Test body",
-		Tags:   []string{"bug"},
+		Title:     "Test Todo",
+		Body:      "Test body",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -111,8 +111,8 @@ func TestAnonymousBoard_TagIsolation(t *testing.T) {
 
 	// Create todo with tag "bug" on board 1
 	_, err = st.CreateTodo(ctx, board1.ID, CreateTodoInput{
-		Title:  "Bug on Board 1",
-		Tags:   []string{"bug"},
+		Title:     "Bug on Board 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -121,8 +121,8 @@ func TestAnonymousBoard_TagIsolation(t *testing.T) {
 
 	// Create todo with tag "bug" on board 2
 	_, err = st.CreateTodo(ctx, board2.ID, CreateTodoInput{
-		Title:  "Bug on Board 2",
-		Tags:   []string{"bug"},
+		Title:     "Bug on Board 2",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -200,8 +200,8 @@ func TestAnonymousBoard_TagColors(t *testing.T) {
 
 	// Create todo with tag
 	_, err = st.CreateTodo(ctx, project.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Tags:   []string{"bug"},
+		Title:     "Test Todo",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -321,8 +321,8 @@ func TestAnonymousBoard_UpdateUserOwnedTagColorFails(t *testing.T) {
 
 	// Create todo with user-owned tag
 	_, err = st.CreateTodo(ctxWithUser, durableProject.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Tags:   []string{"user-tag"},
+		Title:     "Test Todo",
+		Tags:      []string{"user-tag"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -416,8 +416,8 @@ func TestAnonymousBoard_TagDeletion(t *testing.T) {
 
 	// Create todo with tag
 	_, err = st.CreateTodo(ctx, project.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Tags:   []string{"bug"},
+		Title:     "Test Todo",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -479,8 +479,8 @@ func TestDurableBoard_TagsRequireAuth(t *testing.T) {
 
 	// Try to create todo with tags (no userID in context - simulating anonymous access) - should fail
 	_, err = st.CreateTodo(ctx, project.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Tags:   []string{"bug"},
+		Title:     "Test Todo",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err == nil {
@@ -511,8 +511,8 @@ func TestAuthenticatedUser_ViewsAnonymousBoard(t *testing.T) {
 
 	// Create todo with board-scoped tag (no userID)
 	_, err = st.CreateTodo(ctx, project.ID, CreateTodoInput{
-		Title:  "Anonymous Todo",
-		Tags:   []string{"bug"},
+		Title:     "Anonymous Todo",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -527,21 +527,29 @@ func TestAuthenticatedUser_ViewsAnonymousBoard(t *testing.T) {
 		t.Fatalf("get board: %v", err)
 	}
 
-	// Verify board-scoped tags are visible
-	// Note: Anonymous boards now have 20 default tags (including "bug")
-	if len(tags) != 20 {
-		t.Errorf("expected 20 default tags, got %d", len(tags))
+	// Board payloads expose only the current-work projection, even though the
+	// anonymous board's full default catalog remains available separately.
+	if len(tags) != 1 {
+		t.Errorf("expected one active board tag, got %d", len(tags))
 	}
 	// Verify "bug" tag is present
 	var bugFound bool
 	for _, tag := range tags {
-		if tag.Name == "bug" {
+		if tag.Name == "bug" && tag.Count == 1 {
 			bugFound = true
 			break
 		}
 	}
 	if !bugFound {
-		t.Errorf("expected 'bug' tag in default tags")
+		t.Errorf("expected active 'bug' tag with count 1")
+	}
+
+	catalog, err := st.ListTagCounts(ctxWithUser, &pc)
+	if err != nil {
+		t.Fatalf("list anonymous board tag catalog: %v", err)
+	}
+	if len(catalog) != 20 {
+		t.Errorf("expected full 20-tag anonymous catalog, got %d", len(catalog))
 	}
 
 	// Verify todos have the tag
@@ -573,8 +581,8 @@ func TestTagColorResolution(t *testing.T) {
 		t.Fatalf("create anonymous board: %v", err)
 	}
 	_, err = st.CreateTodo(ctx, anonProject.ID, CreateTodoInput{
-		Title:  "Anonymous Todo",
-		Tags:   []string{"anon-tag"},
+		Title:     "Anonymous Todo",
+		Tags:      []string{"anon-tag"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -625,8 +633,8 @@ SELECT id FROM tags WHERE project_id = ? AND name = 'anon-tag' AND user_id IS NU
 		t.Fatalf("create durable project: %v", err)
 	}
 	_, err = st.CreateTodo(ctxWithUser, durableProject.ID, CreateTodoInput{
-		Title:  "Durable Todo",
-		Tags:   []string{"user-tag"},
+		Title:     "Durable Todo",
+		Tags:      []string{"user-tag"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -680,8 +688,8 @@ func TestDurableBoard_UserOwnedTagsUnchanged(t *testing.T) {
 
 	// Create todo with user-owned tags
 	todo, err := st.CreateTodo(ctxWithUser, project.ID, CreateTodoInput{
-		Title:  "Test Todo",
-		Tags:   []string{"bug", "feature"},
+		Title:     "Test Todo",
+		Tags:      []string{"bug", "feature"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -710,8 +718,8 @@ SELECT COUNT(*) FROM tags WHERE user_id = ? AND name IN ('bug', 'feature') AND p
 		t.Fatalf("create project 2: %v", err)
 	}
 	_, err = st.CreateTodo(ctxWithUser, project2.ID, CreateTodoInput{
-		Title:  "Todo in Project 2",
-		Tags:   []string{"bug"}, // Reuse existing user-owned tag
+		Title:     "Todo in Project 2",
+		Tags:      []string{"bug"}, // Reuse existing user-owned tag
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {

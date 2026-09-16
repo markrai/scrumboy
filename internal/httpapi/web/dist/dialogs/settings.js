@@ -20,6 +20,7 @@ import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '..
 import { getEnhancedSpeechWaitPreset, setEnhancedSpeechWaitPreset, } from '../core/enhanced-speech-wait-preferences.js';
 import { VOICE_SPEECH_RATE_PRESETS, getVoiceSpeechRate, setVoiceSpeechRate, sliderPositionForVoiceSpeechRate, voiceSpeechRateDisplayLabel, voiceSpeechRateFromSliderPosition, } from '../core/voice-speech-rate-preferences.js';
 import { getWrapLanesPreference, setWrapLanesPreference, syncOpenBoardWrapLanesClass, } from '../core/wrap-lanes-preferences.js';
+import { getBoardFilterLayoutPreference, setBoardFilterLayoutPreference, } from '../core/board-filter-layout-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref } from '../core/email-notify-preferences.js';
 import { bindWorkflowTabInteractions, clearWorkflowDraftState, invalidateWorkflowLaneCountsCache, isWorkflowDraftDirty, loadWorkflowTabContent, resetWorkflowDraftToBaseline, } from './settings-workflow.js';
 import { bindPriorityTabInteractions, clearPriorityDraftState, invalidatePriorityTierCountsCache, isPriorityDraftDirty, loadPriorityTabContent, resetPriorityDraftToBaseline, syncPriorityLocaleState, } from './settings-priorities.js';
@@ -1552,6 +1553,23 @@ export async function renderSettingsModal(options) {
         </label>
       </div>
     `;
+    const boardFilterLayout = getBoardFilterLayoutPreference();
+    const boardFilterLayoutSectionHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.customization.boardFilterLayout.title">Board filter layout</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.boardFilterLayout.description">Choose compact search-based tag discovery or the permanent tag and sprint pills.</div>
+        <div class="theme-selector theme-selector--inline" style="margin-top:10px;">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="omni" ${boardFilterLayout === "omni" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.omni">Omni / compact filtering</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="legacy" ${boardFilterLayout === "legacy" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.legacy">Legacy pills</span>
+          </label>
+        </div>
+      </div>
+    `;
     let pushPwaDisabledNoticeKey = "";
     let pushPwaDisabledNoticeText = "";
     if (!pushVapidServerReady) {
@@ -1656,6 +1674,7 @@ export async function renderSettingsModal(options) {
       </div>
       ${wallpaperSectionHTML}
       ${cardsPerLaneSectionHTML}
+      ${boardFilterLayoutSectionHTML}
       ${wrapLanesSectionHTML}
       ${getAuthStatusAvailable() ? renderVoiceFlowCustomizationHTML() : ""}
       ${hasUser ? `
@@ -2317,6 +2336,12 @@ export async function renderSettingsModal(options) {
                 syncOpenBoardWrapLanesClass();
             }, { signal });
         }
+        document.querySelectorAll('input[name="boardFilterLayout"]').forEach((option) => {
+            option.addEventListener("change", () => {
+                if (option.checked)
+                    setBoardFilterLayoutPreference(option.value);
+            }, { signal });
+        });
         const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
         if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {
             desktopNotifyBtn.addEventListener("click", async () => {
