@@ -145,6 +145,27 @@ describe('archive view', () => {
     expect(document.getElementById('archiveSelectAllBtn')?.hidden).toBe(true);
   });
 
+  it('returns to the board on Escape when no dialog is open', async () => {
+    h.listArchivedTodos.mockResolvedValue({ todos: [], nextCursor: null, hasMore: false });
+    const { renderArchive, stopArchiveEvents } = await import('./archive.js');
+    await renderArchive('alpha');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(h.navigate).toHaveBeenCalledWith('/alpha');
+
+    h.navigate.mockClear();
+    const dialog = document.createElement('dialog');
+    dialog.id = 'todoDialog';
+    document.body.appendChild(dialog);
+    dialog.setAttribute('open', '');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(h.navigate).not.toHaveBeenCalled();
+
+    stopArchiveEvents();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(h.navigate).not.toHaveBeenCalled();
+  });
+
   it('keeps the archive project image inside a fixed-size desktop wrapper', async () => {
     h.apiFetch.mockResolvedValue({
       ...board,

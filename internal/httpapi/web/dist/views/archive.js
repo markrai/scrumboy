@@ -22,6 +22,7 @@ let archiveSelectedLocalIds = new Set();
 let archiveRenderSequence = 0;
 let archiveReloadPending = false;
 let archiveRealtimeBound = false;
+let archiveEscapeBound = false;
 let archiveAnonSseManager = null;
 let archiveEventsSlug = null;
 let archiveRefreshTimer = null;
@@ -363,9 +364,25 @@ function onArchiveRealtimeEvent(payload) {
     if (event.type === 'refresh_needed')
         scheduleArchiveRefresh();
 }
+function onArchiveEscapeKeydown(ev) {
+    if (ev.key !== 'Escape' || ev.repeat || ev.defaultPrevented)
+        return;
+    // Let native <dialog> cancel handling win (todo detail, settings, etc.).
+    if (document.querySelector('dialog[open]'))
+        return;
+    const slug = getSlug();
+    if (!slug || !archiveEventsSlug)
+        return;
+    ev.preventDefault();
+    navigate(`/${slug}`);
+}
 function connectArchiveEvents(slug) {
     stopArchiveEvents();
     archiveEventsSlug = slug;
+    if (!archiveEscapeBound) {
+        document.addEventListener('keydown', onArchiveEscapeKeydown);
+        archiveEscapeBound = true;
+    }
     if (getAuthStatusAvailable() && getUser()) {
         on('realtime:event', onArchiveRealtimeEvent);
         archiveRealtimeBound = true;
@@ -390,6 +407,10 @@ export function stopArchiveEvents() {
     if (archiveRefreshTimer !== null) {
         clearTimeout(archiveRefreshTimer);
         archiveRefreshTimer = null;
+    }
+    if (archiveEscapeBound) {
+        document.removeEventListener('keydown', onArchiveEscapeKeydown);
+        archiveEscapeBound = false;
     }
     if (archiveRealtimeBound) {
         off('realtime:event', onArchiveRealtimeEvent);

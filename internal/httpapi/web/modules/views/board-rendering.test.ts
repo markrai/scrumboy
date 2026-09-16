@@ -95,6 +95,7 @@ describe('board topbar rendering', () => {
     });
     expect(html).toContain('id="archiveBtn"');
     expect(html).toContain('data-i18n-aria-label="board.actions.openArchive"');
+    expect(html).toContain('src="/archive.svg"');
   });
 
   it('uses the VoiceFlow title catalog key for trigger aria and title text', async () => {

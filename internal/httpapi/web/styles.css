@@ -1798,7 +1798,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 .voice-command-trigger,
 #newTodoBtn,
 #deleteProjectBtn,
-#wallBtn {
+#wallBtn,
+#archiveBtn {
   white-space: nowrap;
   width: 40px;
   min-width: 40px;
@@ -1813,7 +1814,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 .voice-command-trigger img,
 #newTodoBtn img,
 #deleteProjectBtn img,
-#wallBtn img {
+#wallBtn img,
+#archiveBtn img {
   width: 20px;
   height: 20px;
   max-width: 20px;
@@ -1825,7 +1827,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 .voice-command-trigger img,
 #newTodoBtn img,
 #deleteProjectBtn img,
-#wallBtn img {
+#wallBtn img,
+#archiveBtn img {
   display: block;
   filter: var(--voice-command-icon-filter);
   object-fit: contain;
@@ -4165,6 +4168,13 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   .topbar .btn#deleteProjectBtn {
     padding-left: 0;
     padding-right: 0;
+  }
+
+  .topbar .btn#archiveBtn {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
   }
 
   .topbar .btn--ghost {

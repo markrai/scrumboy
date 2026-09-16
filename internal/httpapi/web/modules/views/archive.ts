@@ -33,6 +33,7 @@ let archiveSelectedLocalIds = new Set<number>();
 let archiveRenderSequence = 0;
 let archiveReloadPending = false;
 let archiveRealtimeBound = false;
+let archiveEscapeBound = false;
 let archiveAnonSseManager: SseConnectionManager | null = null;
 let archiveEventsSlug: string | null = null;
 let archiveRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -358,9 +359,23 @@ function onArchiveRealtimeEvent(payload: unknown): void {
   if (event.type === 'refresh_needed') scheduleArchiveRefresh();
 }
 
+function onArchiveEscapeKeydown(ev: KeyboardEvent): void {
+  if (ev.key !== 'Escape' || ev.repeat || ev.defaultPrevented) return;
+  // Let native <dialog> cancel handling win (todo detail, settings, etc.).
+  if (document.querySelector('dialog[open]')) return;
+  const slug = getSlug();
+  if (!slug || !archiveEventsSlug) return;
+  ev.preventDefault();
+  navigate(`/${slug}`);
+}
+
 function connectArchiveEvents(slug: string): void {
   stopArchiveEvents();
   archiveEventsSlug = slug;
+  if (!archiveEscapeBound) {
+    document.addEventListener('keydown', onArchiveEscapeKeydown);
+    archiveEscapeBound = true;
+  }
   if (getAuthStatusAvailable() && getUser()) {
     on('realtime:event', onArchiveRealtimeEvent);
     archiveRealtimeBound = true;
@@ -385,6 +400,10 @@ export function stopArchiveEvents(): void {
   if (archiveRefreshTimer !== null) {
     clearTimeout(archiveRefreshTimer);
     archiveRefreshTimer = null;
+  }
+  if (archiveEscapeBound) {
+    document.removeEventListener('keydown', onArchiveEscapeKeydown);
+    archiveEscapeBound = false;
   }
   if (archiveRealtimeBound) {
     off('realtime:event', onArchiveRealtimeEvent);

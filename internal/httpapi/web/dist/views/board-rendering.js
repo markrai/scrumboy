@@ -255,7 +255,7 @@ export function buildTopbarHtml(args) {
         <div class="spacer"></div>
         ${voiceCommandTriggerHTML}
         ${wallButtonHTML}
-        <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive">${archiveLabel}</button>
+        <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive"><img src="/archive.svg" alt="" width="20" height="20" decoding="async" /></button>
         <div class="search-input-wrapper">
           <input
             type="text"
@@ -292,7 +292,7 @@ export function buildTopbarHtml(args) {
         <div class="spacer"></div>
         ${voiceCommandTriggerHTML}
         ${wallButtonHTML}
-        <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive">${archiveLabel}</button>
+        <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive"><img src="/archive.svg" alt="" width="20" height="20" decoding="async" /></button>
         <div class="search-input-wrapper">
           <input
             type="text"
