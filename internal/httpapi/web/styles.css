@@ -5442,6 +5442,16 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   white-space: nowrap;
 }
 
+@media (min-width: 768px) {
+  .omni-tag-pills {
+    min-height: calc(30px * var(--ui-scale));
+  }
+
+  .omni-tag-pills:empty {
+    display: flex;
+  }
+}
+
 button.omni-tag-pill {
   cursor: pointer;
 }

@@ -243,6 +243,18 @@ describe('board topbar rendering', () => {
     expect(stylesSource).toMatch(/\.omni-tag-pills\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/s);
   });
 
+  it('reserves the populated Omni pill height for an empty desktop rail only', () => {
+    const pillMinHeight = stylesSource.match(/\.omni-tag-pill\s*\{[^}]*min-height:\s*([^;]+);/s)?.[1].trim();
+    const desktopRailRules = stylesSource.match(
+      /@media\s*\(min-width:\s*768px\)\s*\{\s*\.omni-tag-pills\s*\{([^}]*)\}\s*\.omni-tag-pills:empty\s*\{([^}]*)\}\s*\}/s,
+    );
+    const desktopRailMinHeight = desktopRailRules?.[1].match(/min-height:\s*([^;]+);/)?.[1].trim();
+
+    expect(stylesSource).toMatch(/\.omni-tag-pills:empty\s*\{\s*display:\s*none;\s*\}/s);
+    expect(desktopRailRules?.[2]).toMatch(/display:\s*flex;/);
+    expect(desktopRailMinHeight).toBe(pillMinHeight);
+  });
+
   it('renders plain escaped titles on cards and never renders markdown from todo bodies', () => {
     const html = renderTodoCard({
       id: 7,
