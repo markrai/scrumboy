@@ -977,7 +977,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
             user: getUser(),
             sprintId,
             sprintData: getSprintChipDataForSlug(getSlug()),
-        });
+        }, { searchInTopbar: isMobile });
     const membersByUserId = getMembersByUserId();
     const showPointsMode = isModifiedFibonacciModeEnabled();
     const cardOpts = {

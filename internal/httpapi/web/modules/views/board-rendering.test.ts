@@ -205,6 +205,37 @@ describe('board topbar rendering', () => {
     expect(distHost.querySelectorAll('#searchInput')).toHaveLength(1);
   });
 
+  it('renders mobile Omni search between Archive and New Todo while keeping tag suggestions in the second row', () => {
+    const base = {
+      board: board(),
+      search: 'andr',
+      searchPlaceholder: 'Search',
+      isMobile: true,
+      isAnonymousTempBoard: false,
+      currentUserProjectRole: 'maintainer',
+      user: null,
+      backLabel: 'Projects',
+    };
+    const host = document.createElement('div');
+    host.innerHTML = buildTopbarHtml({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' })
+      + buildOmniFilterRowHtml(base, { searchInTopbar: true });
+
+    const topbar = host.querySelector('.topbar');
+    const searchWrapper = topbar?.querySelector('.search-input-wrapper');
+    const secondRow = host.querySelector('.filters--omni');
+    expect(topbar?.querySelector('#searchInput')).not.toBeNull();
+    expect(topbar?.querySelector('#archiveBtn')).not.toBeNull();
+    expect(topbar?.querySelector('#newTodoBtn')).not.toBeNull();
+    expect(searchWrapper?.previousElementSibling?.id).toBe('archiveBtn');
+    expect(searchWrapper?.nextElementSibling?.id).toBe('newTodoBtn');
+    expect(secondRow?.querySelector('#searchInput')).toBeNull();
+    expect(secondRow?.querySelector('#omniTagPills')).not.toBeNull();
+    expect(host.querySelectorAll('#searchInput')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchClear')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchFilterToggle')).toHaveLength(1);
+    expect(host.querySelectorAll('#searchFilterPanel')).toHaveLength(1);
+  });
+
   it('styles Omni as a non-wrapping, horizontally scrollable filter row instead of a topbar child', () => {
     expect(stylesSource).not.toMatch(/\.topbar\s+\.omni-bar/);
     expect(stylesSource).toMatch(/\.filters--omni\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s);

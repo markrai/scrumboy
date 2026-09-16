@@ -240,10 +240,10 @@ function buildSearchFilterControlHtml(args) {
           ${search && search.trim() !== "" ? `<button class="search-clear" id="searchClear" aria-label="${clearSearchLabel}" title="${clearSearchLabel}" data-i18n-aria-label="board.actions.clearSearch" data-i18n-title="board.actions.clearSearch">✕</button>` : ''}
           ${filterPanelHTML}`;
 }
-export function buildOmniFilterRowHtml(args) {
+export function buildOmniFilterRowHtml(args, opts) {
     return `<div class="filters filters--omni" data-board-filter-layout="omni">
     <div class="omni-bar">
-      <div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>
+      ${opts?.searchInTopbar ? '' : `<div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>`}
       <div class="omni-tag-pills" id="omniTagPills" aria-live="polite"></div>
     </div>
   </div>`;
@@ -268,8 +268,11 @@ export function buildTopbarHtml(args) {
     const archiveLabel = escapeHTML(hasI18nKey("board.actions.openArchive") ? t("board.actions.openArchive") : "Archive");
     const changeProjectImageLabel = escapeHTML(t("board.actions.changeProjectImage"));
     const deleteProjectLabel = escapeHTML(t("board.actions.deleteProject"));
-    const searchControlsHTML = boardFilterLayout === 'legacy'
-        ? `<div class="search-input-wrapper" data-board-filter-layout="legacy">${buildSearchFilterControlHtml({
+    const topbarSearchLayout = boardFilterLayout === 'legacy'
+        ? 'legacy'
+        : (boardFilterLayout === 'omni' && isMobile ? 'omni' : null);
+    const searchControlsHTML = topbarSearchLayout
+        ? `<div class="search-input-wrapper" data-board-filter-layout="${topbarSearchLayout}">${buildSearchFilterControlHtml({
             board,
             search,
             searchPlaceholder,
@@ -281,7 +284,7 @@ export function buildTopbarHtml(args) {
             user,
             sprintId,
             sprintData,
-            layout: 'legacy',
+            layout: topbarSearchLayout,
         })}</div>`
         : '';
     if (minimalTopbar) {

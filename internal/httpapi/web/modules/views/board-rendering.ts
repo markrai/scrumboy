@@ -361,10 +361,13 @@ function buildSearchFilterControlHtml(args: BuildSearchFilterControlArgs): strin
           ${filterPanelHTML}`;
 }
 
-export function buildOmniFilterRowHtml(args: Omit<BuildSearchFilterControlArgs, 'layout'>): string {
+export function buildOmniFilterRowHtml(
+  args: Omit<BuildSearchFilterControlArgs, 'layout'>,
+  opts?: { searchInTopbar?: boolean },
+): string {
   return `<div class="filters filters--omni" data-board-filter-layout="omni">
     <div class="omni-bar">
-      <div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>
+      ${opts?.searchInTopbar ? '' : `<div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>`}
       <div class="omni-tag-pills" id="omniTagPills" aria-live="polite"></div>
     </div>
   </div>`;
@@ -412,8 +415,11 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
   const archiveLabel = escapeHTML(hasI18nKey("board.actions.openArchive") ? t("board.actions.openArchive") : "Archive");
   const changeProjectImageLabel = escapeHTML(t("board.actions.changeProjectImage"));
   const deleteProjectLabel = escapeHTML(t("board.actions.deleteProject"));
-  const searchControlsHTML = boardFilterLayout === 'legacy'
-    ? `<div class="search-input-wrapper" data-board-filter-layout="legacy">${buildSearchFilterControlHtml({
+  const topbarSearchLayout: BoardFilterLayout | null = boardFilterLayout === 'legacy'
+    ? 'legacy'
+    : (boardFilterLayout === 'omni' && isMobile ? 'omni' : null);
+  const searchControlsHTML = topbarSearchLayout
+    ? `<div class="search-input-wrapper" data-board-filter-layout="${topbarSearchLayout}">${buildSearchFilterControlHtml({
         board,
         search,
         searchPlaceholder,
@@ -425,7 +431,7 @@ export function buildTopbarHtml(args: BuildTopbarHtmlArgs): string {
         user,
         sprintId,
         sprintData,
-        layout: 'legacy',
+        layout: topbarSearchLayout,
       })}</div>`
     : '';
 
