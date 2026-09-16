@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const stylesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles.css'), 'utf8');
 
 const h = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -138,6 +143,22 @@ describe('archive view', () => {
     expect(document.querySelector('[data-archive-open="12"]')?.textContent).toContain('archive.done');
     expect(document.querySelector('[data-archive-select]')).toBeNull();
     expect(document.getElementById('archiveSelectAllBtn')?.hidden).toBe(true);
+  });
+
+  it('keeps the archive project image inside a fixed-size desktop wrapper', async () => {
+    h.apiFetch.mockResolvedValue({
+      ...board,
+      project: { ...board.project, image: '/uploads/alpha.png' },
+    });
+    h.listArchivedTodos.mockResolvedValue({ todos: [], nextCursor: null, hasMore: false });
+    const { renderArchive } = await import('./archive.js');
+
+    await renderArchive('alpha');
+
+    expect(document.querySelector('.archive-project-image > img.project-image-topbar')).not.toBeNull();
+    expect(stylesSource).toMatch(
+      /\.archive-project-image\s*\{[^}]*width:\s*var\(--s-32\)[^}]*height:\s*var\(--s-32\)[^}]*flex:\s*0\s+0\s+var\(--s-32\)[^}]*overflow:\s*hidden/,
+    );
   });
 
   it('appends cursor pages without duplicating a repeated boundary row', async () => {

@@ -177,8 +177,8 @@ function renderArchiveList(): void {
 
 function archiveTopbarHtml(board: Board): string {
   const image = board.project.image
-    ? `<img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" />`
-    : '<span class="project-image-topbar-placeholder">📦</span>';
+    ? `<span class="archive-project-image"><img src="${escapeHTML(board.project.image)}" alt="" class="project-image-topbar" /></span>`
+    : '<span class="archive-project-image"><span class="project-image-topbar-placeholder">📦</span></span>';
   return `
     <div class="topbar archive-topbar">
       <button class="btn btn--ghost" type="button" id="archiveBackBtn" data-i18n-text="archive.backToBoard">${escapeHTML(t('archive.backToBoard'))}</button>

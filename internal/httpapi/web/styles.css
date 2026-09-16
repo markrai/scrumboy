@@ -4855,6 +4855,17 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   font-weight: 700;
 }
 
+.archive-project-image {
+  width: var(--s-32);
+  height: var(--s-32);
+  flex: 0 0 var(--s-32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius);
+}
+
 .archive-heading {
   display: flex;
   align-items: flex-start;
@@ -5018,6 +5029,13 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   .archive-topbar .archive-topbar__title {
     order: 1;
     flex: 0 0 auto;
+  }
+
+  .archive-topbar .archive-project-image {
+    width: var(--s-24);
+    height: var(--s-24);
+    flex-basis: var(--s-24);
+    order: 1;
   }
 
   .archive-heading {
