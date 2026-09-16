@@ -9,8 +9,10 @@ const {
   renderProjectsMock,
   renderDashboardMock,
   renderBoardMock,
+  renderArchiveMock,
   renderNotFoundMock,
   stopBoardEventsMock,
+  stopArchiveEventsMock,
   startGlobalRealtimeMock,
   stopGlobalRealtimeMock,
   initForegroundLifecycleMock,
@@ -32,8 +34,10 @@ const {
   renderProjectsMock: vi.fn(),
   renderDashboardMock: vi.fn(),
   renderBoardMock: vi.fn(),
+  renderArchiveMock: vi.fn(),
   renderNotFoundMock: vi.fn(),
   stopBoardEventsMock: vi.fn(),
+  stopArchiveEventsMock: vi.fn(),
   startGlobalRealtimeMock: vi.fn(),
   stopGlobalRealtimeMock: vi.fn(),
   initForegroundLifecycleMock: vi.fn(),
@@ -60,8 +64,10 @@ vi.mock('./views/index.js', () => ({
   renderProjects: renderProjectsMock,
   renderDashboard: renderDashboardMock,
   renderBoard: renderBoardMock,
+  renderArchive: renderArchiveMock,
   renderNotFound: renderNotFoundMock,
   stopBoardEvents: stopBoardEventsMock,
+  stopArchiveEvents: stopArchiveEventsMock,
 }));
 
 vi.mock('./core/realtime.js', () => ({
@@ -126,8 +132,10 @@ describe('router push autosubscribe gate', () => {
     renderProjectsMock.mockReset();
     renderDashboardMock.mockReset();
     renderBoardMock.mockReset();
+    renderArchiveMock.mockReset();
     renderNotFoundMock.mockReset();
     stopBoardEventsMock.mockReset();
+    stopArchiveEventsMock.mockReset();
     startGlobalRealtimeMock.mockReset();
     stopGlobalRealtimeMock.mockReset();
     initForegroundLifecycleMock.mockReset();
@@ -317,6 +325,18 @@ describe('router push autosubscribe gate', () => {
 	  expect(renderResetPasswordMock).not.toHaveBeenCalled();
 	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, mobileOidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
 	});
+  it('routes archive list and archived detail URLs without treating Archive as a board lane', async () => {
+    installSignedOutAuthStatus();
+    window.history.replaceState({}, '', '/alpha/archive');
+    const mod = await loadRouterModule();
+
+    expect(mod.parseRoute()).toMatchObject({ name: 'archiveBySlug', slug: 'alpha' });
+    await mod.router();
+    expect(renderArchiveMock).toHaveBeenCalledWith('alpha', null);
+
+    window.history.replaceState({}, '', '/alpha/archive/t/42');
+    expect(mod.parseRoute()).toMatchObject({ name: 'archiveBySlug', slug: 'alpha', openTodoSegment: '42' });
+  });
 });
 
 describe('router cold-start boardData handoff', () => {

@@ -81,6 +81,22 @@ describe('board topbar rendering', () => {
     expect(renderTopbar(false)).not.toContain('id="voiceCommandBtn"');
   });
 
+  it('keeps the project Archive discoverable independently of mutation permission', () => {
+    const html = buildTopbarHtml({
+      board: board(),
+      minimalTopbar: false,
+      search: '',
+      searchPlaceholder: 'Search',
+      isMobile: false,
+      isAnonymousTempBoard: false,
+      currentUserProjectRole: 'viewer',
+      user: { id: 7 },
+      backLabel: 'Projects',
+    });
+    expect(html).toContain('id="archiveBtn"');
+    expect(html).toContain('data-i18n-aria-label="board.actions.openArchive"');
+  });
+
   it('uses the VoiceFlow title catalog key for trigger aria and title text', async () => {
     const i18n = await import('../i18n/index.js');
     await i18n.initI18n({

@@ -237,6 +237,7 @@ export function buildTopbarHtml(args) {
     const newTodoLabel = escapeHTML(t("board.actions.newTodo"));
     const manageMembersLabel = escapeHTML(t("board.actions.manageMembers"));
     const settingsLabel = escapeHTML(t("board.actions.settings"));
+    const archiveLabel = escapeHTML(hasI18nKey("board.actions.openArchive") ? t("board.actions.openArchive") : "Archive");
     const changeProjectImageLabel = escapeHTML(t("board.actions.changeProjectImage"));
     const deleteProjectLabel = escapeHTML(t("board.actions.deleteProject"));
     if (minimalTopbar) {
@@ -254,6 +255,7 @@ export function buildTopbarHtml(args) {
         <div class="spacer"></div>
         ${voiceCommandTriggerHTML}
         ${wallButtonHTML}
+        <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive">${archiveLabel}</button>
         <div class="search-input-wrapper">
           <input
             type="text"
@@ -290,6 +292,7 @@ export function buildTopbarHtml(args) {
         <div class="spacer"></div>
         ${voiceCommandTriggerHTML}
         ${wallButtonHTML}
+        <button class="btn btn--ghost" type="button" id="archiveBtn" title="${archiveLabel}" aria-label="${archiveLabel}" data-i18n-title="board.actions.openArchive" data-i18n-aria-label="board.actions.openArchive">${archiveLabel}</button>
         <div class="search-input-wrapper">
           <input
             type="text"

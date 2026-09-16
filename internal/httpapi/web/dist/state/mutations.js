@@ -4,7 +4,7 @@ import { getUser } from './selectors.js';
 const DEFAULT_LANE_META = () => ({});
 /** True after the user changes dashboard sort (not server hydrate). Skips applying stored preference so a fast local change is not overwritten when the GET returns. */
 let dashboardTodoSortUserTouched = false;
-const VALID_ROUTES = new Set(['projects', 'dashboard', 'boardBySlug', 'reset-password', 'notfound']);
+const VALID_ROUTES = new Set(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'notfound']);
 const VALID_PROJECT_VIEWS = new Set(['list', 'grid']);
 export function setRoute(name) {
     if (!VALID_ROUTES.has(name)) {

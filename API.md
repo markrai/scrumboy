@@ -826,9 +826,11 @@ transports should treat "absent" and "null" as equivalent. Direct reads still re
 stories on both transports; it is the *collection* reads (board, default search) that exclude
 them.
 
-**No built-in UI consumer.** This release ships the archival backend, REST and MCP contracts
-only. The web UI has no archive view, and nothing is archived automatically — every
-transition is an explicit API call.
+**Built-in UI consumer.** The shared web/Capacitor UI uses these REST routes for single and
+batch Archive/Restore, a cursor-paginated project Archive, and read-only archived-story
+detail. It uses the existing REST board-refresh stream; MCP archival remains realtime-silent
+and still has no archive-listing tool. Nothing is archived automatically — every transition
+is an explicit user or API action.
 
 ---
 

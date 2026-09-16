@@ -1,5 +1,5 @@
 import { apiFetch } from './api.js';
-import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderNotFound, stopBoardEvents } from './views/index.js';
+import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderArchive, renderNotFound, stopArchiveEvents, stopBoardEvents } from './views/index.js';
 import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from './core/realtime.js';
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
@@ -95,6 +95,12 @@ function parseRoute(): ParsedRoute {
   if (path === "/auth/reset-password") return { name: "reset-password", token: url.searchParams.get("token") || undefined };
   const tm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/t\/(\d+)\/?$/);
   if (tm && !tm[1].includes("--")) return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, assignee, sort, priority, openTodoSegment: tm[2] };
+  const archiveTodoMatch = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/archive\/t\/(\d+)\/?$/);
+  if (archiveTodoMatch && !archiveTodoMatch[1].includes("--")) {
+    return { name: "archiveBySlug", slug: archiveTodoMatch[1], openTodoSegment: archiveTodoMatch[2] };
+  }
+  const archiveMatch = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/archive\/?$/);
+  if (archiveMatch && !archiveMatch[1].includes("--")) return { name: "archiveBySlug", slug: archiveMatch[1] };
   // Canonical: /{slug} only (lowercase, digits, hyphens; max 32; no leading/trailing hyphen; no consecutive hyphens).
   const sm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/?$/);
   if (sm && !sm[1].includes("--")) return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, assignee, sort, priority, openTodoId };
@@ -344,6 +350,11 @@ async function routeOnceBody(): Promise<void> {
   setOpenTodoSegment(r.openTodoSegment || null);
   if (r.name !== "boardBySlug") {
     stopBoardEvents();
+  }
+  if (r.name !== "archiveBySlug") {
+    stopArchiveEvents();
+  }
+  if (r.name !== "boardBySlug" && r.name !== "archiveBySlug") {
     setProjectId(null);
     setBoard(null);
     lastHandledBoardRoute = null;
@@ -377,6 +388,11 @@ async function routeOnceBody(): Promise<void> {
   if (r.name === "dashboard") {
     console.log("Router: rendering dashboard");
     await renderDashboard();
+    return;
+  }
+  if (r.name === "archiveBySlug") {
+    lastHandledBoardRoute = null;
+    await renderArchive(r.slug || null, r.openTodoSegment || null);
     return;
   }
   if (r.name === "boardBySlug") {

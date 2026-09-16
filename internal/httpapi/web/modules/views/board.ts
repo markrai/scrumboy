@@ -1212,6 +1212,14 @@ function renderBoardFromData(board: Board, projectId: number, tag: string, searc
     newTodoBtn.addEventListener("click", () => openTodoDialog({ mode: "create", role: currentUserProjectRole }));
     (newTodoBtn as any)[BOUND_FLAG] = true;
   }
+  const archiveBtn = document.getElementById("archiveBtn");
+  if (archiveBtn && !(archiveBtn as any)[BOUND_FLAG]) {
+    archiveBtn.addEventListener("click", () => {
+      const slug = getSlug();
+      if (slug) navigate(`/${slug}/archive`);
+    });
+    (archiveBtn as any)[BOUND_FLAG] = true;
+  }
   bindVoiceCommandButton();
   // Setup manage members button event listener (extracted for reuse)
   const setupManageMembersButton = (projId: number, projectName?: string) => {

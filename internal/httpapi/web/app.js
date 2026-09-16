@@ -6,10 +6,10 @@
 // - dist/**/*.js is emitted runtime/build output, not the primary editing target.
 // - source-side modules/**/*.js mirrors are unsupported and should not exist or be recreated.
 
-import { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, todoStatus, todoEstimationPoints, todoPriority, deleteTodoBtn, closeTodoBtn, settingsDialog, closeSettingsBtn } from './dist/dom/elements.js';
+import { app, toast, todoDialog, todoForm, todoDialogTitle, todoTitle, todoBody, todoTags, todoStatus, todoEstimationPoints, todoPriority, archiveTodoBtn, restoreTodoBtn, deleteTodoBtn, closeTodoBtn, settingsDialog, closeSettingsBtn } from './dist/dom/elements.js';
 import { initTheme, handleThemeChange, getStoredTheme, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from './dist/theme.js';
 import { escapeHTML, showToast, showConfirmDialog } from './dist/utils.js';
-import { apiFetch } from './dist/api.js';
+import { apiFetch, archiveTodos, restoreTodos } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
 import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
 import { setProjectId, setBoard, setSlug, setTag, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
@@ -110,10 +110,30 @@ function cleanupTodoDialogUrlOnClose() {
   history.replaceState({}, "", `/${currentSlug}${url.search}`);
 }
 
+function cleanupArchivedTodoDialogUrlOnClose() {
+  const currentSlug = getSlug();
+  if (!currentSlug) return;
+  const url = new URL(window.location.href);
+  const m = url.pathname.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/archive\/t\/\d+\/?$/);
+  if (!m || m[1] !== currentSlug) return;
+  history.replaceState({}, "", `/${currentSlug}/archive${url.search}`);
+}
+
+function isArchiveViewPath() {
+  return /^\/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\/archive(?:\/|$)/.test(window.location.pathname);
+}
+
+function announceArchiveListChange(slug, localId, action) {
+  window.dispatchEvent(new CustomEvent("scrumboy:archive-list-changed", {
+    detail: { slug, localId, action },
+  }));
+}
+
 todoDialog.addEventListener("close", () => {
   setEditingTodo(null);
   onTodoDialogClosed();
   cleanupTodoDialogUrlOnClose();
+  cleanupArchivedTodoDialogUrlOnClose();
   setAutocompleteSuggestion(null);
   renderTagAutocomplete();
   resetAssigneeSelect();
@@ -128,14 +148,59 @@ deleteTodoBtn.addEventListener("click", async () => {
     t("todo.confirm.deleteAction"),
   )) return;
   try {
+    const slug = getSlug();
+    const fromArchive = isArchiveViewPath();
     recordLocalMutation();
-    await apiFetch(`/api/board/${getSlug()}/todos/${todo.localId}`, { method: "DELETE" });
+    await apiFetch(`/api/board/${slug}/todos/${todo.localId}`, { method: "DELETE" });
     setEditingTodo(null);
     onTodoDialogClosed();
     await requestTodoDialogClose({ force: true, reason: "delete" });
-    await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    if (fromArchive) {
+      announceArchiveListChange(slug, todo.localId, "deleted");
+    } else {
+      await loadBoardBySlug(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    }
   } catch (err) {
     showToast(apiErrorMessage(err, { fallbackKey: "todo.deleteFailed" }));
+  }
+});
+
+archiveTodoBtn?.addEventListener("click", async () => {
+  const todo = getEditingTodo();
+  const slug = getSlug();
+  if (!todo || !slug || todo.archivedAt) return;
+  try {
+    recordLocalMutation();
+    await archiveTodos(slug, [todo.localId]);
+    setEditingTodo(null);
+    onTodoDialogClosed();
+    await requestTodoDialogClose({ force: true, reason: "archive" });
+    showToast(t("todo.archive.archived"));
+    await loadBoardBySlug(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+  } catch (err) {
+    showToast(apiErrorMessage(err, { fallbackKey: "todo.archive.archiveFailed" }));
+  }
+});
+
+restoreTodoBtn?.addEventListener("click", async () => {
+  const todo = getEditingTodo();
+  const slug = getSlug();
+  if (!todo || !slug || !todo.archivedAt) return;
+  const fromArchive = isArchiveViewPath();
+  try {
+    recordLocalMutation();
+    await restoreTodos(slug, [todo.localId]);
+    setEditingTodo(null);
+    onTodoDialogClosed();
+    await requestTodoDialogClose({ force: true, reason: "restore" });
+    showToast(t("todo.archive.restored"));
+    if (fromArchive) {
+      announceArchiveListChange(slug, todo.localId, "restored");
+    } else {
+      await loadBoardBySlug(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    }
+  } catch (err) {
+    showToast(apiErrorMessage(err, { fallbackKey: "todo.archive.restoreFailed" }));
   }
 });
 

@@ -70,4 +70,31 @@ describe('apiFetch', () => {
     });
     expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Content-Type');
   });
+
+  it('uses the cursor archive endpoint and atomic batch request shapes', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ todos: [], hasMore: false }),
+    });
+    const { archiveTodos, listArchivedTodos, restoreTodos } = await import('./api.js');
+
+    await listArchivedTodos('alpha board', { limit: 50, afterCursor: '123:9' });
+    await archiveTodos('alpha', [12, 14]);
+    await restoreTodos('alpha', [19]);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/board/alpha%20board/archive?limit=50&afterCursor=123%3A9', {
+      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/board/alpha/todos/archive', {
+      method: 'POST',
+      body: JSON.stringify({ localIds: [12, 14] }),
+      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/board/alpha/todos/restore', {
+      method: 'POST',
+      body: JSON.stringify({ localIds: [19] }),
+      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
+    });
+  });
 });

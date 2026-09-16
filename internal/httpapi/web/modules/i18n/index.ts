@@ -128,6 +128,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "board.actions.manageMembers": "Members",
   "board.actions.newTodo": "New Todo",
   "board.actions.openWall": "Open wall",
+  "board.actions.openArchive": "Archive",
   "board.actions.renameProject": "Rename",
   "board.actions.settings": "Settings",
   "board.backToProjects": "\u2190 Projects",

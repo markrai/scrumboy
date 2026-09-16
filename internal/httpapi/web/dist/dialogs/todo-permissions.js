@@ -11,6 +11,8 @@ const defaultPermissions = {
     canEditStatus: false,
     canSubmitTodo: false,
     canEditLinks: false,
+    canArchiveTodo: false,
+    canRestoreTodo: false,
 };
 let permissions = { ...defaultPermissions };
 export function computeTodoDialogPermissions(opts) {
@@ -19,6 +21,7 @@ export function computeTodoDialogPermissions(opts) {
     const temporaryBoard = isTemporaryBoard(board);
     const baseMaintainer = (role ?? "") === "maintainer" || anonymousBoard;
     const tempLinkForm = temporaryBoard && (mode === "create" || mode === "edit");
+    const canManageLifecycle = (role ?? "") === "maintainer" || temporaryBoard;
     const roleNorm = (role ?? "").toLowerCase();
     const isContributor = roleNorm === "contributor" || roleNorm === "editor";
     const currentUser = getUser();
@@ -33,6 +36,13 @@ export function computeTodoDialogPermissions(opts) {
             tempLinkForm ||
             (!anonymousBoard && isContributor && isAssignedToMe);
     const canEditLinks = baseMaintainer || (!anonymousBoard && isContributor);
+    if (mode === "edit" && todo?.archivedAt) {
+        return {
+            ...defaultPermissions,
+            canDeleteTodo: canManageLifecycle,
+            canRestoreTodo: canManageLifecycle,
+        };
+    }
     return {
         canChangeSprint: baseMaintainer && !anonymousBoard,
         canChangeEstimation: baseMaintainer || tempLinkForm,
@@ -41,11 +51,13 @@ export function computeTodoDialogPermissions(opts) {
             tempLinkForm ||
             (!anonymousBoard && isContributor && isAssignedToMe),
         canEditAssignment: baseMaintainer && !anonymousBoard,
-        canDeleteTodo: baseMaintainer,
+        canDeleteTodo: baseMaintainer || (temporaryBoard && mode === "edit"),
         canEditTitle,
         canEditStatus,
         canSubmitTodo,
         canEditLinks,
+        canArchiveTodo: mode === "edit" && canManageLifecycle,
+        canRestoreTodo: false,
     };
 }
 export function setTodoFormPermissions(next) {

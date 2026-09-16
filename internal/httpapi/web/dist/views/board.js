@@ -1090,6 +1090,15 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
         newTodoBtn.addEventListener("click", () => openTodoDialog({ mode: "create", role: currentUserProjectRole }));
         newTodoBtn[BOUND_FLAG] = true;
     }
+    const archiveBtn = document.getElementById("archiveBtn");
+    if (archiveBtn && !archiveBtn[BOUND_FLAG]) {
+        archiveBtn.addEventListener("click", () => {
+            const slug = getSlug();
+            if (slug)
+                navigate(`/${slug}/archive`);
+        });
+        archiveBtn[BOUND_FLAG] = true;
+    }
     bindVoiceCommandButton();
     // Setup manage members button event listener (extracted for reuse)
     const setupManageMembersButton = (projId, projectName) => {

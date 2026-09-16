@@ -37,9 +37,14 @@
   for no-ops. Active stories omit `archivedAt` in REST payloads and report it as `null`
   over MCP.
 
-  There is no archive UI in this release - archival is available through the REST, MCP and
-  backend contracts only - and nothing is archived automatically; every transition is an
-  explicit API call.
+  The shared web/Capacitor UI now exposes Archive from every readable board. Viewers can
+  browse the cursor-paginated archive and inspect retained story fields and links in a
+  clearly marked read-only detail view. Maintainers and temporary-board capability holders
+  can archive a story, atomically archive a board selection, restore one or many archived
+  stories, or use the existing confirmed hard Delete action from archived detail. Archive
+  and Restore remain separate from Done and never ask for a destination lane. The archive
+  list uses deterministic `Load more` pagination and reconciles through the existing board
+  refresh stream. Nothing is archived automatically; every transition remains explicit.
 
   **Known behaviour:** sprint planning counts (`todoCount`, the unscheduled/backlog count)
   and workflow-column and priority-tier reference counts deliberately still include

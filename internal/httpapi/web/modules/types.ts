@@ -6,7 +6,7 @@ export const NO_PRIORITY_FILTER_VALUE = '**none**';
 
 export type TodoStatus = string;
 export type ProjectView = 'list' | 'grid';
-export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'reset-password' | 'notfound';
+export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'archiveBySlug' | 'reset-password' | 'notfound';
 export type MobileTab = string;
 export type Theme = 'system' | 'dark' | 'light';
 
@@ -103,6 +103,24 @@ export interface LanePageResponse {
   items: Todo[];
   nextCursor?: string | null;
   hasMore: boolean;
+}
+
+export interface ArchivePageResponse {
+  todos: Todo[];
+  nextCursor?: string | null;
+  hasMore: boolean;
+}
+
+export type TodoArchiveTargetState = 'archived' | 'active';
+
+export interface TodoArchiveBatchResult {
+  targetState: TodoArchiveTargetState;
+  requestedCount: number;
+  transitionedCount: number;
+  unchangedCount: number;
+  transitionedLocalIds: number[];
+  unchangedLocalIds: number[];
+  transitionedAt?: string | null;
 }
 
 export interface User {

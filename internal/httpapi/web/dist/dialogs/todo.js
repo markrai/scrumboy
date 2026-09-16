@@ -1,4 +1,4 @@
-import { addTagBtn, closeTodoBtn, deleteTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoPriority, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
+import { addTagBtn, archiveTodoBtn, closeTodoBtn, deleteTodoBtn, restoreTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoPriority, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
 import { renderMarkdownPreviewInto } from '../markdown-preview.js';
@@ -298,6 +298,7 @@ export function __isTodoDialogDirtyForTest() {
 }
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
+    const isArchived = mode === "edit" && !!todo?.archivedAt;
     setEditingTodo(mode === "edit" ? todo : null);
     bindTodoDialogCloseGuards();
     bindTodoDialogLinkLifecycle();
@@ -354,7 +355,7 @@ export async function openTodoDialog(opts) {
         sprintSelect &&
         !isAnonymousBoard(getBoard()) &&
         !!getSlug() &&
-        opts.role === "maintainer" &&
+        (opts.role === "maintainer" || isArchived) &&
         boardSprintsEnabled(getBoard());
     if (sprintField) {
         sprintField.style.display = showSprint ? "" : "none";
@@ -439,6 +440,9 @@ export async function openTodoDialog(opts) {
     const editableWithLinks = mode === "edit" && !!todo?.localId && !!slug;
     if (linksField) {
         linksField.style.display = editableWithLinks ? "" : "none";
+        const controls = linksField.querySelector(".tags-input-row");
+        if (controls)
+            controls.hidden = isArchived;
     }
     if (editableWithLinks) {
         try {
@@ -471,6 +475,8 @@ export async function openTodoDialog(opts) {
     const createdEl = document.getElementById("todoDialogCreated");
     const createdByEl = document.getElementById("todoDialogCreatedBy");
     const updatedEl = document.getElementById("todoDialogUpdated");
+    const archiveBanner = document.getElementById("todoArchiveBanner");
+    const archiveTimestamp = document.getElementById("todoArchiveTimestamp");
     const formatDialogDate = (d) => formatLocalizedDate(d, {
         year: "2-digit",
         month: "numeric",
@@ -526,13 +532,19 @@ export async function openTodoDialog(opts) {
         todoStatus.value = selected;
         populateTodoPriorityOptions(null);
         deleteTodoBtn.style.display = "none";
+        if (archiveTodoBtn)
+            archiveTodoBtn.style.display = "none";
+        if (restoreTodoBtn)
+            restoreTodoBtn.style.display = "none";
+        if (archiveBanner)
+            archiveBanner.hidden = true;
         if (shareTodoBtn)
             shareTodoBtn.style.display = "none";
         setDates(undefined, undefined);
         setCreatedBy(undefined);
     }
     else {
-        setTodoDialogTitleKey(permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
+        setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
         todoTitle.value = todo.title || "";
         todoBody.value = todo.body || "";
         todoTags.value = "";
@@ -541,6 +553,17 @@ export async function openTodoDialog(opts) {
         todoStatus.value = selected;
         populateTodoPriorityOptions(todo.priorityKey);
         deleteTodoBtn.style.display = permissions.canDeleteTodo ? "" : "none";
+        if (archiveTodoBtn)
+            archiveTodoBtn.style.display = permissions.canArchiveTodo ? "" : "none";
+        if (restoreTodoBtn)
+            restoreTodoBtn.style.display = permissions.canRestoreTodo ? "" : "none";
+        if (archiveBanner)
+            archiveBanner.hidden = !isArchived;
+        if (archiveTimestamp) {
+            archiveTimestamp.textContent = isArchived
+                ? t("todo.archive.archivedOn", { date: formatDialogDate(todo.archivedAt) })
+                : "";
+        }
         if (shareTodoBtn)
             shareTodoBtn.style.display = "";
         setDates(todo.createdAt, todo.updatedAt);
@@ -571,8 +594,10 @@ export async function openTodoDialog(opts) {
     todoTitle.readOnly = !permissions.canEditTitle;
     todoStatus.disabled = !permissions.canEditStatus;
     const saveTodoBtn = document.getElementById("saveTodoBtn");
-    if (saveTodoBtn)
+    if (saveTodoBtn) {
         saveTodoBtn.disabled = !permissions.canSubmitTodo;
+        saveTodoBtn.style.display = isArchived ? "none" : "";
+    }
     const tagsChips = document.getElementById("tagsChips");
     if (tagsChips)
         tagsChips.innerHTML = "";

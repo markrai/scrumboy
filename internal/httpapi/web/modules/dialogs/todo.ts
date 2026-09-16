@@ -1,7 +1,9 @@
 import {
   addTagBtn,
+  archiveTodoBtn,
   closeTodoBtn,
   deleteTodoBtn,
+  restoreTodoBtn,
   shareTodoBtn,
   todoBody,
   todoBodyPreview,
@@ -58,7 +60,7 @@ export {
 } from './todo-tags.js';
 
 type TodoNotesMode = "markdown" | "preview";
-type TodoDialogCloseReason = "button" | "cancel" | "outside" | "save" | "delete";
+type TodoDialogCloseReason = "button" | "cancel" | "outside" | "save" | "delete" | "archive" | "restore";
 type TodoDialogSnapshot = {
   title: string;
   body: string;
@@ -402,6 +404,7 @@ export async function openTodoDialog(opts: {
   role?: string | null;
 }): Promise<void> {
   const { mode, todo, status, onNavigateToLinkedTodo } = opts;
+  const isArchived = mode === "edit" && !!todo?.archivedAt;
   setEditingTodo(mode === "edit" ? todo : null);
   bindTodoDialogCloseGuards();
   bindTodoDialogLinkLifecycle();
@@ -461,7 +464,7 @@ export async function openTodoDialog(opts: {
     sprintSelect &&
     !isAnonymousBoard(getBoard()) &&
     !!getSlug() &&
-    opts.role === "maintainer" &&
+    (opts.role === "maintainer" || isArchived) &&
     boardSprintsEnabled(getBoard());
   if (sprintField) {
     sprintField.style.display = showSprint ? "" : "none";
@@ -548,6 +551,8 @@ export async function openTodoDialog(opts: {
   const editableWithLinks = mode === "edit" && !!todo?.localId && !!slug;
   if (linksField) {
     linksField.style.display = editableWithLinks ? "" : "none";
+    const controls = linksField.querySelector<HTMLElement>(".tags-input-row");
+    if (controls) controls.hidden = isArchived;
   }
   if (editableWithLinks) {
     try {
@@ -578,6 +583,8 @@ export async function openTodoDialog(opts: {
   const createdEl = document.getElementById("todoDialogCreated") as HTMLElement | null;
   const createdByEl = document.getElementById("todoDialogCreatedBy") as HTMLElement | null;
   const updatedEl = document.getElementById("todoDialogUpdated") as HTMLElement | null;
+  const archiveBanner = document.getElementById("todoArchiveBanner") as HTMLElement | null;
+  const archiveTimestamp = document.getElementById("todoArchiveTimestamp") as HTMLElement | null;
   const formatDialogDate = (d: string) =>
     formatLocalizedDate(d, {
       year: "2-digit",
@@ -633,11 +640,14 @@ export async function openTodoDialog(opts: {
     (todoStatus as HTMLSelectElement).value = selected;
     populateTodoPriorityOptions(null);
     (deleteTodoBtn as HTMLElement).style.display = "none";
+    if (archiveTodoBtn) (archiveTodoBtn as HTMLElement).style.display = "none";
+    if (restoreTodoBtn) (restoreTodoBtn as HTMLElement).style.display = "none";
+    if (archiveBanner) archiveBanner.hidden = true;
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "none";
     setDates(undefined, undefined);
     setCreatedBy(undefined);
   } else {
-    setTodoDialogTitleKey(permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
+    setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
     (todoTitle as HTMLInputElement).value = todo.title || "";
     (todoBody as HTMLTextAreaElement).value = todo.body || "";
     (todoTags as HTMLInputElement).value = "";
@@ -646,6 +656,14 @@ export async function openTodoDialog(opts: {
     (todoStatus as HTMLSelectElement).value = selected;
     populateTodoPriorityOptions(todo.priorityKey);
     (deleteTodoBtn as HTMLElement).style.display = permissions.canDeleteTodo ? "" : "none";
+    if (archiveTodoBtn) (archiveTodoBtn as HTMLElement).style.display = permissions.canArchiveTodo ? "" : "none";
+    if (restoreTodoBtn) (restoreTodoBtn as HTMLElement).style.display = permissions.canRestoreTodo ? "" : "none";
+    if (archiveBanner) archiveBanner.hidden = !isArchived;
+    if (archiveTimestamp) {
+      archiveTimestamp.textContent = isArchived
+        ? t("todo.archive.archivedOn", { date: formatDialogDate(todo.archivedAt) })
+        : "";
+    }
     if (shareTodoBtn) (shareTodoBtn as HTMLElement).style.display = "";
     setDates(todo.createdAt, todo.updatedAt);
     setCreatedBy(todo.createdByUserId);
@@ -672,7 +690,10 @@ export async function openTodoDialog(opts: {
   (todoTitle as HTMLInputElement).readOnly = !permissions.canEditTitle;
   (todoStatus as HTMLSelectElement).disabled = !permissions.canEditStatus;
   const saveTodoBtn = document.getElementById("saveTodoBtn") as HTMLButtonElement | null;
-  if (saveTodoBtn) saveTodoBtn.disabled = !permissions.canSubmitTodo;
+  if (saveTodoBtn) {
+    saveTodoBtn.disabled = !permissions.canSubmitTodo;
+    saveTodoBtn.style.display = isArchived ? "none" : "";
+  }
 
   const tagsChips = document.getElementById("tagsChips");
   if (tagsChips) tagsChips.innerHTML = "";

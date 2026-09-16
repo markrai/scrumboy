@@ -1,8 +1,15 @@
 import { initBulkEditDialog, openBulkEditDialog } from '../dialogs/bulk-edit.js';
-import { I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
+import { archiveTodos } from '../api.js';
+import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
+import { invalidateBoard } from '../orchestration/board-refresh.js';
+import { recordLocalMutation, setBulkUpdating } from '../realtime/guard.js';
+import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag } from '../state/selectors.js';
+import { isTemporaryBoard, showToast } from '../utils.js';
 
 let selectedTodoIds = new Set<number>();
 let bulkEditUiInitialized = false;
+let getCurrentRole: (() => string | null) | null = null;
+const ARCHIVE_BATCH_MAX = 500;
 
 function selectionLabel(count: number): string {
   return count === 1
@@ -24,6 +31,8 @@ export function clearTodoMultiSelection(): void {
   const btn = document.getElementById("bulkEditBarBtn");
   if (bar) bar.style.display = "none";
   if (btn) btn.textContent = "";
+  const archiveBtn = document.getElementById("bulkArchiveBarBtn") as HTMLButtonElement | null;
+  if (archiveBtn) archiveBtn.hidden = true;
   document.querySelectorAll(".board .card--selected").forEach((el) => el.classList.remove("card--selected"));
 }
 
@@ -39,6 +48,48 @@ export function updateBulkEditBar(): void {
     bar.style.display = "none";
     btn.textContent = "";
   }
+  const archiveBtn = document.getElementById("bulkArchiveBarBtn") as HTMLButtonElement | null;
+  if (archiveBtn) {
+    const canArchive = getCurrentRole?.() === "maintainer" || isTemporaryBoard(getBoard());
+    archiveBtn.hidden = n < 2 || !canArchive;
+    archiveBtn.disabled = n > ARCHIVE_BATCH_MAX;
+    archiveBtn.title = n > ARCHIVE_BATCH_MAX ? t("board.bulkArchive.limit") : "";
+  }
+}
+
+function selectedLocalIds(): number[] {
+  const ids = new Set(selectedTodoIds);
+  const localIds: number[] = [];
+  for (const todos of Object.values(getBoard()?.columns || {})) {
+    for (const todo of todos) {
+      if (ids.has(todo.id) && !todo.archivedAt) localIds.push(todo.localId);
+    }
+  }
+  return localIds;
+}
+
+async function archiveSelection(): Promise<void> {
+  const slug = getSlug();
+  const localIds = selectedLocalIds();
+  const canArchive = getCurrentRole?.() === "maintainer" || isTemporaryBoard(getBoard());
+  if (!slug || !canArchive || localIds.length === 0) return;
+  if (localIds.length > ARCHIVE_BATCH_MAX) {
+    showToast(t("board.bulkArchive.limit"));
+    return;
+  }
+  setBulkUpdating(true);
+  try {
+    recordLocalMutation();
+    const result = await archiveTodos(slug, localIds);
+    clearTodoMultiSelection();
+    showToast(t("board.bulkArchive.archivedMultiple", { count: result.transitionedCount }));
+    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), true);
+  } catch (error) {
+    showToast(apiErrorMessage(error, { fallbackKey: "board.bulkArchive.failed" }));
+    updateBulkEditBar();
+  } finally {
+    setBulkUpdating(false);
+  }
 }
 
 export function toggleTodoSelection(id: number): void {
@@ -53,6 +104,7 @@ export function ensureBulkEditUi(opts: {
   getRole: () => string | null;
   syncSelectionClasses: (selectedIds: ReadonlySet<number>) => void;
 }): void {
+  getCurrentRole = opts.getRole;
   if (bulkEditUiInitialized) return;
   bulkEditUiInitialized = true;
   initBulkEditDialog(() => {
@@ -72,5 +124,8 @@ export function ensureBulkEditUi(opts: {
         opts.syncSelectionClasses(selectedTodoIds);
       },
     });
+  });
+  document.getElementById("bulkArchiveBarBtn")?.addEventListener("click", () => {
+    void archiveSelection();
   });
 }
