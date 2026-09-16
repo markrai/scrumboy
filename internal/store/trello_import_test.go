@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -176,5 +177,47 @@ func TestImportTrelloProject_RollsBackOnMetadataMismatch(t *testing.T) {
 	}
 	if todoCount != 0 {
 		t.Fatalf("expected rollback to leave 0 todos, got %d", todoCount)
+	}
+}
+
+// TestImportTrelloProject_RejectsMislabeledAndUnsupportedVersions confirms the Trello entry
+// point shares the single backup version gate rather than carrying its own. A Trello bundle
+// is always stamped 1.2 and always declares archive state, so relabelling it 1.1 is exactly
+// the mislabeled-payload case the gate exists to reject.
+func TestImportTrelloProject_RejectsMislabeledAndUnsupportedVersions(t *testing.T) {
+	st, _, cleanup := newTrelloTestStore(t)
+	defer cleanup()
+	raw := []byte(`{
+		"id":"board-version",
+		"name":"Version Gate",
+		"lists":[
+			{"id":"list-open","name":"Doing","pos":10,"closed":false},
+			{"id":"list-done","name":"Done","pos":20,"closed":false}
+		],
+		"cards":[
+			{"id":"card-closed","name":"Closed card","idList":"list-open","pos":10,"closed":true,"idLabels":[],"idMembers":[]}
+		]
+	}`)
+
+	for _, version := range []string{"1.1", "1.0", "1.3"} {
+		t.Run("rejects "+version, func(t *testing.T) {
+			bundle, err := trelloimport.BuildImportBundle(raw, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle.ExportData.Version = version
+			if _, err := st.ImportTrelloProject(context.Background(), bundle.ExportData, bundle.ProjectImportMetadata, bundle.TodoImportMetadataByLocalID, store.ModeFull); !errors.Is(err, store.ErrValidation) {
+				t.Fatalf("version %q err=%v want validation", version, err)
+			}
+		})
+	}
+
+	// The version the transform actually produces still imports.
+	bundle, err := trelloimport.BuildImportBundle(raw, time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ImportTrelloProject(context.Background(), bundle.ExportData, bundle.ProjectImportMetadata, bundle.TodoImportMetadataByLocalID, store.ModeFull); err != nil {
+		t.Fatalf("native Trello bundle rejected: %v", err)
 	}
 }

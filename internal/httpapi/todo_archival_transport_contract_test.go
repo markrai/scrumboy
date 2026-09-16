@@ -329,3 +329,66 @@ func TestTodoArchivalRESTDurableAndTemporaryAuthorization(t *testing.T) {
 		t.Fatalf("expired temporary restore status=%d body=%s", resp.StatusCode, body)
 	}
 }
+
+// TestTodoArchiveRESTListInputValidationAndScope covers the archive list's remaining
+// transport contract: malformed paging input is rejected rather than silently coerced, and
+// the list is strictly the archive -- active stories never appear in it.
+func TestTodoArchiveRESTListInputValidationAndScope(t *testing.T) {
+	f := newTodoDeleteRESTFixture(t, "full")
+	_, ctx, client := newTodoDeleteRESTOwner(t, f, "archive-rest-listinput@example.com")
+	p, err := f.store.CreateProject(ctx, "REST archive list input")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived := createTodoDeleteRESTTodo(t, f, ctx, p.ID, "Archived story").LocalID
+	active := createTodoDeleteRESTTodo(t, f, ctx, p.ID, "Active story").LocalID
+	if _, err := f.store.ArchiveTodosByLocalID(ctx, p.ID, []int64{archived}, store.ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	base := todoArchiveURL(f, p.Slug) + "/archive"
+
+	for _, query := range []string{
+		"?limit=0",
+		"?limit=-1",
+		"?limit=abc",
+		"?afterCursor=nonsense",
+		"?afterCursor=1",
+		"?afterCursor=1:2:3",
+		"?afterCursor=-1:2",
+		"?afterCursor=1:0",
+		"?afterCursor=abc:2",
+	} {
+		t.Run("rejects "+query, func(t *testing.T) {
+			resp, body := doJSON(t, client, http.MethodGet, base+query, nil, nil)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status=%d want 400; body=%s", resp.StatusCode, body)
+			}
+		})
+	}
+
+	// An oversized limit is clamped rather than rejected, matching the store bound.
+	var clamped archivePageJSON
+	resp, body := doJSON(t, client, http.MethodGet, base+"?limit=100000", nil, &clamped)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("oversized limit status=%d body=%s", resp.StatusCode, body)
+	}
+
+	var page archivePageJSON
+	resp, body = doJSON(t, client, http.MethodGet, base, nil, &page)
+	if resp.StatusCode != http.StatusOK || len(page.Todos) != 1 {
+		t.Fatalf("archive list status=%d body=%s page=%+v", resp.StatusCode, body, page)
+	}
+	var item struct {
+		LocalID    int64      `json:"localId"`
+		ArchivedAt *time.Time `json:"archivedAt"`
+	}
+	if err := json.Unmarshal(page.Todos[0], &item); err != nil {
+		t.Fatal(err)
+	}
+	if item.LocalID != archived || item.ArchivedAt == nil {
+		t.Fatalf("archive list returned the wrong story: %+v", item)
+	}
+	if item.LocalID == active {
+		t.Fatal("active story leaked into the archive list")
+	}
+}

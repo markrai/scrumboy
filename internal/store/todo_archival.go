@@ -10,8 +10,11 @@ import (
 )
 
 const (
-	ReasonTodoArchived  = "todo_archived"
-	maxTodoArchiveBatch = 500
+	ReasonTodoArchived = "todo_archived"
+	// MaxTodoArchiveBatch is the authoritative upper bound on a single archive or
+	// restore batch. Transports must derive their own validation and advertised
+	// schema limits from this constant rather than repeating the literal.
+	MaxTodoArchiveBatch = 500
 )
 
 func todoArchivedError() error {
@@ -29,8 +32,8 @@ type TodoArchiveBatchResult struct {
 }
 
 func validateArchiveIDs(ids []int64) error {
-	if len(ids) < 1 || len(ids) > maxTodoArchiveBatch {
-		return fmt.Errorf("%w: localIds must contain between 1 and %d items", ErrValidation, maxTodoArchiveBatch)
+	if len(ids) < 1 || len(ids) > MaxTodoArchiveBatch {
+		return fmt.Errorf("%w: localIds must contain between 1 and %d items", ErrValidation, MaxTodoArchiveBatch)
 	}
 	seen := make(map[int64]struct{}, len(ids))
 	for _, id := range ids {
@@ -53,10 +56,22 @@ func (s *Store) RestoreTodoByLocalID(ctx context.Context, projectID, localID int
 	return s.RestoreTodosByLocalID(ctx, projectID, []int64{localID}, mode)
 }
 
+// ArchiveTodosByLocalID archives 1..MaxTodoArchiveBatch stories atomically. Archival is
+// orthogonal to workflow state: column_key, rank, done_at, the story's updated_at, tags,
+// links, sprint, priority and assignment are all left exactly as they were.
 func (s *Store) ArchiveTodosByLocalID(ctx context.Context, projectID int64, ids []int64, mode Mode) (TodoArchiveBatchResult, error) {
 	return s.archiveTodosByLocalID(ctx, projectID, ids, mode, true)
 }
 
+// RestoreTodosByLocalID clears archival on 1..MaxTodoArchiveBatch stories atomically and
+// rewrites no history.
+//
+// Rank note: restore returns a story with the rank it was archived at. Lane rebalancing
+// (rebalanceColumn) renumbers only active rows, so a rebalance that happens while a story
+// is archived can leave its preserved rank away from its original slot, or tied with an
+// active row. That is accepted: ranks are preserved rather than recomputed, and lane
+// ordering stays total because lanes sort by (rank, id). See
+// TestRestoreAfterRebalancePreservesStoredRank.
 func (s *Store) RestoreTodosByLocalID(ctx context.Context, projectID int64, ids []int64, mode Mode) (TodoArchiveBatchResult, error) {
 	return s.archiveTodosByLocalID(ctx, projectID, ids, mode, false)
 }

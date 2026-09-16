@@ -1,6 +1,77 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.35.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+
+## [3.35.0] - 2026-09-15
+
+### Added
+
+- **Story archival** - Stories can be archived and restored without changing their
+  workflow state. Archival is orthogonal to Done: `columnKey`, `rank`, `doneAt`, the
+  story's `updatedAt`, tags, links, sprint, priority, assignment and creator attribution
+  (`createdByUserId`) are all preserved, so completion counts, throughput, average lead
+  time, burndown and sprint history read exactly the same before and after. An archived non-Done story stays historically
+  incomplete; an archived Done story keeps counting as it did.
+
+  Archived stories are hidden from current-work reads (board and lane continuation, board
+  and lane counts, dashboard WIP and assigned work, the default story and link searches,
+  and ordering neighbours) but remain visible to direct reads, reporting, and
+  definition/reference checks - a workflow column or priority tier still referenced only by
+  archived stories cannot be deleted. They are read-only until restored: update, move and
+  link add/remove return **409** with reason `todo_archived`. That check runs *after*
+  authorization, so a caller who could not write the story anyway is refused without
+  learning whether it is archived. Existing links to an archived story stay readable. Hard
+  delete is a separate operation and is still permitted wherever its own authorization
+  already allowed it.
+
+  New REST endpoints: `GET /api/board/{slug}/archive` (cursor-paginated, newest first,
+  ordered by `archivedAt` then id) plus single and batch `POST .../archive` and
+  `.../restore`. New MCP tools `todos_archive` and `todos_restore` take 1-500 unique
+  positive project-local IDs. Both transports call the same atomic store primitive: one
+  unknown ID transitions nothing, and re-archiving an already-archived story is an
+  idempotent no-op rather than an error. **Listing the archive needs only board read
+  access, so viewers can see it; archiving and restoring require maintainer on durable
+  projects.** REST publishes exactly one board refresh per real transition and none for a
+  no-op or failure, while the MCP tools are realtime-silent like every other MCP mutation.
+  Audit records `todo_archived` / `todo_restored`, one event per real transition and none
+  for no-ops. Active stories omit `archivedAt` in REST payloads and report it as `null`
+  over MCP.
+
+  There is no archive UI in this release - archival is available through the REST, MCP and
+  backend contracts only - and nothing is archived automatically; every transition is an
+  explicit API call.
+
+  **Known behaviour:** sprint planning counts (`todoCount`, the unscheduled/backlog count)
+  and workflow-column and priority-tier reference counts deliberately still include
+  archived stories, because those are integrity and planning-scope numbers rather than
+  board reads. They can therefore exceed what the board lanes show. Likewise, tag
+  management counts remain archive-inclusive while the board's tag counts are
+  active-only.
+
+### Changed
+
+- **Backup format 1.2** - Exports are now format **1.2** and always represent archive
+  state explicitly (`archivedAt` as Unix milliseconds, or `null`). Imports accept **1.1**
+  and **1.2**. On matched-project merge an absent `archivedAt` preserves the target's
+  state, explicit `null` clears it, and a timestamp archives it. A payload declaring 1.1
+  while carrying `archivedAt` is rejected as mislabeled rather than silently treated as
+  archival data. Outside matched merge (copy, replace, import into a board) an absent
+  `archivedAt` creates an active story, so 1.1 backups import exactly as before. Imported
+  `archivedAt` values are validated: negative timestamps and ones implausibly far in the
+  future are rejected before anything is written.
+
+  **Upgrade impact:** older Scrumboy versions that only understand 1.1 will reject a 1.2
+  backup rather than silently dropping archive state. Export a backup from the older
+  version before downgrading.
+
+- **Trello import: closed cards** - A closed Trello card now becomes a first-class archived
+  story instead of having `[Archived]` prefixed to its title. Closed *lists* are unchanged
+  and remain a separate axis (`[Closed List]` title prefix plus the Done remap), so a card
+  that is both keeps the closed-list marker and gains archival. Trello exports carry no
+  per-card archive time, so archived cards are stamped with the import time.
+
+  **Upgrade impact:** re-importing a Trello board produces different titles than before.
+  Previously imported cards keep their existing `[Archived]` titles; nothing is rewritten.
 
 ## [3.34.3] - 2026-09-15
 

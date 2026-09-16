@@ -443,6 +443,10 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 
 	isAnonymousBoard := isAnonymousTemporaryBoard(p)
+	if isAnonymousBoard && in.AssigneeUserID != nil {
+		return Todo{}, fmt.Errorf("%w: assignment is not allowed in anonymous mode", ErrValidation)
+	}
+
 	userID, ok := UserIDFromContext(ctx)
 	var actorRole ProjectRole
 	if ok {
@@ -452,51 +456,61 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		}
 		actorRole = role
 	}
-	if existing.ArchivedAt != nil {
-		return Todo{}, todoArchivedError()
-	}
-	if isAnonymousBoard && in.AssigneeUserID != nil {
-		return Todo{}, fmt.Errorf("%w: assignment is not allowed in anonymous mode", ErrValidation)
-	}
 
 	// Durable projects only: contributor/view edit scope. Temporary boards (any expires_at) use link collaboration
 	// for updates, same model as create — skip role-based edit scope.
+	editScope := TodoEditFull
+	scopeEnforced := false
 	if p.ExpiresAt == nil {
 		enabled, err := authEnabledTx(ctx, tx)
 		if err != nil {
 			return Todo{}, err
 		}
 		if enabled {
-			switch GetTodoEditScope(actorRole, userID, &existing) {
-			case TodoEditNone:
+			scopeEnforced = true
+			editScope = GetTodoEditScope(actorRole, userID, &existing)
+			if editScope == TodoEditNone {
 				return Todo{}, ErrUnauthorized
-			case TodoEditBodyOnly:
-				if len(in.Body) > 20000 {
-					return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
-				}
-				nowMs := time.Now().UTC().UnixMilli()
-				if _, err := tx.ExecContext(ctx, `UPDATE todos SET body = ?, updated_at = ? WHERE id = ?`,
-					in.Body, nowMs, todoID); err != nil {
-					return Todo{}, fmt.Errorf("update todo body: %w", err)
-				}
-				if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
-					return Todo{}, err
-				}
-				if err := tx.Commit(); err != nil {
-					return Todo{}, fmt.Errorf("commit update todo: %w", err)
-				}
-				existing.MaterialChanged = existing.Body != in.Body
-				existing.Body = in.Body
-				existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
-				if err := s.UpdateBoardActivity(ctx, existing.ProjectID); err != nil {
-					_ = err
-				}
-				return existing, nil
-			case TodoEditFull:
-				// fall through to full update path
 			}
 		}
 	}
+
+	// Archival is checked only after the caller has cleared the write boundary, so
+	// the conflict reason cannot be used to probe archive state without write access.
+	// MoveTodo orders these the same way.
+	if existing.ArchivedAt != nil {
+		return Todo{}, todoArchivedError()
+	}
+
+	if scopeEnforced {
+		switch editScope {
+		case TodoEditBodyOnly:
+			if len(in.Body) > 20000 {
+				return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
+			}
+			nowMs := time.Now().UTC().UnixMilli()
+			if _, err := tx.ExecContext(ctx, `UPDATE todos SET body = ?, updated_at = ? WHERE id = ?`,
+				in.Body, nowMs, todoID); err != nil {
+				return Todo{}, fmt.Errorf("update todo body: %w", err)
+			}
+			if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
+				return Todo{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return Todo{}, fmt.Errorf("commit update todo: %w", err)
+			}
+			existing.MaterialChanged = existing.Body != in.Body
+			existing.Body = in.Body
+			existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
+			if err := s.UpdateBoardActivity(ctx, existing.ProjectID); err != nil {
+				_ = err
+			}
+			return existing, nil
+		case TodoEditFull:
+			// fall through to full update path
+		}
+	}
+
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" || len(in.Title) > 200 {
 		return Todo{}, fmt.Errorf("%w: invalid title", ErrValidation)

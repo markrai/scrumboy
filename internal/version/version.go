@@ -1,6 +1,6 @@
 package version
 
-const Version = "3.34.3"
+const Version = "3.35.0"
 
 // ExportFormatVersion is the version of the backup/export data format.
 // Only increment this when the ExportData structure changes in a breaking way.

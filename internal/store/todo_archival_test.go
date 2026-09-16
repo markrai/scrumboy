@@ -116,7 +116,7 @@ func TestTodoArchivalBatchValidationAndAtomicity(t *testing.T) {
 			}
 		})
 	}
-	tooMany := make([]int64, maxTodoArchiveBatch+1)
+	tooMany := make([]int64, MaxTodoArchiveBatch+1)
 	for i := range tooMany {
 		tooMany[i] = int64(i + 1)
 	}
@@ -173,7 +173,7 @@ func TestTodoArchivalBatchAcceptsFiveHundredAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().UnixMilli()
-	ids := make([]int64, maxTodoArchiveBatch)
+	ids := make([]int64, MaxTodoArchiveBatch)
 	for i := range ids {
 		ids[i] = int64(i + 1)
 		if _, err := tx.ExecContext(ctx, `
@@ -191,7 +191,7 @@ VALUES (?, ?, ?, '', ?, ?, ?, ?)`, p.ID, ids[i], fmt.Sprintf("todo %d", ids[i]),
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.TransitionedCount != maxTodoArchiveBatch || !reflect.DeepEqual(result.TransitionedLocalIDs, ids) {
+	if result.TransitionedCount != MaxTodoArchiveBatch || !reflect.DeepEqual(result.TransitionedLocalIDs, ids) {
 		t.Fatalf("500 result count=%d", result.TransitionedCount)
 	}
 	var archived, audits int
@@ -201,8 +201,8 @@ VALUES (?, ?, ?, '', ?, ?, ?, ?)`, p.ID, ids[i], fmt.Sprintf("todo %d", ids[i]),
 	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_events WHERE project_id = ? AND action = 'todo_archived'`, p.ID).Scan(&audits); err != nil {
 		t.Fatal(err)
 	}
-	if archived != maxTodoArchiveBatch || audits != maxTodoArchiveBatch {
-		t.Fatalf("archived=%d audits=%d want %d", archived, audits, maxTodoArchiveBatch)
+	if archived != MaxTodoArchiveBatch || audits != MaxTodoArchiveBatch {
+		t.Fatalf("archived=%d audits=%d want %d", archived, audits, MaxTodoArchiveBatch)
 	}
 }
 
@@ -475,5 +475,190 @@ func TestArchivedTodoRejectsOrdinaryMutationAndAllowsHardDelete(t *testing.T) {
 	}
 	if _, err := st.GetTodoByLocalID(ctx, p.ID, todo.LocalID, ModeFull); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleted archived todo lookup err=%v", err)
+	}
+}
+
+// TestArchivedTodoGuardRunsAfterWriteAuthorization pins the error precedence shared by
+// UpdateTodo and MoveTodo: the write boundary is evaluated first, so a caller who could not
+// have written the todo anyway is denied without learning whether the story is archived.
+// The archived conflict is reserved for callers who did clear that boundary.
+func TestArchivedTodoGuardRunsAfterWriteAuthorization(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, viewer := setupAssigneeTestProject(t)
+	defer cleanup()
+	maintainerCtx := WithUserID(ctx, maintainer.ID)
+
+	unassigned, err := st.CreateTodo(maintainerCtx, project.ID, CreateTodoInput{Title: "unassigned target"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := st.CreateTodo(maintainerCtx, project.ID, CreateTodoInput{Title: "assigned target"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignee := contributor.ID
+	if _, err := st.UpdateTodo(maintainerCtx, assigned.ID, UpdateTodoInput{Title: assigned.Title, Body: "", Tags: []string{}, AssigneeUserID: &assignee}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	for _, todo := range []Todo{unassigned, assigned} {
+		if _, err := st.ArchiveTodoByLocalID(maintainerCtx, project.ID, todo.LocalID, ModeFull); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Denied before the guard: archival state must never appear in the error.
+	for _, tc := range []struct {
+		name   string
+		actor  context.Context
+		todoID int64
+	}{
+		{"viewer", WithUserID(ctx, viewer.ID), unassigned.ID},
+		{"unauthenticated", ctx, unassigned.ID},
+		// A contributor has no edit scope on a todo assigned to nobody.
+		{"unassigned contributor", WithUserID(ctx, contributor.ID), unassigned.ID},
+	} {
+		t.Run(tc.name+"/update", func(t *testing.T) {
+			_, err := st.UpdateTodo(tc.actor, tc.todoID, UpdateTodoInput{Title: "rewritten", Body: "rewritten", Tags: []string{}}, ModeFull)
+			if ErrorReason(err) == ReasonTodoArchived {
+				t.Fatalf("archival state leaked to a caller without write access: %v", err)
+			}
+			if !errors.Is(err, ErrUnauthorized) && !errors.Is(err, ErrNotFound) {
+				t.Fatalf("update err=%v want established write denial", err)
+			}
+		})
+		t.Run(tc.name+"/move", func(t *testing.T) {
+			_, err := st.MoveTodo(tc.actor, tc.todoID, DefaultColumnDoing, nil, nil, ModeFull)
+			if ErrorReason(err) == ReasonTodoArchived {
+				t.Fatalf("archival state leaked to a caller without write access: %v", err)
+			}
+			if !errors.Is(err, ErrUnauthorized) && !errors.Is(err, ErrNotFound) {
+				t.Fatalf("move err=%v want established write denial", err)
+			}
+		})
+	}
+
+	// Cleared the boundary: these callers could otherwise have written, so they get the
+	// archived conflict. A contributor assigned to the todo holds body-only edit scope.
+	if _, err := st.UpdateTodo(WithUserID(ctx, contributor.ID), assigned.ID, UpdateTodoInput{Title: "rewritten", Body: "rewritten", Tags: []string{}}, ModeFull); !errors.Is(err, ErrConflict) || ErrorReason(err) != ReasonTodoArchived {
+		t.Fatalf("assigned contributor update err=%v reason=%q want archived conflict", err, ErrorReason(err))
+	}
+	if _, err := st.UpdateTodo(maintainerCtx, unassigned.ID, UpdateTodoInput{Title: "rewritten", Body: "rewritten", Tags: []string{}}, ModeFull); !errors.Is(err, ErrConflict) || ErrorReason(err) != ReasonTodoArchived {
+		t.Fatalf("maintainer update err=%v reason=%q want archived conflict", err, ErrorReason(err))
+	}
+	if _, err := st.MoveTodo(maintainerCtx, unassigned.ID, DefaultColumnDoing, nil, nil, ModeFull); !errors.Is(err, ErrConflict) || ErrorReason(err) != ReasonTodoArchived {
+		t.Fatalf("maintainer move err=%v reason=%q want archived conflict", err, ErrorReason(err))
+	}
+
+	for _, todo := range []Todo{unassigned, assigned} {
+		got, err := st.GetTodoByLocalID(maintainerCtx, project.ID, todo.LocalID, ModeFull)
+		if err != nil || got.Title != todo.Title || got.ArchivedAt == nil {
+			t.Fatalf("archived todo mutated by a rejected write: %+v err=%v", got, err)
+		}
+	}
+}
+
+// TestRestoreAfterRebalancePreservesStoredRank characterizes how archival interacts with
+// lane rebalancing, which is otherwise unspecified. A1 preserves `rank` across archive and
+// restore, and rebalanceColumn deliberately renumbers only active rows. The consequence is
+// that a rebalance while a story is archived can leave that story's preserved rank pointing
+// somewhere other than its original slot -- including colliding with an active row. That is
+// accepted behaviour, not a bug: restore returns the story with the rank it was archived
+// with, and ordering stays deterministic because the lane sorts by (rank, id).
+func TestRestoreAfterRebalancePreservesStoredRank(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "rebalance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := make([]Todo, 4)
+	for i := range created {
+		todo, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: fmt.Sprintf("lane %d", i+1), ColumnKey: DefaultColumnBacklog}, ModeFull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		created[i] = todo
+	}
+	target := created[2]
+
+	if _, err := st.ArchiveTodoByLocalID(ctx, p.ID, target.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := st.GetTodoByLocalID(ctx, p.ID, target.LocalID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rankAtArchive := archived.Rank
+
+	tx, err := st.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rebalanceColumn(ctx, tx, p.ID, DefaultColumnBacklog); err != nil {
+		_ = tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	// The rebalance renumbered the three active rows to 1000/2000/3000 and skipped
+	// the archived one entirely, so its stored rank is untouched.
+	afterRebalance, err := st.GetTodoByLocalID(ctx, p.ID, target.LocalID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterRebalance.Rank != rankAtArchive {
+		t.Fatalf("rebalance renumbered an archived story: rank %d -> %d", rankAtArchive, afterRebalance.Rank)
+	}
+	activeRanks := map[int64]int64{}
+	for _, c := range created {
+		if c.LocalID == target.LocalID {
+			continue
+		}
+		got, err := st.GetTodoByLocalID(ctx, p.ID, c.LocalID, ModeFull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		activeRanks[c.LocalID] = got.Rank
+	}
+	for localID, rank := range activeRanks {
+		if rank%rankStep != 0 || rank == 0 {
+			t.Fatalf("active todo %d was not rebalanced onto the rank grid: %d", localID, rank)
+		}
+	}
+
+	if _, err := st.RestoreTodoByLocalID(ctx, p.ID, target.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := st.GetTodoByLocalID(ctx, p.ID, target.LocalID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.ArchivedAt != nil || restored.Rank != rankAtArchive {
+		t.Fatalf("restore rewrote rank: want %d got %+v", rankAtArchive, restored)
+	}
+	if restored.ColumnKey != target.ColumnKey {
+		t.Fatalf("restore changed the lane: %q -> %q", target.ColumnKey, restored.ColumnKey)
+	}
+
+	// Ordering remains total and deterministic even if the restored rank ties an
+	// active row, because the lane sorts by (rank, id).
+	pc, err := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{}, SortOrderDefault)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lane := cols[DefaultColumnBacklog]
+	if len(lane) != len(created) {
+		t.Fatalf("restored story missing from lane: %d of %d", len(lane), len(created))
+	}
+	for i := 1; i < len(lane); i++ {
+		if !lessByRankID(lane[i-1].Rank, lane[i-1].ID, lane[i].Rank, lane[i].ID) {
+			t.Fatalf("lane ordering is not total after restore: %+v", lane)
+		}
 	}
 }

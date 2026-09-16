@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.34.3-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.35.0-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -113,6 +113,7 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 - Customizable Tags: Users can inherit and customize tag colors.
 - Advanced filtering: Search todos based on text or tags.
 - Sprints: create, activate, close; sprint filter on board; default sprint weeks (1 or 2) per project. Maintainers can disable sprints per project without deleting sprint history or todo assignments, then re-enable them later.
+- **Story archival (API-only, no UI yet):** Archive and restore stories without touching their workflow lane or history - lane, rank, `doneAt`, tags, links, sprint, priority and assignment are all preserved, so metrics and sprint history are unaffected. Archived stories drop out of board, search and dashboard reads and become read-only until restored, while still counting for integrity checks. Single and atomic batch (1-500) operations over REST and MCP, plus a cursor-paginated archive listing that any board viewer can read; archiving and restoring require maintainer. Nothing is archived automatically. See [API.md](API.md) and [docs/mcp.md](docs/mcp.md).
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
 - Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit-trail.md](docs/audit-trail.md)).

@@ -592,15 +592,18 @@ updated first, with project ID descending as the deterministic tie-breaker.
     "tags": [],
     "estimationPoints": null,
     "assigneeUserId": null,
+    "createdByUserId": null,
     "sprintId": null,
+    "priorityKey": null,
     "createdAt": "2026-04-04T12:00:00Z",
     "updatedAt": "2026-04-04T12:00:00Z",
-    "doneAt": null
+    "doneAt": null,
+    "archivedAt": null
   }
 }
 ```
 
-(`todoItem` in `internal/mcp/types.go`; default column when omitted is `store.DefaultColumnBacklog` = **`backlog`** after `normalizeColumnKey` in `internal/mcp/adapter.go`.)
+(`todoItem` in `internal/mcp/types.go`; default column when omitted is `store.DefaultColumnBacklog` = **`backlog`** after `normalizeColumnKey` in `internal/mcp/adapter.go`.) Every field above is always present in MCP todo responses; optional values are explicit JSON `null` rather than omitted. **`archivedAt`** is an RFC3339 timestamp string when the story is archived and `null` when it is active.
 
 **3. `todos_update`** — required: `projectSlug`, `localId`, `patch` (object). Only fields present in `patch` are updated; some fields may be set to JSON `null` to clear where the store allows it. For `priorityKey`, omission preserves, `null` clears, and a string assigns a tier from the same project. Success data uses the same `todo` object shape as `todos_create` / `todos_get`.
 
@@ -897,5 +900,4 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
 - **`sprints_update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints_create`).
 - **JSON-RPC `serverInfo.version`:** The value returned by `initialize` is the string **`1.0.0`** in code (`internal/mcp/jsonrpc_handler.go`), not necessarily the Scrumboy app version from `internal/version`.
 - **`plannedTools`:** Currently always empty / omitted; there is no separate catalog of unimplemented tools in responses.
-
-- `todos_archive` and `todos_restore` archive or restore up to 500 project-local todos. Archival is orthogonal to workflow state; archived todos are omitted from board/search reads and remain available through `todos_get`. Requires maintainer access on durable projects.
+- **`todos_archive` / `todos_restore`:** take `localIds`, an array of **1-500** unique positive project-local IDs, and apply it **atomically** — one unknown ID fails the whole call and transitions nothing. Requires **maintainer** access on durable projects; unavailable in anonymous and pre-bootstrap modes. Re-archiving an already-archived story is an idempotent no-op counted as unchanged, not an error. Archival is orthogonal to workflow state and Done: `columnKey`, rank, `doneAt`, the story's `updatedAt`, tags, links, sprint, priority, assignment and `createdByUserId` are all preserved, so reporting and sprint history are unaffected. Archived stories are read-only (**409** `todo_archived`), but that check runs after authorization, so an unauthorized caller never learns the archive state; an empty `todos_update` patch (`{}`) stays a lookup/no-op and still succeeds. `board_get` and the default `todos_search` exclude archived stories, while `todos_get` still returns them. Link add/remove is rejected when either endpoint is archived, though `todos_linksList` keeps showing existing links and reports each target's `archivedAt`. **Both tools are realtime-silent** — like every other MCP mutation they publish no `board.refresh_needed`, unlike the equivalent REST routes. **There is no MCP archive-listing tool**; the cursor-paginated archive page is REST-only (`GET /api/board/{slug}/archive`).

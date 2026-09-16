@@ -16,6 +16,8 @@ Canonical past-tense event names:
 | todo_updated                         | todo        | Title, body, sprint, estimation, or tags changed                             |
 | todo_deleted                         | todo        | Todo deleted                                                                |
 | todo_moved                           | todo        | Todo moved between columns                                                  |
+| todo_archived                        | todo        | Todo archived (workflow state and history unchanged)                        |
+| todo_restored                        | todo        | Archived todo restored                                                      |
 | member_added                         | member      | Member added to project                                                     |
 | member_removed                       | member      | Member removed from project                                                 |
 | member_role_changed                  | member      | Member role changed                                                         |
@@ -61,6 +63,8 @@ JSON is generated from Go maps via `insertAuditEventTx`; no hand-rolled strings.
 | todo_updated | `changed_fields`; for title/body: `before_len` / `after_len`; for tags: `tags_added` / `tags_removed`; for sprint/estimation: `before` / `after` | **Tag names yes.** Title and body content **no** (lengths only). Note bodies are never stored in audit metadata. |
 | todo_deleted | `local_id`, `column_key` | No |
 | todo_moved | `from_column`, `to_column`, `local_id` | No (column keys only) |
+| todo_archived | `local_id`, `column_key`, `before_archived_at` (null), `after_archived_at` (Unix ms) | No |
+| todo_restored | `local_id`, `column_key`, `before_archived_at` (Unix ms), `after_archived_at` (null) | No |
 | member_added | `user_id`, `role` | No |
 | member_removed | `user_id`, `role` | No |
 | member_role_changed | `user_id`, `from_role`, `to_role` | No |
@@ -99,6 +103,8 @@ Store methods that write audit events:
 | UpdateTodo                                | todo_updated (when fields changed)  |
 | DeleteTodo                                | todo_deleted                         |
 | MoveTodo                                  | todo_moved                           |
+| ArchiveTodosByLocalID                     | todo_archived                        |
+| RestoreTodosByLocalID                     | todo_restored                        |
 | AddProjectMember                          | member_added                         |
 | RemoveProjectMember                       | member_removed                       |
 | UpdateProjectMemberRole                   | member_role_changed                  |
@@ -110,6 +116,13 @@ Store methods that write audit events:
 | DeleteProject                             | project_deleted                      |
 | AddLink                                   | link_added                           |
 | RemoveLink                                | link_removed                         |
+
+`ArchiveTodosByLocalID` and `RestoreTodosByLocalID` take a batch of 1–500 project-local IDs
+and apply it atomically. They write **one event per actual state transition** — a story that
+was already in the requested state is reported as unchanged and produces **no** event, and a
+batch that rolls back (for example, one unknown local ID) leaves no events at all. Archival
+does not write assignment events, and neither action changes `done_at`, the story's
+`updated_at`, or its workflow column.
 
 ---
 

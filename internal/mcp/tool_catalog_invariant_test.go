@@ -142,8 +142,11 @@ func TestToolCatalog_TodoArchivalSchemasAdvertiseBoundedUniqueIDs(t *testing.T) 
 			t.Fatalf("%s properties=%#v", name, schema["properties"])
 		}
 		ids, ok := properties["localIds"].(map[string]any)
-		if !ok || ids["type"] != "array" || ids["minItems"] != 1 || ids["maxItems"] != 500 || ids["uniqueItems"] != true {
-			t.Fatalf("%s localIds schema=%#v", name, properties["localIds"])
+		// maxItems must be derived from the store's authoritative bound, not a
+		// repeated literal: the advertised schema and the batch the store will
+		// actually accept have to stay in lockstep.
+		if !ok || ids["type"] != "array" || ids["minItems"] != 1 || ids["maxItems"] != store.MaxTodoArchiveBatch || ids["uniqueItems"] != true {
+			t.Fatalf("%s localIds schema=%#v (store bound %d)", name, properties["localIds"], store.MaxTodoArchiveBatch)
 		}
 		required := requiredFieldNamesFromSchema(schema)
 		if len(required) != 2 || required[0] != "projectSlug" || required[1] != "localIds" {

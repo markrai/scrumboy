@@ -114,6 +114,14 @@ type TodoExport struct {
 
 func supportedExportVersion(v string) bool { return v == "1.1" || v == "1.2" }
 
+// importArchivedAtFutureSlackMs bounds how far ahead of the importing server's clock an
+// imported archivedAt may sit. A backup cannot legitimately record an archive time in the
+// future, but exporter/importer clock skew is real, so a day of slack is allowed. The
+// bound also rejects the common unit mistake of supplying seconds*10^6 or nanoseconds,
+// which would otherwise be stored verbatim and sit at the head of the newest-first archive
+// page forever.
+const importArchivedAtFutureSlackMs int64 = 24 * 60 * 60 * 1000
+
 func validateBackupVersionAndArchiveFields(data *ExportData) error {
 	if data == nil {
 		return fmt.Errorf("%w: missing export data", ErrValidation)
@@ -121,13 +129,22 @@ func validateBackupVersionAndArchiveFields(data *ExportData) error {
 	if !supportedExportVersion(data.Version) {
 		return fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
 	}
+	ceiling := time.Now().UTC().UnixMilli() + importArchivedAtFutureSlackMs
 	for _, project := range data.Projects {
 		for _, todo := range project.Todos {
 			if data.Version == "1.1" && todo.ArchivedAtPresent {
 				return fmt.Errorf("%w: format 1.1 todo %d contains 1.2 archivedAt data", ErrValidation, todo.LocalID)
 			}
-			if todo.ArchivedAt != nil && *todo.ArchivedAt < 0 {
+			if todo.ArchivedAt == nil {
+				continue
+			}
+			// The archive cursor rejects negative timestamps, so a negative value here
+			// would import a row that no archive page could ever paginate past.
+			if *todo.ArchivedAt < 0 {
 				return fmt.Errorf("%w: todo %d archivedAt must be non-negative", ErrValidation, todo.LocalID)
+			}
+			if *todo.ArchivedAt > ceiling {
+				return fmt.Errorf("%w: todo %d archivedAt %d is implausibly far in the future", ErrValidation, todo.LocalID, *todo.ArchivedAt)
 			}
 		}
 	}

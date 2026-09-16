@@ -41,7 +41,11 @@ assignment), plus `archivedAt` for every todo (`null` means active). A legacy
 merge, omitted project definitions and todo assignments are preserved;
 explicit arrays replace definitions, explicit todo `null` clears, and a string
 assigns. An omitted archival field preserves target state, explicit null
-restores, and a non-negative Unix-millisecond timestamp archives. Replacement
+clears archival, and a Unix-millisecond timestamp archives; outside matched
+merge there is no target state, so an omitted field creates an active story.
+The version gate accepts only 1.1 and 1.2, rejects a 1.1 payload carrying
+`archivedAt` as mislabeled, and rejects an `archivedAt` that is negative or
+implausibly far in the future. Replacement
 and merge run under project-writer serialization and
 abort if any effective non-null todo key would not resolve in the project.
 
@@ -69,6 +73,18 @@ flowchart LR
   TrelloJSON --> Map --> Notes --> Proj
 ```
 
-Trello members do **not** become Scrumboy assignees automatically; member information is preserved in note text where applicable (see Trello import warnings). A closed card becomes a first-class archived story without an `[Archived]` title prefix; a card in a closed list retains the distinct closed-list/Done mapping.
+Trello members do **not** become Scrumboy assignees automatically; member information is preserved in note text where applicable (see Trello import warnings).
+
+**Card closure and list closure are separate axes.** A closed **card** becomes a first-class
+archived story: `archivedAt` is set and the title is left alone — there is no `[Archived]`
+title prefix. Trello's export carries no per-card archive time, so every closed card is
+stamped with the **import time**. A closed **list** is unrelated to archival: its cards keep
+the `[Closed List] ` title prefix and the closed-list/Done column remap, and are not archived.
+A card that is both keeps the closed-list prefix and is additionally archived.
+
+Both closure facts are also retained outside the archive flag: the body's `## Trello import
+notes` section records `- Archived in Trello: true` for a closed card and `- Original Trello
+list: <name> (closed in Trello)` for a closed list, and the per-todo import metadata keeps
+`trelloClosed` and `trelloListClosed`.
 
 Backup and Trello import paths do **not** append import audit events. Do not treat imports as audited actions unless product code adds that later.

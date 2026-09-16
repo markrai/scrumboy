@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	todoapp "scrumboy/internal/application/todo"
@@ -40,8 +41,8 @@ func (a *Adapter) handleTodosArchiveState(ctx context.Context, input any, archiv
 	if in.ProjectSlug == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
-	if len(in.LocalIDs) == 0 || len(in.LocalIDs) > 500 {
-		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "localIds must contain between 1 and 500 items", map[string]any{"field": "localIds"})
+	if len(in.LocalIDs) == 0 || len(in.LocalIDs) > store.MaxTodoArchiveBatch {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, fmt.Sprintf("localIds must contain between 1 and %d items", store.MaxTodoArchiveBatch), map[string]any{"field": "localIds"})
 	}
 	seen := make(map[int64]struct{}, len(in.LocalIDs))
 	for _, id := range in.LocalIDs {

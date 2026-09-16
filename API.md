@@ -479,7 +479,9 @@ Conventions:
 | `todos_update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
 | `todos_delete` | `projectSlug`, `localId` | `data` with `status: "deleted"`, `projectSlug`, `localId` |
 | `todos_move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
-| `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType}`) |
+| `todos_archive` | `projectSlug`, `localIds` (array, 1-500, unique, positive) | `data` batch result (see **Story archival**) |
+| `todos_restore` | `projectSlug`, `localIds` (array, 1-500, unique, positive) | `data` batch result (see **Story archival**) |
+| `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType, archivedAt}`) |
 | `todos_linkAdd` | `projectSlug`, `localId`, `targetLocalId`, optional `linkType` (default `relates_to`; also `blocks`, `duplicates`, `parent`) | `data.outbound`, `data.inbound` (refreshed) |
 | `todos_linkRemove` | `projectSlug`, `localId`, `targetLocalId` | `data.outbound`, `data.inbound` (refreshed) |
 
@@ -497,6 +499,41 @@ current project membership or notification eligibility. MCP todo shapes keep
 the field present with JSON `null` for unauthenticated, pre-migration, imported,
 or deleted-user attribution. The field is read-only; todo mutation inputs cannot
 set or clear it.
+
+**Story archival** is orthogonal to workflow state. `todos_archive` and `todos_restore` take
+**1-500** unique, positive project-local IDs and apply them **atomically**: one unknown ID
+fails the whole request and transitions nothing. Both require **maintainer** access on a
+durable project and are unavailable in anonymous and pre-bootstrap modes. The result reports
+`targetState`, `requestedCount`, `transitionedCount`, `unchangedCount`, `transitionedLocalIds`,
+`unchangedLocalIds` and `transitionedAt`; re-archiving an already-archived story is a no-op
+counted as unchanged rather than an error. Both tools call the same atomic store batch
+primitive as the REST routes.
+
+Archiving preserves everything else about the story — `columnKey`, `rank`, `doneAt`, the
+story's `updatedAt`, tags, links, sprint, priority, assignment and `createdByUserId` are
+untouched — so metrics, burndown and sprint history are unaffected in both directions.
+
+Archived stories are read-only: ordinary mutation returns **409** with reason `todo_archived`
+until restored, and that check runs **after** authorization, so an unauthorized caller is
+refused without learning the archive state. An empty `todos_update` patch (`{}`) is unaffected
+— it remains a lookup/no-op that mutates nothing, so it still succeeds against an archived
+story. `todos_linkAdd` and `todos_linkRemove` are rejected when either endpoint is archived,
+but existing links stay readable: `todos_linksList` keeps returning them and reports each
+target's `archivedAt`. Hard delete is a separate operation and remains permitted wherever its
+own authorization already allowed it.
+
+Direct reads still return archived stories (`todos_get`), while `board_get` and the default
+`todos_search` exclude them. MCP todo shapes always emit `archivedAt` — an **RFC3339
+timestamp string**, or JSON `null` for an active story. (The Unix-millisecond form of this
+field appears only in backup/export payloads, not in tool responses.)
+
+**No MCP archive listing exists.** The cursor-paginated archive page is REST-only
+(`GET /api/board/{slug}/archive`); over MCP, archived stories are reachable individually via
+`todos_get`.
+
+**Realtime.** `todos_archive` and `todos_restore` publish **no** board refresh, matching every
+other MCP mutation in Scrumboy. Only the REST routes publish one. This asymmetry is
+deliberate, not an omission.
 
 **Linked stories:** this is the same "Linked Stories" relation shown on the todo detail page in the
 web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]`). `todos_linkAdd`
@@ -722,6 +759,79 @@ A **`cursor`** that does not match the selected **`sort`** (for example, an acti
 
 ---
 
+## REST: Story archival
+
+Archival is exposed on the board routes. **The listing and the mutations have different
+permission requirements** — see the Access column.
+
+| Method | Path | Body | Access | Result |
+|--------|------|------|--------|--------|
+| `GET` | `/api/board/{slug}/archive` | - | board **read** | `{ todos, nextCursor, hasMore }` |
+| `POST` | `/api/board/{slug}/todos/{localId}/archive` | - | board **write** + maintainer (durable) | batch result for one story |
+| `POST` | `/api/board/{slug}/todos/{localId}/restore` | - | board **write** + maintainer (durable) | batch result for one story |
+| `POST` | `/api/board/{slug}/todos/archive` | `{ "localIds": [1, 2, 3] }` | board **write** + maintainer (durable) | batch result |
+| `POST` | `/api/board/{slug}/todos/restore` | `{ "localIds": [1, 2, 3] }` | board **write** + maintainer (durable) | batch result |
+
+**Permissions.** Reading the archive needs only **read** access to the board, so a viewer can
+list it; an unauthenticated caller gets **404**. The four mutation routes go through the
+ordinary todo **write** boundary — including temporary-board expiry and capability semantics
+— and then, on durable projects, additionally require **maintainer**. A viewer or contributor
+is refused.
+
+**Archive list.** Newest first, ordered by `(archivedAt DESC, id DESC)`. `limit` defaults to
+**50** and is clamped to **100**; a non-numeric or non-positive `limit` returns **400**.
+`afterCursor` is the opaque `nextCursor` from the previous page (`archivedAtMs:todoId`); a
+malformed cursor returns **400**. `hasMore` and `nextCursor` come from a single consistent
+snapshot, so a concurrent restore cannot truncate the remaining archive.
+
+**Batch result** (the same shape for single and batch, and for both directions):
+
+```json
+{
+  "targetState": "archived",
+  "requestedCount": 3,
+  "transitionedCount": 2,
+  "unchangedCount": 1,
+  "transitionedLocalIds": [1, 2],
+  "unchangedLocalIds": [3],
+  "transitionedAt": "2026-09-15T20:35:46.123Z"
+}
+```
+
+`localIds` must hold **1-500** unique positive IDs; violations return **400**. The batch is
+**atomic** — one unknown ID returns **404** and transitions nothing. A story already in the
+requested state is counted as unchanged, not an error, and `transitionedAt` is `null` when
+nothing moved.
+
+**Realtime.** A REST archive/restore publishes exactly **one** board refresh per request that
+actually transitions something, and **none** for a no-op or a failure — regardless of batch
+size. The equivalent MCP tools publish **no** board refresh at all, matching every other MCP
+mutation (see **Story archival** under *Tool reference -> Todos*). Both transports call the
+same atomic store batch primitive, so only the realtime side effect differs.
+
+**Archived stories are read-only.** Ordinary mutation — update, move, link add/remove, over
+both the board routes and the legacy `/api/todos/{id}` paths — returns **409** with reason
+`todo_archived` until the story is restored. Hard delete is a separate operation and is still
+permitted wherever its own authorization already allowed it; it is not blocked by archival.
+
+Authorization is evaluated **before** the archived check, so a caller who could not have
+written the story anyway gets **403**/**404** and never learns whether it is archived. The
+**409** is reserved for callers who did clear the write boundary.
+
+**Projection.** REST todo payloads carry `archivedAt` as an RFC3339 timestamp and **omit the
+field entirely for active stories**, matching the existing `doneAt` convention (every optional
+field in the REST todo shape is `omitempty`). MCP instead always emits `archivedAt`, using
+JSON `null` for active stories, matching *its* `doneAt` convention. Clients integrating both
+transports should treat "absent" and "null" as equivalent. Direct reads still return archived
+stories on both transports; it is the *collection* reads (board, default search) that exclude
+them.
+
+**No built-in UI consumer.** This release ships the archival backend, REST and MCP contracts
+only. The web UI has no archive view, and nothing is archived automatically — every
+transition is an explicit API call.
+
+---
+
 ## Error codes
 
 - **`AUTH_REQUIRED`** - Sign-in required (including some store unauthorized paths mapped from the store layer).
@@ -747,6 +857,16 @@ input and preserves the existing target value; strings assign against the
 effective project tier set. `priorityTiers: null` is invalid. New and
 replace-mode projects with absent legacy definitions receive defaults. Import
 commits only if every non-null todo key resolves to a tier in the same project.
+
+**Backup 1.2 archive presence:** new exports are **format 1.2** and always emit todo
+`archivedAt` — a Unix-millisecond timestamp for archived stories, explicit `null` for active
+ones. Imports accept both **1.1** and **1.2**. For matched-project merge, an **absent**
+`archivedAt` preserves the target story's archive state, explicit `null` clears it, and a
+timestamp archives it; new/copy imports with no archive field create active stories. A
+payload that declares **1.1** but carries `archivedAt` is **rejected** as mislabeled newer
+data rather than silently gaining 1.2 semantics. `archivedAt` must be non-negative and not
+implausibly far in the future. Software that only understands 1.1 should reject 1.2 files
+rather than silently dropping archive state.
 
 1. **Public identifiers first:** Mutations and reads are keyed by **`projectSlug`**, **`localId`**, and similar fields - not internal numeric ids for todos or projects in MCP command shapes (except `projectId` on list output as noted).
 2. **Capabilities match implementation:** `implementedTools` is the authoritative list of POST tool names.

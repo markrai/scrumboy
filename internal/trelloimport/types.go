@@ -713,7 +713,7 @@ func defaultWarnings() []string {
 		"Trello members will not become Scrumboy assignees automatically in this MVP.",
 		"Due and start dates will be preserved in the todo body and import metadata, not as native Scrumboy date fields.",
 		"Custom fields will be preserved as text and import metadata, not as structured or queryable Scrumboy fields.",
-		"Archived cards will be imported with an archived marker.",
+		"Archived Trello cards become archived Scrumboy stories, not cards with a title marker. Trello exports carry no per-card archive time, so every archived card is stamped with the import time.",
 		"Trello boards with more than 12 open lists cannot be imported as-is.",
 	}
 }
