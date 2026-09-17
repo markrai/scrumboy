@@ -1,6 +1,8 @@
 package mcp
 
-import "scrumboy/internal/store"
+import (
+	"scrumboy/internal/store"
+)
 
 // mcpToolDef is the MCP-spec shape returned by tools/list for each tool.
 type mcpToolDef struct {
@@ -365,17 +367,21 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"board_get": {
 			Name:        "board_get",
-			Description: "Get board columns and paginated todo items for a project board view. Returned projectSlug fields use the stored canonical slug.",
+			Description: "Get board columns and paginated todo items for a project board view. Prefer tags for multi-tag AND filtering; tag remains the legacy single-tag input. Do not supply tag and tags together, and do not comma-separate tag names. Returned projectSlug fields use the stored canonical slug.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
-				"tag":         jsonProp("string", "Filter by one tag (scalar; repeated-tag AND filtering is REST-only)"),
-				"search":      jsonProp("string", "Filter by search text"),
-				"assignee":    jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
-				"priority":    jsonProp("string", "Filter by a priority tier key, or \"**none**\" for todos without a priority; omit for all priorities"),
-				"sort":        jsonStringEnumProp("Sort items within each lane by creation time: newest or oldest; omit for manual drag-rank order", []string{"newest", "oldest"}),
-				"sprintId":    jsonPropWithNull("integer", "Filter by the stored sprint row ID returned as sprintId by sprints_list; this is not the project-local sprint number returned as number"),
-				"columnKey":   jsonProp("string", "Restrict the response to a single workflow column key (as returned by workflow_list); other columns are omitted entirely instead of being queried and paginated"),
-				"limit":       jsonProp("integer", "Maximum items per column"),
+				"tag":         jsonProp("string", "Legacy single-tag filter. Prefer tags. Do not supply together with tags. Commas are literal, not separators."),
+				"tags": jsonStringArrayProp(
+					"Optional list of up to 20 unique tag names after normalization. Todos must match every selected logical tag. Do not supply together with `tag`.",
+					1,
+				),
+				"search":    jsonProp("string", "Filter by search text"),
+				"assignee":  jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
+				"priority":  jsonProp("string", "Filter by a priority tier key, or \"**none**\" for todos without a priority; omit for all priorities"),
+				"sort":      jsonStringEnumProp("Sort items within each lane by creation time: newest or oldest; omit for manual drag-rank order", []string{"newest", "oldest"}),
+				"sprintId":  jsonPropWithNull("integer", "Filter by the stored sprint row ID returned as sprintId by sprints_list; this is not the project-local sprint number returned as number"),
+				"columnKey": jsonProp("string", "Restrict the response to a single workflow column key (as returned by workflow_list); other columns are omitted entirely instead of being queried and paginated"),
+				"limit":     jsonProp("integer", "Maximum items per column"),
 				"cursorByColumn": map[string]any{
 					"type":                 "object",
 					"description":          "Pagination cursor token per workflow column key",
@@ -561,6 +567,15 @@ func jsonArrayProp(itemType, description string) map[string]any {
 		"type":        "array",
 		"description": description,
 		"items":       map[string]any{"type": itemType},
+	}
+}
+
+func jsonStringArrayProp(description string, minItems int) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items":       map[string]any{"type": "string"},
+		"minItems":    minItems,
 	}
 }
 

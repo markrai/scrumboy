@@ -24,8 +24,9 @@
   drag/drop boundary reads, realtime refreshes, and deep-link navigation.
   Durable projects match canonical alias groups; temporary boards retain exact
   stored-name semantics. Legacy pills display every selected tag while keeping
-  their historical replace-all click behavior. MCP `board_get.tag` intentionally
-  remains scalar in this release.
+  their historical replace-all click behavior. MCP `board_get` now accepts
+  preferred `tags[]` with the same logical AND, while retaining scalar `tag`
+  compatibility. `tag` and `tags` are mutually exclusive; commas are not parsed.
 
 ## [3.35.0] - 2026-09-15
 

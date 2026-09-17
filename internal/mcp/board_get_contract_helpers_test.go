@@ -24,21 +24,22 @@ type boardGetStoreCall struct {
 	Operation string
 	Context   context.Context
 
-	Slug      string
-	Mode      store.Mode
-	ProjectID int64
-	SprintID  int64
-	ColumnKey string
-	Limit     int
-	AfterA    int64
-	AfterB    int64
-	Tag       string
-	Search    string
-	Assignee  store.AssigneeFilter
-	Priority  store.PriorityFilter
-	Sprint    store.SprintFilter
-	Sort      store.SortOrder
-	ResultErr error
+	Slug       string
+	Mode       store.Mode
+	ProjectID  int64
+	SprintID   int64
+	ColumnKey  string
+	Limit      int
+	AfterA     int64
+	AfterB     int64
+	Tag        string
+	TagFilters []string
+	Search     string
+	Assignee   store.AssigneeFilter
+	Priority   store.PriorityFilter
+	Sprint     store.SprintFilter
+	Sort       store.SortOrder
+	ResultErr  error
 }
 
 type boardGetListResult struct {
@@ -209,20 +210,21 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 		err = injected
 	}
 	s.Calls = append(s.Calls, boardGetStoreCall{
-		Operation: "list",
-		Context:   ctx,
-		ProjectID: projectID,
-		ColumnKey: columnKey,
-		Limit:     limit,
-		AfterA:    afterA,
-		AfterB:    afterB,
-		Tag:       recordedBoardGetTag(tagFilters),
-		Search:    searchFilter,
-		Assignee:  assigneeFilter,
-		Priority:  priorityFilter,
-		Sprint:    sprintFilter,
-		Sort:      sortOrder,
-		ResultErr: err,
+		Operation:  "list",
+		Context:    ctx,
+		ProjectID:  projectID,
+		ColumnKey:  columnKey,
+		Limit:      limit,
+		AfterA:     afterA,
+		AfterB:     afterB,
+		Tag:        recordedBoardGetTag(tagFilters),
+		TagFilters: append([]string(nil), tagFilters...),
+		Search:     searchFilter,
+		Assignee:   assigneeFilter,
+		Priority:   priorityFilter,
+		Sprint:     sprintFilter,
+		Sort:       sortOrder,
+		ResultErr:  err,
 	})
 	return todos, cursor, hasMore, err
 }
@@ -260,16 +262,17 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 		err = injected
 	}
 	s.Calls = append(s.Calls, boardGetStoreCall{
-		Operation: "count",
-		Context:   ctx,
-		ProjectID: projectID,
-		ColumnKey: columnKey,
-		Tag:       recordedBoardGetTag(tagFilters),
-		Search:    searchFilter,
-		Assignee:  assigneeFilter,
-		Priority:  priorityFilter,
-		Sprint:    sprintFilter,
-		ResultErr: err,
+		Operation:  "count",
+		Context:    ctx,
+		ProjectID:  projectID,
+		ColumnKey:  columnKey,
+		Tag:        recordedBoardGetTag(tagFilters),
+		TagFilters: append([]string(nil), tagFilters...),
+		Search:     searchFilter,
+		Assignee:   assigneeFilter,
+		Priority:   priorityFilter,
+		Sprint:     sprintFilter,
+		ResultErr:  err,
 	})
 	return count, err
 }

@@ -5505,9 +5505,9 @@ button.omni-tag-pill:focus-visible {
   width: calc(30px * var(--ui-scale));
   min-height: calc(30px * var(--ui-scale));
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
   font-size: var(--fs-18);
@@ -5515,7 +5515,7 @@ button.omni-tag-pill:focus-visible {
 
 .omni-candidate-chevron:hover,
 .omni-candidate-chevron:focus-visible {
-  border-color: var(--accent);
+  color: var(--accent);
   outline: none;
 }
 

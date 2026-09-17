@@ -246,6 +246,65 @@ func TestToolCatalog_BoardGetSprintIDAdvertisesStoredIdentity(t *testing.T) {
 	}
 }
 
+func TestToolCatalog_BoardGetTagsIsDocumentedStringArray(t *testing.T) {
+	def, ok := toolCatalogDefinitions()["board_get"]
+	if !ok {
+		t.Fatal("board_get missing from tool catalog")
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("board_get input schema has unexpected type %T", def.InputSchema)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get schema properties have unexpected shape: %#v", schema)
+	}
+	tag, ok := properties["tag"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get tag schema has unexpected shape: %#v", properties["tag"])
+	}
+	if tag["type"] != "string" {
+		t.Fatalf("board_get tag type = %#v, want string", tag["type"])
+	}
+	tagDescription, _ := tag["description"].(string)
+	for _, requiredText := range []string{"Legacy", "Prefer tags", "Commas"} {
+		if !strings.Contains(tagDescription, requiredText) {
+			t.Fatalf("board_get tag description %q missing %q", tagDescription, requiredText)
+		}
+	}
+	tags, ok := properties["tags"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get tags schema has unexpected shape: %#v", properties["tags"])
+	}
+	if tags["type"] != "array" {
+		t.Fatalf("board_get tags type = %#v, want array", tags["type"])
+	}
+	if _, ok := tags["maxItems"]; ok {
+		t.Fatalf("board_get tags must not advertise maxItems; the cap is 20 unique names after normalization: %#v", tags)
+	}
+	if tags["minItems"] != 1 {
+		t.Fatalf("board_get tags minItems = %#v, want 1", tags["minItems"])
+	}
+	items, ok := tags["items"].(map[string]any)
+	if !ok || items["type"] != "string" {
+		t.Fatalf("board_get tags items = %#v, want string", tags["items"])
+	}
+	tagsDescription, _ := tags["description"].(string)
+	for _, requiredText := range []string{"20 unique", "after normalization", "every selected", "`tag`"} {
+		if !strings.Contains(tagsDescription, requiredText) {
+			t.Fatalf("board_get tags description %q missing %q", tagsDescription, requiredText)
+		}
+	}
+	if !strings.Contains(def.Description, "Prefer tags") || !strings.Contains(def.Description, "comma-separate") {
+		t.Fatalf("board_get tool description = %q", def.Description)
+	}
+	for _, required := range requiredFieldNamesFromSchema(schema) {
+		if required == "tag" || required == "tags" {
+			t.Fatalf("board_get %s must remain optional", required)
+		}
+	}
+}
+
 func TestToolCatalog_BoardGetSortAdvertisesRuntimeContract(t *testing.T) {
 	def, ok := toolCatalogDefinitions()["board_get"]
 	if !ok {
