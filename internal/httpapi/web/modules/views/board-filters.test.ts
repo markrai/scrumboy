@@ -501,6 +501,8 @@ describe('board-filters', () => {
     expect(previous.getAttribute('aria-hidden')).toBe('true');
     expect(next.disabled).toBe(false);
     expect(next.getAttribute('aria-hidden')).toBe('false');
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-start')).toBe(false);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-end')).toBe(true);
     next.click();
     expect(scrollBy).toHaveBeenCalledWith({ left: 100, behavior: 'smooth' });
 
@@ -508,16 +510,22 @@ describe('board-filters', () => {
     viewport.dispatchEvent(new Event('scroll'));
     expect(previous.disabled).toBe(false);
     expect(next.disabled).toBe(false);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-start')).toBe(true);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-end')).toBe(true);
 
     viewport.scrollLeft = 200;
     viewport.dispatchEvent(new Event('scroll'));
     expect(previous.disabled).toBe(false);
     expect(next.disabled).toBe(true);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-start')).toBe(true);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-end')).toBe(false);
 
     Object.defineProperty(viewport, 'scrollWidth', { configurable: true, value: 100 });
     window.dispatchEvent(new Event('resize'));
     expect(previous.disabled).toBe(true);
     expect(next.disabled).toBe(true);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-start')).toBe(false);
+    expect(viewport.classList.contains('omni-candidate-viewport--fade-end')).toBe(false);
   });
 
   it('stops offering additional Omni pins at the twenty-tag transport cap', async () => {

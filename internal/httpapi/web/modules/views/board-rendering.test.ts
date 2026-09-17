@@ -244,9 +244,9 @@ describe('board topbar rendering', () => {
     expect(desktopRailMinHeight).toBe(pillMinHeight);
     expect(stylesSource).toMatch(/\.omni-candidate-chevron\[aria-hidden="true"\]\s*\{[^}]*visibility:\s*hidden/s);
     expect(stylesSource).toMatch(/@media\s*\(max-width:\s*767px\)[\s\S]*\.omni-candidate-chevron\s*\{\s*display:\s*none;/s);
-    const nextChevronRule = stylesSource.match(/\.omni-candidate-chevron--next\s*\{([^}]+)\}/s)?.[1] ?? '';
-    expect(nextChevronRule).toMatch(/position:\s*absolute;/);
-    expect(nextChevronRule).toMatch(/background-color:\s*transparent;/);
+    expect(stylesSource).not.toMatch(/\.omni-candidate-chevron--next\s*\{[^}]*position:\s*absolute/s);
+    expect(stylesSource).toMatch(/\.omni-candidate-viewport--fade-end\s*\{[^}]*mask-image:/s);
+    expect(stylesSource).toMatch(/\.omni-candidate-viewport--fade-start\s*\{[^}]*mask-image:/s);
   });
 
   it('keeps Omni applied-pill clear controls inside the chip and spaces the pin separator evenly', () => {

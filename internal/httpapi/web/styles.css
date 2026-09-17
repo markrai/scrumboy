@@ -5445,7 +5445,6 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 }
 
 .omni-candidate-region {
-  position: relative;
   display: flex;
   align-items: center;
   flex: 1 1 0;
@@ -5461,6 +5460,33 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .omni-candidate-viewport {
   flex: 1 1 auto;
+}
+
+.omni-candidate-viewport--fade-start {
+  -webkit-mask-image: linear-gradient(to inline-end, transparent, #000 var(--s-16));
+  mask-image: linear-gradient(to inline-end, transparent, #000 var(--s-16));
+}
+
+.omni-candidate-viewport--fade-end {
+  -webkit-mask-image: linear-gradient(to inline-start, transparent, #000 var(--s-16));
+  mask-image: linear-gradient(to inline-start, transparent, #000 var(--s-16));
+}
+
+.omni-candidate-viewport--fade-start.omni-candidate-viewport--fade-end {
+  -webkit-mask-image: linear-gradient(
+    to inline-end,
+    transparent,
+    #000 var(--s-16),
+    #000 calc(100% - var(--s-16)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to inline-end,
+    transparent,
+    #000 var(--s-16),
+    #000 calc(100% - var(--s-16)),
+    transparent
+  );
 }
 
 .omni-tag-pill {
@@ -5513,15 +5539,6 @@ button.omni-tag-pill:focus-visible {
   color: var(--text);
   cursor: pointer;
   font-size: var(--fs-18);
-}
-
-.omni-candidate-chevron--next {
-  position: absolute;
-  inset-inline-end: 0;
-  inset-block: 0;
-  z-index: 1;
-  background-color: transparent;
-  background-image: linear-gradient(to inline-start, var(--bg) 30%, transparent);
 }
 
 .omni-candidate-chevron:hover,

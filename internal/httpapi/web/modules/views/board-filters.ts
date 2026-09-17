@@ -167,6 +167,8 @@ export function updateOmniCandidateChevronState(): void {
   const atEnd = !overflows || viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1;
   setOmniChevronInert(previous, atStart);
   setOmniChevronInert(next, atEnd);
+  viewport.classList.toggle('omni-candidate-viewport--fade-start', !atStart);
+  viewport.classList.toggle('omni-candidate-viewport--fade-end', !atEnd);
 }
 
 function resetOmniCandidateScroll(): void {
