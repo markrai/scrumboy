@@ -198,6 +198,10 @@ function revealFocusedPinnedOmniTag(target: EventTarget | null): void {
   pill.scrollIntoView({ inline: 'nearest', block: 'nearest' });
 }
 
+function handleOmniPinnedFocusIn(event: FocusEvent): void {
+  revealFocusedPinnedOmniTag(event.target);
+}
+
 function syncOmniDesktopRailLayout(): void {
   updateOmniCandidateChevronState();
   revealLastPinnedOmniTag();
@@ -297,9 +301,8 @@ function bindOmniTagPills(): void {
   viewport.onscroll = updateOmniCandidateChevronState;
   const pinned = document.getElementById('omniPinnedTags');
   if (pinned) {
-    pinned.onfocusin = (event: FocusEvent) => {
-      revealFocusedPinnedOmniTag(event.target);
-    };
+    pinned.removeEventListener('focusin', handleOmniPinnedFocusIn);
+    pinned.addEventListener('focusin', handleOmniPinnedFocusIn);
   }
   omniCandidateResizeObserver?.disconnect();
   if (typeof ResizeObserver !== 'undefined') {

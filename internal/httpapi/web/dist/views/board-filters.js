@@ -143,12 +143,44 @@ export function updateOmniCandidateChevronState() {
     const atEnd = !overflows || viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1;
     setOmniChevronInert(previous, atStart);
     setOmniChevronInert(next, atEnd);
+    viewport.classList.toggle('omni-candidate-viewport--fade-start', !atStart);
+    viewport.classList.toggle('omni-candidate-viewport--fade-end', !atEnd);
 }
 function resetOmniCandidateScroll() {
     const viewport = document.getElementById('omniCandidateViewport');
     if (viewport)
         viewport.scrollLeft = 0;
     updateOmniCandidateChevronState();
+}
+function isOmniDesktopPinnedRail() {
+    return !window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
+}
+export function revealLastPinnedOmniTag() {
+    const pinned = document.getElementById('omniPinnedTags');
+    if (!pinned || !isOmniDesktopPinnedRail())
+        return;
+    const overflow = pinned.scrollWidth - pinned.clientWidth;
+    if (overflow <= 1)
+        return;
+    pinned.scrollLeft = overflow;
+}
+function revealFocusedPinnedOmniTag(target) {
+    if (!(target instanceof Element) || !isOmniDesktopPinnedRail())
+        return;
+    const pinned = document.getElementById('omniPinnedTags');
+    if (!pinned || !pinned.contains(target))
+        return;
+    const pill = target.closest('.omni-tag-pill--applied');
+    if (!(pill instanceof HTMLElement))
+        return;
+    pill.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+}
+function handleOmniPinnedFocusIn(event) {
+    revealFocusedPinnedOmniTag(event.target);
+}
+function syncOmniDesktopRailLayout() {
+    updateOmniCandidateChevronState();
+    revealLastPinnedOmniTag();
 }
 function renderOmniTagPills(board = getBoard()) {
     const pinnedTags = document.getElementById('omniPinnedTags');
@@ -193,6 +225,7 @@ function renderOmniTagPills(board = getBoard()) {
     mobilePills.scrollLeft = 0;
     candidateRegion.classList.toggle('omni-candidate-region--after-pins', selectedTags.length > 0);
     resetOmniCandidateScroll();
+    revealLastPinnedOmniTag();
 }
 export function updateOmniTagPills(board = getBoard()) {
     if (getBoardFilterLayoutPreference() !== 'omni')
@@ -248,13 +281,20 @@ function bindOmniTagPills() {
     if (next)
         next.onclick = () => pageCandidates(1);
     viewport.onscroll = updateOmniCandidateChevronState;
+    const pinned = document.getElementById('omniPinnedTags');
+    if (pinned) {
+        pinned.removeEventListener('focusin', handleOmniPinnedFocusIn);
+        pinned.addEventListener('focusin', handleOmniPinnedFocusIn);
+    }
     omniCandidateResizeObserver?.disconnect();
     if (typeof ResizeObserver !== 'undefined') {
-        omniCandidateResizeObserver = new ResizeObserver(updateOmniCandidateChevronState);
+        omniCandidateResizeObserver = new ResizeObserver(syncOmniDesktopRailLayout);
         omniCandidateResizeObserver.observe(viewport);
+        if (pinned)
+            omniCandidateResizeObserver.observe(pinned);
     }
     if (!omniCandidateWindowResizeBound) {
-        window.addEventListener('resize', updateOmniCandidateChevronState);
+        window.addEventListener('resize', syncOmniDesktopRailLayout);
         omniCandidateWindowResizeBound = true;
     }
     renderOmniTagPills();
