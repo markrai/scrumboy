@@ -239,7 +239,7 @@
   "board.project.renameFailed": "نام بدلنا ناکام",
   "board.project.renameTitle": "پروجیکٹ کا نام بدلیں",
   "board.refreshFailed": "بورڈ ریفریش ناکام",
-  "board.search.placeholder.desktop": "Todo تلاش کریں",
+  "board.search.placeholder.desktop": "Todo تلاش کریں...",
   "board.search.placeholder.mobile": "تلاش",
   "board.selection.multiple": "{count} منتخب میں ترمیم",
   "board.selection.single": "منتخب Todo 1 میں ترمیم",

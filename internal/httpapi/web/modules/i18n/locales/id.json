@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Gagal mengubah nama proyek",
   "board.project.renameTitle": "Ubah Nama Proyek",
   "board.refreshFailed": "Gagal memperbarui papan",
-  "board.search.placeholder.desktop": "Cari todo",
+  "board.search.placeholder.desktop": "Cari todo...",
   "board.search.placeholder.mobile": "Cari",
   "board.selection.multiple": "Edit {count} yang dipilih",
   "board.selection.single": "Edit 1 yang dipilih",

@@ -239,7 +239,7 @@
   "board.project.renameFailed": "프로젝트 이름 변경에 실패했습니다",
   "board.project.renameTitle": "프로젝트 이름 변경",
   "board.refreshFailed": "보드를 새로고침하지 못했습니다",
-  "board.search.placeholder.desktop": "Todo 검색",
+  "board.search.placeholder.desktop": "Todo 검색...",
   "board.search.placeholder.mobile": "검색",
   "board.selection.multiple": "선택한 {count}개 편집",
   "board.selection.single": "선택한 Todo 1개 편집",

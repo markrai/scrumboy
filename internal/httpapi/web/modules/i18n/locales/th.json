@@ -239,7 +239,7 @@
   "board.project.renameFailed": "เปลี่ยนชื่อโปรเจกต์ไม่สำเร็จ",
   "board.project.renameTitle": "เปลี่ยนชื่อโปรเจกต์",
   "board.refreshFailed": "รีเฟรชบอร์ดไม่สำเร็จ",
-  "board.search.placeholder.desktop": "ค้นหา Todo",
+  "board.search.placeholder.desktop": "ค้นหา Todo...",
   "board.search.placeholder.mobile": "ค้นหา",
   "board.selection.multiple": "แก้ไข {count} รายการที่เลือก",
   "board.selection.single": "แก้ไข Todo ที่เลือก 1 รายการ",

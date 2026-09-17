@@ -679,7 +679,6 @@ export function updateChipsOnly(sprintId) {
         const toggle = document.getElementById('searchFilterToggle');
         if (toggle)
             updateFilterToggleActiveState(toggle);
-        renderOmniTagPills(board);
         return;
     }
     const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, getTagsFromUrl(), sprintId ?? null);

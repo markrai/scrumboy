@@ -239,7 +239,7 @@
   "board.project.renameFailed": "নাম বদলাতে ব্যর্থ",
   "board.project.renameTitle": "প্রোজেক্টের নাম বদলান",
   "board.refreshFailed": "বোর্ড রিফ্রেশ ব্যর্থ",
-  "board.search.placeholder.desktop": "Todo খুঁজুন",
+  "board.search.placeholder.desktop": "Todo খুঁজুন...",
   "board.search.placeholder.mobile": "খুঁজুন",
   "board.selection.multiple": "{count}টি নির্বাচিত সম্পাদনা",
   "board.selection.single": "১টি নির্বাচিত সম্পাদনা",

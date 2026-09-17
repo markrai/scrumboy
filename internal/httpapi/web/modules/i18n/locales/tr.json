@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Proje yeniden adlandırılamadı",
   "board.project.renameTitle": "Projeyi yeniden adlandır",
   "board.refreshFailed": "Pano yenilenemedi",
-  "board.search.placeholder.desktop": "Todo ara",
+  "board.search.placeholder.desktop": "Todo ara...",
   "board.search.placeholder.mobile": "Ara",
   "board.selection.multiple": "Seçilen {count} todo'yu düzenle",
   "board.selection.single": "Seçilen 1 todo'yu düzenle",

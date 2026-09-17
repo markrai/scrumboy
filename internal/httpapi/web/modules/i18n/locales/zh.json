@@ -239,7 +239,7 @@
   "board.project.renameFailed": "重命名项目失败",
   "board.project.renameTitle": "重命名项目",
   "board.refreshFailed": "刷新看板失败",
-  "board.search.placeholder.desktop": "搜索 Todo",
+  "board.search.placeholder.desktop": "搜索 Todo…",
   "board.search.placeholder.mobile": "搜索",
   "board.selection.multiple": "编辑已选 {count} 项",
   "board.selection.single": "编辑已选 1 项",

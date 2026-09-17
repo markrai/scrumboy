@@ -439,6 +439,31 @@ describe('board-filters', () => {
       .toEqual(['bug', 'mobile', 'testing']);
   });
 
+  it('does not rerender Omni tag candidates on a Sprint-only chips refresh', async () => {
+    const board = makeBoard();
+    board.project.sprintsEnabled = true;
+    board.tags = [
+      { name: 'bug', count: 2, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'mobile', count: 1, lastActiveAt: '2026-09-16T11:00:00Z' },
+      { name: 'testing', count: 3, lastActiveAt: '2026-09-16T10:00:00Z' },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha', { board, layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+    const viewport = document.getElementById('omniCandidateViewport') as HTMLElement;
+    const originalHTML = viewport.innerHTML;
+    viewport.scrollLeft = 70;
+
+    boardFilters.setSprintChipDataForSlug('alpha', {
+      sprints: [{ id: 41, number: 4, name: 'Async Sprint', state: 'ACTIVE' }],
+    });
+    boardFilters.updateChipsOnly('4');
+
+    expect(viewport.scrollLeft).toBe(70);
+    expect(viewport.innerHTML).toBe(originalHTML);
+    expect(Array.from(viewport.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent))
+      .toEqual(['bug', 'mobile', 'testing']);
+  });
+
   it('keeps mobile on the pre-existing pins-and-typed-matches rail without empty-search Browse candidates', async () => {
     const board = makeBoard();
     board.tags = [

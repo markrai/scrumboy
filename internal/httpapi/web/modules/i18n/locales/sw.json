@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Imeshindwa kubadilisha jina la mradi",
   "board.project.renameTitle": "Badilisha jina la mradi",
   "board.refreshFailed": "Imeshindwa kuonyesha upya bodi",
-  "board.search.placeholder.desktop": "Tafuta Todo",
+  "board.search.placeholder.desktop": "Tafuta Todo...",
   "board.search.placeholder.mobile": "Tafuta",
   "board.selection.multiple": "Hariri {count} zilizochaguliwa",
   "board.selection.single": "Hariri 1 iliyochaguliwa",

@@ -188,7 +188,7 @@ const enCatalog = {
   "board.filters.unscheduled": "Unscheduled",
   "board.loadMore": "Load more",
   "board.noResults": "No todos found matching \"{search}\"",
-  "board.search.placeholder.desktop": "Search todos & tags",
+  "board.search.placeholder.desktop": "Search todos...",
   "board.search.placeholder.mobile": "Search",
   "board.todo.dragCard": "Drag card",
 };

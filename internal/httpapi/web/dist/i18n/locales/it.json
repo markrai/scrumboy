@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Impossibile rinominare il progetto",
   "board.project.renameTitle": "Rinomina progetto",
   "board.refreshFailed": "Impossibile aggiornare la board",
-  "board.search.placeholder.desktop": "Cerca Todo",
+  "board.search.placeholder.desktop": "Cerca Todo...",
   "board.search.placeholder.mobile": "Cerca",
   "board.selection.multiple": "Modifica {count} selezionati",
   "board.selection.single": "Modifica 1 elemento selezionato",

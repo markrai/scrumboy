@@ -5774,17 +5774,17 @@ button.omni-tag-pill:focus-visible {
   border: 1px solid var(--border);
   border-radius: 4px;
   font-size: calc(0.9rem * var(--ui-scale));
-  width: calc(200px + 2ch);
+  width: 200px;
   min-width: 120px;
-  max-width: calc(200px + 2ch);
+  max-width: 200px;
   background: var(--panel);
   color: var(--text);
   flex-shrink: 1;
 }
 
 .topbar--voice-commands-off .search-input {
-  width: calc(250px + 2ch);
-  max-width: calc(250px + 2ch);
+  width: 250px;
+  max-width: 250px;
 }
 
 /* Glow when focused or when there is typed text; disappears only when empty */
