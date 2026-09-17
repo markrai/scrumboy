@@ -5589,6 +5589,40 @@ button.omni-tag-pill:focus-visible {
   gap: var(--s-8);
 }
 
+.chips--view-tabs {
+  --view-tabs-scale: 1;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 4px;
+  box-sizing: border-box;
+  gap: calc(var(--s-8) * var(--view-tabs-scale));
+}
+
+.page--projects .chips--view-tabs {
+  margin-bottom: 12px;
+}
+
+.chips--view-tabs .chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: calc(var(--fs-13) * var(--view-tabs-scale));
+  padding: calc(var(--s-6) * var(--view-tabs-scale)) calc(10px * var(--view-tabs-scale));
+}
+
+.chips--view-tabs .dashboard-tab__label,
+.chips--view-tabs .projects-tab__label {
+  white-space: nowrap;
+}
+
+.chips--view-tabs .chip__count {
+  flex-shrink: 0;
+}
+
 .chip {
   background: var(--bg);
   border: 1px solid var(--border);

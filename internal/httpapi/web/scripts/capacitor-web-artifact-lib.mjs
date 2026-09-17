@@ -243,3 +243,38 @@ export async function artifactFiles() {
 export function explicitAssetAllowlist() {
   return [...explicitRuntimeFiles];
 }
+
+export function localQuotedAssetPattern() {
+  return /['"](\/[^'"\s]+\.(?:png|jpe?g|svg|webp|ico|mp3|ogg|json)(?:\?[^'"]*)?)['"]/g;
+}
+
+export function localCssUrlPattern() {
+  return /url\(["']?([^"')]+)["']?\)/g;
+}
+
+export function localHtmlSrcHrefPattern() {
+  return /(?:src|href)="([^"]+)"/g;
+}
+
+export function localReferencePath(reference) {
+  if (!reference || reference.startsWith('#') || reference.startsWith('data:')) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(reference) || reference.startsWith('//')) return null;
+  const path = reference.split(/[?#]/, 1)[0];
+  return path.startsWith('/') ? path.slice(1) : path;
+}
+
+export function collectLocalAssetReferences(source, pattern) {
+  const matcher = new RegExp(pattern.source, pattern.flags);
+  const references = [];
+  for (const match of source.matchAll(matcher)) {
+    const raw = match[1];
+    const relativePath = localReferencePath(raw);
+    if (!relativePath) continue;
+    references.push({
+      raw,
+      relativePath,
+      rooted: raw.startsWith('/'),
+    });
+  }
+  return references;
+}

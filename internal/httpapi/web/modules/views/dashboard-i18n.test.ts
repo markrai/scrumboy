@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { temporaryBoardsNavLabelKey } from "../nav-labels.js";
+
+const stylesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "styles.css"), "utf8");
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -257,6 +262,17 @@ function baseProjects() {
   ];
 }
 
+describe("dashboard view tabs layout", () => {
+  it("keeps view tabs on one content-sized row without clipping labels", () => {
+    expect(stylesSource).toMatch(/\.chips--view-tabs\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(stylesSource).toMatch(/\.chips--view-tabs\s*\{[^}]*--view-tabs-scale:\s*1/s);
+    expect(stylesSource).toMatch(/\.chips--view-tabs\s+\.chip\s*\{[^}]*flex:\s*0 0 auto/s);
+    expect(stylesSource).toMatch(/\.chips--view-tabs\s+\.chip\s*\{[^}]*white-space:\s*nowrap/s);
+    expect(stylesSource).toMatch(/\.chips--view-tabs\s+\.chip\s*\{[^}]*font-size:\s*calc\(var\(--fs-13\) \* var\(--view-tabs-scale\)\)/s);
+    expect(stylesSource).not.toMatch(/\.chips--view-tabs[\s\S]{0,400}text-overflow:\s*ellipsis/);
+  });
+});
+
 describe("dashboard i18n", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -371,6 +387,7 @@ describe("dashboard i18n", () => {
       await mod.renderDashboard();
 
       expect(document.querySelector(".panel__title")?.textContent).toBe("Dashboard");
+      expect(document.querySelector(".chips--view-tabs")).not.toBeNull();
       expect(document.querySelector("#dashboardTabBtn")?.textContent?.trim()).toBe("Dashboard");
       expect(document.querySelector("#projectsTabBtn .dashboard-tab__label")?.textContent).toBe("Projects");
       expect(document.querySelector("#temporaryTabBtn .dashboard-tab__label")?.textContent).toBe("Temporary Boards");

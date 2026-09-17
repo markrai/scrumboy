@@ -50,9 +50,4 @@ describe('C2 mobile bootstrap artifact boundary', () => {
     expect(explicitAssetAllowlist()).toContain('scrumboy.png');
     expect(readFileSync(resolve(webRoot, 'scrumboy.png')).byteLength).toBeGreaterThan(0);
   });
-
-  it('packages the archive toolbar icon referenced by the board UI', () => {
-    expect(explicitAssetAllowlist()).toContain('archive.svg');
-    expect(readFileSync(resolve(webRoot, 'archive.svg')).byteLength).toBeGreaterThan(0);
-  });
 });
