@@ -747,4 +747,89 @@ describe('board-filters', () => {
     expect(tagChips.innerHTML).toContain('chip--active-sprint');
     expect(reloadBoard).not.toHaveBeenCalled();
   });
+
+  it('repairs desktop pinned scroll so the final selected pin is fully visible without resetting candidates', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'ux', count: 2, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'infrastructure', count: 1, lastActiveAt: '2026-09-16T11:00:00Z' },
+      { name: 'mobile', count: 1, lastActiveAt: '2026-09-16T10:00:00Z' },
+      { name: 'bug', count: 3, lastActiveAt: '2026-09-16T09:00:00Z' },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=ux&tag=infrastructure', {
+      board,
+      layout: 'omni',
+    });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+
+    const pinned = document.getElementById('omniPinnedTags') as HTMLElement;
+    const viewport = document.getElementById('omniCandidateViewport') as HTMLElement;
+    Object.defineProperty(pinned, 'clientWidth', { configurable: true, value: 120 });
+    Object.defineProperty(pinned, 'scrollWidth', { configurable: true, value: 360 });
+    viewport.scrollLeft = 70;
+
+    boardFilters.revealLastPinnedOmniTag();
+    expect(pinned.scrollLeft).toBe(240);
+    expect(viewport.scrollLeft).toBe(70);
+
+    pinned.scrollLeft = 0;
+    (document.querySelector('[data-omni-tag="mobile"]') as HTMLButtonElement).click();
+    expect(Array.from(document.querySelectorAll('#omniPinnedTags [data-omni-clear-tag]')).map((el) => el.getAttribute('data-omni-clear-tag')))
+      .toEqual(['ux', 'infrastructure', 'mobile']);
+    expect(pinned.scrollLeft).toBe(240);
+
+    pinned.scrollLeft = 240;
+    Object.defineProperty(pinned, 'scrollWidth', { configurable: true, value: 200 });
+    (document.querySelector('[data-omni-clear-tag="mobile"]') as HTMLButtonElement).click();
+    expect(pinned.scrollLeft).toBe(80);
+  });
+
+  it('scrolls a focused selected pin into the pinned viewport', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'ux', count: 1 },
+      { name: 'mobile', count: 1 },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=ux&tag=mobile', { board, layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+
+    const lastPill = document.querySelector('#omniPinnedTags .omni-tag-pill--applied:last-child') as HTMLElement;
+    const scrollIntoView = vi.fn();
+    lastPill.scrollIntoView = scrollIntoView;
+    lastPill.querySelector('.omni-tag-pill__clear')?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ inline: 'nearest', block: 'nearest' });
+  });
+
+  it('does not repair desktop pinned scroll while the mobile rail is active', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'ux', count: 1 },
+      { name: 'mobile', count: 1 },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=ux&tag=mobile', { board, layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: String(query).includes('max-width: 767'),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+
+    const pinned = document.getElementById('omniPinnedTags') as HTMLElement;
+    Object.defineProperty(pinned, 'clientWidth', { configurable: true, value: 120 });
+    Object.defineProperty(pinned, 'scrollWidth', { configurable: true, value: 360 });
+    pinned.scrollLeft = 12;
+
+    boardFilters.revealLastPinnedOmniTag();
+    expect(pinned.scrollLeft).toBe(12);
+  });
 });

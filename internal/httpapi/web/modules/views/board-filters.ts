@@ -175,6 +175,32 @@ function resetOmniCandidateScroll(): void {
   updateOmniCandidateChevronState();
 }
 
+function isOmniDesktopPinnedRail(): boolean {
+  return !window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
+}
+
+export function revealLastPinnedOmniTag(): void {
+  const pinned = document.getElementById('omniPinnedTags');
+  if (!pinned || !isOmniDesktopPinnedRail()) return;
+  const overflow = pinned.scrollWidth - pinned.clientWidth;
+  if (overflow <= 1) return;
+  pinned.scrollLeft = overflow;
+}
+
+function revealFocusedPinnedOmniTag(target: EventTarget | null): void {
+  if (!(target instanceof Element) || !isOmniDesktopPinnedRail()) return;
+  const pinned = document.getElementById('omniPinnedTags');
+  if (!pinned || !pinned.contains(target)) return;
+  const pill = target.closest('.omni-tag-pill--applied');
+  if (!(pill instanceof HTMLElement)) return;
+  pill.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+}
+
+function syncOmniDesktopRailLayout(): void {
+  updateOmniCandidateChevronState();
+  revealLastPinnedOmniTag();
+}
+
 function renderOmniTagPills(board: Board | null = getBoard()): void {
   const pinnedTags = document.getElementById('omniPinnedTags');
   const candidateViewport = document.getElementById('omniCandidateViewport');
@@ -217,6 +243,7 @@ function renderOmniTagPills(board: Board | null = getBoard()): void {
   mobilePills.scrollLeft = 0;
   candidateRegion.classList.toggle('omni-candidate-region--after-pins', selectedTags.length > 0);
   resetOmniCandidateScroll();
+  revealLastPinnedOmniTag();
 }
 
 export function updateOmniTagPills(board: Board | null = getBoard()): void {
@@ -266,13 +293,20 @@ function bindOmniTagPills(): void {
   if (previous) previous.onclick = () => pageCandidates(-1);
   if (next) next.onclick = () => pageCandidates(1);
   viewport.onscroll = updateOmniCandidateChevronState;
+  const pinned = document.getElementById('omniPinnedTags');
+  if (pinned) {
+    pinned.onfocusin = (event: FocusEvent) => {
+      revealFocusedPinnedOmniTag(event.target);
+    };
+  }
   omniCandidateResizeObserver?.disconnect();
   if (typeof ResizeObserver !== 'undefined') {
-    omniCandidateResizeObserver = new ResizeObserver(updateOmniCandidateChevronState);
+    omniCandidateResizeObserver = new ResizeObserver(syncOmniDesktopRailLayout);
     omniCandidateResizeObserver.observe(viewport);
+    if (pinned) omniCandidateResizeObserver.observe(pinned);
   }
   if (!omniCandidateWindowResizeBound) {
-    window.addEventListener('resize', updateOmniCandidateChevronState);
+    window.addEventListener('resize', syncOmniDesktopRailLayout);
     omniCandidateWindowResizeBound = true;
   }
   renderOmniTagPills();

@@ -5436,7 +5436,8 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 
 .omni-pinned-tags {
   flex: 0 1 auto;
-  max-width: 50%;
+  width: auto;
+  max-width: none;
 }
 
 .omni-pinned-tags:empty {
@@ -5444,9 +5445,10 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 }
 
 .omni-candidate-region {
+  position: relative;
   display: flex;
   align-items: center;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   gap: var(--s-6);
   min-width: 6.5rem;
   overflow: hidden;
@@ -5513,6 +5515,15 @@ button.omni-tag-pill:focus-visible {
   font-size: var(--fs-18);
 }
 
+.omni-candidate-chevron--next {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block: 0;
+  z-index: 1;
+  background-color: transparent;
+  background-image: linear-gradient(to inline-start, var(--bg) 30%, transparent);
+}
+
 .omni-candidate-chevron:hover,
 .omni-candidate-chevron:focus-visible {
   color: var(--accent);
@@ -5529,6 +5540,7 @@ button.omni-tag-pill:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: var(--s-6);
+  padding-inline-end: var(--s-10);
 }
 
 .omni-tag-pill__clear {
@@ -5537,7 +5549,7 @@ button.omni-tag-pill:focus-visible {
   justify-content: center;
   width: 1.2rem;
   height: 1.2rem;
-  margin: calc(-1 * var(--s-4)) calc(-1 * var(--s-6)) calc(-1 * var(--s-4)) 0;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 50%;

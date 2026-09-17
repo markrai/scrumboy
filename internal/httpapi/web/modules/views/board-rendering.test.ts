@@ -244,6 +244,35 @@ describe('board topbar rendering', () => {
     expect(desktopRailMinHeight).toBe(pillMinHeight);
     expect(stylesSource).toMatch(/\.omni-candidate-chevron\[aria-hidden="true"\]\s*\{[^}]*visibility:\s*hidden/s);
     expect(stylesSource).toMatch(/@media\s*\(max-width:\s*767px\)[\s\S]*\.omni-candidate-chevron\s*\{\s*display:\s*none;/s);
+    const nextChevronRule = stylesSource.match(/\.omni-candidate-chevron--next\s*\{([^}]+)\}/s)?.[1] ?? '';
+    expect(nextChevronRule).toMatch(/position:\s*absolute;/);
+    expect(nextChevronRule).toMatch(/background-color:\s*transparent;/);
+  });
+
+  it('keeps Omni applied-pill clear controls inside the chip and spaces the pin separator evenly', () => {
+    const clearRule = stylesSource.match(/\.omni-tag-pill__clear\s*\{([^}]+)\}/s)?.[1] ?? '';
+    expect(clearRule).toMatch(/margin:\s*0;/);
+    expect(clearRule).not.toMatch(/margin(?:-inline-end|-right)?\s*:\s*[^;{]*-/);
+
+    const appliedRule = stylesSource.match(/\.omni-tag-pill--applied\s*\{([^}]+)\}/s)?.[1] ?? '';
+    expect(appliedRule).toMatch(/padding-inline-end:\s*var\(--s-10\);/);
+
+    const barGap = stylesSource.match(/\.filters--omni\s+\.omni-bar\s*\{[^}]*gap:\s*([^;]+);/s)?.[1].trim();
+    const afterPinsPadding = stylesSource.match(
+      /\.omni-candidate-region--after-pins\s*\{[^}]*padding-inline-start:\s*([^;]+);/s,
+    )?.[1].trim();
+    expect(barGap).toBe('var(--s-8)');
+    expect(afterPinsPadding).toBe(barGap);
+
+    const pinnedTagsRule = stylesSource.match(/\.omni-pinned-tags\s*\{([^}]+)\}/s)?.[1] ?? '';
+    expect(pinnedTagsRule).not.toMatch(/padding-inline-end/);
+    expect(pinnedTagsRule).toMatch(/flex:\s*0 1 auto;/);
+    expect(pinnedTagsRule).not.toMatch(/max-width:\s*50%/);
+    expect(pinnedTagsRule).toMatch(/max-width:\s*none;/);
+
+    const candidateRegionRule = stylesSource.match(/\.omni-candidate-region\s*\{([^}]+)\}/s)?.[1] ?? '';
+    expect(candidateRegionRule).toMatch(/flex:\s*1 1 0;/);
+    expect(candidateRegionRule).toMatch(/min-width:\s*6\.5rem;/);
   });
 
   it('renders plain escaped titles on cards and never renders markdown from todo bodies', () => {
