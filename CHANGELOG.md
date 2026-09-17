@@ -2,7 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
-## [Unreleased]
+## [3.36.1] - 2026-09-17
+
+### Fixed
+
+- **Android Capacitor packaging** - Include `archive.svg` in the packaged
+  mobile web allowlist, and add a unit test that fails when product UI sources
+  reference a local static asset that is not on that allowlist (so the gap is
+  caught in `npm test` instead of only at Android deploy).
+- **Mobile Dashboard / Projects / Temporary toggles** - Keep the three view
+  chips on one row and scale font/padding/gap to fit full labels without
+  wrapping or clipping on narrow phone widths.
 
 ## [3.36.0] - 2026-09-17
 
