@@ -121,6 +121,27 @@ async function loadRouterModule() {
   return import('./router.js');
 }
 
+describe('router repeated board tags', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    vi.resetModules();
+  });
+
+  it('restores every ordered pin from a deep link or popstate URL', async () => {
+    window.history.replaceState({}, '', '/alpha?tag=feature&tag=ux&tag=bug');
+    const mod = await loadRouterModule();
+
+    expect(mod.parseRoute()).toMatchObject({
+      name: 'boardBySlug',
+      slug: 'alpha',
+      tags: ['feature', 'ux', 'bug'],
+    });
+
+    window.history.replaceState({}, '', '/alpha?tag=bug&tag=feature');
+    expect(mod.parseRoute().tags).toEqual(['bug', 'feature']);
+  });
+});
+
 describe('router push autosubscribe gate', () => {
   beforeEach(() => {
     vi.resetModules();

@@ -14,7 +14,7 @@ vi.mock("../state/selectors.js", () => ({
   getBoard: () => state.board,
   getSlug: () => state.slug,
   getMobileTab: vi.fn(),
-  getTag: () => new URL(window.location.href).searchParams.get("tag") || "",
+  getTagsFromUrl: () => new URL(window.location.href).searchParams.getAll("tag"),
   getSearch: () => new URL(window.location.href).searchParams.get("search") || "",
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get("sprintId"),
   getAssigneeFromUrl: () => new URL(window.location.href).searchParams.get("assignee"),
@@ -37,7 +37,6 @@ vi.mock("../state/mutations.js", () => ({
   setSlug: (slug: string | null) => {
     state.slug = slug;
   },
-  setTag: vi.fn(),
   setSearch: vi.fn(),
   setOpenTodoSegment: vi.fn(),
   setMobileTab: vi.fn(),
@@ -198,9 +197,9 @@ describe("getRequestedBoardLimitPerLane", () => {
       .mockReturnValueOnce(new Promise((resolve) => { resolveTag = resolve; }));
 
     window.history.replaceState({}, "", "/alpha?search=andr");
-    const searchLoad = board.loadBoardBySlug("alpha", null, "andr");
+    const searchLoad = board.loadBoardBySlug("alpha", [], "andr");
     window.history.replaceState({}, "", "/alpha?tag=android");
-    const tagLoad = board.loadBoardBySlug("alpha", "android", null);
+    const tagLoad = board.loadBoardBySlug("alpha", ["android"], null);
 
     const currentBoard = { project: { id: 1, slug: "alpha" }, tags: [{ name: "android", count: 1 }], columns: {} };
     resolveTag(currentBoard);
@@ -212,6 +211,24 @@ describe("getRequestedBoardLimitPerLane", () => {
     await searchLoad;
     expect(bootstrapLoadedBoardViewMock).toHaveBeenCalledTimes(1);
     expect(window.location.search).toBe("?tag=android");
+  });
+
+  it("drops a response when the ordered tag list was shortened while it was in flight", async () => {
+    const board = await import("./board.js");
+    let resolveLoad!: (value: unknown) => void;
+    apiFetchMock.mockReturnValueOnce(new Promise((resolve) => { resolveLoad = resolve; }));
+
+    window.history.replaceState({}, "", "/alpha?tag=bug&tag=feature&tag=frontend");
+    const load = board.loadBoardBySlug("alpha", ["bug", "feature", "frontend"], null);
+    window.history.replaceState({}, "", "/alpha?tag=bug&tag=frontend");
+
+    resolveLoad({ project: { id: 1, slug: "alpha" }, tags: [], columns: {} });
+    await load;
+
+    expect(bootstrapLoadedBoardViewMock).not.toHaveBeenCalled();
+    expect(new URL(window.location.href).searchParams.getAll("tag")).toEqual(["bug", "frontend"]);
+    expect(new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams.getAll("tag"))
+      .toEqual(["bug", "feature", "frontend"]);
   });
 
   it("preserves on-screen lane size across an unfiltered same-board refresh", async () => {
@@ -271,7 +288,17 @@ describe("pending board search integration", () => {
     document.body.innerHTML = `
       <div id="tagChips"></div>
       <div class="search-input-wrapper"><input id="searchInput" type="text" /></div>
-      <div id="omniTagPills"></div>
+      <div class="filters filters--omni">
+        <div class="omni-bar">
+          <div id="omniPinnedTags"></div>
+          <div id="omniCandidateRegion">
+            <button id="omniCandidatePrev" type="button"></button>
+            <div id="omniCandidateViewport"></div>
+            <button id="omniCandidateNext" type="button"></button>
+          </div>
+          <div id="omniMobileTagPills"></div>
+        </div>
+      </div>
     `;
     localStorage.setItem("scrumboy.boardFilterLayout", "omni");
     floorBySlug.value = {};
@@ -354,6 +381,38 @@ describe("pending board search integration", () => {
   });
 });
 
+describe("lane continuation tag serialization", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    state.slug = "alpha";
+    state.board = { project: { id: 1, slug: "alpha" }, tags: [], columns: {} };
+    apiFetchMock.mockReset().mockResolvedValue({ items: [], nextCursor: null, hasMore: false });
+    window.history.replaceState({}, "", "/alpha?tag=bug&tag=feature&tag=frontend&search=needle");
+  });
+
+  afterEach(() => {
+    state.slug = null;
+    window.history.replaceState({}, "", "/");
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("sends every ordered tag on load more", async () => {
+    const selectors = await import("../state/selectors.js");
+    vi.mocked(selectors.getBoardLaneMeta).mockReturnValue({
+      backlog: { hasMore: true, nextCursor: "next-page", loading: false },
+    } as any);
+    const board = await import("./board.js");
+
+    await board.handleLoadMore("backlog");
+
+    const request = new URL(apiFetchMock.mock.calls[0][0], window.location.origin);
+    expect(request.searchParams.getAll("tag")).toEqual(["bug", "feature", "frontend"]);
+    expect(request.searchParams.get("afterCursor")).toBe("next-page");
+    expect(request.searchParams.get("search")).toBe("needle");
+  });
+});
+
 describe("loadBoardBySlug limitPerLane query", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
@@ -378,7 +437,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     addLane(45);
     window.history.replaceState({}, "", "/other");
 
-    await board.loadBoardBySlug("alpha", null, null, null);
+    await board.loadBoardBySlug("alpha", [], null, null);
 
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
     expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(45);
@@ -392,7 +451,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     floorBySlug.value = { alpha: 60 };
     window.history.replaceState({}, "", "/other");
 
-    await board.loadBoardBySlug("alpha", null, null, null);
+    await board.loadBoardBySlug("alpha", [], null, null);
 
     expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(60);
   });
@@ -406,7 +465,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     floorBySlug.value = { alpha: 60 };
     window.history.replaceState({}, "", "/other");
 
-    await board.loadBoardBySlug("beta", null, null, null);
+    await board.loadBoardBySlug("beta", [], null, null);
 
     expect(limitPerLaneFromFetchUrl(apiFetchMock.mock.calls[0][0])).toBe(50);
   });
@@ -422,7 +481,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     window.history.replaceState({}, "", "/alpha?priority=high");
     const replaceState = vi.spyOn(window.history, "replaceState");
 
-    await board.loadBoardBySlug("alpha", null, null, null, null, null, "high");
+    await board.loadBoardBySlug("alpha", [], null, null, null, null, "high");
 
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
     expect(new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams.get("priority")).toBe("high");
@@ -441,7 +500,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     window.history.replaceState({}, "", `/alpha?priority=${encodeURIComponent(NO_PRIORITY_FILTER_VALUE)}`);
     const replaceState = vi.spyOn(window.history, "replaceState");
 
-    await board.loadBoardBySlug("alpha", null, null, null, null, null, NO_PRIORITY_FILTER_VALUE);
+    await board.loadBoardBySlug("alpha", [], null, null, null, null, NO_PRIORITY_FILTER_VALUE);
 
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
     expect(new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams.get("priority")).toBe(NO_PRIORITY_FILTER_VALUE);
@@ -460,7 +519,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     window.history.replaceState({}, "", "/alpha/t/9?tag=bug&search=needle&sprintId=7&assignee=me&sort=newest&columnKey=doing&priority=deleted#card");
     const replaceState = vi.spyOn(window.history, "replaceState");
 
-    await board.loadBoardBySlug("alpha", "bug", "needle", "7", "me", "newest", "deleted");
+    await board.loadBoardBySlug("alpha", ["bug"], "needle", "7", "me", "newest", "deleted");
 
     expect(apiFetchMock).toHaveBeenCalledTimes(2);
     const firstParams = new URL(apiFetchMock.mock.calls[0][0], window.location.origin).searchParams;
@@ -490,7 +549,7 @@ describe("loadBoardBySlug limitPerLane query", () => {
     });
     window.history.replaceState({}, "", "/alpha?priority=none");
 
-    await board.loadBoardBySlug("alpha", null, null, null, null, null, "none");
+    await board.loadBoardBySlug("alpha", [], null, null, null, null, "none");
 
     expect(apiFetchMock).toHaveBeenCalledTimes(1);
     expect(new URL(window.location.href).searchParams.get("priority")).toBe("none");

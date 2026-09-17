@@ -239,7 +239,7 @@
   "board.project.renameFailed": "تغییر نام ناموفق بود",
   "board.project.renameTitle": "تغییر نام پروژه",
   "board.refreshFailed": "به‌روزرسانی برد ناموفق بود",
-  "board.search.placeholder.desktop": "جستجوی Todoها...",
+  "board.search.placeholder.desktop": "جستجوی Todoها",
   "board.search.placeholder.mobile": "جستجو",
   "board.selection.multiple": "ویرایش {count} مورد انتخاب‌شده",
   "board.selection.single": "ویرایش ۱ مورد انتخاب‌شده",

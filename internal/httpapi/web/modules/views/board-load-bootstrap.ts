@@ -6,7 +6,6 @@ import {
   setProjectId,
   setSearch,
   setSlug,
-  setTag,
 } from '../state/mutations.js';
 import { Board, TodoStatus } from '../types.js';
 import { isAnonymousBoard } from '../utils.js';
@@ -53,7 +52,6 @@ function buildLaneMetaFromBoard(board: Board): Record<TodoStatus, LaneMetaState>
 export async function bootstrapLoadedBoardView(args: {
   board: Board;
   slug: string;
-  tag: string | null;
   search: string | null;
   isCurrent: () => boolean;
   setResolvedRole: (role: string | null) => void;
@@ -61,7 +59,7 @@ export async function bootstrapLoadedBoardView(args: {
   renderLoadedBoard: (opts: { projectId: number; backLabel?: string; backLabelKey?: string; backHref: string; minimalTopbar: boolean }) => void;
   markLoadSuccess: (slug: string) => void;
 }): Promise<boolean> {
-  const { board, slug, tag, search } = args;
+  const { board, slug, search } = args;
   const projectId = board?.project?.id;
   if (!projectId) {
     throw new Error("Invalid board response");
@@ -69,7 +67,6 @@ export async function bootstrapLoadedBoardView(args: {
 
   setSlug(slug);
   setProjectId(projectId);
-  setTag(tag || "");
   setSearch(search || "");
   setBoardLaneMeta(buildLaneMetaFromBoard(board));
 

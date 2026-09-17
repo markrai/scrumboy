@@ -64,7 +64,7 @@ vi.mock("../dist/state/selectors.js", () => ({
   getAuthStatusAvailable: vi.fn(() => true),
   getMobileTab: vi.fn(() => "backlog"),
   getSlug: vi.fn(() => "alpha"),
-  getTag: vi.fn(() => "bug"),
+  getTagsFromUrl: vi.fn(() => ["bug"]),
   getSearch: vi.fn(() => "find"),
   getSprintIdFromUrl: vi.fn(() => "7"),
   getAssigneeFromUrl: vi.fn(() => "42"),
@@ -194,7 +194,7 @@ async function expectContextCompleteReload(): Promise<void> {
   await vi.waitFor(() => expect(loadBoardBySlugMock).toHaveBeenCalledTimes(1));
   expect(loadBoardBySlugMock).toHaveBeenCalledWith(
     "alpha",
-    "bug",
+    ["bug"],
     "find",
     "7",
     "42",

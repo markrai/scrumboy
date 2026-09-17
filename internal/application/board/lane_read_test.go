@@ -19,7 +19,7 @@ type recordingLaneReadStore struct {
 	limit          int
 	afterA         int64
 	afterB         int64
-	tagFilter      string
+	tagFilters     []string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
 	priorityFilter store.PriorityFilter
@@ -39,7 +39,7 @@ func (s *recordingLaneReadStore) ListTodosForBoardLane(
 	limit int,
 	afterA int64,
 	afterB int64,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -53,7 +53,7 @@ func (s *recordingLaneReadStore) ListTodosForBoardLane(
 	s.limit = limit
 	s.afterA = afterA
 	s.afterB = afterB
-	s.tagFilter = tagFilter
+	s.tagFilters = tagFilters
 	s.searchFilter = searchFilter
 	s.assigneeFilter = assigneeFilter
 	s.priorityFilter = priorityFilter
@@ -85,7 +85,7 @@ func TestLaneServiceRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 		Limit:          17,
 		AfterA:         301,
 		AfterB:         302,
-		TagFilter:      "make space",
+		TagFilters:     []string{"make space"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -122,8 +122,8 @@ func TestLaneServiceRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	if readStore.afterA != query.AfterA || readStore.afterB != query.AfterB {
 		t.Fatalf("cursor = (%d, %d), want (%d, %d)", readStore.afterA, readStore.afterB, query.AfterA, query.AfterB)
 	}
-	if readStore.tagFilter != query.TagFilter {
-		t.Fatalf("tagFilter = %q, want %q", readStore.tagFilter, query.TagFilter)
+	if !reflect.DeepEqual(readStore.tagFilters, query.TagFilters) {
+		t.Fatalf("tagFilters = %q, want %q", readStore.tagFilters, query.TagFilters)
 	}
 	if readStore.searchFilter != query.SearchFilter {
 		t.Fatalf("searchFilter = %q, want %q", readStore.searchFilter, query.SearchFilter)

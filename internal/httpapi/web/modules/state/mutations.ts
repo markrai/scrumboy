@@ -31,10 +31,6 @@ export function setBoard(board: Board | null): void {
   current.board = board;
 }
 
-export function setTag(tag: string): void {
-  current.tag = tag;
-}
-
 export function setSearch(search: string): void {
   current.search = search;
 }
@@ -270,7 +266,7 @@ export function resetDashboard(): void {
 
 export function resetUserScopedState(): void {
   // Clear user-scoped data when user changes (e.g., after logout/login)
-  // Keep global fields (route, slug, tag, search, mobileTab) and user field (updated by router)
+  // Keep global fields (route, slug, search, mobileTab) and user field (updated by router)
   current.projects = null;
   current.board = null;
   current.projectId = null;

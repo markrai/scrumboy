@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Não foi possível renomear o projeto",
   "board.project.renameTitle": "Renomear projeto",
   "board.refreshFailed": "Não foi possível atualizar o quadro",
-  "board.search.placeholder.desktop": "Buscar todos...",
+  "board.search.placeholder.desktop": "Buscar todos",
   "board.search.placeholder.mobile": "Buscar",
   "board.selection.multiple": "Editar {count} todos selecionados",
   "board.selection.single": "Editar 1 todo selecionado",

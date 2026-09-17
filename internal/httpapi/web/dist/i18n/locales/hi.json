@@ -239,7 +239,7 @@
   "board.project.renameFailed": "नाम बदलना विफल",
   "board.project.renameTitle": "परियोजना का नाम बदलें",
   "board.refreshFailed": "बोर्ड रीफ़्रेश करना विफल",
-  "board.search.placeholder.desktop": "Todo खोजें...",
+  "board.search.placeholder.desktop": "Todo खोजें",
   "board.search.placeholder.mobile": "खोज",
   "board.selection.multiple": "{count} चयनित संपादित करें",
   "board.selection.single": "1 चयनित संपादित करें",

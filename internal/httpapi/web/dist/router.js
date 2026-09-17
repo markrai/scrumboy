@@ -4,7 +4,8 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import { loadUserTheme } from './theme.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowContinueConversationFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
@@ -33,7 +34,7 @@ function navigate(path, options) {
 function parseRoute() {
     const path = window.location.pathname;
     const url = new URL(window.location.href);
-    const tag = url.searchParams.get("tag") || "";
+    const tags = getTagsFromUrl();
     const search = url.searchParams.get("search") || "";
     const sprintIdRaw = url.searchParams.get("sprintId");
     const sprintId = sprintIdRaw === "" ? null : (sprintIdRaw || null);
@@ -52,7 +53,7 @@ function parseRoute() {
         return { name: "reset-password", token: url.searchParams.get("token") || undefined };
     const tm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/t\/(\d+)\/?$/);
     if (tm && !tm[1].includes("--"))
-        return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, assignee, sort, priority, openTodoSegment: tm[2] };
+        return { name: "boardBySlug", slug: tm[1], tags, search, sprintId, assignee, sort, priority, openTodoSegment: tm[2] };
     const archiveTodoMatch = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/archive\/t\/(\d+)\/?$/);
     if (archiveTodoMatch && !archiveTodoMatch[1].includes("--")) {
         return { name: "archiveBySlug", slug: archiveTodoMatch[1], openTodoSegment: archiveTodoMatch[2] };
@@ -63,8 +64,8 @@ function parseRoute() {
     // Canonical: /{slug} only (lowercase, digits, hyphens; max 32; no leading/trailing hyphen; no consecutive hyphens).
     const sm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/?$/);
     if (sm && !sm[1].includes("--"))
-        return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, assignee, sort, priority, openTodoId };
-    return { name: "notfound" };
+        return { name: "boardBySlug", slug: sm[1], tags, search, sprintId, assignee, sort, priority, openTodoId };
+    return { name: "notfound", tags: [] };
 }
 function normalize(v) {
     return v || "";
@@ -80,7 +81,7 @@ function shouldDoLightweightBoardUpdate(r) {
     const rSort = r.sort ?? null;
     const rPriority = r.priority ?? null;
     return (lastHandledBoardRoute.slug === r.slug &&
-        normalize(lastHandledBoardRoute.tag) === normalize(r.tag) &&
+        sameOrderedTags(lastHandledBoardRoute.tags, r.tags ?? []) &&
         normalize(lastHandledBoardRoute.search) === normalize(r.search) &&
         (lastHandledBoardRoute.sprintId ?? null) === rSprintId &&
         (lastHandledBoardRoute.assignee ?? null) === rAssignee &&
@@ -289,7 +290,6 @@ async function routeOnceBody() {
     }
     console.log("Router: parsed route:", r);
     setRoute(r.name);
-    setTag(r.tag || "");
     setSearch(r.search || "");
     setSlug(r.slug || null);
     setOpenTodoSegment(r.openTodoSegment || null);
@@ -340,7 +340,7 @@ async function routeOnceBody() {
     }
     if (r.name === "boardBySlug") {
         // Default: no sprint filter. URL stays e.g. /scrumboy without ?sprintId=scheduled.
-        console.log("Router: rendering board, slug:", r.slug, "tag:", r.tag, "search:", r.search, "sprintId:", r.sprintId, "assignee:", r.assignee);
+        console.log("Router: rendering board, slug:", r.slug, "tags:", r.tags, "search:", r.search, "sprintId:", r.sprintId, "assignee:", r.assignee);
         // history.state.boardData is a same-session handoff from projects hover-prefetch.
         // Browsers keep that state across F5, so on a cold document load it can be a stale
         // limitPerLane payload that bypasses preference-aware loadBoardBySlug — ignore it.
@@ -353,17 +353,17 @@ async function routeOnceBody() {
         const isLightweight = shouldDoLightweightBoardUpdate(r);
         try {
             if (isLightweight) {
-                await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
+                await renderBoard(r.slug || null, r.tags ?? [], r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
             }
             else {
-                await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, {
+                await renderBoard(r.slug || null, r.tags ?? [], r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, {
                     skipLoad: false,
                     prefetchedBoard: prefetchedBoard?.project && prefetchedBoard?.columns ? prefetchedBoard : undefined,
                 });
             }
             lastHandledBoardRoute = {
                 slug: r.slug || "",
-                tag: normalize(r.tag),
+                tags: [...(r.tags ?? [])],
                 search: normalize(r.search),
                 sprintId: r.sprintId ?? null,
                 assignee: r.assignee ?? null,

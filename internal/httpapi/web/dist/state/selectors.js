@@ -1,4 +1,5 @@
 import { current } from './state.js';
+export { getTagsFromUrl } from './board-filter-url.js';
 export function getRoute() {
     return current.route;
 }
@@ -10,9 +11,6 @@ export function getSlug() {
 }
 export function getBoard() {
     return current.board;
-}
-export function getTag() {
-    return current.tag;
 }
 export function getSearch() {
     return current.search;

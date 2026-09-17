@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Projekt konnte nicht umbenannt werden",
   "board.project.renameTitle": "Projekt umbenennen",
   "board.refreshFailed": "Board konnte nicht aktualisiert werden",
-  "board.search.placeholder.desktop": "Todos suchen...",
+  "board.search.placeholder.desktop": "Todos suchen",
   "board.search.placeholder.mobile": "Suchen",
   "board.selection.multiple": "{count} ausgewählte Todos bearbeiten",
   "board.selection.single": "1 ausgewähltes Todo bearbeiten",

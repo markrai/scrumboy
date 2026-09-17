@@ -452,17 +452,13 @@ Conventions:
 - **Purpose:** Board snapshot with optional tag/search/sprint/assignee/priority filters and **per-column** pagination.
 - **Input:** `projectSlug` (required); optional `tag`, `search`, `assignee`, `priority`, `sprintId` (the stored sprint row id returned by `sprints_list`, not its project-local `number`; must belong to the project when set); optional `columnKey` (workflow column key; surrounding whitespace is trimmed; omit to return all workflow columns); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` or sending `null` applies no sprint-based filter on the board query (internal mode `none`). Nonpositive values return `VALIDATION_ERROR`; missing and cross-project row IDs both return `NOT_FOUND`. An unknown or nonexistent `columnKey` returns `VALIDATION_ERROR` with `field: "columnKey"`.
 - **Validation/access precedence:** after authentication and capability checks, malformed input shape, missing `projectSlug`, invalid `limit`, assignee type/grammar, and invalid `sort` return their exact validation error before project access. Project access occurs before sprint resolution, workflow/`columnKey` validation, and `cursorByColumn` validation, so denied, missing, or expired projects mask bad `sprintId`, `columnKey`, and `cursorByColumn` values as `NOT_FOUND`. Cursor values are decoded in workflow order for columns that are actually read; a malformed later-lane cursor can follow reads of earlier lanes. When `columnKey` scopes the request to one column, cursors for other valid workflow columns in `cursorByColumn` are ignored and are not decoded. Both MCP transports and the permanent `board.get` alias use this order. REST slug board reads intentionally resolve access before all query validation, so cross-transport first-error precedence differs without changing access rules.
-- **Tag filter:** on durable projects, `tag` is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
+- **Tag filter:** MCP `board_get.tag` remains one scalar string. It does not split commas and does not yet expose REST's repeated-tag AND filtering. On durable projects, that scalar is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
 - **Assignee filter:** `assignee` is a **string**. Use `"me"` for the authenticated caller, `"unassigned"` for todos with no assignee, or a positive user ID encoded as a string such as `"42"`. Sentinels are case-sensitive after surrounding whitespace is trimmed. Unknown/non-member positive IDs return an empty board; malformed values return `VALIDATION_ERROR` with `field: "assignee"`. A JSON number such as `42` is invalid.
 - **Priority filter:** omit `priority` or send an empty string for all priorities, use `"**none**"` for todos without a priority, or use a literal priority-tier key. Tier keys contain only lowercase letters, digits, and underscores, while the no-priority sentinel contains `*`, so a real key such as `"none"` remains unambiguous. An unknown tier key returns an empty board.
-- **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.tags`, `data.columns`
-  (each: `key`, `name`, `isDone`, `items` as todo-shaped objects).
-  `data.tags` is the board's **current-work projection**: it includes canonical tags used
-  by at least one non-archived todo and counts unique non-archived todos only. When the
-  request's `tag` filter names a catalog/historical tag with no active uses, that selected
-  tag is additionally returned with `count: 0`, preserving a visible, clearable deep-link
-  filter. Archive-only and unused names are otherwise omitted. This does not change the
-  archive-inclusive project catalog exposed by `tags_listProject` and the REST tag catalog.
+- **Output:** `data.project` (`projectSlug`, `name`, `role`) and `data.columns`
+  (each: `key`, `name`, `isDone`, `items` as todo-shaped objects). MCP
+  `board_get` does not emit the REST board-tag projection; use
+  `tags_listProject` for the archive-inclusive MCP tag catalog.
   Successful project and todo `projectSlug` fields always use the persisted
   canonical slug. Lookup accepts normalization-equivalent input such as
   uppercase or surrounding whitespace, but the response does not echo that
@@ -723,11 +719,42 @@ The browser REST API accepts the same assignee and priority filters on:
 - `GET /api/board/{slug}/lanes/{status}`
 - `GET /api/projects/{id}/board` (supported compatibility full-board route)
 
+The `tag` query parameter may be repeated, and repeat order is preserved:
+
+```text
+?tag=feature&tag=ux&search=mobile
+```
+
+Multiple non-empty `tag` values use logical **AND** with each other and with
+`search`, Sprint, Assignee, and Priority filters. Values are trimmed, empty
+entries are ignored, and exact or case-insensitive duplicates keep their first
+spelling and position. At most 20 unique values are accepted; a twenty-first
+returns HTTP **400** with `details.reason: "too_many_tag_filters"`.
+
+Durable projects resolve each selected value through canonical logical grouping:
+physical aliases such as `make-space` and legacy `make space` are OR alternatives
+inside one logical group, while different groups remain AND requirements.
+Temporary projects use exact trimmed stored names instead. If any selected
+logical tag has no backing row, the board is empty rather than silently dropping
+that filter. `data.tags` remains the project-wide active vocabulary rather than
+being narrowed to the current intersection; every selected inactive/historical
+tag is additionally returned with `count: 0` so clients can display and clear it.
+
 Use the `assignee` query parameter with `me`, `unassigned`, or a positive user ID string. Surrounding whitespace is trimmed; sentinels are otherwise case-sensitive. Invalid values return HTTP **400** with code `VALIDATION_ERROR`, `details.reason: "invalid_assignee"`, and `details.field: "assignee"`—they never disable the filter or return an unfiltered board. `me` also returns that validation error when the REST request has no authenticated actor. A valid unknown/non-member user ID returns an empty board without revealing membership.
 
 For `priority`, omit the parameter or leave it empty for all priorities, use `**none**` for todos without a priority, or pass a literal tier key. Unknown tier keys return an empty board. The special value is outside the priority-key grammar, so a real tier key named `none` remains filterable.
 
 The SPA preserves both parameters in board URLs and exposes them in its filter controls.
+
+Initial REST board responses include `tags`, the board's current-work tag
+projection in alphabetical name order. Active entries include optional
+`lastActiveAt` RFC3339 metadata: the latest story `updatedAt` among
+non-archived stories currently carrying that logical tag. It describes recent
+board activity, not tag-association history. An explicitly selected historical
+tag with no active stories remains in the projection with `count: 0` and omits
+`lastActiveAt`. Archive-only and otherwise unused names remain excluded. This
+does not change the archive-inclusive REST tag catalog or MCP
+`tags_listProject` semantics.
 
 ---
 
@@ -740,7 +767,7 @@ The SPA preserves both parameters in board URLs and exposes them in its filter c
 
 Clients can obtain a project's numeric `id` and canonical `slug` together from `GET /api/projects` or project creation. The numeric board response also includes `project.slug`, allowing an existing client to migrate without a separate lookup.
 
-To reproduce the numeric endpoint's unpaged `columns` result, pass the same `tag`, `search`, `assignee`, `priority`, `sprintId`, and `sort` values to the initial slug request and every lane request. For each lane in `columnOrder`, append its initial items, then request lane pages with `afterCursor=columnsMeta[status].nextCursor` until `hasMore` is false. Preserve page order and do not parse cursor values. Clients may then discard the pagination metadata or adopt the paged contract directly.
+To reproduce the numeric endpoint's unpaged `columns` result, pass the same repeated `tag` list, `search`, `assignee`, `priority`, `sprintId`, and `sort` values to the initial slug request and every lane request. For each lane in `columnOrder`, append its initial items, then request lane pages with `afterCursor=columnsMeta[status].nextCursor` until `hasMore` is false. Preserve tag repeat order and page order, and do not parse cursor values. Clients may then discard the pagination metadata or adopt the paged contract directly.
 
 The numeric compatibility route is available only in Full Mode and remains hidden in Anonymous Mode. Slug board routes retain their existing Durable, active Temporary Board, and Anonymous Board access behavior.
 

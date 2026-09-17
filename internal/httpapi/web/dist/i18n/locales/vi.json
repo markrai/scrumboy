@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Không đổi tên được dự án",
   "board.project.renameTitle": "Đổi tên dự án",
   "board.refreshFailed": "Không làm mới được bảng",
-  "board.search.placeholder.desktop": "Tìm todo...",
+  "board.search.placeholder.desktop": "Tìm todo",
   "board.search.placeholder.mobile": "Tìm kiếm",
   "board.selection.multiple": "Sửa {count} đã chọn",
   "board.selection.single": "Sửa 1 đã chọn",

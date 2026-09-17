@@ -363,6 +363,11 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 
 - `board_get`
 
+`board_get.tag` intentionally remains one optional scalar string. It does not
+split comma-separated values. REST board reads separately accept repeated
+`tag` query parameters and apply logical AND across them; that REST multi-tag
+surface is not yet exposed by MCP.
+
 `board_get` accepts an optional string `assignee` filter: `"me"` for the
 authenticated caller, `"unassigned"` for todos without an assignee, or a
 positive user ID encoded as a string. For example:

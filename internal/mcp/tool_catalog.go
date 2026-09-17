@@ -368,7 +368,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 			Description: "Get board columns and paginated todo items for a project board view. Returned projectSlug fields use the stored canonical slug.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
-				"tag":         jsonProp("string", "Filter by tag"),
+				"tag":         jsonProp("string", "Filter by one tag (scalar; repeated-tag AND filtering is REST-only)"),
 				"search":      jsonProp("string", "Filter by search text"),
 				"assignee":    jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
 				"priority":    jsonProp("string", "Filter by a priority tier key, or \"**none**\" for todos without a priority; omit for all priorities"),

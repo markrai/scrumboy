@@ -167,92 +167,83 @@ describe('board topbar rendering', () => {
     expect(host.querySelector('[data-tag="bug"]')).not.toBeNull();
   });
 
-  it('renders Omni search and tag suggestions only in the second-row filter surface', () => {
-    const base = {
+  it('renders Omni search between Archive and New Todo while keeping tag suggestions in the second row', () => {
+    for (const isMobile of [false, true]) {
+      const base = {
+        board: board(),
+        search: 'andr',
+        searchPlaceholder: 'Search',
+        isMobile,
+        isAnonymousTempBoard: false,
+        currentUserProjectRole: 'maintainer' as const,
+        user: null,
+        backLabel: 'Projects',
+      };
+      const host = document.createElement('div');
+      host.innerHTML = buildTopbarHtml({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' })
+        + buildOmniFilterRowHtml(base, { searchInTopbar: true });
+
+      const topbar = host.querySelector('.topbar');
+      const searchWrapper = topbar?.querySelector('.search-input-wrapper');
+      const secondRow = host.querySelector('.filters--omni');
+      expect(topbar?.querySelector('#searchInput')).not.toBeNull();
+      expect(topbar?.querySelector('.omni-bar')).toBeNull();
+      expect(topbar?.querySelector('#archiveBtn')).not.toBeNull();
+      expect(topbar?.querySelector('#newTodoBtn')).not.toBeNull();
+      expect(searchWrapper?.previousElementSibling?.id).toBe('archiveBtn');
+      expect(searchWrapper?.nextElementSibling?.id).toBe('newTodoBtn');
+      expect(secondRow?.querySelector('#searchInput')).toBeNull();
+      expect(secondRow?.querySelector('#omniPinnedTags')).not.toBeNull();
+      expect(secondRow?.querySelector('#omniCandidateViewport')).not.toBeNull();
+      expect(secondRow?.querySelector('#omniMobileTagPills')).not.toBeNull();
+      expect(secondRow?.querySelector('[aria-live]')).toBeNull();
+      expect(secondRow?.querySelector('#tagChips')).toBeNull();
+      expect(host.querySelectorAll('#searchInput')).toHaveLength(1);
+      expect(host.querySelectorAll('#searchClear')).toHaveLength(1);
+      expect(host.querySelectorAll('#searchFilterToggle')).toHaveLength(1);
+      expect(host.querySelectorAll('#searchFilterPanel')).toHaveLength(1);
+      expect(topbar?.contains(secondRow)).toBe(false);
+    }
+
+    const distBase = {
       board: board(),
       search: 'andr',
       searchPlaceholder: 'Search',
       isMobile: false,
       isAnonymousTempBoard: false,
-      currentUserProjectRole: 'maintainer',
+      currentUserProjectRole: 'maintainer' as const,
       user: null,
       backLabel: 'Projects',
     };
-    const host = document.createElement('div');
-    const topbarHtml = buildTopbarHtml({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' });
-    const omniRowHtml = buildOmniFilterRowHtml(base);
-    host.innerHTML = topbarHtml + omniRowHtml;
-
-    const topbar = host.querySelector('.topbar');
-    const secondRow = host.querySelector('.filters--omni');
-    expect(topbar?.querySelector('#searchInput')).toBeNull();
-    expect(topbar?.querySelector('.omni-bar')).toBeNull();
-    expect(secondRow?.querySelector('#searchInput')).not.toBeNull();
-    expect(secondRow?.querySelector('#omniTagPills')).not.toBeNull();
-    expect(secondRow?.querySelector('#tagChips')).toBeNull();
-    expect(host.querySelectorAll('#searchInput')).toHaveLength(1);
-    expect(host.querySelectorAll('#searchClear')).toHaveLength(1);
-    expect(host.querySelectorAll('#searchFilterToggle')).toHaveLength(1);
-    expect(host.querySelectorAll('#searchFilterPanel')).toHaveLength(1);
-    expect(topbar?.contains(secondRow)).toBe(false);
-    expect(Array.from(host.children).indexOf(secondRow as Element)).toBeGreaterThan(Array.from(host.children).indexOf(topbar as Element));
-
     const distHost = document.createElement('div');
-    distHost.innerHTML = buildTopbarHtmlDist({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' })
-      + buildOmniFilterRowHtmlDist(base);
-    expect(distHost.querySelector('.topbar #searchInput')).toBeNull();
-    expect(distHost.querySelector('.filters--omni #searchInput')).not.toBeNull();
+    distHost.innerHTML = buildTopbarHtmlDist({ ...distBase, minimalTopbar: false, boardFilterLayout: 'omni' })
+      + buildOmniFilterRowHtmlDist(distBase, { searchInTopbar: true });
+    const distSearchWrapper = distHost.querySelector('.topbar .search-input-wrapper');
+    expect(distHost.querySelector('.topbar #searchInput')).not.toBeNull();
+    expect(distHost.querySelector('.filters--omni #searchInput')).toBeNull();
+    expect(distSearchWrapper?.previousElementSibling?.id).toBe('archiveBtn');
+    expect(distSearchWrapper?.nextElementSibling?.id).toBe('newTodoBtn');
     expect(distHost.querySelectorAll('#searchInput')).toHaveLength(1);
-  });
-
-  it('renders mobile Omni search between Archive and New Todo while keeping tag suggestions in the second row', () => {
-    const base = {
-      board: board(),
-      search: 'andr',
-      searchPlaceholder: 'Search',
-      isMobile: true,
-      isAnonymousTempBoard: false,
-      currentUserProjectRole: 'maintainer',
-      user: null,
-      backLabel: 'Projects',
-    };
-    const host = document.createElement('div');
-    host.innerHTML = buildTopbarHtml({ ...base, minimalTopbar: false, boardFilterLayout: 'omni' })
-      + buildOmniFilterRowHtml(base, { searchInTopbar: true });
-
-    const topbar = host.querySelector('.topbar');
-    const searchWrapper = topbar?.querySelector('.search-input-wrapper');
-    const secondRow = host.querySelector('.filters--omni');
-    expect(topbar?.querySelector('#searchInput')).not.toBeNull();
-    expect(topbar?.querySelector('#archiveBtn')).not.toBeNull();
-    expect(topbar?.querySelector('#newTodoBtn')).not.toBeNull();
-    expect(searchWrapper?.previousElementSibling?.id).toBe('archiveBtn');
-    expect(searchWrapper?.nextElementSibling?.id).toBe('newTodoBtn');
-    expect(secondRow?.querySelector('#searchInput')).toBeNull();
-    expect(secondRow?.querySelector('#omniTagPills')).not.toBeNull();
-    expect(host.querySelectorAll('#searchInput')).toHaveLength(1);
-    expect(host.querySelectorAll('#searchClear')).toHaveLength(1);
-    expect(host.querySelectorAll('#searchFilterToggle')).toHaveLength(1);
-    expect(host.querySelectorAll('#searchFilterPanel')).toHaveLength(1);
   });
 
   it('styles Omni as a non-wrapping, horizontally scrollable filter row instead of a topbar child', () => {
     expect(stylesSource).not.toMatch(/\.topbar\s+\.omni-bar/);
     expect(stylesSource).toMatch(/\.filters--omni\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s);
     expect(stylesSource).toMatch(/\.filters--omni\s+\.omni-bar\s*\{[^}]*width:\s*100%[^}]*max-width:\s*none/s);
-    expect(stylesSource).toMatch(/\.omni-tag-pills\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/s);
+    expect(stylesSource).toMatch(/\.omni-pinned-tags,\s*\.omni-candidate-viewport\s*\{[^}]*flex-wrap:\s*nowrap[^}]*overflow-x:\s*auto/s);
+    expect(stylesSource).toMatch(/\.omni-pinned-tags,\s*\.omni-candidate-viewport\s*\{[^}]*scrollbar-width:\s*none/s);
   });
 
-  it('reserves the populated Omni pill height for an empty desktop rail only', () => {
+  it('reserves the populated Omni pill height on the stable desktop structure', () => {
     const pillMinHeight = stylesSource.match(/\.omni-tag-pill\s*\{[^}]*min-height:\s*([^;]+);/s)?.[1].trim();
-    const desktopRailRules = stylesSource.match(
-      /@media\s*\(min-width:\s*768px\)\s*\{\s*\.omni-tag-pills\s*\{([^}]*)\}\s*\.omni-tag-pills:empty\s*\{([^}]*)\}\s*\}/s,
+    const desktopStructureRules = stylesSource.match(
+      /@media\s*\(min-width:\s*768px\)\s*\{\s*\.filters--omni \.omni-bar,\s*\.omni-candidate-viewport\s*\{([^}]*)\}/s,
     );
-    const desktopRailMinHeight = desktopRailRules?.[1].match(/min-height:\s*([^;]+);/)?.[1].trim();
+    const desktopRailMinHeight = desktopStructureRules?.[1].match(/min-height:\s*([^;]+);/)?.[1].trim();
 
-    expect(stylesSource).toMatch(/\.omni-tag-pills:empty\s*\{\s*display:\s*none;\s*\}/s);
-    expect(desktopRailRules?.[2]).toMatch(/display:\s*flex;/);
     expect(desktopRailMinHeight).toBe(pillMinHeight);
+    expect(stylesSource).toMatch(/\.omni-candidate-chevron\[aria-hidden="true"\]\s*\{[^}]*visibility:\s*hidden/s);
+    expect(stylesSource).toMatch(/@media\s*\(max-width:\s*767px\)[\s\S]*\.omni-candidate-chevron\s*\{\s*display:\s*none;/s);
   });
 
   it('renders plain escaped titles on cards and never renders markdown from todo bodies', () => {

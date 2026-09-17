@@ -9,7 +9,7 @@ import {
   getSortFromUrl,
   getBoard,
   getSlug,
-  getTag,
+  getTagsFromUrl,
   getSearch,
   getSprintIdFromUrl,
   getBoardMembers,
@@ -377,7 +377,7 @@ async function runBulkApply(todoIds: number[]): Promise<void> {
     invalidateTagsCache();
   }
 
-  await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+  await invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {

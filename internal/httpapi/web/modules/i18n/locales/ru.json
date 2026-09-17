@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Не удалось переименовать проект",
   "board.project.renameTitle": "Переименовать проект",
   "board.refreshFailed": "Не удалось обновить доску",
-  "board.search.placeholder.desktop": "Поиск задач...",
+  "board.search.placeholder.desktop": "Поиск задач",
   "board.search.placeholder.mobile": "Поиск",
   "board.selection.multiple": "Редактировать выбранные ({count})",
   "board.selection.single": "Редактировать 1 выбранную задачу",

@@ -540,6 +540,8 @@ type tagCountJSON struct {
 	Name  string  `json:"name"`
 	Count int     `json:"count"`
 	Color *string `json:"color,omitempty"`
+	// LastActiveAt is recent board activity, not tag-association history.
+	LastActiveAt *time.Time `json:"lastActiveAt,omitempty"`
 	// DeleteScope is one of "mine", "project", "none". canDelete is a
 	// compatibility alias equal to deleteScope != "none".
 	DeleteScope string `json:"deleteScope"`
@@ -679,6 +681,7 @@ func boardToJSONWithMeta(p store.Project, workflow []store.WorkflowColumn, prior
 			Name:           tc.Name,
 			Count:          tc.Count,
 			Color:          tc.Color,
+			LastActiveAt:   tc.LastActiveAt,
 			DeleteScope:    scope,
 			CanDelete:      scope != "none",
 			CanUpdateColor: tc.CanUpdateColor,

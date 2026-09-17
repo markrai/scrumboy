@@ -237,7 +237,7 @@ func (f *mcpMoveLaneFake) ListTodosForBoardLane(
 	_ int,
 	afterA int64,
 	afterB int64,
-	_ string,
+	_ []string,
 	_ string,
 	_ store.AssigneeFilter,
 	_ store.PriorityFilter,

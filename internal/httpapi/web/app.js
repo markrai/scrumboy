@@ -11,8 +11,8 @@ import { initTheme, handleThemeChange, getStoredTheme, THEME_SYSTEM, THEME_DARK,
 import { escapeHTML, showToast, showConfirmDialog } from './dist/utils.js';
 import { apiFetch, archiveTodos, restoreTodos } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
-import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTag, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
-import { setProjectId, setBoard, setSlug, setTag, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
+import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
+import { setProjectId, setBoard, setSlug, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
 import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload, shouldSubmitSprintAssignment } from './dist/dialogs/todo-submit.js';
 import { renderSettingsModal, invalidateTagsCache, resumeAuthenticationMethodFlow } from './dist/dialogs/settings.js';
@@ -81,7 +81,7 @@ app.addEventListener("click", async (e) => {
 
 // columnsSpec moved to modules/features/drag-drop.ts
 
-// setTagParam, renderTodoCard, findTodoInBoard, updateMobileTabs moved to modules/views/board.ts
+// setTagParams, renderTodoCard, findTodoInBoard, updateMobileTabs moved to modules/views/board.ts
 // refreshCountsFromDOM removed - verified unused (orphan code)
 
 // openTodoDialog and setMoveButtonsEnabled moved to modules/dialogs/todo.ts
@@ -158,7 +158,7 @@ deleteTodoBtn.addEventListener("click", async () => {
     if (fromArchive) {
       announceArchiveListChange(slug, todo.localId, "deleted");
     } else {
-      await loadBoardBySlug(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+      await loadBoardBySlug(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     }
   } catch (err) {
     showToast(apiErrorMessage(err, { fallbackKey: "todo.deleteFailed" }));
@@ -176,7 +176,7 @@ archiveTodoBtn?.addEventListener("click", async () => {
     onTodoDialogClosed();
     await requestTodoDialogClose({ force: true, reason: "archive" });
     showToast(t("todo.archive.archived"));
-    await loadBoardBySlug(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    await loadBoardBySlug(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
   } catch (err) {
     showToast(apiErrorMessage(err, { fallbackKey: "todo.archive.archiveFailed" }));
   }
@@ -197,7 +197,7 @@ restoreTodoBtn?.addEventListener("click", async () => {
     if (fromArchive) {
       announceArchiveListChange(slug, todo.localId, "restored");
     } else {
-      await loadBoardBySlug(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+      await loadBoardBySlug(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     }
   } catch (err) {
     showToast(apiErrorMessage(err, { fallbackKey: "todo.archive.restoreFailed" }));
@@ -286,7 +286,7 @@ todoForm.addEventListener("submit", async (e) => {
     await requestTodoDialogClose({ force: true, reason: "save" });
     // Invalidate tags cache so Settings modal shows newly created tags
     invalidateTagsCache();
-    await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    await loadBoardBySlug(getSlug(), getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
   } catch (err) {
     showToast(apiErrorMessage(err, { fallbackKey: "todo.saveFailed" }));
   }

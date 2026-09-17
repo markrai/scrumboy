@@ -153,7 +153,7 @@ VALUES (?, ?, ?, '', ?, ?, ?, ?, ?, ?)`, p.ID, i, fmt.Sprintf("scale %d", i), co
 	// materializing the project's historical/archive todo-tag pairs.
 	t.Run("active board tag projection", func(t *testing.T) {
 		plan := explainTodoArchivalPlan(t, st, `
-SELECT DISTINCT g.id, g.name, t.id
+SELECT DISTINCT g.id, g.name, t.id, t.updated_at
 FROM todos t INDEXED BY idx_todos_active_project_updated_local_id
 JOIN todo_tags tt ON tt.todo_id = t.id
 JOIN tags g ON g.id = tt.tag_id

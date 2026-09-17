@@ -16,7 +16,7 @@ import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
 import { 
   getSlug, 
-  getTag, 
+  getTagsFromUrl,
   getSearch,
   getSprintIdFromUrl,
   getAssigneeFromUrl,
@@ -2417,7 +2417,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
           usePreferenceLimitOnNextBoardRequest();
           void invalidateBoard(
             slug,
-            getTag(),
+            getTagsFromUrl(),
             getSearch(),
             getSprintIdFromUrl(),
             getAssigneeFromUrl(),

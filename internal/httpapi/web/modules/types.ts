@@ -41,6 +41,8 @@ export interface Tag {
   name: string;
   color?: string;
   count: number;
+  // Latest updatedAt among active stories currently carrying this tag.
+  lastActiveAt?: string;
   // tagId is present only for board-scoped tags; grouped personal labels omit it.
   tagId?: number;
   // deleteScope is "mine", "project", or "none"; canDelete is a compatibility alias.

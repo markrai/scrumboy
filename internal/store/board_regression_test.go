@@ -40,7 +40,7 @@ func TestGetBoard_NoHang(t *testing.T) {
 	go func() {
 		defer close(done)
 		pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-		_, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, _, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		boardErr = err
 	}()
 
@@ -90,7 +90,7 @@ func TestBoardArchivalVisibilityBelowSoftCapAndLaneContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, tags, _, columns, meta, err := st.GetBoardPaged(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
+	_, tags, _, columns, meta, err := st.GetBoardPaged(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,21 +108,21 @@ func TestBoardArchivalVisibilityBelowSoftCapAndLaneContinuation(t *testing.T) {
 		t.Fatalf("archive-only tag leaked into active board projection: %v", tagCounts)
 	}
 	a, b := ParseLaneCursor(meta[DefaultColumnBacklog].NextCursor)
-	continued, _, more, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 10, a, b, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	continued, _, more, err := st.ListTodosForBoardLane(ctx, p.ID, DefaultColumnBacklog, 10, a, b, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if more || len(continued) != 1 || continued[0].ID != last.ID {
 		t.Fatalf("archive lane continuation=%+v more=%v", continued, more)
 	}
-	_, _, _, searched, _, err := st.GetBoardPaged(ctx, &pc, "", "archived searchable", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
+	_, _, _, searched, _, err := st.GetBoardPaged(ctx, &pc, []string{""}, "archived searchable", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(searched[DefaultColumnBacklog]) != 0 {
 		t.Fatalf("search leaked archived todo: %+v", searched[DefaultColumnBacklog])
 	}
-	_, filteredTags, _, filtered, filteredMeta, err := st.GetBoardPaged(ctx, &pc, "archive-only", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
+	_, filteredTags, _, filtered, filteredMeta, err := st.GetBoardPaged(ctx, &pc, []string{"archive-only"}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestBoardArchivalVisibilityBelowSoftCapAndLaneContinuation(t *testing.T) {
 	if _, err := st.RestoreTodoByLocalID(ctx, p.ID, archived.LocalID, ModeFull); err != nil {
 		t.Fatal(err)
 	}
-	_, restoredTags, _, _, _, err := st.GetBoardPaged(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
+	_, restoredTags, _, _, _, err := st.GetBoardPaged(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +215,7 @@ INSERT INTO todos(project_id, local_id, title, body, column_key, rank, created_a
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, tags, _, columns, meta, err := st.GetBoardPaged(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
+	_, tags, _, columns, meta, err := st.GetBoardPaged(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +237,7 @@ INSERT INTO todos(project_id, local_id, title, body, column_key, rank, created_a
 	if _, exists := tagCounts["scale-archive"]; exists {
 		t.Fatalf("above-cap projection leaked archive-only tag: %v", tagCounts)
 	}
-	_, selectedTags, _, _, _, err := st.GetBoardPaged(ctx, &pc, "scale-archive", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
+	_, selectedTags, _, _, _, err := st.GetBoardPaged(ctx, &pc, []string{"scale-archive"}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +283,7 @@ func TestActiveBoardTagsCanonicalGroupingCountsUniqueTodos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, tags, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, tags, _, _, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatal(err)
 	}

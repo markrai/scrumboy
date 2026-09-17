@@ -3,7 +3,7 @@ import { archiveTodos } from '../api.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation, setBulkUpdating } from '../realtime/guard.js';
-import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTag } from '../state/selectors.js';
+import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTagsFromUrl } from '../state/selectors.js';
 import { isTemporaryBoard, showToast } from '../utils.js';
 
 let selectedTodoIds = new Set<number>();
@@ -83,7 +83,7 @@ async function archiveSelection(): Promise<void> {
     const result = await archiveTodos(slug, localIds);
     clearTodoMultiSelection();
     showToast(t("board.bulkArchive.archivedMultiple", { count: result.transitionedCount }));
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), true);
+    await invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), true);
   } catch (error) {
     showToast(apiErrorMessage(error, { fallbackKey: "board.bulkArchive.failed" }));
     updateBulkEditBar();

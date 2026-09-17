@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Не вдалося перейменувати проєкт",
   "board.project.renameTitle": "Перейменувати проєкт",
   "board.refreshFailed": "Не вдалося оновити дошку",
-  "board.search.placeholder.desktop": "Шукати Todo...",
+  "board.search.placeholder.desktop": "Шукати Todo",
   "board.search.placeholder.mobile": "Пошук",
   "board.selection.multiple": "Редагувати {count} вибраних",
   "board.selection.single": "Редагувати вибране",

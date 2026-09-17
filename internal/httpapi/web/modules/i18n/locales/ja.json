@@ -239,7 +239,7 @@
   "board.project.renameFailed": "プロジェクト名の変更に失敗しました",
   "board.project.renameTitle": "プロジェクト名を変更",
   "board.refreshFailed": "ボードの更新に失敗しました",
-  "board.search.placeholder.desktop": "Todo を検索...",
+  "board.search.placeholder.desktop": "Todo を検索",
   "board.search.placeholder.mobile": "検索",
   "board.selection.multiple": "選択中 {count} 件を編集",
   "board.selection.single": "選択中 1 件を編集",

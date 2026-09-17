@@ -2,7 +2,7 @@ import { apiFetch } from '../api.js';
 import { emit } from '../events.js';
 import { invalidateBoard, refreshSprintsAndChips } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
-import { getBoard, getSlug } from '../state/selectors.js';
+import { getBoard, getSlug, getTagsFromUrl } from '../state/selectors.js';
 import { setBoard } from '../state/mutations.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
@@ -271,7 +271,7 @@ export function bindSprintsTabInteractions(options: BindSprintsTabInteractionsOp
         );
         await invalidateBoard(
           slug,
-          url.searchParams.get('tag') ?? undefined,
+          getTagsFromUrl(),
           url.searchParams.get('search') ?? undefined,
           null,
           url.searchParams.get('assignee'),

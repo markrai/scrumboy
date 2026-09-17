@@ -24,7 +24,7 @@ vi.mock('../state/selectors.js', () => ({
   getSearch: () => selectorState.search,
   getSlug: () => selectorState.slug,
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => new URL(window.location.href).searchParams.getAll('tag'),
   getTagColors: () => selectorState.tagColors,
   getUser: () => null,
 }));
@@ -82,7 +82,17 @@ function renderFilterShell(): void {
     <div class="search-input-wrapper">
       <input id="searchInput" type="text" />
     </div>
-    <div id="omniTagPills"></div>
+    <div class="filters filters--omni">
+      <div class="omni-bar">
+        <div id="omniPinnedTags"></div>
+        <div id="omniCandidateRegion">
+          <button id="omniCandidatePrev" type="button" aria-label="Previous tags"></button>
+          <div id="omniCandidateViewport"></div>
+          <button id="omniCandidateNext" type="button" aria-label="Next tags"></button>
+        </div>
+        <div id="omniMobileTagPills"></div>
+      </div>
+    </div>
   `;
 }
 
@@ -153,13 +163,25 @@ describe('board-filters', () => {
   it('computes stable chips html when board filter inputs do not change', async () => {
     const { boardFilters, board } = await setupBoardFiltersState('/alpha');
 
-    const first = boardFilters.computeBoardChipsRender(board, '', null);
-    const second = boardFilters.computeBoardChipsRender(board, '', null);
+    const first = boardFilters.computeBoardChipsRender(board, [], null);
+    const second = boardFilters.computeBoardChipsRender(board, [], null);
 
     expect(first.chipsHTML).toContain('data-tag="bug"');
     expect(first.chipsUnchanged).toBe(false);
     expect(second.chipsHTML).toBe(first.chipsHTML);
     expect(second.chipsUnchanged).toBe(true);
+  });
+
+  it('marks every repeated URL tag active in Legacy chip rendering', async () => {
+    const { boardFilters, board } = await setupBoardFiltersState('/alpha?tag=bug&tag=feature');
+
+    const rendered = boardFilters.computeBoardChipsRender(board, ['bug', 'feature'], null);
+    const host = document.createElement('div');
+    host.innerHTML = rendered.chipsHTML;
+
+    expect(host.querySelector('[data-tag="bug"]')?.classList.contains('chip--active')).toBe(true);
+    expect(host.querySelector('[data-tag="feature"]')?.classList.contains('chip--active')).toBe(true);
+    expect(host.querySelector('[data-tag=""]')?.classList.contains('chip--active')).toBe(false);
   });
 
   it('does not render cached sprint chips or selection for a disabled board', async () => {
@@ -170,7 +192,7 @@ describe('board-filters', () => {
       sprints: [{ id: 12, number: 7, name: 'Sprint 7', state: 'ACTIVE' }],
     });
 
-    const rendered = boardFilters.computeBoardChipsRender(board, '', '7');
+    const rendered = boardFilters.computeBoardChipsRender(board, [], '7');
 
     expect(rendered.chipsHTML).not.toContain('data-sprint-id');
     expect(rendered.chipsHTML).not.toContain('Sprint 7');
@@ -178,7 +200,7 @@ describe('board-filters', () => {
 
   it('non-additive tag chip click clears sprint filter and reloads with the selected tag', async () => {
     const { boardFilters, board } = await setupBoardFiltersState(
-      '/alpha?search=query&sprintId=7',
+      '/alpha?tag=old&tag=keep&search=query&sprintId=7',
       { search: 'query' },
     );
     const reloadBoard = vi.fn().mockResolvedValue(undefined);
@@ -186,7 +208,7 @@ describe('board-filters', () => {
     boardFilters.setSprintChipDataForSlug('alpha', {
       sprints: [{ id: 12, number: 7, name: 'Sprint 7', state: 'PLANNED' }],
     });
-    const rendered = boardFilters.computeBoardChipsRender(board, '', '7');
+    const rendered = boardFilters.computeBoardChipsRender(board, [], '7');
     const tagChips = document.getElementById('tagChips');
     if (!tagChips) throw new Error('missing tagChips test node');
     tagChips.innerHTML = rendered.chipsHTML;
@@ -201,10 +223,10 @@ describe('board-filters', () => {
     bugChip.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     const params = new URL(window.location.href).searchParams;
-    expect(params.get('tag')).toBe('bug');
+    expect(params.getAll('tag')).toEqual(['bug']);
     expect(params.get('sprintId')).toBeNull();
     expect(reloadBoard).toHaveBeenCalledTimes(1);
-    expect(reloadBoard).toHaveBeenCalledWith('alpha', 'bug', 'query', null, null, null, null);
+    expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug'], 'query', null, null, null, null);
   });
 
   it('additive tag chip click preserves the existing sprint filter', async () => {
@@ -217,7 +239,7 @@ describe('board-filters', () => {
     boardFilters.setSprintChipDataForSlug('alpha', {
       sprints: [{ id: 12, number: 7, name: 'Sprint 7', state: 'PLANNED' }],
     });
-    const rendered = boardFilters.computeBoardChipsRender(board, '', '7');
+    const rendered = boardFilters.computeBoardChipsRender(board, [], '7');
     const tagChips = document.getElementById('tagChips');
     if (!tagChips) throw new Error('missing tagChips test node');
     tagChips.innerHTML = rendered.chipsHTML;
@@ -235,7 +257,7 @@ describe('board-filters', () => {
     expect(params.get('tag')).toBe('feature');
     expect(params.get('sprintId')).toBe('7');
     expect(reloadBoard).toHaveBeenCalledTimes(1);
-    expect(reloadBoard).toHaveBeenCalledWith('alpha', 'feature', 'query', '7', null, null, null);
+    expect(reloadBoard).toHaveBeenCalledWith('alpha', ['feature'], 'query', '7', null, null, null);
   });
 
   it('non-additive sprint chip click clears the tag filter and reloads with the sprint number', async () => {
@@ -248,7 +270,7 @@ describe('board-filters', () => {
     boardFilters.setSprintChipDataForSlug('alpha', {
       sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'PLANNED' }],
     });
-    const rendered = boardFilters.computeBoardChipsRender(board, 'bug', null);
+    const rendered = boardFilters.computeBoardChipsRender(board, ['bug'], null);
     const tagChips = document.getElementById('tagChips');
     if (!tagChips) throw new Error('missing tagChips test node');
     tagChips.innerHTML = rendered.chipsHTML;
@@ -266,7 +288,7 @@ describe('board-filters', () => {
     expect(params.get('tag')).toBeNull();
     expect(params.get('sprintId')).toBe('3');
     expect(reloadBoard).toHaveBeenCalledTimes(1);
-    expect(reloadBoard).toHaveBeenCalledWith('alpha', '', 'query', '3', null, null, null);
+    expect(reloadBoard).toHaveBeenCalledWith('alpha', [], 'query', '3', null, null, null);
   });
 
   it('search input debounces reloads, trims the search value, and clear removes the filter', async () => {
@@ -296,7 +318,7 @@ describe('board-filters', () => {
     vi.advanceTimersByTime(1);
     expect(new URL(window.location.href).searchParams.get('search')).toBe('login');
     expect(reloadBoard).toHaveBeenCalledTimes(1);
-    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', 'bug', 'login', '7', null, null, null);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug'], 'login', '7', null, null, null);
 
     const clearBtn = document.getElementById('searchClear');
     if (!(clearBtn instanceof HTMLElement)) throw new Error('missing search clear button');
@@ -305,7 +327,7 @@ describe('board-filters', () => {
     expect(searchInput.value).toBe('');
     expect(new URL(window.location.href).searchParams.get('search')).toBeNull();
     expect(reloadBoard).toHaveBeenCalledTimes(2);
-    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', 'bug', null, '7', null, null, null);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug'], null, '7', null, null, null);
   });
 
   it('search clear cancels a debounce that has not fired and preserves tag and sprint', async () => {
@@ -325,7 +347,7 @@ describe('board-filters', () => {
     expect(new URL(window.location.href).searchParams.get('tag')).toBe('bug');
     expect(new URL(window.location.href).searchParams.get('sprintId')).toBe('7');
     expect(reloadBoard).toHaveBeenCalledTimes(1);
-    expect(reloadBoard).toHaveBeenCalledWith('alpha', 'bug', null, '7', null, null, null);
+    expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug'], null, '7', null, null, null);
   });
 
   it('ranks Omni suggestions exact, prefix, then substring case-insensitively and omits inactive/applied tags', async () => {
@@ -340,9 +362,145 @@ describe('board-filters', () => {
       { name: 'andr-legacy', count: 0 },
     ];
 
-    expect(boardFilters.matchOmniTags('ANDROID', tags, 'android-ui').map((tag: { name: string }) => tag.name))
+    expect(boardFilters.matchOmniTags('ANDROID', tags, ['android-ui']).map((tag: { name: string }) => tag.name))
       .toEqual(['Android', 'xandroid']);
-    expect(boardFilters.matchOmniTags('', tags, '')).toEqual([]);
+    expect(boardFilters.matchOmniTags('', tags, [])).toEqual([]);
+  });
+
+  it('ranks Browse candidates by recency, count, and name without mutating board tags', async () => {
+    const { boardFilters } = await setupBoardFiltersState('/alpha', { layout: 'omni' });
+    const tags = [
+      { name: 'zero', count: 0, lastActiveAt: '2026-09-17T00:00:00Z' },
+      { name: 'missing', count: 10 },
+      { name: 'Zulu', count: 2, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'alpha', count: 3, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'Beta', count: 3, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'newest', count: 1, lastActiveAt: '2026-09-16T13:00:00Z' },
+    ];
+    const originalOrder = tags.map((tag) => tag.name);
+
+    expect(boardFilters.rankBrowseOmniTags(tags, ['Beta']).map((tag: { name: string }) => tag.name))
+      .toEqual(['newest', 'alpha', 'Zulu', 'missing']);
+    expect(tags.map((tag) => tag.name)).toEqual(originalOrder);
+  });
+
+  it('renders empty-search Browse candidates subdued, pins one, and reintroduces it after unpin', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'bug', count: 2, lastActiveAt: '2026-09-16T10:00:00Z' },
+      { name: 'mobile', count: 1, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'testing', count: 3, lastActiveAt: '2026-09-16T11:00:00Z' },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=bug', { board, layout: 'omni' });
+    const reloadBoard = vi.fn().mockResolvedValue(undefined);
+    boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+    expect(document.querySelector('#omniPinnedTags [data-omni-clear-tag="bug"]')).not.toBeNull();
+    expect(Array.from(document.querySelectorAll('#omniCandidateViewport [data-omni-tag]')).map((el) => el.textContent))
+      .toEqual(['mobile', 'testing']);
+    expect(Array.from(document.querySelectorAll('#omniCandidateViewport [data-omni-tag]'))
+      .every((el) => el.classList.contains('omni-tag-pill--browse'))).toBe(true);
+
+    (document.querySelector('[data-omni-tag="mobile"]') as HTMLButtonElement).click();
+    expect((document.getElementById('searchInput') as HTMLInputElement).value).toBe('');
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['bug', 'mobile']);
+    expect(document.querySelector('#omniPinnedTags [data-omni-clear-tag="mobile"]')).not.toBeNull();
+    expect(document.querySelector('#omniCandidateViewport [data-omni-tag="mobile"]')).toBeNull();
+
+    (document.querySelector('[data-omni-clear-tag="mobile"]') as HTMLButtonElement).click();
+    expect(document.querySelector('#omniCandidateViewport [data-omni-tag="mobile"]')).not.toBeNull();
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug'], null, null, null, null, null);
+  });
+
+  it('switches immediately between Browse and Match candidates and resets candidate scroll', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'bug', count: 2, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'mobile', count: 1, lastActiveAt: '2026-09-16T11:00:00Z' },
+      { name: 'testing', count: 3, lastActiveAt: '2026-09-16T10:00:00Z' },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha', { board, layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+    const viewport = document.getElementById('omniCandidateViewport') as HTMLElement;
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+    viewport.scrollLeft = 70;
+
+    input.value = 'mob';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(viewport.scrollLeft).toBe(0);
+    expect(Array.from(viewport.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent)).toEqual(['mobile']);
+    expect(viewport.querySelector('.omni-tag-pill--browse')).toBeNull();
+
+    viewport.scrollLeft = 30;
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(viewport.scrollLeft).toBe(0);
+    expect(Array.from(viewport.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent))
+      .toEqual(['bug', 'mobile', 'testing']);
+  });
+
+  it('keeps mobile on the pre-existing pins-and-typed-matches rail without empty-search Browse candidates', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'bug', count: 2, lastActiveAt: '2026-09-16T12:00:00Z' },
+      { name: 'mobile', count: 1, lastActiveAt: '2026-09-16T11:00:00Z' },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=bug', { board, layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+    const mobileRail = document.getElementById('omniMobileTagPills') as HTMLElement;
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+
+    expect(Array.from(mobileRail.querySelectorAll('[data-omni-clear-tag]')).map((el) => el.getAttribute('data-omni-clear-tag')))
+      .toEqual(['bug']);
+    expect(mobileRail.querySelector('[data-omni-tag]')).toBeNull();
+
+    input.value = 'mob';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(Array.from(mobileRail.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent)).toEqual(['mobile']);
+    expect(mobileRail.querySelector('.omni-tag-pill--browse')).toBeNull();
+  });
+
+  it('pages the candidate viewport and updates reserved chevrons at start, middle, end, and resize', async () => {
+    const { boardFilters } = await setupBoardFiltersState('/alpha', { layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+    const viewport = document.getElementById('omniCandidateViewport') as HTMLElement;
+    const previous = document.getElementById('omniCandidatePrev') as HTMLButtonElement;
+    const next = document.getElementById('omniCandidateNext') as HTMLButtonElement;
+    Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 100 });
+    Object.defineProperty(viewport, 'scrollWidth', { configurable: true, value: 300 });
+    const scrollBy = vi.fn();
+    Object.defineProperty(viewport, 'scrollBy', { configurable: true, value: scrollBy });
+
+    boardFilters.updateOmniCandidateChevronState();
+    expect(previous.disabled).toBe(true);
+    expect(previous.getAttribute('aria-hidden')).toBe('true');
+    expect(next.disabled).toBe(false);
+    expect(next.getAttribute('aria-hidden')).toBe('false');
+    next.click();
+    expect(scrollBy).toHaveBeenCalledWith({ left: 100, behavior: 'smooth' });
+
+    viewport.scrollLeft = 100;
+    viewport.dispatchEvent(new Event('scroll'));
+    expect(previous.disabled).toBe(false);
+    expect(next.disabled).toBe(false);
+
+    viewport.scrollLeft = 200;
+    viewport.dispatchEvent(new Event('scroll'));
+    expect(previous.disabled).toBe(false);
+    expect(next.disabled).toBe(true);
+
+    Object.defineProperty(viewport, 'scrollWidth', { configurable: true, value: 100 });
+    window.dispatchEvent(new Event('resize'));
+    expect(previous.disabled).toBe(true);
+    expect(next.disabled).toBe(true);
+  });
+
+  it('stops offering additional Omni pins at the twenty-tag transport cap', async () => {
+    const { boardFilters } = await setupBoardFiltersState('/alpha', { layout: 'omni' });
+    const applied = Array.from({ length: 20 }, (_, index) => `tag-${index}`);
+
+    expect(boardFilters.matchOmniTags('bug', [{ name: 'bug', count: 1 }], applied)).toEqual([]);
+    expect(boardFilters.rankBrowseOmniTags([{ name: 'bug', count: 1 }], applied)).toEqual([]);
   });
 
   it('Omni suggestion consumes search, preserves other filters, and cancels the pending debounce', async () => {
@@ -353,7 +511,7 @@ describe('board-filters', () => {
       { name: 'ancient', count: 0 },
     ];
     const { boardFilters } = await setupBoardFiltersState(
-      '/alpha?sprintId=7&assignee=me&sort=newest&priority=high',
+      '/alpha?tag=feature&sprintId=7&assignee=me&sort=newest&priority=high',
       { board, layout: 'omni' },
     );
     const reloadBoard = vi.fn().mockResolvedValue(undefined);
@@ -362,19 +520,19 @@ describe('board-filters', () => {
     const input = document.getElementById('searchInput') as HTMLInputElement;
     input.value = 'andr';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    expect(Array.from(document.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent))
+    expect(Array.from(document.querySelectorAll('#omniCandidateViewport [data-omni-tag]')).map((el) => el.textContent))
       .toEqual(['android', 'android-ui']);
 
     (document.querySelector('[data-omni-tag="android"]') as HTMLButtonElement).click();
     expect(input.value).toBe('');
     const params = new URL(window.location.href).searchParams;
     expect(params.get('search')).toBeNull();
-    expect(params.get('tag')).toBe('android');
+    expect(params.getAll('tag')).toEqual(['feature', 'android']);
     expect(params.get('sprintId')).toBe('7');
     expect(params.get('assignee')).toBe('me');
     expect(params.get('sort')).toBe('newest');
     expect(params.get('priority')).toBe('high');
-    expect(reloadBoard).toHaveBeenCalledWith('alpha', 'android', null, '7', 'me', 'newest', 'high');
+    expect(reloadBoard).toHaveBeenCalledWith('alpha', ['feature', 'android'], null, '7', 'me', 'newest', 'high');
 
     vi.advanceTimersByTime(300);
     expect(reloadBoard).toHaveBeenCalledTimes(1);
@@ -383,15 +541,78 @@ describe('board-filters', () => {
     input.value = 'crash';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     vi.advanceTimersByTime(300);
-    expect(new URL(window.location.href).searchParams.get('tag')).toBe('android');
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['feature', 'android']);
     expect(new URL(window.location.href).searchParams.get('search')).toBe('crash');
-    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', 'android', 'crash', '7', 'me', 'newest', 'high');
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['feature', 'android'], 'crash', '7', 'me', 'newest', 'high');
+  });
+
+  it('appends second and third Omni tags, excludes every pin from suggestions, and removes only the middle pin', async () => {
+    const board = makeBoard();
+    board.tags = [
+      { name: 'bug', count: 3 },
+      { name: 'feature', count: 2 },
+      { name: 'frontend', count: 1 },
+      { name: 'future', count: 4 },
+    ];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=bug&search=fea', {
+      board,
+      search: 'fea',
+      layout: 'omni',
+    });
+    const reloadBoard = vi.fn().mockResolvedValue(undefined);
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+    input.value = 'fea';
+    boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+    (document.querySelector('[data-omni-tag="feature"]') as HTMLButtonElement).click();
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['bug', 'feature']);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug', 'feature'], null, null, null, null, null);
+
+    input.value = 'front';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('[data-omni-tag="frontend"]') as HTMLButtonElement).click();
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['bug', 'feature', 'frontend']);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug', 'feature', 'frontend'], null, null, null, null, null);
+
+    input.value = 'f';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(Array.from(document.querySelectorAll('#omniCandidateViewport [data-omni-tag]')).map((el) => el.getAttribute('data-omni-tag')))
+      .toEqual(['future']);
+
+    (document.querySelector('[data-omni-clear-tag="feature"]') as HTMLButtonElement).click();
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['bug', 'frontend']);
+    expect(input.value).toBe('f');
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug', 'frontend'], null, null, null, null, null);
+  });
+
+  it('preserves all pins when a pending typed search fires after removing one pin', async () => {
+    const board = makeBoard();
+    board.tags.push({ name: 'frontend', count: 1 });
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=bug&tag=feature', {
+      board,
+      layout: 'omni',
+    });
+    const reloadBoard = vi.fn().mockResolvedValue(undefined);
+    boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+    input.value = 'front';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    (document.querySelector('[data-omni-clear-tag="bug"]') as HTMLButtonElement).click();
+
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['feature']);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['feature'], null, null, null, null, null);
+
+    vi.advanceTimersByTime(300);
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['feature']);
+    expect(new URL(window.location.href).searchParams.get('search')).toBe('front');
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['feature'], 'front', null, null, null, null);
   });
 
   it('shows and clears a selected zero-active tag without clearing text search', async () => {
     const board = makeBoard();
-    board.tags = [{ name: 'ancient', count: 0 }];
-    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=ancient&search=crash&sprintId=7', {
+    board.tags = [{ name: 'ancient', count: 0 }, { name: 'lost', count: 0 }];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?tag=ancient&tag=lost&search=crash&sprintId=7', {
       tag: 'ancient',
       search: 'crash',
       board,
@@ -402,16 +623,17 @@ describe('board-filters', () => {
     const reloadBoard = vi.fn().mockResolvedValue(undefined);
     boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
 
-    expect(document.querySelector('.omni-tag-pill--applied')?.textContent).toContain('ancient');
+    expect(Array.from(document.querySelectorAll('#omniPinnedTags [data-omni-clear-tag]')).map((button) => button.getAttribute('data-omni-clear-tag')))
+      .toEqual(['ancient', 'lost']);
     expect(document.querySelector('[data-omni-tag="ancient"]')).toBeNull();
-    (document.querySelector('[data-omni-clear-tag]') as HTMLButtonElement).click();
+    (document.querySelector('[data-omni-clear-tag="ancient"]') as HTMLButtonElement).click();
 
     const params = new URL(window.location.href).searchParams;
-    expect(params.get('tag')).toBeNull();
+    expect(params.getAll('tag')).toEqual(['lost']);
     expect(params.get('search')).toBe('crash');
     expect(params.get('sprintId')).toBe('7');
     expect(input.value).toBe('crash');
-    expect(reloadBoard).toHaveBeenCalledWith('alpha', '', 'crash', '7', null, null, null);
+    expect(reloadBoard).toHaveBeenCalledWith('alpha', ['lost'], 'crash', '7', null, null, null);
   });
 
   it('keeps a pending typed search scheduled when clearing the applied tag', async () => {
@@ -437,7 +659,7 @@ describe('board-filters', () => {
     expect(new URL(window.location.href).searchParams.get('tag')).toBeNull();
     expect(new URL(window.location.href).searchParams.get('search')).toBeNull();
     expect(reloadBoard).toHaveBeenCalledTimes(1);
-    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
 
     vi.advanceTimersByTime(299);
     expect(reloadBoard).toHaveBeenCalledTimes(1);
@@ -448,7 +670,7 @@ describe('board-filters', () => {
     expect(params.get('search')).toBe('crash');
     expect(input.value).toBe('crash');
     expect(reloadBoard).toHaveBeenCalledTimes(2);
-    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', 'crash', null, null, null, null);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], 'crash', null, null, null, null);
   });
 
   it.each(['Enter', ' '])('activates an Omni suggestion with the %s key', async (key) => {
@@ -482,7 +704,7 @@ describe('board-filters', () => {
     boardFilters.setSprintChipDataForSlug('alpha', {
       sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'PLANNED' }],
     });
-    const rendered = boardFilters.computeBoardChipsRender(board, '', '3');
+    const rendered = boardFilters.computeBoardChipsRender(board, [], '3');
     const tagChips = document.getElementById('tagChips');
     if (!tagChips) throw new Error('missing tagChips test node');
     tagChips.innerHTML = rendered.chipsHTML;

@@ -75,7 +75,7 @@ func TestBoardExcludesArchivedAndArchiveListIncludes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{}, SortOrderDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,7 +648,7 @@ func TestRestoreAfterRebalancePreservesStoredRank(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{}, SortOrderDefault)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -470,7 +470,6 @@ export async function renderArchive(slug, openTodoSegment = null) {
     const rendered = await bootstrapLoadedBoardView({
         board,
         slug,
-        tag: '',
         search: '',
         isCurrent: () => sequence === archiveRenderSequence && getSlug() === slug,
         setResolvedRole: (role) => { currentRole = role; },

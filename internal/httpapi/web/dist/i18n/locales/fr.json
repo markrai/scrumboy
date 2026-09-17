@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Impossible de renommer le projet",
   "board.project.renameTitle": "Renommer le projet",
   "board.refreshFailed": "Impossible d'actualiser le tableau",
-  "board.search.placeholder.desktop": "Rechercher des todos...",
+  "board.search.placeholder.desktop": "Rechercher des todos",
   "board.search.placeholder.mobile": "Rechercher",
   "board.selection.multiple": "Modifier {count} todos sélectionnés",
   "board.selection.single": "Modifier 1 todo sélectionné",

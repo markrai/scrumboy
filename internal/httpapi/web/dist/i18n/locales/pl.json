@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Nie udało się zmienić nazwy projektu",
   "board.project.renameTitle": "Zmień nazwę projektu",
   "board.refreshFailed": "Nie udało się odświeżyć tablicy",
-  "board.search.placeholder.desktop": "Szukaj Todo...",
+  "board.search.placeholder.desktop": "Szukaj Todo",
   "board.search.placeholder.mobile": "Szukaj",
   "board.selection.multiple": "Edytuj {count} zaznaczonych",
   "board.selection.single": "Edytuj zaznaczony element",

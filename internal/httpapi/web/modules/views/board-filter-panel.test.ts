@@ -33,7 +33,7 @@ vi.mock('../state/selectors.js', () => ({
   getSearch: () => selectorState.search,
   getSlug: () => selectorState.slug,
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => selectorState.tag ? [selectorState.tag] : [],
   getTagColors: () => selectorState.tagColors,
   getUser: () => selectorState.user,
 }));
@@ -331,7 +331,7 @@ describe('board filter panel (assignee + sort)', () => {
 
       (currentPanel.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
       expect(reloadBoard).toHaveBeenCalledTimes(1);
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', [], null, null, null, 'newest', null);
     });
   });
 
@@ -366,7 +366,7 @@ describe('board filter panel (assignee + sort)', () => {
 
     it('picking an Omni Sprint preserves the selected tag and composes every filter', async () => {
       localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
-      const { boardFilters } = await setupState('/alpha?tag=bug&search=query&assignee=me&sort=newest&priority=high', {
+      const { boardFilters } = await setupState('/alpha?tag=bug&tag=feature&search=query&assignee=me&sort=newest&priority=high', {
         tag: 'bug',
         search: 'query',
         panelOptions: {
@@ -381,9 +381,9 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-sprint-option="3"]') as HTMLButtonElement).click();
 
       const params = new URL(window.location.href).searchParams;
-      expect(params.get('tag')).toBe('bug');
+      expect(params.getAll('tag')).toEqual(['bug', 'feature']);
       expect(params.get('sprintId')).toBe('3');
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', 'bug', 'query', '3', 'me', 'newest', 'high');
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug', 'feature'], 'query', '3', 'me', 'newest', 'high');
       expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
     });
 
@@ -397,7 +397,7 @@ describe('board filter panel (assignee + sort)', () => {
 
       expect(new URL(window.location.href).searchParams.get('assignee')).toBe('unassigned');
       expect(reloadBoard).toHaveBeenCalledTimes(1);
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', 'bug', 'query', '7', 'unassigned', null, null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug'], 'query', '7', 'unassigned', null, null);
       expect(toastMock).toHaveBeenCalledWith(expect.stringContaining('Unassigned'));
     });
 
@@ -408,13 +408,13 @@ describe('board filter panel (assignee + sort)', () => {
 
       (document.querySelector('[data-assignee-option="me"]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('assignee')).toBe('me');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, 'me', null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, 'me', null, null);
       expect(toastMock).toHaveBeenCalledTimes(1);
 
       toastMock.mockClear();
       (document.querySelector('[data-assignee-option=""]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('assignee')).toBeNull();
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       // Clearing back to the neutral option is not itself "filtering" — no toast.
       expect(toastMock).not.toHaveBeenCalled();
     });
@@ -427,7 +427,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-assignee-option="5"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('assignee')).toBe('5');
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, '5', null, null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', [], null, null, '5', null, null);
     });
 
     it('picking a sort option sets the sort param, reloads, and toasts "Sorted: ..."', async () => {
@@ -438,13 +438,13 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, 'newest', null);
       expect(toastMock).toHaveBeenCalledWith(expect.stringContaining('Newest first'));
 
       toastMock.mockClear();
       (document.querySelector('[data-sort-option=""]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
     });
 
@@ -478,7 +478,7 @@ describe('board filter panel (assignee + sort)', () => {
         method: 'PUT',
         body: JSON.stringify({ key: 'boardTodoSort', value: 'default' }),
       }));
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
     });
 
@@ -493,7 +493,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', [], null, null, null, 'newest', null);
       expect(fetchMock).not.toHaveBeenCalled();
       expect(localStorage.getItem(BOARD_TODO_SORT_STORAGE_KEY)).toBeNull();
       expect(getBoardTodoSortPreference()).toBe('default');
@@ -522,13 +522,13 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-priority-option="high"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('priority')).toBe('high');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, 'high');
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, 'high');
       expect(toastMock).toHaveBeenCalledWith(expect.stringContaining('High'));
 
       toastMock.mockClear();
       (document.querySelector('[data-priority-option=""]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('priority')).toBeNull();
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
     });
 
@@ -540,7 +540,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector(`[data-priority-option="${NO_PRIORITY_FILTER_VALUE}"]`) as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('priority')).toBe(NO_PRIORITY_FILTER_VALUE);
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, NO_PRIORITY_FILTER_VALUE);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, NO_PRIORITY_FILTER_VALUE);
     });
 
     it('picking a real tier whose key is none keeps the literal tier key', async () => {
@@ -551,7 +551,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-priority-option="none"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('priority')).toBe('none');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, 'none');
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, 'none');
     });
 
     it('toggles the --active pulse class on the toggle button as the priority filter is applied/cleared', async () => {

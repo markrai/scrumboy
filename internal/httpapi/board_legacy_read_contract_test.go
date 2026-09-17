@@ -92,23 +92,24 @@ func TestBoardLegacyRead_RESTCombinedFiltersUnpagedResponseContract(t *testing.T
 		todo := createTodo(
 			"Matching "+strconv.Itoa(i+1),
 			"contains the needle",
-			[]string{"focus"},
+			[]string{"focus", "review"},
 			&ownerID,
 			&sprint.ID,
 		)
 		matchingIDs = append(matchingIDs, todo.ID)
 	}
 
-	createTodo("Wrong tag", "contains the needle", []string{"other"}, &ownerID, &sprint.ID)
-	createTodo("Wrong search", "contains only hay", []string{"focus"}, &ownerID, &sprint.ID)
-	createTodo("Wrong assignee", "contains the needle", []string{"focus"}, nil, &sprint.ID)
-	createTodo("Wrong sprint", "contains the needle", []string{"focus"}, &ownerID, nil)
+	createTodo("Wrong tag", "contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
+	createTodo("Wrong search", "contains only hay", []string{"focus", "review"}, &ownerID, &sprint.ID)
+	createTodo("Wrong assignee", "contains the needle", []string{"focus", "review"}, nil, &sprint.ID)
+	createTodo("Wrong sprint", "contains the needle", []string{"focus", "review"}, &ownerID, nil)
 
 	wantNewestIDs := slices.Clone(matchingIDs)
 	slices.Reverse(wantNewestIDs)
 
 	query := url.Values{}
 	query.Set("tag", "focus")
+	query.Add("tag", "review")
 	query.Set("search", "  needle  ")
 	query.Set("assignee", "me")
 	query.Set("sprintId", strconv.FormatInt(sprint.Number, 10))

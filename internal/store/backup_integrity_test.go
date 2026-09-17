@@ -452,7 +452,7 @@ func TestImportPreflight_MalformedRejectedBeforeWrites(t *testing.T) {
 				Projects: []ProjectExport{{
 					Slug: "wf", Name: "WF", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 					WorkflowColumns: []WorkflowColumnExport{{Key: "only", Name: "Only", Color: "#94a3b8", Position: 0, IsDone: false}},
-					Todos: []TodoExport{},
+					Todos:           []TodoExport{},
 				}}},
 			want: "at least 2 columns",
 		},
@@ -807,7 +807,7 @@ func TestImportPreflight_InvalidWorkflowSprintRejected(t *testing.T) {
 				Projects: []ProjectExport{{
 					Slug: "wf", Name: "WF", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 					WorkflowColumns: []WorkflowColumnExport{{Key: "only", Name: "Only", Color: "#94a3b8", Position: 0, IsDone: false}},
-					Todos: []TodoExport{},
+					Todos:           []TodoExport{},
 				}}},
 			want: "at least 2 columns",
 		},

@@ -56,6 +56,13 @@ type recordingBoardGetStore struct {
 	CountResults map[string]int
 }
 
+func recordedBoardGetTag(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return tags[0]
+}
+
 func newRecordingBoardGetStore(st *store.Store) *recordingBoardGetStore {
 	return &recordingBoardGetStore{
 		Store:        st,
@@ -162,7 +169,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 	limit int,
 	afterA int64,
 	afterB int64,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -187,7 +194,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 			limit,
 			afterA,
 			afterB,
-			tagFilter,
+			tagFilters,
 			searchFilter,
 			assigneeFilter,
 			priorityFilter,
@@ -209,7 +216,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 		Limit:     limit,
 		AfterA:    afterA,
 		AfterB:    afterB,
-		Tag:       tagFilter,
+		Tag:       recordedBoardGetTag(tagFilters),
 		Search:    searchFilter,
 		Assignee:  assigneeFilter,
 		Priority:  priorityFilter,
@@ -224,7 +231,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 	ctx context.Context,
 	projectID int64,
 	columnKey string,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -241,7 +248,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 			ctx,
 			projectID,
 			columnKey,
-			tagFilter,
+			tagFilters,
 			searchFilter,
 			assigneeFilter,
 			priorityFilter,
@@ -257,7 +264,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 		Context:   ctx,
 		ProjectID: projectID,
 		ColumnKey: columnKey,
-		Tag:       tagFilter,
+		Tag:       recordedBoardGetTag(tagFilters),
 		Search:    searchFilter,
 		Assignee:  assigneeFilter,
 		Priority:  priorityFilter,

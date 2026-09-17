@@ -202,7 +202,7 @@ const BOOTSTRAP_EN_CATALOG = {
     "board.project.renameFailed": "Failed to rename project",
     "board.project.renameTitle": "Rename Project",
     "board.refreshFailed": "Failed to refresh board",
-    "board.search.placeholder.desktop": "Search todos...",
+    "board.search.placeholder.desktop": "Search todos & tags",
     "board.search.placeholder.mobile": "Search",
     "board.selection.multiple": "Edit {count} selected",
     "board.selection.single": "Edit 1 selected",

@@ -35,6 +35,13 @@ type mcpBoardReadRecorder struct {
 	calls []mcpBoardReadCall
 }
 
+func firstRecordedTagFilter(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return tags[0]
+}
+
 func (r *mcpBoardReadRecorder) record(call mcpBoardReadCall) {
 	r.calls = append(r.calls, call)
 }
@@ -129,7 +136,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 	limit int,
 	afterA int64,
 	afterB int64,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -144,7 +151,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 		limit:          limit,
 		afterA:         afterA,
 		afterB:         afterB,
-		tagFilter:      tagFilter,
+		tagFilter:      firstRecordedTagFilter(tagFilters),
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
 		priorityFilter: priorityFilter,
@@ -167,7 +174,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 	ctx context.Context,
 	projectID int64,
 	columnKey string,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -178,7 +185,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 		ctx:            ctx,
 		projectID:      projectID,
 		columnKey:      columnKey,
-		tagFilter:      tagFilter,
+		tagFilter:      firstRecordedTagFilter(tagFilters),
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
 		priorityFilter: priorityFilter,

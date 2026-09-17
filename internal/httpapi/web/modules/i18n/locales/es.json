@@ -239,7 +239,7 @@
   "board.project.renameFailed": "Error al renombrar proyecto",
   "board.project.renameTitle": "Renombrar proyecto",
   "board.refreshFailed": "Error al actualizar tablero",
-  "board.search.placeholder.desktop": "Buscar todos...",
+  "board.search.placeholder.desktop": "Buscar todos",
   "board.search.placeholder.mobile": "Buscar",
   "board.selection.multiple": "Editar {count} seleccionados",
   "board.selection.single": "Editar 1 elemento seleccionado",

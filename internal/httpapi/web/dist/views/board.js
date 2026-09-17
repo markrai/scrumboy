@@ -6,8 +6,9 @@ import { navigate } from '../router.js';
 import { escapeHTML, showToast, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
-import { getAssigneeFromUrl, getBoard, getMobileTab, getPriorityFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getBoard, getMobileTab, getPriorityFromUrl, getSlug, getTagsFromUrl, getSearch, getSortFromUrl, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
 import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
+import { appendTagParams, normalizeBoardTagFilters, sameOrderedTags } from '../state/board-filter-url.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
@@ -65,7 +66,7 @@ export function getVoiceCreateDryRunBoardPorts() {
             const context = getVoiceCommandContext();
             if (!context)
                 throw new Error('context_unavailable');
-            await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+            await loadBoardBySlug(context.projectSlug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
         },
     });
 }
@@ -126,7 +127,7 @@ function bindVoiceCommandButton() {
                     const context = getVoiceCommandContext();
                     if (!context || context.userId !== initialUserId || context.projectId !== initialProjectId || context.projectSlug !== initialProjectSlug)
                         return;
-                    await loadBoardBySlug(context.projectSlug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+                    await loadBoardBySlug(context.projectSlug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
                 },
                 openTodo: async (localId) => {
                     const context = getVoiceCommandContext();
@@ -234,7 +235,7 @@ function getMembersByUserId() {
 }
 /** Lightweight render signature for updateBoardContent skip; avoids stale UI from board-only comparison. */
 let lastUpdateBoardContentBoard = null;
-let lastUpdateBoardContentTag = "";
+let lastUpdateBoardContentTagsKey = "[]";
 let lastUpdateBoardContentSearch = "";
 let lastUpdateBoardContentSprintId = null;
 let lastUpdateBoardContentAssignee = null;
@@ -272,7 +273,7 @@ function rerenderBoardForLocaleChange() {
         return;
     resetBoardFilterUiState();
     lastUpdateBoardContentBoard = null;
-    renderBoardFromData(board, projectId, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), {
+    renderBoardFromData(board, projectId, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl(), {
         ...lastBoardRenderOptions,
         forceFullRender: true,
     });
@@ -442,9 +443,9 @@ function openTodoFromCard(todo) {
     history.pushState({}, "", `${targetPath}${url.search}`);
 }
 // Load more todos for a lane (targeted column append)
-async function handleLoadMore(status) {
+export async function handleLoadMore(status) {
     const slug = getSlug();
-    const tag = getTag();
+    const tags = getTagsFromUrl();
     const search = getSearch();
     const sprintId = getSprintIdFromUrl();
     const assignee = getAssigneeFromUrl();
@@ -461,8 +462,7 @@ async function handleLoadMore(status) {
         params.set("limit", "20");
         if (meta.nextCursor)
             params.set("afterCursor", meta.nextCursor);
-        if (tag)
-            params.set("tag", tag);
+        appendTagParams(params, tags);
         if (search)
             params.set("search", search);
         if (sprintId)
@@ -741,7 +741,7 @@ async function handleProjectImageUpload(projectId) {
             });
             syncTopbarFromBoard({ project: { image: finalDataUrl } });
             if (getSlug()) {
-                await loadBoardBySlug(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+                await loadBoardBySlug(getSlug(), getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
             }
             else {
                 const renderProjects = await getRenderProjects();
@@ -780,10 +780,11 @@ function syncTopbarFromBoard(board) {
 }
 // Full board + filters update. Use for SSE refresh, filter change, search.
 // For chips-only updates (e.g. deferred sprints load), use updateChipsOnly instead.
-function updateBoardContent(board, tag, search, sprintId, assignee, sort, priority) {
-    // Skip full rebuild when render signature matches (board + tag + search + sprintId + assignee + sort + priority)
+function updateBoardContent(board, tags, search, sprintId, assignee, sort, priority) {
+    const tagsKey = JSON.stringify(tags);
+    // Skip full rebuild when render signature matches (board + ordered tags + search + sprintId + assignee + sort + priority)
     if (board === lastUpdateBoardContentBoard &&
-        tag === lastUpdateBoardContentTag &&
+        tagsKey === lastUpdateBoardContentTagsKey &&
         search === lastUpdateBoardContentSearch &&
         sprintId === lastUpdateBoardContentSprintId &&
         assignee === lastUpdateBoardContentAssignee &&
@@ -803,7 +804,7 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort, priori
     setTagColors(tagColors);
     const isAnonymousTempBoard = isAnonymousBoard(board);
     if (getBoardFilterLayoutPreference() === 'legacy') {
-        const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tag || "", sprintId ?? null);
+        const { chipsHTML, chipsUnchanged } = computeBoardChipsRender(board, tags, sprintId ?? null);
         // Chips guard: skip filters DOM and initMobileTagPagination when chips HTML unchanged
         if (!chipsUnchanged) {
             const filtersEl = document.querySelector(".filters");
@@ -868,14 +869,14 @@ function updateBoardContent(board, tag, search, sprintId, assignee, sort, priori
     }
     initMobileLoadMoreVisibility();
     lastUpdateBoardContentBoard = board;
-    lastUpdateBoardContentTag = tag;
+    lastUpdateBoardContentTagsKey = tagsKey;
     lastUpdateBoardContentSearch = search;
     lastUpdateBoardContentSprintId = sprintId;
     lastUpdateBoardContentAssignee = assignee;
     lastUpdateBoardContentSort = sort;
     lastUpdateBoardContentPriority = priority;
 }
-function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, sort, priority = null, opts = {}) {
+function renderBoardFromData(board, projectId, tags, search, sprintId, assignee, sort, priority = null, opts = {}) {
     lastBoardRenderProjectId = projectId;
     lastBoardRenderOptions = {
         backLabel: opts.backLabel,
@@ -920,7 +921,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     const existingBoardContainer = document.querySelector(".board");
     const savedAgendaScroll = captureAgendaListScroll();
     if (existingBoardContainer && !opts.forceFullRender) {
-        updateBoardContent(board, tag, search, sprintId, assignee, sort, priority);
+        updateBoardContent(board, tags, search, sprintId, assignee, sort, priority);
         syncTopbarFromBoard(board);
         return;
     }
@@ -936,7 +937,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
     const isAnonymousTempBoard = isAnonymousBoard(board);
     const boardFilterLayout = getBoardFilterLayoutPreference();
     const chipsHTML = boardFilterLayout === 'legacy'
-        ? computeBoardChipsRender(board, tag || "", sprintId ?? null).chipsHTML
+        ? computeBoardChipsRender(board, tags, sprintId ?? null).chipsHTML
         : '';
     const showVoiceCommands = canShowVoiceCommandsForBoard(projectId, board);
     // Minimal topbar (used for temporary/anonymous boards): logo, project name, rename (if anonymous temp), New Todo, Settings
@@ -958,7 +959,6 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
         sort,
         priority,
         boardMembers: getBoardMembers(),
-        tag,
         sprintId,
         boardFilterLayout,
         sprintData: getSprintChipDataForSlug(getSlug()),
@@ -977,7 +977,7 @@ function renderBoardFromData(board, projectId, tag, search, sprintId, assignee, 
             user: getUser(),
             sprintId,
             sprintData: getSprintChipDataForSlug(getSlug()),
-        }, { searchInTopbar: isMobile });
+        }, { searchInTopbar: true });
     const membersByUserId = getMembersByUserId();
     const showPointsMode = isModifiedFibonacciModeEnabled();
     const cardOpts = {
@@ -1622,7 +1622,7 @@ function priorityFilterExistsOnBoard(board, priority) {
     return (board.priorityOrder ?? []).some((tier) => tier.key === priority);
 }
 // Load board by slug
-export async function loadBoardBySlug(slug, tag, search, sprintId = null, assignee = null, sort = null, priority = null) {
+export async function loadBoardBySlug(slug, tags, search, sprintId = null, assignee = null, sort = null, priority = null) {
     ensureBoardI18nBinding();
     if (!slug) {
         throw new Error("Slug is required");
@@ -1631,7 +1631,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     clearPendingRealtimeRefresh();
     const requestSeq = ++boardLoadSequence;
     const requestSlug = slug;
-    const requestTag = tag || "";
+    const requestTags = normalizeBoardTagFilters(tags);
     const requestSearch = search || "";
     const requestSprintId = sprintId ?? null;
     const requestAssignee = assignee ?? null;
@@ -1643,8 +1643,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     lastUpdateBoardContentBoard = null;
     const params = new URLSearchParams();
     params.set("limitPerLane", String(Math.max(getRequestedBoardLimitPerLane(slug), getBoardLimitPerLaneFloor(slug))));
-    if (tag)
-        params.set("tag", tag);
+    appendTagParams(params, requestTags);
     if (search)
         params.set("search", search);
     if (requestSprintId)
@@ -1667,7 +1666,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
             url.searchParams.delete("sprintId");
             const newUrl = url.pathname + (url.search ? url.search : "");
             history.replaceState({}, "", newUrl);
-            await loadBoardBySlug(slug, tag, search, null, assignee, sort, priority);
+            await loadBoardBySlug(slug, requestTags, search, null, assignee, sort, priority);
             return;
         }
         throw err;
@@ -1677,18 +1676,18 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     const currentUrl = new URL(window.location.href);
     const currentPath = currentUrl.pathname.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)(?:\/t\/\d+)?\/?$/);
     const currentSlug = currentPath ? currentPath[1] : "";
-    const currentTag = currentUrl.searchParams.get("tag") || "";
+    const currentTags = getTagsFromUrl();
     const currentSearch = currentUrl.searchParams.get("search") || "";
     const currentSprintId = currentUrl.searchParams.get("sprintId") || null;
     const currentAssignee = currentUrl.searchParams.get("assignee") || null;
     const currentSort = currentUrl.searchParams.get("sort") || null;
     const currentPriority = currentUrl.searchParams.get("priority") || null;
-    if (currentSlug !== requestSlug || currentTag !== requestTag || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null) || (currentSort || null) !== (requestSort || null) || (currentPriority || null) !== (requestPriority || null))
+    if (currentSlug !== requestSlug || !sameOrderedTags(currentTags, requestTags) || currentSearch !== requestSearch || (currentSprintId || null) !== (requestSprintId || null) || (currentAssignee || null) !== (requestAssignee || null) || (currentSort || null) !== (requestSort || null) || (currentPriority || null) !== (requestPriority || null))
         return;
     if (!priorityFilterExistsOnBoard(board, requestPriority)) {
         currentUrl.searchParams.delete("priority");
         history.replaceState({}, "", currentUrl.pathname + currentUrl.search + currentUrl.hash);
-        await loadBoardBySlug(slug, requestTag, requestSearch, requestSprintId, requestAssignee, requestSort, null);
+        await loadBoardBySlug(slug, requestTags, requestSearch, requestSprintId, requestAssignee, requestSort, null);
         return;
     }
     resetBoardLimitPerLaneFloor();
@@ -1698,7 +1697,6 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     const rendered = await bootstrapLoadedBoardView({
         board,
         slug,
-        tag,
         search,
         isCurrent: () => requestSeq === boardLoadSequence && getSlug() === requestSlug,
         setResolvedRole: (role) => {
@@ -1708,7 +1706,7 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
             lastFetchedProjectId = projectId;
         },
         renderLoadedBoard: (renderOpts) => {
-            renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", effectiveSprintId, requestAssignee, requestSort, requestPriority, renderOpts);
+            renderBoardFromData(board, renderOpts.projectId, requestTags, search || "", effectiveSprintId, requestAssignee, requestSort, requestPriority, renderOpts);
         },
         markLoadSuccess: (loadedSlug) => {
             markBoardLoadSucceeded(loadedSlug);
@@ -1744,8 +1742,8 @@ export async function loadBoardBySlug(slug, tag, search, sprintId = null, assign
     }
 }
 // Register board refresher with orchestration layer
-registerBoardRefresher(async (slug, tag, search, sprintId, assignee, sort, priority) => {
-    await loadBoardBySlug(slug, tag || null, search || null, sprintId ?? null, assignee ?? null, sort ?? null, priority ?? null);
+registerBoardRefresher(async (slug, tags, search, sprintId, assignee, sort, priority) => {
+    await loadBoardBySlug(slug, tags, search || null, sprintId ?? null, assignee ?? null, sort ?? null, priority ?? null);
 });
 // Register sprints-only refresher (chips update without full board reload)
 registerSprintsRefresher(async (slug) => {
@@ -1830,7 +1828,7 @@ async function openTodoFromPath(slug, openTodoSegment) {
     }
 }
 // Main render function for board view
-export async function renderBoard(slug, tag, search, sprintId, assignee = null, sort = null, priority = null, openTodoId = null, openTodoSegment = null, opts = {}) {
+export async function renderBoard(slug, tags, search, sprintId, assignee = null, sort = null, priority = null, openTodoId = null, openTodoSegment = null, opts = {}) {
     ensureBoardI18nBinding();
     cancelPendingSearchReload();
     if (!slug)
@@ -1849,7 +1847,6 @@ export async function renderBoard(slug, tag, search, sprintId, assignee = null, 
         const rendered = await bootstrapLoadedBoardView({
             board,
             slug,
-            tag,
             search,
             isCurrent: () => getSlug() === slug,
             setResolvedRole: (role) => {
@@ -1859,7 +1856,7 @@ export async function renderBoard(slug, tag, search, sprintId, assignee = null, 
                 lastFetchedProjectId = projectId;
             },
             renderLoadedBoard: (renderOpts) => {
-                renderBoardFromData(board, renderOpts.projectId, tag || "", search || "", sprintId, assignee, sort, priority, renderOpts);
+                renderBoardFromData(board, renderOpts.projectId, tags, search || "", sprintId, assignee, sort, priority, renderOpts);
             },
             markLoadSuccess: (loadedSlug) => {
                 markBoardLoadSucceeded(loadedSlug);
@@ -1898,7 +1895,7 @@ export async function renderBoard(slug, tag, search, sprintId, assignee = null, 
     else if (!opts.skipLoad) {
         setInitialBoardLoadInFlight(slug);
         try {
-            await loadBoardBySlug(slug, tag, search || null, sprintId, assignee, sort, priority);
+            await loadBoardBySlug(slug, tags, search || null, sprintId, assignee, sort, priority);
         }
         finally {
             setInitialBoardLoadInFlight(null);

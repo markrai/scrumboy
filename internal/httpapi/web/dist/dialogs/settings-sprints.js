@@ -2,7 +2,7 @@ import { apiFetch } from '../api.js';
 import { emit } from '../events.js';
 import { invalidateBoard, refreshSprintsAndChips } from '../orchestration/board-refresh.js';
 import { recordLocalMutation } from '../realtime/guard.js';
-import { getBoard, getSlug } from '../state/selectors.js';
+import { getBoard, getSlug, getTagsFromUrl } from '../state/selectors.js';
 import { setBoard } from '../state/mutations.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
@@ -234,7 +234,7 @@ export function bindSprintsTabInteractions(options) {
             url.searchParams.delete('sprintId');
             history.replaceState({}, '', url.pathname + url.search);
             showToast(nextEnabled ? t('settings.sprints.toast.enabled') : t('settings.sprints.toast.disabled'));
-            await invalidateBoard(slug, url.searchParams.get('tag') ?? undefined, url.searchParams.get('search') ?? undefined, null, url.searchParams.get('assignee'), url.searchParams.get('sort'), url.searchParams.get('priority'), true).catch(() => { });
+            await invalidateBoard(slug, getTagsFromUrl(), url.searchParams.get('search') ?? undefined, null, url.searchParams.get('assignee'), url.searchParams.get('sort'), url.searchParams.get('priority'), true).catch(() => { });
             if (nextEnabled) {
                 await refreshSprintsAndChips(slug).catch(() => { });
             }

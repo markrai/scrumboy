@@ -239,7 +239,7 @@
   "board.project.renameFailed": "فشلت إعادة تسمية المشروع",
   "board.project.renameTitle": "إعادة تسمية المشروع",
   "board.refreshFailed": "فشل تحديث اللوحة",
-  "board.search.placeholder.desktop": "البحث في المهام...",
+  "board.search.placeholder.desktop": "البحث في المهام",
   "board.search.placeholder.mobile": "بحث",
   "board.selection.multiple": "تحرير العناصر المحددة ({count})",
   "board.selection.single": "تحرير عنصر محدد واحد",

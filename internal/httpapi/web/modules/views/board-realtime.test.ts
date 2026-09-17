@@ -39,7 +39,7 @@ vi.mock("../state/selectors.js", () => ({
   getAuthStatusAvailable: () => selectorState.authStatusAvailable,
   getProjectId: () => selectorState.projectId,
   getSlug: () => selectorState.slug,
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => selectorState.tag ? [selectorState.tag] : [],
   getSearch: () => selectorState.search,
   getSprintIdFromUrl: () => selectorState.sprintId,
   getUser: () => selectorState.user,
@@ -155,7 +155,7 @@ describe("board-realtime drag refresh guards", () => {
     vi.advanceTimersByTime(mod.__getRealtimeRefreshDebounceMsForTest() + 5);
 
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, "deleted");
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", ["bug"], "login", "7", null, null, "deleted");
     expect(mod.__getPendingRealtimeRefreshSlugForTest()).toBeNull();
 
     vi.advanceTimersByTime(mod.__getMaxRefreshDelayMsForTest());
@@ -195,7 +195,7 @@ describe("board-realtime drag refresh guards", () => {
 
     vi.advanceTimersByTime(2);
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", ["bug"], "login", "7", null, null, null);
   });
 
   it("preserves the old force-flush behavior for non-drag guards", async () => {
@@ -208,7 +208,7 @@ describe("board-realtime drag refresh guards", () => {
 
     vi.advanceTimersByTime(20);
     expect(invalidateBoardMock).toHaveBeenCalledTimes(1);
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", ["bug"], "login", "7", null, null, null);
   });
 
   it("cancels a filter-complete realtime recovery when a manual board load starts", async () => {

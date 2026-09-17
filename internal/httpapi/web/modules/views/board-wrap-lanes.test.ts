@@ -174,7 +174,7 @@ const enCatalog = {
   'board.filters.unscheduled': 'Unscheduled',
   'board.loadMore': 'Load more',
   'board.noResults': 'No todos found matching "{search}"',
-  'board.search.placeholder.desktop': 'Search todos...',
+  'board.search.placeholder.desktop': 'Search todos & tags',
   'board.search.placeholder.mobile': 'Search',
   'board.todo.dragCard': 'Drag card',
 };
@@ -214,7 +214,7 @@ async function renderPrefetchedBoard(
   mod: typeof import('./board.js'),
   board: Board,
 ): Promise<void> {
-  await mod.renderBoard('alpha', '', '', null, null, null, null, null, null, {
+  await mod.renderBoard('alpha', [], '', null, null, null, null, null, null, {
     prefetchedBoard: board,
   });
   await flushPromises();

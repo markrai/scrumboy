@@ -82,27 +82,78 @@ func normalizeTagFilter(tag string, durable bool) string {
 	return trimmed
 }
 
-// boardTagFilter is a tag filter resolved once for a board request.
-// NoFilter means show every todo; otherwise TagIDs are the matching backing rows
-// (empty means the filter matches nothing — callers must not fall back to unfiltered).
+// boardTagFilter is an ordered set of logical tag filters resolved once for a
+// board request. NoFilter means show every todo. Otherwise each entry in
+// TagIDGroups contains the physical tag rows that may satisfy one logical pin
+// (OR within a group, AND across groups). An empty group means the filter
+// matches nothing and callers must not fall back to an unfiltered query.
 type boardTagFilter struct {
-	NoFilter bool
-	TagIDs   []int64
+	NoFilter    bool
+	TagIDGroups [][]int64
 }
 
-// resolveBoardTagFilter normalizes and resolves a raw tag filter for one board request.
-// The result is safe to reuse across the full-board, soft-cap count, window, and every
-// paged lane list/count for that request.
-func (s *Store) resolveBoardTagFilter(ctx context.Context, projectID int64, durable bool, rawFilter string) (boardTagFilter, error) {
-	key := normalizeTagFilter(rawFilter, durable)
-	if key == "" {
+// normalizeBoardTagFilters applies the store-authoritative logical identity.
+// Durable aliases collapse through TagGroupKey; temporary boards retain exact
+// trimmed names. First-seen order and spelling are preserved in labels.
+func normalizeBoardTagFilters(rawFilters []string, durable bool) (keys, labels []string) {
+	seen := make(map[string]struct{}, len(rawFilters))
+	for _, raw := range rawFilters {
+		label := strings.TrimSpace(raw)
+		key := normalizeTagFilter(label, durable)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+		labels = append(labels, label)
+	}
+	return keys, labels
+}
+
+// resolveBoardTagFilter normalizes and resolves every selected logical tag in
+// one project association scan. The result is safe to reuse across the
+// full-board, soft-cap count, window, and every paged lane list/count for the
+// request.
+func (s *Store) resolveBoardTagFilter(ctx context.Context, projectID int64, durable bool, rawFilters []string) (boardTagFilter, error) {
+	keys, _ := normalizeBoardTagFilters(rawFilters, durable)
+	if len(keys) == 0 {
 		return boardTagFilter{NoFilter: true}, nil
 	}
-	ids, err := s.resolveTagFilterRowIDs(ctx, projectID, key, durable)
-	if err != nil {
-		return boardTagFilter{}, err
+
+	groupByKey := make(map[string]int, len(keys))
+	groups := make([][]int64, len(keys))
+	for i, key := range keys {
+		groupByKey[key] = i
 	}
-	return boardTagFilter{TagIDs: ids}, nil
+
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT g.id, g.name
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+ORDER BY g.id`, projectID)
+	if err != nil {
+		return boardTagFilter{}, fmt.Errorf("resolve tag filters: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return boardTagFilter{}, fmt.Errorf("scan tag filter row: %w", err)
+		}
+		key := normalizeTagFilter(name, durable)
+		if group, ok := groupByKey[key]; ok {
+			groups[group] = append(groups[group], id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return boardTagFilter{}, fmt.Errorf("rows tag filters: %w", err)
+	}
+	return boardTagFilter{TagIDGroups: groups}, nil
 }
 
 func normalizeTags(in []string) ([]string, error) {
@@ -330,23 +381,24 @@ JOIN todos t ON t.id = tt.todo_id AND t.project_id = ? AND t.archived_at IS NULL
 
 // listActiveBoardTags returns the board payload's current-work tag projection.
 // Unlike listTagCounts it never enumerates archived associations during an
-// ordinary board read. selectedTag is the sole historical exception: when a URL
-// explicitly filters on an inactive catalog tag, that tag remains in the payload
-// with count zero so clients can expose and clear the otherwise invisible filter.
+// ordinary board read. selectedTags are the sole historical exception: when a
+// URL explicitly filters on inactive catalog tags, every selected logical tag
+// remains in the payload with count zero so clients can expose and clear each
+// otherwise invisible filter.
 func (s *Store) listActiveBoardTags(
 	ctx context.Context,
 	projectID int64,
 	viewerUserID *int64,
 	viewerRole *ProjectRole,
 	groupByName bool,
-	selectedTag string,
+	selectedTags []string,
 ) ([]TagCount, error) {
 	viewerID := int64(0)
 	if viewerUserID != nil {
 		viewerID = *viewerUserID
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT DISTINCT g.id, g.name, g.user_id, g.project_id, g.color, utc.color, t.id
+SELECT DISTINCT g.id, g.name, g.user_id, g.project_id, g.color, utc.color, t.id, t.updated_at
 FROM todos t INDEXED BY idx_todos_active_project_updated_local_id
 JOIN todo_tags tt ON tt.todo_id = t.id
 JOIN tags g ON g.id = tt.tag_id
@@ -359,10 +411,11 @@ ORDER BY g.id, t.id`, viewerID, projectID)
 
 	metaByID := make(map[int64]tagRowMeta)
 	todosByID := make(map[int64]map[int64]struct{})
+	lastActiveByID := make(map[int64]time.Time)
 	for rows.Next() {
 		var m tagRowMeta
-		var todoID int64
-		if err := rows.Scan(&m.tagID, &m.name, &m.userID, &m.projectID, &m.boardColor, &m.viewerColor, &todoID); err != nil {
+		var todoID, updatedAtMs int64
+		if err := rows.Scan(&m.tagID, &m.name, &m.userID, &m.projectID, &m.boardColor, &m.viewerColor, &todoID, &updatedAtMs); err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("scan active board tag: %w", err)
 		}
@@ -371,32 +424,43 @@ ORDER BY g.id, t.id`, viewerID, projectID)
 			todosByID[m.tagID] = make(map[int64]struct{})
 		}
 		todosByID[m.tagID][todoID] = struct{}{}
+		updatedAt := time.UnixMilli(updatedAtMs).UTC()
+		if latest, ok := lastActiveByID[m.tagID]; !ok || updatedAt.After(latest) {
+			lastActiveByID[m.tagID] = updatedAt
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows active board tags: %w", err)
 	}
 
-	selectedKey := normalizeTagFilter(selectedTag, groupByName)
-	selectedAlreadyActive := false
+	selectedKeys, selectedLabels := normalizeBoardTagFilters(selectedTags, groupByName)
+	activeKeys := make(map[string]struct{}, len(metaByID))
 	for _, m := range metaByID {
-		name := m.name
-		if groupByName {
-			name = TagGroupKey(name)
-		}
-		if name == selectedKey {
-			selectedAlreadyActive = true
-			break
+		activeKeys[normalizeTagFilter(m.name, groupByName)] = struct{}{}
+	}
+	missingKeys := make(map[string]string)
+	for i, key := range selectedKeys {
+		if _, active := activeKeys[key]; !active {
+			missingKeys[key] = selectedLabels[i]
 		}
 	}
-	if selectedKey != "" && !selectedAlreadyActive {
-		selectedIDs, err := s.selectedBoardTagRowIDs(ctx, projectID, selectedKey, groupByName)
+	if len(missingKeys) > 0 {
+		selectedIDsByKey, err := s.selectedBoardTagRowIDs(ctx, projectID, missingKeys, groupByName)
 		if err != nil {
 			return nil, err
 		}
-		missingIDs := make([]int64, 0, len(selectedIDs))
-		for _, tagID := range selectedIDs {
-			if _, exists := metaByID[tagID]; !exists {
+		var missingIDs []int64
+		seenIDs := make(map[int64]struct{})
+		for _, selectedIDs := range selectedIDsByKey {
+			for _, tagID := range selectedIDs {
+				if _, exists := metaByID[tagID]; exists {
+					continue
+				}
+				if _, exists := seenIDs[tagID]; exists {
+					continue
+				}
+				seenIDs[tagID] = struct{}{}
 				missingIDs = append(missingIDs, tagID)
 			}
 		}
@@ -430,8 +494,14 @@ ORDER BY g.id`, args...)
 	if !groupByName {
 		isMaintainer := viewerRole != nil && viewerRole.HasMinimumRole(RoleMaintainer)
 		out := make([]TagCount, 0, len(metaByID))
+		projectedNames := make(map[string]struct{}, len(metaByID))
 		for tagID, m := range metaByID {
 			tc := TagCount{TagID: tagID, Name: m.name, Count: len(todosByID[tagID]), CanUpdateColor: true}
+			if lastActive, ok := lastActiveByID[tagID]; ok {
+				lastActiveCopy := lastActive
+				tc.LastActiveAt = &lastActiveCopy
+			}
+			projectedNames[m.name] = struct{}{}
 			if m.userID.Valid {
 				tc.CanDeleteMine = viewerUserID != nil && m.userID.Int64 == *viewerUserID
 				if m.viewerColor.Valid && m.viewerColor.String != "" {
@@ -447,6 +517,11 @@ ORDER BY g.id`, args...)
 			}
 			out = append(out, tc)
 		}
+		for i, key := range selectedKeys {
+			if _, projected := projectedNames[key]; !projected {
+				out = append(out, TagCount{Name: selectedLabels[i], Count: 0})
+			}
+		}
 		sort.Slice(out, func(i, j int) bool {
 			if out[i].Name == out[j].Name {
 				return out[i].TagID < out[j].TagID
@@ -458,6 +533,7 @@ ORDER BY g.id`, args...)
 
 	grouped := make(map[string][]tagRowMeta)
 	todosByKey := make(map[string]map[int64]struct{})
+	lastActiveByKey := make(map[string]time.Time)
 	for tagID, m := range metaByID {
 		key := TagGroupKey(m.name)
 		grouped[key] = append(grouped[key], m)
@@ -466,6 +542,11 @@ ORDER BY g.id`, args...)
 		}
 		for todoID := range todosByID[tagID] {
 			todosByKey[key][todoID] = struct{}{}
+		}
+		if lastActive, ok := lastActiveByID[tagID]; ok {
+			if latest, exists := lastActiveByKey[key]; !exists || lastActive.After(latest) {
+				lastActiveByKey[key] = lastActive
+			}
 		}
 	}
 
@@ -493,6 +574,10 @@ ORDER BY g.id`, args...)
 			Count: len(todosByKey[key]),
 			Color: pickGroupedTagColor(rowsForName, viewerUserID, historicalViewerPref),
 		}
+		if lastActive, ok := lastActiveByKey[key]; ok {
+			lastActiveCopy := lastActive
+			tc.LastActiveAt = &lastActiveCopy
+		}
 		if personal {
 			if viewerUserID != nil {
 				tc.CanUpdateColor = true
@@ -510,65 +595,54 @@ ORDER BY g.id`, args...)
 		}
 		out = append(out, tc)
 	}
+	for i, key := range selectedKeys {
+		if _, projected := grouped[key]; !projected {
+			out = append(out, TagCount{Name: selectedLabels[i], Count: 0})
+		}
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
-// selectedBoardTagRowIDs resolves the selected-tag exception. Historical
-// association scans are intentionally isolated here and run only when the
-// request actually carries a tag filter.
-func (s *Store) selectedBoardTagRowIDs(ctx context.Context, projectID int64, selectedKey string, durable bool) ([]int64, error) {
-	seen := make(map[int64]struct{})
-	var out []int64
-	add := func(ids []int64) {
-		for _, id := range ids {
-			if _, exists := seen[id]; exists {
-				continue
-			}
-			seen[id] = struct{}{}
-			out = append(out, id)
-		}
-	}
-
-	boardRows, err := s.db.QueryContext(ctx, `
-SELECT id, name
-FROM tags
-WHERE project_id = ? AND user_id IS NULL
-ORDER BY id`, projectID)
+// selectedBoardTagRowIDs resolves all selected-tag metadata exceptions in one
+// catalog/association query. Historical association scans are intentionally
+// isolated here and run only when a request carries inactive selected tags.
+func (s *Store) selectedBoardTagRowIDs(ctx context.Context, projectID int64, selectedKeys map[string]string, durable bool) (map[string][]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name FROM (
+  SELECT g.id, g.name
+  FROM tags g
+  WHERE g.project_id = ? AND g.user_id IS NULL
+  UNION
+  SELECT g.id, g.name
+  FROM tags g
+  JOIN todo_tags tt ON tt.tag_id = g.id
+  JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+  UNION
+  SELECT g.id, g.name
+  FROM project_tags pt
+  JOIN tags g ON g.id = pt.tag_id
+  WHERE pt.project_id = ? AND g.user_id IS NOT NULL
+)
+ORDER BY id`, projectID, projectID, projectID)
 	if err != nil {
-		return nil, fmt.Errorf("resolve selected board-scoped tag: %w", err)
+		return nil, fmt.Errorf("resolve selected board tag metadata: %w", err)
 	}
-	for boardRows.Next() {
+	defer rows.Close()
+	out := make(map[string][]int64, len(selectedKeys))
+	for rows.Next() {
 		var id int64
 		var name string
-		if err := boardRows.Scan(&id, &name); err != nil {
-			boardRows.Close()
-			return nil, err
+		if err := rows.Scan(&id, &name); err != nil {
+			return nil, fmt.Errorf("scan selected board tag metadata: %w", err)
 		}
-		match := name == selectedKey
-		if durable {
-			match = TagGroupKey(name) == selectedKey
-		}
-		if match {
-			add([]int64{id})
+		key := normalizeTagFilter(name, durable)
+		if _, selected := selectedKeys[key]; selected {
+			out[key] = append(out[key], id)
 		}
 	}
-	boardRows.Close()
-	if err := boardRows.Err(); err != nil {
-		return nil, err
-	}
-
-	usedIDs, err := s.resolveTagFilterRowIDs(ctx, projectID, selectedKey, durable)
-	if err != nil {
-		return nil, err
-	}
-	add(usedIDs)
-	if durable {
-		linkedIDs, err := s.projectLinkedPersonalTagRowsForName(ctx, projectID, selectedKey)
-		if err != nil {
-			return nil, err
-		}
-		add(linkedIDs)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows selected board tag metadata: %w", err)
 	}
 	return out, nil
 }
@@ -1511,49 +1585,6 @@ ORDER BY g.id`, projectID)
 		}
 	}
 	return ids, rows.Err()
-}
-
-// resolveTagFilterRowIDs returns the ids of every tag row used by a todo in the project
-// that the board tag filter should select (filterKey already normalized by normalizeTagFilter).
-//
-// Durable projects resolve by TagGroupKey so the filter agrees with the grouped chip:
-// clicking a "make-space" chip whose count spans a legacy "make space" row must return
-// both todos. Temporary boards match the raw stored name exactly, because their chips
-// are still one entry per tag row and normalizeTagFilter preserved that displayed label.
-//
-// The candidate set is restricted to rows actually used in the project, which is also
-// what keeps the resulting IN list small. An empty result means the filter matches no
-// row: callers must return an empty page rather than falling back to an unfiltered query.
-func (s *Store) resolveTagFilterRowIDs(ctx context.Context, projectID int64, filterKey string, durable bool) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT DISTINCT g.id, g.name
-FROM tags g
-JOIN todo_tags tt ON tt.tag_id = g.id
-JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
-ORDER BY g.id`, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve tag filter: %w", err)
-	}
-	defer rows.Close()
-	var ids []int64
-	for rows.Next() {
-		var id int64
-		var name string
-		if err := rows.Scan(&id, &name); err != nil {
-			return nil, fmt.Errorf("scan tag filter row: %w", err)
-		}
-		match := name == filterKey
-		if durable {
-			match = TagGroupKey(name) == filterKey
-		}
-		if match {
-			ids = append(ids, id)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows tag filter: %w", err)
-	}
-	return ids, nil
 }
 
 // tagFilterPlaceholders renders the placeholder list and bind args for a resolved

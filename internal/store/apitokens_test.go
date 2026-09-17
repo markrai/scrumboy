@@ -13,8 +13,8 @@ import (
 func TestCreateUserAPITokenAndGetUserByAPIToken(t *testing.T) {
 	dir := t.TempDir()
 	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
-		BusyTimeout:   5000,
-		JournalMode:   "WAL",
+		BusyTimeout: 5000,
+		JournalMode: "WAL",
 		Synchronous: "FULL",
 	})
 	if err != nil {

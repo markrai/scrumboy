@@ -188,7 +188,7 @@ const enCatalog = {
   "board.filters.unscheduled": "Unscheduled",
   "board.loadMore": "Load more",
   "board.noResults": "No todos found matching \"{search}\"",
-  "board.search.placeholder.desktop": "Search todos...",
+  "board.search.placeholder.desktop": "Search todos & tags",
   "board.search.placeholder.mobile": "Search",
   "board.todo.dragCard": "Drag card",
 };
@@ -230,7 +230,7 @@ async function renderPrefetchedBoard(
 ): Promise<void> {
   await mod.renderBoard(
     "alpha",
-    opts.tag ?? "",
+    opts.tag ? [opts.tag] : [],
     opts.search ?? "needle",
     null,
     null,
@@ -284,7 +284,6 @@ describe("board i18n locale switching", () => {
     const mutations = await import("../state/mutations.js");
     mutations.setUser(null);
     mutations.setAuthStatusAvailable(false);
-    mutations.setTag("");
     mutations.setSearch("");
     voiceFlowEnabled.value = false;
     document.body.innerHTML = "";
@@ -316,7 +315,7 @@ describe("board i18n locale switching", () => {
     }] as any;
     const mod = await import("./board.js");
 
-    await mod.renderBoard("alpha", "", "needle", null, null, "newest", null, null, null, {
+    await mod.renderBoard("alpha", [], "needle", null, null, "newest", null, null, null, {
       prefetchedBoard: viewerBoard,
     });
     await flushPromises();
@@ -428,25 +427,27 @@ describe("board i18n locale switching", () => {
   });
 
   it("switches Omni and Legacy surfaces in place without changing URL filters or moving VoiceFlow outside the topbar", async () => {
-    const originalPath = "/alpha?tag=bug&search=query&sprintId=7&assignee=me&sort=newest&priority=high";
+    const originalPath = "/alpha?tag=bug&tag=feature&search=query&sprintId=7&assignee=me&sort=newest&priority=high";
     window.history.replaceState({}, "", originalPath);
     localStorage.setItem("scrumboy.boardFilterLayout", "omni");
     const i18n = await import("../i18n/index.js");
     await i18n.initI18n({ locale: "en", loadLocale: vi.fn(async () => enCatalog) });
     const mutations = await import("../state/mutations.js");
-    mutations.setTag("bug");
     mutations.setSearch("query");
     const mod = await import("./board.js");
 
-    await mod.renderBoard("alpha", "bug", "query", "7", "me", "newest", "high", null, null, {
+    await mod.renderBoard("alpha", ["bug", "feature"], "query", "7", "me", "newest", "high", null, null, {
       prefetchedBoard: board(),
     });
     await flushPromises();
 
-    expect(document.querySelector(".topbar #searchInput")).toBeNull();
-    expect(document.querySelector(".container > .filters--omni #searchInput")).not.toBeNull();
-    expect(document.querySelector(".container > .filters--omni #omniTagPills")).not.toBeNull();
+    expect(document.querySelector(".topbar #searchInput")).not.toBeNull();
+    expect(document.querySelector(".container > .filters--omni #searchInput")).toBeNull();
+    expect(document.querySelector(".container > .filters--omni #omniCandidateViewport")).not.toBeNull();
     expect(document.querySelectorAll("#searchInput")).toHaveLength(1);
+    const omniSearchWrapper = document.querySelector(".topbar .search-input-wrapper");
+    expect(omniSearchWrapper?.previousElementSibling?.id).toBe("archiveBtn");
+    expect(omniSearchWrapper?.nextElementSibling?.id).not.toBe("archiveBtn");
 
     voiceFlowEnabled.value = true;
     const events = await import("../events.js");
@@ -463,14 +464,14 @@ describe("board i18n locale switching", () => {
 
     expect(document.querySelector(".topbar #searchInput")).not.toBeNull();
     expect(document.querySelector(".container > .filters #tagChips")).not.toBeNull();
-    expect(document.querySelector("#omniTagPills")).toBeNull();
+    expect(document.querySelector("#omniCandidateViewport")).toBeNull();
     expect(document.querySelectorAll("#searchInput")).toHaveLength(1);
     expect(window.location.pathname + window.location.search).toBe(originalPath);
 
     preferences.setBoardFilterLayoutPreference("omni", { skipRemote: true });
 
-    expect(document.querySelector(".topbar #searchInput")).toBeNull();
-    expect(document.querySelector(".container > .filters--omni #searchInput")).not.toBeNull();
+    expect(document.querySelector(".topbar #searchInput")).not.toBeNull();
+    expect(document.querySelector(".container > .filters--omni #searchInput")).toBeNull();
     expect(document.querySelector("#tagChips")).toBeNull();
     expect(document.querySelectorAll("#searchInput")).toHaveLength(1);
     expect(window.location.pathname + window.location.search).toBe(originalPath);

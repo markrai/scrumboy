@@ -354,6 +354,9 @@ type TagCount struct {
 	Name  string
 	Count int
 	Color *string // Hex color code (e.g., "#FF5733"), nil if no custom color
+	// LastActiveAt is the latest updated_at among non-archived todos that
+	// currently carry this logical tag. It is nil for zero-active selections.
+	LastActiveAt *time.Time
 	// CanDeleteMine is true when the viewer owns at least one backing personal row.
 	// The action is "delete my personal tag", which is global to that user.
 	CanDeleteMine bool
