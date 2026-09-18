@@ -1224,7 +1224,6 @@
   "todo.status.testing": "[!! Testing !!]",
   "todo.tags.placeholder": "[!! Type tag and press Enter or Tab !!]",
   "todo.tags.remove": "[!! Remove tag !!]",
-  "todo.tags.showAllProject": "[!! Show all project tags !!]",
   "todo.updated": "[!! Todo updated !!]",
   "tooltips.boardSearch": "[!! Search titles and notes. Combine with tag, sprint, and other filters to narrow the board. !!]",
   "tooltips.doneLane": "[!! Exactly one lane counts as done. Stories there get a completion timestamp used for dashboard stats and burndown, even if the lane is named Shipped instead of Done. !!]",

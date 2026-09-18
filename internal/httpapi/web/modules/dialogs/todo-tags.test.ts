@@ -256,7 +256,7 @@ describe('todo-tags', () => {
     ]);
   });
 
-  it('Show all loads the full current-project catalog and never the Mine library', async () => {
+  it('loads the full current-project catalog including historical tags and never the Mine library', async () => {
     const mod = await import('./todo-tag-suggestions.js');
     const fetcher = vi.fn(async () => [
       { name: 'historical', count: 0 },

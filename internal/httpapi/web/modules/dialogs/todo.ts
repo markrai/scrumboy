@@ -45,7 +45,11 @@ import {
   resetTodoTagAutocompleteBindings,
   setupTagAutocomplete,
 } from './todo-tags.js';
-import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions } from './todo-tag-suggestions.js';
+import {
+  defaultTodoTagSuggestions,
+  loadAllProjectTagSuggestions,
+  mergeTodoTagSuggestions,
+} from './todo-tag-suggestions.js';
 
 export {
   getTodoFormPermissions,
@@ -80,6 +84,7 @@ let todoTooltipsApplied = false;
 let todoDialogBaseline: TodoDialogSnapshot | null = null;
 let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort: AbortController | null = null;
+let todoDialogOpenGeneration = 0;
 
 function sprintStateLabel(state: string): string {
   const key = `todo.sprint.state.${state}`;
@@ -405,6 +410,7 @@ export async function openTodoDialog(opts: {
   role?: string | null;
 }): Promise<void> {
   const { mode, todo, status, onNavigateToLinkedTodo } = opts;
+  const openGeneration = ++todoDialogOpenGeneration;
   const isArchived = mode === "edit" && !!todo?.archivedAt;
   const tagsToShow: string[] = mode === "create" ? [] : (todo?.tags || []);
   setEditingTodo(mode === "edit" ? todo : null);
@@ -433,25 +439,6 @@ export async function openTodoDialog(opts: {
     setTagColors(tagColors);
   };
   installTagSuggestions(defaultTodoTagSuggestions(board, tagsToShow));
-
-  const showAllProjectTagsBtn = document.getElementById("showAllProjectTagsBtn") as HTMLButtonElement | null;
-  if (showAllProjectTagsBtn) {
-    showAllProjectTagsBtn.hidden = !getSlug() || !permissions.canEditTags;
-    showAllProjectTagsBtn.disabled = false;
-    showAllProjectTagsBtn.onclick = async () => {
-      const slug = getSlug();
-      if (!slug) return;
-      showAllProjectTagsBtn.disabled = true;
-      try {
-        installTagSuggestions(await loadAllProjectTagSuggestions(slug, getTagsFromChips()));
-        showAllProjectTagsBtn.hidden = true;
-        setupTagAutocomplete();
-      } catch (err) {
-        console.error("Failed to fetch project tag catalog:", err);
-        showAllProjectTagsBtn.disabled = false;
-      }
-    };
-  }
 
   const assigneeField = document.getElementById("todoAssigneeField");
   const assigneeSelect = document.getElementById("todoAssignee") as HTMLSelectElement | null;
@@ -704,6 +691,26 @@ export async function openTodoDialog(opts: {
 
   if (permissions.canEditTags) {
     setupTagAutocomplete();
+  }
+
+  const catalogSlug = getSlug();
+  if (catalogSlug && permissions.canEditTags) {
+    void loadAllProjectTagSuggestions(catalogSlug)
+      .then((catalog) => {
+        const dialog = todoDialog as HTMLDialogElement | null;
+        if (
+          openGeneration !== todoDialogOpenGeneration ||
+          getSlug() !== catalogSlug ||
+          !dialog?.open
+        ) {
+          return;
+        }
+        installTagSuggestions(mergeTodoTagSuggestions(catalog, getTagsFromChips()));
+        setupTagAutocomplete();
+      })
+      .catch((err) => {
+        console.error("Failed to fetch project tag catalog:", err);
+      });
   }
 
   bindShareTodoButton();

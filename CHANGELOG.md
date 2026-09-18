@@ -54,9 +54,9 @@
   one non-archived story, counted by unique active story. An explicitly selected inactive
   tag is included with count zero so deep-linked filters never become invisible. Full,
   archive-inclusive tag catalogs remain unchanged in tag management, the project catalog
-  APIs/MCP tools, and exports. Story editing starts from active project tags plus the
-  current story's own tags and can explicitly load the full project catalog; Voice Create
-  uses only active project tags by default.
+  APIs/MCP tools, and exports. Story editing hydrates the full archive-inclusive project
+  catalog asynchronously for autocomplete; Voice Create uses only active project tags by
+  default.
 
 - **Story archival** - Stories can be archived and restored without changing their
   workflow state. Archival is orthogonal to Done: `columnKey`, `rank`, `doneAt`, the

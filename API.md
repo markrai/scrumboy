@@ -576,8 +576,9 @@ Activate/close enforce sprint state (e.g. planned vs active); violations return 
 
 Project tag catalog operations remain archive-inclusive and are distinct from the active
 `data.tags` projection returned by board reads. They are the source for tag management,
-explicit **Show all project tags** in story editing, Settings/MCP catalog workflows, and
-export; selecting a tag from the catalog does not delete or detach historical associations.
+story-editor autocomplete (hydrated asynchronously from the project catalog), Settings/MCP
+catalog workflows, and export; selecting a tag from the catalog does not delete or detach
+historical associations.
 
 | Tool | Input | Output |
 |------|-------|--------|

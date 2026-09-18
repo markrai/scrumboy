@@ -12,7 +12,7 @@ import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
-import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions } from './todo-tag-suggestions.js';
+import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions, mergeTodoTagSuggestions, } from './todo-tag-suggestions.js';
 export { getTodoFormPermissions, } from './todo-permissions.js';
 export { getTagsFromChips, normalizeTagName, removeTag, renderTagAutocomplete, renderTagsChips, setupTagAutocomplete, } from './todo-tags.js';
 let todoNotesMode = "markdown";
@@ -22,6 +22,7 @@ let todoTooltipsApplied = false;
 let todoDialogBaseline = null;
 let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort = null;
+let todoDialogOpenGeneration = 0;
 function sprintStateLabel(state) {
     const key = `todo.sprint.state.${state}`;
     return state && hasI18nKey(key) ? t(key) : state;
@@ -299,6 +300,7 @@ export function __isTodoDialogDirtyForTest() {
 }
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
+    const openGeneration = ++todoDialogOpenGeneration;
     const isArchived = mode === "edit" && !!todo?.archivedAt;
     const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
     setEditingTodo(mode === "edit" ? todo : null);
@@ -326,26 +328,6 @@ export async function openTodoDialog(opts) {
         setTagColors(tagColors);
     };
     installTagSuggestions(defaultTodoTagSuggestions(board, tagsToShow));
-    const showAllProjectTagsBtn = document.getElementById("showAllProjectTagsBtn");
-    if (showAllProjectTagsBtn) {
-        showAllProjectTagsBtn.hidden = !getSlug() || !permissions.canEditTags;
-        showAllProjectTagsBtn.disabled = false;
-        showAllProjectTagsBtn.onclick = async () => {
-            const slug = getSlug();
-            if (!slug)
-                return;
-            showAllProjectTagsBtn.disabled = true;
-            try {
-                installTagSuggestions(await loadAllProjectTagSuggestions(slug, getTagsFromChips()));
-                showAllProjectTagsBtn.hidden = true;
-                setupTagAutocomplete();
-            }
-            catch (err) {
-                console.error("Failed to fetch project tag catalog:", err);
-                showAllProjectTagsBtn.disabled = false;
-            }
-        };
-    }
     const assigneeField = document.getElementById("todoAssigneeField");
     const assigneeSelect = document.getElementById("todoAssignee");
     const showAssignee = assigneeField && assigneeSelect && !isAnonymousBoard(getBoard());
@@ -607,6 +589,23 @@ export async function openTodoDialog(opts) {
     renderTagsChips(tagsToShow, { canRemove: permissions.canEditTags });
     if (permissions.canEditTags) {
         setupTagAutocomplete();
+    }
+    const catalogSlug = getSlug();
+    if (catalogSlug && permissions.canEditTags) {
+        void loadAllProjectTagSuggestions(catalogSlug)
+            .then((catalog) => {
+            const dialog = todoDialog;
+            if (openGeneration !== todoDialogOpenGeneration ||
+                getSlug() !== catalogSlug ||
+                !dialog?.open) {
+                return;
+            }
+            installTagSuggestions(mergeTodoTagSuggestions(catalog, getTagsFromChips()));
+            setupTagAutocomplete();
+        })
+            .catch((err) => {
+            console.error("Failed to fetch project tag catalog:", err);
+        });
     }
     bindShareTodoButton();
     captureTodoDialogBaseline();

@@ -1349,6 +1349,5 @@
   "settings.customization.boardFilterLayout.title": "Board filter layout",
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
-  "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "todo.tags.showAllProject": "Show all project tags"
+  "settings.customization.boardFilterLayout.legacy": "Legacy pills"
 }
