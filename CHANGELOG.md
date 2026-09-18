@@ -2,6 +2,28 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.36.2] - 2026-09-18
+
+### Fixed
+
+- **Creator card-move email copy** - Card-move SMTP subjects and bodies for
+  ordinary activity and **Cards I opened** share the same move wording and
+  field order (`Project:`, `Card:`, `Moved by:`, `Status:`), omit a redundant
+  event heading, and keep **Assigned to me** subject precedence when a
+  mutation also moved the card.
+- **Unavailable client routes** - Unmatched paths and missing/inaccessible
+  board or archive destinations rewrite to `/` (login entry) without a toast;
+  unauthenticated visits preserve a same-origin `next` for post-login return.
+
+### Changed
+
+- **Story editor tag catalog** - Editing a story hydrates the full
+  archive-inclusive project tag catalog asynchronously for autocomplete
+  instead of requiring an explicit **Show all project tags** action. Voice
+  Create still uses only active project tags by default.
+- **Start sprint confirm** - The sprint activation confirm action uses the
+  success (green) button style instead of the destructive (red) style.
+
 ## [3.36.1] - 2026-09-17
 
 ### Fixed
