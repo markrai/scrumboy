@@ -142,12 +142,23 @@ mistaken for a second activity event. When the accepted event carries an entity 
 identity, that identity is from the event that was queued — not a digest of later mutations in the
 same window.
 
-**Activity copy.** SMTP activity bodies use a deterministic plain-text hierarchy: event heading,
-actor, entity, project, event-specific details, then CTA. Fields use action/domain labels such as
-`Moved by:`, `Card:`, `Sprint:`, `Column:`, `Tag:`, `Project:`, and `Status:`; unavailable optional
-fields are omitted. Live card notifications with a valid card identity link to the canonical
-`/<project-slug>/t/<localId>` card route. Deleted-card and project-level notifications link to the
-project when a live destination exists, and deleted projects have no dead CTA.
+**Activity copy.** SMTP activity bodies use a deterministic plain-text hierarchy: optional
+event heading, then labeled fields, then CTA. Card-move emails omit the heading (the subject
+already carries the action) and order fields as `Project:`, `Card:`, `Moved by:`, `Status:`.
+Other activity emails keep heading → actor → entity → project → event-specific details → CTA.
+Fields use action/domain labels such as `Moved by:`, `Card:`, `Sprint:`, `Column:`, `Tag:`,
+`Project:`, and `Status:`; unavailable optional fields are omitted. Live card notifications with
+a valid card identity link to the canonical `/<project-slug>/t/<localId>` card route.
+Deleted-card and project-level notifications link to the project when a live destination exists,
+and deleted projects have no dead CTA.
+
+Card-move subjects prefer `{project}: {#localId title} Moved to {destination}` when a real
+column transition is known, otherwise `{project}: {#localId title} Moved` (or a generic
+`{project}: card moved` when card identity is unavailable). Ordinary card-activity and
+**Cards I opened** move emails share that subject. Non-move **Cards I opened** emails keep
+`A card you opened was updated: {title}`. When category precedence selects **Assigned to me**,
+the subject stays `Assigned to you: {title}` even if the same mutation also moved the card.
+Other non-move activity emails keep `{project}: {reason} — {entity}` enrichment.
 
 Card, sprint, and project-activity emails are enriched **opportunistically** from data already
 present on the successful mutation path (card `#localId` + title, sprint/column/tag display name,

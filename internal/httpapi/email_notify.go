@@ -336,7 +336,13 @@ func (w *creatorEmailWork) prepare(ctx context.Context) (mailDelivery, bool, err
 	if err != nil || user.Email == "" {
 		return mailDelivery{}, false, nil
 	}
-	subject, body, ok := w.notifier.renderCreatorEmail(authorized, category, user.Name)
+	actorName := ""
+	if authorized.ActivityReason == todoapp.RefreshReasonTodoMoved && authorized.ActorUserID > 0 {
+		if actor, err := w.notifier.store.GetUser(ctx, authorized.ActorUserID); err == nil {
+			actorName = strings.TrimSpace(actor.Name)
+		}
+	}
+	subject, body, ok := w.notifier.renderCreatorEmail(authorized, category, user.Name, actorName)
 	if !ok {
 		return mailDelivery{}, false, nil
 	}
@@ -378,7 +384,7 @@ func selectCreatorEmailCategory(pref store.EmailNotifyPref, candidate todoapp.Au
 	return "", false
 }
 
-func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNotification, category emailCategory, recipientName string) (string, string, bool) {
+func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNotification, category emailCategory, recipientName, actorName string) (string, string, bool) {
 	switch category {
 	case emailCategoryAssigned:
 		subject := fmt.Sprintf("Assigned to you: %s", candidate.Title)
@@ -396,21 +402,39 @@ func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNo
 		})
 		return subject, body, true
 	case emailCategoryCreatedByMe:
-		action := "updated"
-		if candidate.ActivityReason == todoapp.RefreshReasonTodoMoved {
-			action = "moved"
-		}
-		subject := fmt.Sprintf("A card you opened was %s: %s", action, candidate.Title)
 		card, ok := cardIdentity(candidate.LocalID, candidate.Title)
-		fields := []notificationField{{label: "Project", value: candidate.ProjectName}}
+		fields := make([]notificationField, 0, 4)
 		ctaLabel, ctaURL := "View project", n.projectURL(candidate.ProjectSlug)
-		if ok {
-			fields = append([]notificationField{{label: "Card", value: card}}, fields...)
-			ctaLabel, ctaURL = "View card", n.cardURL(candidate.ProjectSlug, candidate.LocalID)
+		var subject, heading string
+		if candidate.ActivityReason == todoapp.RefreshReasonTodoMoved {
+			cardValue := ""
+			if ok {
+				cardValue = card
+			}
+			subject = cardMovedSubject(
+				candidate.ProjectName,
+				cardValue,
+				moveDestinationName(candidate.ActivityReason, candidate.FromName, candidate.ToName),
+			)
+			fields = append(fields, notificationField{label: "Project", value: candidate.ProjectName})
+			if ok {
+				fields = append(fields, notificationField{label: "Card", value: card})
+				ctaLabel, ctaURL = "View card", n.cardURL(candidate.ProjectSlug, candidate.LocalID)
+			}
+			fields = append(fields, notificationField{label: "Moved by", value: actorName})
+			fields = appendMoveStatusField(fields, candidate.ActivityReason, candidate.FromName, candidate.ToName)
+		} else {
+			subject = fmt.Sprintf("A card you opened was updated: %s", candidate.Title)
+			heading = "Card updated"
+			if ok {
+				fields = append(fields, notificationField{label: "Card", value: card})
+				ctaLabel, ctaURL = "View card", n.cardURL(candidate.ProjectSlug, candidate.LocalID)
+			}
+			fields = append(fields, notificationField{label: "Project", value: candidate.ProjectName})
+			fields = appendMoveStatusField(fields, candidate.ActivityReason, candidate.FromName, candidate.ToName)
 		}
-		fields = appendMoveStatusField(fields, candidate.ActivityReason, candidate.FromName, candidate.ToName)
 		body := formatPlainTextNotification(plainTextNotification{
-			heading: "Card " + action, fields: fields, ctaLabel: ctaLabel, ctaURL: ctaURL,
+			heading: heading, fields: fields, ctaLabel: ctaLabel, ctaURL: ctaURL,
 		})
 		return subject, body, true
 	case emailCategoryCardActivity:
@@ -422,22 +446,17 @@ func (n *emailNotifier) renderCreatorEmail(candidate todoapp.AuthorizedCreatorNo
 			LocalID: candidate.LocalID,
 			Title:   candidate.Title,
 		})
-		subject := fmt.Sprintf("%s: %s", candidate.ProjectName, info.subject)
-		if enriched && suffix != "" {
-			subject = fmt.Sprintf("%s: %s — %s", candidate.ProjectName, info.subject, suffix)
+		moveActor := ""
+		if candidate.ActivityReason == todoapp.RefreshReasonTodoMoved {
+			moveActor = actorName
 		}
-		fields := make([]notificationField, 0, 2)
-		if enriched {
-			fields = append(fields, notificationField{label: entityLabel, value: entityValue})
-		}
-		fields = append(fields, notificationField{label: "Project", value: candidate.ProjectName})
-		fields = appendMoveStatusField(fields, candidate.ActivityReason, candidate.FromName, candidate.ToName)
+		subject, heading, fields := activityCopy(info, candidate.ProjectName, candidate.ActivityReason, moveActor, entityLabel, entityValue, suffix, enriched, candidate.FromName, candidate.ToName)
 		ctaLabel, ctaURL := "View project", n.projectURL(candidate.ProjectSlug)
 		if enriched && isLiveCardReason(candidate.ActivityReason) {
 			ctaLabel, ctaURL = "View card", n.cardURL(candidate.ProjectSlug, candidate.LocalID)
 		}
 		return subject, formatPlainTextNotification(plainTextNotification{
-			heading: sentenceHeading(info.subject), fields: fields, ctaLabel: ctaLabel, ctaURL: ctaURL,
+			heading: heading, fields: fields, ctaLabel: ctaLabel, ctaURL: ctaURL,
 		}), true
 	default:
 		return "", "", false
@@ -503,24 +522,14 @@ func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, rea
 			actorName = actor.Name
 		}
 	}
-	subject := fmt.Sprintf("%s: %s", proj.Name, info.subject)
 	entityLabel, entityValue, suffix, enriched := activityEntity(reason, entity)
-	if enriched && suffix != "" {
-		subject = fmt.Sprintf("%s: %s — %s", proj.Name, info.subject, suffix)
-	}
-	fields := make([]notificationField, 0, 4)
-	fields = append(fields, notificationField{label: info.actorLabel, value: actorName})
-	if enriched {
-		fields = append(fields, notificationField{label: entityLabel, value: entityValue})
-	}
-	fields = append(fields, notificationField{label: "Project", value: proj.Name})
-	fields = appendMoveStatusField(fields, reason, entity.FromName, entity.ToName)
+	subject, heading, fields := activityCopy(info, proj.Name, reason, actorName, entityLabel, entityValue, suffix, enriched, entity.FromName, entity.ToName)
 	ctaLabel, ctaURL := "View project", n.projectURL(proj.Slug)
 	if enriched && isLiveCardReason(reason) {
 		ctaLabel, ctaURL = "View card", n.cardURL(proj.Slug, entity.LocalID)
 	}
 	body := formatPlainTextNotification(plainTextNotification{
-		heading: sentenceHeading(info.subject), fields: fields, ctaLabel: ctaLabel, ctaURL: ctaURL,
+		heading: heading, fields: fields, ctaLabel: ctaLabel, ctaURL: ctaURL,
 	})
 	for _, m := range members {
 		if m.UserID == actorUserID || excluded[m.UserID] {
@@ -535,6 +544,64 @@ func (n *emailNotifier) handleActivity(ctx context.Context, projectID int64, rea
 			LogRef: fmt.Sprintf("email-notify category=%s user=%d", category, m.UserID),
 		})
 	}
+}
+
+// activityCopy builds the shared subject/body metadata for board-activity emails.
+// Card moves omit the redundant heading, put Project before Card, and use
+// "{project}: {#id title} Moved to {destination}" subjects when possible.
+func activityCopy(info reasonInfo, projectName, reason, actorName, entityLabel, entityValue, suffix string, enriched bool, fromName, toName string) (subject, heading string, fields []notificationField) {
+	destination := moveDestinationName(reason, fromName, toName)
+	if reason == todoapp.RefreshReasonTodoMoved {
+		card := ""
+		if enriched {
+			card = entityValue
+		}
+		subject = cardMovedSubject(projectName, card, destination)
+		fields = []notificationField{{label: "Project", value: projectName}}
+		if enriched {
+			fields = append(fields, notificationField{label: entityLabel, value: entityValue})
+		}
+		fields = append(fields, notificationField{label: info.actorLabel, value: actorName})
+		fields = appendMoveStatusField(fields, reason, fromName, toName)
+		return subject, "", fields
+	}
+
+	subject = fmt.Sprintf("%s: %s", projectName, info.subject)
+	if enriched && suffix != "" {
+		subject = fmt.Sprintf("%s: %s — %s", projectName, info.subject, suffix)
+	}
+	fields = make([]notificationField, 0, 4)
+	fields = append(fields, notificationField{label: info.actorLabel, value: actorName})
+	if enriched {
+		fields = append(fields, notificationField{label: entityLabel, value: entityValue})
+	}
+	fields = append(fields, notificationField{label: "Project", value: projectName})
+	fields = appendMoveStatusField(fields, reason, fromName, toName)
+	return subject, sentenceHeading(info.subject), fields
+}
+
+func cardMovedSubject(projectName, card, destination string) string {
+	projectName = strings.TrimSpace(projectName)
+	card = strings.TrimSpace(card)
+	destination = strings.TrimSpace(destination)
+	if card != "" && destination != "" {
+		return fmt.Sprintf("%s: %s Moved to %s", projectName, card, destination)
+	}
+	if card != "" {
+		return fmt.Sprintf("%s: %s Moved", projectName, card)
+	}
+	return fmt.Sprintf("%s: card moved", projectName)
+}
+
+func moveDestinationName(reason, fromName, toName string) string {
+	if reason != todoapp.RefreshReasonTodoMoved {
+		return ""
+	}
+	fromName, toName = strings.TrimSpace(fromName), strings.TrimSpace(toName)
+	if fromName == "" || toName == "" || fromName == toName {
+		return ""
+	}
+	return toName
 }
 
 func appendMoveStatusField(fields []notificationField, reason, fromName, toName string) []notificationField {

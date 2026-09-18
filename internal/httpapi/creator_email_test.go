@@ -136,6 +136,9 @@ func TestCreatorEmailPrepareFreshChecksAndRendering(t *testing.T) {
 
 func TestCreatorEmailMovedCandidatePreparesExactOpenedCardBody(t *testing.T) {
 	st := newEmailNotifyFake()
+	actor := st.users[1]
+	actor.Name = "Alice"
+	st.users[1] = actor
 	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true}
 	q := newMailQueue(discardLogger())
 	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
@@ -149,12 +152,45 @@ func TestCreatorEmailMovedCandidatePreparesExactOpenedCardBody(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("prepare = (%+v, %v, %v), want delivery", prepared, ok, err)
 	}
-	if prepared.Subject != "A card you opened was moved: Ship it" {
+	if prepared.Subject != "Roadmap: #4 Ship it Moved to Done" {
 		t.Fatalf("subject = %q", prepared.Subject)
 	}
-	wantBody := "Card moved\n\nCard: #4 Ship it\nProject: Roadmap\nStatus: Testing → Done\n\nView card:\nhttps://example.test/roadmap/t/4\n"
+	wantBody := "Project: Roadmap\nCard: #4 Ship it\nMoved by: Alice\nStatus: Testing → Done\n\nView card:\nhttps://example.test/roadmap/t/4\n"
 	if prepared.Body != wantBody {
 		t.Fatalf("body = %q, want %q", prepared.Body, wantBody)
+	}
+}
+
+func TestCreatorEmailMovedCandidateSelectsCreatedByMeWhenCardActivityAlsoEnabled(t *testing.T) {
+	st := newEmailNotifyFake()
+	actor := st.users[1]
+	actor.Name = "Alice"
+	st.users[1] = actor
+	st.prefs[2] = store.EmailNotifyPref{V: 2, Enabled: true, CreatedByMe: true, CardActivity: true}
+	q := newMailQueue(discardLogger())
+	n := newEmailNotifier(st, q, "https://example.test", true, discardLogger())
+	n.handleCreatorCandidate(context.Background(), creatorMovedEmailCandidateEvent(t, " Testing ", " Done "))
+
+	items := q.Drain()
+	if len(items) != 1 || items[0].Prepare == nil {
+		t.Fatalf("queued creator candidates = %+v, want exactly one deferred delivery", items)
+	}
+	prepared, ok, err := items[0].Prepare(context.Background())
+	if err != nil || !ok {
+		t.Fatalf("prepare = (%+v, %v, %v), want delivery", prepared, ok, err)
+	}
+	if !strings.Contains(prepared.LogRef, "category=createdByMe") {
+		t.Fatalf("log ref = %q, want createdByMe", prepared.LogRef)
+	}
+	if prepared.Subject != "Roadmap: #4 Ship it Moved to Done" {
+		t.Fatalf("subject = %q", prepared.Subject)
+	}
+	wantBody := "Project: Roadmap\nCard: #4 Ship it\nMoved by: Alice\nStatus: Testing → Done\n\nView card:\nhttps://example.test/roadmap/t/4\n"
+	if prepared.Body != wantBody {
+		t.Fatalf("body = %q, want %q", prepared.Body, wantBody)
+	}
+	if got := len(q.Drain()); got != 0 {
+		t.Fatalf("extra queued deliveries after prepare = %d, want 0", got)
 	}
 }
 
