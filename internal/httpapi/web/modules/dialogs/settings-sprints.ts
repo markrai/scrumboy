@@ -404,7 +404,8 @@ export function bindSprintsTabInteractions(options: BindSprintsTabInteractionsOp
           const confirmed = await showConfirmDialog(
             t('settings.sprints.activateConfirm.message', { name: sprintName, plannedDate: plannedLabel }),
             t('settings.sprints.activateConfirm.title'),
-            t('settings.sprints.activateConfirm.confirm')
+            t('settings.sprints.activateConfirm.confirm'),
+            'success'
           );
           if (!confirmed) return;
         }

@@ -454,7 +454,8 @@ describe('settings-sprints', () => {
     expect(showConfirmDialogMock).toHaveBeenCalledWith(
       expectedMessage,
       deCatalog['settings.sprints.activateConfirm.title'],
-      deCatalog['settings.sprints.activateConfirm.confirm']
+      deCatalog['settings.sprints.activateConfirm.confirm'],
+      'success'
     );
     expect(expectedMessage).toContain('Release Train');
     expect(expectedMessage).toContain(plannedLabel);

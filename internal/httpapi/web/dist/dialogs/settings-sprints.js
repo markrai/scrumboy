@@ -345,7 +345,7 @@ export function bindSprintsTabInteractions(options) {
             const plannedMs = parseInt(plannedStartRaw, 10);
             if (Number.isFinite(plannedMs) && Math.abs(plannedMs - Date.now()) > 60000) {
                 const plannedLabel = formatSprintDate(plannedMs);
-                const confirmed = await showConfirmDialog(t('settings.sprints.activateConfirm.message', { name: sprintName, plannedDate: plannedLabel }), t('settings.sprints.activateConfirm.title'), t('settings.sprints.activateConfirm.confirm'));
+                const confirmed = await showConfirmDialog(t('settings.sprints.activateConfirm.message', { name: sprintName, plannedDate: plannedLabel }), t('settings.sprints.activateConfirm.title'), t('settings.sprints.activateConfirm.confirm'), 'success');
                 if (!confirmed)
                     return;
             }
