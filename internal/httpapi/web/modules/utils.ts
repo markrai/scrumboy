@@ -208,12 +208,62 @@ export function renderUserAvatar(user: User | null, options?: { id?: string; ari
 }
 
 /**
+ * Sanitize a post-auth client destination to a same-origin path (+ optional query).
+ * Mirrors the defensive shape of server oidc.SanitizeReturnTo for local SPA redirects.
+ * OIDC return_to remains enforced server-side separately; this guards password/2FA
+ * `location.replace` and any other caller of redirectAfterAuth.
+ */
+export function sanitizePostAuthNext(raw: string | null | undefined): string {
+  if (typeof raw !== "string") return "/";
+  const trimmed = raw.trim();
+  if (!trimmed) return "/";
+
+  let pathPart = trimmed;
+  let queryPart = "";
+  const qIdx = trimmed.indexOf("?");
+  if (qIdx >= 0) {
+    pathPart = trimmed.slice(0, qIdx);
+    queryPart = trimmed.slice(qIdx);
+  }
+
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(pathPart);
+  } catch {
+    return "/";
+  }
+  decodedPath = decodedPath.trim();
+  if (!decodedPath) return "/";
+
+  const hasRejectedChar = (s: string): boolean => {
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i);
+      if (code === 0 || code === 0x0a || code === 0x0d || s[i] === "\\") return true;
+    }
+    return false;
+  };
+  if (hasRejectedChar(trimmed) || hasRejectedChar(decodedPath)) return "/";
+
+  if (!decodedPath.startsWith("/")) return "/";
+  if (decodedPath.startsWith("//")) return "/";
+  if (decodedPath.includes("://")) return "/";
+  if (trimmed.includes("#") || decodedPath.includes("#")) return "/";
+
+  for (const seg of decodedPath.split("/")) {
+    if (seg === "." || seg === "..") return "/";
+  }
+
+  return decodedPath + queryPart;
+}
+
+/**
  * Redirect to a path with a cache-busting query param so the browser always does a fresh load.
  * Required when redirecting to the same URL (e.g. / after login or logout) — otherwise the browser
  * may serve from cache and the UI won't reflect the new auth state.
+ * Always sanitizes to a same-origin client path first (invalid → `/`).
  */
 export function redirectAfterAuth(path: string): void {
-  const base = path || "/";
+  const base = sanitizePostAuthNext(path);
   const sep = base.includes("?") ? "&" : "?";
   window.location.replace(base + sep + "_=" + Date.now());
 }

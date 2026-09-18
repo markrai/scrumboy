@@ -1044,3 +1044,213 @@ describe('router board todo sort hydration', () => {
     expect(renderBoardMock.mock.calls.at(-1)?.[5]).toBeNull();
   });
 });
+
+describe('router invalid URL redirect', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderAuthMock.mockReset();
+    renderResetPasswordMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    renderDashboardMock.mockReset();
+    renderBoardMock.mockReset();
+    renderBoardMock.mockResolvedValue(undefined);
+    renderArchiveMock.mockReset();
+    renderNotFoundMock.mockReset();
+    stopBoardEventsMock.mockReset();
+    stopArchiveEventsMock.mockReset();
+    startGlobalRealtimeMock.mockReset();
+    stopGlobalRealtimeMock.mockReset();
+    initForegroundLifecycleMock.mockReset();
+    hydrateNotificationsForUserMock.mockReset();
+    initNotificationBadgeMock.mockReset();
+    unsubscribeFromPushMock.mockReset();
+    unsubscribeFromPushMock.mockResolvedValue(undefined);
+    maybeAutoSubscribePushAfterLoginMock.mockClear();
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+    hydrateVoiceFlowEnabledFromServerMock.mockClear();
+    hydrateVoiceFlowContinueConversationFromServerMock.mockClear();
+    hydrateVoiceFlowHandsFreeConfirmationFromServerMock.mockClear();
+    hydrateVoiceFlowModeFromServerMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  function installSignedOutFullMode(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: null,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  function installSignedInFullMode(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: userStatus(),
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return userStatus();
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return {};
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  function installAnonymousMode(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: null,
+          bootstrapAvailable: false,
+          mode: 'anonymous',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  it('rewrites an invalid path to / and shows auth when signed out', async () => {
+    window.history.replaceState({}, '', '/this/is/invalid');
+    installSignedOutFullMode();
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderAuthMock).toHaveBeenCalledTimes(1);
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderProjectsMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites an invalid path to / and shows projects when signed in', async () => {
+    window.history.replaceState({}, '', '/this/is/invalid');
+    installSignedInFullMode();
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderAuthMock).not.toHaveBeenCalled();
+  });
+
+  it('parses slug-shaped paths as boardBySlug', async () => {
+    window.history.replaceState({}, '', '/no-such-board');
+    const mod = await loadRouterModule();
+
+    expect(mod.parseRoute()).toMatchObject({ name: 'boardBySlug', slug: 'no-such-board' });
+  });
+
+  it('rewrites a missing board slug to / and shows auth when signed out', async () => {
+    window.history.replaceState({}, '', '/nonsense');
+    installSignedOutFullMode();
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/nonsense' }));
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderProjectsMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites a missing board slug to / and shows projects when signed in', async () => {
+    window.history.replaceState({}, '', '/nonsense');
+    installSignedInFullMode();
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderAuthMock).not.toHaveBeenCalled();
+  });
+
+  it('does not console.error for handled board 404', async () => {
+    window.history.replaceState({}, '', '/nonsense');
+    installSignedOutFullMode();
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes('error rendering board'))).toBe(false);
+  });
+
+  it('rewrites a missing archive destination to / with preserved next when signed out', async () => {
+    window.history.replaceState({}, '', '/nonsense/archive');
+    installSignedOutFullMode();
+    renderArchiveMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderArchiveMock).toHaveBeenCalledTimes(1);
+    expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/nonsense/archive' }));
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+  });
+
+  it('assigns / for invalid paths in anonymous server mode', async () => {
+    window.history.replaceState({}, '', '/this/is/invalid');
+    installAnonymousMode();
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(assignSpy).toHaveBeenCalledWith('/');
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderAuthMock).not.toHaveBeenCalled();
+    expect(renderProjectsMock).not.toHaveBeenCalled();
+  });
+});

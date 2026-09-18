@@ -80,6 +80,47 @@ function navigate(path: string, options?: { state?: object }): void {
   });
 }
 
+/** Unmatched paths and missing board/archive destinations rewrite to `/` (main login entry). */
+function redirectMissingClientPathToHome(opts?: { next?: string }): void {
+  if (!getAuthStatusAvailable()) {
+    window.location.assign("/");
+    return;
+  }
+  // Preserve a same-origin client path for post-login return (existence-hiding 404s still look identical).
+  const preservedNext = opts?.next;
+  history.replaceState({}, "", "/");
+  if (preservedNext && getUser() == null) {
+    renderAuth({
+      next: preservedNext,
+      bootstrap: getBootstrapAvailable(),
+      oidcEnabled: getOidcEnabled(),
+      mobileOidcEnabled: getMobileOidcEnabled(),
+      localAuthEnabled: getLocalAuthEnabled(),
+      selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),
+    });
+    return;
+  }
+  rerouteRequested = true;
+}
+
+function authOverlayOptions(next: string, opts?: { bootstrap?: boolean }): {
+  next: string;
+  bootstrap: boolean;
+  oidcEnabled: boolean;
+  mobileOidcEnabled: boolean;
+  localAuthEnabled: boolean;
+  selfServicePasswordResetEnabled: boolean;
+} {
+  return {
+    next,
+    bootstrap: opts?.bootstrap ?? getBootstrapAvailable(),
+    oidcEnabled: getOidcEnabled(),
+    mobileOidcEnabled: getMobileOidcEnabled(),
+    localAuthEnabled: getLocalAuthEnabled(),
+    selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),
+  };
+}
+
 function parseRoute(): ParsedRoute {
   const path = window.location.pathname;
   const url = new URL(window.location.href);
@@ -335,6 +376,11 @@ async function routeOnceBody(): Promise<void> {
   }
 
   let r = parseRoute();
+  // Unmatched client paths rewrite to `/` (main login entry in full mode; marketing root in anonymous mode).
+  if (r.name === "notfound") {
+    redirectMissingClientPathToHome();
+    return;
+  }
 	const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
 	if (authMethodReturn && getUser()) {
 		const cleanURL = new URL(window.location.href);
@@ -400,7 +446,22 @@ async function routeOnceBody(): Promise<void> {
   }
   if (r.name === "archiveBySlug") {
     lastHandledBoardRoute = null;
-    await renderArchive(r.slug || null, r.openTodoSegment || null);
+    try {
+      await renderArchive(r.slug || null, r.openTodoSegment || null);
+    } catch (err) {
+      const status = err && (err as Error & { status?: number }).status;
+      if (status === 401) {
+        renderAuth(authOverlayOptions(window.location.pathname + window.location.search, { bootstrap: false }));
+        return;
+      }
+      if (status === 404) {
+        // Missing or inaccessible archive destination: same home redirect as unmatched paths (no toast).
+        redirectMissingClientPathToHome({ next: window.location.pathname + window.location.search });
+        return;
+      }
+      console.error("Router: error rendering archive:", err);
+      throw err;
+    }
     return;
   }
   if (r.name === "boardBySlug") {
@@ -440,12 +501,18 @@ async function routeOnceBody(): Promise<void> {
         window.scrollTo(0, 0);
       }
     } catch (err) {
-      console.error("Router: error rendering board:", err);
-      if (err && (err as Error & { status?: number }).status === 401) {
+      const status = err && (err as Error & { status?: number }).status;
+      if (status === 401) {
         // Only show auth UI for 401s (entry points). Resource endpoints should generally return 404 when unauthenticated.
-        renderAuth({ next: window.location.pathname + window.location.search, bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
+        renderAuth(authOverlayOptions(window.location.pathname + window.location.search, { bootstrap: false }));
         return;
       }
+      if (status === 404) {
+        // Missing or inaccessible board (incl. existence-hiding): same home redirect as unmatched paths (no toast).
+        redirectMissingClientPathToHome({ next: window.location.pathname + window.location.search });
+        return;
+      }
+      console.error("Router: error rendering board:", err);
       throw err;
     }
     return;

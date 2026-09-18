@@ -326,4 +326,18 @@ describe('archive view', () => {
     expect(document.querySelectorAll<HTMLInputElement>('[data-archive-select]:checked')).toHaveLength(2);
     expect(h.listArchivedTodos).toHaveBeenCalledTimes(1);
   });
+
+  it('rethrows board API 404 with status so the router can redirect', async () => {
+    h.apiFetch.mockImplementation(async (path: string) => {
+      if (typeof path === 'string' && path.includes('/tags')) return [];
+      throw Object.assign(new Error('Not found'), {
+        status: 404,
+        data: { error: { code: 'NOT_FOUND', message: 'Not found' } },
+      });
+    });
+    const { renderArchive } = await import('./archive.js');
+
+    await expect(renderArchive('nonsense')).rejects.toMatchObject({ status: 404 });
+    expect(h.showToast).not.toHaveBeenCalled();
+  });
 });
