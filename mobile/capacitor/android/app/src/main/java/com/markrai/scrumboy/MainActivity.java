@@ -16,6 +16,7 @@ import java.util.Base64;
 
 public class MainActivity extends BridgeActivity {
     static final String VOICE_CREATE_DRY_RUN_ACTION = "com.markrai.scrumboy.action.VOICE_CREATE_DRY_RUN";
+    static final String VOICE_AGENT_EVAL_ACTION = "com.markrai.scrumboy.action.VOICE_AGENT_EVAL";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -27,6 +28,7 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         dispatchWidgetOpen(getIntent());
         dispatchDryRunIntent(getIntent());
+        dispatchAgentEvalIntent(getIntent());
     }
 
     @Override
@@ -35,6 +37,7 @@ public class MainActivity extends BridgeActivity {
         setIntent(intent);
         dispatchWidgetOpen(intent);
         dispatchDryRunIntent(intent);
+        dispatchAgentEvalIntent(intent);
     }
 
     private void dispatchWidgetOpen(Intent intent) {
@@ -76,6 +79,26 @@ public class MainActivity extends BridgeActivity {
         PluginHandle handle = bridge.getPlugin("ScrumboyVoiceFlow");
         if (handle != null && handle.getInstance() instanceof ScrumboyVoiceFlowPlugin plugin) {
             plugin.dispatchDryRunRequest(requestId, transcript, intent.getIntExtra("timeoutMs", 45_000));
+        }
+    }
+
+    private void dispatchAgentEvalIntent(Intent intent) {
+        if (!isDebuggable() || intent == null || !VOICE_AGENT_EVAL_ACTION.equals(intent.getAction())) return;
+        String requestId = intent.getStringExtra("requestId");
+        String transcriptBase64 = intent.getStringExtra("transcriptBase64");
+        final String transcript;
+        if (transcriptBase64 == null) {
+            transcript = ScrumboyVoiceFlowPlugin.AGENT_EVAL_CORPUS;
+        } else {
+            try {
+                transcript = new String(Base64.getDecoder().decode(transcriptBase64), StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException error) {
+                return;
+            }
+        }
+        PluginHandle handle = bridge.getPlugin("ScrumboyVoiceFlow");
+        if (handle != null && handle.getInstance() instanceof ScrumboyVoiceFlowPlugin plugin) {
+            plugin.dispatchAgentEvalRequest(requestId, transcript, intent.getIntExtra("timeoutMs", 600_000));
         }
     }
 }

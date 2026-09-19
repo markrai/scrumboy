@@ -119,6 +119,21 @@ export function rankTitleCandidates(phrase, candidates) {
         return a.localId - b.localId;
     });
 }
+/** Exact title first, then the same unique-winner rule as resolveTodoByTitle. */
+export function selectUniqueTitleCandidate(phrase, candidates) {
+    const ranked = rankTitleCandidates(phrase, candidates);
+    const exact = ranked.filter((candidate) => candidate.score === 100);
+    if (exact.length === 1)
+        return exact[0];
+    if (exact.length > 1)
+        return null;
+    const [first, second] = ranked;
+    if (!first)
+        return null;
+    const hasClearSingle = !second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE;
+    const hasClearWinner = !!second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE && first.score - second.score >= CLEAR_WIN_SCORE_GAP;
+    return hasClearSingle || hasClearWinner ? first : null;
+}
 async function rankedTitleCandidates(phrase, context) {
     const candidates = new Map();
     mergeCandidates(candidates, localTitleCandidates(context.board));

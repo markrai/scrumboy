@@ -40,11 +40,16 @@ type SkillDefinition = { effect: 'read' | 'open' | 'proposal'; run(call: SkillCa
 const short = (value: string, max = 200) => value.slice(0, max);
 const resourceLike = (value: string) => /^(todo|member|lane|tag|proposal)_/.test(value);
 const fail = (status: 'not_found' | 'stale' | 'denied' | 'invalid', resource: AgentResource['kind'] = 'todo'): SkillOutcome => ({ result: status === 'not_found' ? { status, resource } : { status } });
-const TODO_REFERENCE_WRAPPER = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
+const TODO_REFERENCE_PREFIX = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
+const TODO_REFERENCE_SUFFIX = /^(.+?)\s+(?:story|todo|to[-\s]?do|card|task|item)$/i;
 
-function unwrapTodoReference(reference: string): string | null {
-  const match = TODO_REFERENCE_WRAPPER.exec(stripWrappingQuotes(reference.trim()));
-  return match?.[1]?.trim() || null;
+export function unwrapTodoReference(reference: string): string | null {
+  const trimmed = stripWrappingQuotes(reference.trim());
+  const prefix = TODO_REFERENCE_PREFIX.exec(trimmed)?.[1]?.trim();
+  if (prefix) return prefix;
+  const suffix = TODO_REFERENCE_SUFFIX.exec(trimmed)?.[1]?.trim();
+  if (!suffix) return null;
+  return suffix.replace(/^(?:the|a|an)\s+/i, '').trim() || suffix;
 }
 
 function strippedReferenceIsStronger(reference: string, stripped: string, todo: Todo): boolean {

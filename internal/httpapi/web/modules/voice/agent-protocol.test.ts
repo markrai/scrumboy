@@ -17,7 +17,7 @@ function rejected(raw: string): AgentProtocolError {
   }
   throw new Error('Expected protocol rejection');
 }
-describe('voice-agent-v15 protocol', () => {
+describe('voice-agent-v16 protocol', () => {
   it('still accepts a valid named delete envelope', () => {
     expect(parseAgentEnvelope('{"kind":"skill_call","skill":"todos.delete","arguments":{"reference":"Billy Mongoose"}}', idle)).toEqual({
       kind: 'skill_call', skill: 'todos.delete', arguments: { reference: 'Billy Mongoose' },
@@ -33,6 +33,14 @@ describe('voice-agent-v15 protocol', () => {
     expect(interpretAgentEnvelope(JSON.stringify({ kind: 'clarify_skill', skill: 'todos.delete', arguments: { todoRef: 'todo_369' }, missing: 'approval', text: 'Please confirm.' }), idle)).toEqual({
       envelope: { kind: 'skill_call', skill: 'todos.delete', arguments: { todoRef: 'todo_369' } },
       recoveredFrom: 'delete_clarification_with_target',
+    });
+  });
+  it('recovers a move clarification that already contains both reference and lane', () => {
+    expect(interpretAgentEnvelope(JSON.stringify({
+      kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' }, missing: 'lane', text: 'Which lane?',
+    }), idle)).toEqual({
+      envelope: { kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' } },
+      recoveredFrom: 'move_clarification_with_target_and_lane',
     });
   });
   describe('safe structural rejection diagnostics', () => {
@@ -178,7 +186,6 @@ describe('voice-agent-v15 protocol', () => {
   it.each([
     '{"kind":"clarify_skill","skill":"todos.open","arguments":{},"missing":"reference","text":"Which story?"}',
     '{"kind":"clarify_skill","skill":"todos.move","arguments":{},"missing":"reference","text":"Which story?"}',
-    '{"kind":"clarify_skill","skill":"todos.move","arguments":{"lane":"Done","reference":"x"},"missing":"reference","text":"Which story?"}',
     '{"kind":"clarify_skill","skill":"todos.move","arguments":{},"missing":"lane","text":"Which lane?"}',
     '{"kind":"clarify_skill","skill":"todos.move","arguments":{"reference":"x","todoRef":"todo_1"},"missing":"lane","text":"Which lane?"}',
     '{"kind":"clarify_skill","skill":"todos.move","arguments":{"reference":"x","extra":"y"},"missing":"lane","text":"Which lane?"}',
@@ -259,7 +266,7 @@ describe('voice-agent-v15 protocol', () => {
     });
   });
   it('conditions literal domain titles and finite authority', () => {
-    expect(VOICE_AGENT_PROMPT_VERSION).toBe('voice-agent-v15');
+    expect(VOICE_AGENT_PROMPT_VERSION).toBe('voice-agent-v16');
     for (const text of ["Bird's Eye View", 'Settings', 'Search', 'story called X', 'card named X', 'PREPARE', 'Only the skills']) expect(VOICE_AGENT_PROMPT).toContain(text);
     expect(VOICE_AGENT_PROMPT.length).toBeLessThan(8192);
   });
@@ -271,7 +278,7 @@ describe('voice-agent-v15 protocol', () => {
     for (const text of ['Move Goblins in Washington to Done', 'Mark Goblins in Washington as Done', 'Mark the story Goblins in Washington as Done', 'Mark the story Goblins in Washington done', 'Set Goblins in Washington to Done', 'Change Goblins in Washington to Done', 'Change the status of Goblins in Washington to Done', 'Mark the story "Goblins in Washington" as "Done"', '"reference":"Goblins in Washington"', '"lane":"Done"', 'do not call todos.resolve first']) {
       expect(VOICE_AGENT_PROMPT).toContain(text);
     }
-    for (const text of ['never ask for a more specific title or identifier', 'pass only the literal entity reference', 'Nano never needs board contents to call todos.move']) {
+    for (const text of ['never ask for a more specific title or identifier', 'pass only the literal entity reference', 'Nano never needs board contents to call todos.move', 'Move #239 to done', 'Move story #239 to done', 'Move number 239 to Done', 'never emit clarify_skill or ask Which lane?', 'Invalid URL story']) {
       expect(VOICE_AGENT_PROMPT).toContain(text);
     }
   });

@@ -122,6 +122,32 @@ describe('bounded skill registry', () => {
     expect(view).toMatchObject({ phase: 'error' });
     expect(h.execute).not.toHaveBeenCalled();
   });
+  it.each(['Invalid URL story', 'Invalid URL card', 'Invalid URL todo', 'the Invalid URL card'])(
+    'strips a trailing %s wrapper when that yields a strictly stronger unique title',
+    async reference => {
+      const h = harness([skill('todos.move', { reference, lane: 'Done' }), { kind: 'finish' }]);
+      h.todo.title = 'Invalid URLs should redirect to main login';
+      h.todo.localId = 239;
+
+      const view = await h.loop.submit(`Move ${reference} to done.`, h.signal);
+      expect(view.phase).toBe('confirmation');
+      expect(view.text).toContain('Invalid URLs should redirect to main login');
+      expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+      expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.move', entities: { localId: 239, toColumnKey: 'done' } });
+    },
+  );
+  it('does not strip a trailing entity noun from a literal exact title', async () => {
+    const h = harness([skill('todos.move', { reference: 'Invalid URL story', lane: 'Done' }), { kind: 'finish' }]);
+    h.todo.title = 'Invalid URL story';
+    h.todo.localId = 410;
+    h.board.columns.backlog.push({
+      id: 92, localId: 239, title: 'Invalid URLs should redirect to main login', status: 'backlog', columnKey: 'backlog',
+    });
+
+    expect((await h.loop.submit('Move Invalid URL story to done.', h.signal)).phase).toBe('confirmation');
+    await h.loop.confirm(h.signal);
+    expect(h.execute.mock.calls[0][0].entities.localId).toBe(410);
+  });
   it('retains normal fuzzy resolution when the stripped reference is strictly stronger', async () => {
     const h = harness([skill('todos.move', { reference: 'the story Goblins in Washington', lane: 'Done' }), finish]);
     h.todo.title = 'Goblins in Washington Today';

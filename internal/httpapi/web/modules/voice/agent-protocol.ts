@@ -177,6 +177,27 @@ function validateSkillCallEnvelope(envelope: Record<string, unknown>): void {
     } else if (extra && extra in args) text(args[extra], extra === 'text' ? 1000 : 200);
   }
 }
+function recoverCompleteMoveClarification(envelope: Record<string, unknown>): SkillCall | undefined {
+  if (envelope.skill !== 'todos.move') return undefined;
+  keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
+  text(envelope.text, AGENT_LIMITS.ask);
+  if (!isObjectRecord(envelope.arguments)) return undefined;
+  const args = envelope.arguments;
+  const hasReference = 'reference' in args;
+  const hasTodoRef = 'todoRef' in args;
+  if (hasReference === hasTodoRef || !('lane' in args)) return undefined;
+  const target = hasReference ? 'reference' : 'todoRef';
+  const actual = Object.keys(args);
+  if (actual.some(key => key !== target && key !== 'lane')) return undefined;
+  text(args[target], target === 'todoRef' ? 80 : 200);
+  text(args.lane, 200);
+  return {
+    kind: 'skill_call', skill: 'todos.move',
+    arguments: target === 'reference'
+      ? { reference: args.reference as string, lane: args.lane as string }
+      : { todoRef: args.todoRef as string, lane: args.lane as string },
+  } as SkillCall;
+}
 function recoverCompleteDeleteClarification(envelope: Record<string, unknown>): SkillCall | undefined {
   if (envelope.skill !== 'todos.delete') return undefined;
   keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
@@ -232,7 +253,7 @@ export function parseAgentEnvelope(raw: string, state: AgentState): AgentEnvelop
   return interpretAgentEnvelope(raw, state).envelope;
 }
 /** Parses one model envelope and applies bounded local-model compatibility recoveries. */
-export type AgentRecovery = 'confirm' | 'delete_clarification_with_target';
+export type AgentRecovery = 'confirm' | 'delete_clarification_with_target' | 'move_clarification_with_target_and_lane';
 export function interpretAgentEnvelope(raw: string, state: AgentState): { envelope: AgentEnvelope; recoveredFrom?: AgentRecovery } {
   if (typeof raw !== 'string' || raw.length > 8192) invalid('Output too large');
   let value: unknown;
@@ -260,6 +281,8 @@ export function interpretAgentEnvelope(raw: string, state: AgentState): { envelo
   } else if (kind === 'clarify_skill') {
     const recoveredDelete = recoverCompleteDeleteClarification(envelope);
     if (recoveredDelete) return { envelope: recoveredDelete, recoveredFrom: 'delete_clarification_with_target' };
+    const recoveredMove = recoverCompleteMoveClarification(envelope);
+    if (recoveredMove) return { envelope: recoveredMove, recoveredFrom: 'move_clarification_with_target_and_lane' };
     validateSkillClarificationEnvelope(envelope);
   } else if (kind === 'finish') {
     // An accompanying human-readable text is bounded, ignored and never renders; it must not discard prepared proposals.

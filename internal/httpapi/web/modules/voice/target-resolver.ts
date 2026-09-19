@@ -24,7 +24,7 @@ type TodosSearchResponse = {
   items?: TodoSearchItem[];
 };
 
-type RankedTodoCandidate = TodoTargetCandidate & {
+export type RankedTodoCandidate = TodoTargetCandidate & {
   score: number;
 };
 
@@ -142,6 +142,22 @@ export function rankTitleCandidates(phrase: string, candidates: TodoTargetCandid
       if (b.score !== a.score) return b.score - a.score;
       return a.localId - b.localId;
     });
+}
+
+/** Exact title first, then the same unique-winner rule as resolveTodoByTitle. */
+export function selectUniqueTitleCandidate(
+  phrase: string,
+  candidates: TodoTargetCandidate[],
+): RankedTodoCandidate | null {
+  const ranked = rankTitleCandidates(phrase, candidates);
+  const exact = ranked.filter((candidate) => candidate.score === 100);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+  const [first, second] = ranked;
+  if (!first) return null;
+  const hasClearSingle = !second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE;
+  const hasClearWinner = !!second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE && first.score - second.score >= CLEAR_WIN_SCORE_GAP;
+  return hasClearSingle || hasClearWinner ? first : null;
 }
 
 async function rankedTitleCandidates(phrase: string, context: TodoTargetResolveContext): Promise<RankedTodoCandidate[]> {

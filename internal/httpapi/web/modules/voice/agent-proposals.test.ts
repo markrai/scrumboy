@@ -46,7 +46,7 @@ describe('authoritative mutation proposals', () => {
     expect((await h.loop.submit('repeat update', h.signal)).phase).toBe('error'); expect(h.execute).not.toHaveBeenCalled();
   });
   it('additional confirmation work requires a new full confirmation', async () => {
-    const h = harness([skill('todos.move', { reference: 'Happy Birthday', lane: 'Done' }), finish,
+    const h = harness([
       skill('todos.add_tag', { reference: 'Happy Birthday', tag: 'urgent' }), finish, { kind: 'confirm' }]);
     await h.loop.submit('Move Happy Birthday to Done', h.signal);
     const view = await h.loop.submit('Yes but also tag it urgent', h.signal);
