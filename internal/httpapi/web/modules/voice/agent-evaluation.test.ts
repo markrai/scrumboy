@@ -12,7 +12,7 @@ import {
   voiceAgentEvaluationCaseApplicability,
   type VoiceAgentEvaluationExpected,
 } from './agent-evaluation.js';
-import { extractHighConfidenceMoveCall } from './agent-move-extraction.js';
+import { extractDeterministicMoveCall } from './agent-move-extraction.js';
 
 const corpus = JSON.parse(readFileSync(resolve('scripts/voice-agent-evaluation.json'), 'utf8')) as {
   boardRequirements: typeof VOICE_AGENT_EVALUATION_BOARD_REQUIREMENTS;
@@ -72,7 +72,7 @@ describe('VoiceFlow agent evaluation harness', () => {
       expect(result.mutationExecuted).toBe(false);
       expect(result.providerUsed).toBe(false);
       expect(result.applicationMatches).toBe(true);
-      expect(extractHighConfidenceMoveCall(testCase.transcript, board())).not.toBeNull();
+      expect(extractDeterministicMoveCall(testCase.transcript, board())).not.toBeNull();
     }
   });
 
@@ -88,7 +88,7 @@ describe('VoiceFlow agent evaluation harness', () => {
     });
     expect(result.rawEnvelope).toMatchObject({ kind: 'clarify_skill' });
     expect(result.protocolEnvelope).toMatchObject({ kind: 'skill_call', skill: 'todos.move' });
-    expect(result.protocolRecoveredFrom).toBe('move_clarification_with_target_and_lane');
+    expect(result.protocolRecoveredFrom).toBe('complete_skill_clarification');
     expect(result.rawMatches).toBe(false);
     expect(result.protocolMatches).toBe(true);
     expect(result.applicationMatches).toBe(true);
@@ -157,15 +157,17 @@ describe('VoiceFlow agent evaluation harness', () => {
     expect(scored.mismatches).toContain('clarification_not_allowed');
   });
 
-  it('scores the application-owned corpus without a provider and leaves ambiguous titles unguessed', async () => {
+  it('scores the application-owned corpus without a provider and leaves ambiguity to the registry', async () => {
     const summary = await evaluateVoiceAgentCorpus(VOICE_AGENT_EVALUATION_CASES, { board: board() });
     expect(summary.mutationExecuted).toBe(false);
     expect(summary.providerUsed).toBe(false);
     expect(summary.applicableCount).toBe(VOICE_AGENT_EVALUATION_CASES.length);
     expect(summary.inapplicableCount).toBe(0);
     expect(summary.results.find(result => result.id === 'move-invalid-url-story')?.applicationMatches).toBe(true);
-    expect(summary.results.find(result => result.id === 'move-goblin-ambiguous')?.deterministicCall).toBeNull();
-    expect(extractHighConfidenceMoveCall('Move Goblin to Done.', board())).toBeNull();
+    expect(summary.results.find(result => result.id === 'move-goblin-ambiguous')?.deterministicCall).toMatchObject({
+      kind: 'skill_call', skill: 'todos.move', arguments: { reference: 'Goblin', lane: 'Done' },
+    });
+    expect(extractDeterministicMoveCall('Move Goblin to Done.')).not.toBeNull();
   });
 
   it('keeps malformed-but-JSON envelopes visible as unrecovered raw output and scores them as misses', async () => {

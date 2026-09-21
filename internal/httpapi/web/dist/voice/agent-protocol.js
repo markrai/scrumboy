@@ -146,49 +146,27 @@ function validateSkillCallEnvelope(envelope) {
             text(args[extra], extra === 'text' ? 1000 : 200);
     }
 }
-function recoverCompleteMoveClarification(envelope) {
-    if (envelope.skill !== 'todos.move')
+const CLARIFICATION_SKILLS = new Set(['todos.move', 'todos.delete']);
+/** Canonicalize only supported clarifications whose arguments already form a fully valid skill call. */
+function recoverCompleteSkillClarification(envelope) {
+    if (!CLARIFICATION_SKILLS.has(envelope.skill))
         return undefined;
     keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
     text(envelope.text, AGENT_LIMITS.ask);
     if (!isObjectRecord(envelope.arguments))
         return undefined;
-    const args = envelope.arguments;
-    const hasReference = 'reference' in args;
-    const hasTodoRef = 'todoRef' in args;
-    if (hasReference === hasTodoRef || !('lane' in args))
-        return undefined;
-    const target = hasReference ? 'reference' : 'todoRef';
-    const actual = Object.keys(args);
-    if (actual.some(key => key !== target && key !== 'lane'))
-        return undefined;
-    text(args[target], target === 'todoRef' ? 80 : 200);
-    text(args.lane, 200);
-    return {
-        kind: 'skill_call', skill: 'todos.move',
-        arguments: target === 'reference'
-            ? { reference: args.reference, lane: args.lane }
-            : { todoRef: args.todoRef, lane: args.lane },
-    };
-}
-function recoverCompleteDeleteClarification(envelope) {
-    if (envelope.skill !== 'todos.delete')
-        return undefined;
-    keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
-    text(envelope.text, AGENT_LIMITS.ask);
-    if (!isObjectRecord(envelope.arguments))
-        return undefined;
-    const args = envelope.arguments;
-    const argumentKeys = Object.keys(args);
-    if (argumentKeys.length !== 1 || !['reference', 'todoRef'].includes(argumentKeys[0]))
-        return undefined;
-    const target = argumentKeys[0];
-    const value = args[target];
-    text(value, target === 'todoRef' ? 80 : 200);
-    return {
-        kind: 'skill_call', skill: 'todos.delete',
-        arguments: target === 'reference' ? { reference: value } : { todoRef: value },
-    };
+    const call = { kind: 'skill_call', skill: envelope.skill, arguments: envelope.arguments };
+    try {
+        validateSkillCallEnvelope(call);
+        return call;
+    }
+    catch (error) {
+        if (!(error instanceof AgentProtocolError))
+            throw error;
+        if (error.diagnostic.protocolMissingKeys?.length)
+            return undefined;
+        throw error;
+    }
 }
 function validateSkillClarificationEnvelope(envelope) {
     keys(envelope, ['kind', 'skill', 'arguments', 'missing', 'text']);
@@ -269,12 +247,9 @@ export function interpretAgentEnvelope(raw, state) {
         text(envelope.text, AGENT_LIMITS.ask);
     }
     else if (kind === 'clarify_skill') {
-        const recoveredDelete = recoverCompleteDeleteClarification(envelope);
-        if (recoveredDelete)
-            return { envelope: recoveredDelete, recoveredFrom: 'delete_clarification_with_target' };
-        const recoveredMove = recoverCompleteMoveClarification(envelope);
-        if (recoveredMove)
-            return { envelope: recoveredMove, recoveredFrom: 'move_clarification_with_target_and_lane' };
+        const recovered = recoverCompleteSkillClarification(envelope);
+        if (recovered)
+            return { envelope: recovered, recoveredFrom: 'complete_skill_clarification' };
         validateSkillClarificationEnvelope(envelope);
     }
     else if (kind === 'finish') {

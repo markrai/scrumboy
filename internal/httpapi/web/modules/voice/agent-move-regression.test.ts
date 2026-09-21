@@ -1,10 +1,15 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { harness, skill } from './agent.test.utils.js';
+import { harness, latestRef, skill } from './agent.test.utils.js';
 
 function story239(h: ReturnType<typeof harness>) {
   h.todo.title = 'Invalid URLs should redirect to main login';
   h.todo.localId = 239;
+}
+
+function latestAgentTodoRef(input: string): string {
+  const trace = JSON.parse(input).trace as Array<{ agent?: { arguments?: { todoRef?: string } } }>;
+  return [...trace].reverse().find(entry => entry.agent?.arguments?.todoRef)?.agent?.arguments?.todoRef ?? '';
 }
 
 describe('AI VoiceFlow move regressions', () => {
@@ -22,7 +27,8 @@ describe('AI VoiceFlow move regressions', () => {
     expect(view.text).toMatch(/Done/i);
     expect(h.model).not.toHaveBeenCalled();
     expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
-    expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { reference: '#239', lane: 'Done' }));
+    expect(run.mock.calls[0][0]).toMatchObject({ kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239' } });
+    expect((run.mock.calls[0][0].arguments as { lane: string }).lane.toLowerCase()).toBe('done');
     expect(h.execute).not.toHaveBeenCalled();
     expect((await h.loop.confirm(h.signal)).phase).toBe('success');
     expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.move', entities: { localId: 239, toColumnKey: 'done' } });
@@ -40,10 +46,8 @@ describe('AI VoiceFlow move regressions', () => {
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('still asks which lane for Move #239, then locally merges done', async () => {
-    const h = harness([
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
-    ]);
+  it('asks which lane for Move #239, then locally merges done without a model turn', async () => {
+    const h = harness([]);
     story239(h);
     const question = await h.loop.submit('Move #239.', h.signal);
     expect(question).toEqual({ phase: 'question', text: 'Which lane?' });
@@ -54,12 +58,12 @@ describe('AI VoiceFlow move regressions', () => {
     const confirmation = await h.loop.submit('done', h.signal);
     expect(confirmation.phase).toBe('confirmation');
     expect(confirmation.text).toContain('#239');
-    expect(h.model).toHaveBeenCalledOnce();
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('local-merges Done after Move #239 even when the model used ask_user', async () => {
-    const h = harness([{ kind: 'ask_user', text: 'Which lane?' }]);
+  it('keeps a missing-lane move in structured application-owned clarification state', async () => {
+    const h = harness([]);
     story239(h);
     expect(await h.loop.submit('Move #239.', h.signal)).toEqual({ phase: 'question', text: 'Which lane?' });
     expect(h.loop.currentState).toEqual({
@@ -68,14 +72,12 @@ describe('AI VoiceFlow move regressions', () => {
     });
     const confirmation = await h.loop.submit('Done', h.signal);
     expect(confirmation.phase).toBe('confirmation');
-    expect(h.model).toHaveBeenCalledOnce();
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('does not accept a model-invented Done lane for Move #239', async () => {
-    const h = harness([
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
-    ]);
+  it('does not invent a lane for Move #239', async () => {
+    const h = harness([]);
     story239(h);
     expect(await h.loop.submit('Move #239.', h.signal)).toEqual({ phase: 'question', text: 'Which lane?' });
     expect(h.loop.currentState).toEqual({
@@ -98,43 +100,41 @@ describe('AI VoiceFlow move regressions', () => {
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('still asks which story for Move to done, then locally merges #239', async () => {
-    const h = harness([
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
-    ]);
+  it('asks which story for Move to done, then locally merges #239 without a model turn', async () => {
+    const h = harness([]);
     story239(h);
     expect(await h.loop.submit('Move to done.', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
     const confirmation = await h.loop.submit('#239', h.signal);
     expect(confirmation.phase).toBe('confirmation');
-    expect(h.model).toHaveBeenCalledOnce();
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('local-merges #239 after Move to done even when the model used ask_user', async () => {
-    const h = harness([{ kind: 'ask_user', text: 'Which story?' }]);
+  it('keeps a missing-target move in structured application-owned clarification state', async () => {
+    const h = harness([]);
     story239(h);
     expect(await h.loop.submit('Move to done.', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
     expect(h.loop.currentState).toEqual({
       kind: 'clarification',
-      skillClarification: { skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference' },
+      skillClarification: { skill: 'todos.move', arguments: { lane: 'done' }, missing: 'reference' },
     });
     const confirmation = await h.loop.submit('#239', h.signal);
     expect(confirmation.phase).toBe('confirmation');
-    expect(h.model).toHaveBeenCalledOnce();
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
 
-  it('local-merges #239 after equivalent ask_user wording for Move to done', async () => {
-    const h = harness([{ kind: 'ask_user', text: 'What should I move?' }]);
+  it('accepts a numeric reply for an application-owned missing target', async () => {
+    const h = harness([]);
     story239(h);
     expect(await h.loop.submit('Move to done.', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
     expect(h.loop.currentState).toEqual({
       kind: 'clarification',
-      skillClarification: { skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference' },
+      skillClarification: { skill: 'todos.move', arguments: { lane: 'done' }, missing: 'reference' },
     });
     const confirmation = await h.loop.submit('#239', h.signal);
     expect(confirmation.phase).toBe('confirmation');
-    expect(h.model).toHaveBeenCalledOnce();
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
 
@@ -201,6 +201,178 @@ describe('AI VoiceFlow move regressions', () => {
     expect(question.phase).toBe('question');
     expect(question.choices).toHaveLength(3);
     expect(h.loop.currentState).toEqual({ kind: 'choice' });
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('resolves a standalone ambiguous move locally and still requires confirmation', async () => {
+    const h = harness([]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push(
+      { id: 92, localId: 370, title: 'Goblins in Burtonsville', status: 'backlog', columnKey: 'backlog' },
+      { id: 93, localId: 371, title: 'Goblins on the way', status: 'backlog', columnKey: 'backlog' },
+    );
+    expect((await h.loop.submit('Move Goblin to Done.', h.signal)).phase).toBe('question');
+    const confirmation = await h.loop.choose(0, h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('Goblins in Washington');
+    expect(h.model).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('continues an ambiguous compound move after local choice and retains the tag mutation', async () => {
+    const h = harness([
+      skill('todos.move', { reference: 'Goblin', lane: 'Done' }),
+      { kind: 'ask_user', text: 'Which one?' },
+      input => skill('todos.add_tag', { todoRef: latestAgentTodoRef(input), tag: 'urgent' }),
+      { kind: 'finish' },
+    ]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push(
+      { id: 92, localId: 370, title: 'Goblins in Burtonsville', status: 'backlog', columnKey: 'backlog' },
+      { id: 93, localId: 371, title: 'Goblins on the way', status: 'backlog', columnKey: 'backlog' },
+    );
+    expect((await h.loop.submit('Move Goblin to Done and tag it urgent', h.signal)).phase).toBe('question');
+    const confirmation = await h.loop.choose(0, h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('Done');
+    expect(confirmation.text).toContain('urgent');
+    expect(h.execute).not.toHaveBeenCalled();
+    expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+    expect(h.execute.mock.calls.map(([ir]) => ir.intent)).toEqual(['todos.move', 'todos.add_tag']);
+  });
+
+  it('continues an ambiguous compound open after local choice and prepares later mutation', async () => {
+    const h = harness([
+      skill('todos.open', { reference: 'Goblin' }),
+      { kind: 'ask_user', text: 'Which one?' },
+      input => skill('todos.add_tag', { todoRef: latestRef(input), tag: 'urgent' }),
+      { kind: 'finish' },
+    ]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 370, title: 'Goblins in Burtonsville', status: 'backlog', columnKey: 'backlog' });
+    expect((await h.loop.submit('Open Goblin and tag it urgent', h.signal)).phase).toBe('question');
+    const confirmation = await h.loop.choose(0, h.signal);
+    expect(h.options.openTodo).toHaveBeenCalledOnce();
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('urgent');
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('continues a compound move after missing-slot clarification and retains later mutation', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
+      skill('todos.add_tag', { reference: '#239', tag: 'urgent' }),
+      { kind: 'finish' },
+    ]);
+    story239(h);
+    expect((await h.loop.submit('Move #239 and tag it urgent', h.signal)).phase).toBe('question');
+    const confirmation = await h.loop.submit('Done', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('Done');
+    expect(confirmation.text).toContain('urgent');
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('preserves model continuation after clarification even without a recognized compound cue', async () => {
+    const h = harness([
+      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
+      skill('todos.add_tag', { reference: '#239', tag: 'urgent' }),
+      { kind: 'finish' },
+    ]);
+    story239(h);
+    expect((await h.loop.submit('Could you move #239 and afterwards make it urgent', h.signal)).phase).toBe('question');
+    const confirmation = await h.loop.submit('Done', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('Done');
+    expect(confirmation.text).toContain('urgent');
+    expect(h.model).toHaveBeenCalledTimes(3);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('preserves model continuation after a choice even without a recognized compound cue', async () => {
+    const h = harness([
+      skill('todos.move', { reference: 'Goblin', lane: 'Done' }),
+      { kind: 'ask_user', text: 'Which one?' },
+      input => skill('todos.add_tag', { todoRef: latestAgentTodoRef(input), tag: 'urgent' }),
+      { kind: 'finish' },
+    ]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
+    h.board.columns.backlog.push({ id: 92, localId: 370, title: 'Goblins in Burtonsville', status: 'backlog', columnKey: 'backlog' });
+    expect((await h.loop.submit('Could you move Goblin and afterwards make it urgent', h.signal)).phase).toBe('question');
+    const confirmation = await h.loop.choose(0, h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(confirmation.text).toContain('Done');
+    expect(confirmation.text).toContain('urgent');
+    expect(h.model).toHaveBeenCalledTimes(4);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it('returns the specific missing-lane error for a named move to an unknown destination', async () => {
+    const h = harness([]);
+    const view = await h.loop.submit('Move Happy Birthday to TotallyInventedLane.', h.signal);
+    expect(view.phase).toBe('error');
+    expect(view.text).toMatch(/status was not found/i);
+    expect(h.model).not.toHaveBeenCalled();
+  });
+
+  it.each(['Research and Development', 'Salt & Pepper', 'Jack and Jill'])(
+    'moves an exact title containing a compound-looking token without a model turn: %s',
+    async title => {
+      const h = harness([]);
+      h.todo.title = title;
+      const view = await h.loop.submit(`Move ${title} to Done.`, h.signal);
+      expect(view.phase).toBe('confirmation');
+      expect(view.text).toContain(title);
+      expect(h.model).not.toHaveBeenCalled();
+      expect(h.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    'Find and Replace',
+    'Search and Replace',
+    'Tag and Assign Permissions',
+    'Archive and Delete Old Data',
+  ])('moves an exact operation-like title without a model turn: %s', async title => {
+    const h = harness([]);
+    h.todo.title = title;
+    const view = await h.loop.submit(`Move ${title} to Done.`, h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain(title);
+    expect(h.model).not.toHaveBeenCalled();
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Ready to Deploy', 'ready_to_deploy'],
+    ['Blocked as Duplicate', 'blocked_as_duplicate'],
+    ['Converted into Lead', 'converted_into_lead'],
+  ])('moves to a %s lane without truncating its name', async (laneName, laneKey) => {
+    const h = harness([]);
+    story239(h);
+    h.board.columnOrder!.push({ key: laneKey, name: laneName, isDone: false });
+    h.board.columns[laneKey] = [];
+    const view = await h.loop.submit(`Move #239 to ${laneName}`, h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain(laneName);
+    expect(h.model).not.toHaveBeenCalled();
+    expect((await h.loop.confirm(h.signal)).phase).toBe('success');
+    expect(h.execute.mock.calls[0][0]).toMatchObject({ intent: 'todos.move', entities: { localId: 239, toColumnKey: laneKey } });
+  });
+
+  it('moves to an operation-like lane name without a model turn', async () => {
+    const h = harness([]);
+    story239(h);
+    h.board.columnOrder!.push({ key: 'review_archive', name: 'Review and Archive', isDone: false });
+    h.board.columns.review_archive = [];
+    const view = await h.loop.submit('Move #239 to Review and Archive', h.signal);
+    expect(view.phase).toBe('confirmation');
+    expect(view.text).toContain('Review and Archive');
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
 

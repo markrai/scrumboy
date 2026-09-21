@@ -5,8 +5,8 @@ import type { BoardMember } from '../state/state.js';
 import { canRunVoiceMutationInContext, getActiveVoiceCommandContext, type VoiceCommandOptions, type VoiceCommandContext } from './command-context.js';
 import { callMcpTool, type McpToolName } from './mcp-client.js';
 import { executeCommandIR } from './execute.js';
-import { rankTitleCandidates, resolveExactTodoTitle, resolveTodoTarget } from './target-resolver.js';
-import { normalizeLookup, parseSpokenNumber, stripWrappingQuotes } from './normalize.js';
+import { resolveExactTodoTitle, resolveTodoTarget, strippedReferenceIsStronger, unwrapTodoReference } from './target-resolver.js';
+import { normalizeLookup, parseSpokenNumber } from './normalize.js';
 import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, matchVoiceMembers, matchVoiceTags } from './resolve.js';
 import { isCommandFailure, validateCommandIR, type CommandIR, type ResolvedCommand } from './schema.js';
 import { voiceText } from './i18n.js';
@@ -40,25 +40,6 @@ type SkillDefinition = { effect: 'read' | 'open' | 'proposal'; run(call: SkillCa
 const short = (value: string, max = 200) => value.slice(0, max);
 const resourceLike = (value: string) => /^(todo|member|lane|tag|proposal)_/.test(value);
 const fail = (status: 'not_found' | 'stale' | 'denied' | 'invalid', resource: AgentResource['kind'] = 'todo'): SkillOutcome => ({ result: status === 'not_found' ? { status, resource } : { status } });
-const TODO_REFERENCE_PREFIX = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
-const TODO_REFERENCE_SUFFIX = /^(.+?)\s+(?:story|todo|to[-\s]?do|card|task|item)$/i;
-
-export function unwrapTodoReference(reference: string): string | null {
-  const trimmed = stripWrappingQuotes(reference.trim());
-  const prefix = TODO_REFERENCE_PREFIX.exec(trimmed)?.[1]?.trim();
-  if (prefix) return prefix;
-  const suffix = TODO_REFERENCE_SUFFIX.exec(trimmed)?.[1]?.trim();
-  if (!suffix) return null;
-  return suffix.replace(/^(?:the|a|an)\s+/i, '').trim() || suffix;
-}
-
-function strippedReferenceIsStronger(reference: string, stripped: string, todo: Todo): boolean {
-  const candidate = [{ localId: todo.localId, title: todo.title }];
-  const originalScore = rankTitleCandidates(reference, candidate)[0]?.score ?? 0;
-  const strippedScore = rankTitleCandidates(stripped, candidate)[0]?.score ?? 0;
-  return strippedScore > originalScore;
-}
-
 export class VoiceAgentSkillRegistry {
   readonly skills: ReadonlyMap<VoiceAgentSkillName, SkillDefinition>;
   private readonly callTool: typeof callMcpTool;

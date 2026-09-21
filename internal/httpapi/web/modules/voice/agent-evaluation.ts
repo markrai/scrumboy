@@ -2,20 +2,12 @@ import type { Board, Todo } from '../types.js';
 import type { LocalTextGenerationCapability } from '../platform/local-text-generation.js';
 import { interpretAgentEnvelope, type AgentEnvelope, type AgentRecovery, type AgentState } from './agent-protocol.js';
 import { createVoiceAgentModel, type VoiceAgentModel } from './agent-model.js';
-import {
-  extractHighConfidenceMoveCall,
-  extractMissingMoveSlotClarification,
-  recoverMoveAfterParseFailure,
-  recoverPresentMoveArguments,
-  extractMoveSlots,
-  uniqueDirectMoveTitle,
-  type MoveSlotEvidence,
-} from './agent-move-extraction.js';
-import { unwrapTodoReference } from './agent-skills.js';
+import { interpretApplicationEnvelope } from './agent-interpretation.js';
+import { extractMoveSlots, type MoveSlotEvidence } from './agent-move-extraction.js';
 import { parseSpokenNumber } from './normalize.js';
 import { isCommandFailure } from './schema.js';
 import { resolveVoiceLane } from './resolve.js';
-import { rankTitleCandidates } from './target-resolver.js';
+import { rankTitleCandidates, selectUniqueTodoReferenceCandidate, unwrapTodoReference } from './target-resolver.js';
 
 export const VOICE_AGENT_EVALUATION_VERSION = 1 as const;
 export const VOICE_AGENT_EVALUATION_TIMEOUT_MS = 45_000;
@@ -87,14 +79,18 @@ function hasLane(board: Board, lane: string): boolean {
   return !isCommandFailure(resolveVoiceLane(lane, board));
 }
 
+function uniqueBoardTitle(phrase: string, board: Board): boolean {
+  return selectUniqueTodoReferenceCandidate(phrase, boardTodos(board).map(todo => ({ localId: todo.localId, title: todo.title }))) != null;
+}
+
 function ambiguousTitle(phrase: string, board: Board): boolean {
-  if (uniqueDirectMoveTitle(phrase, board)) return false;
+  if (uniqueBoardTitle(phrase, board)) return false;
   return rankTitleCandidates(phrase, boardTodos(board).map(todo => ({ localId: todo.localId, title: todo.title }))).length >= 2;
 }
 
 /**
  * Evaluator-only: JSON envelope as the model emitted it, including fence stripping.
- * Does not apply production compatibility recoveries such as move_clarification_with_target_and_lane.
+ * Does not apply production compatibility recoveries such as complete_skill_clarification.
  */
 export function parseUnrecoveredModelEnvelope(raw: string): AgentEnvelope | null {
   if (typeof raw !== 'string' || raw.length > 8192) return null;
@@ -126,7 +122,7 @@ export function voiceAgentEvaluationCaseApplicability(
   if (testCase.id === 'move-nonexistent-lane' && hasLane(board, VOICE_AGENT_EVALUATION_BOARD_REQUIREMENTS.absentLane)) {
     return { applicable: false, reason: 'absent_lane_present' };
   }
-  if (testCase.id === 'move-nonexistent-story' && uniqueDirectMoveTitle(VOICE_AGENT_EVALUATION_BOARD_REQUIREMENTS.absentTitle, board)) {
+  if (testCase.id === 'move-nonexistent-story' && uniqueBoardTitle(VOICE_AGENT_EVALUATION_BOARD_REQUIREMENTS.absentTitle, board)) {
     return { applicable: false, reason: 'absent_title_uniquely_present' };
   }
   if (testCase.id === 'move-goblin-ambiguous' && !ambiguousTitle(VOICE_AGENT_EVALUATION_BOARD_REQUIREMENTS.requiredAmbiguousTitle, board)) {
@@ -134,7 +130,7 @@ export function voiceAgentEvaluationCaseApplicability(
   }
   if (expected.referenceText && !expected.allowClarification && testCase.id !== 'move-nonexistent-story') {
     const slots = extractMoveSlots(testCase.transcript, board);
-    if (!slots.reference || !uniqueDirectMoveTitle(slots.reference, board)) {
+    if (!slots.reference || !uniqueBoardTitle(slots.reference, board)) {
       return { applicable: false, reason: 'unique_title_unavailable' };
     }
   }
@@ -243,8 +239,8 @@ export async function evaluateVoiceAgentUtterance(
   }>,
 ): Promise<VoiceAgentUtteranceEvaluation> {
   const slots = extractMoveSlots(transcript, options.board);
-  const deterministicCall = extractHighConfidenceMoveCall(transcript, options.board);
-  const deterministicClarification = extractMissingMoveSlotClarification(transcript, options.board);
+  const deterministic = interpretApplicationEnvelope(transcript, null, 'idle', options.board);
+  const deterministicCall = deterministic?.envelope.kind === 'skill_call' ? deterministic.envelope : null;
   const applicability = options.applicability ?? { applicable: true, reason: null };
   let rawEnvelope: AgentEnvelope | null = null;
   let protocolEnvelope: AgentEnvelope | null = null;
@@ -274,13 +270,7 @@ export async function evaluateVoiceAgentUtterance(
       protocolEnvelope = null;
     }
   }
-  const recovered = protocolEnvelope
-    ? recoverPresentMoveArguments(transcript, protocolEnvelope, options.board, 'idle')
-    : (providerUsed ? recoverMoveAfterParseFailure(transcript, options.board, 'idle') : null);
-  const guardedEnvelope = deterministicCall
-    ?? recovered?.envelope
-    ?? protocolEnvelope
-    ?? deterministicClarification;
+  const guardedEnvelope = interpretApplicationEnvelope(transcript, protocolEnvelope, 'idle', options.board)?.envelope ?? null;
   const scored = options.expected && applicability.applicable
     ? scoreEvaluationLayers(rawEnvelope, protocolEnvelope, guardedEnvelope, options.expected, options.board)
     : null;

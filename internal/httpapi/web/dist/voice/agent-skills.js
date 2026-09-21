@@ -2,8 +2,8 @@ import { classifyVoiceCommandSafety } from './command-safety.js';
 import { canRunVoiceMutationInContext, getActiveVoiceCommandContext } from './command-context.js';
 import { callMcpTool } from './mcp-client.js';
 import { executeCommandIR } from './execute.js';
-import { rankTitleCandidates, resolveExactTodoTitle, resolveTodoTarget } from './target-resolver.js';
-import { normalizeLookup, parseSpokenNumber, stripWrappingQuotes } from './normalize.js';
+import { resolveExactTodoTitle, resolveTodoTarget, strippedReferenceIsStronger, unwrapTodoReference } from './target-resolver.js';
+import { normalizeLookup, parseSpokenNumber } from './normalize.js';
 import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, matchVoiceMembers, matchVoiceTags } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { voiceText } from './i18n.js';
@@ -11,24 +11,6 @@ import { AGENT_LIMITS, AgentProtocolError, SKILL_NAMES } from './agent-protocol.
 const short = (value, max = 200) => value.slice(0, max);
 const resourceLike = (value) => /^(todo|member|lane|tag|proposal)_/.test(value);
 const fail = (status, resource = 'todo') => ({ result: status === 'not_found' ? { status, resource } : { status } });
-const TODO_REFERENCE_PREFIX = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
-const TODO_REFERENCE_SUFFIX = /^(.+?)\s+(?:story|todo|to[-\s]?do|card|task|item)$/i;
-export function unwrapTodoReference(reference) {
-    const trimmed = stripWrappingQuotes(reference.trim());
-    const prefix = TODO_REFERENCE_PREFIX.exec(trimmed)?.[1]?.trim();
-    if (prefix)
-        return prefix;
-    const suffix = TODO_REFERENCE_SUFFIX.exec(trimmed)?.[1]?.trim();
-    if (!suffix)
-        return null;
-    return suffix.replace(/^(?:the|a|an)\s+/i, '').trim() || suffix;
-}
-function strippedReferenceIsStronger(reference, stripped, todo) {
-    const candidate = [{ localId: todo.localId, title: todo.title }];
-    const originalScore = rankTitleCandidates(reference, candidate)[0]?.score ?? 0;
-    const strippedScore = rankTitleCandidates(stripped, candidate)[0]?.score ?? 0;
-    return strippedScore > originalScore;
-}
 export class VoiceAgentSkillRegistry {
     constructor(options, ports = {}) {
         this.options = options;

@@ -1,251 +1,159 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import type { Board, Todo } from '../types.js';
+import type { Board } from '../types.js';
+import { interpretApplicationEnvelope } from './agent-interpretation.js';
 import {
-  extractHighConfidenceMoveCall,
+  extractDeterministicMoveCall,
   extractMissingMoveSlotClarification,
+  extractMoveSlotCandidates,
   extractMoveSlots,
   hasCompoundRequestCue,
   isCompleteStandaloneMove,
-  recoverMoveAfterParseFailure,
-  recoverPresentMoveArguments,
-  uniqueDirectMoveTitle,
+  recognizeMoveCommand,
 } from './agent-move-extraction.js';
 
-function todo(overrides: Partial<Todo> & Pick<Todo, 'localId' | 'title'>): Todo {
-  return { id: overrides.localId, status: 'backlog', columnKey: 'backlog', ...overrides };
-}
-
-function board(stories: Todo[] = [
-  todo({ localId: 239, title: 'Invalid URLs should redirect to main login' }),
-]): Board {
+function boardWith(titles: readonly string[] = [], laneNames: readonly string[] = ['Backlog', 'Done']): Board {
+  const columnOrder = laneNames.map((name, index) => ({
+    key: name.toLowerCase().replace(/\s+/g, '_'), name, isDone: index === laneNames.length - 1,
+  }));
+  const columns = Object.fromEntries(columnOrder.map(lane => [lane.key, []]));
+  const firstLane = columnOrder[0];
+  columns[firstLane.key] = titles.map((title, index) => ({
+    id: index + 1, localId: index + 1, title, status: firstLane.key, columnKey: firstLane.key,
+  }));
   return {
     project: { id: 1, slug: 'alpha', name: 'Alpha', creatorUserId: 7, dominantColor: '#123456' },
-    tags: [],
-    columnOrder: [
-      { key: 'backlog', name: 'Backlog', isDone: false },
-      { key: 'done', name: 'Done', isDone: true },
-    ],
-    columns: { backlog: stories, done: [] },
+    tags: [], columnOrder, columns,
   };
 }
 
-describe('high-confidence VoiceFlow move extraction', () => {
+describe('application-owned VoiceFlow move recognition', () => {
   it.each([
-    'Move #239 to done.',
-    'Move story #239 to done.',
-    'Move number 239 to Done.',
-    'Move 239 to done',
-  ])('extracts a complete numeric move from %s', utterance => {
-    expect(extractHighConfidenceMoveCall(utterance, board())).toEqual({
-      kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' },
+    ['Move #239 to done.', '#239', 'done'],
+    ['Move story #239 to done.', '#239', 'done'],
+    ['Move number 239 to Done.', '#239', 'Done'],
+    ['Move 239 to done', '#239', 'done'],
+  ])('extracts a complete numeric move from %s', (utterance, reference, lane) => {
+    expect(extractDeterministicMoveCall(utterance)).toEqual({
+      kind: 'skill_call', skill: 'todos.move', arguments: { reference, lane },
     });
-    expect(extractMoveSlots(utterance, board())).toEqual({ reference: '#239', numeric: true, lane: 'Done' });
+    expect(extractMoveSlots(utterance)).toEqual({ reference, numeric: true, lane });
   });
 
   it.each([
-    'Move Invalid URL story to done.',
-    'Move Invalid URLs should redirect to main login to done.',
-    'Move the Invalid URL card into Done.',
-    'Move Goblins in Washington to Done.',
-  ])('skips the model for a unique title move: %s', utterance => {
-    const stories = [
-      todo({ localId: 239, title: 'Invalid URLs should redirect to main login' }),
-      todo({ localId: 369, title: 'Goblins in Washington' }),
-    ];
-    expect(extractHighConfidenceMoveCall(utterance, board(stories))?.kind).toBe('skill_call');
-    expect(extractHighConfidenceMoveCall(utterance, board(stories))?.arguments.lane).toBe('Done');
-  });
-
-  it('does not skip the model for an ambiguous Goblin title', () => {
-    const stories = [
-      todo({ localId: 369, title: 'Goblins in Washington' }),
-      todo({ localId: 370, title: 'Goblins in Burtonsville' }),
-      todo({ localId: 371, title: 'Goblins on the way' }),
-    ];
-    expect(uniqueDirectMoveTitle('Goblin', board(stories))).toBe(false);
-    expect(extractHighConfidenceMoveCall('Move Goblin to Done.', board(stories))).toBeNull();
-    expect(extractMoveSlots('Move Goblin to Done.', board(stories))).toEqual({
-      reference: 'Goblin', numeric: false, lane: 'Done',
+    ['Move Invalid URL story to done.', 'Invalid URL story', 'done'],
+    ['Move Invalid URLs should redirect to main login to done.', 'Invalid URLs should redirect to main login', 'done'],
+    ['Move the Invalid URL card into Done.', 'the Invalid URL card', 'Done'],
+    ['Move Goblin to Done.', 'Goblin', 'Done'],
+    ['Move TotallyInventedStory to TotallyInventedLane.', 'TotallyInventedStory', 'TotallyInventedLane'],
+  ])('recognizes title and lane syntax without resolving board truth: %s', (utterance, reference, lane) => {
+    expect(extractDeterministicMoveCall(utterance, boardWith([reference]))).toEqual({
+      kind: 'skill_call', skill: 'todos.move', arguments: { reference, lane },
     });
   });
 
-  it('keeps exact-title-first when a literal wrapper title exists', () => {
-    const stories = [
-      todo({ localId: 410, title: 'Invalid URL story' }),
-      todo({ localId: 239, title: 'Invalid URLs should redirect to main login' }),
-    ];
-    expect(extractHighConfidenceMoveCall('Move Invalid URL story to done.', board(stories))).toEqual({
-      kind: 'skill_call', skill: 'todos.move', arguments: { reference: 'Invalid URL story', lane: 'Done' },
+  it('returns every destination partition before authoritative lane selection', () => {
+    expect(extractMoveSlotCandidates('Move #239 to Ready to Deploy')).toEqual([
+      { reference: '#239', numeric: true, lane: 'Ready to Deploy' },
+      { reference: '#239 to Ready', numeric: false, lane: 'Deploy' },
+    ]);
+    expect(extractMoveSlots('Move #239 to Ready to Deploy', boardWith([], ['Backlog', 'Ready to Deploy']))).toEqual({
+      reference: '#239', numeric: true, lane: 'Ready to Deploy',
     });
   });
 
-  it('does not treat a missing lane as a complete move', () => {
-    expect(extractHighConfidenceMoveCall('Move #239.', board())).toBeNull();
-    expect(extractMoveSlots('Move #239.', board())).toEqual({ reference: '#239', numeric: true, lane: null });
-    expect(extractMissingMoveSlotClarification('Move #239.', board())).toEqual({
+  it('uses the unique authoritative lane to split a named target containing destination words', () => {
+    const board = boardWith(['Invalid URLs should redirect to main login', 'Widget'], ['Backlog', 'Done', 'Ready to Deploy']);
+    expect(extractMoveSlots('Move Invalid URLs should redirect to main login to Done', board)).toEqual({
+      reference: 'Invalid URLs should redirect to main login', numeric: false, lane: 'Done',
+    });
+    expect(extractMoveSlots('Move Widget to Ready to Deploy', board)).toEqual({
+      reference: 'Widget', numeric: false, lane: 'Ready to Deploy',
+    });
+  });
+
+  it('abstains when multiple destination partitions resolve to real lanes', () => {
+    const board = boardWith(['Widget'], ['Backlog', 'Ready to Deploy', 'Deploy']);
+    expect(recognizeMoveCommand('Move Widget to Ready to Deploy', board)).toBeNull();
+  });
+
+  it('recognizes missing slots without asking the model', () => {
+    expect(extractDeterministicMoveCall('Move #239.')).toBeNull();
+    expect(extractMissingMoveSlotClarification('Move #239.')).toEqual({
       kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?',
     });
-  });
-
-  it('does not treat a missing numeric target as a complete move', () => {
-    expect(extractHighConfidenceMoveCall('Move to done.', board())).toBeNull();
-    expect(extractMoveSlots('Move to done.', board())).toEqual({ reference: null, numeric: false, lane: 'Done' });
-    expect(extractMissingMoveSlotClarification('Move to done.', board())).toEqual({
-      kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?',
+    expect(extractMissingMoveSlotClarification('Move to done.')).toEqual({
+      kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'done' }, missing: 'reference', text: 'Which story?',
     });
   });
 
-  it('does not skip the model for compound work', () => {
-    expect(hasCompoundRequestCue('Move #239 to done and tag it urgent')).toBe(true);
-    expect(extractHighConfidenceMoveCall('Move #239 to done and tag it urgent', board())).toBeNull();
-    expect(extractMissingMoveSlotClarification('Move to done and archive it', board())).toBeNull();
+  it.each([
+    'Move Research and Development to Done.',
+    'Move Salt & Pepper to Done.',
+    'Move Jack and Jill to Done.',
+  ])('does not mistake a title conjunction for compound work: %s', utterance => {
+    expect(hasCompoundRequestCue(utterance)).toBe(false);
+    expect(extractDeterministicMoveCall(utterance)?.skill).toBe('todos.move');
   });
 
-  it('rejects a clarify_skill that claims a plainly present lane is missing', () => {
-    const recovered = recoverPresentMoveArguments(
-      'Move #239 to done.',
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
-      board(),
-      'idle',
-    );
-    expect(recovered).toEqual({
-      recoveredFrom: 'present_move_slots',
-      envelope: { kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' } },
+  it.each([
+    'Find and Replace',
+    'Search and Replace',
+    'Tag and Assign Permissions',
+    'Archive and Delete Old Data',
+  ])('treats an operation-like phrase as literal when it is an exact title: %s', title => {
+    const board = boardWith([title]);
+    const utterance = `Move ${title} to Done`;
+    expect(hasCompoundRequestCue(utterance, board)).toBe(false);
+    expect(extractDeterministicMoveCall(utterance, board)).toEqual({
+      kind: 'skill_call', skill: 'todos.move', arguments: { reference: title, lane: 'Done' },
     });
   });
 
-  it('converts Which lane? ask_user into a complete move when both slots are present', () => {
-    const recovered = recoverPresentMoveArguments(
-      'Move #239 to done.',
-      { kind: 'ask_user', text: 'Which lane?' },
-      board(),
-      'idle',
-    );
-    expect(recovered?.envelope).toEqual({
+  it('treats an operation-like phrase as literal when it is an authoritative lane', () => {
+    const board = boardWith([], ['Backlog', 'Review and Archive']);
+    const utterance = 'Move #239 to Review and Archive';
+    expect(hasCompoundRequestCue(utterance, board)).toBe(false);
+    expect(extractDeterministicMoveCall(utterance, board)).toEqual({
+      kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'Review and Archive' },
+    });
+  });
+
+  it.each([
+    'Move #239 to done and tag it urgent',
+    'Move #239 to done, then add the urgent tag',
+    'Move #239 to done; open it',
+    'Move to done and archive it',
+    'Move #239 and after that tag it urgent',
+  ])('abstains when a second operation is present: %s', utterance => {
+    expect(hasCompoundRequestCue(utterance)).toBe(true);
+    expect(recognizeMoveCommand(utterance)).toBeNull();
+  });
+
+  it('abstains for uncertain or non-move syntax', () => {
+    expect(recognizeMoveCommand('Move story.')).toBeNull();
+    expect(recognizeMoveCommand('Could this be done?')).toBeNull();
+  });
+
+  it('keeps terminality separate from interpretation provenance', () => {
+    expect(interpretApplicationEnvelope('Move #239 to done.', { kind: 'ask_user', text: 'Which lane?' }, 'idle')).toEqual({
+      source: 'deterministic_move',
+      completion: 'finish_after_effect',
+      envelope: { kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'done' } },
+    });
+    expect(interpretApplicationEnvelope('Move #239 to done and tag it urgent', {
       kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' },
-    });
+    }, 'idle')).toMatchObject({ source: 'model', completion: 'continue' });
   });
 
-  it('keeps a genuine missing-lane clarification', () => {
-    expect(recoverPresentMoveArguments(
-      'Move #239.',
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
-      board(),
-      'idle',
-    )).toBeNull();
-  });
-
-  it('keeps a genuine missing-reference clarification', () => {
-    expect(recoverPresentMoveArguments(
-      'Move to done.',
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
-      board(),
-      'idle',
-    )).toBeNull();
-  });
-
-  it('turns a Which lane? ask_user into structured clarification when only the target is present', () => {
-    const recovered = recoverPresentMoveArguments(
-      'Move #239.',
-      { kind: 'ask_user', text: 'Which lane?' },
-      board(),
-      'idle',
-    );
-    expect(recovered).toEqual({
-      recoveredFrom: 'ask_user_to_clarify_skill',
-      envelope: { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
-    });
-  });
-
-  it('turns a Which story? ask_user into structured clarification when only the lane is present', () => {
-    const recovered = recoverPresentMoveArguments(
-      'Move to done.',
-      { kind: 'ask_user', text: 'Which story?' },
-      board(),
-      'idle',
-    );
-    expect(recovered).toEqual({
-      recoveredFrom: 'ask_user_to_clarify_skill',
-      envelope: { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
-    });
-  });
-
-  it('still retains a missing-target draft when ask_user uses equivalent wording', () => {
-    const recovered = recoverPresentMoveArguments(
-      'Move to done.',
-      { kind: 'ask_user', text: 'What should I move?' },
-      board(),
-      'idle',
-    );
-    expect(recovered).toEqual({
-      recoveredFrom: 'ask_user_to_clarify_skill',
-      envelope: { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
-    });
-  });
-
-  it('does not give a non-move ask_user missing-slot authority', () => {
-    expect(recoverPresentMoveArguments(
-      'Delete a story',
-      { kind: 'ask_user', text: 'Which story?' },
-      board(),
-      'idle',
-    )).toBeNull();
-  });
-
-  it('does not complete Move #239 from a model-invented Done lane', () => {
-    expect(recoverPresentMoveArguments(
-      'Move #239.',
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference', text: 'Which story?' },
-      board(),
-      'idle',
-    )).toEqual({
-      recoveredFrom: 'present_move_slots',
-      envelope: { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
-    });
-  });
-
-  it('does not intercept a compound move as a complete skill_call', () => {
-    expect(recoverPresentMoveArguments(
-      'Move #239 to done and tag it urgent',
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239' }, missing: 'lane', text: 'Which lane?' },
-      board(),
-      'idle',
-    )).toBeNull();
-    expect(extractHighConfidenceMoveCall('Move #239 to done and tag it urgent', board())).toBeNull();
-  });
-
-  it('recovers a title move that already names a lane', () => {
-    const recovered = recoverPresentMoveArguments(
-      'Move Invalid URL story to done.',
-      { kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: 'Invalid URL story' }, missing: 'lane', text: 'Which lane?' },
-      board(),
-      'idle',
-    );
-    expect(recovered?.envelope).toEqual({
-      kind: 'skill_call', skill: 'todos.move', arguments: { reference: 'Invalid URL story', lane: 'Done' },
-    });
-  });
-
-  it('recovers a unique title move after unparseable model JSON', () => {
-    const recovered = recoverMoveAfterParseFailure('Move Invalid URL story to done.', board(), 'idle');
-    expect(recovered).toEqual({
-      recoveredFrom: 'model_parse_failure',
-      envelope: { kind: 'skill_call', skill: 'todos.move', arguments: { reference: 'Invalid URL story', lane: 'Done' } },
-    });
-  });
-
-  it('recovers a missing-slot draft after unparseable model JSON', () => {
-    expect(recoverMoveAfterParseFailure('Move to done.', board(), 'idle')?.envelope).toMatchObject({
-      kind: 'clarify_skill', skill: 'todos.move', missing: 'reference',
-    });
-    expect(recoverMoveAfterParseFailure('Move #239.', board(), 'idle')?.envelope).toMatchObject({
+  it('uses the same production interpretation to recover malformed-model cases in evaluation', () => {
+    expect(interpretApplicationEnvelope('Move #239.', null, 'idle')?.envelope).toMatchObject({
       kind: 'clarify_skill', skill: 'todos.move', missing: 'lane',
     });
+    expect(interpretApplicationEnvelope('Move #239 to done.', null, 'clarification')).toBeNull();
   });
 
-  it('does not finish compound prepared work locally', () => {
-    expect(isCompleteStandaloneMove('Move #239 to done and tag it urgent', board())).toBe(false);
-    expect(isCompleteStandaloneMove('Move #239 to done.', board())).toBe(true);
+  it('distinguishes standalone completion from compound continuation', () => {
+    expect(isCompleteStandaloneMove('Move #239 to done and tag it urgent')).toBe(false);
+    expect(isCompleteStandaloneMove('Move #239 to done.')).toBe(true);
   });
 });

@@ -210,8 +210,8 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('#369', h.signal);
     expect(confirmation).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
     expect(run.mock.calls[1][0]).toEqual(skill('todos.delete', { todoRef: offeredRef }));
-    expect(h.events).not.toContain('model');
-    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.events).toContain('model');
+    expect(h.model).toHaveBeenCalledTimes(3);
     expect(h.options.openTodo).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
@@ -236,8 +236,8 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('#369', h.signal);
     expect(confirmation).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
     expect(run.mock.calls[0][0]).toEqual(skill('todos.delete', { reference: '#369' }));
-    expect(h.events).not.toContain('model');
-    expect(h.model).toHaveBeenCalledTimes(1);
+    expect(h.events).toContain('model');
+    expect(h.model).toHaveBeenCalledTimes(2);
     expect(h.options.openTodo).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
@@ -274,7 +274,7 @@ describe('bounded local agent loop', () => {
     expect(confirmation.phase).toBe('confirmation');
     expect(run.mock.calls[1][0]).toEqual(skill('todos.move', { todoRef: offeredRef, lane: 'Done' }));
     expect(h.events).not.toContain('model');
-    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
   it('retains a structured missing move reference and fills #369 locally', async () => {
@@ -299,14 +299,14 @@ describe('bounded local agent loop', () => {
         skillClarification: { skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference' },
       });
       expect(run).not.toHaveBeenCalled();
-      expect(h.model).toHaveBeenCalledOnce();
+      expect(h.model).not.toHaveBeenCalled();
       h.events.length = 0;
 
       const confirmation = await h.loop.submit('#369', h.signal);
       expect(confirmation.phase).toBe('confirmation');
       expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { lane: 'Done', reference: '#369' }));
       expect(h.events).not.toContain('model');
-      expect(h.model).toHaveBeenCalledTimes(1);
+      expect(h.model).not.toHaveBeenCalled();
       expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
       expect(h.execute).not.toHaveBeenCalled();
       expect(events).toContainEqual(expect.objectContaining({
@@ -337,7 +337,7 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('Done', h.signal);
     expect(confirmation.phase).toBe('confirmation');
     expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' }));
-    expect(h.model).toHaveBeenCalledTimes(1);
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
   it('hands ambiguity from a locally completed clarification to pendingChoice', async () => {
@@ -374,7 +374,7 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('#369', h.signal);
     expect(confirmation.phase).toBe('confirmation');
     expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { lane: 'Done', reference: '#369' }));
-    expect(h.model).toHaveBeenCalledTimes(1);
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
   it('continues compound work after a deterministic Open choice and confirms the selected Todo mutation', async () => {

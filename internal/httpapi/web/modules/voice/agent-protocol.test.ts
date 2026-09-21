@@ -26,13 +26,13 @@ describe('voice-agent-v16 protocol', () => {
   it('recovers a delete clarification that already contains a valid reference', () => {
     expect(interpretAgentEnvelope(JSON.stringify({ kind: 'clarify_skill', skill: 'todos.delete', arguments: { reference: 'Billy Mongoose' }, missing: 'confirmation', text: 'Are you sure?' }), idle)).toEqual({
       envelope: { kind: 'skill_call', skill: 'todos.delete', arguments: { reference: 'Billy Mongoose' } },
-      recoveredFrom: 'delete_clarification_with_target',
+      recoveredFrom: 'complete_skill_clarification',
     });
   });
   it('recovers a delete clarification that already contains a valid todoRef without trusting missing', () => {
     expect(interpretAgentEnvelope(JSON.stringify({ kind: 'clarify_skill', skill: 'todos.delete', arguments: { todoRef: 'todo_369' }, missing: 'approval', text: 'Please confirm.' }), idle)).toEqual({
       envelope: { kind: 'skill_call', skill: 'todos.delete', arguments: { todoRef: 'todo_369' } },
-      recoveredFrom: 'delete_clarification_with_target',
+      recoveredFrom: 'complete_skill_clarification',
     });
   });
   it('recovers a move clarification that already contains both reference and lane', () => {
@@ -40,7 +40,7 @@ describe('voice-agent-v16 protocol', () => {
       kind: 'clarify_skill', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' }, missing: 'lane', text: 'Which lane?',
     }), idle)).toEqual({
       envelope: { kind: 'skill_call', skill: 'todos.move', arguments: { reference: '#239', lane: 'Done' } },
-      recoveredFrom: 'move_clarification_with_target_and_lane',
+      recoveredFrom: 'complete_skill_clarification',
     });
   });
   describe('safe structural rejection diagnostics', () => {

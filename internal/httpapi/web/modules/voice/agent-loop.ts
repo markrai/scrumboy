@@ -5,13 +5,14 @@ import { VoiceAgentResourceHandles } from './agent-resources.js';
 import { VoiceAgentProposalStore, type BatchExecution } from './agent-proposals.js';
 import { renderAgentSkillResult, type AgentSession, type AgentSkillContext, type AgentSkillResult, type VoiceAgentSkillRegistry } from './agent-skills.js';
 import type { VoiceAgentModel } from './agent-model.js';
-import { extractHighConfidenceMoveCall, isCompleteStandaloneMove, recoverMoveAfterParseFailure, recoverPresentMoveArguments } from './agent-move-extraction.js';
+import { interpretApplicationEnvelope, type AgentTaskCompletion } from './agent-interpretation.js';
 import { normalizeLookup } from './normalize.js';
 
 type TraceEntry = { user: string } | { agent: AgentEnvelope } | { skillResult: { skill: SkillCall['skill']; result: AgentSkillResult } };
 export type AgentTask = AgentSkillContext & {
   goal: string; trace: TraceEntry[]; proposals: VoiceAgentProposalStore; confirmation: boolean; clarification: boolean;
   pendingSkillClarification: SkillClarification | null;
+  pendingResolutionCompletion: AgentTaskCompletion | null;
   modelSteps: number; skillCalls: number; results: AgentSkillResult[];
 };
 export type AgentLoopView = { text: string; choices?: { id: string; label: string }[]; danger?: boolean; confirmLabel?: string } & (
@@ -164,7 +165,7 @@ export class VoiceAgentLoop {
   invalidate(): void {
     this.diagnostic?.end('controller_invalidated');
     this.task?.handles.clear(); this.task?.proposals.clear();
-    if (this.task) { this.task.goal = ''; this.task.confirmation = false; this.task.clarification = false; this.task.trace.length = 0; this.task.results.length = 0; this.task.pendingChoice = null; this.task.pendingSkillClarification = null; }
+    if (this.task) { this.task.goal = ''; this.task.confirmation = false; this.task.clarification = false; this.task.trace.length = 0; this.task.results.length = 0; this.task.pendingChoice = null; this.task.pendingSkillClarification = null; this.task.pendingResolutionCompletion = null; }
     this.task = null; this.session.activeTodo = null;
   }
   setKeepListening(enabled: boolean): void {
@@ -173,7 +174,7 @@ export class VoiceAgentLoop {
   }
   private finish(task: AgentTask, mutations: number): void {
     task.diagnostic?.end('success', { modelSteps: task.modelSteps, skillCalls: task.skillCalls, mutationsExecuted: mutations });
-    task.handles.clear(); task.proposals.clear(); task.goal = ''; task.confirmation = false; task.clarification = false; task.trace.length = 0; task.results.length = 0; task.pendingChoice = null; task.pendingSkillClarification = null;
+    task.handles.clear(); task.proposals.clear(); task.goal = ''; task.confirmation = false; task.clarification = false; task.trace.length = 0; task.results.length = 0; task.pendingChoice = null; task.pendingSkillClarification = null; task.pendingResolutionCompletion = null;
     this.task = null;
     if (!this.session.keepListening) this.session.activeTodo = null;
   }
@@ -205,26 +206,32 @@ export class VoiceAgentLoop {
     let interpretState: AgentStateKind | 'none' = 'none';
     let repaired = false;
     try {
-      const context = this.registry.context(signal);
+      const initialContext = this.registry.context(signal);
       if (!utterance.trim() || utterance.length > AGENT_LIMITS.utterance) throw new AgentProtocolError('Utterance limit');
       let localSelection: AgentEnvelope | null = null;
       let localClarification: SkillClarification | null = null;
-      let localSource: 'local_clarification' | 'local_choice' | 'local_high_confidence_move' | 'local_standalone_finish' | null = null;
+      let localSource: 'local_clarification' | 'local_choice' | 'local_deterministic_move' | 'local_standalone_finish' | null = null;
+      let localCompletion: AgentTaskCompletion = 'continue';
       if (!this.task) {
-        this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, pendingSkillClarification: null, choiceAnswered: false, confirmation: false, clarification: false, modelSteps: 0, skillCalls: 0, results: [] };
-        const extracted = extractHighConfidenceMoveCall(utterance, context.board);
-        if (extracted) {
-          localSelection = extracted;
-          localSource = 'local_high_confidence_move';
+        this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, pendingSkillClarification: null, pendingResolutionCompletion: null, choiceAnswered: false, confirmation: false, clarification: false, modelSteps: 0, skillCalls: 0, results: [] };
+        const interpreted = interpretApplicationEnvelope(utterance, null, 'idle', initialContext.board);
+        if (interpreted) {
+          localSelection = interpreted.envelope;
+          localSource = 'local_deterministic_move';
+          localCompletion = interpreted.completion;
         }
       } else if (this.task.pendingChoice) {
         this.task.choiceAnswered = true;
         localSelection = localChoiceCall(this.task, utterance);
-        if (localSelection) localSource = 'local_choice';
+        if (localSelection) {
+          localSource = 'local_choice';
+          localCompletion = this.task.pendingResolutionCompletion ?? 'continue';
+        }
       } else if (this.task.pendingSkillClarification) {
         localClarification = this.task.pendingSkillClarification;
         localSelection = completeSkillClarification(localClarification, utterance);
         localSource = 'local_clarification';
+        localCompletion = this.task.pendingResolutionCompletion ?? 'continue';
       }
       const task = this.task;
       this.append(task, { user: utterance });
@@ -234,17 +241,18 @@ export class VoiceAgentLoop {
         repaired = false;
         const state = this.state(task);
         interpretState = state.kind;
-        let sourcedLocally = false;
+        let completion: AgentTaskCompletion = 'continue';
         if (localSelection) {
           envelope = localSelection;
           const source = localSource;
-          sourcedLocally = source === 'local_clarification' || source === 'local_choice' || source === 'local_high_confidence_move';
+          completion = localCompletion;
           localSelection = null;
           diagnostic.emit('interpret', localClarification && source === 'local_clarification'
             ? { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source, clarificationKind: 'skill_argument', skill: localClarification.skill, missing: localClarification.missing, clarificationResolved: true }
             : { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source, ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}) });
           localClarification = null;
           localSource = null;
+          localCompletion = 'continue';
         }
         for (let attempt = 0; !envelope && attempt < 2; attempt++) {
           if (task.modelSteps >= AGENT_LIMITS.modelSteps || task.skillCalls >= AGENT_LIMITS.skillCalls) throw new AgentProtocolError('Task limit');
@@ -255,29 +263,31 @@ export class VoiceAgentLoop {
           });
           stage = 'interpret';
           const raw = await this.model(input, signal);
-          this.registry.context(signal);
+          const currentContext = this.registry.context(signal);
           if (this.task !== task) throw new AgentProtocolError('Task expired');
           try {
             const parsed = interpretAgentEnvelope(raw, state);
-            const recovered = recoverPresentMoveArguments(utterance, parsed.envelope, context.board, state.kind);
-            envelope = recovered?.envelope ?? parsed.envelope;
+            const interpreted = interpretApplicationEnvelope(utterance, parsed.envelope, state.kind, currentContext.board);
+            if (!interpreted) throw new AgentProtocolError('Missing envelope');
+            envelope = interpreted.envelope;
+            completion = interpreted.completion;
             diagnostic.emit('interpret', {
               step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind,
               ...(parsed.recoveredFrom ? { recoveredFrom: parsed.recoveredFrom } : {}),
-              ...(recovered ? { semanticGuard: recovered.recoveredFrom, modelInterpretationKind: parsed.envelope.kind } : {}),
+              ...(interpreted.source !== 'model' ? { semanticGuard: interpreted.source, modelInterpretationKind: parsed.envelope.kind } : {}),
               ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}),
               ...(envelope.kind === 'clarify_skill' ? { skill: envelope.skill, missing: envelope.missing } : {}),
             });
             break;
           }
           catch (error) {
-            const recovered = recoverMoveAfterParseFailure(utterance, context.board, state.kind);
-            if (recovered) {
-              envelope = recovered.envelope;
-              sourcedLocally = envelope.kind === 'skill_call';
+            const interpreted = interpretApplicationEnvelope(utterance, null, state.kind, currentContext.board);
+            if (interpreted) {
+              envelope = interpreted.envelope;
+              completion = interpreted.completion;
               diagnostic.emit('interpret', {
                 step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind,
-                semanticGuard: recovered.recoveredFrom,
+                semanticGuard: interpreted.source,
                 ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}),
                 ...(envelope.kind === 'clarify_skill' ? { skill: envelope.skill, missing: envelope.missing } : {}),
               });
@@ -305,6 +315,7 @@ export class VoiceAgentLoop {
           task.confirmation = false;
           task.clarification = false;
           task.pendingSkillClarification = Object.freeze({ ...envelope, arguments: Object.freeze({ ...envelope.arguments }) }) as SkillClarification;
+          task.pendingResolutionCompletion = completion;
           diagnostic.emit('resolve', { phase: 'initial', result: 'question', choiceCount: 0, clarificationKind: 'skill_argument', skill: envelope.skill, missing: envelope.missing });
           return { phase: 'question', text: envelope.text };
         }
@@ -329,6 +340,7 @@ export class VoiceAgentLoop {
           stage = 'target_resolution';
           const outcome = await this.registry.run(envelope, task, signal);
           task.pendingSkillClarification = null;
+          task.pendingResolutionCompletion = outcome.result.status === 'choices' ? completion : null;
           this.registry.context(signal);
           if (this.task !== task) throw new AgentProtocolError('Task expired');
           if (outcome.prepared) {
@@ -357,6 +369,11 @@ export class VoiceAgentLoop {
           }
           this.append(task, { skillResult: { skill: envelope.skill, result: outcome.result } });
           task.results.push(outcome.result);
+          if (outcome.result.status === 'choices' && completion === 'finish_after_effect') {
+            diagnostic.emit('resolve', { phase: 'initial', result: 'question', choiceCount: outcome.result.choices.length });
+            return { phase: 'question', text: renderAgentSkillResult(outcome.result),
+              choices: outcome.result.choices.map(choice => ({ id: choice.handle, label: `${choice.number ? `#${choice.number} · ` : ''}${choice.label}${choice.lane ? ` · ${choice.lane}` : ''}` })) };
+          }
           const standaloneOpenComplete = outcome.result.status === 'opened' && isStandaloneNamedOpenGoal(task.goal)
             && !task.proposals.count && task.results.every(result => ['choices', 'resolved', 'opened'].includes(result.status));
           if (standaloneOpenComplete) {
@@ -365,7 +382,7 @@ export class VoiceAgentLoop {
             return { phase: 'success', text };
           }
           if ((outcome.prepared || outcome.result.status === 'no_op') && !task.pendingChoice
-            && (sourcedLocally || (envelope.skill === 'todos.move' && isCompleteStandaloneMove(task.goal, context.board)))) {
+            && completion === 'finish_after_effect') {
             localSelection = { kind: 'finish' };
             localSource = 'local_standalone_finish';
           }

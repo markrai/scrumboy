@@ -1,5 +1,5 @@
 import type { Board, Todo } from '../types.js';
-import { normalizeTitleReference } from './normalize.js';
+import { normalizeTitleReference, stripWrappingQuotes } from './normalize.js';
 import { localizedCommandFailure, isCommandFailure, type CommandResult, type TodoTargetCandidate, type TodoTargetReference } from './schema.js';
 import type { McpToolName } from './mcp-client.js';
 
@@ -31,6 +31,8 @@ export type RankedTodoCandidate = TodoTargetCandidate & {
 const MIN_CANDIDATE_SCORE = 70;
 const SINGLE_CANDIDATE_AUTO_SCORE = 75;
 const CLEAR_WIN_SCORE_GAP = 12;
+const TODO_REFERENCE_PREFIX = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
+const TODO_REFERENCE_SUFFIX = /^(.+?)\s+(?:story|todo|to[-\s]?do|card|task|item)$/i;
 
 function boardTodos(board: Board): Todo[] {
   return Object.values(board.columns ?? {}).flat();
@@ -158,6 +160,43 @@ export function selectUniqueTitleCandidate(
   const hasClearSingle = !second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE;
   const hasClearWinner = !!second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE && first.score - second.score >= CLEAR_WIN_SCORE_GAP;
   return hasClearSingle || hasClearWinner ? first : null;
+}
+
+/** Removes a grammatical Todo wrapper without deciding whether stripping is safe for a particular board. */
+export function unwrapTodoReference(reference: string): string | null {
+  const trimmed = stripWrappingQuotes(reference.trim());
+  const prefix = TODO_REFERENCE_PREFIX.exec(trimmed)?.[1]?.trim();
+  if (prefix) return prefix;
+  const suffix = TODO_REFERENCE_SUFFIX.exec(trimmed)?.[1]?.trim();
+  if (!suffix) return null;
+  return suffix.replace(/^(?:the|a|an)\s+/i, '').trim() || suffix;
+}
+
+/** Wrapper stripping is safe only when it improves the selected candidate's title score. */
+export function strippedReferenceIsStronger(
+  reference: string,
+  stripped: string,
+  candidate: TodoTargetCandidate,
+): boolean {
+  const candidates = [candidate];
+  const originalScore = rankTitleCandidates(reference, candidates)[0]?.score ?? 0;
+  const strippedScore = rankTitleCandidates(stripped, candidates)[0]?.score ?? 0;
+  return strippedScore > originalScore;
+}
+
+/** Exact literal title first, then a unique and demonstrably stronger wrapper-stripped interpretation. */
+export function selectUniqueTodoReferenceCandidate(
+  reference: string,
+  candidates: TodoTargetCandidate[],
+): RankedTodoCandidate | null {
+  const original = rankTitleCandidates(reference, candidates);
+  const exact = original.filter(candidate => candidate.score === 100);
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+  const unwrapped = unwrapTodoReference(reference);
+  if (!unwrapped) return selectUniqueTitleCandidate(reference, candidates);
+  const selected = selectUniqueTitleCandidate(unwrapped, candidates);
+  return selected && strippedReferenceIsStronger(reference, unwrapped, selected) ? selected : null;
 }
 
 async function rankedTitleCandidates(phrase: string, context: TodoTargetResolveContext): Promise<RankedTodoCandidate[]> {
