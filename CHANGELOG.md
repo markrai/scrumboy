@@ -2,6 +2,25 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.36.3] - 2026-09-20
+
+### Fixed
+
+- **VoiceFlow move-to-lane interpretation** - Standalone move utterances
+  (`Move #239 to done`, title-based moves, spoken numbers) are recognized
+  deterministically while the agent is idle, so complete moves no longer
+  depend on the on-device model and incomplete ones clarify the missing
+  story or lane. Compound or continuation moves still go through the model.
+  Target/lane resolution and finish-after-effect completion are hardened so
+  a successful single move ends cleanly without inviting an unintended
+  follow-up skill call.
+
+### Added
+
+- **Voice agent evaluation bridge** - Debug-only Android / Capacitor path to
+  score move utterances (raw, protocol, and application accuracy) against a
+  fixed corpus on the current board without executing mutations.
+
 ## [3.36.2] - 2026-09-18
 
 ### Fixed
