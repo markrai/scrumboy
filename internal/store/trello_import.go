@@ -6,16 +6,14 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"scrumboy/internal/version"
 )
 
 func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, projectImportMetadata string, todoImportMetadataByLocalID map[int64]string, mode Mode) (Project, error) {
 	if data == nil || len(data.Projects) != 1 {
 		return Project{}, fmt.Errorf("%w: Trello import requires exactly one project payload", ErrValidation)
 	}
-	if data.Version != version.ExportFormatVersion {
-		return Project{}, fmt.Errorf("%w: unsupported export version %q (expected %s)", ErrValidation, data.Version, version.ExportFormatVersion)
+	if err := validateBackupVersionAndArchiveFields(data); err != nil {
+		return Project{}, err
 	}
 	if err := s.validateImportPreflight(ctx, data, mode, "copy"); err != nil {
 		return Project{}, err
@@ -80,10 +78,14 @@ func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, proje
 				todoImportMetadata = metadata
 			}
 		}
+		var archivedAt any
+		if todoExport.ArchivedAtPresent && todoExport.ArchivedAt != nil {
+			archivedAt = *todoExport.ArchivedAt
+		}
 
 		res, err := tx.ExecContext(ctx, `
-			INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, created_at, updated_at, done_at, import_metadata)
-			VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)`,
+			INSERT INTO todos(project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, sprint_id, created_at, updated_at, done_at, archived_at, import_metadata)
+			VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)`,
 			newProjectID,
 			todoExport.LocalID,
 			todoExport.Title,
@@ -94,6 +96,7 @@ func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, proje
 			createdAtMs,
 			updatedAtMs,
 			resolveImportDoneAt(todoExport.DoneAt, status, updatedAtMs),
+			archivedAt,
 			todoImportMetadata,
 		)
 		if err != nil {

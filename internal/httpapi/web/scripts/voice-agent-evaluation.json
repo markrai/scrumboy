@@ -1,0 +1,156 @@
+{
+  "description": "Synthetic goldens for physical on-device agent semantic evaluation. rawAccuracy scores the unrecovered model JSON before protocol compatibility recoveries such as complete_skill_clarification. protocolAccuracy scores interpretAgentEnvelope. applicationAccuracy scores the production application interpretation layer. Application accuracy is valid only on a board that satisfies boardRequirements; inapplicable cases are reported separately and are not semantic misses. Mocked generation is not model accuracy. Complete standalone moves must not be scored as missing-lane or missing-reference clarifications.",
+  "boardRequirements": {
+    "requiredLocalIds": [239],
+    "requiredUniqueTitles": ["Invalid URLs should redirect to main login", "Goblins in Washington"],
+    "requiredAmbiguousTitle": "Goblin",
+    "requiredLane": "done",
+    "absentTitle": "TotallyInventedStory",
+    "absentLane": "TotallyInventedLane"
+  },
+  "cases": [
+    {
+      "id": "move-hash-to-done",
+      "transcript": "Move #239 to done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceNumeric": 239,
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-story-hash-to-done",
+      "transcript": "Move story #239 to done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceNumeric": 239,
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-number-to-done",
+      "transcript": "Move number 239 to Done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceNumeric": 239,
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-hash-missing-lane",
+      "transcript": "Move #239.",
+      "expected": {
+        "kind": "clarify_skill",
+        "skill": "todos.move",
+        "missing": "lane",
+        "referenceNumeric": 239,
+        "allowClarification": true
+      }
+    },
+    {
+      "id": "move-to-done-missing-reference",
+      "transcript": "Move to done.",
+      "expected": {
+        "kind": "clarify_skill",
+        "skill": "todos.move",
+        "missing": "reference",
+        "lane": "done",
+        "allowClarification": true
+      }
+    },
+    {
+      "id": "move-invalid-url-story",
+      "transcript": "Move Invalid URL story to done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceText": "Invalid URL",
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-invalid-urls-full-title",
+      "transcript": "Move Invalid URLs should redirect to main login to done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceText": "Invalid URL",
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-the-invalid-url-card",
+      "transcript": "Move the Invalid URL card into Done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceText": "Invalid URL",
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-goblins-in-washington",
+      "transcript": "Move Goblins in Washington to Done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceText": "Goblins in Washington",
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-goblin-ambiguous",
+      "transcript": "Move Goblin to Done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceText": "Goblin",
+        "lane": "done",
+        "allowClarification": true
+      }
+    },
+    {
+      "id": "move-nonexistent-story",
+      "transcript": "Move TotallyInventedStory to done.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceText": "TotallyInventedStory",
+        "lane": "done",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-nonexistent-lane",
+      "transcript": "Move #239 to TotallyInventedLane.",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceNumeric": 239,
+        "lane": "TotallyInventedLane",
+        "allowClarification": false
+      }
+    },
+    {
+      "id": "move-compound",
+      "transcript": "Move #239 to done and tag it urgent",
+      "expected": {
+        "kind": "skill_call",
+        "skill": "todos.move",
+        "referenceNumeric": 239,
+        "lane": "done",
+        "allowClarification": true
+      }
+    }
+  ]
+}

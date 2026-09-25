@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiFetchMock, loadBoardBySlugMock, state } = vi.hoisted(() => ({
+const { apiFetchMock, archiveTodosMock, restoreTodosMock, loadBoardBySlugMock, showToastMock, state } = vi.hoisted(() => ({
   apiFetchMock: vi.fn().mockResolvedValue({}),
+  archiveTodosMock: vi.fn().mockResolvedValue({ transitionedCount: 1 }),
+  restoreTodosMock: vi.fn().mockResolvedValue({ transitionedCount: 1 }),
   loadBoardBySlugMock: vi.fn().mockResolvedValue(undefined),
+  showToastMock: vi.fn(),
   state: {
     editingTodo: null as any,
   },
@@ -21,6 +24,8 @@ vi.mock("../dist/dom/elements.js", () => ({
   todoStatus: document.getElementById("todoStatus"),
   todoEstimationPoints: document.getElementById("todoEstimationPoints"),
   todoPriority: document.getElementById("todoPriority"),
+  get archiveTodoBtn() { return document.getElementById("archiveTodoBtn"); },
+  get restoreTodoBtn() { return document.getElementById("restoreTodoBtn"); },
   deleteTodoBtn: document.getElementById("deleteTodoBtn"),
   closeTodoBtn: document.getElementById("closeTodoBtn"),
   settingsDialog: document.getElementById("settingsDialog"),
@@ -38,11 +43,15 @@ vi.mock("../dist/theme.js", () => ({
 
 vi.mock("../dist/utils.js", () => ({
   escapeHTML: (value: string) => value,
-  showToast: vi.fn(),
+  showToast: showToastMock,
   showConfirmDialog: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock("../dist/api.js", () => ({ apiFetch: apiFetchMock }));
+vi.mock("../dist/api.js", () => ({
+  apiFetch: apiFetchMock,
+  archiveTodos: archiveTodosMock,
+  restoreTodos: restoreTodosMock,
+}));
 vi.mock("../dist/router.js", () => ({
   navigate: vi.fn(),
   router: vi.fn().mockResolvedValue(undefined),
@@ -55,7 +64,7 @@ vi.mock("../dist/state/selectors.js", () => ({
   getAuthStatusAvailable: vi.fn(() => true),
   getMobileTab: vi.fn(() => "backlog"),
   getSlug: vi.fn(() => "alpha"),
-  getTag: vi.fn(() => "bug"),
+  getTagsFromUrl: vi.fn(() => ["bug"]),
   getSearch: vi.fn(() => "find"),
   getSprintIdFromUrl: vi.fn(() => "7"),
   getAssigneeFromUrl: vi.fn(() => "42"),
@@ -168,6 +177,8 @@ function installDom(): void {
       <select id="todoSprint"><option value="7" selected>Sprint 7</option></select>
       <div id="todoSprintField"></div>
       <button id="deleteTodoBtn" type="button">Delete</button>
+      <button id="archiveTodoBtn" type="button">Archive</button>
+      <button id="restoreTodoBtn" type="button">Restore</button>
       <button id="closeTodoBtn" type="button">Close</button>
     </form>
     <dialog id="settingsDialog"></dialog>
@@ -183,7 +194,7 @@ async function expectContextCompleteReload(): Promise<void> {
   await vi.waitFor(() => expect(loadBoardBySlugMock).toHaveBeenCalledTimes(1));
   expect(loadBoardBySlugMock).toHaveBeenCalledWith(
     "alpha",
-    "bug",
+    ["bug"],
     "find",
     "7",
     "42",
@@ -196,6 +207,8 @@ describe("app post-mutation board refresh context", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    archiveTodosMock.mockResolvedValue({ transitionedCount: 1 });
+    restoreTodosMock.mockResolvedValue({ transitionedCount: 1 });
     installDom();
     window.history.replaceState({}, "", "/alpha?assignee=42&sort=newest&priority=high");
     state.editingTodo = {
@@ -235,6 +248,41 @@ describe("app post-mutation board refresh context", () => {
 
     (document.getElementById("deleteTodoBtn") as HTMLButtonElement).click();
 
+    await expectContextCompleteReload();
+  });
+
+  it("archives one active story without sending a workflow move", async () => {
+    await loadApp();
+    (document.getElementById("archiveTodoBtn") as HTMLButtonElement).click();
+
+    await vi.waitFor(() => expect(archiveTodosMock).toHaveBeenCalledWith("alpha", [4]));
+    expect(apiFetchMock.mock.calls.some((call) => String(call[0]).endsWith("/move"))).toBe(false);
+    await expectContextCompleteReload();
+  });
+
+  it("leaves the board in place when single-story archival fails", async () => {
+    archiveTodosMock.mockRejectedValueOnce(new Error("network"));
+    await loadApp();
+    (document.getElementById("archiveTodoBtn") as HTMLButtonElement).click();
+
+    await vi.waitFor(() => expect(showToastMock).toHaveBeenCalled());
+    expect(loadBoardBySlugMock).not.toHaveBeenCalled();
+    expect(state.editingTodo?.localId).toBe(4);
+  });
+
+  it("restores an archived story and refreshes the board with its retained lane", async () => {
+    state.editingTodo = {
+      localId: 4,
+      columnKey: "done",
+      status: "Done",
+      doneAt: "2026-09-01T12:00:00Z",
+      archivedAt: "2026-09-15T12:00:00Z",
+    };
+    await loadApp();
+    (document.getElementById("restoreTodoBtn") as HTMLButtonElement).click();
+
+    await vi.waitFor(() => expect(restoreTodosMock).toHaveBeenCalledWith("alpha", [4]));
+    expect(apiFetchMock.mock.calls.some((call) => String(call[0]).endsWith("/move"))).toBe(false);
     await expectContextCompleteReload();
   });
 });

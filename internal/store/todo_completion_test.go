@@ -72,3 +72,34 @@ func TestCountCompletedTodosForProjectUsesHalfOpenPeriod(t *testing.T) {
 		t.Fatalf("count=%d want=0", count)
 	}
 }
+
+func TestCountCompletedTodosForProjectIncludesArchivedDoneAndExcludesReopened(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	project, err := st.CreateProject(ctx, "Archived completion history")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedDone := mustCreateTodo(t, st, project.ID, "Archived done", DefaultColumnDone)
+	reopened := mustCreateTodo(t, st, project.ID, "Reopened", DefaultColumnDone)
+	if _, err := st.MoveTodo(ctx, reopened.ID, DefaultColumnDoing, nil, nil, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC().Add(-time.Hour)
+	end := time.Now().UTC().Add(time.Hour)
+	completedAt := time.Now().UTC().UnixMilli()
+	if _, err := st.db.ExecContext(ctx, `UPDATE todos SET done_at = ? WHERE id IN (?, ?)`, completedAt, archivedDone.ID, reopened.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodosByLocalID(ctx, project.ID, []int64{archivedDone.LocalID, reopened.LocalID}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	count, err := st.CountCompletedTodosForProject(ctx, project.ID, start, end)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("completed archived/reopened count=%d want 1", count)
+	}
+}

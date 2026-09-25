@@ -15,8 +15,8 @@ func newTestStoreWithSQL(t *testing.T) (*Store, *sql.DB, func()) {
 	t.Helper()
 	dir := t.TempDir()
 	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
-		BusyTimeout:   5000,
-		JournalMode:   "WAL",
+		BusyTimeout: 5000,
+		JournalMode: "WAL",
 		Synchronous: "FULL",
 	})
 	if err != nil {
@@ -46,7 +46,7 @@ func TestDurableBoardRead_DoesNotRefreshLastActivityAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	if _, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
+	if _, _, _, _, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
 	var lastMs int64
@@ -108,7 +108,7 @@ func TestExpiringBoardRead_RefreshesLastActivityWhenStale(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectContextForRead: %v", err)
 	}
-	if _, _, _, _, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
+	if _, _, _, _, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault); err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
 	var lastMs int64

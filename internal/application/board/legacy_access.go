@@ -68,7 +68,7 @@ func readLegacy(
 	project, tags, workflow, columns, err := legacy.GetBoard(
 		ctx,
 		pc,
-		query.TagFilter,
+		query.TagFilters,
 		query.SearchFilter,
 		query.AssigneeFilter,
 		query.PriorityFilter,

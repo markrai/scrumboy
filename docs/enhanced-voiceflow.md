@@ -352,4 +352,5 @@ Do not treat that guide as user documentation.
 * [voiceflow.md](voiceflow.md) — Basic VoiceFlow grammar, Safe-Mode / Hands-Free, Continue conversation
 * [voiceflow-tracing.md](voiceflow-tracing.md) — maintainer diagnostics
 * [diagrams/scrumboy_voiceflow.md](diagrams/scrumboy_voiceflow.md) — pipeline overview (may lag Enhanced Create routing)
-* [mobile/capacitor/README.md](../mobile/capacitor/README.md) — Capacitor Android shell
+* [android.md](android.md) — build and run the Android client
+* [mobile/capacitor/README.md](../mobile/capacitor/README.md) — Capacitor Android shell internals (native speech / local generation plugins)

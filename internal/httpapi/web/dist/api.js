@@ -33,4 +33,23 @@ async function apiFetchForm(path, form) {
     }
     return data;
 }
+export function listArchivedTodos(slug, options = {}) {
+    const params = new URLSearchParams();
+    params.set('limit', String(options.limit ?? 50));
+    if (options.afterCursor)
+        params.set('afterCursor', options.afterCursor);
+    return apiFetch(`/api/board/${encodeURIComponent(slug)}/archive?${params.toString()}`);
+}
+function transitionTodos(slug, action, localIds) {
+    return apiFetch(`/api/board/${encodeURIComponent(slug)}/todos/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ localIds }),
+    });
+}
+export function archiveTodos(slug, localIds) {
+    return transitionTodos(slug, 'archive', localIds);
+}
+export function restoreTodos(slug, localIds) {
+    return transitionTodos(slug, 'restore', localIds);
+}
 export { apiFetch, apiFetchForm };

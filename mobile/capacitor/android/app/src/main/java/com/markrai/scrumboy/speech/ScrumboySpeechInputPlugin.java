@@ -6,6 +6,7 @@ import android.Manifest;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import androidx.annotation.RequiresApi;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -232,6 +233,7 @@ public class ScrumboySpeechInputPlugin extends Plugin {
      * Ownership order: prepare (create + listener, no capture), publish the exact handle,
      * attach cancellation to that handle, recheck the operation, then startListening.
      */
+    @RequiresApi(Build.VERSION_CODES.S)
     private void startPlatformRecognition(
         SpeechInputOperationRegistry.Operation operation,
         PluginCall call,
@@ -306,6 +308,11 @@ public class ScrumboySpeechInputPlugin extends Plugin {
 
         final MlKitAdvancedSpeechRuntime.RecognitionHandle[] handleSlot =
             new MlKitAdvancedSpeechRuntime.RecognitionHandle[1];
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            rejectCurrent(operation, call, new SpeechInputException("unsupported", false));
+            return;
+        }
 
         final MlKitAdvancedSpeechRuntime.RecognitionHandle prepared;
         try {
@@ -518,6 +525,10 @@ public class ScrumboySpeechInputPlugin extends Plugin {
                 action -> dispatchToActivity(call, operation, action),
                 () -> {
                     try {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                            rejectCurrent(operation, call, new SpeechInputException("unsupported", false));
+                            return;
+                        }
                         startPlatformRecognition(
                             operation,
                             call,

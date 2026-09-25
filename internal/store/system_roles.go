@@ -19,6 +19,23 @@ func (s *Store) requireOwner(ctx context.Context, userID int64) error {
 	return nil
 }
 
+// requireOwnerTx performs the owner check on the same database snapshot as a
+// transaction's mutation. This is required for destructive operations whose
+// authorization must not be invalidated between a preflight read and the write.
+func requireOwnerTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	var role string
+	if err := tx.QueryRowContext(ctx, `SELECT system_role FROM users WHERE id = ?`, userID).Scan(&role); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get user role: %w", err)
+	}
+	if parsed, ok := ParseSystemRole(role); !ok || parsed != SystemRoleOwner {
+		return ErrUnauthorized
+	}
+	return nil
+}
+
 // requireAdmin ensures the user has 'admin' or 'owner' system role.
 // Returns ErrUnauthorized if the user is not an admin or owner.
 func (s *Store) requireAdmin(ctx context.Context, userID int64) error {

@@ -14,7 +14,6 @@ export interface State {
   projectId: number | null;
   slug: string | null;
   board: Board | null;
-  tag: string;
   search: string;
   openTodoSegment: string | null;
   editingTodo: Todo | null;
@@ -68,7 +67,6 @@ let _current: State = {
   projectId: null,
   slug: null,
   board: null,
-  tag: "",
   search: "",
   openTodoSegment: null,
   editingTodo: null,

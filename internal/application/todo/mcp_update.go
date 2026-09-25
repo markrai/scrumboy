@@ -143,5 +143,9 @@ func cloneMCPUpdateTodo(todo store.Todo) store.Todo {
 		doneAt := *todo.DoneAt
 		todo.DoneAt = &doneAt
 	}
+	if todo.ArchivedAt != nil {
+		archivedAt := *todo.ArchivedAt
+		todo.ArchivedAt = &archivedAt
+	}
 	return todo
 }

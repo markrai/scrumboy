@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.34.2-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.36.5-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -23,6 +23,7 @@
   - [Run from source](#run-from-source)
   - [Run the Windows executable](#run-the-windows-executable)
   - [Run the macOS executable](#run-the-macos-executable)
+  - [Build the Android app](#build-the-android-app)
 - [Features](#features)
 - [Modes](#modes)
 - [Roles](#roles)
@@ -97,6 +98,10 @@ Windows users can download the `windows-amd64` executable from [GitHub Releases]
 
 macOS users can download Apple Silicon or Intel builds from [GitHub Releases](https://github.com/markrai/scrumboy/releases). These binaries require **macOS 12 Monterey or later**. Extract and run `./scrumboy` from a dedicated writable folder; it starts a local Scrumboy server at [http://localhost:8080](http://localhost:8080). Current macOS release binaries are not Apple-signed or notarized. For exact artifact filenames, checksum and provenance verification, runtime-data location, Gatekeeper/quarantine troubleshooting, and other release-install details, see [docs/install-from-releases.md](docs/install-from-releases.md).
 
+### Build the Android app
+
+Scrumboy includes a native Android client, implemented with Capacitor, under `mobile/capacitor`. It connects to a running Scrumboy server; it does not replace or start the server. Build it from source. Release builds require HTTPS to that server. Prerequisites, web-payload packaging, Gradle commands, device connection, and optional signing are in [docs/android.md](docs/android.md).
+
 ---
 
 # Features
@@ -106,14 +111,15 @@ macOS users can download Apple Silicon or Intel builds from [GitHub Releases](ht
 - Realtime SSE enabled boards for instant multi-user actions.
 - **Webhooks (API-only, full mode):** Register URLs per project so Scrumboy can POST JSON when subscribed domain events fire (e.g. `todo.assigned`). For your own automations, not in-app or browser notifications. See [Integrations](#integrations--api-access).
 - Customizable Tags: Users can inherit and customize tag colors.
-- Advanced filtering: Search todos based on text or tags.
+- Advanced filtering: on desktop, the default compact Omni control shows recently active project tags when search is empty, narrows immediately to matching tag suggestions while typing, and provides arrows for paging the candidate shelf. Mobile retains its compact single rail for pinned tags and typed matches. Multiple pinned tags use logical AND and compose with ordinary text search, sprint, and other URL filters. The previous permanent tag/sprint pills remain available as **Legacy pills** under Settings → Customization.
 - Sprints: create, activate, close; sprint filter on board; default sprint weeks (1 or 2) per project. Maintainers can disable sprints per project without deleting sprint history or todo assignments, then re-enable them later.
+- **Story archival:** Archive and restore one story or a selection without touching workflow state or history - lane, rank, `doneAt`, tags, links, sprint, priority and assignment are preserved, so metrics and sprint history are unaffected. Every board reader can browse the cursor-paginated Archive and inspect archived stories in a clearly marked read-only detail view; maintainers (and temporary-board capability holders) can restore or hard-delete them. Archived stories drop out of board, search and dashboard reads while still counting for integrity checks. The same single and atomic batch (1-500) operations are available over REST and MCP. Nothing is archived automatically. See [API.md](API.md) and [docs/mcp.md](docs/mcp.md).
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
 - Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit-trail.md](docs/audit-trail.md)).
 - Backup: export/import JSON; merge or replace; scope full or single project. JSON export is not a complete `DATA_DIR` disaster-recovery backup (uploaded wallpapers and `audit_events` are omitted); see [docs/diagrams/scrumboy_deployment_ops.md](docs/diagrams/scrumboy_deployment_ops.md).
 - Trello import: migrate an existing Trello board from its JSON export, with a preview before anything is imported (see [docs/backup-and-import.md](docs/backup-and-import.md)).
-- Mobile: Native Android app (or PWA) for an excellent mobile UX.
+- Mobile: Native Android app (Capacitor client; build from source — [docs/android.md](docs/android.md)) with native VoiceFlow on supported devices, or install the [PWA](docs/pwa.md) from the browser.
 - Multi-language Support: English, 简体中文, हिन्दी, Español (Latinoamérica), العربية, Français, বাংলা, Português (Brasil), Bahasa Indonesia, اردو, Русский, Deutsch, 日本語, Kiswahili, Tiếng Việt, Türkçe, 한국어, فارسی, ไทย, Italiano, Bahasa Melayu, Polski, and Українська.
 - Anonymous shareable boards can be created in both Full & Anonymous deployments.
 - VoiceFlow - deterministic voice commands in the browser; on supported Android devices, **AI VoiceFlow** adds on-device speech and Gemini Nano planning with confirmation before mutations (see [docs/voiceflow.md](docs/voiceflow.md), [docs/enhanced-voiceflow.md](docs/enhanced-voiceflow.md)).

@@ -10,7 +10,7 @@ const recordLocalMutationMock = vi.hoisted(() => vi.fn());
 const sortableInstances: Array<{ destroy: ReturnType<typeof vi.fn> }> = [];
 const selectorState = vi.hoisted(() => ({
   slug: "alpha",
-  tag: null as string | null,
+  tags: [] as string[],
   search: null as string | null,
   sprintId: null as string | null,
   assignee: null as string | null,
@@ -34,7 +34,7 @@ vi.mock("../state/selectors.js", () => ({
   getSortFromUrl: () => selectorState.sort,
   getPriorityFromUrl: () => selectorState.priority,
   getSlug: () => selectorState.slug,
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => selectorState.tags,
   getSearch: () => selectorState.search,
   getSprintIdFromUrl: () => selectorState.sprintId,
   getBoardLaneMeta: () => selectorState.laneMeta,
@@ -108,7 +108,7 @@ describe("drag-drop", () => {
   beforeEach(() => {
     vi.resetModules();
     selectorState.slug = "alpha";
-    selectorState.tag = null;
+    selectorState.tags = [];
     selectorState.search = null;
     selectorState.sprintId = null;
     selectorState.assignee = null;
@@ -395,6 +395,35 @@ describe("drag-drop", () => {
     expect(dropZones.classList.contains("mobile-tab-drops--intro-glow")).toBe(false);
   });
 
+  it("preserves every selected tag when fetching a hidden filtered-lane boundary", async () => {
+    selectorState.tags = ["bug", "frontend", "urgent"];
+    selectorState.search = "login";
+    selectorState.laneMeta.doing = { hasMore: true, nextCursor: "next-page", loading: false };
+    apiFetchMock
+      .mockResolvedValueOnce({ items: [{ localId: 99 }] })
+      .mockResolvedValueOnce({});
+    const from = getElement("list_backlog");
+    const list = getElement("list_doing");
+    const item = makeCard(82);
+    list.append(makeCard(81), item);
+    const dragDrop = await import("./drag-drop.js");
+    dragDrop.initDnD();
+
+    await getSortableOptions("list_doing").onEnd({
+      item,
+      to: list,
+      from,
+      oldIndex: 0,
+      newIndex: 1,
+    });
+
+    const boundaryURL = new URL(apiFetchMock.mock.calls[0][0], window.location.origin);
+    expect(boundaryURL.pathname).toBe("/api/board/alpha/lanes/doing");
+    expect(boundaryURL.searchParams.getAll("tag")).toEqual(["bug", "frontend", "urgent"]);
+    expect(boundaryURL.searchParams.get("search")).toBe("login");
+    expectMove(82, "doing", 81, 99);
+  });
+
   it("uses null anchors for chronological mobile lane-tab drops", async () => {
     selectorState.sort = "newest";
     const from = getElement("list_backlog");
@@ -436,7 +465,7 @@ describe("drag-drop", () => {
   });
 
   it("localizes move failure toasts and preserves current filters for recovery invalidation", async () => {
-    selectorState.tag = "bug";
+    selectorState.tags = ["bug", "frontend", "urgent"];
     selectorState.search = "login";
     selectorState.sprintId = "7";
     const i18n = await import("../i18n/index.js");
@@ -463,7 +492,15 @@ describe("drag-drop", () => {
     });
 
     expect(showToastMock).toHaveBeenCalledWith("[!! Failed to move todo !!]");
-    expect(invalidateBoardMock).toHaveBeenCalledWith("alpha", "bug", "login", "7", null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith(
+      "alpha",
+      ["bug", "frontend", "urgent"],
+      "login",
+      "7",
+      null,
+      null,
+      null,
+    );
   });
 
   it("does not attach Sortable to an agenda list or tab drop", async () => {

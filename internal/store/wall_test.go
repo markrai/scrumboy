@@ -48,7 +48,7 @@ func TestWallCreateMaterializesRow(t *testing.T) {
 	}
 
 	note, wall, err := st.CreateNote(ctx, p.ID, CreateNoteInput{
-		X:      10, Y: 20, Width: 180, Height: 140,
+		X: 10, Y: 20, Width: 180, Height: 140,
 		Color: "#ffd966", Text: "hello",
 	})
 	if err != nil {

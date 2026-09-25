@@ -459,40 +459,55 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 
 	// Durable projects only: contributor/view edit scope. Temporary boards (any expires_at) use link collaboration
 	// for updates, same model as create — skip role-based edit scope.
+	editScope := TodoEditFull
+	scopeEnforced := false
 	if p.ExpiresAt == nil {
 		enabled, err := authEnabledTx(ctx, tx)
 		if err != nil {
 			return Todo{}, err
 		}
 		if enabled {
-			switch GetTodoEditScope(actorRole, userID, &existing) {
-			case TodoEditNone:
+			scopeEnforced = true
+			editScope = GetTodoEditScope(actorRole, userID, &existing)
+			if editScope == TodoEditNone {
 				return Todo{}, ErrUnauthorized
-			case TodoEditBodyOnly:
-				if len(in.Body) > 20000 {
-					return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
-				}
-				nowMs := time.Now().UTC().UnixMilli()
-				if _, err := tx.ExecContext(ctx, `UPDATE todos SET body = ?, updated_at = ? WHERE id = ?`,
-					in.Body, nowMs, todoID); err != nil {
-					return Todo{}, fmt.Errorf("update todo body: %w", err)
-				}
-				if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
-					return Todo{}, err
-				}
-				if err := tx.Commit(); err != nil {
-					return Todo{}, fmt.Errorf("commit update todo: %w", err)
-				}
-				existing.MaterialChanged = existing.Body != in.Body
-				existing.Body = in.Body
-				existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
-				if err := s.UpdateBoardActivity(ctx, existing.ProjectID); err != nil {
-					_ = err
-				}
-				return existing, nil
-			case TodoEditFull:
-				// fall through to full update path
 			}
+		}
+	}
+
+	// Archival is checked only after the caller has cleared the write boundary, so
+	// the conflict reason cannot be used to probe archive state without write access.
+	// MoveTodo orders these the same way.
+	if existing.ArchivedAt != nil {
+		return Todo{}, todoArchivedError()
+	}
+
+	if scopeEnforced {
+		switch editScope {
+		case TodoEditBodyOnly:
+			if len(in.Body) > 20000 {
+				return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
+			}
+			nowMs := time.Now().UTC().UnixMilli()
+			if _, err := tx.ExecContext(ctx, `UPDATE todos SET body = ?, updated_at = ? WHERE id = ?`,
+				in.Body, nowMs, todoID); err != nil {
+				return Todo{}, fmt.Errorf("update todo body: %w", err)
+			}
+			if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
+				return Todo{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return Todo{}, fmt.Errorf("commit update todo: %w", err)
+			}
+			existing.MaterialChanged = existing.Body != in.Body
+			existing.Body = in.Body
+			existing.UpdatedAt = time.UnixMilli(nowMs).UTC()
+			if err := s.UpdateBoardActivity(ctx, existing.ProjectID); err != nil {
+				_ = err
+			}
+			return existing, nil
+		case TodoEditFull:
+			// fall through to full update path
 		}
 	}
 
@@ -957,6 +972,9 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 			}
 		}
 	}
+	if existing.ArchivedAt != nil {
+		return Todo{}, todoArchivedError()
+	}
 
 	targetCol, err := validateProjectColumnKeyTx(ctx, tx, existing.ProjectID, toColumnKey)
 	if err != nil {
@@ -1021,7 +1039,7 @@ func (s *Store) MoveTodo(ctx context.Context, todoID int64, toColumnKey string, 
 }
 
 func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at FROM todos WHERE id=?`, todoID)
+	row := tx.QueryRowContext(ctx, `SELECT id, project_id, local_id, title, body, column_key, rank, estimation_points, assignee_user_id, created_by_user_id, sprint_id, priority_key, created_at, updated_at, done_at, archived_at FROM todos WHERE id=?`, todoID)
 	var t Todo
 	var columnKey string
 	var createdAtMs, updatedAtMs int64
@@ -1032,7 +1050,8 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 	var sprintID sql.NullInt64
 	var priorityKey sql.NullString
 	var doneAtMs sql.NullInt64
-	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs); err != nil {
+	var archivedAtMs sql.NullInt64
+	if err := row.Scan(&t.ID, &t.ProjectID, &localID, &t.Title, &t.Body, &columnKey, &t.Rank, &estimationPoints, &assigneeUserID, &createdByUserID, &sprintID, &priorityKey, &createdAtMs, &updatedAtMs, &doneAtMs, &archivedAtMs); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Todo{}, ErrNotFound
 		}
@@ -1076,6 +1095,10 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 	if doneAtMs.Valid {
 		dt := time.UnixMilli(doneAtMs.Int64).UTC()
 		t.DoneAt = &dt
+	}
+	if archivedAtMs.Valid {
+		at := time.UnixMilli(archivedAtMs.Int64).UTC()
+		t.ArchivedAt = &at
 	}
 
 	tags, err := listTodoTagsTx(ctx, tx, t.ID)

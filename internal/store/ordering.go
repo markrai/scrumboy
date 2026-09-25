@@ -100,7 +100,7 @@ func computeNewRank(ctx context.Context, tx *sql.Tx, projectID int64, columnKey 
 }
 
 func getNeighbor(ctx context.Context, tx *sql.Tx, projectID int64, columnKey string, id int64) (neighbor, error) {
-	row := tx.QueryRowContext(ctx, `SELECT id, rank FROM todos WHERE id=? AND project_id=? AND column_key=?`, id, projectID, columnKey)
+	row := tx.QueryRowContext(ctx, `SELECT id, rank FROM todos WHERE id=? AND project_id=? AND column_key=? AND archived_at IS NULL`, id, projectID, columnKey)
 	var n neighbor
 	if err := row.Scan(&n.id, &n.rank); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -112,7 +112,7 @@ func getNeighbor(ctx context.Context, tx *sql.Tx, projectID int64, columnKey str
 }
 
 func maxRankInColumn(ctx context.Context, tx *sql.Tx, projectID int64, columnKey string) (int64, error) {
-	row := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(rank), 0) FROM todos WHERE project_id=? AND column_key=?`, projectID, columnKey)
+	row := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(rank), 0) FROM todos WHERE project_id=? AND column_key=? AND archived_at IS NULL`, projectID, columnKey)
 	var max int64
 	if err := row.Scan(&max); err != nil {
 		return 0, fmt.Errorf("max rank: %w", err)
@@ -121,7 +121,7 @@ func maxRankInColumn(ctx context.Context, tx *sql.Tx, projectID int64, columnKey
 }
 
 func rebalanceColumn(ctx context.Context, tx *sql.Tx, projectID int64, columnKey string) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM todos WHERE project_id=? AND column_key=? ORDER BY rank ASC, id ASC`, projectID, columnKey)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM todos WHERE project_id=? AND column_key=? AND archived_at IS NULL ORDER BY rank ASC, id ASC`, projectID, columnKey)
 	if err != nil {
 		return fmt.Errorf("rebalance list: %w", err)
 	}

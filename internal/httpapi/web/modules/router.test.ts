@@ -9,8 +9,10 @@ const {
   renderProjectsMock,
   renderDashboardMock,
   renderBoardMock,
+  renderArchiveMock,
   renderNotFoundMock,
   stopBoardEventsMock,
+  stopArchiveEventsMock,
   startGlobalRealtimeMock,
   stopGlobalRealtimeMock,
   initForegroundLifecycleMock,
@@ -32,8 +34,10 @@ const {
   renderProjectsMock: vi.fn(),
   renderDashboardMock: vi.fn(),
   renderBoardMock: vi.fn(),
+  renderArchiveMock: vi.fn(),
   renderNotFoundMock: vi.fn(),
   stopBoardEventsMock: vi.fn(),
+  stopArchiveEventsMock: vi.fn(),
   startGlobalRealtimeMock: vi.fn(),
   stopGlobalRealtimeMock: vi.fn(),
   initForegroundLifecycleMock: vi.fn(),
@@ -60,8 +64,10 @@ vi.mock('./views/index.js', () => ({
   renderProjects: renderProjectsMock,
   renderDashboard: renderDashboardMock,
   renderBoard: renderBoardMock,
+  renderArchive: renderArchiveMock,
   renderNotFound: renderNotFoundMock,
   stopBoardEvents: stopBoardEventsMock,
+  stopArchiveEvents: stopArchiveEventsMock,
 }));
 
 vi.mock('./core/realtime.js', () => ({
@@ -115,6 +121,27 @@ async function loadRouterModule() {
   return import('./router.js');
 }
 
+describe('router repeated board tags', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    vi.resetModules();
+  });
+
+  it('restores every ordered pin from a deep link or popstate URL', async () => {
+    window.history.replaceState({}, '', '/alpha?tag=feature&tag=ux&tag=bug');
+    const mod = await loadRouterModule();
+
+    expect(mod.parseRoute()).toMatchObject({
+      name: 'boardBySlug',
+      slug: 'alpha',
+      tags: ['feature', 'ux', 'bug'],
+    });
+
+    window.history.replaceState({}, '', '/alpha?tag=bug&tag=feature');
+    expect(mod.parseRoute().tags).toEqual(['bug', 'feature']);
+  });
+});
+
 describe('router push autosubscribe gate', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -126,8 +153,10 @@ describe('router push autosubscribe gate', () => {
     renderProjectsMock.mockReset();
     renderDashboardMock.mockReset();
     renderBoardMock.mockReset();
+    renderArchiveMock.mockReset();
     renderNotFoundMock.mockReset();
     stopBoardEventsMock.mockReset();
+    stopArchiveEventsMock.mockReset();
     startGlobalRealtimeMock.mockReset();
     stopGlobalRealtimeMock.mockReset();
     initForegroundLifecycleMock.mockReset();
@@ -317,6 +346,18 @@ describe('router push autosubscribe gate', () => {
 	  expect(renderResetPasswordMock).not.toHaveBeenCalled();
 	  expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ oidcEnabled: true, mobileOidcEnabled: true, localAuthEnabled: false, selfServicePasswordResetEnabled: false }));
 	});
+  it('routes archive list and archived detail URLs without treating Archive as a board lane', async () => {
+    installSignedOutAuthStatus();
+    window.history.replaceState({}, '', '/alpha/archive');
+    const mod = await loadRouterModule();
+
+    expect(mod.parseRoute()).toMatchObject({ name: 'archiveBySlug', slug: 'alpha' });
+    await mod.router();
+    expect(renderArchiveMock).toHaveBeenCalledWith('alpha', null);
+
+    window.history.replaceState({}, '', '/alpha/archive/t/42');
+    expect(mod.parseRoute()).toMatchObject({ name: 'archiveBySlug', slug: 'alpha', openTodoSegment: '42' });
+  });
 });
 
 describe('router cold-start boardData handoff', () => {
@@ -426,7 +467,7 @@ describe('router wrap lanes hydration', () => {
     };
   }
 
-  function installSignedInAuth(user: ReturnType<typeof userStatus>, wrapLanesValue: string): void {
+  function installSignedInAuth(user: ReturnType<typeof userStatus>, wrapLanesValue: string, boardFilterLayoutValue = ''): void {
     apiFetchMock.mockImplementation(async (url: string) => {
       if (url === '/api/auth/status') {
         return {
@@ -447,6 +488,9 @@ describe('router wrap lanes hydration', () => {
       }
       if (url.includes('key=wrapLanes')) {
         return { value: wrapLanesValue };
+      }
+      if (url.includes('key=boardFilterLayout')) {
+        return { value: boardFilterLayoutValue };
       }
       if (url.startsWith('/api/user/preferences?key=')) {
         return { value: '' };
@@ -498,6 +542,21 @@ describe('router wrap lanes hydration', () => {
     await mod.router();
 
     expect(prefs.getWrapLanesPreference()).toBe(false);
+  });
+
+  it('hydrates the signed-in board filter layout and defaults invalid server values to Omni', async () => {
+    const prefs = await import('./core/board-filter-layout-preferences.js');
+    installSignedInAuth(userBob(), '', 'legacy');
+    const mod = await loadRouterModule();
+
+    await mod.router();
+    expect(prefs.getBoardFilterLayoutPreference()).toBe('legacy');
+
+    const mutations = await import('./state/mutations.js');
+    mutations.setAuthStatusChecked(false);
+    installSignedInAuth(userStatus(), '', 'not-a-layout');
+    await mod.router();
+    expect(prefs.getBoardFilterLayoutPreference()).toBe('omni');
   });
 });
 
@@ -983,5 +1042,215 @@ describe('router board todo sort hydration', () => {
     expect(prefs.getBoardTodoSortPreference()).toBe('default');
     expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
     expect(renderBoardMock.mock.calls.at(-1)?.[5]).toBeNull();
+  });
+});
+
+describe('router invalid URL redirect', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderAuthMock.mockReset();
+    renderResetPasswordMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+    renderDashboardMock.mockReset();
+    renderBoardMock.mockReset();
+    renderBoardMock.mockResolvedValue(undefined);
+    renderArchiveMock.mockReset();
+    renderNotFoundMock.mockReset();
+    stopBoardEventsMock.mockReset();
+    stopArchiveEventsMock.mockReset();
+    startGlobalRealtimeMock.mockReset();
+    stopGlobalRealtimeMock.mockReset();
+    initForegroundLifecycleMock.mockReset();
+    hydrateNotificationsForUserMock.mockReset();
+    initNotificationBadgeMock.mockReset();
+    unsubscribeFromPushMock.mockReset();
+    unsubscribeFromPushMock.mockResolvedValue(undefined);
+    maybeAutoSubscribePushAfterLoginMock.mockClear();
+    loadUserThemeMock.mockClear();
+    applyWallpaperForAuthContextMock.mockClear();
+    loadUserWallpaperMock.mockClear();
+    hydrateVoiceFlowEnabledFromServerMock.mockClear();
+    hydrateVoiceFlowContinueConversationFromServerMock.mockClear();
+    hydrateVoiceFlowHandsFreeConfirmationFromServerMock.mockClear();
+    hydrateVoiceFlowModeFromServerMock.mockClear();
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  function installSignedOutFullMode(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: null,
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  function installSignedInFullMode(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: userStatus(),
+          bootstrapAvailable: false,
+          mode: 'full',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      if (url === '/api/me') {
+        return userStatus();
+      }
+      if (url.startsWith('/api/user/preferences?key=')) {
+        return {};
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  function installAnonymousMode(): void {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/auth/status') {
+        return {
+          user: null,
+          bootstrapAvailable: false,
+          mode: 'anonymous',
+          pushConfigured: false,
+          selfServicePasswordResetEnabled: false,
+          oidcEnabled: false,
+          localAuthEnabled: true,
+          wallEnabled: false,
+          markdownNotesEnabled: false,
+          mermaidNotesEnabled: false,
+        };
+      }
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+  }
+
+  it('rewrites an invalid path to / and shows auth when signed out', async () => {
+    window.history.replaceState({}, '', '/this/is/invalid');
+    installSignedOutFullMode();
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderAuthMock).toHaveBeenCalledTimes(1);
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderProjectsMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites an invalid path to / and shows projects when signed in', async () => {
+    window.history.replaceState({}, '', '/this/is/invalid');
+    installSignedInFullMode();
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderAuthMock).not.toHaveBeenCalled();
+  });
+
+  it('parses slug-shaped paths as boardBySlug', async () => {
+    window.history.replaceState({}, '', '/no-such-board');
+    const mod = await loadRouterModule();
+
+    expect(mod.parseRoute()).toMatchObject({ name: 'boardBySlug', slug: 'no-such-board' });
+  });
+
+  it('rewrites a missing board slug to / and shows auth when signed out', async () => {
+    window.history.replaceState({}, '', '/nonsense');
+    installSignedOutFullMode();
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/nonsense' }));
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderProjectsMock).not.toHaveBeenCalled();
+  });
+
+  it('rewrites a missing board slug to / and shows projects when signed in', async () => {
+    window.history.replaceState({}, '', '/nonsense');
+    installSignedInFullMode();
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderBoardMock).toHaveBeenCalledTimes(1);
+    expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderAuthMock).not.toHaveBeenCalled();
+  });
+
+  it('does not console.error for handled board 404', async () => {
+    window.history.replaceState({}, '', '/nonsense');
+    installSignedOutFullMode();
+    renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(errorSpy.mock.calls.some((call) => String(call[0]).includes('error rendering board'))).toBe(false);
+  });
+
+  it('rewrites a missing archive destination to / with preserved next when signed out', async () => {
+    window.history.replaceState({}, '', '/nonsense/archive');
+    installSignedOutFullMode();
+    renderArchiveMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(window.location.pathname).toBe('/');
+    expect(renderArchiveMock).toHaveBeenCalledTimes(1);
+    expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/nonsense/archive' }));
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+  });
+
+  it('assigns / for invalid paths in anonymous server mode', async () => {
+    window.history.replaceState({}, '', '/this/is/invalid');
+    installAnonymousMode();
+    const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    const mod = await loadRouterModule();
+
+    await mod.router();
+
+    expect(assignSpy).toHaveBeenCalledWith('/');
+    expect(renderNotFoundMock).not.toHaveBeenCalled();
+    expect(renderAuthMock).not.toHaveBeenCalled();
+    expect(renderProjectsMock).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
-import { escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
+import { attachDialogClose, bindDialogLocale, escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent, sanitizeHexColor } from '../utils.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import {
@@ -16,7 +16,7 @@ import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
 import { 
   getSlug, 
-  getTag, 
+  getTagsFromUrl,
   getSearch,
   getSprintIdFromUrl,
   getAssigneeFromUrl,
@@ -102,6 +102,11 @@ import {
   setWrapLanesPreference,
   syncOpenBoardWrapLanesClass,
 } from '../core/wrap-lanes-preferences.js';
+import {
+  getBoardFilterLayoutPreference,
+  setBoardFilterLayoutPreference,
+  type BoardFilterLayout,
+} from '../core/board-filter-layout-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref, type EmailNotifyCategory } from '../core/email-notify-preferences.js';
 import {
   bindWorkflowTabInteractions,
@@ -132,6 +137,7 @@ import {
   loadCalendarTabContent,
 } from './settings-calendar.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
+import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 
 export { invalidateTagsCache } from './settings-tags.js';
@@ -561,67 +567,6 @@ function ensureSettingsLocaleListener(): void {
  * Returns an idempotent cleanup that manual close handlers can call; native
  * dialog `cancel` and `close` also release the listener automatically.
  */
-function bindDialogLocale(dialog: HTMLDialogElement, sync?: () => void): () => void {
-  let removed = false;
-  const handleNativeCleanup: EventListener = () => {
-    release();
-  };
-  const release = () => {
-    if (removed) return;
-    removed = true;
-    document.removeEventListener(I18N_LOCALE_CHANGED, listener);
-    dialog.removeEventListener("cancel", handleNativeCleanup);
-    dialog.removeEventListener("close", handleNativeCleanup);
-  };
-  const listener: EventListener = () => {
-    // Self-clean if the dialog was detached without calling the cleanup
-    // (defensive: avoids leaked listeners hydrating stale nodes).
-    if (!dialog.isConnected) {
-      release();
-      return;
-    }
-    hydrateI18n(dialog);
-    sync?.();
-  };
-  // Localize immediately so non-English locales render correctly on open.
-  hydrateI18n(dialog);
-  sync?.();
-  document.addEventListener(I18N_LOCALE_CHANGED, listener);
-  dialog.addEventListener("cancel", handleNativeCleanup);
-  dialog.addEventListener("close", handleNativeCleanup);
-  return release;
-}
-
-/**
- * Wire uniform, orphan-free teardown for a dynamically-created dialog.
- *
- * Returns an idempotent `close()` that releases the locale listener, runs any
- * caller cleanup, and removes the node from the DOM. Native dismiss paths
- * (Escape / light-dismiss `cancel`, and the `close` event) are routed through
- * the same `close()` so the node can never be left detached-but-present, which
- * would otherwise duplicate element IDs and misbind handlers on reopen.
- */
-function attachDialogClose(
-  dialog: HTMLDialogElement,
-  releaseLocale: () => void,
-  extraCleanup?: () => void
-): () => void {
-  let removed = false;
-  const close = () => {
-    if (removed) return;
-    removed = true;
-    extraCleanup?.();
-    releaseLocale();
-    dialog.remove();
-  };
-  dialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    close();
-  });
-  dialog.addEventListener("close", close);
-  return close;
-}
-
 /**
  * Re-localize the Web Push hint without probing push capability or changing the
  * toggle/subscription state. Only the unsupported-browser hint is locale-driven;
@@ -1754,6 +1699,24 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
     `;
 
+  const boardFilterLayout = getBoardFilterLayoutPreference();
+  const boardFilterLayoutSectionHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.customization.boardFilterLayout.title">Board filter layout</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.boardFilterLayout.description">Choose compact search-based tag discovery or the permanent tag and sprint pills.</div>
+        <div class="theme-selector theme-selector--inline" style="margin-top:10px;">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="omni" ${boardFilterLayout === "omni" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.omni">Omni / compact filtering</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="legacy" ${boardFilterLayout === "legacy" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.legacy">Legacy pills</span>
+          </label>
+        </div>
+      </div>
+    `;
+
   let pushPwaDisabledNoticeKey = "";
   let pushPwaDisabledNoticeText = "";
   if (!pushVapidServerReady) {
@@ -1858,6 +1821,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
       ${wallpaperSectionHTML}
       ${cardsPerLaneSectionHTML}
+      ${boardFilterLayoutSectionHTML}
       ${wrapLanesSectionHTML}
       ${getAuthStatusAvailable() ? renderVoiceFlowCustomizationHTML() : ""}
       ${hasUser ? `
@@ -1934,6 +1898,14 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
     `;
 
+  // Render API tokens section if needed (part of the Profile tab, not its own tab)
+  let apiTokensHTML = "";
+  if (showProfileTab && getSettingsActiveTab() === "profile" && getUser()) {
+    apiTokensHTML = await renderApiTokensSectionHTML();
+  } else {
+    invalidateApiTokensCache();
+  }
+
   // Render users tab content if needed
   let usersHTML = "";
   if (showUsersTab && getSettingsActiveTab() === "users") {
@@ -1973,7 +1945,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
     </div>
   `;
   if (!dialogWasOpen) {
@@ -2185,6 +2157,14 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     regenerateRecoveryCodesBtn.addEventListener("click", () => showRegenerateRecoveryCodesDialog(), { signal });
   }
 
+  // Setup API token management (Profile tab)
+  if (showProfileTab && getSettingsActiveTab() === "profile" && getUser()) {
+    bindApiTokensInteractions({
+      signal,
+      rerender: () => renderSettingsModal(),
+    });
+  }
+
   // Setup user management actions (users tab)
   if (getSettingsActiveTab() === "users") {
     // Promote button
@@ -2393,7 +2373,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
           usePreferenceLimitOnNextBoardRequest();
           void invalidateBoard(
             slug,
-            getTag(),
+            getTagsFromUrl(),
             getSearch(),
             getSprintIdFromUrl(),
             getAssigneeFromUrl(),
@@ -2570,6 +2550,16 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         { signal }
       );
     }
+
+    document.querySelectorAll<HTMLInputElement>('input[name="boardFilterLayout"]').forEach((option) => {
+      option.addEventListener(
+        "change",
+        () => {
+          if (option.checked) setBoardFilterLayoutPreference(option.value as BoardFilterLayout);
+        },
+        { signal }
+      );
+    });
 
     const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
     if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {

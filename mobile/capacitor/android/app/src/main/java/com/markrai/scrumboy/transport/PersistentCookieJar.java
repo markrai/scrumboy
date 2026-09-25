@@ -66,6 +66,29 @@ final class PersistentCookieJar implements CookieJar {
         return ownerOrigin;
     }
 
+    /**
+     * True when a non-empty, unexpired {@link ScrumboySessionCookie#NAME} cookie
+     * would be sent to {@code origin}. Other persisted cookies do not count.
+     */
+    synchronized boolean hasAuthenticatedSessionCookie(String origin) {
+        if (retired || origin == null || origin.trim().isEmpty()) return false;
+        HttpUrl url;
+        try {
+            String normalized = origin.trim();
+            url = HttpUrl.get(normalized.endsWith("/") ? normalized : normalized + "/");
+        } catch (IllegalArgumentException error) {
+            return false;
+        }
+        for (Cookie cookie : loadForRequest(url)) {
+            if (ScrumboySessionCookie.NAME.equals(cookie.name())
+                    && cookie.value() != null
+                    && !cookie.value().isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     synchronized boolean ensureOwner(String origin) {
         if (origin.equals(ownerOrigin)) return true;
         cookies.clear();

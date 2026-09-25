@@ -136,6 +136,8 @@ type Server struct {
 	todoLegacyDeletes             *todoapp.LegacyDeleteService
 	todoLegacyMoves               *todoapp.LegacyMoveService
 	todoLegacyUpdates             *todoapp.LegacyUpdateService
+	todoArchival                  *todoapp.RESTArchiveService
+	todoArchiveReads              *todoapp.ArchiveReadService
 	creatorNotificationAuthorizer *todoapp.CreatorNotificationAuthorizationService
 	todoLinkMutations             *todolinkapp.RESTMutationService
 	sprintDefinitions             *sprintapp.RESTDefinitionService
@@ -249,9 +251,11 @@ type storeAPI interface {
 	DeleteSession(ctx context.Context, token string) error
 	DeleteSessionsByUserID(ctx context.Context, userID int64) error
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
-	CreateUserAPIToken(ctx context.Context, userID int64, name *string) (id int64, plaintext string, createdAt time.Time, err error)
+	CreateUserAPIToken(ctx context.Context, userID int64, name *string, isService bool) (id int64, plaintext string, createdAt time.Time, err error)
 	ListUserAPITokens(ctx context.Context, userID int64) ([]store.APITokenMeta, error)
 	RevokeUserAPIToken(ctx context.Context, userID, tokenID int64) error
+	ListArchivedServiceAPITokens(ctx context.Context, requesterID int64, limit int, beforeID int64) ([]store.ArchivedServiceAPIToken, *int64, error)
+	PurgeArchivedServiceAPITokens(ctx context.Context, requesterID int64, archivedBefore time.Time) (int64, error)
 
 	// OAuth 2.1 authorization server (RFC 7591/6749/7636/7009) for MCP clients.
 	CreateOAuthClient(ctx context.Context, clientID, clientName, redirectURI string) (store.OAuthClient, error)
@@ -342,6 +346,11 @@ type storeAPI interface {
 	GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, error)
 	MoveTodo(ctx context.Context, todoID int64, toColumnKey string, afterID, beforeID *int64, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
+	ArchiveTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	ArchiveTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	ListArchivedTodos(ctx context.Context, projectID int64, limit int, afterArchivedAtMs, afterID *int64, mode store.Mode) ([]store.Todo, string, bool, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	todoapp.CreateStore
 	todoapp.UpdateStore
@@ -707,6 +716,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh:         boardRefreshPublisher,
 		CreatorRequests: creatorRequestPublisher,
 	})
+	server.todoArchival = todoapp.NewRESTArchiveService(todoapp.RESTArchiveServiceDependencies{
+		Archive: st,
+		Refresh: boardRefreshPublisher,
+	})
+	server.todoArchiveReads = todoapp.NewArchiveReadService(st)
 	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
 		Projects: st,
 		Delete:   st,

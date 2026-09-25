@@ -1,6 +1,212 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.34.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+
+## [3.36.5] - 2026-09-24
+
+### Added
+
+- **API token management UI** - Profile settings list, create, and revoke
+  personal API tokens (`GET`/`POST`/`DELETE /api/me/tokens`), including an
+  optional service-token flag, a one-time secret-reveal dialog with
+  copy-to-clipboard, and i18n across all locale catalogs.
+
+## [3.36.4] - 2026-09-22
+
+### Added
+
+- **Service API tokens** - `POST /api/me/tokens` accepts an optional
+  `isService` flag marking a user-owned token for bot/automation use. It is
+  not a separate service identity: while its user exists, a service token
+  authenticates as that user with that user's permissions. When an owner
+  deletes the user, each service token's metadata (name, timestamps,
+  revocation state) is archived together with snapshots of who held it and
+  which owner deleted them, and then all of the user's tokens are deleted in
+  the same transaction, so no secret survives. Archive records are immutable
+  and hold no secret. Owners can list them with
+  `GET /api/admin/service-token-archive` and permanently purge older ones
+  with `DELETE /api/admin/service-token-archive?archivedBefore=…`. Omitting
+  `isService` creates a personal token, which is deleted with its owner as
+  before. See [API.md](API.md#service-token-archive).
+
+## [3.36.3] - 2026-09-20
+
+### Fixed
+
+- **VoiceFlow move-to-lane interpretation** - Standalone move utterances
+  (`Move #239 to done`, title-based moves, spoken numbers) are recognized
+  deterministically while the agent is idle, so complete moves no longer
+  depend on the on-device model and incomplete ones clarify the missing
+  story or lane. Compound or continuation moves still go through the model.
+  Target/lane resolution and finish-after-effect completion are hardened so
+  a successful single move ends cleanly without inviting an unintended
+  follow-up skill call.
+
+### Added
+
+- **Voice agent evaluation bridge** - Debug-only Android / Capacitor path to
+  score move utterances (raw, protocol, and application accuracy) against a
+  fixed corpus on the current board without executing mutations.
+
+## [3.36.2] - 2026-09-18
+
+### Fixed
+
+- **Creator card-move email copy** - Card-move SMTP subjects and bodies for
+  ordinary activity and **Cards I opened** share the same move wording and
+  field order (`Project:`, `Card:`, `Moved by:`, `Status:`), omit a redundant
+  event heading, and keep **Assigned to me** subject precedence when a
+  mutation also moved the card.
+- **Unavailable client routes** - Unmatched paths and missing/inaccessible
+  board or archive destinations rewrite to `/` (login entry) without a toast;
+  unauthenticated visits preserve a same-origin `next` for post-login return.
+
+### Changed
+
+- **Story editor tag catalog** - Editing a story hydrates the full
+  archive-inclusive project tag catalog asynchronously for autocomplete
+  instead of requiring an explicit **Show all project tags** action. Voice
+  Create still uses only active project tags by default.
+- **Start sprint confirm** - The sprint activation confirm action uses the
+  success (green) button style instead of the destructive (red) style.
+
+## [3.36.1] - 2026-09-17
+
+### Fixed
+
+- **Android Capacitor packaging** - Include `archive.svg` in the packaged
+  mobile web allowlist, and add a unit test that fails when product UI sources
+  reference a local static asset that is not on that allowlist (so the gap is
+  caught in `npm test` instead of only at Android deploy).
+- **Mobile Dashboard / Projects / Temporary toggles** - Keep the three view
+  chips on one row and scale font/padding/gap to fit full labels without
+  wrapping or clipping on narrow phone widths.
+
+## [3.36.0] - 2026-09-17
+
+### Added
+
+- **Desktop Omni tag Browse and Match shelf** - Empty desktop Omni search now
+  offers active, unpinned project tags ranked by recent board activity; typing
+  switches immediately to the existing exact/prefix/substring matches. Pinned
+  tags stay in an independent region, while chevrons page the horizontally
+  scrollable candidate viewport. Mobile retains its existing single rail of
+  pins and typed matches, with no empty-search Browse shelf or chevrons. REST
+  board-tag objects add optional `lastActiveAt`, the latest `updatedAt` among
+  active stories currently carrying the logical tag; selected count-zero
+  historical exceptions omit it.
+
+- **Multi-tag Omni board filtering** - The compact Omni filter can pin up to 20
+  tags in click order. Repeated `tag` URL parameters use logical AND, compose
+  with text/Sprint/Assignee/Priority filters, and are preserved by pagination,
+  drag/drop boundary reads, realtime refreshes, and deep-link navigation.
+  Durable projects match canonical alias groups; temporary boards retain exact
+  stored-name semantics. Legacy pills display every selected tag while keeping
+  their historical replace-all click behavior. MCP `board_get` now accepts
+  preferred `tags[]` with the same logical AND, while retaining scalar `tag`
+  compatibility. `tag` and `tags` are mutually exclusive; commas are not parsed.
+
+## [3.35.0] - 2026-09-15
+
+### Added
+
+- **Compact Omni board filtering** - Boards now default to an Omni presentation that
+  keeps the existing debounced text search and shows deterministic matching active-tag
+  suggestions beside it. Selecting a suggestion consumes the discovery text, while an
+  applied tag remains independently visible and clearable and composes with Sprint and
+  every other existing URL filter. Settings → Customization offers **Legacy pills** for
+  users who prefer the previous permanent tag/sprint strip; both layouts control the same
+  URL and backend filters.
+
+  Board payload `tags` are now a current-work projection: canonical tags used by at least
+  one non-archived story, counted by unique active story. An explicitly selected inactive
+  tag is included with count zero so deep-linked filters never become invisible. Full,
+  archive-inclusive tag catalogs remain unchanged in tag management, the project catalog
+  APIs/MCP tools, and exports. Story editing hydrates the full archive-inclusive project
+  catalog asynchronously for autocomplete; Voice Create uses only active project tags by
+  default.
+
+- **Story archival** - Stories can be archived and restored without changing their
+  workflow state. Archival is orthogonal to Done: `columnKey`, `rank`, `doneAt`, the
+  story's `updatedAt`, tags, links, sprint, priority, assignment and creator attribution
+  (`createdByUserId`) are all preserved, so completion counts, throughput, average lead
+  time, burndown and sprint history read exactly the same before and after. An archived non-Done story stays historically
+  incomplete; an archived Done story keeps counting as it did.
+
+  Archived stories are hidden from current-work reads (board and lane continuation, board
+  and lane counts, dashboard WIP and assigned work, the default story and link searches,
+  and ordering neighbours) but remain visible to direct reads, reporting, and
+  definition/reference checks - a workflow column or priority tier still referenced only by
+  archived stories cannot be deleted. They are read-only until restored: update, move and
+  link add/remove return **409** with reason `todo_archived`. That check runs *after*
+  authorization, so a caller who could not write the story anyway is refused without
+  learning whether it is archived. Existing links to an archived story stay readable. Hard
+  delete is a separate operation and is still permitted wherever its own authorization
+  already allowed it.
+
+  New REST endpoints: `GET /api/board/{slug}/archive` (cursor-paginated, newest first,
+  ordered by `archivedAt` then id) plus single and batch `POST .../archive` and
+  `.../restore`. New MCP tools `todos_archive` and `todos_restore` take 1-500 unique
+  positive project-local IDs. Both transports call the same atomic store primitive: one
+  unknown ID transitions nothing, and re-archiving an already-archived story is an
+  idempotent no-op rather than an error. **Listing the archive needs only board read
+  access, so viewers can see it; archiving and restoring require maintainer on durable
+  projects.** REST publishes exactly one board refresh per real transition and none for a
+  no-op or failure, while the MCP tools are realtime-silent like every other MCP mutation.
+  Audit records `todo_archived` / `todo_restored`, one event per real transition and none
+  for no-ops. Active stories omit `archivedAt` in REST payloads and report it as `null`
+  over MCP.
+
+  The shared web/Capacitor UI now exposes Archive from every readable board. Viewers can
+  browse the cursor-paginated archive and inspect retained story fields and links in a
+  clearly marked read-only detail view. Maintainers and temporary-board capability holders
+  can archive a story, atomically archive a board selection, restore one or many archived
+  stories, or use the existing confirmed hard Delete action from archived detail. Archive
+  and Restore remain separate from Done and never ask for a destination lane. The archive
+  list uses deterministic `Load more` pagination and reconciles through the existing board
+  refresh stream. Nothing is archived automatically; every transition remains explicit.
+
+  **Known behaviour:** sprint planning counts (`todoCount`, the unscheduled/backlog count)
+  and workflow-column and priority-tier reference counts deliberately still include
+  archived stories, because those are integrity and planning-scope numbers rather than
+  board reads. They can therefore exceed what the board lanes show. Likewise, tag
+  management counts remain archive-inclusive while the board's tag counts are
+  active-only.
+
+### Changed
+
+- **Backup format 1.2** - Exports are now format **1.2** and always represent archive
+  state explicitly (`archivedAt` as Unix milliseconds, or `null`). Imports accept **1.1**
+  and **1.2**. On matched-project merge an absent `archivedAt` preserves the target's
+  state, explicit `null` clears it, and a timestamp archives it. A payload declaring 1.1
+  while carrying `archivedAt` is rejected as mislabeled rather than silently treated as
+  archival data. Outside matched merge (copy, replace, import into a board) an absent
+  `archivedAt` creates an active story, so 1.1 backups import exactly as before. Imported
+  `archivedAt` values are validated: negative timestamps and ones implausibly far in the
+  future are rejected before anything is written.
+
+  **Upgrade impact:** older Scrumboy versions that only understand 1.1 will reject a 1.2
+  backup rather than silently dropping archive state. Export a backup from the older
+  version before downgrading.
+
+- **Trello import: closed cards** - A closed Trello card now becomes a first-class archived
+  story instead of having `[Archived]` prefixed to its title. Closed *lists* are unchanged
+  and remain a separate axis (`[Closed List]` title prefix plus the Done remap), so a card
+  that is both keeps the closed-list marker and gains archival. Trello exports carry no
+  per-card archive time, so archived cards are stamped with the import time.
+
+  **Upgrade impact:** re-importing a Trello board produces different titles than before.
+  Previously imported cards keep their existing `[Archived]` titles; nothing is rewritten.
+
+## [3.34.3] - 2026-09-15
+
+### Added
+
+- **Scrumboy Dashboard Android widget** - Native home-screen widget that
+  projects assigned Dashboard work (counts plus a scrollable list of all
+  assigned todos) from a sanitized on-device snapshot. Logout and server
+  change clear it. Taps open existing `/dashboard` and `/{slug}/t/{localId}`
+  routes through an internal activity extra, not a public URL scheme.
 
 ## [3.34.2] - 2026-09-14
 

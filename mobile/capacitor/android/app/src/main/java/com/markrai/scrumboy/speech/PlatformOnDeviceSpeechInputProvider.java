@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.speech.RecognitionListener;
 import android.speech.RecognizerIntent;
 import android.speech.SpeechRecognizer;
+import androidx.annotation.RequiresApi;
 import java.util.ArrayList;
 
 final class PlatformOnDeviceSpeechInputProvider {
@@ -28,7 +29,10 @@ final class PlatformOnDeviceSpeechInputProvider {
      * Never calls {@code startListening}, so no callback can arrive before the caller has
      * published the handle and attached cancellation to it. Phase two is
      * {@link PlatformRecognitionHandle#start()}.
+     *
+     * API 31+: callers must honor {@link #isAvailable(Context)}.
      */
+    @RequiresApi(Build.VERSION_CODES.S)
     PlatformRecognitionHandle prepare(
         Context context,
         String language,
@@ -37,7 +41,7 @@ final class PlatformOnDeviceSpeechInputProvider {
         if (!isAvailable(context)) throw new SpeechInputException("unsupported", false);
         final SpeechRecognizer recognizer;
         try {
-            recognizer = SpeechRecognizer.createOnDeviceSpeechRecognizer(context);
+            recognizer = createOnDeviceRecognizer(context);
         } catch (RuntimeException error) {
             throw new SpeechInputException("unsupported", false);
         }
@@ -103,6 +107,11 @@ final class PlatformOnDeviceSpeechInputProvider {
                 recognizer.destroy();
             }
         });
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private static SpeechRecognizer createOnDeviceRecognizer(Context context) {
+        return SpeechRecognizer.createOnDeviceSpeechRecognizer(context);
     }
 
     private static String firstTranscript(ArrayList<String> matches) {

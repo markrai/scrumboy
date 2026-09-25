@@ -135,7 +135,7 @@ func assertTodoSearchItem(t *testing.T, item map[string]any, wantLocalID int64, 
 func assertTodoLinkItem(t *testing.T, item map[string]any, wantLocalID int64, wantTitle, wantLinkType string) {
 	t.Helper()
 
-	assertExactJSONKeys(t, item, "localId", "title", "linkType")
+	assertExactJSONKeys(t, item, "localId", "title", "linkType", "archivedAt")
 	gotLocalID, ok := item["localId"].(float64)
 	if !ok || int64(gotLocalID) != wantLocalID {
 		t.Fatalf("expected link item localId=%d, got %+v", wantLocalID, item)
@@ -269,6 +269,9 @@ func TestMeAPITokensCRUD(t *testing.T) {
 	if created["token"] == nil || created["token"].(string) == "" {
 		t.Fatal("expected non-empty token in create response")
 	}
+	if isService, ok := created["isService"].(bool); !ok || isService {
+		t.Fatalf("omitted isService = %#v, want false", created["isService"])
+	}
 	id := int64(created["id"].(float64))
 
 	var list map[string]any
@@ -279,6 +282,9 @@ func TestMeAPITokensCRUD(t *testing.T) {
 	items := list["items"].([]any)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 token, got %d", len(items))
+	}
+	if isService, ok := items[0].(map[string]any)["isService"].(bool); !ok || isService {
+		t.Fatalf("listed omitted isService = %#v, want false", items[0].(map[string]any)["isService"])
 	}
 
 	resp, _ = doJSON(t, client, http.MethodDelete, fmt.Sprintf("%s/api/me/tokens/%d", ts.URL, id), nil, nil)
@@ -297,6 +303,133 @@ func TestMeAPITokensCRUD(t *testing.T) {
 	meta := items[0].(map[string]any)
 	if meta["revokedAt"] == nil {
 		t.Fatal("expected revokedAt on revoked token")
+	}
+}
+
+func TestMeAPITokensServiceFlagRoundTrips(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+	client := newCookieClient(t)
+	bootstrapUserClient(t, client, ts.URL, "Alice", "service-token@example.com", "password123")
+
+	var created map[string]any
+	resp, _ := doJSON(t, client, http.MethodPost, ts.URL+"/api/me/tokens", map[string]any{
+		"name":      "automation",
+		"isService": true,
+	}, &created)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST service /api/me/tokens: status=%d", resp.StatusCode)
+	}
+	if isService, ok := created["isService"].(bool); !ok || !isService {
+		t.Fatalf("created isService = %#v, want true", created["isService"])
+	}
+
+	var list map[string]any
+	resp, _ = doJSON(t, client, http.MethodGet, ts.URL+"/api/me/tokens", nil, &list)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/me/tokens: status=%d", resp.StatusCode)
+	}
+	items := list["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 token, got %d", len(items))
+	}
+	if isService, ok := items[0].(map[string]any)["isService"].(bool); !ok || !isService {
+		t.Fatalf("listed isService = %#v, want true", items[0].(map[string]any)["isService"])
+	}
+}
+
+func TestAdminServiceTokenArchiveAfterUserDeletion(t *testing.T) {
+	ts, _, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+	owner := newCookieClient(t)
+	bootstrapUserClient(t, owner, ts.URL, "Owner", "archive-owner@example.com", "password123")
+
+	var created map[string]any
+	resp, _ := doJSON(t, owner, http.MethodPost, ts.URL+"/api/admin/users", map[string]any{
+		"name":     "Bot Keeper",
+		"email":    "bot-keeper@example.com",
+		"password": "password123",
+	}, &created)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create user: status=%d", resp.StatusCode)
+	}
+	botKeeperID := int64(created["id"].(float64))
+	botKeeper := newCookieClient(t)
+	loginUserClient(t, botKeeper, ts.URL, "bot-keeper@example.com", "password123")
+	for _, body := range []map[string]any{
+		{"name": "ci", "isService": true},
+		{"name": "laptop"},
+	} {
+		if resp, _ := doJSON(t, botKeeper, http.MethodPost, ts.URL+"/api/me/tokens", body, nil); resp.StatusCode != http.StatusCreated {
+			t.Fatalf("create token %v: status=%d", body, resp.StatusCode)
+		}
+	}
+
+	if resp, _ := doJSON(t, botKeeper, http.MethodGet, ts.URL+"/api/admin/service-token-archive", nil, nil); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-admin archive GET: status=%d want 403", resp.StatusCode)
+	}
+
+	if resp, _ := doJSON(t, owner, http.MethodDelete, fmt.Sprintf("%s/api/admin/users/%d", ts.URL, botKeeperID), nil, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete user: status=%d", resp.StatusCode)
+	}
+
+	var ownerTokens map[string]any
+	if resp, _ := doJSON(t, owner, http.MethodGet, ts.URL+"/api/me/tokens", nil, &ownerTokens); resp.StatusCode != http.StatusOK {
+		t.Fatalf("owner GET /api/me/tokens: status=%d", resp.StatusCode)
+	}
+	if items := ownerTokens["items"].([]any); len(items) != 0 {
+		t.Fatalf("owner inherited live tokens: %v", items)
+	}
+
+	var archive map[string]any
+	if resp, _ := doJSON(t, owner, http.MethodGet, ts.URL+"/api/admin/service-token-archive?limit=10", nil, &archive); resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive GET: status=%d", resp.StatusCode)
+	}
+	items := archive["items"].([]any)
+	if len(items) != 1 || archive["nextBefore"] != nil {
+		t.Fatalf("archive = %v, want one service record and no next page", archive)
+	}
+	record := items[0].(map[string]any)
+	origin := record["originUser"].(map[string]any)
+	archivedBy := record["archivedBy"].(map[string]any)
+	if record["name"] != "ci" || record["revokedOnArchive"] != true || record["token"] != nil || record["tokenHash"] != nil {
+		t.Fatalf("archive record = %v", record)
+	}
+	if int64(origin["id"].(float64)) != botKeeperID || origin["email"] != "bot-keeper@example.com" || origin["name"] != "Bot Keeper" {
+		t.Fatalf("originUser = %v", origin)
+	}
+	if archivedBy["email"] != "archive-owner@example.com" {
+		t.Fatalf("archivedBy = %v", archivedBy)
+	}
+
+	for _, url := range []string{
+		ts.URL + "/api/admin/service-token-archive?limit=abc",
+		ts.URL + "/api/admin/service-token-archive?limit=0",
+		ts.URL + "/api/admin/service-token-archive?before=-1",
+	} {
+		if resp, _ := doJSON(t, owner, http.MethodGet, url, nil, nil); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("GET %s: status=%d want 400", url, resp.StatusCode)
+		}
+	}
+	for _, url := range []string{
+		ts.URL + "/api/admin/service-token-archive",
+		ts.URL + "/api/admin/service-token-archive?archivedBefore=yesterday",
+	} {
+		if resp, _ := doJSON(t, owner, http.MethodDelete, url, nil, nil); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("DELETE %s: status=%d want 400", url, resp.StatusCode)
+		}
+	}
+
+	var purged map[string]any
+	cutoff := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+	if resp, _ := doJSON(t, owner, http.MethodDelete, ts.URL+"/api/admin/service-token-archive?archivedBefore="+cutoff, nil, &purged); resp.StatusCode != http.StatusOK {
+		t.Fatalf("archive purge: status=%d", resp.StatusCode)
+	}
+	if purged["deleted"] != float64(1) {
+		t.Fatalf("purge result = %v, want deleted=1", purged)
+	}
+	if resp, _ := doJSON(t, owner, http.MethodGet, ts.URL+"/api/admin/service-token-archive", nil, &archive); resp.StatusCode != http.StatusOK || len(archive["items"].([]any)) != 0 {
+		t.Fatalf("archive after purge: status=%d body=%v", resp.StatusCode, archive)
 	}
 }
 

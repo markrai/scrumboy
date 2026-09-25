@@ -201,6 +201,8 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "todos_update",
     "todos_countCompleted",
     "todos_delete",
+    "todos_archive",
+    "todos_restore",
     "todos_move",
     "todos_linksList",
     "todos_linkAdd",
@@ -250,7 +252,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (52 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -282,6 +284,8 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (50 tools).
 - `todos_update`
 - `todos_countCompleted`
 - `todos_delete`
+- `todos_archive`
+- `todos_restore`
 - `todos_move`
 - `todos_linksList`
 - `todos_linkAdd`
@@ -330,7 +334,7 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 >
 > A grouped entry is labelled by its canonical name. A legacy row whose stored name
 > cannot be canonicalized at all keeps its raw stored name as the label, and that label
-> is what `tagName` and the board `tag` filter accept for it.
+> is what `tagName` and the board `tag`/`tags` filters accept for it.
 >
 > `tags_updateProjectColor` takes **exactly one** of `tagId` or `tagName`, decided by
 > what was supplied rather than by what is valid: sending a malformed `tagId` or an
@@ -358,6 +362,41 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 **Board**
 
 - `board_get`
+
+Prefer `tags` for board filtering:
+
+```json
+{
+  "projectSlug": "example",
+  "tags": ["feature", "ux"]
+}
+```
+
+Todos must match every selected logical tag (AND). `tags` is a string array of
+up to 20 unique names after trim and case-insensitive dedup; the first spelling
+wins. Do not supply `tag` and `tags` together.
+
+Legacy `tag` remains a backward-compatible scalar:
+
+```json
+{
+  "projectSlug": "example",
+  "tag": "feature"
+}
+```
+
+Neither field parses commas. `"feature,ux"` is one literal tag name; callers
+who want two filters must send `tags: ["feature", "ux"]`. REST board reads
+separately accept repeated `tag` query parameters with the same logical AND
+and store semantics.
+
+On durable projects, each selected name is matched on the same grouping key
+`tags_listProject` labels entries with, so filtering by `make-space` returns
+todos carrying either the canonical row or a legacy `make space` row. Temporary
+boards keep exact stored-name matching. If any selected logical tag matches no
+row, the board is empty rather than silently dropping that filter. The same
+normalized ordered list is applied to the initial page, every per-lane read,
+filtered counts, and cursor continuation.
 
 `board_get` accepts an optional string `assignee` filter: `"me"` for the
 authenticated caller, `"unassigned"` for todos without an assignee, or a
@@ -405,9 +444,10 @@ still uses column keys in `cursorByColumn`; entries for other valid workflow
 columns are ignored and are not decoded when `columnKey` scopes the request.
 
 `board_get` uses explicit validation tiers. Authentication/capability checks,
-input shape, required `projectSlug`, `limit`, assignee type/grammar, and `sort`
-are checked before project access because they are target-independent. Project
-access then precedes sprint resolution, workflow/`columnKey` validation, and
+input shape, required `projectSlug`, `limit`, assignee type/grammar, `sort`,
+`tags` type/items, empty normalized `tags`, more than 20 unique `tags`, and
+supplying `tag` together with `tags` are checked before project access because
+they are target-independent. Project access then precedes sprint resolution, workflow/`columnKey` validation, and
 `cursorByColumn` validation. As a result, a bad pre-access field still returns
 its exact `VALIDATION_ERROR` when the slug is denied, missing, or expired,
 while bad `sprintId`, `columnKey`, and `cursorByColumn` values are masked by
@@ -476,6 +516,8 @@ todos_search
 todos_update
 todos_countCompleted
 todos_delete
+todos_archive
+todos_restore
 todos_move
 todos_linksList
 todos_linkAdd
@@ -586,15 +628,18 @@ updated first, with project ID descending as the deterministic tie-breaker.
     "tags": [],
     "estimationPoints": null,
     "assigneeUserId": null,
+    "createdByUserId": null,
     "sprintId": null,
+    "priorityKey": null,
     "createdAt": "2026-04-04T12:00:00Z",
     "updatedAt": "2026-04-04T12:00:00Z",
-    "doneAt": null
+    "doneAt": null,
+    "archivedAt": null
   }
 }
 ```
 
-(`todoItem` in `internal/mcp/types.go`; default column when omitted is `store.DefaultColumnBacklog` = **`backlog`** after `normalizeColumnKey` in `internal/mcp/adapter.go`.)
+(`todoItem` in `internal/mcp/types.go`; default column when omitted is `store.DefaultColumnBacklog` = **`backlog`** after `normalizeColumnKey` in `internal/mcp/adapter.go`.) Every field above is always present in MCP todo responses; optional values are explicit JSON `null` rather than omitted. **`archivedAt`** is an RFC3339 timestamp string when the story is archived and `null` when it is active.
 
 **3. `todos_update`** — required: `projectSlug`, `localId`, `patch` (object). Only fields present in `patch` are updated; some fields may be set to JSON `null` to clear where the store allows it. For `priorityKey`, omission preserves, `null` clears, and a string assigns a tier from the same project. Success data uses the same `todo` object shape as `todos_create` / `todos_get`.
 
@@ -891,3 +936,4 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
 - **`sprints_update` `patch`:** Catalog documents `plannedStartAt` / `plannedEndAt` as **Unix milliseconds** (integers), not RFC3339 strings (unlike `sprints_create`).
 - **JSON-RPC `serverInfo.version`:** The value returned by `initialize` is the string **`1.0.0`** in code (`internal/mcp/jsonrpc_handler.go`), not necessarily the Scrumboy app version from `internal/version`.
 - **`plannedTools`:** Currently always empty / omitted; there is no separate catalog of unimplemented tools in responses.
+- **`todos_archive` / `todos_restore`:** take `localIds`, an array of **1-500** unique positive project-local IDs, and apply it **atomically** — one unknown ID fails the whole call and transitions nothing. Requires **maintainer** access on durable projects; unavailable in anonymous and pre-bootstrap modes. Re-archiving an already-archived story is an idempotent no-op counted as unchanged, not an error. Archival is orthogonal to workflow state and Done: `columnKey`, rank, `doneAt`, the story's `updatedAt`, tags, links, sprint, priority, assignment and `createdByUserId` are all preserved, so reporting and sprint history are unaffected. Archived stories are read-only (**409** `todo_archived`), but that check runs after authorization, so an unauthorized caller never learns the archive state; an empty `todos_update` patch (`{}`) stays a lookup/no-op and still succeeds. `board_get` and the default `todos_search` exclude archived stories, while `todos_get` still returns them. Link add/remove is rejected when either endpoint is archived, though `todos_linksList` keeps showing existing links and reports each target's `archivedAt`. **Both tools are realtime-silent** — like every other MCP mutation they publish no `board.refresh_needed`, unlike the equivalent REST routes. **There is no MCP archive-listing tool**; the cursor-paginated archive page is REST-only (`GET /api/board/{slug}/archive`).

@@ -18,6 +18,7 @@ type LinkedStoryItem = {
   localId: number;
   title: string;
   linkType?: string;
+  archivedAt?: string;
 };
 
 type LinkedStoriesResponse = {
@@ -45,7 +46,8 @@ function removeLinksAutocompleteOverlay(): void {
 }
 
 function formatLinkedStoryLabel(item: LinkedStoryItem): string {
-  return `#${item.localId} ${item.title || ""}`.trim();
+  const archived = item.archivedAt ? ` (${t("todo.archive.banner")})` : "";
+  return `#${item.localId} ${item.title || ""}${archived}`.trim();
 }
 
 function getLinkedStorySuggestionText(item: LinkedStoryItem, q: string): string | null {
@@ -180,7 +182,7 @@ function renderLinksChips(
         : "";
       return `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="outbound">
-      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
+      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}${item.archivedAt ? ` · ${escapeHTML(t("todo.archive.banner"))}` : ""}</button>
       ${removeBtn}
     </span>
   `;
@@ -191,7 +193,7 @@ function renderLinksChips(
     .map(
       (item) => `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="inbound">
-      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
+      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}${item.archivedAt ? ` · ${escapeHTML(t("todo.archive.banner"))}` : ""}</button>
     </span>
   `,
     )

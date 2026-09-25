@@ -165,7 +165,7 @@ func TestUserAdministrationStoreDeleteCascadesAndPreservesTodoHistory(t *testing
 		t.Fatalf("create target session: %v", err)
 	}
 	name := "delete-cascade-token"
-	if _, _, _, err := fx.store.CreateUserAPIToken(ctx, fx.user.ID, &name); err != nil {
+	if _, _, _, err := fx.store.CreateUserAPIToken(ctx, fx.user.ID, &name, false); err != nil {
 		t.Fatalf("create target API token: %v", err)
 	}
 	if err := fx.store.SetUserPreference(ctx, fx.user.ID, "cardsPerLane", "50"); err != nil {

@@ -1,10 +1,11 @@
 import { apiFetch } from './api.js';
-import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderNotFound, stopBoardEvents } from './views/index.js';
+import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderArchive, renderNotFound, stopArchiveEvents, stopBoardEvents } from './views/index.js';
 import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from './core/realtime.js';
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setTag, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
@@ -26,6 +27,10 @@ import {
   WRAP_LANES_PREFERENCE_KEY,
 } from './core/wrap-lanes-preferences.js';
 import {
+  BOARD_FILTER_LAYOUT_PREFERENCE_KEY,
+  loadBoardFilterLayoutPreferenceFromServer,
+} from './core/board-filter-layout-preferences.js';
+import {
   AGENDA_START_OF_DAY_PREFERENCE_KEY,
   loadAgendaStartOfDayPreferenceFromServer,
   onAgendaStartOfDayAuthUserChanged,
@@ -42,6 +47,7 @@ import {
   isBoardTodoSortUrlParam,
   loadBoardTodoSortPreferenceFromServer,
 } from './core/board-sort-preferences.js';
+import { hydrateDashboardWidgetFromNetwork, setDashboardWidgetCurrentUser } from './dashboard-widget-publish.js';
 
 // Attach foreground listeners once at module load (idempotent guard lives in initForegroundLifecycle).
 initForegroundLifecycle();
@@ -49,7 +55,7 @@ initForegroundLifecycle();
 type ParsedRoute = {
   name: RouteName;
   slug?: string;
-  tag?: string;
+  tags?: string[];
   search?: string;
   sprintId?: string | null;
   assignee?: string | null;
@@ -62,7 +68,7 @@ type ParsedRoute = {
 
 let isRouting = false;
 let rerouteRequested = false;
-let lastHandledBoardRoute: { slug: string; tag: string; search: string; sprintId: string | null; assignee: string | null; sort: string | null; priority: string | null; openTodoSegment: string | null } | null = null;
+let lastHandledBoardRoute: { slug: string; tags: string[]; search: string; sprintId: string | null; assignee: string | null; sort: string | null; priority: string | null; openTodoSegment: string | null } | null = null;
 /** True until the first routeOnce after a full document load (F5 / cold open). */
 let isDocumentColdStart = true;
 
@@ -74,10 +80,51 @@ function navigate(path: string, options?: { state?: object }): void {
   });
 }
 
+/** Unmatched paths and missing board/archive destinations rewrite to `/` (main login entry). */
+function redirectMissingClientPathToHome(opts?: { next?: string }): void {
+  if (!getAuthStatusAvailable()) {
+    window.location.assign("/");
+    return;
+  }
+  // Preserve a same-origin client path for post-login return (existence-hiding 404s still look identical).
+  const preservedNext = opts?.next;
+  history.replaceState({}, "", "/");
+  if (preservedNext && getUser() == null) {
+    renderAuth({
+      next: preservedNext,
+      bootstrap: getBootstrapAvailable(),
+      oidcEnabled: getOidcEnabled(),
+      mobileOidcEnabled: getMobileOidcEnabled(),
+      localAuthEnabled: getLocalAuthEnabled(),
+      selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),
+    });
+    return;
+  }
+  rerouteRequested = true;
+}
+
+function authOverlayOptions(next: string, opts?: { bootstrap?: boolean }): {
+  next: string;
+  bootstrap: boolean;
+  oidcEnabled: boolean;
+  mobileOidcEnabled: boolean;
+  localAuthEnabled: boolean;
+  selfServicePasswordResetEnabled: boolean;
+} {
+  return {
+    next,
+    bootstrap: opts?.bootstrap ?? getBootstrapAvailable(),
+    oidcEnabled: getOidcEnabled(),
+    mobileOidcEnabled: getMobileOidcEnabled(),
+    localAuthEnabled: getLocalAuthEnabled(),
+    selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),
+  };
+}
+
 function parseRoute(): ParsedRoute {
   const path = window.location.pathname;
   const url = new URL(window.location.href);
-  const tag = url.searchParams.get("tag") || "";
+  const tags = getTagsFromUrl();
   const search = url.searchParams.get("search") || "";
   const sprintIdRaw = url.searchParams.get("sprintId");
   const sprintId = sprintIdRaw === "" ? null : (sprintIdRaw || null);
@@ -93,11 +140,17 @@ function parseRoute(): ParsedRoute {
   if (path === "/dashboard") return { name: "dashboard" };
   if (path === "/auth/reset-password") return { name: "reset-password", token: url.searchParams.get("token") || undefined };
   const tm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/t\/(\d+)\/?$/);
-  if (tm && !tm[1].includes("--")) return { name: "boardBySlug", slug: tm[1], tag, search, sprintId, assignee, sort, priority, openTodoSegment: tm[2] };
+  if (tm && !tm[1].includes("--")) return { name: "boardBySlug", slug: tm[1], tags, search, sprintId, assignee, sort, priority, openTodoSegment: tm[2] };
+  const archiveTodoMatch = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/archive\/t\/(\d+)\/?$/);
+  if (archiveTodoMatch && !archiveTodoMatch[1].includes("--")) {
+    return { name: "archiveBySlug", slug: archiveTodoMatch[1], openTodoSegment: archiveTodoMatch[2] };
+  }
+  const archiveMatch = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/archive\/?$/);
+  if (archiveMatch && !archiveMatch[1].includes("--")) return { name: "archiveBySlug", slug: archiveMatch[1] };
   // Canonical: /{slug} only (lowercase, digits, hyphens; max 32; no leading/trailing hyphen; no consecutive hyphens).
   const sm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/?$/);
-  if (sm && !sm[1].includes("--")) return { name: "boardBySlug", slug: sm[1], tag, search, sprintId, assignee, sort, priority, openTodoId };
-  return { name: "notfound" };
+  if (sm && !sm[1].includes("--")) return { name: "boardBySlug", slug: sm[1], tags, search, sprintId, assignee, sort, priority, openTodoId };
+  return { name: "notfound", tags: [] };
 }
 
 function normalize(v?: string | null): string {
@@ -114,7 +167,7 @@ function shouldDoLightweightBoardUpdate(r: ParsedRoute): boolean {
   const rPriority = r.priority ?? null;
   return (
     lastHandledBoardRoute.slug === r.slug &&
-    normalize(lastHandledBoardRoute.tag) === normalize(r.tag) &&
+    sameOrderedTags(lastHandledBoardRoute.tags, r.tags ?? []) &&
     normalize(lastHandledBoardRoute.search) === normalize(r.search) &&
     (lastHandledBoardRoute.sprintId ?? null) === rSprintId &&
     (lastHandledBoardRoute.assignee ?? null) === rAssignee &&
@@ -152,11 +205,13 @@ async function routeOnceBody(): Promise<void> {
     const newUser = st && st.user ? st.user : null;
     const oldUserId = oldUser?.id || null;
     const newUserId = newUser?.id || null;
+    let widgetIdentity = Promise.resolve();
     
     if (oldUserId !== newUserId) {
       // User changed (logout, login as different user, or initial load)
       resetUserScopedState();
       stopGlobalRealtime();
+      widgetIdentity = setDashboardWidgetCurrentUser(newUserId);
     }
 
     setUser(newUser);
@@ -274,6 +329,10 @@ async function routeOnceBody(): Promise<void> {
         apiFetch<{ value: string }>(`/api/user/preferences?key=${WRAP_LANES_PREFERENCE_KEY}`),
       );
 
+      await loadBoardFilterLayoutPreferenceFromServer(() =>
+        apiFetch<{ value: string }>(`/api/user/preferences?key=${BOARD_FILTER_LAYOUT_PREFERENCE_KEY}`),
+      );
+
       await loadAgendaStartOfDayPreferenceFromServer(() =>
         apiFetch<{ value: string }>(`/api/user/preferences?key=${AGENDA_START_OF_DAY_PREFERENCE_KEY}`),
       );
@@ -286,8 +345,9 @@ async function routeOnceBody(): Promise<void> {
         apiFetch<{ value: string }>(`/api/user/preferences?key=${BOARD_TODO_SORT_PREFERENCE_KEY}`),
       );
 
-      // Load email notification preferences
       await loadUserEmailNotifyPref();
+      await widgetIdentity;
+      hydrateDashboardWidgetFromNetwork({ skipIfDashboardRoute: true });
     }
 
     if (getAuthStatusAvailable()) {
@@ -316,6 +376,11 @@ async function routeOnceBody(): Promise<void> {
   }
 
   let r = parseRoute();
+  // Unmatched client paths rewrite to `/` (main login entry in full mode; marketing root in anonymous mode).
+  if (r.name === "notfound") {
+    redirectMissingClientPathToHome();
+    return;
+  }
 	const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
 	if (authMethodReturn && getUser()) {
 		const cleanURL = new URL(window.location.href);
@@ -334,12 +399,16 @@ async function routeOnceBody(): Promise<void> {
   }
   console.log("Router: parsed route:", r);
   setRoute(r.name);
-  setTag(r.tag || "");
   setSearch(r.search || "");
   setSlug(r.slug || null);
   setOpenTodoSegment(r.openTodoSegment || null);
   if (r.name !== "boardBySlug") {
     stopBoardEvents();
+  }
+  if (r.name !== "archiveBySlug") {
+    stopArchiveEvents();
+  }
+  if (r.name !== "boardBySlug" && r.name !== "archiveBySlug") {
     setProjectId(null);
     setBoard(null);
     lastHandledBoardRoute = null;
@@ -375,9 +444,29 @@ async function routeOnceBody(): Promise<void> {
     await renderDashboard();
     return;
   }
+  if (r.name === "archiveBySlug") {
+    lastHandledBoardRoute = null;
+    try {
+      await renderArchive(r.slug || null, r.openTodoSegment || null);
+    } catch (err) {
+      const status = err && (err as Error & { status?: number }).status;
+      if (status === 401) {
+        renderAuth(authOverlayOptions(window.location.pathname + window.location.search, { bootstrap: false }));
+        return;
+      }
+      if (status === 404) {
+        // Missing or inaccessible archive destination: same home redirect as unmatched paths (no toast).
+        redirectMissingClientPathToHome({ next: window.location.pathname + window.location.search });
+        return;
+      }
+      console.error("Router: error rendering archive:", err);
+      throw err;
+    }
+    return;
+  }
   if (r.name === "boardBySlug") {
     // Default: no sprint filter. URL stays e.g. /scrumboy without ?sprintId=scheduled.
-    console.log("Router: rendering board, slug:", r.slug, "tag:", r.tag, "search:", r.search, "sprintId:", r.sprintId, "assignee:", r.assignee);
+    console.log("Router: rendering board, slug:", r.slug, "tags:", r.tags, "search:", r.search, "sprintId:", r.sprintId, "assignee:", r.assignee);
     // history.state.boardData is a same-session handoff from projects hover-prefetch.
     // Browsers keep that state across F5, so on a cold document load it can be a stale
     // limitPerLane payload that bypasses preference-aware loadBoardBySlug — ignore it.
@@ -390,16 +479,16 @@ async function routeOnceBody(): Promise<void> {
     const isLightweight = shouldDoLightweightBoardUpdate(r);
     try {
       if (isLightweight) {
-        await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
+        await renderBoard(r.slug || null, r.tags ?? [], r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
       } else {
-        await renderBoard(r.slug || null, r.tag || "", r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, {
+        await renderBoard(r.slug || null, r.tags ?? [], r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, {
           skipLoad: false,
           prefetchedBoard: prefetchedBoard?.project && prefetchedBoard?.columns ? (prefetchedBoard as Board) : undefined,
         });
       }
       lastHandledBoardRoute = {
         slug: r.slug || "",
-        tag: normalize(r.tag),
+        tags: [...(r.tags ?? [])],
         search: normalize(r.search),
         sprintId: r.sprintId ?? null,
         assignee: r.assignee ?? null,
@@ -412,12 +501,18 @@ async function routeOnceBody(): Promise<void> {
         window.scrollTo(0, 0);
       }
     } catch (err) {
-      console.error("Router: error rendering board:", err);
-      if (err && (err as Error & { status?: number }).status === 401) {
+      const status = err && (err as Error & { status?: number }).status;
+      if (status === 401) {
         // Only show auth UI for 401s (entry points). Resource endpoints should generally return 404 when unauthenticated.
-        renderAuth({ next: window.location.pathname + window.location.search, bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: getLocalAuthEnabled(), selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled() });
+        renderAuth(authOverlayOptions(window.location.pathname + window.location.search, { bootstrap: false }));
         return;
       }
+      if (status === 404) {
+        // Missing or inaccessible board (incl. existence-hiding): same home redirect as unmatched paths (no toast).
+        redirectMissingClientPathToHome({ next: window.location.pathname + window.location.search });
+        return;
+      }
+      console.error("Router: error rendering board:", err);
       throw err;
     }
     return;

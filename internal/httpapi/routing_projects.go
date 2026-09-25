@@ -218,7 +218,11 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			writeStoreErr(w, err, true)
 			return true
 		}
-		tag := r.URL.Query().Get("tag")
+		tags, err := parseBoardTagFilters(r.URL.Query()["tag"])
+		if err != nil {
+			writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag"})
+			return true
+		}
 		search := strings.TrimSpace(r.URL.Query().Get("search"))
 		if search == "" {
 			search = ""
@@ -244,7 +248,7 @@ func (s *Server) handleProjectsProjectReads(w http.ResponseWriter, r *http.Reque
 			return true
 		}
 		result, err := prepared.Read(boardapp.LegacyQuery{
-			TagFilter:      tag,
+			TagFilters:     tags,
 			SearchFilter:   search,
 			AssigneeFilter: assigneeFilter,
 			PriorityFilter: priorityFilter,

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,7 +21,9 @@ type boardReadContractResponse struct {
 		Key string `json:"key"`
 	} `json:"columnOrder"`
 	Tags []struct {
-		Name string `json:"name"`
+		Name         string  `json:"name"`
+		Count        int     `json:"count"`
+		LastActiveAt *string `json:"lastActiveAt"`
 	} `json:"tags"`
 	Columns map[string][]struct {
 		ID              int64  `json:"id"`
@@ -32,6 +35,83 @@ type boardReadContractResponse struct {
 		NextCursor *string `json:"nextCursor"`
 		TotalCount int     `json:"totalCount"`
 	} `json:"columnsMeta"`
+}
+
+func TestBoardRead_RESTTagLastActiveAtContract(t *testing.T) {
+	ts, sqlDB, cleanup := newTestHTTPServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t)
+	ownerJSON := bootstrapUserClient(t, client, ts.URL, "Owner", "board-tag-recency@example.com", "password123")
+	ownerID := int64(ownerJSON["id"].(float64))
+	ownerCtx := store.WithUserID(context.Background(), ownerID)
+	st := store.New(sqlDB, nil)
+	project, err := st.CreateProject(ownerCtx, "Board tag recency contract")
+	if err != nil {
+		t.Fatal(err)
+	}
+	create := func(title, tag string) store.Todo {
+		t.Helper()
+		todo, err := st.CreateTodo(ownerCtx, project.ID, store.CreateTodoInput{Title: title, Tags: []string{tag}}, store.ModeFull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return todo
+	}
+	alpha := create("alpha active", "alpha")
+	zeta := create("zeta active", "zeta")
+	dormant := create("dormant archived", "dormant")
+	base := time.Date(2026, 9, 16, 18, 1, 2, 123000000, time.UTC)
+	for _, item := range []struct {
+		id int64
+		at time.Time
+	}{{alpha.ID, base}, {zeta.ID, base.Add(time.Minute)}, {dormant.ID, base.Add(2 * time.Minute)}} {
+		if _, err := sqlDB.ExecContext(ownerCtx, `UPDATE todos SET updated_at = ? WHERE id = ?`, item.at.UnixMilli(), item.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := sqlDB.ExecContext(ownerCtx, `UPDATE todos SET archived_at = ? WHERE id = ?`, base.Add(3*time.Minute).UnixMilli(), dormant.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	var board boardReadContractResponse
+	resp, body := doJSON(t, client, http.MethodGet, ts.URL+"/api/board/"+project.Slug+"?tag=dormant", nil, &board)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET board: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	wantOrder := []string{"alpha", "dormant", "zeta"}
+	if len(board.Tags) != len(wantOrder) {
+		t.Fatalf("tags=%+v want order %v", board.Tags, wantOrder)
+	}
+	for i, want := range wantOrder {
+		if board.Tags[i].Name != want {
+			t.Fatalf("tags[%d]=%q want %q; payload must stay alphabetical", i, board.Tags[i].Name, want)
+		}
+	}
+	for _, tag := range board.Tags {
+		if tag.Name == "dormant" {
+			if tag.Count != 0 || tag.LastActiveAt != nil {
+				t.Fatalf("selected inactive tag=%+v want count zero and omitted lastActiveAt", tag)
+			}
+			continue
+		}
+		if tag.Count <= 0 || tag.LastActiveAt == nil {
+			t.Fatalf("active tag=%+v want positive count and lastActiveAt", tag)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, *tag.LastActiveAt); err != nil {
+			t.Fatalf("lastActiveAt %q is not RFC3339: %v", *tag.LastActiveAt, err)
+		}
+	}
+
+	var raw struct {
+		Tags []map[string]json.RawMessage `json:"tags"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := raw.Tags[1]["lastActiveAt"]; present {
+		t.Fatalf("selected inactive tag serialized lastActiveAt: %s", raw.Tags[1]["lastActiveAt"])
+	}
 }
 
 type boardLaneReadContractResponse struct {
@@ -103,15 +183,16 @@ func TestBoardRead_RESTCombinedFiltersAndPaginationContract(t *testing.T) {
 		}
 	}
 
-	createTodo("Older matching", "contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
-	createTodo("Wrong tag", "contains the needle", []string{"other"}, &ownerID, &sprint.ID)
-	createTodo("Wrong search", "contains only hay", []string{"focus"}, &ownerID, &sprint.ID)
-	createTodo("Wrong assignee", "contains the needle", []string{"focus"}, nil, &sprint.ID)
-	createTodo("Wrong sprint", "contains the needle", []string{"focus"}, &ownerID, nil)
-	createTodo("Newer matching", "also contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
+	createTodo("Older matching", "contains the needle", []string{"focus", "review"}, &ownerID, &sprint.ID)
+	createTodo("Wrong tag", "contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
+	createTodo("Wrong search", "contains only hay", []string{"focus", "review"}, &ownerID, &sprint.ID)
+	createTodo("Wrong assignee", "contains the needle", []string{"focus", "review"}, nil, &sprint.ID)
+	createTodo("Wrong sprint", "contains the needle", []string{"focus", "review"}, &ownerID, nil)
+	createTodo("Newer matching", "also contains the needle", []string{"focus", "review"}, &ownerID, &sprint.ID)
 
 	query := url.Values{}
 	query.Set("tag", "focus")
+	query.Add("tag", "review")
 	query.Set("search", "  needle  ")
 	query.Set("assignee", "me")
 	query.Set("sprintId", strconv.FormatInt(sprint.Number, 10))
@@ -222,16 +303,17 @@ func TestBoardLaneRead_RESTCombinedFiltersAndCursorContract(t *testing.T) {
 		}
 	}
 
-	createTodo("Oldest matching", "contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
-	createTodo("Wrong tag", "contains the needle", []string{"other"}, &ownerID, &sprint.ID)
-	createTodo("Middle matching", "also contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
-	createTodo("Wrong search", "contains only hay", []string{"focus"}, &ownerID, &sprint.ID)
-	createTodo("Wrong assignee", "contains the needle", []string{"focus"}, nil, &sprint.ID)
-	createTodo("Wrong sprint", "contains the needle", []string{"focus"}, &ownerID, nil)
-	createTodo("Newest matching", "still contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
+	createTodo("Oldest matching", "contains the needle", []string{"focus", "review"}, &ownerID, &sprint.ID)
+	createTodo("Wrong tag", "contains the needle", []string{"focus"}, &ownerID, &sprint.ID)
+	createTodo("Middle matching", "also contains the needle", []string{"focus", "review"}, &ownerID, &sprint.ID)
+	createTodo("Wrong search", "contains only hay", []string{"focus", "review"}, &ownerID, &sprint.ID)
+	createTodo("Wrong assignee", "contains the needle", []string{"focus", "review"}, nil, &sprint.ID)
+	createTodo("Wrong sprint", "contains the needle", []string{"focus", "review"}, &ownerID, nil)
+	createTodo("Newest matching", "still contains the needle", []string{"focus", "review"}, &ownerID, &sprint.ID)
 
 	query := url.Values{}
 	query.Set("tag", "focus")
+	query.Add("tag", "review")
 	query.Set("search", "  needle  ")
 	query.Set("assignee", "me")
 	query.Set("sprintId", strconv.FormatInt(sprint.Number, 10))

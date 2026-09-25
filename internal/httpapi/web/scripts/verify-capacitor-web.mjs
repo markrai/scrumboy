@@ -6,7 +6,11 @@ import {
   artifactManifestName,
   artifactRoot,
   buildArtifactManifest,
+  collectLocalAssetReferences,
   extractModuleSpecifiers,
+  localCssUrlPattern,
+  localHtmlSrcHrefPattern,
+  localQuotedAssetPattern,
   runtimeModuleRoots,
   webRoot,
 } from './capacitor-web-artifact-lib.mjs';
@@ -23,21 +27,12 @@ async function exists(path) {
   }
 }
 
-function localReferencePath(reference) {
-  if (!reference || reference.startsWith('#') || reference.startsWith('data:')) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(reference) || reference.startsWith('//')) return null;
-  const path = reference.split(/[?#]/, 1)[0];
-  return path.startsWith('/') ? path.slice(1) : path;
-}
-
 async function assertLocalReferencesExist(relativeFile, source, pattern) {
-  for (const match of source.matchAll(pattern)) {
-    const reference = localReferencePath(match[1]);
-    if (!reference) continue;
-    const target = match[1].startsWith('/')
-      ? resolve(artifactRoot, reference)
-      : resolve(artifactRoot, dirname(relativeFile), reference);
-    assert(await exists(target), `${relativeFile} references missing local asset ${match[1]}`);
+  for (const { raw, relativePath, rooted } of collectLocalAssetReferences(source, pattern)) {
+    const target = rooted
+      ? resolve(artifactRoot, relativePath)
+      : resolve(artifactRoot, dirname(relativeFile), relativePath);
+    assert(await exists(target), `${relativeFile} references missing local asset ${raw}`);
   }
 }
 
@@ -58,7 +53,7 @@ async function verifyModuleGraph(files) {
       assert(await exists(resolve(artifactRoot, target)), `${relativeFile} imports missing module ${specifier}`);
       queue.push(target);
     }
-    await assertLocalReferencesExist(relativeFile, source, /['"](\/[^'"\s]+\.(?:png|jpe?g|svg|webp|ico|mp3|ogg|json)(?:\?[^'"]*)?)['"]/g);
+    await assertLocalReferencesExist(relativeFile, source, localQuotedAssetPattern());
   }
   const unreferenced = javascriptFiles.filter((file) => !reachable.has(file));
   assert(unreferenced.length === 0, `Artifact contains unreachable JavaScript: ${unreferenced.join(', ')}`);
@@ -73,7 +68,7 @@ export async function verifyCapacitorWebArtifact() {
   assert(index.includes('<script type="module" src="/bootstrap.js"></script>'), 'Generated index.html does not load the mobile bootstrap');
   assert(!/<script\b[^>]*\bsrc="\/app\.js(?:[?#][^"]*)?"/i.test(index), 'Generated index.html must not start the product app before C2 installs the runtime');
   assert(!/\b(?:src|href|content)="https?:\/\//i.test(index), 'Generated index.html contains a remote URL');
-  await assertLocalReferencesExist('index.html', index, /(?:src|href)="([^"]+)"/g);
+  await assertLocalReferencesExist('index.html', index, localHtmlSrcHrefPattern());
 
   assert(await exists(resolve(artifactRoot, 'bootstrap.js')), 'Missing generated bootstrap.js');
   const bootstrap = await readFile(resolve(artifactRoot, 'bootstrap.js'), 'utf8');
@@ -120,7 +115,7 @@ export async function verifyCapacitorWebArtifact() {
   assert(forbidden.length === 0, `Artifact contains excluded content: ${forbidden.join(', ')}`);
 
   const styles = await readFile(resolve(artifactRoot, 'styles.css'), 'utf8');
-  await assertLocalReferencesExist('styles.css', styles, /url\(["']?([^"')]+)["']?\)/g);
+  await assertLocalReferencesExist('styles.css', styles, localCssUrlPattern());
   await verifyModuleGraph(files);
 
   const sourceLocales = (await readdir(resolve(webRoot, 'modules', 'i18n', 'locales')))

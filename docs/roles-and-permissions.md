@@ -42,7 +42,10 @@ Public system-role updates accept only `admin` and `user`. Setting `owner` throu
 | Edit todo (title, body, tags, sprint, estimation) | Maintainer | Except body when assigned (see below)   |
 | Edit body when assigned        | Contributor   | Body-only; no title, tags, sprint, assign |
 | Move todo                      | Maintainer    |                                        |
-| Delete todo                    | Maintainer    |                                        |
+| Delete todo                    | Maintainer    | Hard delete; allowed on archived todos too |
+| Archive / restore todo         | Maintainer    | Single or atomic batch (1-500); durable projects |
+| View archive listing           | Viewer+       | `GET /api/board/{slug}/archive` needs only read access |
+| Edit an archived todo          | Nobody        | Read-only until restored (**409** `todo_archived`); role is checked first |
 | Self-assign todo               | Maintainer    | Contributor cannot self-assign          |
 | Assign todo to others          | Maintainer    |                                        |
 | Create tags                    | Contributor+  |                                        |

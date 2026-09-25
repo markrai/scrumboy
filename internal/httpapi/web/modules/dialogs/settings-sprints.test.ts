@@ -79,6 +79,7 @@ vi.mock('../realtime/guard.js', () => ({
 vi.mock('../state/selectors.js', () => ({
   getBoard: () => selectorState.board,
   getSlug: () => selectorState.slug,
+  getTagsFromUrl: () => new URL(window.location.href).searchParams.getAll('tag'),
 }));
 
 vi.mock('../state/mutations.js', () => ({
@@ -208,7 +209,7 @@ describe('settings-sprints', () => {
     await flushPromises();
 
     expect(window.location.search).toBe('?tag=focus');
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'focus', undefined, null, null, null, null, true);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['focus'], undefined, null, null, null, null, true);
     expect(clearSprintChipDataMock).toHaveBeenCalledTimes(1);
     expect(selectorState.board?.project.sprintsEnabled).toBe(false);
   });
@@ -230,7 +231,7 @@ describe('settings-sprints', () => {
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
     await flushPromises();
 
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', undefined, undefined, null, null, null, null, true);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', [], undefined, null, null, null, null, true);
     expect(refreshSprintsAndChipsMock).toHaveBeenCalledWith('alpha');
     expect(selectorState.board?.project.sprintsEnabled).toBe(true);
   });
@@ -453,7 +454,8 @@ describe('settings-sprints', () => {
     expect(showConfirmDialogMock).toHaveBeenCalledWith(
       expectedMessage,
       deCatalog['settings.sprints.activateConfirm.title'],
-      deCatalog['settings.sprints.activateConfirm.confirm']
+      deCatalog['settings.sprints.activateConfirm.confirm'],
+      'success'
     );
     expect(expectedMessage).toContain('Release Train');
     expect(expectedMessage).toContain(plannedLabel);

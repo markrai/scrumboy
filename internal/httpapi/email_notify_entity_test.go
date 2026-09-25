@@ -189,7 +189,7 @@ func TestEmailNotifier_CreatorCardActivityUsesPassiveEnrichedCopy(t *testing.T) 
 		LocalID:        42,
 		Title:          "Fix login",
 		ActivityReason: todoapp.RefreshReasonTodoUpdated,
-	}, emailCategoryCardActivity, "")
+	}, emailCategoryCardActivity, "", "")
 	if !ok {
 		t.Fatal("expected creator card-activity render to succeed")
 	}
@@ -251,8 +251,8 @@ func TestEmailNotifier_RefreshNeeded_MovedCardFullyEnriched(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected emails to non-actor members, got %+v", got)
 	}
-	wantSubject := "Scrumboy: card moved — #332 Make mobile save bottom longer"
-	wantBody := "Card moved\n\nMoved by: Mark Rai\nCard: #332 Make mobile save bottom longer\nProject: Scrumboy\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/scrumboy/t/332\n"
+	wantSubject := "Scrumboy: #332 Make mobile save bottom longer Moved to Done"
+	wantBody := "Project: Scrumboy\nCard: #332 Make mobile save bottom longer\nMoved by: Mark Rai\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/scrumboy/t/332\n"
 	for _, delivery := range got {
 		if delivery.Subject != wantSubject || delivery.Body != wantBody {
 			t.Fatalf("moved-card delivery = subject %q body %q, want %q / %q", delivery.Subject, delivery.Body, wantSubject, wantBody)
@@ -277,13 +277,13 @@ func TestEmailNotifier_RefreshNeeded_MovedCardMissingTransitionOmitsStatus(t *te
 	if len(got) != 2 {
 		t.Fatalf("expected emails to non-actor members, got %+v", got)
 	}
-	wantBody := "Card moved\n\nMoved by: Alice\nCard: #42 Fix login\nProject: Roadmap\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+	wantBody := "Project: Roadmap\nCard: #42 Fix login\nMoved by: Alice\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
 	for _, delivery := range got {
 		if delivery.Body != wantBody {
 			t.Fatalf("missing-transition body = %q, want %q", delivery.Body, wantBody)
 		}
-		if strings.Contains(delivery.Body, "Status:") || strings.Contains(delivery.Body, "→") {
-			t.Fatalf("missing transition emitted malformed status: %q", delivery.Body)
+		if !strings.Contains(delivery.Subject, "Moved") || strings.Contains(delivery.Subject, "Moved to") {
+			t.Fatalf("missing-transition subject = %q, want Moved without destination", delivery.Subject)
 		}
 	}
 }
@@ -302,10 +302,13 @@ func TestEmailNotifier_RefreshNeeded_SameColumnReorderOmitsStatus(t *testing.T) 
 	if len(got) != 2 {
 		t.Fatalf("expected emails to non-actor members, got %+v", got)
 	}
-	wantBody := "Card moved\n\nMoved by: Alice\nCard: #42 Fix login\nProject: Roadmap\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+	wantBody := "Project: Roadmap\nCard: #42 Fix login\nMoved by: Alice\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
 	for _, delivery := range got {
 		if delivery.Body != wantBody {
 			t.Fatalf("same-column reorder body = %q, want %q", delivery.Body, wantBody)
+		}
+		if !strings.Contains(delivery.Subject, "Moved") || strings.Contains(delivery.Subject, "Moved to") {
+			t.Fatalf("same-column reorder subject = %q, want Moved without destination", delivery.Subject)
 		}
 		if strings.Contains(delivery.Body, "Status:") || strings.Contains(delivery.Body, "Testing → Testing") {
 			t.Fatalf("same-column reorder emitted status: %q", delivery.Body)
@@ -430,7 +433,7 @@ func TestEmailNotifier_CreatorOpenedBodyUsesSingleSentenceIdentity(t *testing.T)
 		LocalID:        42,
 		Title:          "Fix login",
 		ActivityReason: todoapp.RefreshReasonTodoUpdated,
-	}, emailCategoryCreatedByMe, "")
+	}, emailCategoryCreatedByMe, "", "")
 	if !ok {
 		t.Fatal("expected createdByMe render to succeed")
 	}
@@ -453,22 +456,147 @@ func TestEmailNotifier_CreatorOpenedMovedBodyIncludesExactStatus(t *testing.T) {
 		ActivityReason: todoapp.RefreshReasonTodoMoved,
 		FromName:       " Testing ",
 		ToName:         " Done ",
-	}, emailCategoryCreatedByMe, "")
+	}, emailCategoryCreatedByMe, "", "Alice")
 	if !ok {
 		t.Fatal("expected createdByMe moved render to succeed")
 	}
-	if subject != "A card you opened was moved: Fix login" {
+	if subject != "Roadmap: #42 Fix login Moved to Done" {
 		t.Fatalf("unexpected subject: %q", subject)
 	}
-	want := "Card moved\n\nCard: #42 Fix login\nProject: Roadmap\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+	want := "Project: Roadmap\nCard: #42 Fix login\nMoved by: Alice\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
 	if body != want {
 		t.Fatalf("createdByMe moved body = %q, want %q", body, want)
 	}
 }
 
+func TestEmailNotifier_CardMoveSubjectParityAcrossCategories(t *testing.T) {
+	n := newEmailNotifier(newEmailNotifyFake(), newMailQueue(discardLogger()), "https://scrumboy.example.com", true, discardLogger())
+	base := todoapp.AuthorizedCreatorNotification{
+		ProjectName:    "Roadmap",
+		ProjectSlug:    "roadmap",
+		LocalID:        42,
+		Title:          "Fix login",
+		ActivityReason: todoapp.RefreshReasonTodoMoved,
+		FromName:       " Testing ",
+		ToName:         " Done ",
+	}
+
+	t.Run("card activity uses canonical move subject", func(t *testing.T) {
+		subject, body, ok := n.renderCreatorEmail(base, emailCategoryCardActivity, "", "Alice")
+		if !ok {
+			t.Fatal("expected card activity render to succeed")
+		}
+		if subject != "Roadmap: #42 Fix login Moved to Done" {
+			t.Fatalf("subject = %q", subject)
+		}
+		wantBody := "Project: Roadmap\nCard: #42 Fix login\nMoved by: Alice\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+		if body != wantBody {
+			t.Fatalf("body = %q, want %q", body, wantBody)
+		}
+	})
+
+	t.Run("created by me uses the same canonical move subject", func(t *testing.T) {
+		subject, body, ok := n.renderCreatorEmail(base, emailCategoryCreatedByMe, "", "Alice")
+		if !ok {
+			t.Fatal("expected createdByMe render to succeed")
+		}
+		if subject != "Roadmap: #42 Fix login Moved to Done" {
+			t.Fatalf("subject = %q", subject)
+		}
+		wantBody := "Project: Roadmap\nCard: #42 Fix login\nMoved by: Alice\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+		if body != wantBody {
+			t.Fatalf("body = %q, want %q", body, wantBody)
+		}
+	})
+
+	t.Run("no real column change omits Moved to destination", func(t *testing.T) {
+		for _, transition := range []struct {
+			name     string
+			fromName string
+			toName   string
+		}{
+			{name: "missing"},
+			{name: "missing destination", fromName: "Testing"},
+			{name: "missing source", toName: "Done"},
+			{name: "same column", fromName: " Testing ", toName: "Testing"},
+		} {
+			t.Run(transition.name, func(t *testing.T) {
+				candidate := base
+				candidate.FromName = transition.fromName
+				candidate.ToName = transition.toName
+				for _, category := range []emailCategory{emailCategoryCardActivity, emailCategoryCreatedByMe} {
+					subject, body, ok := n.renderCreatorEmail(candidate, category, "", "Alice")
+					if !ok {
+						t.Fatalf("category %s render failed", category)
+					}
+					if subject != "Roadmap: #42 Fix login Moved" {
+						t.Fatalf("category %s subject = %q", category, subject)
+					}
+					if !strings.Contains(body, "Moved by: Alice") {
+						t.Fatalf("category %s missing Moved by: body=%q", category, body)
+					}
+					if strings.Contains(subject, "Moved to") || strings.Contains(body, "Status:") {
+						t.Fatalf("category %s leaked destination: subject=%q body=%q", category, subject, body)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("assignment category keeps Assigned subject even when card also moved", func(t *testing.T) {
+		assigneeID := int64(2)
+		candidate := base
+		candidate.AssignmentChanged = true
+		candidate.ToAssigneeUserID = &assigneeID
+		candidate.RecipientUserID = assigneeID
+		subject, body, ok := n.renderCreatorEmail(candidate, emailCategoryAssigned, "Taylor", "Alice")
+		if !ok {
+			t.Fatal("expected assigned render to succeed")
+		}
+		if subject != "Assigned to you: Fix login" {
+			t.Fatalf("subject = %q", subject)
+		}
+		if strings.Contains(subject, "Moved") {
+			t.Fatalf("assigned subject unexpectedly used move copy: %q", subject)
+		}
+		wantBody := "Card assigned\n\nAssigned to: Taylor\nCard: #42 Fix login\nProject: Roadmap\nStatus: Testing → Done\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+		if body != wantBody {
+			t.Fatalf("body = %q, want %q", body, wantBody)
+		}
+		if strings.Contains(body, "Moved by") {
+			t.Fatalf("assigned body unexpectedly included Moved by: %q", body)
+		}
+		cat, selected := selectCreatorEmailCategory(store.EmailNotifyPref{
+			Assigned: true, CreatedByMe: true, CardActivity: true,
+		}, candidate)
+		if !selected || cat != emailCategoryAssigned {
+			t.Fatalf("category = %q selected=%v, want assigned", cat, selected)
+		}
+	})
+
+	t.Run("non-move created by me keeps opened-card subject", func(t *testing.T) {
+		subject, body, ok := n.renderCreatorEmail(todoapp.AuthorizedCreatorNotification{
+			ProjectName:    "Roadmap",
+			ProjectSlug:    "roadmap",
+			LocalID:        42,
+			Title:          "Fix login",
+			ActivityReason: todoapp.RefreshReasonTodoUpdated,
+		}, emailCategoryCreatedByMe, "", "Alice")
+		if !ok {
+			t.Fatal("expected createdByMe update render to succeed")
+		}
+		if subject != "A card you opened was updated: Fix login" {
+			t.Fatalf("subject = %q", subject)
+		}
+		if strings.Contains(body, "Moved by") {
+			t.Fatalf("non-move createdByMe unexpectedly included Moved by: %q", body)
+		}
+	})
+}
+
 func TestEmailNotifier_CreatorOpenedMovedBodyOmitsIncompleteStatus(t *testing.T) {
 	n := newEmailNotifier(newEmailNotifyFake(), newMailQueue(discardLogger()), "https://scrumboy.example.com", true, discardLogger())
-	want := "Card moved\n\nCard: #42 Fix login\nProject: Roadmap\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
+	want := "Project: Roadmap\nCard: #42 Fix login\nMoved by: Alice\n\nView card:\nhttps://scrumboy.example.com/roadmap/t/42\n"
 	for _, transition := range []struct {
 		name     string
 		fromName string
@@ -479,7 +607,7 @@ func TestEmailNotifier_CreatorOpenedMovedBodyOmitsIncompleteStatus(t *testing.T)
 		{name: "missing source", toName: "Done"},
 	} {
 		t.Run(transition.name, func(t *testing.T) {
-			_, body, ok := n.renderCreatorEmail(todoapp.AuthorizedCreatorNotification{
+			subject, body, ok := n.renderCreatorEmail(todoapp.AuthorizedCreatorNotification{
 				ProjectName:    "Roadmap",
 				ProjectSlug:    "roadmap",
 				LocalID:        42,
@@ -487,9 +615,12 @@ func TestEmailNotifier_CreatorOpenedMovedBodyOmitsIncompleteStatus(t *testing.T)
 				ActivityReason: todoapp.RefreshReasonTodoMoved,
 				FromName:       transition.fromName,
 				ToName:         transition.toName,
-			}, emailCategoryCreatedByMe, "")
+			}, emailCategoryCreatedByMe, "", "Alice")
 			if !ok || body != want {
 				t.Fatalf("incomplete transition body = %q ok=%v, want %q", body, ok, want)
+			}
+			if subject != "Roadmap: #42 Fix login Moved" {
+				t.Fatalf("incomplete transition subject = %q", subject)
 			}
 		})
 	}
@@ -497,16 +628,19 @@ func TestEmailNotifier_CreatorOpenedMovedBodyOmitsIncompleteStatus(t *testing.T)
 
 func TestEmailNotifier_CreatorOpenedBodyFallsBackWhenIdentityInvalid(t *testing.T) {
 	n := newEmailNotifier(newEmailNotifyFake(), newMailQueue(discardLogger()), "https://scrumboy.example.com", true, discardLogger())
-	_, body, ok := n.renderCreatorEmail(todoapp.AuthorizedCreatorNotification{
+	subject, body, ok := n.renderCreatorEmail(todoapp.AuthorizedCreatorNotification{
 		ProjectName:    "Roadmap",
 		ProjectSlug:    "roadmap",
 		Title:          "Fix login",
 		ActivityReason: todoapp.RefreshReasonTodoMoved,
-	}, emailCategoryCreatedByMe, "")
+	}, emailCategoryCreatedByMe, "", "Alice")
 	if !ok {
 		t.Fatal("expected createdByMe render to succeed")
 	}
-	want := "Card moved\n\nProject: Roadmap\n\nView project:\nhttps://scrumboy.example.com/roadmap\n"
+	if subject != "Roadmap: card moved" {
+		t.Fatalf("subject = %q", subject)
+	}
+	want := "Project: Roadmap\nMoved by: Alice\n\nView project:\nhttps://scrumboy.example.com/roadmap\n"
 	if body != want {
 		t.Fatalf("expected generic createdByMe body %q, got %q", want, body)
 	}

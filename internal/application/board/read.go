@@ -22,7 +22,7 @@ type ReadStore interface {
 	GetBoardPaged(
 		ctx context.Context,
 		pc *store.ProjectContext,
-		tagFilter string,
+		tagFilters []string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
 		priorityFilter store.PriorityFilter,
@@ -65,7 +65,7 @@ func (s *Service) ReadInitial(ctx context.Context, pc *store.ProjectContext, que
 	project, tags, workflow, columns, columnsMeta, err := s.store.GetBoardPaged(
 		ctx,
 		pc,
-		query.TagFilter,
+		query.TagFilters,
 		query.SearchFilter,
 		query.AssigneeFilter,
 		query.PriorityFilter,

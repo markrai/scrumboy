@@ -150,7 +150,7 @@ SELECT DISTINCT p.id, p.name, p.slug
 FROM todos t
 JOIN projects p ON p.id = t.project_id
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND wc.is_done = 0
+WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
 ORDER BY p.name
 `, userID)
 	if err != nil {
@@ -242,7 +242,7 @@ SELECT
   COALESCE(SUM(CASE WHEN sprint_id IS NULL OR sprint_id NOT IN `+ph+` THEN estimation_points ELSE 0 END), 0)
 FROM todos t
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE assignee_user_id = ? AND wc.is_done = 0
+WHERE assignee_user_id = ? AND wc.is_done = 0 AND archived_at IS NULL
 `, args...).Scan(&sprintCount, &spPts, &backlogCount, &blPts); err != nil {
 			return DashboardSummary{}, fmt.Errorf("assigned split: %w", err)
 		}
@@ -259,7 +259,7 @@ WHERE assignee_user_id = ? AND wc.is_done = 0
 SELECT COUNT(*), COALESCE(SUM(estimation_points), 0)
 FROM todos t
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE assignee_user_id = ? AND wc.is_done = 0`, userID).Scan(&backlogCount, &pUnsched); err != nil {
+WHERE assignee_user_id = ? AND wc.is_done = 0 AND archived_at IS NULL`, userID).Scan(&backlogCount, &pUnsched); err != nil {
 			return DashboardSummary{}, fmt.Errorf("count assigned: %w", err)
 		}
 		if pUnsched.Valid {
@@ -402,7 +402,7 @@ SELECT t.project_id, t.column_key, t.local_id, t.title, t.updated_at, p.name, p.
 FROM todos t
 JOIN projects p ON p.id = t.project_id
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND wc.is_done = 0
+WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
 `, userID)
 	if err != nil {
 		return DashboardSummary{}, fmt.Errorf("wip rows: %w", err)
@@ -830,7 +830,7 @@ SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.es
 FROM todos t
 JOIN projects p ON p.id = t.project_id
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND wc.is_done = 0
+WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
   AND (t.updated_at < ? OR (t.updated_at = ? AND t.id < ?))
 ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
@@ -844,7 +844,7 @@ SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.es
 FROM todos t
 JOIN projects p ON p.id = t.project_id
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND wc.is_done = 0
+WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
 ORDER BY t.updated_at DESC, t.id DESC
 LIMIT ?
 `, userID, fetchLimit)
@@ -946,7 +946,7 @@ SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.es
 FROM todos t
 JOIN projects p ON p.id = t.project_id
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND wc.is_done = 0
+WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
   AND (t.project_id, wc.position, t.rank, t.id) > (?, ?, ?, ?)
 ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
 LIMIT ?
@@ -961,7 +961,7 @@ SELECT t.id, t.local_id, t.title, t.project_id, t.column_key, t.updated_at, t.es
 FROM todos t
 JOIN projects p ON p.id = t.project_id
 JOIN project_workflow_columns wc ON wc.project_id = t.project_id AND wc.key = t.column_key
-WHERE t.assignee_user_id = ? AND wc.is_done = 0
+WHERE t.assignee_user_id = ? AND wc.is_done = 0 AND t.archived_at IS NULL
 ORDER BY t.project_id ASC, wc.position ASC, t.rank ASC, t.id ASC
 LIMIT ?
 `, userID, fetchLimit)

@@ -11,6 +11,10 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.markrai.scrumboy.widget.DashboardWidgetPendingOpenPath;
+import com.markrai.scrumboy.widget.DashboardWidgetSnapshot;
+import com.markrai.scrumboy.widget.DashboardWidgetSnapshotStore;
+import com.markrai.scrumboy.widget.DashboardWidgetUpdater;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -47,6 +51,7 @@ import org.json.JSONObject;
 @CapacitorPlugin(name = "ScrumboyTransport")
 public final class ScrumboyTransportPlugin extends Plugin {
     private static final String EVENT_NAME = "scrumboyTransportEvent";
+    static final String PENDING_OPEN_PATH_EVENT = "scrumboyPendingOpenPath";
     private static final int COPY_BUFFER_SIZE = 16 * 1024;
 
     private final ExecutorService worker = Executors.newCachedThreadPool();
@@ -301,6 +306,7 @@ public final class ScrumboyTransportPlugin extends Plugin {
                 sessionGeneration.runIfCurrent(logoutGeneration, () -> {
                     rotateSessionStack(false);
                     sessionReady = selectedOrigin != null;
+                    clearDashboardWidgetState();
                 });
             }
             call.resolve();
@@ -315,10 +321,86 @@ public final class ScrumboyTransportPlugin extends Plugin {
                 clearSessionState(true);
                 selectedOrigin = null;
                 sessionReady = false;
+                clearDashboardWidgetState();
             }
             call.resolve();
         } catch (Exception error) {
             reject(call, error);
+        }
+    }
+
+    @PluginMethod
+    public void setDashboardWidgetCurrentUser(PluginCall call) {
+        try {
+            long userId = call.getData().optLong("userId", 0);
+            new DashboardWidgetSnapshotStore(getContext()).setCurrentUserId(userId);
+            DashboardWidgetUpdater.notifyAll(getContext());
+        } catch (Exception ignored) {
+            // Widget publication must not fail product session hydration.
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void publishDashboardWidgetSnapshot(PluginCall call) {
+        try {
+            SelectedOrigin origin;
+            synchronized (configurationLock) {
+                origin = selectedOrigin;
+            }
+            if (origin == null) {
+                call.resolve();
+                return;
+            }
+            DashboardWidgetSnapshot snapshot = DashboardWidgetSnapshot.fromPublishPayload(call.getData(), origin.value());
+            DashboardWidgetSnapshotStore store = new DashboardWidgetSnapshotStore(getContext());
+            if (snapshot != null) store.saveSnapshot(snapshot);
+            DashboardWidgetUpdater.notifyAll(getContext());
+        } catch (Exception ignored) {
+            // Widget publication must not fail the in-app Dashboard.
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearDashboardWidgetSnapshot(PluginCall call) {
+        clearDashboardWidgetState();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void consumePendingOpenPath(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            String path = new DashboardWidgetPendingOpenPath(getContext()).consume();
+            if (path != null) result.put("path", path);
+        } catch (Exception ignored) {
+            // Navigation consume is best-effort.
+        }
+        call.resolve(result);
+    }
+
+    public void emitPendingOpenPath() {
+        try {
+            String path = new DashboardWidgetPendingOpenPath(getContext()).peek();
+            if (path == null) return;
+            JSObject event = new JSObject();
+            event.put("path", path);
+            notifyListeners(PENDING_OPEN_PATH_EVENT, event);
+        } catch (Exception ignored) {
+            // Plugin may not be listening yet; bootstrap consume remains authoritative.
+        }
+    }
+
+    private void clearDashboardWidgetState() {
+        try {
+            Context context = getContext();
+            if (context == null) return;
+            new DashboardWidgetSnapshotStore(context).clearAll();
+            new DashboardWidgetPendingOpenPath(context).clear();
+            DashboardWidgetUpdater.notifyAll(context);
+        } catch (RuntimeException ignored) {
+            // Session clearing remains authoritative even if widget notify fails.
         }
     }
 

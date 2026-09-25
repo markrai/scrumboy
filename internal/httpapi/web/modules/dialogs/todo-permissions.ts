@@ -12,6 +12,8 @@ export type TodoDialogPermissions = {
   canEditStatus: boolean;
   canSubmitTodo: boolean;
   canEditLinks: boolean;
+  canArchiveTodo: boolean;
+  canRestoreTodo: boolean;
 };
 
 const defaultPermissions: TodoDialogPermissions = {
@@ -25,6 +27,8 @@ const defaultPermissions: TodoDialogPermissions = {
   canEditStatus: false,
   canSubmitTodo: false,
   canEditLinks: false,
+  canArchiveTodo: false,
+  canRestoreTodo: false,
 };
 
 let permissions: TodoDialogPermissions = { ...defaultPermissions };
@@ -40,6 +44,7 @@ export function computeTodoDialogPermissions(opts: {
   const temporaryBoard = isTemporaryBoard(board);
   const baseMaintainer = (role ?? "") === "maintainer" || anonymousBoard;
   const tempLinkForm = temporaryBoard && (mode === "create" || mode === "edit");
+  const canManageLifecycle = (role ?? "") === "maintainer" || temporaryBoard;
   const roleNorm = (role ?? "").toLowerCase();
   const isContributor = roleNorm === "contributor" || roleNorm === "editor";
   const currentUser = getUser();
@@ -58,6 +63,14 @@ export function computeTodoDialogPermissions(opts: {
         (!anonymousBoard && isContributor && isAssignedToMe);
   const canEditLinks = baseMaintainer || (!anonymousBoard && isContributor);
 
+  if (mode === "edit" && todo?.archivedAt) {
+    return {
+      ...defaultPermissions,
+      canDeleteTodo: canManageLifecycle,
+      canRestoreTodo: canManageLifecycle,
+    };
+  }
+
   return {
     canChangeSprint: baseMaintainer && !anonymousBoard,
     canChangeEstimation: baseMaintainer || tempLinkForm,
@@ -67,11 +80,13 @@ export function computeTodoDialogPermissions(opts: {
       tempLinkForm ||
       (!anonymousBoard && isContributor && isAssignedToMe),
     canEditAssignment: baseMaintainer && !anonymousBoard,
-    canDeleteTodo: baseMaintainer,
+    canDeleteTodo: baseMaintainer || (temporaryBoard && mode === "edit"),
     canEditTitle,
     canEditStatus,
     canSubmitTodo,
     canEditLinks,
+    canArchiveTodo: mode === "edit" && canManageLifecycle,
+    canRestoreTodo: false,
   };
 }
 

@@ -45,6 +45,23 @@
 
         </activity>
 
+        <receiver
+            android:name=".widget.DashboardWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_dashboard_full_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/scrumboy_dashboard_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".widget.DashboardWidgetRemoteViewsService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

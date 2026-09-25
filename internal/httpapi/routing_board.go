@@ -563,6 +563,70 @@ func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, r
 func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
 	project := pc.Project
 
+	// GET /api/board/{slug}/archive - newest archived stories, cursor paginated.
+	if len(rest) == 2 && rest[1] == "archive" && r.Method == http.MethodGet {
+		limit := 50
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n <= 0 {
+				writeValidationError(w, "invalid limit", "invalid_limit", nil)
+				return true
+			}
+			if n > 100 {
+				n = 100
+			}
+			limit = n
+		}
+		var afterAt, afterID *int64
+		if raw := strings.TrimSpace(r.URL.Query().Get("afterCursor")); raw != "" {
+			a, b, err := store.ParseArchiveCursor(raw)
+			if err != nil {
+				writeStoreErr(w, err, true)
+				return true
+			}
+			afterAt, afterID = &a, &b
+		}
+		items, next, more, err := s.todoArchiveReads.List(s.requestContext(r), project.ID, limit, afterAt, afterID, s.storeMode())
+		if err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+		out := make([]todoJSON, 0, len(items))
+		for _, t := range items {
+			out = append(out, todoToJSONForProject(t, project))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"todos": out, "nextCursor": next, "hasMore": more})
+		return true
+	}
+
+	// POST /api/board/{slug}/todos/archive|restore - bounded batch lifecycle mutation.
+	if len(rest) == 3 && rest[1] == "todos" && (rest[2] == "archive" || rest[2] == "restore") && r.Method == http.MethodPost {
+		var in struct {
+			LocalIDs []int64 `json:"localIds"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return true
+		}
+		var result store.TodoArchiveBatchResult
+		var err error
+		prepared := s.todoArchival.Prepare(s.requestContext(r), todoapp.ResolvedArchiveTarget{ProjectContext: *pc, Mode: s.storeMode()})
+		if rest[2] == "archive" {
+			result, err = prepared.Archive(todoapp.ArchiveBatchCommand{LocalIDs: in.LocalIDs})
+		} else {
+			result, err = prepared.Restore(todoapp.ArchiveBatchCommand{LocalIDs: in.LocalIDs})
+		}
+		if err != nil {
+			if errors.Is(err, store.ErrUnauthorized) {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+			} else {
+				writeStoreErr(w, err, true)
+			}
+			return true
+		}
+		writeJSON(w, http.StatusOK, result)
+		return true
+	}
+
 	// POST /api/board/{slug}/todos
 	if len(rest) == 2 && rest[1] == "todos" && r.Method == http.MethodPost {
 		var in struct {
@@ -736,17 +800,19 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 		outboundJSON := make([]map[string]any, 0, len(outbound))
 		for _, t := range outbound {
 			outboundJSON = append(outboundJSON, map[string]any{
-				"localId":  t.LocalID,
-				"title":    t.Title,
-				"linkType": t.LinkType,
+				"localId":    t.LocalID,
+				"title":      t.Title,
+				"linkType":   t.LinkType,
+				"archivedAt": t.ArchivedAt,
 			})
 		}
 		inboundJSON := make([]map[string]any, 0, len(inbound))
 		for _, t := range inbound {
 			inboundJSON = append(inboundJSON, map[string]any{
-				"localId":  t.LocalID,
-				"title":    t.Title,
-				"linkType": t.LinkType,
+				"localId":    t.LocalID,
+				"title":      t.Title,
+				"linkType":   t.LinkType,
+				"archivedAt": t.ArchivedAt,
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -821,6 +887,33 @@ func (s *Server) handleBoardLinkRoutes(w http.ResponseWriter, r *http.Request, r
 
 func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
 	project := pc.Project
+
+	// POST /api/board/{slug}/todos/{localId}/archive|restore
+	if len(rest) == 4 && rest[1] == "todos" && (rest[3] == "archive" || rest[3] == "restore") && r.Method == http.MethodPost {
+		localID, ok := parseInt64(rest[2])
+		if !ok {
+			writeValidationError(w, "invalid todo localId", "invalid_todo_local_id", map[string]any{"field": "localId"})
+			return true
+		}
+		var result store.TodoArchiveBatchResult
+		var err error
+		prepared := s.todoArchival.Prepare(s.requestContext(r), todoapp.ResolvedArchiveTarget{ProjectContext: *pc, Mode: s.storeMode()})
+		if rest[3] == "archive" {
+			result, err = prepared.Archive(todoapp.ArchiveBatchCommand{LocalIDs: []int64{localID}})
+		} else {
+			result, err = prepared.Restore(todoapp.ArchiveBatchCommand{LocalIDs: []int64{localID}})
+		}
+		if err != nil {
+			if errors.Is(err, store.ErrUnauthorized) {
+				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+			} else {
+				writeStoreErr(w, err, true)
+			}
+			return true
+		}
+		writeJSON(w, http.StatusOK, result)
+		return true
+	}
 
 	// GET /api/board/{slug}/todos/{localId}
 	if len(rest) == 3 && rest[1] == "todos" && r.Method == http.MethodGet {

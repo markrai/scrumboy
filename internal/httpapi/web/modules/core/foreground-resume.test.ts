@@ -14,7 +14,7 @@ vi.mock('../state/selectors.js', () => ({
   getSortFromUrl: () => 'newest',
   getAuthStatusAvailable: () => true,
   getSlug: () => 'alpha',
-  getTag: () => 'bug',
+  getTagsFromUrl: () => ['bug'],
   getSearch: () => 'login',
   getSprintIdFromUrl: () => '7',
   getUser: () => ({ id: 11 }),
@@ -46,7 +46,7 @@ describe('foreground resume convergence', () => {
 
     await vi.advanceTimersByTimeAsync(1);
     expect(invalidateBoardMock).toHaveBeenCalledOnce();
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'login', '7', '42', 'newest', 'high');
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['bug'], 'login', '7', '42', 'newest', 'high');
     expect(hydrateNotificationsMock).toHaveBeenCalledOnce();
     expect(hydrateNotificationsMock).toHaveBeenCalledWith(11);
   });

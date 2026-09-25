@@ -315,9 +315,29 @@ Manage opaque MCP/API tokens while logged in (session cookie). Mutating endpoint
 
 | Method | Path | Body | Success |
 |--------|------|------|---------|
-| `GET` | `/api/me/tokens` | — | `200` JSON `{ "items": [ { "id", "name?", "createdAt", "lastUsedAt?", "revokedAt?" } ] }` (no secret) |
-| `POST` | `/api/me/tokens` | `{ "name": "optional label" }` | `201` JSON `{ "id", "name?", "createdAt", "token" }` — **`token` is shown only on create** |
+| `GET` | `/api/me/tokens` | — | `200` JSON `{ "items": [ { "id", "name?", "createdAt", "lastUsedAt?", "revokedAt?", "isService" } ] }` (no secret) |
+| `POST` | `/api/me/tokens` | `{ "name": "optional label", "isService": false }` | `201` JSON `{ "id", "name?", "createdAt", "token", "isService" }` — **`token` is shown only on create** |
 | `DELETE` | `/api/me/tokens/{id}` | — | `204` (revoke / soft-delete) |
+
+Revoked tokens stay in the owning user's `GET /api/me/tokens` list with `revokedAt` set; there is no
+endpoint that removes them.
+
+`isService` (optional, default `false`; omitting it creates a personal token as before) marks a
+normal user-owned token for bot/automation use. It is not a service account: while its user exists,
+a service token authenticates as that user with exactly that user's permissions, like any other
+token. The flag only changes what is kept when the user is deleted (REST `DELETE
+/api/admin/users/{id}` or MCP `admin_deleteUser`). In the same transaction as the deletion:
+
+- the metadata of each of the user's service tokens, active or already revoked, is copied into the
+  owner-only [service token archive](#service-token-archive), together with a snapshot of who held
+  it and which owner deleted them;
+- all of the user's token rows, personal and service, are then deleted with the user, so every one
+  of their secrets stops authenticating.
+
+If the deletion fails, nothing is archived and the tokens are untouched. Service tokens are not
+moved to another account: archived records never appear in anyone's `/api/me/tokens`, and the
+archive holds no secret or hash, so an archived token cannot be reactivated. Automation that used a
+deleted user's token needs a new token.
 
 Create a token (after login, with session + header):
 
@@ -328,6 +348,16 @@ curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
   -d '{"name":"Claude"}'
 ```
 
+Create a service token for unattended automation (e.g. a CI job), so its metadata survives if the
+minting user's account is later removed:
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
+  -H "Content-Type: application/json" \
+  -H "X-Scrumboy: 1" \
+  -d '{"name":"wiki-freshness-check-ci","isService":true}'
+```
+
 Then call MCP with **Bearer** (no cookie required for this path):
 
 ```bash
@@ -336,6 +366,44 @@ curl -X POST http://localhost:8080/mcp \
   -H "Authorization: Bearer sb_paste_token_from_create_response" \
   -d '{"tool":"projects_list","input":{}}'
 ```
+
+### Service token archive
+
+Retained metadata about service tokens of deleted users, for offboarding and governance review. No
+web UI for it exists yet. Owner-only, with a session cookie; `DELETE` also needs `X-Scrumboy: 1`.
+Plain users get `403`; admins who are not owners get `401` (the same as other owner-only admin
+actions).
+
+| Method | Path | Success |
+|--------|------|---------|
+| `GET` | `/api/admin/service-token-archive?limit=50&before={id}` | `200` JSON `{ "items": [ … ], "nextBefore": id \| null }` |
+| `DELETE` | `/api/admin/service-token-archive?archivedBefore={RFC 3339}` | `200` JSON `{ "deleted": n }` |
+
+**Listing.** Items come newest archive first (descending `id`). `limit` is 1–200 (default 50).
+`before` is an exclusive cursor: omit it for the first page, then pass the previous response's
+`nextBefore`, which is `null` on the last page.
+
+Each item is `{ "id", "tokenId", "name?", "createdAt", "lastUsedAt?", "revokedAt", "revokedOnArchive",
+"originUser": { "id", "email", "name" }, "archivedAt", "archivedBy": { "id", "email" } }`:
+
+- `id` is the archive record's own id (and the pagination cursor).
+- `tokenId` is the historical id of the deleted token. It is not a credential; token ids are never
+  reused, so it identifies one historical token.
+- For a token that was already revoked before its user was deleted, `revokedOnArchive` is `false`
+  and `revokedAt` is its original revocation time.
+- For a token that was still active when its user was deleted, `revokedOnArchive` is `true` and
+  `revokedAt` equals `archivedAt`, the time of the deletion.
+- `originUser` (the user who held the token) and `archivedBy` (the owner who deleted that user) are
+  snapshots taken at deletion time. User ids can be reused after an account is deleted, so the
+  recorded `id` may now belong to a different account. Identify people by the recorded
+  email and name, never by looking the id up among current users.
+
+**Personal data and retention.** Archive records contain identifying information: the deleted
+user's name and email and the deleting owner's email. These remain after both accounts are deleted,
+until an owner purges them. Records cannot be edited, but they are not permanent. `DELETE`
+permanently removes every record archived strictly before `archivedBefore` (an RFC 3339 timestamp
+with a time zone, e.g. `2026-01-01T00:00:00Z`), so owners can apply their own retention policy. It
+affects only archive records, never live tokens of existing users.
 
 ---
 
@@ -450,13 +518,15 @@ Conventions:
 ### `board_get`
 
 - **Purpose:** Board snapshot with optional tag/search/sprint/assignee/priority filters and **per-column** pagination.
-- **Input:** `projectSlug` (required); optional `tag`, `search`, `assignee`, `priority`, `sprintId` (the stored sprint row id returned by `sprints_list`, not its project-local `number`; must belong to the project when set); optional `columnKey` (workflow column key; surrounding whitespace is trimmed; omit to return all workflow columns); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` or sending `null` applies no sprint-based filter on the board query (internal mode `none`). Nonpositive values return `VALIDATION_ERROR`; missing and cross-project row IDs both return `NOT_FOUND`. An unknown or nonexistent `columnKey` returns `VALIDATION_ERROR` with `field: "columnKey"`.
-- **Validation/access precedence:** after authentication and capability checks, malformed input shape, missing `projectSlug`, invalid `limit`, assignee type/grammar, and invalid `sort` return their exact validation error before project access. Project access occurs before sprint resolution, workflow/`columnKey` validation, and `cursorByColumn` validation, so denied, missing, or expired projects mask bad `sprintId`, `columnKey`, and `cursorByColumn` values as `NOT_FOUND`. Cursor values are decoded in workflow order for columns that are actually read; a malformed later-lane cursor can follow reads of earlier lanes. When `columnKey` scopes the request to one column, cursors for other valid workflow columns in `cursorByColumn` are ignored and are not decoded. Both MCP transports and the permanent `board.get` alias use this order. REST slug board reads intentionally resolve access before all query validation, so cross-transport first-error precedence differs without changing access rules.
-- **Tag filter:** on durable projects, `tag` is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. A `tag` that matches no row returns an empty board rather than an unfiltered one.
+- **Input:** `projectSlug` (required); optional `tag` (legacy scalar), `tags` (preferred string array, up to 20 unique names after trim/dedup, logical AND), `search`, `assignee`, `priority`, `sprintId` (the stored sprint row id returned by `sprints_list`, not its project-local `number`; must belong to the project when set); optional `columnKey` (workflow column key; surrounding whitespace is trimmed; omit to return all workflow columns); optional `limit` (default 20, max 100); optional `cursorByColumn` (map column key → opaque cursor string). Omitting `sprintId` or sending `null` applies no sprint-based filter on the board query (internal mode `none`). Nonpositive values return `VALIDATION_ERROR`; missing and cross-project row IDs both return `NOT_FOUND`. An unknown or nonexistent `columnKey` returns `VALIDATION_ERROR` with `field: "columnKey"`.
+- **Validation/access precedence:** after authentication and capability checks, malformed input shape, missing `projectSlug`, invalid `limit`, assignee type/grammar, invalid `sort`, invalid `tags` type/items, empty normalized `tags`, more than 20 unique `tags`, and supplying `tag` together with `tags` return their exact validation error before project access. Project access occurs before sprint resolution, workflow/`columnKey` validation, and `cursorByColumn` validation, so denied, missing, or expired projects mask bad `sprintId`, `columnKey`, and `cursorByColumn` values as `NOT_FOUND`. Cursor values are decoded in workflow order for columns that are actually read; a malformed later-lane cursor can follow reads of earlier lanes. When `columnKey` scopes the request to one column, cursors for other valid workflow columns in `cursorByColumn` are ignored and are not decoded. Both MCP transports and the permanent `board.get` alias use this order. REST slug board reads intentionally resolve access before all query validation, so cross-transport first-error precedence differs without changing access rules.
+- **Tag filter:** Prefer `tags: ["feature", "ux"]` (logical AND, maximum 20 unique names after trim/dedup). Legacy `tag: "feature"` remains a backward-compatible scalar and is normalized internally to a one-element filter list. `tag` and `tags` are mutually exclusive (`VALIDATION_ERROR`). Neither field splits commas: `"feature,ux"` is one literal tag name. On durable projects, each selected name is matched on the same grouping key `tags_listProject` labels entries with, so filtering by `make-space` returns todos carrying either the canonical row or a legacy `make space` row and filtered counts agree with the chip counts. Temporary boards keep exact stored-name matching (row-level chips): the filter is not rewritten through `TagGroupKey`, so a `make space` chip selects only that row. If any selected logical tag matches no row, the board is empty rather than silently dropping that filter. The same normalized ordered list is applied to the initial page, every per-lane read, filtered counts, and cursor continuation.
 - **Assignee filter:** `assignee` is a **string**. Use `"me"` for the authenticated caller, `"unassigned"` for todos with no assignee, or a positive user ID encoded as a string such as `"42"`. Sentinels are case-sensitive after surrounding whitespace is trimmed. Unknown/non-member positive IDs return an empty board; malformed values return `VALIDATION_ERROR` with `field: "assignee"`. A JSON number such as `42` is invalid.
 - **Priority filter:** omit `priority` or send an empty string for all priorities, use `"**none**"` for todos without a priority, or use a literal priority-tier key. Tier keys contain only lowercase letters, digits, and underscores, while the no-priority sentinel contains `*`, so a real key such as `"none"` remains unambiguous. An unknown tier key returns an empty board.
-- **Output:** `data.project` (`projectSlug`, `name`, `role`), `data.columns`
-  (each: `key`, `name`, `isDone`, `items` as todo-shaped objects).
+- **Output:** `data.project` (`projectSlug`, `name`, `role`) and `data.columns`
+  (each: `key`, `name`, `isDone`, `items` as todo-shaped objects). MCP
+  `board_get` does not emit the REST board-tag projection; use
+  `tags_listProject` for the archive-inclusive MCP tag catalog.
   Successful project and todo `projectSlug` fields always use the persisted
   canonical slug. Lookup accepts normalization-equivalent input such as
   uppercase or surrounding whitespace, but the response does not echo that
@@ -479,7 +549,9 @@ Conventions:
 | `todos_update` | `projectSlug`, `localId`, `patch` (JSON patch object) | `data.todo` |
 | `todos_delete` | `projectSlug`, `localId` | `data` with `status: "deleted"`, `projectSlug`, `localId` |
 | `todos_move` | `projectSlug`, `localId`, `toColumnKey`, optional `afterLocalId`, `beforeLocalId` | `data.todo` |
-| `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType}`) |
+| `todos_archive` | `projectSlug`, `localIds` (array, 1-500, unique, positive) | `data` batch result (see **Story archival**) |
+| `todos_restore` | `projectSlug`, `localIds` (array, 1-500, unique, positive) | `data` batch result (see **Story archival**) |
+| `todos_linksList` | `projectSlug`, `localId` | `data.outbound`, `data.inbound` (arrays of `{localId, title, linkType, archivedAt}`) |
 | `todos_linkAdd` | `projectSlug`, `localId`, `targetLocalId`, optional `linkType` (default `relates_to`; also `blocks`, `duplicates`, `parent`) | `data.outbound`, `data.inbound` (refreshed) |
 | `todos_linkRemove` | `projectSlug`, `localId`, `targetLocalId` | `data.outbound`, `data.inbound` (refreshed) |
 
@@ -497,6 +569,41 @@ current project membership or notification eligibility. MCP todo shapes keep
 the field present with JSON `null` for unauthenticated, pre-migration, imported,
 or deleted-user attribution. The field is read-only; todo mutation inputs cannot
 set or clear it.
+
+**Story archival** is orthogonal to workflow state. `todos_archive` and `todos_restore` take
+**1-500** unique, positive project-local IDs and apply them **atomically**: one unknown ID
+fails the whole request and transitions nothing. Both require **maintainer** access on a
+durable project and are unavailable in anonymous and pre-bootstrap modes. The result reports
+`targetState`, `requestedCount`, `transitionedCount`, `unchangedCount`, `transitionedLocalIds`,
+`unchangedLocalIds` and `transitionedAt`; re-archiving an already-archived story is a no-op
+counted as unchanged rather than an error. Both tools call the same atomic store batch
+primitive as the REST routes.
+
+Archiving preserves everything else about the story — `columnKey`, `rank`, `doneAt`, the
+story's `updatedAt`, tags, links, sprint, priority, assignment and `createdByUserId` are
+untouched — so metrics, burndown and sprint history are unaffected in both directions.
+
+Archived stories are read-only: ordinary mutation returns **409** with reason `todo_archived`
+until restored, and that check runs **after** authorization, so an unauthorized caller is
+refused without learning the archive state. An empty `todos_update` patch (`{}`) is unaffected
+— it remains a lookup/no-op that mutates nothing, so it still succeeds against an archived
+story. `todos_linkAdd` and `todos_linkRemove` are rejected when either endpoint is archived,
+but existing links stay readable: `todos_linksList` keeps returning them and reports each
+target's `archivedAt`. Hard delete is a separate operation and remains permitted wherever its
+own authorization already allowed it.
+
+Direct reads still return archived stories (`todos_get`), while `board_get` and the default
+`todos_search` exclude them. MCP todo shapes always emit `archivedAt` — an **RFC3339
+timestamp string**, or JSON `null` for an active story. (The Unix-millisecond form of this
+field appears only in backup/export payloads, not in tool responses.)
+
+**No MCP archive listing exists.** The cursor-paginated archive page is REST-only
+(`GET /api/board/{slug}/archive`); over MCP, archived stories are reachable individually via
+`todos_get`.
+
+**Realtime.** `todos_archive` and `todos_restore` publish **no** board refresh, matching every
+other MCP mutation in Scrumboy. Only the REST routes publish one. This asymmetry is
+deliberate, not an omission.
 
 **Linked stories:** this is the same "Linked Stories" relation shown on the todo detail page in the
 web UI (`GET/POST/DELETE /api/board/{slug}/todos/{localId}/links[/targetLocalId]`). `todos_linkAdd`
@@ -534,6 +641,12 @@ Shared inputs: many tools use `projectSlug` only or `projectSlug` + `sprintId` (
 Activate/close enforce sprint state (e.g. planned vs active); violations return `VALIDATION_ERROR` with details.
 
 ### Tags
+
+Project tag catalog operations remain archive-inclusive and are distinct from the active
+`data.tags` projection returned by board reads. They are the source for tag management,
+story-editor autocomplete (hydrated asynchronously from the project catalog), Settings/MCP
+catalog workflows, and export; selecting a tag from the catalog does not delete or detach
+historical associations.
 
 | Tool | Input | Output |
 |------|-------|--------|
@@ -675,11 +788,42 @@ The browser REST API accepts the same assignee and priority filters on:
 - `GET /api/board/{slug}/lanes/{status}`
 - `GET /api/projects/{id}/board` (supported compatibility full-board route)
 
+The `tag` query parameter may be repeated, and repeat order is preserved:
+
+```text
+?tag=feature&tag=ux&search=mobile
+```
+
+Multiple non-empty `tag` values use logical **AND** with each other and with
+`search`, Sprint, Assignee, and Priority filters. Values are trimmed, empty
+entries are ignored, and exact or case-insensitive duplicates keep their first
+spelling and position. At most 20 unique values are accepted; a twenty-first
+returns HTTP **400** with `details.reason: "too_many_tag_filters"`.
+
+Durable projects resolve each selected value through canonical logical grouping:
+physical aliases such as `make-space` and legacy `make space` are OR alternatives
+inside one logical group, while different groups remain AND requirements.
+Temporary projects use exact trimmed stored names instead. If any selected
+logical tag has no backing row, the board is empty rather than silently dropping
+that filter. `data.tags` remains the project-wide active vocabulary rather than
+being narrowed to the current intersection; every selected inactive/historical
+tag is additionally returned with `count: 0` so clients can display and clear it.
+
 Use the `assignee` query parameter with `me`, `unassigned`, or a positive user ID string. Surrounding whitespace is trimmed; sentinels are otherwise case-sensitive. Invalid values return HTTP **400** with code `VALIDATION_ERROR`, `details.reason: "invalid_assignee"`, and `details.field: "assignee"`—they never disable the filter or return an unfiltered board. `me` also returns that validation error when the REST request has no authenticated actor. A valid unknown/non-member user ID returns an empty board without revealing membership.
 
 For `priority`, omit the parameter or leave it empty for all priorities, use `**none**` for todos without a priority, or pass a literal tier key. Unknown tier keys return an empty board. The special value is outside the priority-key grammar, so a real tier key named `none` remains filterable.
 
 The SPA preserves both parameters in board URLs and exposes them in its filter controls.
+
+Initial REST board responses include `tags`, the board's current-work tag
+projection in alphabetical name order. Active entries include optional
+`lastActiveAt` RFC3339 metadata: the latest story `updatedAt` among
+non-archived stories currently carrying that logical tag. It describes recent
+board activity, not tag-association history. An explicitly selected historical
+tag with no active stories remains in the projection with `count: 0` and omits
+`lastActiveAt`. Archive-only and otherwise unused names remain excluded. This
+does not change the archive-inclusive REST tag catalog or MCP
+`tags_listProject` semantics.
 
 ---
 
@@ -692,7 +836,7 @@ The SPA preserves both parameters in board URLs and exposes them in its filter c
 
 Clients can obtain a project's numeric `id` and canonical `slug` together from `GET /api/projects` or project creation. The numeric board response also includes `project.slug`, allowing an existing client to migrate without a separate lookup.
 
-To reproduce the numeric endpoint's unpaged `columns` result, pass the same `tag`, `search`, `assignee`, `priority`, `sprintId`, and `sort` values to the initial slug request and every lane request. For each lane in `columnOrder`, append its initial items, then request lane pages with `afterCursor=columnsMeta[status].nextCursor` until `hasMore` is false. Preserve page order and do not parse cursor values. Clients may then discard the pagination metadata or adopt the paged contract directly.
+To reproduce the numeric endpoint's unpaged `columns` result, pass the same repeated `tag` list, `search`, `assignee`, `priority`, `sprintId`, and `sort` values to the initial slug request and every lane request. For each lane in `columnOrder`, append its initial items, then request lane pages with `afterCursor=columnsMeta[status].nextCursor` until `hasMore` is false. Preserve tag repeat order and page order, and do not parse cursor values. Clients may then discard the pagination metadata or adopt the paged contract directly.
 
 The numeric compatibility route is available only in Full Mode and remains hidden in Anonymous Mode. Slug board routes retain their existing Durable, active Temporary Board, and Anonymous Board access behavior.
 
@@ -722,6 +866,81 @@ A **`cursor`** that does not match the selected **`sort`** (for example, an acti
 
 ---
 
+## REST: Story archival
+
+Archival is exposed on the board routes. **The listing and the mutations have different
+permission requirements** — see the Access column.
+
+| Method | Path | Body | Access | Result |
+|--------|------|------|--------|--------|
+| `GET` | `/api/board/{slug}/archive` | - | board **read** | `{ todos, nextCursor, hasMore }` |
+| `POST` | `/api/board/{slug}/todos/{localId}/archive` | - | board **write** + maintainer (durable) | batch result for one story |
+| `POST` | `/api/board/{slug}/todos/{localId}/restore` | - | board **write** + maintainer (durable) | batch result for one story |
+| `POST` | `/api/board/{slug}/todos/archive` | `{ "localIds": [1, 2, 3] }` | board **write** + maintainer (durable) | batch result |
+| `POST` | `/api/board/{slug}/todos/restore` | `{ "localIds": [1, 2, 3] }` | board **write** + maintainer (durable) | batch result |
+
+**Permissions.** Reading the archive needs only **read** access to the board, so a viewer can
+list it; an unauthenticated caller gets **404**. The four mutation routes go through the
+ordinary todo **write** boundary — including temporary-board expiry and capability semantics
+— and then, on durable projects, additionally require **maintainer**. A viewer or contributor
+is refused.
+
+**Archive list.** Newest first, ordered by `(archivedAt DESC, id DESC)`. `limit` defaults to
+**50** and is clamped to **100**; a non-numeric or non-positive `limit` returns **400**.
+`afterCursor` is the opaque `nextCursor` from the previous page (`archivedAtMs:todoId`); a
+malformed cursor returns **400**. `hasMore` and `nextCursor` come from a single consistent
+snapshot, so a concurrent restore cannot truncate the remaining archive.
+
+**Batch result** (the same shape for single and batch, and for both directions):
+
+```json
+{
+  "targetState": "archived",
+  "requestedCount": 3,
+  "transitionedCount": 2,
+  "unchangedCount": 1,
+  "transitionedLocalIds": [1, 2],
+  "unchangedLocalIds": [3],
+  "transitionedAt": "2026-09-15T20:35:46.123Z"
+}
+```
+
+`localIds` must hold **1-500** unique positive IDs; violations return **400**. The batch is
+**atomic** — one unknown ID returns **404** and transitions nothing. A story already in the
+requested state is counted as unchanged, not an error, and `transitionedAt` is `null` when
+nothing moved.
+
+**Realtime.** A REST archive/restore publishes exactly **one** board refresh per request that
+actually transitions something, and **none** for a no-op or a failure — regardless of batch
+size. The equivalent MCP tools publish **no** board refresh at all, matching every other MCP
+mutation (see **Story archival** under *Tool reference -> Todos*). Both transports call the
+same atomic store batch primitive, so only the realtime side effect differs.
+
+**Archived stories are read-only.** Ordinary mutation — update, move, link add/remove, over
+both the board routes and the legacy `/api/todos/{id}` paths — returns **409** with reason
+`todo_archived` until the story is restored. Hard delete is a separate operation and is still
+permitted wherever its own authorization already allowed it; it is not blocked by archival.
+
+Authorization is evaluated **before** the archived check, so a caller who could not have
+written the story anyway gets **403**/**404** and never learns whether it is archived. The
+**409** is reserved for callers who did clear the write boundary.
+
+**Projection.** REST todo payloads carry `archivedAt` as an RFC3339 timestamp and **omit the
+field entirely for active stories**, matching the existing `doneAt` convention (every optional
+field in the REST todo shape is `omitempty`). MCP instead always emits `archivedAt`, using
+JSON `null` for active stories, matching *its* `doneAt` convention. Clients integrating both
+transports should treat "absent" and "null" as equivalent. Direct reads still return archived
+stories on both transports; it is the *collection* reads (board, default search) that exclude
+them.
+
+**Built-in UI consumer.** The shared web/Capacitor UI uses these REST routes for single and
+batch Archive/Restore, a cursor-paginated project Archive, and read-only archived-story
+detail. It uses the existing REST board-refresh stream; MCP archival remains realtime-silent
+and still has no archive-listing tool. Nothing is archived automatically — every transition
+is an explicit user or API action.
+
+---
+
 ## Error codes
 
 - **`AUTH_REQUIRED`** - Sign-in required (including some store unauthorized paths mapped from the store layer).
@@ -747,6 +966,16 @@ input and preserves the existing target value; strings assign against the
 effective project tier set. `priorityTiers: null` is invalid. New and
 replace-mode projects with absent legacy definitions receive defaults. Import
 commits only if every non-null todo key resolves to a tier in the same project.
+
+**Backup 1.2 archive presence:** new exports are **format 1.2** and always emit todo
+`archivedAt` — a Unix-millisecond timestamp for archived stories, explicit `null` for active
+ones. Imports accept both **1.1** and **1.2**. For matched-project merge, an **absent**
+`archivedAt` preserves the target story's archive state, explicit `null` clears it, and a
+timestamp archives it; new/copy imports with no archive field create active stories. A
+payload that declares **1.1** but carries `archivedAt` is **rejected** as mislabeled newer
+data rather than silently gaining 1.2 semantics. `archivedAt` must be non-negative and not
+implausibly far in the future. Software that only understands 1.1 should reject 1.2 files
+rather than silently dropping archive state.
 
 1. **Public identifiers first:** Mutations and reads are keyed by **`projectSlug`**, **`localId`**, and similar fields - not internal numeric ids for todos or projects in MCP command shapes (except `projectId` on list output as noted).
 2. **Capabilities match implementation:** `implementedTools` is the authoritative list of POST tool names.

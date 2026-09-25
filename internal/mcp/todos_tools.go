@@ -589,6 +589,7 @@ func todoToItem(projectSlug string, todo store.Todo) todoItem {
 		CreatedAt:        todo.CreatedAt,
 		UpdatedAt:        todo.UpdatedAt,
 		DoneAt:           todo.DoneAt,
+		ArchivedAt:       todo.ArchivedAt,
 	}
 }
 

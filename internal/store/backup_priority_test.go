@@ -88,7 +88,7 @@ func TestExportEmitsExplicitPriorityPresenceAndRejectsMissingDefinitions(t *test
 	if !bytes.Contains(raw, []byte(`"priorityTiers":[]`)) || !bytes.Contains(raw, []byte(`"priorityKey":null`)) {
 		t.Fatalf("export lacks explicit priority presence: %s", raw)
 	}
-	if exported.Version != "1.1" {
+	if exported.Version != "1.2" {
 		t.Fatalf("export version=%q", exported.Version)
 	}
 

@@ -14,6 +14,7 @@ import (
 type boardGetInput struct {
 	ProjectSlug    string            `json:"projectSlug"`
 	Tag            string            `json:"tag"`
+	Tags           []string          `json:"tags"`
 	Search         string            `json:"search"`
 	Assignee       string            `json:"assignee"`
 	Priority       string            `json:"priority"`
@@ -43,6 +44,71 @@ func boardGetAssigneeHasInvalidType(input any) bool {
 	return !ok
 }
 
+func boardGetRawTagFields(input any) (tag json.RawMessage, tags json.RawMessage, ok bool) {
+	b, err := json.Marshal(input)
+	if err != nil {
+		return nil, nil, false
+	}
+	var raw struct {
+		Tag  json.RawMessage `json:"tag"`
+		Tags json.RawMessage `json:"tags"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, nil, false
+	}
+	return raw.Tag, raw.Tags, true
+}
+
+func jsonRawIsStringArray(raw json.RawMessage) bool {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	items, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if _, ok := item.(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func boardGetTagsHasInvalidType(input any) bool {
+	_, tags, ok := boardGetRawTagFields(input)
+	if !ok || len(tags) == 0 {
+		return false
+	}
+	return !jsonRawIsStringArray(tags)
+}
+
+func resolveBoardGetTagFilters(input any, in boardGetInput) ([]string, *adapterError) {
+	tagRaw, tagsRaw, ok := boardGetRawTagFields(input)
+	if !ok {
+		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid input", map[string]any{"detail": "malformed board_get input"})
+	}
+	if len(tagRaw) > 0 && len(tagsRaw) > 0 {
+		return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "tag and tags are mutually exclusive", map[string]any{})
+	}
+	if len(tagsRaw) > 0 {
+		normalized, err := boardapp.NormalizeTagFilters(in.Tags)
+		if err != nil {
+			return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "too many tag filters", map[string]any{"field": "tags"})
+		}
+		if len(normalized) == 0 {
+			return nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tags", map[string]any{"field": "tags"})
+		}
+		return normalized, nil
+	}
+	tag := strings.TrimSpace(in.Tag)
+	if tag == "" {
+		return nil, nil
+	}
+	return []string{tag}, nil
+}
+
 func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[string]any, *adapterError) {
 	auth, bootstrapAvailable, err := a.authState(ctx)
 	if err != nil {
@@ -60,6 +126,9 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 
 	if boardGetAssigneeHasInvalidType(input) {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid assignee", map[string]any{"field": "assignee"})
+	}
+	if boardGetTagsHasInvalidType(input) {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid tags", map[string]any{"field": "tags"})
 	}
 
 	var in boardGetInput
@@ -81,10 +150,9 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid limit", map[string]any{"field": "limit"})
 	}
 
-	// Pass the trimmed tag through unchanged. The store normalizes scope-aware:
-	// durable projects group via TagGroupKey; temporary boards exact-match the raw
-	// displayed name (so a "make space" chip is not rewritten to "make-space").
-	tag := strings.TrimSpace(in.Tag)
+	// Tag filters stay transport-normalized only. The store applies scope-aware
+	// matching: durable projects group via TagGroupKey; temporary boards exact-match
+	// the raw displayed name (so a "make space" chip is not rewritten to "make-space").
 	search := strings.TrimSpace(in.Search)
 	actorUserID, ok := store.UserIDFromContext(ctx)
 	if !ok {
@@ -103,6 +171,11 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid sort", map[string]any{"field": "sort"})
 	}
 
+	tagFilters, tagErr := resolveBoardGetTagFilters(input, in)
+	if tagErr != nil {
+		return nil, nil, tagErr
+	}
+
 	// This is the target-dependent validation boundary: denied, missing, and
 	// expired projects mask later sprint and cursor errors as not found.
 	prepared, prepareErr := a.boardReads.Prepare(ctx, boardapp.MCPBoardReadTarget{
@@ -114,7 +187,7 @@ func (a *Adapter) handleBoardGet(ctx context.Context, input any) (any, map[strin
 	}
 
 	result, readErr := prepared.Read(boardapp.MCPBoardReadQuery{
-		TagFilter:      tag,
+		TagFilters:     tagFilters,
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
