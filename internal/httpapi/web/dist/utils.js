@@ -1,5 +1,71 @@
 import { toast } from './dom/elements.js';
-import { t } from './i18n/index.js';
+import { hydrateI18n, I18N_LOCALE_CHANGED, t } from './i18n/index.js';
+/**
+ * Keeps a dynamically-created `<dialog>` re-localized as the active locale changes,
+ * without needing to reopen it. Call once right after `showModal()`; pass an
+ * optional `sync` callback for any stateful, non-`data-i18n-*` text the dialog
+ * renders (see `syncProfileLocaleState`-style helpers for the pattern).
+ *
+ * Returns a `release()` that stops listening — call it as part of the dialog's
+ * own close/cleanup so the listener doesn't outlive the node.
+ */
+export function bindDialogLocale(dialog, sync) {
+    let removed = false;
+    const handleNativeCleanup = () => {
+        release();
+    };
+    const release = () => {
+        if (removed)
+            return;
+        removed = true;
+        document.removeEventListener(I18N_LOCALE_CHANGED, listener);
+        dialog.removeEventListener("cancel", handleNativeCleanup);
+        dialog.removeEventListener("close", handleNativeCleanup);
+    };
+    const listener = () => {
+        // Self-clean if the dialog was detached without calling the cleanup
+        // (defensive: avoids leaked listeners hydrating stale nodes).
+        if (!dialog.isConnected) {
+            release();
+            return;
+        }
+        hydrateI18n(dialog);
+        sync?.();
+    };
+    // Localize immediately so non-English locales render correctly on open.
+    hydrateI18n(dialog);
+    sync?.();
+    document.addEventListener(I18N_LOCALE_CHANGED, listener);
+    dialog.addEventListener("cancel", handleNativeCleanup);
+    dialog.addEventListener("close", handleNativeCleanup);
+    return release;
+}
+/**
+ * Wire uniform, orphan-free teardown for a dynamically-created dialog.
+ *
+ * Returns an idempotent `close()` that releases the locale listener, runs any
+ * caller cleanup, and removes the node from the DOM. Native dismiss paths
+ * (Escape / light-dismiss `cancel`, and the `close` event) are routed through
+ * the same `close()` so the node can never be left detached-but-present, which
+ * would otherwise duplicate element IDs and misbind handlers on reopen.
+ */
+export function attachDialogClose(dialog, releaseLocale, extraCleanup) {
+    let removed = false;
+    const close = () => {
+        if (removed)
+            return;
+        removed = true;
+        extraCleanup?.();
+        releaseLocale();
+        dialog.remove();
+    };
+    dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        close();
+    });
+    dialog.addEventListener("close", close);
+    return close;
+}
 /**
  * Returns true if the board is anonymous (temporary, no creator).
  * Use this helper everywhere instead of duplicating expiresAt/creatorUserId logic.

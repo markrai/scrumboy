@@ -403,6 +403,89 @@ VALUES (1, 1, 1, 'existing', '', 'backlog', 1000, ?, ?)`, now, now); err != nil 
 	}
 }
 
+func TestMigration072DefaultsExistingAPITokensToPersonal(t *testing.T) {
+	ctx := context.Background()
+	sqlDB := openRawTestDB(t)
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	const target = "072_add_api_token_service_flag.sql"
+	for _, migrationVersion := range embeddedMigrationVersions(t) {
+		if migrationVersion == target {
+			break
+		}
+		if err := applyOne(ctx, sqlDB, migrationVersion); err != nil {
+			t.Fatalf("apply %s: %v", migrationVersion, err)
+		}
+	}
+	now := time.Now().UTC().UnixMilli()
+	if _, err := sqlDB.ExecContext(ctx, `
+INSERT INTO users(id, email, name, password_hash, is_bootstrap, system_role, created_at)
+VALUES (1, 'legacy-token@example.com', 'Legacy', '!', 1, 'owner', ?)`, now); err != nil {
+		t.Fatalf("insert legacy user: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `
+INSERT INTO api_tokens(id, user_id, token_hash, name, created_at, last_used_at, revoked_at)
+VALUES (1, 1, 'legacy-hash', 'legacy', ?, NULL, NULL)`, now); err != nil {
+		t.Fatalf("insert legacy api token: %v", err)
+	}
+
+	if err := applyOne(ctx, sqlDB, target); err != nil {
+		t.Fatalf("apply %s: %v", target, err)
+	}
+	var isService bool
+	if err := sqlDB.QueryRowContext(ctx, `SELECT is_service FROM api_tokens WHERE id = 1`).Scan(&isService); err != nil {
+		t.Fatalf("read migrated token: %v", err)
+	}
+	if isService {
+		t.Fatal("existing API token migrated as service token; want personal")
+	}
+	if _, err := sqlDB.ExecContext(ctx, `
+INSERT INTO api_tokens(user_id, token_hash, name, created_at)
+VALUES (1, 'post-migration-hash', 'post migration', ?)`, now); err != nil {
+		t.Fatalf("insert token using database default: %v", err)
+	}
+	if err := sqlDB.QueryRowContext(ctx, `SELECT is_service FROM api_tokens WHERE token_hash = 'post-migration-hash'`).Scan(&isService); err != nil {
+		t.Fatalf("read defaulted token: %v", err)
+	}
+	if isService {
+		t.Fatal("database default created a service token; want personal")
+	}
+}
+
+func TestMigration073ServiceTokenArchiveHasNoUserReferencesOrSecrets(t *testing.T) {
+	ctx := context.Background()
+	sqlDB := openMigratedDB(t)
+
+	var foreignKeys int
+	if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_foreign_key_list('archived_service_api_tokens')`).Scan(&foreignKeys); err != nil {
+		t.Fatalf("read archive foreign keys: %v", err)
+	}
+	if foreignKeys != 0 {
+		t.Fatalf("archive has %d foreign keys; provenance must not depend on users rows that get deleted", foreignKeys)
+	}
+	var hashColumns int
+	if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('archived_service_api_tokens') WHERE name LIKE '%hash%'`).Scan(&hashColumns); err != nil {
+		t.Fatalf("read archive columns: %v", err)
+	}
+	if hashColumns != 0 {
+		t.Fatal("archive stores a token hash; archived secrets must be unrecoverable")
+	}
+
+	now := time.Now().UTC().UnixMilli()
+	if _, err := sqlDB.ExecContext(ctx, `
+INSERT INTO archived_service_api_tokens(
+  token_id, name, created_at, last_used_at, revoked_at, revoked_on_archive,
+  origin_user_id, origin_user_email, origin_user_name,
+  archived_at, archived_by_user_id, archived_by_user_email)
+VALUES (1, 'ci', ?, NULL, ?, 1, 42, 'gone@example.com', 'Gone', ?, 7, 'owner@example.com')`, now, now, now); err != nil {
+		t.Fatalf("insert archive row without user rows: %v", err)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `UPDATE archived_service_api_tokens SET origin_user_email = 'forged@example.com'`); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("archive update err=%v, want immutability failure", err)
+	}
+}
+
 func TestChronologicalTodoIndexSupportsLaneOrder(t *testing.T) {
 	sqlDB := openMigratedDB(t)
 

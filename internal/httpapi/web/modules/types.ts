@@ -137,6 +137,19 @@ export interface User {
   oidcLinked?: boolean;
 }
 
+export interface ApiToken {
+  id: number | string;
+  name?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+  isService?: boolean;
+}
+
+export interface ApiTokenCreateResponse extends ApiToken {
+  token: string;
+}
+
 export interface ActiveSprintInfo {
   id: number;
   name: string;

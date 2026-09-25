@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { harness, skill, finish, latestRef } from './agent.test.utils.js';
-import { AGENT_LIMITS } from './agent-protocol.js';
+import { AGENT_LIMITS, AgentProtocolError } from './agent-protocol.js';
+import { VoiceAgentProposalStore } from './agent-proposals.js';
 describe('bounded local agent loop', () => {
   it.each(['todos.append_notes', 'todos.replace_notes'])('separates full visual and complete condensed %s confirmation speech', async name => {
     const notes = 'Dictated text. '.repeat(60);
@@ -121,9 +122,8 @@ describe('bounded local agent loop', () => {
     expect(JSON.parse(h.model.mock.calls[2][0]).pending).toMatchObject({ kind: 'choice', resource: 'todo' });
     expect(h.options.openTodo).not.toHaveBeenCalled();
   });
-  it('prepares the exact physical mark-as-Done move when Nano emits the contracted skill', async () => {
-    const expected = skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' });
-    const h = harness([expected, finish]);
+  it('prepares the exact physical mark-as-Done move from a unique quoted title without a model turn', async () => {
+    const h = harness([]);
     h.todo.title = 'Goblins in Washington';
     h.todo.localId = 369;
     const run = vi.spyOn(h.registry, 'run');
@@ -133,7 +133,8 @@ describe('bounded local agent loop', () => {
     expect(view.phase).toBe('confirmation');
     expect(view.text).toContain('Goblins in Washington');
     expect(view.text).toContain('Done');
-    expect(run.mock.calls[0][0]).toEqual(expected);
+    expect(run.mock.calls[0][0]).toMatchObject({ kind: 'skill_call', skill: 'todos.move', arguments: { lane: 'Done' } });
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
     expect(h.execute).not.toHaveBeenCalled();
   });
@@ -209,7 +210,7 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('#369', h.signal);
     expect(confirmation).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
     expect(run.mock.calls[1][0]).toEqual(skill('todos.delete', { todoRef: offeredRef }));
-    expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
+    expect(h.events).toContain('model');
     expect(h.model).toHaveBeenCalledTimes(3);
     expect(h.options.openTodo).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
@@ -235,7 +236,7 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('#369', h.signal);
     expect(confirmation).toMatchObject({ phase: 'confirmation', danger: true, confirmLabel: 'Delete' });
     expect(run.mock.calls[0][0]).toEqual(skill('todos.delete', { reference: '#369' }));
-    expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
+    expect(h.events).toContain('model');
     expect(h.model).toHaveBeenCalledTimes(2);
     expect(h.options.openTodo).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
@@ -272,8 +273,8 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('#369', h.signal);
     expect(confirmation.phase).toBe('confirmation');
     expect(run.mock.calls[1][0]).toEqual(skill('todos.move', { todoRef: offeredRef, lane: 'Done' }));
-    expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
-    expect(h.model).toHaveBeenCalledTimes(3);
+    expect(h.events).not.toContain('model');
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
   it('retains a structured missing move reference and fills #369 locally', async () => {
@@ -298,14 +299,14 @@ describe('bounded local agent loop', () => {
         skillClarification: { skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference' },
       });
       expect(run).not.toHaveBeenCalled();
-      expect(h.model).toHaveBeenCalledOnce();
+      expect(h.model).not.toHaveBeenCalled();
       h.events.length = 0;
 
       const confirmation = await h.loop.submit('#369', h.signal);
       expect(confirmation.phase).toBe('confirmation');
       expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { lane: 'Done', reference: '#369' }));
-      expect(h.events.indexOf('todos_get')).toBeLessThan(h.events.indexOf('model'));
-      expect(h.model).toHaveBeenCalledTimes(2);
+      expect(h.events).not.toContain('model');
+      expect(h.model).not.toHaveBeenCalled();
       expect(h.loop.currentState).toEqual({ kind: 'confirmation', proposalCount: 1 });
       expect(h.execute).not.toHaveBeenCalled();
       expect(events).toContainEqual(expect.objectContaining({
@@ -336,7 +337,7 @@ describe('bounded local agent loop', () => {
     const confirmation = await h.loop.submit('Done', h.signal);
     expect(confirmation.phase).toBe('confirmation');
     expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { reference: 'Goblins in Washington', lane: 'Done' }));
-    expect(h.model).toHaveBeenCalledTimes(2);
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
   it('hands ambiguity from a locally completed clarification to pendingChoice', async () => {
@@ -359,18 +360,21 @@ describe('bounded local agent loop', () => {
     expect(confirmation.phase).toBe('confirmation');
     expect(h.execute).not.toHaveBeenCalled();
   });
-  it('gives a plain ask_user no local entity-selection authority', async () => {
-    const h = harness([
-      { kind: 'ask_user', text: 'Which story?' },
-      { kind: 'ask_user', text: 'Please describe the story.' },
-    ]);
+  it('retains a missing-target move from ask_user and fills #369 locally', async () => {
+    const h = harness([{ kind: 'ask_user', text: 'Which story?' }]);
+    h.todo.title = 'Goblins in Washington';
+    h.todo.localId = 369;
     const run = vi.spyOn(h.registry, 'run');
 
     expect(await h.loop.submit('Mark a story as Done', h.signal)).toEqual({ phase: 'question', text: 'Which story?' });
-    expect(h.loop.currentState).toEqual({ kind: 'clarification' });
-    expect(await h.loop.submit('#369', h.signal)).toEqual({ phase: 'question', text: 'Please describe the story.' });
-    expect(h.model).toHaveBeenCalledTimes(2);
-    expect(run).not.toHaveBeenCalled();
+    expect(h.loop.currentState).toEqual({
+      kind: 'clarification',
+      skillClarification: { skill: 'todos.move', arguments: { lane: 'Done' }, missing: 'reference' },
+    });
+    const confirmation = await h.loop.submit('#369', h.signal);
+    expect(confirmation.phase).toBe('confirmation');
+    expect(run.mock.calls[0][0]).toEqual(skill('todos.move', { lane: 'Done', reference: '#369' }));
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.execute).not.toHaveBeenCalled();
   });
   it('continues compound work after a deterministic Open choice and confirms the selected Todo mutation', async () => {
@@ -706,17 +710,17 @@ describe('state-aware voice agent protocol lifecycle', () => {
 
   it('qualified additional work leaves confirmation, then finishes from proposals_ready into a new confirmation', async () => {
     const h = harness([
-      skill('todos.move', { reference: 'Happy Birthday', lane: 'Done' }), finish,
       skill('todos.add_tag', { reference: 'Happy Birthday', tag: 'urgent' }), finish,
       { kind: 'confirm' },
     ]);
     expect((await h.loop.submit('Move Happy Birthday to Done', h.signal)).phase).toBe('confirmation');
+    expect(h.model).not.toHaveBeenCalled();
     expect(h.loop.confirmationPending).toBe(true);
     const next = await h.loop.submit('Yes but also tag it urgent', h.signal);
     expect(next.phase).toBe('confirmation');
     expect(next.text).toContain('urgent');
-    expect(pendingOf(h, 2)).toEqual({ kind: 'confirmation', proposalCount: 1 });
-    expect(pendingOf(h, 3)).toEqual({ kind: 'proposals_ready', proposalCount: 2 });
+    expect(pendingOf(h, 0)).toEqual({ kind: 'confirmation', proposalCount: 1 });
+    expect(pendingOf(h, 1)).toEqual({ kind: 'proposals_ready', proposalCount: 2 });
     expect(h.execute).not.toHaveBeenCalled();
     expect((await h.loop.submit('yes', h.signal)).phase).toBe('success');
     expect(h.execute).toHaveBeenCalledTimes(2);
@@ -836,5 +840,90 @@ describe('state-aware voice agent protocol lifecycle', () => {
     h.steps.push(input => skill('todos.open', { todoRef: JSON.parse(input).pending.choices[0].handle }), finish);
     expect((await h.loop.submit('pick whichever', h.signal)).phase).toBe('success');
     expect(pendingOf(h, 2)).toMatchObject({ kind: 'choice', resource: 'todo' });
+  });
+
+  it.each([
+    {
+      name: 'target_resolution',
+      setup: (h: ReturnType<typeof harness>) => {
+        h.steps.push(skill('todos.open', { reference: 'Happy Birthday' }));
+        vi.spyOn(h.registry, 'run').mockRejectedValueOnce(new AgentProtocolError('Resolver exploded'));
+        return 'Open Happy Birthday';
+      },
+    },
+    {
+      name: 'proposal_preparation',
+      setup: (h: ReturnType<typeof harness>) => {
+        h.todo.localId = 239;
+        vi.spyOn(VoiceAgentProposalStore.prototype, 'add').mockImplementationOnce(() => {
+          throw new AgentProtocolError('Proposal store exploded');
+        });
+        return 'Move #239 to done.';
+      },
+    },
+  ])('traces thrown $name failures without labeling them model_interpretation_failure', async ({ name, setup }) => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    const debug = vi.spyOn(console, 'debug').mockImplementation((label, fields) => {
+      if (label === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    try {
+      const h = harness([]);
+      const utterance = setup(h);
+      const view = await h.loop.submit(utterance, h.signal);
+      expect(view).toEqual({ phase: 'error', text: 'I could not finish that safely. Please try again.' });
+      expect(events).toContainEqual(expect.objectContaining({ result: 'failure', safeFailureStage: name }));
+      expect(events.some(event => event.safeFailureStage === 'model_interpretation_failure')).toBe(false);
+      expect(h.execute).not.toHaveBeenCalled();
+    } finally {
+      debug.mockRestore();
+      localStorage.removeItem('scrumboy_debug_voiceflow');
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('does not report a thrown target-resolution failure during a complete todos.move as lane_resolution', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    const debug = vi.spyOn(console, 'debug').mockImplementation((label, fields) => {
+      if (label === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    try {
+      const h = harness([]);
+      h.todo.localId = 239;
+      vi.spyOn(h.registry, 'run').mockRejectedValueOnce(new AgentProtocolError('Resolver exploded'));
+      const view = await h.loop.submit('Move #239 to done.', h.signal);
+      expect(view).toEqual({ phase: 'error', text: 'I could not finish that safely. Please try again.' });
+      expect(events).toContainEqual(expect.objectContaining({ result: 'failure', safeFailureStage: 'target_resolution' }));
+      expect(events.some(event => event.safeFailureStage === 'lane_resolution')).toBe(false);
+      expect(events.some(event => event.safeFailureStage === 'model_interpretation_failure')).toBe(false);
+      expect(h.execute).not.toHaveBeenCalled();
+    } finally {
+      debug.mockRestore();
+      localStorage.removeItem('scrumboy_debug_voiceflow');
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('still classifies a stale-context throw during a complete todos.move', async () => {
+    localStorage.setItem('scrumboy_debug_voiceflow', '1');
+    const events: Record<string, unknown>[] = [];
+    const debug = vi.spyOn(console, 'debug').mockImplementation((label, fields) => {
+      if (label === 'VoiceFlow trace') events.push(fields as Record<string, unknown>);
+    });
+    try {
+      const h = harness([]);
+      h.todo.localId = 239;
+      vi.spyOn(h.registry, 'run').mockRejectedValueOnce(new AgentProtocolError('Stale todo'));
+      const view = await h.loop.submit('Move #239 to done.', h.signal);
+      expect(view).toEqual({ phase: 'error', text: 'I could not finish that safely. Please try again.' });
+      expect(events).toContainEqual(expect.objectContaining({ result: 'failure', safeFailureStage: 'stale_context' }));
+      expect(events.some(event => event.safeFailureStage === 'lane_resolution')).toBe(false);
+      expect(h.execute).not.toHaveBeenCalled();
+    } finally {
+      debug.mockRestore();
+      localStorage.removeItem('scrumboy_debug_voiceflow');
+      vi.restoreAllMocks();
+    }
   });
 });

@@ -12,6 +12,10 @@ public class ScrumboyVoiceFlowPluginTest {
         assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "../escape", "Create Fred", 45000));
         assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "case_42", null, 45000));
         assertFalse(ScrumboyVoiceFlowPlugin.acceptsDryRunRequest(true, "case_42", "Create Fred", 0));
+        assertTrue(ScrumboyVoiceFlowPlugin.acceptsAgentEvalRequest(true, "corpus_1", ScrumboyVoiceFlowPlugin.AGENT_EVAL_CORPUS, 600000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsAgentEvalRequest(false, "corpus_1", ScrumboyVoiceFlowPlugin.AGENT_EVAL_CORPUS, 600000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsAgentEvalRequest(true, "../escape", ScrumboyVoiceFlowPlugin.AGENT_EVAL_CORPUS, 600000));
+        assertFalse(ScrumboyVoiceFlowPlugin.acceptsAgentEvalRequest(true, "corpus_1", ScrumboyVoiceFlowPlugin.AGENT_EVAL_CORPUS, 0));
     }
 
     @Test public void onlyAcceptsBoundedTraceLinesInDebugBuilds() {

@@ -41,26 +41,77 @@ const {
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
 vi.mock('../members-cache.js', () => ({ fetchProjectMembers: fetchProjectMembersMock }));
 
-vi.mock('../utils.js', () => ({
-  escapeHTML: (s: string) =>
-    String(s)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;'),
-  showToast: showToastMock,
-  getAppVersion: () => 'test-version',
-  showConfirmDialog: showConfirmDialogMock,
-  confirmDelete: confirmDeleteMock,
-  isAnonymousBoard: () => false,
-  renderUserAvatar: (_user: unknown, opts?: { id?: string; ariaLabel?: string }) =>
-    `<button class="user-avatar" id="${opts?.id ?? 'userAvatarBtn'}" aria-label="${opts?.ariaLabel ?? ''}"></button>`,
-  processImageFile: vi.fn(),
-  processWallpaperFileForUpload: vi.fn(),
-  renderAvatarContent: () => '',
-  sanitizeHexColor: (color?: string | null, fallback?: string | null) => color ?? fallback ?? null,
-}));
+vi.mock('../utils.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils.js')>();
+  // bindDialogLocale/attachDialogClose are exercised directly by these tests
+  // (relocalizing an open dialog in place). `importOriginal`'s snapshot of
+  // utils.js closes over whichever ../i18n/index.js instance was live the
+  // *first* time this factory ran, which goes stale once a later test's
+  // `vi.resetModules()` + fresh `initI18n()` call creates a new i18n module
+  // instance mid-suite — the stale closure keeps hydrating against the old
+  // instance's (still-bootstrap) catalog. Re-resolve ../i18n/index.js by
+  // dynamic import at call time instead, so it always tracks the current
+  // module-registry epoch. attachDialogClose has no i18n dependency, so the
+  // snapshot from `actual` is safe to reuse as-is.
+  const bindDialogLocale = (dialog: HTMLDialogElement, sync?: () => void): (() => void) => {
+    let removed = false;
+    let cleanupListener: (() => void) | null = null;
+    const handleNativeCleanup: EventListener = () => release();
+    const release = () => {
+      if (removed) return;
+      removed = true;
+      cleanupListener?.();
+      dialog.removeEventListener('cancel', handleNativeCleanup);
+      dialog.removeEventListener('close', handleNativeCleanup);
+    };
+    dialog.addEventListener('cancel', handleNativeCleanup);
+    dialog.addEventListener('close', handleNativeCleanup);
+    // Single import, resolved once: wire the listener and do the immediate
+    // hydrate from the SAME resolved module reference. Two independent
+    // `import('../i18n/index.js')` calls (one for the initial hydrate, one
+    // for the listener) were observed to resolve at different times under
+    // Vitest's mock-factory module runner, letting a locale-change event
+    // dispatch before the listener from the second call had registered.
+    void import('../i18n/index.js').then((i18n) => {
+      if (removed) return;
+      const listener: EventListener = () => {
+        if (!dialog.isConnected) {
+          release();
+          return;
+        }
+        i18n.hydrateI18n(dialog);
+        sync?.();
+      };
+      cleanupListener = () => document.removeEventListener(i18n.I18N_LOCALE_CHANGED, listener);
+      document.addEventListener(i18n.I18N_LOCALE_CHANGED, listener);
+      i18n.hydrateI18n(dialog);
+      sync?.();
+    });
+    return release;
+  };
+  return {
+    bindDialogLocale,
+    attachDialogClose: actual.attachDialogClose,
+    escapeHTML: (s: string) =>
+      String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;'),
+    showToast: showToastMock,
+    getAppVersion: () => 'test-version',
+    showConfirmDialog: showConfirmDialogMock,
+    confirmDelete: confirmDeleteMock,
+    isAnonymousBoard: () => false,
+    renderUserAvatar: (_user: unknown, opts?: { id?: string; ariaLabel?: string }) =>
+      `<button class="user-avatar" id="${opts?.id ?? 'userAvatarBtn'}" aria-label="${opts?.ariaLabel ?? ''}"></button>`,
+    processImageFile: vi.fn(),
+    processWallpaperFileForUpload: vi.fn(),
+    renderAvatarContent: () => '',
+    sanitizeHexColor: (color?: string | null, fallback?: string | null) => color ?? fallback ?? null,
+  };
+});
 
 vi.mock('../theme.js', () => ({
   getStoredTheme: () => 'system',

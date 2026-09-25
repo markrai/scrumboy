@@ -23,6 +23,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 	// | Promote admin -> owner | ❌     | ❌     | ❌    |
 	// | Delete user           | ✅     | ❌     | ❌    |
 	// | Demote admin          | ✅     | ❌     | ❌    |
+	// | Service-token archive | ✅     | ❌     | ❌    |
 	// Store remains authoritative for mutation-time Owner and persistence
 	// invariants. Selected create, role, and deletion orchestration delegates
 	// through internal/application/useradmin after this shared transport gate.
@@ -65,6 +66,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 		} else {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		}
+		return
+	}
+
+	if rest[0] == "service-token-archive" && len(rest) == 1 {
+		// GET/DELETE /api/admin/service-token-archive (owner-only; enforced by store)
+		s.handleAdminServiceTokenArchive(w, r, userID)
 		return
 	}
 
@@ -430,6 +437,69 @@ func (s *Server) handleAdminDefaultBoard(w http.ResponseWriter, r *http.Request,
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+	}
+}
+
+// handleAdminServiceTokenArchive lists (GET) or purges (DELETE) archived service-token records of
+// deleted users. The store requires the owner role for both.
+func (s *Server) handleAdminServiceTokenArchive(w http.ResponseWriter, r *http.Request, requesterID int64) {
+	ctx := s.requestContext(r)
+	q := r.URL.Query()
+
+	switch r.Method {
+	case http.MethodGet:
+		// GET /api/admin/service-token-archive?limit=&before=
+		limit := 50
+		if raw := q.Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid limit", nil)
+				return
+			}
+			limit = n
+		}
+		var before int64
+		if raw := q.Get("before"); raw != "" {
+			n, ok := parseInt64(raw)
+			if !ok {
+				writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid before cursor", nil)
+				return
+			}
+			before = n
+		}
+
+		items, next, err := s.store.ListArchivedServiceAPITokens(ctx, requesterID, limit, before)
+		if err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"items":      archivedServiceAPITokensToJSON(items),
+			"nextBefore": next,
+		})
+
+	case http.MethodDelete:
+		// DELETE /api/admin/service-token-archive?archivedBefore=<RFC 3339>
+		raw := q.Get("archivedBefore")
+		if raw == "" {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "archivedBefore is required", nil)
+			return
+		}
+		archivedBefore, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "archivedBefore must be an RFC 3339 timestamp", nil)
+			return
+		}
+
+		deleted, err := s.store.PurgeArchivedServiceAPITokens(ctx, requesterID, archivedBefore)
+		if err != nil {
+			writeStoreErr(w, err, false)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"deleted": deleted})
 
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)

@@ -315,9 +315,29 @@ Manage opaque MCP/API tokens while logged in (session cookie). Mutating endpoint
 
 | Method | Path | Body | Success |
 |--------|------|------|---------|
-| `GET` | `/api/me/tokens` | — | `200` JSON `{ "items": [ { "id", "name?", "createdAt", "lastUsedAt?", "revokedAt?" } ] }` (no secret) |
-| `POST` | `/api/me/tokens` | `{ "name": "optional label" }` | `201` JSON `{ "id", "name?", "createdAt", "token" }` — **`token` is shown only on create** |
+| `GET` | `/api/me/tokens` | — | `200` JSON `{ "items": [ { "id", "name?", "createdAt", "lastUsedAt?", "revokedAt?", "isService" } ] }` (no secret) |
+| `POST` | `/api/me/tokens` | `{ "name": "optional label", "isService": false }` | `201` JSON `{ "id", "name?", "createdAt", "token", "isService" }` — **`token` is shown only on create** |
 | `DELETE` | `/api/me/tokens/{id}` | — | `204` (revoke / soft-delete) |
+
+Revoked tokens stay in the owning user's `GET /api/me/tokens` list with `revokedAt` set; there is no
+endpoint that removes them.
+
+`isService` (optional, default `false`; omitting it creates a personal token as before) marks a
+normal user-owned token for bot/automation use. It is not a service account: while its user exists,
+a service token authenticates as that user with exactly that user's permissions, like any other
+token. The flag only changes what is kept when the user is deleted (REST `DELETE
+/api/admin/users/{id}` or MCP `admin_deleteUser`). In the same transaction as the deletion:
+
+- the metadata of each of the user's service tokens, active or already revoked, is copied into the
+  owner-only [service token archive](#service-token-archive), together with a snapshot of who held
+  it and which owner deleted them;
+- all of the user's token rows, personal and service, are then deleted with the user, so every one
+  of their secrets stops authenticating.
+
+If the deletion fails, nothing is archived and the tokens are untouched. Service tokens are not
+moved to another account: archived records never appear in anyone's `/api/me/tokens`, and the
+archive holds no secret or hash, so an archived token cannot be reactivated. Automation that used a
+deleted user's token needs a new token.
 
 Create a token (after login, with session + header):
 
@@ -328,6 +348,16 @@ curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
   -d '{"name":"Claude"}'
 ```
 
+Create a service token for unattended automation (e.g. a CI job), so its metadata survives if the
+minting user's account is later removed:
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
+  -H "Content-Type: application/json" \
+  -H "X-Scrumboy: 1" \
+  -d '{"name":"wiki-freshness-check-ci","isService":true}'
+```
+
 Then call MCP with **Bearer** (no cookie required for this path):
 
 ```bash
@@ -336,6 +366,44 @@ curl -X POST http://localhost:8080/mcp \
   -H "Authorization: Bearer sb_paste_token_from_create_response" \
   -d '{"tool":"projects_list","input":{}}'
 ```
+
+### Service token archive
+
+Retained metadata about service tokens of deleted users, for offboarding and governance review. No
+web UI for it exists yet. Owner-only, with a session cookie; `DELETE` also needs `X-Scrumboy: 1`.
+Plain users get `403`; admins who are not owners get `401` (the same as other owner-only admin
+actions).
+
+| Method | Path | Success |
+|--------|------|---------|
+| `GET` | `/api/admin/service-token-archive?limit=50&before={id}` | `200` JSON `{ "items": [ … ], "nextBefore": id \| null }` |
+| `DELETE` | `/api/admin/service-token-archive?archivedBefore={RFC 3339}` | `200` JSON `{ "deleted": n }` |
+
+**Listing.** Items come newest archive first (descending `id`). `limit` is 1–200 (default 50).
+`before` is an exclusive cursor: omit it for the first page, then pass the previous response's
+`nextBefore`, which is `null` on the last page.
+
+Each item is `{ "id", "tokenId", "name?", "createdAt", "lastUsedAt?", "revokedAt", "revokedOnArchive",
+"originUser": { "id", "email", "name" }, "archivedAt", "archivedBy": { "id", "email" } }`:
+
+- `id` is the archive record's own id (and the pagination cursor).
+- `tokenId` is the historical id of the deleted token. It is not a credential; token ids are never
+  reused, so it identifies one historical token.
+- For a token that was already revoked before its user was deleted, `revokedOnArchive` is `false`
+  and `revokedAt` is its original revocation time.
+- For a token that was still active when its user was deleted, `revokedOnArchive` is `true` and
+  `revokedAt` equals `archivedAt`, the time of the deletion.
+- `originUser` (the user who held the token) and `archivedBy` (the owner who deleted that user) are
+  snapshots taken at deletion time. User ids can be reused after an account is deleted, so the
+  recorded `id` may now belong to a different account. Identify people by the recorded
+  email and name, never by looking the id up among current users.
+
+**Personal data and retention.** Archive records contain identifying information: the deleted
+user's name and email and the deleting owner's email. These remain after both accounts are deleted,
+until an owner purges them. Records cannot be edited, but they are not permanent. `DELETE`
+permanently removes every record archived strictly before `archivedBefore` (an RFC 3339 timestamp
+with a time zone, e.g. `2026-01-01T00:00:00Z`), so owners can apply their own retention policy. It
+affects only archive records, never live tokens of existing users.
 
 ---
 

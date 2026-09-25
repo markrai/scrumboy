@@ -13,6 +13,7 @@ import { createSpeechInputComposition } from './speech-input-capability.js';
 import { SPEECH_OUTPUT_CAPABILITY } from '../../../internal/httpapi/web/modules/platform/speech-output.js';
 import { createSpeechOutputComposition } from './speech-output-capability.js';
 import { installVoiceCreateDryRunBridge } from './voice-create-dry-run-bridge.js';
+import { installVoiceAgentEvaluationBridge } from './voice-agent-evaluation-bridge.js';
 import { ScrumboyTransport } from './native-plugin.js';
 import { createDashboardWidgetCapability, DASHBOARD_WIDGET_CAPABILITY } from './dashboard-widget-capability.js';
 
@@ -45,4 +46,4 @@ void Promise.all([
       speechOutput.invalidate(),
     ]);
   },
-})).then(() => installVoiceCreateDryRunBridge());
+})).then(() => installVoiceCreateDryRunBridge()).then(() => installVoiceAgentEvaluationBridge());

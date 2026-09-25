@@ -78,7 +78,7 @@ func registerAgoraTestStaticToken(t *testing.T, baseURL string, st *store.Store)
 	if err != nil {
 		t.Fatalf("bootstrap Agora test user: %v", err)
 	}
-	_, token, _, err := st.CreateUserAPIToken(context.Background(), user.ID, nil)
+	_, token, _, err := st.CreateUserAPIToken(context.Background(), user.ID, nil, false)
 	if err != nil {
 		t.Fatalf("create Agora test token: %v", err)
 	}
