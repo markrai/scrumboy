@@ -3583,6 +3583,59 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   background: #EF4444;
 }
 
+/* API token badges */
+.status-pill--service {
+  background: #6366F1;
+}
+
+.status-pill--revoked {
+  background: #9CA3AF;
+}
+
+.api-tokens-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: var(--s-12);
+}
+
+.api-tokens-table th {
+  text-align: left;
+  padding: var(--s-8) 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: var(--fs-13);
+  color: var(--muted);
+}
+
+.api-tokens-table td {
+  padding: var(--s-12);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.api-tokens-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.api-tokens-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-12);
+  margin-top: var(--s-12);
+}
+
+.api-tokens-create__name {
+  flex: 1 1 220px;
+}
+
+.api-tokens-create__service {
+  display: flex;
+  align-items: center;
+  gap: var(--s-8);
+  flex: 1 1 100%;
+}
+
 .settings-sprint-row {
   display: flex;
   justify-content: space-between;

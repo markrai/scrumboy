@@ -20,10 +20,15 @@ type APITokenMeta struct {
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 	RevokedAt  *time.Time
+	IsService  bool
 }
 
 // CreateUserAPIToken generates a new opaque token, stores SHA-256(token) only, and returns the new row id, plaintext once, and created time.
-func (s *Store) CreateUserAPIToken(ctx context.Context, userID int64, name *string) (id int64, plaintext string, createdAt time.Time, err error) {
+// isService marks the user-owned token for bot/automation use; it authenticates as that user like any
+// other token. When the user is later deleted, DeleteUser copies its metadata and owner provenance
+// into archived_service_api_tokens before the row cascade-deletes, so the metadata is kept for
+// offboarding review while the secret stops working.
+func (s *Store) CreateUserAPIToken(ctx context.Context, userID int64, name *string, isService bool) (id int64, plaintext string, createdAt time.Time, err error) {
 	if userID <= 0 {
 		return 0, "", time.Time{}, fmt.Errorf("%w: invalid user id", ErrValidation)
 	}
@@ -48,9 +53,9 @@ func (s *Store) CreateUserAPIToken(ctx context.Context, userID int64, name *stri
 	}
 
 	res, err := s.db.ExecContext(ctx, `
-INSERT INTO api_tokens(user_id, token_hash, name, created_at, last_used_at, revoked_at)
-VALUES (?, ?, ?, ?, NULL, NULL)
-`, userID, tokenHash, nameArg, nowMs)
+INSERT INTO api_tokens(user_id, token_hash, name, created_at, last_used_at, revoked_at, is_service)
+VALUES (?, ?, ?, ?, NULL, NULL, ?)
+`, userID, tokenHash, nameArg, nowMs, isService)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: api_tokens.token_hash") {
 			return 0, "", time.Time{}, ErrConflict
@@ -70,7 +75,7 @@ func (s *Store) ListUserAPITokens(ctx context.Context, userID int64) ([]APIToken
 		return nil, fmt.Errorf("%w: invalid user id", ErrValidation)
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, name, created_at, last_used_at, revoked_at
+SELECT id, name, created_at, last_used_at, revoked_at, is_service
 FROM api_tokens
 WHERE user_id = ?
 ORDER BY created_at DESC
@@ -83,18 +88,20 @@ ORDER BY created_at DESC
 	var out []APITokenMeta
 	for rows.Next() {
 		var (
-			id              int64
-			name            sql.NullString
-			createdAtMs     int64
-			lastUsedMs      sql.NullInt64
-			revokedMs       sql.NullInt64
+			id          int64
+			name        sql.NullString
+			createdAtMs int64
+			lastUsedMs  sql.NullInt64
+			revokedMs   sql.NullInt64
+			isService   bool
 		)
-		if err := rows.Scan(&id, &name, &createdAtMs, &lastUsedMs, &revokedMs); err != nil {
+		if err := rows.Scan(&id, &name, &createdAtMs, &lastUsedMs, &revokedMs, &isService); err != nil {
 			return nil, fmt.Errorf("scan api token: %w", err)
 		}
 		meta := APITokenMeta{
 			ID:        id,
 			CreatedAt: time.UnixMilli(createdAtMs).UTC(),
+			IsService: isService,
 		}
 		if name.Valid {
 			s := name.String

@@ -2,6 +2,52 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.36.5] - 2026-09-24
+
+### Added
+
+- **API token management UI** - Profile settings list, create, and revoke
+  personal API tokens (`GET`/`POST`/`DELETE /api/me/tokens`), including an
+  optional service-token flag, a one-time secret-reveal dialog with
+  copy-to-clipboard, and i18n across all locale catalogs.
+
+## [3.36.4] - 2026-09-22
+
+### Added
+
+- **Service API tokens** - `POST /api/me/tokens` accepts an optional
+  `isService` flag marking a user-owned token for bot/automation use. It is
+  not a separate service identity: while its user exists, a service token
+  authenticates as that user with that user's permissions. When an owner
+  deletes the user, each service token's metadata (name, timestamps,
+  revocation state) is archived together with snapshots of who held it and
+  which owner deleted them, and then all of the user's tokens are deleted in
+  the same transaction, so no secret survives. Archive records are immutable
+  and hold no secret. Owners can list them with
+  `GET /api/admin/service-token-archive` and permanently purge older ones
+  with `DELETE /api/admin/service-token-archive?archivedBefore=…`. Omitting
+  `isService` creates a personal token, which is deleted with its owner as
+  before. See [API.md](API.md#service-token-archive).
+
+## [3.36.3] - 2026-09-20
+
+### Fixed
+
+- **VoiceFlow move-to-lane interpretation** - Standalone move utterances
+  (`Move #239 to done`, title-based moves, spoken numbers) are recognized
+  deterministically while the agent is idle, so complete moves no longer
+  depend on the on-device model and incomplete ones clarify the missing
+  story or lane. Compound or continuation moves still go through the model.
+  Target/lane resolution and finish-after-effect completion are hardened so
+  a successful single move ends cleanly without inviting an unintended
+  follow-up skill call.
+
+### Added
+
+- **Voice agent evaluation bridge** - Debug-only Android / Capacitor path to
+  score move utterances (raw, protocol, and application accuracy) against a
+  fixed corpus on the current board without executing mutations.
+
 ## [3.36.2] - 2026-09-18
 
 ### Fixed

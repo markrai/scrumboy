@@ -513,8 +513,8 @@ describe('production VoiceFlow traces', () => {
     const h = harness(['private invalid output', 'private invalid output']); const s = surface(h, []);
     await s.controller.submitTranscript('open');
     expect(events.map(e => e.stage)).toEqual(['transcript_input', 'interpret', 'terminal']);
-    expect(events[1]).toMatchObject({ result: 'failure' });
-    expect(events.at(-1)).toMatchObject({ outcome: 'interpret_failure' });
+    expect(events[1]).toMatchObject({ result: 'failure', safeFailureStage: 'protocol_repair_exhaustion' });
+    expect(events.at(-1)).toMatchObject({ outcome: 'protocol_repair_exhaustion_failure' });
     expect(JSON.stringify(events)).not.toContain('private invalid output');
     expect(h.execute).not.toHaveBeenCalled(); s.controller.close();
   });

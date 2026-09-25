@@ -4,6 +4,7 @@ import { AGENT_LIMITS, AgentProtocolError, agentRepairInstruction, completeSkill
 import { VoiceAgentResourceHandles } from './agent-resources.js';
 import { VoiceAgentProposalStore } from './agent-proposals.js';
 import { renderAgentSkillResult } from './agent-skills.js';
+import { interpretApplicationEnvelope } from './agent-interpretation.js';
 import { normalizeLookup } from './normalize.js';
 export const agentSafeFailure = () => voiceText('voice.agent.safeFailure', 'I could not finish that safely. Please try again.');
 function batchText(result) {
@@ -16,6 +17,48 @@ function batchText(result) {
 const choiceFillers = new Set(['the', 'one', 'story', 'todo', 'card', 'task', 'item', 'option', 'please', 'i', 'choose', 'select', 'offered', 'number', 'in']);
 const choiceOrdinals = new Map([['first', 0], ['second', 1], ['third', 2], ['fourth', 3], ['fifth', 4]]);
 function words(value) { return normalizeLookup(value).match(/[\p{L}\p{N}]+/gu) ?? []; }
+function authoritativeFailureResource(error) {
+    const read = (value) => (value === 'todo' || value === 'lane' || value === 'member' || value === 'tag' ? value : undefined);
+    if (!error || typeof error !== 'object')
+        return undefined;
+    if ('resource' in error) {
+        const resource = read(error.resource);
+        if (resource)
+            return resource;
+    }
+    if (error instanceof AgentProtocolError)
+        return read(error.diagnostic.resource);
+    return undefined;
+}
+function classifySafeFailure(stage, stateKind, error, repaired) {
+    const reason = error instanceof AgentProtocolError ? error.message : `${stage}_exception`;
+    if (reason === 'Context invalidated' || reason === 'Stale todo' || reason === 'Stale target'
+        || reason === 'Title changed during resolution' || reason === 'Proposal changed; start again'
+        || reason === 'Task expired' || reason === 'Task cancelled') {
+        return { safeFailureStage: 'stale_context', reason };
+    }
+    const resource = authoritativeFailureResource(error);
+    if (resource === 'lane')
+        return { safeFailureStage: 'lane_resolution', reason };
+    if (resource)
+        return { safeFailureStage: 'target_resolution', reason };
+    if (stage === 'proposal_preparation' || stage === 'confirmation_preflight' || stage === 'target_resolution') {
+        return { safeFailureStage: stage, reason };
+    }
+    if (stage === 'lane_resolution')
+        return { safeFailureStage: 'target_resolution', reason };
+    if (stage === 'interpret') {
+        if (stateKind === 'proposals_ready')
+            return { safeFailureStage: 'proposals_ready_completion', reason };
+        return { safeFailureStage: repaired ? 'protocol_repair_exhaustion' : 'model_interpretation_failure', reason };
+    }
+    if (stage === 'resolve') {
+        if (/todo|title|target|reference/i.test(reason))
+            return { safeFailureStage: 'target_resolution', reason };
+        return { safeFailureStage: 'proposal_preparation', reason };
+    }
+    return { safeFailureStage: 'model_interpretation_failure', reason };
+}
 function isStandaloneNamedOpenGoal(goal) {
     const normalized = normalizeLookup(goal);
     if (!/^(?:please )?(?:open|find(?: me)?|search for|look up)\s+\S/.test(normalized))
@@ -132,6 +175,7 @@ export class VoiceAgentLoop {
             this.task.results.length = 0;
             this.task.pendingChoice = null;
             this.task.pendingSkillClarification = null;
+            this.task.pendingResolutionCompletion = null;
         }
         this.task = null;
         this.session.activeTodo = null;
@@ -152,6 +196,7 @@ export class VoiceAgentLoop {
         task.results.length = 0;
         task.pendingChoice = null;
         task.pendingSkillClarification = null;
+        task.pendingResolutionCompletion = null;
         this.task = null;
         if (!this.session.keepListening)
             this.session.activeTodo = null;
@@ -190,36 +235,59 @@ export class VoiceAgentLoop {
     async submit(utterance, signal) {
         const diagnostic = this.trace();
         let stage = 'interpret';
+        let interpretState = 'none';
+        let repaired = false;
         try {
-            this.registry.context(signal);
+            const initialContext = this.registry.context(signal);
             if (!utterance.trim() || utterance.length > AGENT_LIMITS.utterance)
                 throw new AgentProtocolError('Utterance limit');
             let localSelection = null;
             let localClarification = null;
+            let localSource = null;
+            let localCompletion = 'continue';
             if (!this.task) {
-                this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, pendingSkillClarification: null, choiceAnswered: false, confirmation: false, clarification: false, modelSteps: 0, skillCalls: 0, results: [] };
+                this.task = { diagnostic, goal: utterance, trace: [], handles: new VoiceAgentResourceHandles(), session: this.session, proposals: new VoiceAgentProposalStore(), pendingChoice: null, pendingSkillClarification: null, pendingResolutionCompletion: null, choiceAnswered: false, confirmation: false, clarification: false, modelSteps: 0, skillCalls: 0, results: [] };
+                const interpreted = interpretApplicationEnvelope(utterance, null, 'idle', initialContext.board);
+                if (interpreted) {
+                    localSelection = interpreted.envelope;
+                    localSource = 'local_deterministic_move';
+                    localCompletion = interpreted.completion;
+                }
             }
             else if (this.task.pendingChoice) {
                 this.task.choiceAnswered = true;
                 localSelection = localChoiceCall(this.task, utterance);
+                if (localSelection) {
+                    localSource = 'local_choice';
+                    localCompletion = this.task.pendingResolutionCompletion ?? 'continue';
+                }
             }
             else if (this.task.pendingSkillClarification) {
                 localClarification = this.task.pendingSkillClarification;
                 localSelection = completeSkillClarification(localClarification, utterance);
+                localSource = 'local_clarification';
+                localCompletion = this.task.pendingResolutionCompletion ?? 'continue';
             }
             const task = this.task;
             this.append(task, { user: utterance });
             while (true) {
                 let envelope;
                 let repair;
+                repaired = false;
                 const state = this.state(task);
+                interpretState = state.kind;
+                let completion = 'continue';
                 if (localSelection) {
                     envelope = localSelection;
+                    const source = localSource;
+                    completion = localCompletion;
                     localSelection = null;
-                    diagnostic.emit('interpret', localClarification
-                        ? { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source: 'local_clarification', clarificationKind: 'skill_argument', skill: localClarification.skill, missing: localClarification.missing, clarificationResolved: true }
-                        : { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source: 'local_choice', skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) });
+                    diagnostic.emit('interpret', localClarification && source === 'local_clarification'
+                        ? { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source, clarificationKind: 'skill_argument', skill: localClarification.skill, missing: localClarification.missing, clarificationResolved: true }
+                        : { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, source, ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}) });
                     localClarification = null;
+                    localSource = null;
+                    localCompletion = 'continue';
                 }
                 for (let attempt = 0; !envelope && attempt < 2; attempt++) {
                     if (task.modelSteps >= AGENT_LIMITS.modelSteps || task.skillCalls >= AGENT_LIMITS.skillCalls)
@@ -230,19 +298,42 @@ export class VoiceAgentLoop {
                         ...(repair ? { repair: agentRepairInstruction(state, repair) } : {}), });
                     stage = 'interpret';
                     const raw = await this.model(input, signal);
-                    this.registry.context(signal);
+                    const currentContext = this.registry.context(signal);
                     if (this.task !== task)
                         throw new AgentProtocolError('Task expired');
                     try {
                         const parsed = interpretAgentEnvelope(raw, state);
-                        envelope = parsed.envelope;
-                        diagnostic.emit('interpret', { step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind, ...(parsed.recoveredFrom ? { recoveredFrom: parsed.recoveredFrom } : {}), ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}) });
+                        const interpreted = interpretApplicationEnvelope(utterance, parsed.envelope, state.kind, currentContext.board);
+                        if (!interpreted)
+                            throw new AgentProtocolError('Missing envelope');
+                        envelope = interpreted.envelope;
+                        completion = interpreted.completion;
+                        diagnostic.emit('interpret', {
+                            step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind,
+                            ...(parsed.recoveredFrom ? { recoveredFrom: parsed.recoveredFrom } : {}),
+                            ...(interpreted.source !== 'model' ? { semanticGuard: interpreted.source, modelInterpretationKind: parsed.envelope.kind } : {}),
+                            ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}),
+                            ...(envelope.kind === 'clarify_skill' ? { skill: envelope.skill, missing: envelope.missing } : {}),
+                        });
                         break;
                     }
                     catch (error) {
+                        const interpreted = interpretApplicationEnvelope(utterance, null, state.kind, currentContext.board);
+                        if (interpreted) {
+                            envelope = interpreted.envelope;
+                            completion = interpreted.completion;
+                            diagnostic.emit('interpret', {
+                                step: task.modelSteps, state: state.kind, interpretationKind: envelope.kind,
+                                semanticGuard: interpreted.source,
+                                ...(envelope.kind === 'skill_call' ? { skill: envelope.skill, ...Object.fromEntries(Object.entries(envelope.arguments).filter(([key]) => ['reference', 'todoRef', 'lane', 'member', 'tag', 'title'].includes(key))) } : {}),
+                                ...(envelope.kind === 'clarify_skill' ? { skill: envelope.skill, missing: envelope.missing } : {}),
+                            });
+                            break;
+                        }
                         if (!(error instanceof AgentProtocolError) || attempt === 1)
                             throw error;
                         repair = error.message;
+                        repaired = true;
                     }
                 }
                 if (!envelope)
@@ -266,6 +357,7 @@ export class VoiceAgentLoop {
                     task.confirmation = false;
                     task.clarification = false;
                     task.pendingSkillClarification = Object.freeze({ ...envelope, arguments: Object.freeze({ ...envelope.arguments }) });
+                    task.pendingResolutionCompletion = completion;
                     diagnostic.emit('resolve', { phase: 'initial', result: 'question', choiceCount: 0, clarificationKind: 'skill_argument', skill: envelope.skill, missing: envelope.missing });
                     return { phase: 'question', text: envelope.text };
                 }
@@ -288,16 +380,23 @@ export class VoiceAgentLoop {
                     task.skillCalls++;
                     // A correction/addition invalidates the old confirmation before any new work.
                     task.confirmation = false;
-                    stage = 'resolve';
+                    stage = 'target_resolution';
                     const outcome = await this.registry.run(envelope, task, signal);
                     task.pendingSkillClarification = null;
+                    task.pendingResolutionCompletion = outcome.result.status === 'choices' ? completion : null;
                     this.registry.context(signal);
                     if (this.task !== task)
                         throw new AgentProtocolError('Task expired');
-                    if (outcome.prepared)
+                    if (outcome.prepared) {
+                        stage = 'proposal_preparation';
                         diagnostic.command(outcome.prepared.command, 'initial');
-                    else if (outcome.result.status !== 'opened')
-                        diagnostic.emit('resolve', { phase: 'initial', skill: envelope.skill, result: outcome.result.status, ...('number' in outcome.result ? { localId: outcome.result.number } : {}), ...(outcome.result.status === 'choices' ? { choiceCount: outcome.result.choices.length } : {}) });
+                    }
+                    else if (outcome.result.status !== 'opened') {
+                        const resolution = outcome.result.status === 'not_found' && 'resource' in outcome.result
+                            ? (outcome.result.resource === 'lane' ? 'lane_resolution' : 'target_resolution')
+                            : outcome.result.status === 'choices' ? 'target_resolution' : 'proposal_preparation';
+                        diagnostic.emit('resolve', { phase: 'initial', skill: envelope.skill, result: outcome.result.status, resolution, ...('number' in outcome.result ? { localId: outcome.result.number } : {}), ...(outcome.result.status === 'choices' ? { choiceCount: outcome.result.choices.length } : {}), ...(outcome.result.status === 'not_found' && 'resource' in outcome.result ? { resource: outcome.result.resource } : {}) });
+                    }
                     if (outcome.prepared) {
                         const ref = task.proposals.add(outcome.prepared);
                         if (outcome.result.status === 'prepared')
@@ -306,14 +405,22 @@ export class VoiceAgentLoop {
                     if (JSON.stringify(outcome.result).length > AGENT_LIMITS.resultText)
                         throw new AgentProtocolError('Result limit');
                     if (['stale', 'denied', 'invalid', 'not_found'].includes(outcome.result.status)) {
-                        diagnostic.emit('failure', { source: 'resolve', reason: outcome.result.status });
-                        diagnostic.end('resolution_failure', { code: outcome.result.status });
+                        const resolution = outcome.result.status === 'not_found' && 'resource' in outcome.result
+                            ? (outcome.result.resource === 'lane' ? 'lane_resolution' : 'target_resolution')
+                            : outcome.result.status === 'stale' ? 'stale_context' : 'proposal_preparation';
+                        diagnostic.emit('failure', { source: 'resolve', reason: outcome.result.status, safeFailureStage: resolution, ...(outcome.result.status === 'not_found' && 'resource' in outcome.result ? { resource: outcome.result.resource } : {}) });
+                        diagnostic.end('resolution_failure', { code: outcome.result.status, safeFailureStage: resolution });
                         const text = renderAgentSkillResult(outcome.result);
                         this.finish(task, 0);
                         return { phase: 'error', text };
                     }
                     this.append(task, { skillResult: { skill: envelope.skill, result: outcome.result } });
                     task.results.push(outcome.result);
+                    if (outcome.result.status === 'choices' && completion === 'finish_after_effect') {
+                        diagnostic.emit('resolve', { phase: 'initial', result: 'question', choiceCount: outcome.result.choices.length });
+                        return { phase: 'question', text: renderAgentSkillResult(outcome.result),
+                            choices: outcome.result.choices.map(choice => ({ id: choice.handle, label: `${choice.number ? `#${choice.number} · ` : ''}${choice.label}${choice.lane ? ` · ${choice.lane}` : ''}` })) };
+                    }
                     const standaloneOpenComplete = outcome.result.status === 'opened' && isStandaloneNamedOpenGoal(task.goal)
                         && !task.proposals.count && task.results.every(result => ['choices', 'resolved', 'opened'].includes(result.status));
                     if (standaloneOpenComplete) {
@@ -321,12 +428,21 @@ export class VoiceAgentLoop {
                         this.finish(task, 0);
                         return { phase: 'success', text };
                     }
+                    if ((outcome.prepared || outcome.result.status === 'no_op') && !task.pendingChoice
+                        && completion === 'finish_after_effect') {
+                        localSelection = { kind: 'finish' };
+                        localSource = 'local_standalone_finish';
+                    }
                 }
             }
         }
         catch (error) {
-            diagnostic.emit(stage === 'interpret' ? 'interpret' : 'failure', { result: 'failure', source: stage, reason: error instanceof AgentProtocolError ? error.message : stage + '_exception', ...(error instanceof AgentProtocolError ? error.diagnostic : {}) });
-            diagnostic.end(stage + '_failure');
+            const classified = classifySafeFailure(stage, interpretState, error, repaired);
+            diagnostic.emit(stage === 'interpret' ? 'interpret' : 'failure', {
+                result: 'failure', source: stage, safeFailureStage: classified.safeFailureStage, reason: classified.reason,
+                ...(error instanceof AgentProtocolError ? error.diagnostic : {}),
+            });
+            diagnostic.end(`${classified.safeFailureStage}_failure`, { source: stage, reason: classified.reason });
             this.invalidate();
             return { phase: 'error', text: agentSafeFailure() };
         }

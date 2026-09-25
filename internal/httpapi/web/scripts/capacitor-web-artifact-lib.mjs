@@ -24,6 +24,7 @@ export const runtimeModuleRoots = Object.freeze([
   'app.js',
   // Unreachable from normal product startup; imported only by the native debug bridge.
   'dist/voice/voice-create-device-evaluation.js',
+  'dist/voice/agent-device-evaluation.js',
 ]);
 
 const explicitRuntimeFiles = [
