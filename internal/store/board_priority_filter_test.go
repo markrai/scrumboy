@@ -102,7 +102,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 
 	t.Run("filters by specific priority key", func(t *testing.T) {
 		filter := mustPriorityFilter(t, "urgent")
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -114,7 +114,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 
 	t.Run("filters real tier whose key is none", func(t *testing.T) {
 		filter := mustPriorityFilter(t, "none")
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -126,7 +126,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 
 	t.Run("filters no-priority", func(t *testing.T) {
 		filter := mustPriorityFilter(t, PriorityFilterNoPriorityValue)
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -138,7 +138,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 
 	t.Run("unmatched key returns empty board", func(t *testing.T) {
 		filter := mustPriorityFilter(t, "not-a-real-key")
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -148,7 +148,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 	})
 
 	t.Run("no filter returns all", func(t *testing.T) {
-		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+		_, _, _, cols, err := st.GetBoard(ctxOwner, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 		if err != nil {
 			t.Fatalf("GetBoard: %v", err)
 		}
@@ -159,7 +159,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 
 	t.Run("paged path combines priority tag and search", func(t *testing.T) {
 		filter := mustPriorityFilter(t, "urgent")
-		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "focus", "urgent", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
+		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, []string{"focus"}, "urgent", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
 		}
@@ -175,7 +175,7 @@ func TestGetBoard_PriorityFilter(t *testing.T) {
 
 	t.Run("paged path filters no-priority", func(t *testing.T) {
 		filter := mustPriorityFilter(t, PriorityFilterNoPriorityValue)
-		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
+		_, _, _, cols, meta, err := st.GetBoardPaged(ctxOwner, &pc, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault, 1)
 		if err != nil {
 			t.Fatalf("GetBoardPaged: %v", err)
 		}
@@ -216,7 +216,7 @@ func TestListTodosForBoardLane_PriorityFilter(t *testing.T) {
 	}
 
 	filter := mustPriorityFilter(t, "urgent")
-	items, cursor, hasMore, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, math.MinInt64, 0, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+	items, cursor, hasMore, err := st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, math.MinInt64, 0, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestListTodosForBoardLane_PriorityFilter(t *testing.T) {
 	}
 
 	afterRank, afterID := ParseLaneCursor(cursor)
-	items, _, hasMore, err = st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, afterRank, afterID, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
+	items, _, hasMore, err = st.ListTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, 2, afterRank, afterID, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("ListTodosForBoardLane second page: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestListTodosForBoardLane_PriorityFilter(t *testing.T) {
 		t.Fatalf("unexpected second filtered page: items=%+v hasMore=%v", items, hasMore)
 	}
 
-	count, err := st.CountTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, "", "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"})
+	count, err := st.CountTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, []string{""}, "", AssigneeFilter{}, filter, SprintFilter{Mode: "none"})
 	if err != nil {
 		t.Fatalf("CountTodosForBoardLane urgent: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestListTodosForBoardLane_PriorityFilter(t *testing.T) {
 	}
 
 	noPriorityFilter := mustPriorityFilter(t, PriorityFilterNoPriorityValue)
-	count, err = st.CountTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, "", "", AssigneeFilter{}, noPriorityFilter, SprintFilter{Mode: "none"})
+	count, err = st.CountTodosForBoardLane(ctxOwner, p.ID, DefaultColumnBacklog, []string{""}, "", AssigneeFilter{}, noPriorityFilter, SprintFilter{Mode: "none"})
 	if err != nil {
 		t.Fatalf("CountTodosForBoardLane: %v", err)
 	}

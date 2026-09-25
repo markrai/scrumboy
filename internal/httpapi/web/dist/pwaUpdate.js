@@ -5,6 +5,7 @@
  */
 import { hasI18nKey, I18N_LOCALE_CHANGED, t } from './i18n/index.js';
 import { escapeHTML, getAppVersion } from './utils.js';
+import { getAppRuntime } from './platform/runtime.js';
 const PWA_UPDATE_PENDING_KEY = 'pwaUpdatePending';
 let serviceWorkerRegistration = null;
 let updateNotificationShown = false;
@@ -86,6 +87,8 @@ function dismissUpdateNotification() {
     updateNotificationShown = false;
 }
 function registerServiceWorker() {
+    if (!getAppRuntime().supportsPWA())
+        return;
     if (!('serviceWorker' in navigator))
         return;
     const isLocalhost = window.location.hostname === 'localhost' ||
@@ -139,6 +142,8 @@ function registerServiceWorker() {
     });
 }
 export function registerPwaGlobals() {
+    if (!getAppRuntime().supportsPWA())
+        return;
     window.reloadForUpdate = reloadForUpdate;
     window.dismissUpdateNotification = dismissUpdateNotification;
     registerServiceWorker();

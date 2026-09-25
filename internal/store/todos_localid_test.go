@@ -36,9 +36,9 @@ func TestTodoLocalID_ConcurrentCreatesAreUniqueAndContiguous(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{
-				Title:  "t",
-				Body:   "",
-				Tags:   nil,
+				Title:     "t",
+				Body:      "",
+				Tags:      nil,
 				ColumnKey: DefaultColumnBacklog,
 			}, ModeFull)
 			if err != nil {
@@ -56,7 +56,7 @@ func TestTodoLocalID_ConcurrentCreatesAreUniqueAndContiguous(t *testing.T) {
 	}
 
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -109,4 +109,3 @@ FROM (
 		t.Fatalf("expected no duplicate local_id rows, got %d duplicates", dupCount)
 	}
 }
-

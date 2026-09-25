@@ -200,7 +200,10 @@ func TestLegacyMoveServiceSuccessSequencesMoveBeforeRefresh(t *testing.T) {
 	const key contextKey = "request"
 	ctx := context.WithValue(context.Background(), key, "bound")
 	trace := []string{}
-	moved := store.Todo{ID: 7001, ProjectID: 17, LocalID: 4, Title: "moved card", ColumnKey: "doing"}
+	moved := store.Todo{
+		ID: 7001, ProjectID: 17, LocalID: 4, Title: "moved card", ColumnKey: "doing",
+		MoveFromColumnName: "Testing", MoveToColumnName: "Done",
+	}
 	moves := &legacyMoveStoreFake{todo: moved, trace: &trace}
 	refresh := &legacyMoveRefreshFake{trace: &trace}
 	prepared := NewLegacyMoveService(LegacyMoveServiceDependencies{Move: moves, Refresh: refresh}).Prepare(
@@ -218,7 +221,7 @@ func TestLegacyMoveServiceSuccessSequencesMoveBeforeRefresh(t *testing.T) {
 	if len(moves.calls) != 1 || len(refresh.calls) != 1 {
 		t.Fatalf("calls = move %d refresh %d, want 1 each", len(moves.calls), len(refresh.calls))
 	}
-	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != moved.ProjectID || got.reason != RefreshReasonTodoMoved || got.entity != (apprefresh.Entity{LocalID: 4, Title: "moved card"}) {
+	if got := refresh.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != moved.ProjectID || got.reason != RefreshReasonTodoMoved || got.entity != (apprefresh.Entity{LocalID: 4, Title: "moved card", FromName: "Testing", ToName: "Done"}) {
 		t.Fatalf("refresh call = %+v, want bound context, project %d, reason %q, entity #4 moved card", got, moved.ProjectID, RefreshReasonTodoMoved)
 	}
 	if !reflect.DeepEqual(result, LegacyMoveResult{Todo: moved}) {

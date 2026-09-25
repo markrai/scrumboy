@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_dashboard_background">#EBE7E0</color>
+    <color name="widget_dashboard_border">#D6D3D1</color>
+    <color name="widget_dashboard_title">#0F172A</color>
+    <color name="widget_dashboard_muted">#64748B</color>
+    <color name="widget_dashboard_body">#1E293B</color>
+    <color name="widget_dashboard_accent_fallback">#2563EB</color>
+    <color name="widget_dashboard_row">#F8FAFC</color>
+</resources>

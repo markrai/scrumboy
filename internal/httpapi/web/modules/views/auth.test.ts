@@ -55,6 +55,7 @@ const enCatalog = {
   "auth.login.failed": "Login failed.",
   "auth.oidc.button": "Continue with SSO",
   "auth.oidc.error.email": "A verified email address is required.",
+  "auth.oidc.error.domain_not_allowed": "Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access.",
   "auth.oidc.error.generic": "Authentication failed.",
   "auth.oidc.error.provider": "The identity provider returned an error.",
   "auth.oidc.error.state_invalid": "Login session expired or invalid. Please try again.",
@@ -983,6 +984,63 @@ describe("auth view i18n", () => {
     expect(document.getElementById("authPasswordToggle")?.getAttribute("aria-label")).toBe("Show password");
   });
 
+  it("keeps browser OIDC available but hides interactive OIDC in the Capacitor runtime", async () => {
+    await setupI18n("en");
+    const runtime = await import("../platform/runtime.js");
+    const auth = await import("./auth.js");
+    const transport = {
+      request: vi.fn(),
+      openEventStream: vi.fn(),
+      acquireResource: vi.fn(),
+      logout: vi.fn(),
+    };
+    runtime.installAppRuntime({
+      kind: "capacitor",
+      capability: () => null,
+      assetOrigin: () => "capacitor://localhost",
+      serverOrigin: () => "https://server.example",
+      publicLinkOrigin: () => "https://server.example",
+      supportsPWA: () => false,
+      supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => false,
+      startInteractiveOIDC: vi.fn(async () => undefined),
+      transport: () => transport,
+    });
+
+    auth.renderAuth({ next: "/dashboard", oidcEnabled: true, localAuthEnabled: true });
+
+    expect(document.getElementById("authSsoBtn")).toBeNull();
+    expect(document.querySelector(".auth-divider")).toBeNull();
+    expect(document.getElementById("authForm")).not.toBeNull();
+  });
+
+  it("requires the additive mobile capability and delegates native SSO to AppRuntime", async () => {
+    await setupI18n("en");
+    const runtime = await import("../platform/runtime.js");
+    const auth = await import("./auth.js");
+    const startInteractiveOIDC = vi.fn(async () => undefined);
+    runtime.installAppRuntime({
+      kind: "capacitor",
+      capability: () => null,
+      assetOrigin: () => "capacitor://localhost",
+      serverOrigin: () => "https://server.example",
+      publicLinkOrigin: () => "https://server.example",
+      supportsPWA: () => false,
+      supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => true,
+      startInteractiveOIDC,
+      transport: () => ({}) as never,
+    });
+
+    auth.renderAuth({ next: "/dashboard?view=mine", oidcEnabled: true, mobileOidcEnabled: false });
+    expect(document.getElementById("authSsoBtn")).toBeNull();
+
+    auth.renderAuth({ next: "/dashboard?view=mine", oidcEnabled: true, mobileOidcEnabled: true });
+    document.getElementById("authSsoBtn")?.click();
+    await flushPromises();
+    expect(startInteractiveOIDC).toHaveBeenCalledWith("/dashboard?view=mine");
+  });
+
   it("shows forgot password only for configured local sign-in outside bootstrap", async () => {
     await setupI18n("en");
     const auth = await import("./auth.js");
@@ -1626,6 +1684,17 @@ describe("auth view i18n", () => {
     await flushPromises();
 
     expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the specific browser error for a domain-restricted OIDC signup", async () => {
+    await setupI18n("en");
+    const auth = await import("./auth.js");
+    window.history.replaceState({}, "", "/?oidc_error=domain_not_allowed");
+
+    auth.renderAuth({ next: "/", oidcEnabled: true, localAuthEnabled: true });
+
+    expect(showToastMock).toHaveBeenCalledWith("Sign-up is restricted to specific email domains, and your account's email is not on the list. Contact an administrator for access.");
+    expect(window.location.search).toBe("");
   });
 
   it("preserves explicit next exactly and strips oidc_error from derived SSO return_to", async () => {

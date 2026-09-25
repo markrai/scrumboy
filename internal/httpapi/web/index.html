@@ -34,6 +34,7 @@
 
     <div id="bulkEditBar" class="bulk-edit-bar" style="display: none" aria-live="polite">
       <button type="button" class="btn bulk-edit-bar__btn" id="bulkEditBarBtn"></button>
+      <button type="button" class="btn btn--ghost bulk-edit-bar__btn" id="bulkArchiveBarBtn" data-i18n-text="board.bulkArchive.archiveSelected">Archive selected</button>
     </div>
 
     <dialog id="bulkEditDialog" class="dialog">
@@ -119,6 +120,12 @@
             <span class="todo-dialog-updated muted" id="todoDialogUpdated" aria-hidden="true"><span class="todo-dialog-datetime-value"></span></span>
             <button class="btn btn--ghost" type="button" id="closeTodoBtn" aria-label="Close" data-i18n-aria-label="common.close">✕</button>
           </div>
+        </div>
+
+        <div class="todo-archive-banner" id="todoArchiveBanner" role="status" hidden>
+          <strong data-i18n-text="todo.archive.banner">Archived</strong>
+          <span id="todoArchiveTimestamp"></span>
+          <span data-i18n-text="todo.archive.readOnly">Read-only until restored. Workflow state and history are preserved.</span>
         </div>
 
         <div class="todo-dialog__body">
@@ -213,6 +220,8 @@
 
         <div class="dialog__footer">
           <button class="btn btn--danger" type="button" id="deleteTodoBtn" data-i18n-text="common.delete">Delete</button>
+          <button class="btn btn--ghost" type="button" id="archiveTodoBtn" data-i18n-text="common.archive">Archive</button>
+          <button class="btn" type="button" id="restoreTodoBtn" data-i18n-text="common.restore">Restore</button>
           <div class="todo-dialog-dates muted" id="todoDialogCreated" aria-hidden="true"><span class="todo-dialog-datetime-value"></span><span class="todo-dialog-createdby" id="todoDialogCreatedBy"></span></div>
           <button class="btn" type="submit" value="save" id="saveTodoBtn" data-i18n-text="common.save">Save</button>
           <button class="btn btn--ghost todo-share-btn" type="button" id="shareTodoBtn" aria-label="Share story link" data-i18n-aria-label="todo.links.shareAriaLabel">↗</button>

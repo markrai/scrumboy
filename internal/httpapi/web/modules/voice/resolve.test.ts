@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
+import { buildMcpCall } from './execute.js';
 import { parseCommand } from './parser.js';
-import { resolveCommandDraft } from './resolve.js';
+import { matchVoiceTags, matchVoiceTagsDetailed, resolveCommandDraft } from './resolve.js';
+import { rankTitleCandidates, resolveExactTodoTitle, resolveTodoTarget } from './target-resolver.js';
 
 function board(overrides: Partial<Board> = {}): Board {
   return {
@@ -49,6 +51,41 @@ async function parseAndResolve(input: string, sourceBoard = board()) {
 }
 
 describe('voice command resolution', () => {
+  it('resolves create into the first active workflow column used by ordinary create', async () => {
+    const sourceBoard = board({
+      columnOrder: [
+        { key: 'todo', name: 'To Do', isDone: false },
+        { key: 'done', name: 'Done', isDone: true },
+      ],
+      columns: { todo: [], done: [] },
+    });
+
+    const resolved = await parseAndResolve('create todo Clean the garage', sourceBoard);
+
+    expect(resolved).toMatchObject({
+      ok: true,
+      value: {
+        ir: {
+          intent: 'todos.create',
+          projectId: 1,
+          projectSlug: 'alpha',
+          entities: { title: 'Clean the garage', columnKey: 'todo' },
+        },
+      },
+    });
+    if (!resolved.ok || resolved.value.ir.intent !== 'todos.create') {
+      throw new Error('create command did not reach the create execution boundary');
+    }
+    expect(buildMcpCall(resolved.value.ir)).toEqual({
+      tool: 'todos_create',
+      input: {
+        projectSlug: 'alpha',
+        title: 'Clean the garage',
+        columnKey: 'todo',
+      },
+    });
+  });
+
   it('maps spoken status aliases to active board lane keys', async () => {
     const resolved = await parseAndResolve('todo 56 is in progress');
 
@@ -355,6 +392,29 @@ describe('voice command resolution', () => {
     });
   });
 
+  it('finds an exact original title through authoritative search without accepting its fuzzy neighbor', async () => {
+    const callTool = vi.fn(async (tool: string, input: Record<string, unknown>) => {
+      if (tool === 'todos_search') return { items: [
+        { projectSlug: 'alpha', localId: 369, title: 'the story Goblins in Washington' },
+        { projectSlug: 'alpha', localId: 410, title: 'The Story of Goblins in Washington' },
+      ] };
+      if (tool === 'todos_get' && input.localId === 369) {
+        return { todo: { id: 369, localId: 369, title: 'the story Goblins in Washington', status: 'backlog' } };
+      }
+      throw new Error('unexpected call');
+    });
+
+    const resolved = await resolveExactTodoTitle('the story Goblins in Washington', {
+      projectSlug: 'alpha',
+      board: board({ columns: { backlog: [], not_started: [], doing: [], testing: [], done: [] } }),
+      callTool,
+    });
+
+    expect(resolved).toMatchObject({ ok: true, value: { todo: { localId: 369 } } });
+    expect(callTool).toHaveBeenCalledWith('todos_search', { projectSlug: 'alpha', query: 'the story Goblins in Washington', limit: 10 });
+    expect(callTool).toHaveBeenCalledWith('todos_get', { projectSlug: 'alpha', localId: 369 });
+  });
+
   it('returns top three ambiguous title candidates without guessing', async () => {
     const parsed = parseCommand('open login');
     if (!parsed.ok) throw new Error('parse failed');
@@ -389,6 +449,53 @@ describe('voice command resolution', () => {
         { localId: 14, title: 'Fix login button style' },
       ],
       draft: parsed.value,
+    });
+  });
+
+  it('ranks all three Goblin title candidates at 75 and leaves resolution ambiguous', async () => {
+    const candidates = [
+      { localId: 12, title: 'Goblins in Burtonsville' },
+      { localId: 13, title: 'Goblins in Washington' },
+      { localId: 14, title: 'Goblins on the way' },
+    ];
+    expect(rankTitleCandidates('Goblin', candidates)).toEqual(candidates.map(candidate => ({ ...candidate, score: 75 })));
+
+    const resolved = await resolveTodoTarget(
+      { kind: 'title', phrase: 'Goblin', display: 'Goblin' },
+      {
+        projectSlug: 'alpha',
+        board: board({ columns: {
+          backlog: candidates.map(candidate => ({ id: candidate.localId, ...candidate, status: 'backlog' })),
+          not_started: [], doing: [], testing: [], done: [],
+        } }),
+      },
+    );
+    expect(resolved).toEqual({
+      ok: false,
+      code: 'ambiguous_story',
+      message: 'More than one todo matched. Choose one.',
+      candidates,
+    });
+  });
+
+  it('resolves a sole strong Goblin title candidate without changing the scoring threshold', async () => {
+    const todo = { id: 12, localId: 12, title: 'Goblins in Burtonsville', status: 'backlog' };
+    const resolved = await resolveTodoTarget(
+      { kind: 'title', phrase: 'Goblin', display: 'Goblin' },
+      { projectSlug: 'alpha', board: board({ columns: { backlog: [todo], not_started: [], doing: [], testing: [], done: [] } }) },
+    );
+    expect(resolved).toEqual({ ok: true, value: { todo } });
+  });
+
+  it('returns the existing not-found result for an unrelated title reference', async () => {
+    const resolved = await resolveTodoTarget(
+      { kind: 'title', phrase: 'Purple Elephant', display: 'Purple Elephant' },
+      { projectSlug: 'alpha', board: board() },
+    );
+    expect(resolved).toEqual({
+      ok: false,
+      code: 'unknown_story',
+      message: 'No strong todo title match was found in this project.',
     });
   });
 
@@ -509,5 +616,45 @@ describe('voice command resolution', () => {
       code: 'invalid_schema',
       message: 'Selected todo was not one of the offered choices.',
     });
+  });
+});
+
+describe('spoken tag reference resolution', () => {
+  const taggedBoard = board({
+    tags: [
+      { name: 'Architecture', count: 0 },
+      { name: 'Architectural Debt', count: 0 },
+      { name: 'UX', count: 0 },
+      { name: 'QA', count: 0 },
+      { name: 'API', count: 0 },
+    ],
+  });
+
+  it.each([
+    ['Architecture', 'Architecture'],
+    ['architecture', 'Architecture'],
+    ['ARCHITECTURE', 'Architecture'],
+    ['UX', 'UX'],
+    ['U.X.', 'UX'],
+    ['U X', 'UX'],
+    ['u-x', 'UX'],
+    ['Q.A.', 'QA'],
+    ['A P I', 'API'],
+  ])('maps spoken %s onto authoritative %s', (spoken, authoritative) => {
+    expect(matchVoiceTags(spoken, taggedBoard)).toEqual([authoritative]);
+  });
+
+  it('does not invent semantic aliases', () => {
+    expect(matchVoiceTags('user experience', taggedBoard)).toEqual([]);
+  });
+
+  it('lets strong exact equality beat weaker shared prefixes', () => {
+    expect(matchVoiceTags('Architecture', taggedBoard)).toEqual(['Architecture']);
+  });
+
+  it('returns every collision at the same precedence level instead of choosing by object order', () => {
+    const collision = board({ tags: [{ name: 'RD', count: 0 }, { name: 'R&D', count: 0 }] });
+    expect(matchVoiceTagsDetailed('R D', collision.tags)).toEqual({ matches: ['RD', 'R&D'], kind: 'spoken_identity' });
+    expect(matchVoiceTags('RD', collision)).toEqual(['RD']);
   });
 });

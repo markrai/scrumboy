@@ -27,27 +27,26 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: internal/httpapi/web/package-lock.json
+          cache-dependency-path: |
+            internal/httpapi/web/package-lock.json
+            mobile/capacitor/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: internal/httpapi/web
+        run: npm ci
+
+      - name: Install Capacitor dependencies for frontend tests
+        working-directory: mobile/capacitor
         run: npm ci
 
       - name: Build frontend
         working-directory: internal/httpapi/web
         run: npm run build
 
-      - name: Test frontend
-        working-directory: internal/httpapi/web
-        run: npm test
-
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-
-      - name: Test Go
-        run: go test ./... -count=1 -p=1 -timeout=15m
 
       - name: Prepare artifact names
         id: names

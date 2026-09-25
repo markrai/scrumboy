@@ -2,6 +2,8 @@
 import { apiFetch, apiFetchForm } from './api.js';
 import { getUser } from './state/selectors.js';
 import { HEX_COLOR_RE } from './utils.js';
+import { getAppRuntime } from './platform/runtime.js';
+import type { AcquiredServerResource } from './platform/server-transport.js';
 
 const WALLPAPER_STORAGE_KEY = 'scrumboy_wallpaper';
 export const WALLPAPER_PREF_KEY = 'wallpaper';
@@ -21,6 +23,20 @@ export interface WallpaperState {
 }
 
 let cachedWallpaperJSON: string | null = null;
+
+type OwnedWallpaperResource = {
+  path: string;
+  resource: AcquiredServerResource;
+};
+
+type PendingWallpaperAcquisition = {
+  path: string;
+  controller: AbortController;
+};
+
+let wallpaperResourceGeneration = 0;
+let pendingWallpaperAcquisition: PendingWallpaperAcquisition | null = null;
+let ownedWallpaperResource: OwnedWallpaperResource | null = null;
 
 function defaultOff(): WallpaperState {
   return { v: 1, mode: 'off' };
@@ -57,6 +73,32 @@ export function parseWallpaperState(raw: string | null | undefined): WallpaperSt
 
 function serializeWallpaperState(st: WallpaperState): string {
   return JSON.stringify(st);
+}
+
+function releaseResource(resource: AcquiredServerResource): void {
+  try {
+    resource.release();
+  } catch {
+    // Resource cleanup must not break wallpaper state changes.
+  }
+}
+
+function supersedeWallpaperAcquisition(): number {
+  wallpaperResourceGeneration += 1;
+  pendingWallpaperAcquisition?.controller.abort();
+  pendingWallpaperAcquisition = null;
+  return wallpaperResourceGeneration;
+}
+
+function releaseOwnedWallpaperResource(): void {
+  const owned = ownedWallpaperResource;
+  ownedWallpaperResource = null;
+  if (owned) releaseResource(owned.resource);
+}
+
+function clearServerWallpaperRendering(imgEl: HTMLElement): void {
+  imgEl.style.backgroundImage = '';
+  releaseOwnedWallpaperResource();
 }
 
 /** Effective wallpaper state (localStorage cache; server merged via loadUserWallpaper in full mode). */
@@ -113,7 +155,7 @@ export async function loadUserWallpaper(): Promise<void> {
 
 async function verifyWallpaperImageOnServer(rev: number): Promise<boolean> {
   try {
-    const res = await fetch(`/api/user/wallpaper/image?rev=${encodeURIComponent(String(rev))}`, {
+    const res = await getAppRuntime().transport().request(`/api/user/wallpaper/image?rev=${encodeURIComponent(String(rev))}`, {
       method: 'GET',
       credentials: 'same-origin',
     });
@@ -125,14 +167,21 @@ async function verifyWallpaperImageOnServer(rev: number): Promise<boolean> {
 
 /** Clear wallpaper visuals only; does not read or write preferences (anonymous deployment). */
 function applyWallpaperVisualOff(): void {
+  supersedeWallpaperAcquisition();
   const shell = document.getElementById(SHELL_ID) as HTMLElement | null;
-  if (!shell) return;
+  if (!shell) {
+    releaseOwnedWallpaperResource();
+    return;
+  }
   const imgEl = shell.querySelector('.wallpaper-shell__image') as HTMLElement | null;
-  if (!imgEl) return;
+  if (!imgEl) {
+    releaseOwnedWallpaperResource();
+    return;
+  }
   document.documentElement.removeAttribute('data-wallpaper-active');
   document.documentElement.removeAttribute('data-wallpaper-source');
   shell.classList.remove('wallpaper-shell--visible');
-  imgEl.style.backgroundImage = '';
+  clearServerWallpaperRendering(imgEl);
   imgEl.style.backgroundColor = '';
 }
 
@@ -153,10 +202,11 @@ function ensureShell(): HTMLElement {
   return el;
 }
 
-function applyBuiltinWallpaper(shell: HTMLElement, imgEl: HTMLElement): void {
+function applyBuiltinWallpaper(shell: HTMLElement, imgEl: HTMLElement, generation: number): void {
   const url = BUILTIN_DEFAULT_WALLPAPER_URL;
   const probe = new Image();
   probe.onload = () => {
+    if (generation !== wallpaperResourceGeneration) return;
     document.documentElement.setAttribute('data-wallpaper-active', '');
     shell.classList.add('wallpaper-shell--visible');
     document.documentElement.setAttribute('data-wallpaper-source', 'image');
@@ -165,28 +215,77 @@ function applyBuiltinWallpaper(shell: HTMLElement, imgEl: HTMLElement): void {
     setStoredWallpaperState(defaultBuiltin());
   };
   probe.onerror = () => {
+    if (generation !== wallpaperResourceGeneration) return;
     setStoredWallpaperState(defaultOff());
     applyWallpaperState(defaultOff());
   };
   probe.src = url;
 }
 
+function installServerWallpaperResource(
+  shell: HTMLElement,
+  imgEl: HTMLElement,
+  path: string,
+  resource: AcquiredServerResource,
+): void {
+  document.documentElement.setAttribute('data-wallpaper-active', '');
+  document.documentElement.setAttribute('data-wallpaper-source', 'image');
+  shell.classList.add('wallpaper-shell--visible');
+  imgEl.style.backgroundColor = '';
+  imgEl.style.backgroundImage = `url("${resource.url}")`;
+
+  const previous = ownedWallpaperResource;
+  ownedWallpaperResource = { path, resource };
+  if (previous && previous.resource !== resource) releaseResource(previous.resource);
+}
+
+function acquireServerWallpaper(shell: HTMLElement, imgEl: HTMLElement, path: string): void {
+  if (pendingWallpaperAcquisition?.path === path) return;
+
+  const generation = supersedeWallpaperAcquisition();
+  if (ownedWallpaperResource?.path === path) {
+    installServerWallpaperResource(shell, imgEl, path, ownedWallpaperResource.resource);
+    return;
+  }
+
+  const controller = new AbortController();
+  pendingWallpaperAcquisition = { path, controller };
+  void getAppRuntime().transport().acquireResource(path, { signal: controller.signal }).then((resource) => {
+    if (generation !== wallpaperResourceGeneration) {
+      releaseResource(resource);
+      return;
+    }
+    pendingWallpaperAcquisition = null;
+    installServerWallpaperResource(shell, imgEl, path, resource);
+  }).catch(() => {
+    if (generation === wallpaperResourceGeneration) pendingWallpaperAcquisition = null;
+  });
+}
+
 export function applyWallpaperState(st: WallpaperState): void {
   const shell = ensureShell();
   const imgEl = shell.querySelector('.wallpaper-shell__image') as HTMLElement | null;
-  if (!imgEl) return;
+  if (!imgEl) {
+    supersedeWallpaperAcquisition();
+    releaseOwnedWallpaperResource();
+    return;
+  }
 
   if (st.mode === 'off') {
+    supersedeWallpaperAcquisition();
     document.documentElement.removeAttribute('data-wallpaper-active');
     document.documentElement.removeAttribute('data-wallpaper-source');
     shell.classList.remove('wallpaper-shell--visible');
-    imgEl.style.backgroundImage = '';
+    clearServerWallpaperRendering(imgEl);
     imgEl.style.backgroundColor = '';
     return;
   }
 
   if (st.mode === 'builtin') {
-    applyBuiltinWallpaper(shell, imgEl);
+    const generation = supersedeWallpaperAcquisition();
+    clearServerWallpaperRendering(imgEl);
+    imgEl.style.backgroundColor = '';
+    applyBuiltinWallpaper(shell, imgEl, generation);
     return;
   }
 
@@ -194,17 +293,19 @@ export function applyWallpaperState(st: WallpaperState): void {
   shell.classList.add('wallpaper-shell--visible');
 
   if (st.mode === 'color' && st.hex) {
+    supersedeWallpaperAcquisition();
     document.documentElement.setAttribute('data-wallpaper-source', 'color');
-    imgEl.style.backgroundImage = '';
+    clearServerWallpaperRendering(imgEl);
     imgEl.style.backgroundColor = st.hex;
     return;
   }
 
   if (st.mode === 'image' && st.rev) {
-    document.documentElement.setAttribute('data-wallpaper-source', 'image');
-    imgEl.style.backgroundColor = '';
-    const url = `/api/user/wallpaper/image?rev=${encodeURIComponent(String(st.rev))}`;
-    imgEl.style.backgroundImage = `url("${url}")`;
+    acquireServerWallpaper(
+      shell,
+      imgEl,
+      `/api/user/wallpaper/image?rev=${encodeURIComponent(String(st.rev))}`,
+    );
     return;
   }
 

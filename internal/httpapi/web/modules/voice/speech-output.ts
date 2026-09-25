@@ -1,5 +1,15 @@
+import { getVoiceSpeechRate } from '../core/voice-speech-rate-preferences.js';
+
 export function prepareTextForSpeechSynthesis(text: string): string {
-  return String(text ?? "").replace(/^(Create|Open|Delete|Move|Assign) todo\b/i, "$1 to do");
+  const value = String(text ?? "");
+  const leadingCommand = value.replace(
+    /^(Create|Open|Delete|Move|Assign|Unassign) todo\b/i,
+    "$1 to do",
+  );
+  return leadingCommand.replace(
+    /^(Add tag .+ to|Remove tag .+ from) todo(?=\s+#\d+\b)/i,
+    "$1 to do",
+  );
 }
 
 export function speak(text: string, options: { signal?: AbortSignal } = {}): Promise<void> {
@@ -12,6 +22,7 @@ export function speak(text: string, options: { signal?: AbortSignal } = {}): Pro
 
     let settled = false;
     const utterance = new SpeechSynthesisUtterance(prepareTextForSpeechSynthesis(text));
+    utterance.rate = getVoiceSpeechRate();
     const cleanup = () => {
       utterance.onend = null;
       utterance.onerror = null;

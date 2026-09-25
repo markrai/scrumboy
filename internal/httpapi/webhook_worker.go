@@ -4,22 +4,58 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"log"
 	"net/http"
 	"time"
+
+	"scrumboy/internal/safehttp"
 )
+
+var errWebhookRedirect = errors.New("webhook redirects are not allowed")
 
 type webhookWorker struct {
 	*retryWorker[webhookDelivery]
 }
 
 func newWebhookWorker(queue *webhookQueue, logger *log.Logger) *webhookWorker {
-	client := &http.Client{Timeout: 10 * time.Second}
+	return newWebhookWorkerWithClient(queue, logger, newWebhookHTTPClient())
+}
+
+func newWebhookWorkerWithClient(queue *webhookQueue, logger *log.Logger, client *http.Client) *webhookWorker {
 	send := func(d webhookDelivery) error {
 		return sendWebhook(client, d)
 	}
-	return &webhookWorker{retryWorker: newRetryWorker(queue, logger, "webhook", send)}
+	inner := newRetryWorker(queue, logger, "webhook", send)
+	inner.isPermanent = isPermanentWebhookError
+	return &webhookWorker{retryWorker: inner}
+}
+
+func newWebhookHTTPClient() *http.Client {
+	return newWebhookHTTPClientWithDialer(safehttp.Dialer{})
+}
+
+func newWebhookHTTPClientWithDialer(d safehttp.Dialer) *http.Client {
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errWebhookRedirect
+		},
+		Transport: &http.Transport{
+			Proxy:               nil,
+			DisableKeepAlives:   true,
+			ForceAttemptHTTP2:   true,
+			TLSHandshakeTimeout: 5 * time.Second,
+			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+			DialContext:         safehttp.NewDialContext(d),
+		},
+	}
+}
+
+func isPermanentWebhookError(err error) bool {
+	return errors.Is(err, safehttp.ErrForbidden) || errors.Is(err, errWebhookRedirect)
 }
 
 func sendWebhook(client *http.Client, d webhookDelivery) error {

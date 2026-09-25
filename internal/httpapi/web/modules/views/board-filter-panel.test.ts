@@ -33,7 +33,7 @@ vi.mock('../state/selectors.js', () => ({
   getSearch: () => selectorState.search,
   getSlug: () => selectorState.slug,
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => selectorState.tag ? [selectorState.tag] : [],
   getTagColors: () => selectorState.tagColors,
   getUser: () => selectorState.user,
 }));
@@ -73,11 +73,17 @@ function makeTiers(): PriorityTier[] {
   ];
 }
 
-function renderFilterShell(assignee: string | null, sort: string | null, user: any = { id: 1, name: 'Me', email: 'me@example.com' }, priority: string | null = null): void {
+function renderFilterShell(
+  assignee: string | null,
+  sort: string | null,
+  user: any = { id: 1, name: 'Me', email: 'me@example.com' },
+  priority: string | null = null,
+  panelOptions: Parameters<typeof buildFilterPanelHtml>[6] = {},
+): void {
   document.body.innerHTML = `
     <div class="search-input-wrapper">
       <input id="searchInput" type="text" />
-      ${buildFilterPanelHtml(assignee, sort, makeMembers(), user, priority, makeTiers())}
+      ${buildFilterPanelHtml(assignee, sort, makeMembers(), user, priority, makeTiers(), panelOptions)}
     </div>
   `;
 }
@@ -87,10 +93,10 @@ async function loadModules() {
   return { boardFilters };
 }
 
-async function setupState(url: string, opts?: { tag?: string; search?: string; assignee?: string | null; sort?: string | null; priority?: string | null; user?: any }) {
+async function setupState(url: string, opts?: { tag?: string; search?: string; assignee?: string | null; sort?: string | null; priority?: string | null; user?: any; panelOptions?: Parameters<typeof buildFilterPanelHtml>[6] }) {
   toastMock.mockClear();
   window.history.replaceState({}, '', url);
-  renderFilterShell(opts?.assignee ?? null, opts?.sort ?? null, opts?.user, opts?.priority ?? null);
+  renderFilterShell(opts?.assignee ?? null, opts?.sort ?? null, opts?.user, opts?.priority ?? null, opts?.panelOptions);
 
   const { boardFilters } = await loadModules();
   selectorState.board = null;
@@ -145,6 +151,31 @@ describe('board filter panel (assignee + sort)', () => {
       expect(html).toContain('data-sort-option=""');
       expect(html).toContain('data-sort-option="newest"');
       expect(html).toContain('data-sort-option="oldest"');
+    });
+
+    it('renders Sprint controls only for Omni boards with sprints enabled', () => {
+      const omni = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
+        layout: 'omni',
+        sprintsEnabled: true,
+        sprintId: '3',
+        sprintData: { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'ACTIVE' }] },
+      });
+      expect(omni).toContain('data-sprint-option=""');
+      expect(omni).toContain('data-sprint-option="scheduled"');
+      expect(omni).toContain('data-sprint-option="unscheduled"');
+      expect(omni).toContain('class="search-filter-option is-active search-filter-option--active-sprint" data-sprint-option="3"');
+
+      const legacy = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
+        layout: 'legacy',
+        sprintsEnabled: true,
+        sprintId: '3',
+      });
+      expect(legacy).not.toContain('data-sprint-option');
+    });
+
+    it('marks the chevron active for Sprint only in Omni', () => {
+      expect(isBoardFilterActive(null, null, null, '3', 'omni')).toBe(true);
+      expect(isBoardFilterActive(null, null, null, '3', 'legacy')).toBe(false);
     });
 
     it('omits the "Assigned to me" option when there is no logged-in user (anonymous/temp boards)', () => {
@@ -300,11 +331,62 @@ describe('board filter panel (assignee + sort)', () => {
 
       (currentPanel.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
       expect(reloadBoard).toHaveBeenCalledTimes(1);
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', [], null, null, null, 'newest', null);
     });
   });
 
   describe('URL param round-trip and reload wiring', () => {
+    it('refreshes the Omni Sprint section when sprint data arrives asynchronously', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const { boardFilters } = await setupState('/alpha?sprintId=4', {
+        panelOptions: {
+          layout: 'omni',
+          sprintsEnabled: true,
+          sprintId: '4',
+          sprintData: null,
+        },
+      });
+      selectorState.board = {
+        project: { slug: 'alpha', sprintsEnabled: true },
+        tags: [],
+        columns: {},
+      } as Board;
+
+      boardFilters.setSprintChipDataForSlug('alpha', {
+        sprints: [{ id: 41, number: 4, name: 'Async Sprint', state: 'ACTIVE' }],
+      });
+      boardFilters.updateChipsOnly('4');
+
+      const option = document.querySelector('[data-sprint-option="4"]');
+      expect(option?.textContent).toContain('Async Sprint');
+      expect(option?.classList.contains('is-active')).toBe(true);
+      expect(option?.classList.contains('search-filter-option--active-sprint')).toBe(true);
+      expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
+    });
+
+    it('picking an Omni Sprint preserves the selected tag and composes every filter', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const { boardFilters } = await setupState('/alpha?tag=bug&tag=feature&search=query&assignee=me&sort=newest&priority=high', {
+        tag: 'bug',
+        search: 'query',
+        panelOptions: {
+          layout: 'omni',
+          sprintsEnabled: true,
+          sprintData: { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'PLANNED' }] },
+        },
+      });
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+
+      (document.querySelector('[data-sprint-option="3"]') as HTMLButtonElement).click();
+
+      const params = new URL(window.location.href).searchParams;
+      expect(params.getAll('tag')).toEqual(['bug', 'feature']);
+      expect(params.get('sprintId')).toBe('3');
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug', 'feature'], 'query', '3', 'me', 'newest', 'high');
+      expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
+    });
+
     it('picking an assignee option sets the URL param and reloads with all 6 positional args', async () => {
       const { boardFilters } = await setupState('/alpha?tag=bug&search=query&sprintId=7', { tag: 'bug', search: 'query' });
       const reloadBoard = vi.fn().mockResolvedValue(undefined);
@@ -315,7 +397,7 @@ describe('board filter panel (assignee + sort)', () => {
 
       expect(new URL(window.location.href).searchParams.get('assignee')).toBe('unassigned');
       expect(reloadBoard).toHaveBeenCalledTimes(1);
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', 'bug', 'query', '7', 'unassigned', null, null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug'], 'query', '7', 'unassigned', null, null);
       expect(toastMock).toHaveBeenCalledWith(expect.stringContaining('Unassigned'));
     });
 
@@ -326,13 +408,13 @@ describe('board filter panel (assignee + sort)', () => {
 
       (document.querySelector('[data-assignee-option="me"]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('assignee')).toBe('me');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, 'me', null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, 'me', null, null);
       expect(toastMock).toHaveBeenCalledTimes(1);
 
       toastMock.mockClear();
       (document.querySelector('[data-assignee-option=""]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('assignee')).toBeNull();
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       // Clearing back to the neutral option is not itself "filtering" — no toast.
       expect(toastMock).not.toHaveBeenCalled();
     });
@@ -345,7 +427,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-assignee-option="5"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('assignee')).toBe('5');
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, '5', null, null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', [], null, null, '5', null, null);
     });
 
     it('picking a sort option sets the sort param, reloads, and toasts "Sorted: ..."', async () => {
@@ -356,13 +438,13 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, 'newest', null);
       expect(toastMock).toHaveBeenCalledWith(expect.stringContaining('Newest first'));
 
       toastMock.mockClear();
       (document.querySelector('[data-sort-option=""]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('sort')).toBeNull();
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
     });
 
@@ -396,7 +478,7 @@ describe('board filter panel (assignee + sort)', () => {
         method: 'PUT',
         body: JSON.stringify({ key: 'boardTodoSort', value: 'default' }),
       }));
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
     });
 
@@ -411,7 +493,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-sort-option="newest"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('sort')).toBe('newest');
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', '', null, null, null, 'newest', null);
+      expect(reloadBoard).toHaveBeenCalledWith('alpha', [], null, null, null, 'newest', null);
       expect(fetchMock).not.toHaveBeenCalled();
       expect(localStorage.getItem(BOARD_TODO_SORT_STORAGE_KEY)).toBeNull();
       expect(getBoardTodoSortPreference()).toBe('default');
@@ -440,13 +522,13 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-priority-option="high"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('priority')).toBe('high');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, 'high');
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, 'high');
       expect(toastMock).toHaveBeenCalledWith(expect.stringContaining('High'));
 
       toastMock.mockClear();
       (document.querySelector('[data-priority-option=""]') as HTMLButtonElement).click();
       expect(new URL(window.location.href).searchParams.get('priority')).toBeNull();
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, null);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, null);
       expect(toastMock).not.toHaveBeenCalled();
     });
 
@@ -458,7 +540,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector(`[data-priority-option="${NO_PRIORITY_FILTER_VALUE}"]`) as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('priority')).toBe(NO_PRIORITY_FILTER_VALUE);
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, NO_PRIORITY_FILTER_VALUE);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, NO_PRIORITY_FILTER_VALUE);
     });
 
     it('picking a real tier whose key is none keeps the literal tier key', async () => {
@@ -469,7 +551,7 @@ describe('board filter panel (assignee + sort)', () => {
       (document.querySelector('[data-priority-option="none"]') as HTMLButtonElement).click();
 
       expect(new URL(window.location.href).searchParams.get('priority')).toBe('none');
-      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', '', null, null, null, null, 'none');
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', [], null, null, null, null, 'none');
     });
 
     it('toggles the --active pulse class on the toggle button as the priority filter is applied/cleared', async () => {

@@ -25,6 +25,8 @@ type AuthorizedCreatorNotification struct {
 	LocalID               int64
 	Title                 string
 	ActivityReason        string
+	FromName              string
+	ToName                string
 	RecipientUserID       int64
 	ActorUserID           int64
 	MaterialChanged       bool
@@ -63,6 +65,8 @@ func (s *CreatorNotificationAuthorizationService) Authorize(
 		LocalID:               request.LocalID,
 		Title:                 request.Title,
 		ActivityReason:        request.ActivityReason,
+		FromName:              request.FromName,
+		ToName:                request.ToName,
 		RecipientUserID:       request.CreatedByUserID,
 		ActorUserID:           request.ActorUserID,
 		MaterialChanged:       request.MaterialChanged,
@@ -113,6 +117,8 @@ func (s *CreatorNotificationAuthorizationService) authorizeCurrentRecipient(
 		LocalID:               candidate.LocalID,
 		Title:                 candidate.Title,
 		ActivityReason:        candidate.ActivityReason,
+		FromName:              candidate.FromName,
+		ToName:                candidate.ToName,
 		RecipientUserID:       candidate.RecipientUserID,
 		ActorUserID:           candidate.ActorUserID,
 		MaterialChanged:       candidate.MaterialChanged,

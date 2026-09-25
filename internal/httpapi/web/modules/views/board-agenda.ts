@@ -13,6 +13,8 @@ export const AGENDA_HOUR_HEIGHT_PX = 48;
 export const AGENDA_HOUR_HEIGHT_MOBILE_PX = 96;
 export const AGENDA_HOUR_HEIGHT_MOBILE_MQ = '(max-width: 767px)';
 export const AGENDA_MIN_VISIBLE_MINUTES = 15;
+/** Visual span floor for timed cards; packing still uses AGENDA_MIN_VISIBLE_MINUTES. */
+export const AGENDA_MIN_DISPLAY_MINUTES = 60;
 export const AGENDA_DAY_MINUTES = 1440;
 /** Place "now" this far down the initial viewport (presentation constant, not a preference). */
 export const AGENDA_SMART_NOW_OFFSET_FRACTION = 1 / 3;
@@ -428,7 +430,9 @@ function formatHourLabel(hour: number): string {
 
 function renderTimedCard(layout: AgendaTimedLayout, timezone: string, window: AgendaDayWindow): string {
   const startMin = layout.startMinute - window.startMinute;
-  const spanMin = Math.max(layout.endMinute - layout.startMinute, 0);
+  const packedSpan = Math.max(layout.endMinute - layout.startMinute, 0);
+  const remaining = window.endMinute - layout.startMinute;
+  const spanMin = Math.max(packedSpan, Math.min(AGENDA_MIN_DISPLAY_MINUTES, remaining));
   const widthPct = 100 / layout.columnCount;
   const leftPct = widthPct * layout.column;
   const style = `--agenda-start-min:${startMin};--agenda-span-min:${spanMin};left:calc(${leftPct}% + 2px);width:calc(${widthPct}% - 4px)`;
@@ -730,6 +734,30 @@ export function syncOpenBoardAgendaLayout(opts: { forceAutoFocus?: boolean } = {
   });
 }
 
+function agendaEventSameClockTime(event: AgendaEvent, timezone: string): boolean {
+  if (event.allDay) return false;
+  const startLabel = formatAgendaClockTime(event.startsAt, timezone);
+  const endLabel = formatAgendaClockTime(event.endsAt, timezone);
+  return !!startLabel && startLabel === endLabel;
+}
+
+function formatAgendaEventDuration(event: AgendaEvent): string {
+  const start = Date.parse(event.startsAt);
+  const end = Date.parse(event.endsAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return '';
+  const totalMinutes = Math.round((end - start) / 60_000);
+  if (totalMinutes <= 0) return '';
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) {
+    return t('board.agenda.duration.hoursAndMinutes', { h: hours, m: minutes });
+  }
+  if (hours > 0) {
+    return t('board.agenda.duration.hours', { n: hours });
+  }
+  return t('board.agenda.duration.minutes', { n: minutes });
+}
+
 function formatAgendaEventTime(event: AgendaEvent, timezone: string): string {
   if (event.allDay) {
     return t('board.agenda.allDay');
@@ -739,7 +767,11 @@ function formatAgendaEventTime(event: AgendaEvent, timezone: string): string {
     return '';
   }
   const endLabel = formatAgendaClockTime(event.endsAt, timezone);
-  return endLabel ? `${startLabel} - ${endLabel}` : startLabel;
+  if (!endLabel || endLabel === startLabel) {
+    return startLabel;
+  }
+  const duration = formatAgendaEventDuration(event);
+  return duration ? `${startLabel} - ${endLabel} (${duration})` : `${startLabel} - ${endLabel}`;
 }
 
 function formatAgendaClockTime(iso: string, timezone: string): string {

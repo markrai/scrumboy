@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeLookup, normalizeTitleReference, parseSpokenNumber } from './normalize.js';
-import { normalizeConfirmationResponse, normalizeDisambiguationChoice, normalizeEntityAlias } from './vocabulary.js';
+import { normalizeLookup, normalizeTitleReference, normalizeVoiceReviewUtterance, parseSpokenNumber, spokenReferenceIdentity } from './normalize.js';
+import { canonicalizeTagName } from './tag-canonicalization.js';
+import { classifyVoiceBinaryDecision, classifyVoiceReviewDecision, normalizeConfirmationResponse, normalizeDisambiguationChoice, normalizeEntityAlias } from './vocabulary.js';
 
 describe('voice command normalization', () => {
   it('normalizes supported story ID forms', () => {
@@ -28,6 +29,49 @@ describe('voice command normalization', () => {
   it('normalizes lookup phrases without preserving punctuation variants', () => {
     expect(normalizeLookup('In-Progress!')).toBe('in progress');
     expect(normalizeLookup('"Ada Lovelace"')).toBe('ada lovelace');
+    expect(normalizeLookup('ＦＵＬＬＷＩＤＴＨ')).toBe('fullwidth');
+  });
+
+  it('normalizes and compositionally classifies bounded review phrases', () => {
+    expect(normalizeVoiceReviewUtterance('  Sure.  ')).toBe('sure');
+    expect(normalizeVoiceReviewUtterance('Yes, please.')).toBe('yes please');
+    expect(normalizeVoiceReviewUtterance('No, thanks.')).toBe('no thanks');
+    expect(normalizeVoiceReviewUtterance('That’s fine!')).toBe("that's fine");
+    expect(classifyVoiceReviewDecision('Go ahead.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Sure, thing.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Yep. Go ahead.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Yeah, go ahead.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Sure, please do.')).toBe('confirm');
+    expect(classifyVoiceReviewDecision('Don’t do it.')).toBe('cancel');
+    expect(classifyVoiceReviewDecision('Sure, change the lane first.')).toBe('unknown');
+    expect(classifyVoiceReviewDecision('Yes, but assign Sarah.')).toBe('unknown');
+    expect(classifyVoiceReviewDecision('Okay, and tag it UX.')).toBe('unknown');
+    expect(classifyVoiceReviewDecision("Yep, don't do it.")).toBe('unknown');
+    expect(classifyVoiceReviewDecision('No... actually go ahead.')).toBe('unknown');
+    expect(classifyVoiceReviewDecision('yes no')).toBe('unknown');
+    expect(classifyVoiceReviewDecision('yesterday')).toBe('unknown');
+    expect(classifyVoiceBinaryDecision('No thanks.')).toBe('no');
+    expect(classifyVoiceBinaryDecision('Stop.')).toBe('cancel');
+  });
+
+  it('derives a compact identity only for safely spelled alphanumeric references', () => {
+    for (const value of ['UX', 'U.X.', 'U. X.', 'U X', 'u-x', 'u x']) {
+      expect(spokenReferenceIdentity(value).spelled).toBe('ux');
+    }
+    expect(spokenReferenceIdentity('A P I').spelled).toBe('api');
+    expect(spokenReferenceIdentity('R&D').spelled).toBe('rd');
+    expect(spokenReferenceIdentity('foo-bar').spelled).toBeNull();
+    expect(spokenReferenceIdentity('user experience').spelled).toBeNull();
+    expect(spokenReferenceIdentity('C++').spelled).toBeNull();
+  });
+
+  it('mirrors server tag canonicalization without changing lookup identity', () => {
+    expect(canonicalizeTagName('  Make   Space  ')).toBe('make-space');
+    expect(canonicalizeTagName('--Architecture---Review--')).toBe('architecture-review');
+    expect(canonicalizeTagName('UX')).toBe('ux');
+    for (const value of ['', '   ', 'R&D', 'C++', 'bad!', 'x'.repeat(33)]) {
+      expect(canonicalizeTagName(value)).toBeNull();
+    }
   });
 
   it('normalizes title suffix number markers deterministically', () => {

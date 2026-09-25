@@ -22,7 +22,7 @@ type mcpBoardReadCall struct {
 	limit          int
 	afterA         int64
 	afterB         int64
-	tagFilter      string
+	tagFilters     []string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
 	priorityFilter store.PriorityFilter
@@ -129,7 +129,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 	limit int,
 	afterA int64,
 	afterB int64,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -144,7 +144,7 @@ func (f *mcpBoardReadLaneFake) ListTodosForBoardLane(
 		limit:          limit,
 		afterA:         afterA,
 		afterB:         afterB,
-		tagFilter:      tagFilter,
+		tagFilters:     append([]string(nil), tagFilters...),
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
 		priorityFilter: priorityFilter,
@@ -167,7 +167,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 	ctx context.Context,
 	projectID int64,
 	columnKey string,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -178,7 +178,7 @@ func (f *mcpBoardReadLaneFake) CountTodosForBoardLane(
 		ctx:            ctx,
 		projectID:      projectID,
 		columnKey:      columnKey,
-		tagFilter:      tagFilter,
+		tagFilters:     append([]string(nil), tagFilters...),
 		searchFilter:   searchFilter,
 		assigneeFilter: assigneeFilter,
 		priorityFilter: priorityFilter,
@@ -375,7 +375,7 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 	prepared := prepareMCPBoardRead(t, h, ctx)
 
 	result, err := prepared.Read(MCPBoardReadQuery{
-		TagFilter:      "tag",
+		TagFilters:     []string{"tag"},
 		SearchFilter:   "search",
 		AssigneeFilter: assignee,
 		PriorityFilter: priority,
@@ -430,7 +430,7 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 			call.operation != "list:shipped" && call.operation != "count:shipped" {
 			continue
 		}
-		if call.projectID != 17 || call.tagFilter != "tag" || call.searchFilter != "search" ||
+		if call.projectID != 17 || !reflect.DeepEqual(call.tagFilters, []string{"tag"}) || call.searchFilter != "search" ||
 			!reflect.DeepEqual(call.assigneeFilter, assignee) ||
 			!reflect.DeepEqual(call.priorityFilter, priority) ||
 			call.sprintFilter != (store.SprintFilter{Mode: "sprint", SprintID: 91}) {
@@ -443,6 +443,33 @@ func TestMCPBoardReadSuccessfulOrchestration(t *testing.T) {
 				call.sortOrder != store.SortOrderDefault {
 				t.Fatalf("%s list arguments = %#v", call.operation, call)
 			}
+		}
+	}
+}
+
+func TestMCPBoardReadForwardsEveryTagFilter(t *testing.T) {
+	h := newMCPBoardReadHarness()
+	h.lanes.pages["triage"] = mcpBoardReadLanePage{
+		todos: []store.Todo{
+			{ID: 101, ProjectID: 17, LocalID: 1, ColumnKey: "triage", Rank: 100},
+		},
+	}
+	h.lanes.counts["triage"] = 1
+	h.lanes.counts["shipped"] = 0
+	prepared := prepareMCPBoardRead(t, h, context.Background())
+
+	wantTags := []string{"feature", "UX"}
+	_, err := prepared.Read(MCPBoardReadQuery{TagFilters: wantTags, Limit: 20})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	for _, call := range h.recorder.calls {
+		if call.operation != "list:triage" && call.operation != "count:triage" &&
+			call.operation != "list:shipped" && call.operation != "count:shipped" {
+			continue
+		}
+		if !reflect.DeepEqual(call.tagFilters, wantTags) {
+			t.Fatalf("%s tagFilters = %#v, want %#v", call.operation, call.tagFilters, wantTags)
 		}
 	}
 }

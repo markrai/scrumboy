@@ -15,7 +15,7 @@ type recordingLegacyReadStore struct {
 
 	ctx            context.Context
 	projectContext *store.ProjectContext
-	tagFilter      string
+	tagFilters     []string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
 	priorityFilter store.PriorityFilter
@@ -57,7 +57,7 @@ func (s *recordingLegacyReadAccessStore) GetProjectContextForRead(
 func (s *recordingLegacyReadStore) GetBoard(
 	ctx context.Context,
 	pc *store.ProjectContext,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -73,7 +73,7 @@ func (s *recordingLegacyReadStore) GetBoard(
 	s.calls++
 	s.ctx = ctx
 	s.projectContext = pc
-	s.tagFilter = tagFilter
+	s.tagFilters = tagFilters
 	s.searchFilter = searchFilter
 	s.assigneeFilter = assigneeFilter
 	s.priorityFilter = priorityFilter
@@ -101,7 +101,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesToExistingService(t *testing.T) {
 	ctx := context.WithValue(context.Background(), readServiceContextKey{}, "initial")
 	pc := &store.ProjectContext{Project: store.Project{ID: 7, Slug: "project-slug"}}
 	query := Query{
-		TagFilter:      "focus",
+		TagFilters:     []string{"focus"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -168,7 +168,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesToExistingService(t *testing.T) {
 	if initialStore.projectContext == pc || !reflect.DeepEqual(*initialStore.projectContext, *pc) {
 		t.Fatal("ReadInitial did not use a value-equivalent copy of the resolved project context")
 	}
-	if initialStore.tagFilter != query.TagFilter ||
+	if !reflect.DeepEqual(initialStore.tagFilters, query.TagFilters) ||
 		initialStore.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(initialStore.assigneeFilter, query.AssigneeFilter) ||
 		!reflect.DeepEqual(initialStore.priorityFilter, query.PriorityFilter) ||
@@ -206,7 +206,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesToExistingService(t *testing.T) {
 		Limit:          17,
 		AfterA:         301,
 		AfterB:         302,
-		TagFilter:      "focus",
+		TagFilters:     []string{"focus"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -264,7 +264,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesToExistingService(t *testing.T) {
 		laneStore.limit != query.Limit ||
 		laneStore.afterA != query.AfterA ||
 		laneStore.afterB != query.AfterB ||
-		laneStore.tagFilter != query.TagFilter ||
+		!reflect.DeepEqual(laneStore.tagFilters, query.TagFilters) ||
 		laneStore.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(laneStore.assigneeFilter, query.AssigneeFilter) ||
 		!reflect.DeepEqual(laneStore.priorityFilter, query.PriorityFilter) ||
@@ -420,7 +420,7 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 		Role:    store.RoleViewer,
 	}
 	query := LegacyQuery{
-		TagFilter:      "make space",
+		TagFilters:     []string{"make space"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -497,8 +497,8 @@ func TestPreparedLegacyRead_DelegatesExactlyAndNamesResult(t *testing.T) {
 	if !reflect.DeepEqual(*legacyStore.projectContext, *pc) {
 		t.Fatal("prepared legacy read changed the resolved project context")
 	}
-	if legacyStore.tagFilter != query.TagFilter {
-		t.Fatalf("tagFilter = %q, want %q", legacyStore.tagFilter, query.TagFilter)
+	if !reflect.DeepEqual(legacyStore.tagFilters, query.TagFilters) {
+		t.Fatalf("tagFilters = %q, want %q", legacyStore.tagFilters, query.TagFilters)
 	}
 	if legacyStore.searchFilter != query.SearchFilter {
 		t.Fatalf("searchFilter = %q, want %q", legacyStore.searchFilter, query.SearchFilter)

@@ -15,6 +15,11 @@ type createProjectInput struct {
 	Name string `json:"name"`
 }
 
+type projectsListInput struct {
+	Limit  *int    `json:"limit"`
+	Cursor *string `json:"cursor"`
+}
+
 type updateProjectEnvelope struct {
 	ProjectSlug string          `json:"projectSlug"`
 	Patch       json.RawMessage `json:"patch"`
@@ -94,7 +99,6 @@ func projectToItem(slug string, p store.Project, role store.ProjectRole) project
 		ProjectSlug:        slug,
 		ProjectID:          p.ID,
 		Name:               p.Name,
-		Image:              p.Image,
 		DominantColor:      p.DominantColor,
 		DefaultSprintWeeks: p.DefaultSprintWeeks,
 		ExpiresAt:          p.ExpiresAt,
@@ -102,6 +106,16 @@ func projectToItem(slug string, p store.Project, role store.ProjectRole) project
 		UpdatedAt:          p.UpdatedAt,
 		Role:               role.String(),
 	}
+}
+
+func normalizeProjectsListLimit(limit *int) (int, *adapterError) {
+	if limit == nil {
+		return 20, nil
+	}
+	if *limit <= 0 || *limit > 100 {
+		return 0, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid limit", map[string]any{"field": "limit"})
+	}
+	return *limit, nil
 }
 
 // mapProjectApplicationError owns only the MCP projection of the neutral
@@ -263,30 +277,41 @@ func (a *Adapter) handleProjectsList(ctx context.Context, input any) (any, map[s
 		return nil, nil, newAdapterError(401, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
 
-	entries, listErr := a.store.ListProjects(ctx)
+	var in projectsListInput
+	if err := decodeInput(input, &in); err != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid input", map[string]any{"detail": err.Error()})
+	}
+	limit, limitErr := normalizeProjectsListLimit(in.Limit)
+	if limitErr != nil {
+		return nil, nil, limitErr
+	}
+
+	summaries, nextCursor, listErr := a.store.ListProjectSummaries(ctx, limit, in.Cursor)
 	if listErr != nil {
 		return nil, nil, mapStoreError(listErr)
 	}
 
-	items := make([]projectItem, 0, len(entries))
-	for _, entry := range entries {
-		items = append(items, projectListEntryToItem(entry))
+	items := make([]projectItem, 0, len(summaries))
+	for _, summary := range summaries {
+		items = append(items, projectSummaryToItem(summary))
 	}
 
-	return map[string]any{"items": items}, map[string]any{}, nil
+	return map[string]any{"items": items}, map[string]any{
+		"nextCursor": nextCursor,
+		"hasMore":    nextCursor != nil,
+	}, nil
 }
 
-func projectListEntryToItem(entry store.ProjectListEntry) projectItem {
+func projectSummaryToItem(summary store.ProjectSummary) projectItem {
 	return projectItem{
-		ProjectSlug:        entry.Project.Slug,
-		ProjectID:          entry.Project.ID,
-		Name:               entry.Project.Name,
-		Image:              entry.Project.Image,
-		DominantColor:      entry.Project.DominantColor,
-		DefaultSprintWeeks: entry.Project.DefaultSprintWeeks,
-		ExpiresAt:          entry.Project.ExpiresAt,
-		CreatedAt:          entry.Project.CreatedAt,
-		UpdatedAt:          entry.Project.UpdatedAt,
-		Role:               entry.Role.String(),
+		ProjectSlug:        summary.Slug,
+		ProjectID:          summary.ID,
+		Name:               summary.Name,
+		DominantColor:      summary.DominantColor,
+		DefaultSprintWeeks: summary.DefaultSprintWeeks,
+		ExpiresAt:          summary.ExpiresAt,
+		CreatedAt:          summary.CreatedAt,
+		UpdatedAt:          summary.UpdatedAt,
+		Role:               summary.Role.String(),
 	}
 }

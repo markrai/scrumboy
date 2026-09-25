@@ -5,6 +5,7 @@
 
 import { apiFetch } from '../api.js';
 import { getAppVersion } from '../utils.js';
+import { getAppRuntime } from '../platform/runtime.js';
 
 const LS_PUSH = 'scrumboy_push_enabled';
 /** Per signed-in user: durable auto-subscribe outcomes only (`done` | `denied`). See maybeAutoSubscribePushAfterLogin. */
@@ -45,6 +46,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 
 /** Ensure SW is registered (e.g. localhost may skip auto-register until user enables push). */
 async function ensureServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!getAppRuntime().supportsWebPush()) return null;
   if (!('serviceWorker' in navigator)) return null;
   let reg = await navigator.serviceWorker.getRegistration();
   if (reg) return reg;
@@ -74,6 +76,9 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
   if (!Number.isFinite(userId) || userId <= 0) {
     return;
   }
+  if (!getAppRuntime().supportsWebPush()) {
+    return;
+  }
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     return;
   }
@@ -84,7 +89,7 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
   }
 
   try {
-    const keyResp = await fetch('/api/push/vapid-public-key', { credentials: 'same-origin' });
+    const keyResp = await getAppRuntime().transport().request('/api/push/vapid-public-key', { credentials: 'same-origin' });
     if (!keyResp.ok) {
       return;
     }
@@ -139,6 +144,7 @@ export async function maybeAutoSubscribePushAfterLogin(userId: number): Promise<
 /** True if this browser has an active push subscription for our SW. */
 export async function isPushSubscribed(): Promise<boolean> {
   try {
+    if (!getAppRuntime().supportsWebPush()) return false;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
     const reg = await ensureServiceWorkerRegistration();
     if (!reg) return false;
@@ -153,6 +159,9 @@ export async function isPushSubscribed(): Promise<boolean> {
  * Subscribe to Web Push (user gesture should precede this). Returns false if unsupported or server misconfigured.
  */
 export async function subscribeToPush(): Promise<boolean> {
+  if (!getAppRuntime().supportsWebPush()) {
+    return false;
+  }
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     return false;
   }
@@ -168,7 +177,7 @@ export async function subscribeToPush(): Promise<boolean> {
     }
   }
 
-  const keyResp = await fetch('/api/push/vapid-public-key', { credentials: 'same-origin' });
+  const keyResp = await getAppRuntime().transport().request('/api/push/vapid-public-key', { credentials: 'same-origin' });
   if (!keyResp.ok) {
     if (pushDebug()) console.warn('[push] vapid key unavailable', keyResp.status);
     return false;
@@ -215,6 +224,14 @@ export async function subscribeToPush(): Promise<boolean> {
  */
 export async function unsubscribeFromPush(): Promise<void> {
   try {
+    if (!getAppRuntime().supportsWebPush()) {
+      try {
+        localStorage.removeItem(LS_PUSH);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     if (!('serviceWorker' in navigator)) {
       try {
         localStorage.removeItem(LS_PUSH);

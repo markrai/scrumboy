@@ -1,4 +1,4 @@
-let refreshBoard: ((slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null) => Promise<void>) | null = null;
+let refreshBoard: ((slug: string, tags: readonly string[], search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null) => Promise<void>) | null = null;
 let refreshSprintsOnly: ((slug: string) => Promise<void>) | null = null;
 
 export const CARDS_PER_LANE_PREFERENCE_KEY = 'cardsPerLane';
@@ -27,12 +27,12 @@ let forcePreferenceLimitOnce = false;
 const INVALIDATE_COALESCE_MS = 700;
 let lastInvalidate: { key: string; at: number } | null = null;
 
-function invalidateCoalesceKey(slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null): string {
-  return `${slug}\t${tag ?? ''}\t${search ?? ''}\t${sprintId ?? ''}\t${assignee ?? ''}\t${sort ?? ''}\t${priority ?? ''}`;
+export function invalidateCoalesceKey(slug: string, tags: readonly string[], search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null): string {
+  return `${slug}\t${JSON.stringify(tags)}\t${search ?? ''}\t${sprintId ?? ''}\t${assignee ?? ''}\t${sort ?? ''}\t${priority ?? ''}`;
 }
 
 export function registerBoardRefresher(
-  fn: (slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null) => Promise<void>
+  fn: (slug: string, tags: readonly string[], search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null) => Promise<void>
 ) {
   refreshBoard = fn;
 }
@@ -47,15 +47,15 @@ export function registerSprintsRefresher(fn: (slug: string) => Promise<void>) {
  * duplicate slug/tag/search/sprintId/assignee/sort/priority invalidates are coalesced within
  * INVALIDATE_COALESCE_MS.
  */
-export async function invalidateBoard(slug: string, tag?: string, search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null, force = false) {
+export async function invalidateBoard(slug: string, tags: readonly string[], search?: string, sprintId?: string | null, assignee?: string | null, sort?: string | null, priority?: string | null, force = false) {
   if (!refreshBoard) return;
   const now = Date.now();
-  const key = invalidateCoalesceKey(slug, tag, search, sprintId, assignee, sort, priority);
+  const key = invalidateCoalesceKey(slug, tags, search, sprintId, assignee, sort, priority);
   if (!force && lastInvalidate && lastInvalidate.key === key && now - lastInvalidate.at < INVALIDATE_COALESCE_MS) {
     return;
   }
   lastInvalidate = { key, at: now };
-  await refreshBoard(slug, tag, search, sprintId, assignee, sort, priority);
+  await refreshBoard(slug, tags, search, sprintId, assignee, sort, priority);
 }
 
 export function setBoardLimitPerLaneFloor(limit: number, slug: string) {

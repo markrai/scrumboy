@@ -2,6 +2,34 @@
 
 Voice commands are project-scoped. Everything you say applies to the project you are currently viewing.
 
+## On-device AI VoiceFlow
+
+### AI VoiceFlow
+
+On English, enhanced-capable devices, AI VoiceFlow is one surface. A deterministic first-turn router sends clear new-Todo requests to the dedicated Create planner and everything else to the bounded skill agent. No classifier model runs before either engine. The old `scrumboy_voice_create_v2` preference is ignored; existing values do not change routing and no mode selector is shown.
+
+The `voice-create-plan-v1` prompt makes one request through the existing Nano generation bridge. It extracts one create with optional lane, singular assignee, existing tags and literal notes. Unspecified fields stay omitted in model output. Scrumboy supplies the current project, canonical leftmost lane, unassigned, no tags and empty notes. An explicit unresolved field never falls back to a default. Missing title or material unsupported content blocks the entire create. Duplicate people produce deterministic choices; selecting a choice does not call Nano.
+
+The final ASR transcript remains visible through preparation and review. Review text comes from the resolved command and includes the lane and supplied assignee/tags/notes, without listing empty defaults. Planning does not open todos or call mutation APIs. Confirmation refreshes and re-resolves the reviewed fields; a changed leftmost default, resolved identity or context invalidates consent. One enriched `todos_create` carries all fields in the existing server create transaction. No follow-up assign/tag/notes requests run.
+
+Whole-utterance `yes`, `yep`, `confirm`, `go ahead`, `do it`, and `yes please` confirm only a pending review. `no`, `cancel`, `never mind` and `stop` cancel. Mixed replies such as “yes but assign Sarah instead” invalidate the pending review and ask for a complete restatement; natural revision is not implemented. Confirmation adds no Nano generation. A lost execution response is reported as failed or unconfirmed and is not automatically retried.
+
+The existing 256-output-token generation budget is unchanged. This experiment bounds input to 2,000 code units, notes to 1,000 and tags to five; malformed/oversized output fails closed with no repair loop. These are parser limits, not a guarantee that every maximal request fits the token budget. Full extraction accuracy and output truncation still require physical Nano testing. The focused synthetic evaluation cases are in `internal/httpapi/web/scripts/voice-create-evaluation.json`; mocked tests prove orchestration, not physical-model accuracy. Diagnostic traces add `planner_start` and `plan` metadata without raw model output or duplicated notes.
+
+### Existing agent
+
+For non-Create requests, AI VoiceFlow uses the existing domain-conditioned skill loop. Nano chooses one bounded Scrumboy skill at a time and can sequence several actions from one request. Todo, story, card, task and item identify the same entity; software-like titles such as **Bird's Eye View**, **Settings**, and **Search** remain literal todo titles.
+
+The available skills are `todos.resolve`, `todos.open`, `todos.inspect`, `todos.create`, `todos.move`, `todos.rename`, `todos.append_notes`, `todos.replace_notes`, `todos.assign`, `todos.unassign`, `todos.add_tag`, `todos.remove_tag`, `todos.delete`, and `analytics.count_completed` (this week). Opening and bounded reads can run immediately. Every mutation prepares a proposal. A complete task receives one combined confirmation, including when the user adds another action during confirmation. Natural replies such as “yeah, go ahead” and “no thanks” are interpreted locally.
+
+Scrumboy resolves resources, enforces permission and validation, and issues task-scoped opaque handles. The model sees bounded skill results, never the board or project member/tag catalogs. All proposals are freshly checked before presenting confirmation and again before the first mutation. Execution follows proposal order. A failure stops the batch and reports succeeded, failed or unconfirmed, and unattempted operations; separate server mutations are not a transaction and are not rolled back. Overlapping writes to the same todo field and create-then-assign dependencies require separate tasks in this version.
+
+Each task allows at most 8 model invocations (including protocol repairs), 6 skill calls, 4 mutation proposals, 5 choices per result, and 16 in-memory trace entries. Invalid output permits one local repair per step and never falls back to command parsing. Completion and invalidation clear task state. Project/account/server changes and closing VoiceFlow invalidate handles and pending proposals.
+
+**Keep Listening**, off by default, controls the next command window. Both settings allow the current task's clarification and confirmation replies. When enabled, a spoken terminal result opens exactly one additional bounded listening window and retains only an active todo reference. Speech output finishes before speech input starts. No always-on microphone, cloud AI, persisted conversation, or second model call for factual wording is used. The stored boolean preference is unchanged.
+
+The browser/basic path remains unchanged. The grammar, modes, and confirmation policy below describe that path.
+
 ## Locale boundary
 
 * The surrounding Scrumboy UI follows the app locale, including the `Settings -> Customization -> VoiceFlow` toggle and nearby board chrome.
@@ -15,8 +43,7 @@ Voice commands are project-scoped. Everything you say applies to the project you
 * You can target a todo by **local ID** (number) or by a **title phrase** (when the match is strong enough—see below)
 * You can use the number directly (e.g. “open 12”)
 * Commands must be clear and complete (no guessing)
-* Each command stands alone (no “move it”)
-* **Pronouns are not supported** for targets: phrases like “it”, “that”, “this one” are rejected
+* Explicit todo commands use an ID or title. The bounded conversational forms described below may refer to the active todo as “it”, “this todo”, or “this card”.
 * **Project switching in speech is not supported** (e.g. “in project foo …”); stay on the current board
 
 ## Referencing a todo: ID vs title
@@ -42,6 +69,15 @@ For **move**, **delete**, **open** / **edit**, **assign**, and forms like **“t
 
 * create story "login page"
 * create todo "fix bug"
+
+Fresh enhanced speech acquisition keeps one ML Kit recognition stream open across authoritative
+segment finals. Each final is retained in order; a 4-second post-final grace window ends the
+VoiceFlow turn after no further meaningful partial activity. The 45-second absolute ceiling
+still applies, and a ceiling timeout fails closed rather than promoting unfinished partial text.
+The deterministic router then sends the joined authoritative segments to exactly one semantic
+engine. Fresh, Create-owned follow-up, and Agent-owned follow-up enhanced captures intentionally
+use the same 45-second / `create_v2` / 4-second policy in this pass. Basic VoiceFlow keeps its
+existing first-final behavior and 10-second acquisition window.
 
 ## Move / Update Status
 
@@ -83,6 +119,14 @@ Built-in phrases are mapped to your board’s lanes where possible, including:
 Custom lane **names** and **keys** are also accepted when they resolve to a single lane.
 
 ## Modes
+
+### Continue conversation
+
+The **Continue conversation** toggle is off by default. When enabled, a successful turn clears the transcript and review UI while retaining only the in-memory active todo reference needed for the next bounded turn. Turning it off, closing VoiceFlow, changing project context, signing out, or restarting the process clears that conversation state.
+
+After a todo has been opened or otherwise resolved successfully, on-device interpretation can understand **“Open it”**, **“Change the title”**, and **“Change its title to …”**. A missing title produces the question **“What would you like to change the title to?”**; the next answer is bound to the concrete pending todo, freshly revalidated, explicitly confirmed, and executed through the normal todo-update path. The pending question remains open long enough to answer even when continuation is off.
+
+No chat transcript, todo title, project data, or pending answer is persisted. Only the boolean toggle preference may be stored.
 
 ### Safe-Mode (default)
 

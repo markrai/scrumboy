@@ -22,24 +22,34 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080 ^| findstr LISTENING') 
 timeout /t 1 /nobreak >nul
 
 REM ---- Optional HTTPS (mkcert + cert.pem/key.pem) ----
+REM SCRUMBOY_INTRANET_IP is optional: when set, include it as a mkcert SAN and print an intranet URL.
 set USE_HTTPS=0
+set "MKCERT_NAMES=localhost 127.0.0.1"
+set "HAS_INTRANET_IP=0"
+if defined SCRUMBOY_INTRANET_IP if not "%SCRUMBOY_INTRANET_IP%"=="" (
+  set "MKCERT_NAMES=%SCRUMBOY_INTRANET_IP% localhost 127.0.0.1"
+  set "HAS_INTRANET_IP=1"
+)
 if exist "cert.pem" (
   if exist "key.pem" (
     set USE_HTTPS=1
+    if "%HAS_INTRANET_IP%"=="1" echo LAN HTTPS: existing certificate files are being reused. If this LAN IP is new, regenerate cert.pem/key.pem so the IP is included.
     goto :show_urls
   )
 )
 where mkcert >nul 2>&1
 if %ERRORLEVEL% neq 0 (
   echo mkcert not found - will use HTTP.
-  echo To enable HTTPS for intranet: install mkcert, run mkcert -install, then:
-  echo   mkcert -cert-file cert.pem -key-file key.pem 192.168.1.250 localhost
+  if "%HAS_INTRANET_IP%"=="1" (
+    echo To enable HTTPS for intranet: install mkcert, run mkcert -install, then:
+    echo   mkcert -cert-file cert.pem -key-file key.pem %SCRUMBOY_INTRANET_IP% localhost 127.0.0.1
+  )
   echo.
   goto :show_urls
 )
 REM Write straight to cert.pem/key.pem. Wildcard rename breaks on Windows ^(see f.bat^).
 echo Generating HTTPS certificates ^(or refreshing if one of cert.pem/key.pem is missing^)...
-mkcert -cert-file cert.pem -key-file key.pem 192.168.1.250 localhost
+mkcert -cert-file cert.pem -key-file key.pem %MKCERT_NAMES%
 if %ERRORLEVEL% neq 0 (
   echo WARNING: Certificate generation failed - will use HTTP
 ) else (
@@ -51,12 +61,13 @@ echo.
 if %USE_HTTPS%==1 (
   echo Server URLs ^(HTTPS^):
   echo   Local:    https://127.0.0.1:8080/
-  echo   Intranet: https://192.168.1.250:8080/
+  if "%HAS_INTRANET_IP%"=="1" echo   Intranet: https://%SCRUMBOY_INTRANET_IP%:8080/
 ) else (
   echo Server URLs ^(HTTP^):
   echo   Local:    http://127.0.0.1:8080/
-  echo   Intranet: http://192.168.1.250:8080/
+  if "%HAS_INTRANET_IP%"=="1" echo   Intranet: http://%SCRUMBOY_INTRANET_IP%:8080/
 )
+if not "%HAS_INTRANET_IP%"=="1" echo LAN HTTPS: set SCRUMBOY_INTRANET_IP to this machine's LAN IP to include it in the certificate.
 echo.
 echo Press Ctrl+C to stop the server.
 echo.

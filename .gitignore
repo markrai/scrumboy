@@ -8,6 +8,8 @@
 # Build and tooling
 /.tools/
 /dist/
+/mobile/capacitor/www/
+/mobile/capacitor/.generated/
 # Go / Windows build outputs (never commit binaries)
 *.exe
 # Unix binary at repo root only (do not use bare "scrumboy" — that ignores cmd/scrumboy/)
@@ -40,6 +42,8 @@ Thumbs.db
 coverage.out
 *.cover
 *.test
+/.tmp/
+/build/voice-create-*.json
 
 # Development related
 /docs/draft/

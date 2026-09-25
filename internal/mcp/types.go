@@ -59,13 +59,12 @@ type projectItem struct {
 	ProjectSlug        string     `json:"projectSlug"`
 	ProjectID          int64      `json:"projectId"`
 	Name               string     `json:"name"`
-	Image              *string    `json:"image"`
 	DominantColor      string     `json:"dominantColor"`
 	DefaultSprintWeeks int        `json:"defaultSprintWeeks"`
 	ExpiresAt          *time.Time `json:"expiresAt"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
-	Role               string     `json:"role,omitempty"`
+	Role               string     `json:"role"`
 }
 
 type todoItem struct {
@@ -83,6 +82,7 @@ type todoItem struct {
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	DoneAt           *time.Time `json:"doneAt"`
+	ArchivedAt       *time.Time `json:"archivedAt"`
 }
 
 type todoSearchItem struct {
@@ -92,9 +92,10 @@ type todoSearchItem struct {
 }
 
 type todoLinkItem struct {
-	LocalID  int64  `json:"localId"`
-	Title    string `json:"title"`
-	LinkType string `json:"linkType"`
+	LocalID    int64      `json:"localId"`
+	Title      string     `json:"title"`
+	LinkType   string     `json:"linkType"`
+	ArchivedAt *time.Time `json:"archivedAt"`
 }
 
 type sprintItem struct {

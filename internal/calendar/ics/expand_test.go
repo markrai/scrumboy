@@ -97,6 +97,62 @@ END:VCALENDAR
 	}
 }
 
+func TestExpandTimedEventMissingDTENDIsPointInTime(t *testing.T) {
+	loc := time.UTC
+	day := time.Date(2026, 8, 17, 0, 0, 0, 0, loc)
+	body := []byte(`BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:point
+DTSTART:20260817T100000Z
+SUMMARY:Reminder
+END:VEVENT
+END:VCALENDAR
+`)
+	events, err := Expand(body, loc, day, day.Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%+v", events)
+	}
+	if events[0].AllDay {
+		t.Fatalf("expected timed event, got all-day: %+v", events[0])
+	}
+	if !events[0].StartsAt.Equal(events[0].EndsAt) {
+		t.Fatalf("missing DTEND should end at DTSTART, got start=%s end=%s", events[0].StartsAt, events[0].EndsAt)
+	}
+	if events[0].StartsAt.Hour() != 10 || events[0].StartsAt.Minute() != 0 {
+		t.Fatalf("start=%s, want 10:00 UTC", events[0].StartsAt)
+	}
+}
+
+func TestExpandTimedEventDURATIONStillApplies(t *testing.T) {
+	loc := time.UTC
+	day := time.Date(2026, 8, 17, 0, 0, 0, 0, loc)
+	body := []byte(`BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:dur
+DTSTART:20260817T100000Z
+DURATION:PT1H
+SUMMARY:Hour
+END:VEVENT
+END:VCALENDAR
+`)
+	events, err := Expand(body, loc, day, day.Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("events=%+v", events)
+	}
+	wantEnd := events[0].StartsAt.Add(time.Hour)
+	if !events[0].EndsAt.Equal(wantEnd) {
+		t.Fatalf("DURATION PT1H: end=%s want=%s", events[0].EndsAt, wantEnd)
+	}
+}
+
 func TestExpandUnknownTZIDFailsClosed(t *testing.T) {
 	body := []byte(`BEGIN:VCALENDAR
 VERSION:2.0

@@ -22,6 +22,8 @@ import (
 	tagapp "scrumboy/internal/application/tag"
 	todoapp "scrumboy/internal/application/todo"
 	todolinkapp "scrumboy/internal/application/todolink"
+	useradminapp "scrumboy/internal/application/useradmin"
+	wallapp "scrumboy/internal/application/wall"
 	workflowapp "scrumboy/internal/application/workflow"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
@@ -134,6 +136,8 @@ type Server struct {
 	todoLegacyDeletes             *todoapp.LegacyDeleteService
 	todoLegacyMoves               *todoapp.LegacyMoveService
 	todoLegacyUpdates             *todoapp.LegacyUpdateService
+	todoArchival                  *todoapp.RESTArchiveService
+	todoArchiveReads              *todoapp.ArchiveReadService
 	creatorNotificationAuthorizer *todoapp.CreatorNotificationAuthorizationService
 	todoLinkMutations             *todolinkapp.RESTMutationService
 	sprintDefinitions             *sprintapp.RESTDefinitionService
@@ -147,6 +151,13 @@ type Server struct {
 	membershipMutations           *membershipapp.RESTMutationService
 	tagColors                     *tagapp.RESTColorService
 	tagDeletions                  *tagapp.RESTDeletionService
+	userCreations                 *useradminapp.RESTCreationService
+	userRoleMutations             *useradminapp.RESTRoleService
+	userDeletions                 *useradminapp.RESTDeletionService
+	wallNoteMutations             *wallapp.RESTNoteService
+	wallReplacements              *wallapp.RESTReplacementService
+	wallEdgeMutations             *wallapp.RESTEdgeService
+	wallTransientMutations        *wallapp.RESTTransientService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -169,9 +180,11 @@ type Server struct {
 	notificationMailDone    <-chan struct{}
 	emailNotifier           *emailNotifier
 
-	authRateLimit       *ratelimit.Limiter
-	oauthDCRRateLimit   *ratelimit.Limiter
-	oauthTokenRateLimit *ratelimit.Limiter
+	authRateLimit               *ratelimit.Limiter
+	mobileOIDCStartRateLimit    *ratelimit.Limiter
+	mobileOIDCExchangeRateLimit *ratelimit.Limiter
+	oauthDCRRateLimit           *ratelimit.Limiter
+	oauthTokenRateLimit         *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
@@ -224,19 +237,25 @@ type storeAPI interface {
 	ResetLocalPassword(ctx context.Context, userID int64, expectedHash, password string) error
 	BootstrapUser(ctx context.Context, email, password, name string) (store.User, error)
 	AuthenticateUser(ctx context.Context, email, password string) (store.User, error)
-	CreateUser(ctx context.Context, email, password, name string) (store.User, error)
+	useradminapp.UserCreationStore
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
-	UpdateUserRole(ctx context.Context, requesterID, targetUserID int64, newRole store.SystemRole) error
-	DeleteUser(ctx context.Context, requesterID, targetUserID int64) error
+	useradminapp.UserRoleMutationStore
+	useradminapp.UserDeletionStore
 	AssignUnownedDurableProjectsToUser(ctx context.Context, userID int64) error
 	ClaimTemporaryBoard(ctx context.Context, projectID, userID int64) error
 	CreateSession(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)
+	CreateMobileOIDCFlow(ctx context.Context, rawState, handoffChallenge, returnTo string, ttl time.Duration) error
+	GetMobileOIDCFlow(ctx context.Context, rawState string) (store.MobileOIDCFlow, error)
+	CreateMobileOIDCHandoffGrant(ctx context.Context, rawState string, userID int64, ttl time.Duration) (code string, expiresAt time.Time, returnTo string, err error)
+	ExchangeMobileOIDCHandoff(ctx context.Context, rawCode, rawState, verifier string, sessionTTL time.Duration) (store.MobileOIDCExchange, error)
 	DeleteSession(ctx context.Context, token string) error
 	DeleteSessionsByUserID(ctx context.Context, userID int64) error
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
-	CreateUserAPIToken(ctx context.Context, userID int64, name *string) (id int64, plaintext string, createdAt time.Time, err error)
+	CreateUserAPIToken(ctx context.Context, userID int64, name *string, isService bool) (id int64, plaintext string, createdAt time.Time, err error)
 	ListUserAPITokens(ctx context.Context, userID int64) ([]store.APITokenMeta, error)
 	RevokeUserAPIToken(ctx context.Context, userID, tokenID int64) error
+	ListArchivedServiceAPITokens(ctx context.Context, requesterID int64, limit int, beforeID int64) ([]store.ArchivedServiceAPIToken, *int64, error)
+	PurgeArchivedServiceAPITokens(ctx context.Context, requesterID int64, archivedBefore time.Time) (int64, error)
 
 	// OAuth 2.1 authorization server (RFC 7591/6749/7636/7009) for MCP clients.
 	CreateOAuthClient(ctx context.Context, clientID, clientName, redirectURI string) (store.OAuthClient, error)
@@ -251,7 +270,7 @@ type storeAPI interface {
 	GetUserByEmail(ctx context.Context, email string) (store.User, error)
 	LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subject, email string) error
 	LinkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string) error
-	CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (store.User, error)
+	CreateUserOIDCWithDomainPolicy(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (store.User, error)
 	CreateFirstPasswordGrant(ctx context.Context, userID int64, sessionToken string, ttl time.Duration) (string, time.Time, error)
 	FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionToken string, userID int64) (bool, error)
 	SetFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string) error
@@ -327,6 +346,11 @@ type storeAPI interface {
 	GetProjectIDForTodo(ctx context.Context, todoID int64) (int64, error)
 	MoveTodo(ctx context.Context, todoID int64, toColumnKey string, afterID, beforeID *int64, mode store.Mode) (store.Todo, error)
 	GetTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.Todo, error)
+	ArchiveTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	ArchiveTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	RestoreTodosByLocalID(ctx context.Context, projectID int64, localIDs []int64, mode store.Mode) (store.TodoArchiveBatchResult, error)
+	ListArchivedTodos(ctx context.Context, projectID int64, limit int, afterArchivedAtMs, afterID *int64, mode store.Mode) ([]store.Todo, string, bool, error)
 	DeleteTodoByLocalID(ctx context.Context, projectID, localID int64, mode store.Mode) error
 	todoapp.CreateStore
 	todoapp.UpdateStore
@@ -520,6 +544,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 	firstPasswordStartLimiter := ratelimit.New(5, time.Minute)
 	firstPasswordFinishLimiter := ratelimit.New(5, time.Minute)
 	oidcLinkStartLimiter := ratelimit.New(5, time.Minute)
+	mobileOIDCStartRateLimit := ratelimit.New(20, time.Minute)
+	mobileOIDCExchangeRateLimit := ratelimit.New(20, time.Minute)
 	currentPasswordLimiter := ratelimit.New(5, time.Minute)
 	secondFactorLimiter := ratelimit.New(5, time.Minute)
 	totpLimiter := ratelimit.New(5, time.Minute)
@@ -598,6 +624,8 @@ func NewServer(st storeAPI, opts Options) *Server {
 		notificationMailDone:        notificationMailDone,
 		emailNotifier:               emailNotifier,
 		authRateLimit:               authRateLimit,
+		mobileOIDCStartRateLimit:    mobileOIDCStartRateLimit,
+		mobileOIDCExchangeRateLimit: mobileOIDCExchangeRateLimit,
 		oauthDCRRateLimit:           oauthDCRRateLimit,
 		oauthTokenRateLimit:         oauthTokenRateLimit,
 		encryptionKey:               encKey,
@@ -631,6 +659,25 @@ func NewServer(st storeAPI, opts Options) *Server {
 		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
+	server.wallNoteMutations = wallapp.NewRESTNoteService(wallapp.RESTNoteServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
+	})
+	server.wallReplacements = wallapp.NewRESTReplacementService(wallapp.RESTReplacementServiceDependencies{
+		Roles:        st,
+		Replacements: st,
+		Refresh:      wallRefreshPublisher{server: server},
+	})
+	server.wallEdgeMutations = wallapp.NewRESTEdgeService(wallapp.RESTEdgeServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
+	})
+	server.wallTransientMutations = wallapp.NewRESTTransientService(wallapp.RESTTransientServiceDependencies{
+		Roles:     st,
+		Publisher: wallTransientPublisher{server: server},
+	})
 	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
 	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)
 	server.projectUpdates = projectapp.NewRESTUpdateService(projectapp.RESTUpdateServiceDependencies{
@@ -669,6 +716,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh:         boardRefreshPublisher,
 		CreatorRequests: creatorRequestPublisher,
 	})
+	server.todoArchival = todoapp.NewRESTArchiveService(todoapp.RESTArchiveServiceDependencies{
+		Archive: st,
+		Refresh: boardRefreshPublisher,
+	})
+	server.todoArchiveReads = todoapp.NewArchiveReadService(st)
 	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
 		Projects: st,
 		Delete:   st,
@@ -770,6 +822,16 @@ func NewServer(st storeAPI, opts Options) *Server {
 		BoardNames:    st,
 		PersonalNames: st,
 		Publisher:     tagDeletionPublisher{server: server},
+	})
+	server.userCreations = useradminapp.NewRESTCreationService(useradminapp.RESTCreationServiceDependencies{
+		Creations: st,
+	})
+	server.userRoleMutations = useradminapp.NewRESTRoleService(useradminapp.RESTRoleServiceDependencies{
+		Mutations:      st,
+		ProjectionRead: st,
+	})
+	server.userDeletions = useradminapp.NewRESTDeletionService(useradminapp.RESTDeletionServiceDependencies{
+		Deletions: st,
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)
@@ -950,6 +1012,8 @@ func (s *Server) PublishCreatorNotificationRequest(ctx context.Context, request 
 		LocalID:               request.LocalID,
 		Title:                 request.Title,
 		ActivityReason:        request.ActivityReason,
+		FromName:              request.FromName,
+		ToName:                request.ToName,
 		CreatedByUserID:       request.CreatedByUserID,
 		ActorUserID:           request.ActorUserID,
 		MaterialChanged:       request.MaterialChanged,
@@ -992,6 +1056,8 @@ func (s *Server) publishAuthorizedCreatorNotification(ctx context.Context, autho
 		LocalID:               authorized.LocalID,
 		Title:                 authorized.Title,
 		ActivityReason:        authorized.ActivityReason,
+		FromName:              authorized.FromName,
+		ToName:                authorized.ToName,
 		RecipientUserID:       authorized.RecipientUserID,
 		ActorUserID:           authorized.ActorUserID,
 		MaterialChanged:       authorized.MaterialChanged,

@@ -608,11 +608,12 @@ func TestWebhookWorker_SignatureHeader(t *testing.T) {
 	defer ts.Close()
 
 	q := newWebhookQueue(log.New(io.Discard, "", 0))
-	w := newWebhookWorker(q, log.New(io.Discard, "", 0))
+	client, publicURL := webhookClientToTestServer(t, ts, "hooks.example")
+	w := newWebhookWorkerWithClient(q, log.New(io.Discard, "", 0), client)
 
 	q.Enqueue(webhookDelivery{
 		WebhookID: 1,
-		URL:       ts.URL,
+		URL:       publicURL + "/",
 		Secret:    &secret,
 		EventID:   "evt-1",
 		EventType: "todo.assigned",

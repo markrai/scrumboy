@@ -168,6 +168,72 @@ func TestJSONRPCSprintsListExposesLegacyUnscheduledCount(t *testing.T) {
 	}
 }
 
+func TestJSONRPCProjectsListExposesPaginationAcrossPages(t *testing.T) {
+	ts, sqlDB, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	ownerID := firstUserID(t, sqlDB)
+	ctx := store.WithUserID(context.Background(), ownerID)
+	st := store.New(sqlDB, nil)
+	for i := 0; i < 3; i++ {
+		if _, err := st.CreateProject(ctx, "JSON-RPC Project Page "+string(rune('A'+i))); err != nil {
+			t.Fatalf("create project %d: %v", i, err)
+		}
+	}
+
+	var cursor any
+	for pageIndex := 0; pageIndex < 3; pageIndex++ {
+		input := map[string]any{"limit": 1}
+		if cursor != nil {
+			input["cursor"] = cursor
+		}
+		data, meta := callToolOverBothTransports(
+			t,
+			client,
+			ts.URL,
+			"projects_list",
+			input,
+			"nextCursor",
+			"hasMore",
+		)
+		items, ok := data["items"].([]any)
+		if !ok || len(items) != 1 {
+			t.Fatalf("page %d items=%#v, want one project", pageIndex+1, data["items"])
+		}
+		item := items[0].(map[string]any)
+		if _, exists := item["image"]; exists {
+			t.Fatalf("page %d project unexpectedly contains image: %#v", pageIndex+1, item)
+		}
+		if pageIndex < 2 {
+			if meta["hasMore"] != true || meta["nextCursor"] == nil {
+				t.Fatalf("page %d meta=%#v, want continuation", pageIndex+1, meta)
+			}
+			cursor = meta["nextCursor"]
+		} else if meta["hasMore"] != false || meta["nextCursor"] != nil {
+			t.Fatalf("final page meta=%#v, want completed pagination", meta)
+		}
+	}
+
+	pastEndData, pastEndMeta := callToolOverBothTransports(
+		t,
+		client,
+		ts.URL,
+		"projects_list",
+		map[string]any{"limit": 1, "cursor": "0:1"},
+		"nextCursor",
+		"hasMore",
+	)
+	items, ok := pastEndData["items"].([]any)
+	if !ok || items == nil || len(items) != 0 {
+		t.Fatalf("past-end items=%#v, want empty array", pastEndData["items"])
+	}
+	if pastEndMeta["hasMore"] != false || pastEndMeta["nextCursor"] != nil {
+		t.Fatalf("past-end meta=%#v, want completed pagination", pastEndMeta)
+	}
+}
+
 func TestJSONRPCDashboardListTodosExposesLegacyPagination(t *testing.T) {
 	ts, sqlDB, cleanup := newTestServer(t, "full")
 	defer cleanup()

@@ -91,7 +91,7 @@ func TestJSONRPCAuthenticationMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByEmail: %v", err)
 	}
-	_, token, _, err := st.CreateUserAPIToken(context.Background(), user.ID, nil)
+	_, token, _, err := st.CreateUserAPIToken(context.Background(), user.ID, nil, false)
 	if err != nil {
 		t.Fatalf("CreateUserAPIToken: %v", err)
 	}

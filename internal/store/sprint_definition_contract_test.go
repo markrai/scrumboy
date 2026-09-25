@@ -64,6 +64,56 @@ func TestSprintDefinitionCreate_InsertRemainsCommittedWhenReturnReadFails(t *tes
 	}
 }
 
+func TestSprintHistoricalCountsIncludeArchivedTodos(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	project, err := st.CreateProject(ctx, "sprint archived history")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	sprint, err := st.CreateSprint(ctx, project.ID, "Sprint 1", now, now.Add(14*24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived sprint", SprintID: &sprint.ID}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "active sprint", SprintID: &sprint.ID}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	unscheduled, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived backlog"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodosByLocalID(ctx, project.ID, []int64{archived.LocalID, unscheduled.LocalID}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	sprints, err := st.ListSprintsWithTodoCount(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sprints) != 1 || sprints[0].TodoCount != 2 {
+		t.Fatalf("sprint counts=%+v want archived+active", sprints)
+	}
+	scope, err := st.loadBurndownTodosForSprint(ctx, project.ID, sprint.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope) != 2 {
+		t.Fatalf("sprint burndown scope=%d want 2", len(scope))
+	}
+	backlogCount, err := st.CountUnscheduledTodos(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if backlogCount != 1 {
+		t.Fatalf("unscheduled historical count=%d want 1", backlogCount)
+	}
+}
+
 func TestSprintDefinitionStoreOwnsDefinitionValidationByState(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()

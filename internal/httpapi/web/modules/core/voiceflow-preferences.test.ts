@@ -3,17 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setUser } from '../state/mutations.js';
 import {
   getVoiceFlowEnabledPreference,
+  getVoiceFlowContinueConversationPreference,
   getVoiceFlowHandsFreeConfirmationPreference,
   getVoiceFlowModePreference,
   hydrateVoiceFlowEnabledFromServer,
+  hydrateVoiceFlowContinueConversationFromServer,
   hydrateVoiceFlowHandsFreeConfirmationFromServer,
   hydrateVoiceFlowModeFromServer,
   normalizeVoiceFlowEnabled,
+  normalizeVoiceFlowContinueConversation,
   normalizeVoiceFlowHandsFreeConfirmation,
   setVoiceFlowEnabledPreference,
+  setVoiceFlowContinueConversationPreference,
   setVoiceFlowHandsFreeConfirmationPreference,
   setVoiceFlowModePreference,
   VOICE_FLOW_ENABLED_STORAGE_KEY,
+  VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY,
   VOICE_FLOW_HANDS_FREE_CONFIRMATION_STORAGE_KEY,
   VOICE_FLOW_MODE_STORAGE_KEY,
 } from './voiceflow-preferences.js';
@@ -118,6 +123,29 @@ describe('VoiceFlow preferences', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/user/preferences', expect.objectContaining({
       method: 'PUT',
       body: JSON.stringify({ key: 'voiceFlowHandsFreeConfirmation', value: 'mutations' }),
+    }));
+  });
+
+  it('defaults continuation off and persists only its boolean preference', () => {
+    expect(getVoiceFlowContinueConversationPreference()).toBe(false);
+    setVoiceFlowContinueConversationPreference(true, { skipRemote: true });
+    expect(localStorage.getItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY)).toBe('true');
+    expect(getVoiceFlowContinueConversationPreference()).toBe(true);
+    expect(normalizeVoiceFlowContinueConversation('unexpected')).toBe(false);
+    hydrateVoiceFlowContinueConversationFromServer('false');
+    expect(getVoiceFlowContinueConversationPreference()).toBe(false);
+  });
+
+  it('saves continuation through the existing user preference endpoint when signed in', () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    setUser({ id: 1, name: 'Ada' });
+
+    setVoiceFlowContinueConversationPreference(true);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/user/preferences', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ key: 'voiceFlowContinueConversation', value: 'true' }),
     }));
   });
 });

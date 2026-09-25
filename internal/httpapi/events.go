@@ -141,6 +141,8 @@ type refreshNeededPayload struct {
 	LocalID     int64  `json:"localId,omitempty"`
 	Title       string `json:"title,omitempty"`
 	Name        string `json:"name,omitempty"`
+	FromName    string `json:"fromName,omitempty"`
+	ToName      string `json:"toName,omitempty"`
 }
 
 type refreshNeededEvent struct {
@@ -178,6 +180,8 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 		LocalID:     entity.LocalID,
 		Title:       entity.Title,
 		Name:        entity.Name,
+		FromName:    entity.FromName,
+		ToName:      entity.ToName,
 	})
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      "board.refresh_needed",

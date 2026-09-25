@@ -26,8 +26,8 @@ func TestUserOwnedTags_CreationRequiresUserAccess(t *testing.T) {
 
 	// Create todo with tags - should succeed (user owns project)
 	todo, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "Test",
-		Tags:   []string{"bug"},
+		Title:     "Test",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -70,8 +70,8 @@ func TestUserOwnedTags_NamesNormalizedToLowercase(t *testing.T) {
 
 	// Create todo with mixed-case tag
 	_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "Test",
-		Tags:   []string{"Bug", "URGENT", "feature"},
+		Title:     "Test",
+		Tags:      []string{"Bug", "URGENT", "feature"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -125,8 +125,8 @@ func TestUserOwnedTags_UniqueConstraintPreventsDuplicates(t *testing.T) {
 
 	// Create todo with tag "bug"
 	_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "Test 1",
-		Tags:   []string{"bug"},
+		Title:     "Test 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -135,8 +135,8 @@ func TestUserOwnedTags_UniqueConstraintPreventsDuplicates(t *testing.T) {
 
 	// Create another todo with same tag "bug" (normalized)
 	_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "Test 2",
-		Tags:   []string{"Bug"}, // Different case, but normalized to "bug"
+		Title:     "Test 2",
+		Tags:      []string{"Bug"}, // Different case, but normalized to "bug"
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -178,8 +178,8 @@ func TestUserOwnedTags_CanAttachToMultipleProjects(t *testing.T) {
 
 	// Create tag in p1
 	_, err = st.CreateTodo(ctx, p1.ID, CreateTodoInput{
-		Title:  "Test 1",
-		Tags:   []string{"bug"},
+		Title:     "Test 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -188,8 +188,8 @@ func TestUserOwnedTags_CanAttachToMultipleProjects(t *testing.T) {
 
 	// Use same tag in p2
 	_, err = st.CreateTodo(ctx, p2.ID, CreateTodoInput{
-		Title:  "Test 2",
-		Tags:   []string{"bug"},
+		Title:     "Test 2",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -269,8 +269,8 @@ VALUES (?, ?, ?, ?)
 
 	// User1 creates todo with tag "bug"
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Todo 1",
-		Tags:   []string{"bug"},
+		Title:     "Todo 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -280,8 +280,8 @@ VALUES (?, ?, ?, ?)
 	// User2 creates todo with tag "feature"
 	ctx2 := WithUserID(ctx, user2.ID)
 	_, err = st.CreateTodo(ctx2, p.ID, CreateTodoInput{
-		Title:  "Todo 2",
-		Tags:   []string{"feature"},
+		Title:     "Todo 2",
+		Tags:      []string{"feature"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -290,7 +290,7 @@ VALUES (?, ?, ?, ?)
 
 	// View board as user1 - should see ALL tags (both "bug" and "feature")
 	pc, _ := st.GetProjectContextForRead(ctx1, p.ID, ModeFull)
-	_, tags, _, _, err := st.GetBoard(ctx1, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, tags, _, _, err := st.GetBoard(ctx1, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -345,8 +345,8 @@ VALUES (?, ?, ?, ?)
 
 	// User1 creates todo with tag "bug"
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Todo 1",
-		Tags:   []string{"bug"},
+		Title:     "Todo 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -356,8 +356,8 @@ VALUES (?, ?, ?, ?)
 	// User2 creates todo with tag "feature"
 	ctx2 := WithUserID(ctx, user2.ID)
 	_, err = st.CreateTodo(ctx2, p.ID, CreateTodoInput{
-		Title:  "Todo 2",
-		Tags:   []string{"feature"},
+		Title:     "Todo 2",
+		Tags:      []string{"feature"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -423,8 +423,8 @@ func TestUserOwnedTags_ColorPerViewer(t *testing.T) {
 
 	// User1 creates tag "bug"
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Test",
-		Tags:   []string{"bug"},
+		Title:     "Test",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -490,8 +490,8 @@ func TestUserOwnedTags_DeleteRequiresZeroReferences(t *testing.T) {
 
 	// Create todo with tag
 	_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "Test",
-		Tags:   []string{"bug"},
+		Title:     "Test",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -540,8 +540,8 @@ func TestUserOwnedTags_OwnershipPermanent(t *testing.T) {
 
 	// Create tag in project
 	_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "Test",
-		Tags:   []string{"bug"},
+		Title:     "Test",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -577,8 +577,8 @@ func TestUserOwnedTags_OwnershipPermanent(t *testing.T) {
 		t.Fatalf("CreateProject 2: %v", err)
 	}
 	_, err = st.CreateTodo(ctx, p2.ID, CreateTodoInput{
-		Title:  "Test 2",
-		Tags:   []string{"bug"}, // Reuse same tag
+		Title:     "Test 2",
+		Tags:      []string{"bug"}, // Reuse same tag
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -628,8 +628,8 @@ VALUES (?, ?, ?, ?)
 
 	// User1 creates tag "bug"
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Todo 1",
-		Tags:   []string{"bug"},
+		Title:     "Todo 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -639,8 +639,8 @@ VALUES (?, ?, ?, ?)
 	// User2 creates todo - can only use their own tags, so "bug" will create a new tag for user2
 	ctx2 := WithUserID(ctx, user2.ID)
 	_, err = st.CreateTodo(ctx2, p.ID, CreateTodoInput{
-		Title:  "Todo 2",
-		Tags:   []string{"bug"}, // Same name, but will be user2's tag
+		Title:     "Todo 2",
+		Tags:      []string{"bug"}, // Same name, but will be user2's tag
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -704,8 +704,8 @@ VALUES (?, ?, ?, ?)
 
 	// User1 creates todo with tag "bug"
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Todo 1",
-		Tags:   []string{"bug"},
+		Title:     "Todo 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -715,8 +715,8 @@ VALUES (?, ?, ?, ?)
 	// User2 creates todo with tag "bug" (their own tag)
 	ctx2 := WithUserID(ctx, user2.ID)
 	_, err = st.CreateTodo(ctx2, p.ID, CreateTodoInput{
-		Title:  "Todo 2",
-		Tags:   []string{"bug"},
+		Title:     "Todo 2",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -725,7 +725,7 @@ VALUES (?, ?, ?, ?)
 
 	// Filter by "bug" - should match both todos (filtering by name, not owner)
 	pc, _ := st.GetProjectContextForRead(ctx1, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx1, &pc, "bug", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx1, &pc, []string{"bug"}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -767,8 +767,8 @@ VALUES (?, ?, ?, ?)
 
 	// User1 creates todo with tag "bug"
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Todo 1",
-		Tags:   []string{"bug"},
+		Title:     "Todo 1",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -778,8 +778,8 @@ VALUES (?, ?, ?, ?)
 	// User2 creates todo with tag "feature"
 	ctx2 := WithUserID(ctx, user2.ID)
 	_, err = st.CreateTodo(ctx2, p.ID, CreateTodoInput{
-		Title:  "Todo 2",
-		Tags:   []string{"feature"},
+		Title:     "Todo 2",
+		Tags:      []string{"feature"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -821,8 +821,8 @@ func TestUserOwnedTags_CannotDeleteOtherUsersTags(t *testing.T) {
 
 	// User1 creates tag
 	_, err = st.CreateTodo(ctx1, p.ID, CreateTodoInput{
-		Title:  "Test",
-		Tags:   []string{"bug"},
+		Title:     "Test",
+		Tags:      []string{"bug"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
@@ -850,7 +850,7 @@ func TestUserOwnedTags_CannotDeleteOtherUsersTags(t *testing.T) {
 	// User1 can delete their own tag (if no references)
 	// First delete the todo
 	pc, _ := st.GetProjectContextForRead(ctx1, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx1, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx1, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}
@@ -960,20 +960,39 @@ func TestUserOwnedTags_ListUserTags(t *testing.T) {
 
 	// Create tags in both projects
 	_, err = st.CreateTodo(ctx, p1.ID, CreateTodoInput{
-		Title:  "Test 1",
-		Tags:   []string{"bug", "urgent"},
+		Title:     "Test 1",
+		Tags:      []string{"bug", "urgent"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
 		t.Fatalf("CreateTodo p1: %v", err)
 	}
 	_, err = st.CreateTodo(ctx, p2.ID, CreateTodoInput{
-		Title:  "Test 2",
-		Tags:   []string{"feature"},
+		Title:     "Test 2",
+		Tags:      []string{"feature"},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {
 		t.Fatalf("CreateTodo p2: %v", err)
+	}
+
+	// A different user's unrelated personal library must never enter this read.
+	other, err := st.CreateUser(context.Background(), "other@example.com", "password", "Other")
+	if err != nil {
+		t.Fatalf("CreateUser other: %v", err)
+	}
+	otherCtx := WithUserID(context.Background(), other.ID)
+	otherProject, err := st.CreateProject(otherCtx, "Other Project")
+	if err != nil {
+		t.Fatalf("CreateProject other: %v", err)
+	}
+	_, err = st.CreateTodo(otherCtx, otherProject.ID, CreateTodoInput{
+		Title:     "Other Todo",
+		Tags:      []string{"other-private"},
+		ColumnKey: DefaultColumnBacklog,
+	}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo other: %v", err)
 	}
 
 	// List user's tags (cross-project)
@@ -995,6 +1014,9 @@ func TestUserOwnedTags_ListUserTags(t *testing.T) {
 	}
 	if !tagNames["feature"] {
 		t.Error("Expected 'feature' tag in user's tag library")
+	}
+	if tagNames["other-private"] {
+		t.Error("Did not expect another user's unrelated tag in user's tag library")
 	}
 	if len(tags) != 3 {
 		t.Errorf("Expected 3 tags in user's library, got %d: %v", len(tags), tags)

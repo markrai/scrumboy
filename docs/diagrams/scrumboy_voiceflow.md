@@ -2,6 +2,25 @@
 
 Optional browser speech shortcuts for board actions (push-to-talk or hands-free). The surrounding board/settings UI localizes with the SPA i18n layer, but command grammar, spoken confirmations, and disambiguation words remain English-centric today.
 
+The enhanced on-device path uses this separate bounded skill loop. The browser/basic diagrams below remain unchanged.
+
+```mermaid
+flowchart LR
+  Speech[Local speech input] --> Agent[Nano voice-agent-v9]
+  Agent --> Protocol[Strict single-envelope protocol]
+  Protocol --> Skills[Scrumboy bounded skill registry]
+  Skills --> Results[Bounded authoritative results]
+  Results --> Agent
+  Skills --> Proposals[Prepared mutation proposals]
+  Proposals --> Review[Fresh batch preflight and combined confirmation]
+  Review --> Confirm[User confirmation]
+  Confirm --> Preflight[Fresh preflight of every proposal]
+  Preflight --> Execute[Existing mutation paths in prepared order]
+  Execute --> Output[Authoritative result and local speech output]
+```
+
+The model selects actions; Scrumboy owns resources, permissions, validation, task handles, confirmation and execution. All proposals pass preflight before any mutation starts. Execution failures stop the remaining operations without a homemade rollback. Keep Listening controls one next-command window after the current task, independently of clarification and confirmation replies.
+
 ```mermaid
 flowchart LR
   UI[Board topbar and settings]

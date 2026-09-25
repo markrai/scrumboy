@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"reflect"
 	"testing"
+	"time"
 )
 
 // TestBurndown_TestingIsIncomplete verifies that Testing status is counted as incomplete in burndown
@@ -86,6 +88,42 @@ func TestBurndown_TestingIsIncomplete(t *testing.T) {
 	// Testing should count as incomplete, not completed
 }
 
+func TestBurndownArchivalPreservesDoneAndIncompleteHistory(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "archive burndown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	incomplete, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: "incomplete", ColumnKey: DefaultColumnDoing}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: "done", ColumnKey: DefaultColumnDone}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yesterday := time.Now().UTC().Add(-24 * time.Hour).Truncate(time.Millisecond)
+	if _, err := st.db.ExecContext(ctx, `UPDATE todos SET created_at = ?, updated_at = ? WHERE id IN (?, ?)`, yesterday.UnixMilli(), yesterday.UnixMilli(), incomplete.ID, done.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.GetBacklogSize(ctx, p.ID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodosByLocalID(ctx, p.ID, []int64{incomplete.LocalID, done.LocalID}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	after, err := st.GetBacklogSize(ctx, p.ID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("burndown changed after archive\nbefore=%+v\nafter=%+v", before, after)
+	}
+}
+
 // TestMoveTodo_ToTesting verifies that todos can be moved to Testing status
 func TestMoveTodo_ToTesting(t *testing.T) {
 	st, cleanup := newTestStore(t)
@@ -155,6 +193,9 @@ func TestMoveTodo_ToTesting(t *testing.T) {
 		if moved.ColumnKey != DefaultColumnDone {
 			t.Errorf("expected column Done, got %q", moved.ColumnKey)
 		}
+		if moved.MoveFromColumnName != "Testing" || moved.MoveToColumnName != "Done" {
+			t.Errorf("move transition names = %q → %q, want Testing → Done", moved.MoveFromColumnName, moved.MoveToColumnName)
+		}
 	})
 }
 
@@ -207,7 +248,7 @@ func TestGetBoard_IncludesTestingColumn(t *testing.T) {
 
 	// Get board
 	pc, _ := st.GetProjectContextForRead(ctx, p.ID, ModeFull)
-	_, _, _, cols, err := st.GetBoard(ctx, &pc, "", "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
+	_, _, _, cols, err := st.GetBoard(ctx, &pc, []string{""}, "", AssigneeFilter{}, PriorityFilter{}, SprintFilter{Mode: "none"}, SortOrderDefault)
 	if err != nil {
 		t.Fatalf("GetBoard: %v", err)
 	}

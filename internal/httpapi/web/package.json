@@ -17,22 +17,24 @@
     "test:cards-per-lane": "playwright test --config=playwright.config.ts scripts/cards-per-lane.playwright.ts",
     "test:e2e": "playwright test --config=playwright.config.ts",
     "copy:i18n": "node scripts/copy-i18n-locales.mjs",
+    "build:capacitor-web": "node scripts/build-capacitor-web.mjs",
+    "verify:capacitor-web": "node scripts/verify-capacitor-web.mjs",
     "build": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run generate:landing && tsc && npm run copy:i18n",
-    "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && vitest run",
+    "test": "node scripts/verify-vendor.mjs && npm run verify:i18n && npm run verify:landing && node scripts/run-vitest.mjs run",
     "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "happy-dom": "^20.11.1",
+    "@playwright/test": "^1.63.0",
+    "happy-dom": "^20.14.0",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
     "vite": "6.4.3",
-    "vitest": "3.2.6"
+    "vitest": "4.1.11"
   },
   "dependencies": {
-    "dompurify": "3.4.13",
+    "dompurify": "3.4.15",
     "markdown-it": "14.3.0",
-    "mermaid": "11.16.1",
+    "mermaid": "11.17.2",
     "uplot": "^1.6.32"
   },
   "overrides": {

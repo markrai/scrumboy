@@ -82,7 +82,7 @@ func TestImportMergeUpdate_PreservesExistingAssignee(t *testing.T) {
 	}
 
 	todo, err := st.CreateTodo(ctxOwner, project.ID, CreateTodoInput{
-		Title:  "before merge",
+		Title:     "before merge",
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeFull)
 	if err != nil {

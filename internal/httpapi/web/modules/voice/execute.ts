@@ -3,7 +3,7 @@ import { voiceText } from './i18n.js';
 import { callMcpTool, type McpToolName } from './mcp-client.js';
 import type { CommandIR } from './schema.js';
 
-type McpCommandIR = Extract<CommandIR, { intent: "todos.create" | "todos.move" | "todos.delete" | "todos.assign" }>;
+type McpCommandIR = Exclude<CommandIR, { intent: "open_todo" }>;
 
 export type McpCommandCall = {
   tool: McpToolName;
@@ -26,6 +26,8 @@ export function buildMcpCall(ir: McpCommandIR): McpCommandCall {
         input: {
           projectSlug: ir.projectSlug,
           title: ir.entities.title,
+          columnKey: ir.entities.columnKey,
+          ...('body' in ir.entities ? { body: ir.entities.body, tags: ir.entities.tags, assigneeUserId: ir.entities.assigneeUserId } : {}),
         },
       };
     case "todos.move":
@@ -54,6 +56,46 @@ export function buildMcpCall(ir: McpCommandIR): McpCommandCall {
           patch: {
             assigneeUserId: ir.entities.assigneeUserId,
           },
+        },
+      };
+    case "todos.update_title":
+      return {
+        tool: "todos_update",
+        input: {
+          projectSlug: ir.projectSlug,
+          localId: ir.entities.localId,
+          patch: {
+            title: ir.entities.title,
+          },
+        },
+      };
+    case "todos.append_notes":
+    case "todos.replace_notes":
+      return {
+        tool: "todos_update",
+        input: {
+          projectSlug: ir.projectSlug,
+          localId: ir.entities.localId,
+          patch: { body: ir.entities.body },
+        },
+      };
+    case "todos.add_tag":
+    case "todos.remove_tag":
+      return {
+        tool: "todos_update",
+        input: {
+          projectSlug: ir.projectSlug,
+          localId: ir.entities.localId,
+          patch: { tags: ir.entities.tags },
+        },
+      };
+    case "todos.unassign":
+      return {
+        tool: "todos_update",
+        input: {
+          projectSlug: ir.projectSlug,
+          localId: ir.entities.localId,
+          patch: { assigneeUserId: null },
         },
       };
   }

@@ -188,6 +188,28 @@ describe('settings cards per lane', () => {
     expect(options).toEqual(['20', '50', '75', '100']);
   });
 
+  it('omits Cards per lane when there is no signed-in user', async () => {
+    const settings = await import('./settings.js');
+    const state = await import('../state/mutations.js');
+    state.setAuthStatusAvailable(false);
+    state.setPushConfigured(false);
+    state.setPushStatus({ state: 'not_configured', reason: null });
+    state.setUser(null);
+    state.setSlug(null);
+    state.setBoard(null);
+    state.setProjects(null);
+    state.setProjectId(null);
+    state.setSettingsProjectId(null);
+    state.setSettingsActiveTab('customization');
+    state.setBoardMembers([]);
+    await settings.renderSettingsModal();
+
+    const html = document.getElementById('settingsCustomizationContent')?.innerHTML ?? '';
+    expect(document.getElementById('cardsPerLaneSelect')).toBeNull();
+    expect(html).not.toContain('Cards per lane');
+    expect(html).not.toContain('Sign in to save this preference');
+  });
+
   it('persists a successful change and clears board prefetch cache', async () => {
     window.history.replaceState({ boardData: { project: { id: 1 }, columns: {} } }, '', '/alpha');
     apiFetchMock.mockResolvedValue({ ok: true });
@@ -220,7 +242,7 @@ describe('settings cards per lane', () => {
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await vi.waitFor(() => expect(invalidateBoardMock).toHaveBeenCalled());
 
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', '', '', null, null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', [], '', null, null, null, null);
   });
 
   it('restores the previous value when save fails', async () => {

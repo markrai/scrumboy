@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { initI18n, resetI18nForTests } from "./i18n/index.js";
 import { confirmDelete, showConfirmDialog, showPromptDialog } from "./utils.js";
 
@@ -98,6 +98,21 @@ describe("showConfirmDialog lifecycle", () => {
       locale: "en",
       loadLocale: async (locale) => locale === "pseudo" ? pseudoCatalog : enCatalog,
     });
+  });
+
+  it.each([
+    ["default", false, false],
+    ["success", true, false],
+    ["danger", false, true],
+  ] as const)("applies the %s semantic confirmation tone", async (tone, success, danger) => {
+    const resultPromise = showConfirmDialog("Proceed?", "Confirm", "Continue", tone);
+    const confirmBtn = document.getElementById("confirmDialogConfirm") as HTMLButtonElement;
+
+    expect(confirmBtn.classList.contains("btn--success")).toBe(success);
+    expect(confirmBtn.classList.contains("btn--danger")).toBe(danger);
+
+    confirmBtn.click();
+    await expect(resultPromise).resolves.toBe(true);
   });
 
   it("resolves true exactly once even on double-click confirm", async () => {
@@ -252,5 +267,76 @@ describe("showPromptDialog lifecycle", () => {
 
     await expect(showPromptDialog()).rejects.toThrow("showModal failed");
     expect(document.querySelector("dialog")).toBeNull();
+  });
+});
+
+describe("sanitizePostAuthNext", () => {
+  it("preserves valid internal paths and queries", async () => {
+    const { sanitizePostAuthNext } = await import("./utils.js");
+    expect(sanitizePostAuthNext("/")).toBe("/");
+    expect(sanitizePostAuthNext("/dashboard")).toBe("/dashboard");
+    expect(sanitizePostAuthNext("/board-slug")).toBe("/board-slug");
+    expect(sanitizePostAuthNext("/board-slug/t/123")).toBe("/board-slug/t/123");
+    expect(sanitizePostAuthNext("/board-slug?tag=x")).toBe("/board-slug?tag=x");
+    expect(sanitizePostAuthNext("/dashboard?tab=mine&view=1")).toBe("/dashboard?tab=mine&view=1");
+    expect(sanitizePostAuthNext("  /projects?from=auth  ")).toBe("/projects?from=auth");
+  });
+
+  it("falls back to / for absolute, protocol-relative, and dangerous schemes", async () => {
+    const { sanitizePostAuthNext } = await import("./utils.js");
+    expect(sanitizePostAuthNext("https://example.com")).toBe("/");
+    expect(sanitizePostAuthNext("http://example.com")).toBe("/");
+    expect(sanitizePostAuthNext("//example.com")).toBe("/");
+    expect(sanitizePostAuthNext("//example.com/path")).toBe("/");
+    expect(sanitizePostAuthNext("javascript:alert(1)")).toBe("/");
+    expect(sanitizePostAuthNext("data:text/html,hi")).toBe("/");
+    expect(sanitizePostAuthNext("")).toBe("/");
+    expect(sanitizePostAuthNext(null)).toBe("/");
+    expect(sanitizePostAuthNext(undefined)).toBe("/");
+    expect(sanitizePostAuthNext("dashboard")).toBe("/");
+  });
+
+  it("rejects backslash, encoding, traversal, and fragment escape variants", async () => {
+    const { sanitizePostAuthNext } = await import("./utils.js");
+    expect(sanitizePostAuthNext("/foo\\bar")).toBe("/");
+    expect(sanitizePostAuthNext("/foo\nbar")).toBe("/");
+    expect(sanitizePostAuthNext("/foo\rbar")).toBe("/");
+    expect(sanitizePostAuthNext("/foo\0bar")).toBe("/");
+    expect(sanitizePostAuthNext("/foo#bar")).toBe("/");
+    expect(sanitizePostAuthNext("%2f%2f")).toBe("/");
+    expect(sanitizePostAuthNext("/%2f%2fevil.example/path")).toBe("/");
+    expect(sanitizePostAuthNext("%2e%2e")).toBe("/");
+    expect(sanitizePostAuthNext("/../../etc/passwd")).toBe("/");
+    expect(sanitizePostAuthNext("/foo/./bar")).toBe("/");
+    expect(sanitizePostAuthNext("/foo/../bar")).toBe("/");
+    expect(sanitizePostAuthNext("/foo://bar")).toBe("/");
+  });
+
+  it("preserves encoded query values that look external without treating them as the destination", async () => {
+    const { sanitizePostAuthNext } = await import("./utils.js");
+    const oauthNext =
+      "/oauth/authorize?response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&return_to=https://attacker.example&state=a%2Bb";
+    expect(sanitizePostAuthNext(oauthNext)).toBe(oauthNext);
+  });
+});
+
+describe("redirectAfterAuth", () => {
+  it("navigates only after sanitizing next (password/2FA post-auth boundary)", async () => {
+    const replaceSpy = vi.spyOn(window.location, "replace").mockImplementation(() => {});
+    const { redirectAfterAuth } = await import("./utils.js");
+
+    redirectAfterAuth("/dashboard?tab=mine");
+    expect(replaceSpy).toHaveBeenLastCalledWith(expect.stringMatching(/^\/dashboard\?tab=mine&_=\d+$/));
+
+    redirectAfterAuth("https://evil.example/phish");
+    expect(replaceSpy).toHaveBeenLastCalledWith(expect.stringMatching(/^\/\?_=\d+$/));
+
+    redirectAfterAuth("//evil.example");
+    expect(replaceSpy).toHaveBeenLastCalledWith(expect.stringMatching(/^\/\?_=\d+$/));
+
+    redirectAfterAuth("javascript:alert(1)");
+    expect(replaceSpy).toHaveBeenLastCalledWith(expect.stringMatching(/^\/\?_=\d+$/));
+
+    replaceSpy.mockRestore();
   });
 });

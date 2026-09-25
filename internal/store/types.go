@@ -18,6 +18,7 @@ var (
 	ErrEncryptionNotConfigured    = errs.ErrEncryptionNotConfigured
 	ErrSprintsDisabled            = errors.New("sprints are disabled for this project")
 	ErrSnapshotSuperseded         = errors.New("calendar snapshot configuration changed")
+	ErrOIDCSignupDomainNotAllowed = errors.New("OIDC signup email domain is not allowed")
 )
 
 const (
@@ -228,6 +229,21 @@ type ProjectListEntry struct {
 	Role    ProjectRole
 }
 
+// ProjectSummary is a lightweight project list projection. It deliberately
+// excludes presentation and ownership fields that summary consumers do not
+// need, most notably the potentially large project image.
+type ProjectSummary struct {
+	ID                 int64
+	Slug               string
+	Name               string
+	DominantColor      string
+	DefaultSprintWeeks int
+	ExpiresAt          *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	Role               ProjectRole
+}
+
 // SystemRole represents a user's system-wide role (Owner, Admin, User).
 // System roles govern system-level permissions (user management, admin APIs).
 // System roles are completely separate from ProjectRole and do not grant
@@ -300,6 +316,7 @@ type Todo struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	DoneAt          *time.Time // Last completion time (Unix ms). Set on transition into DONE; never cleared on reopen.
+	ArchivedAt      *time.Time // Orthogonal archival timestamp; NULL means active.
 
 	// AssignmentChanged is set when this mutation changed assignee handling: CreateTodo (initial assignee on create)
 	// or UpdateTodo (assignee field changed). Not persisted; used by callers to gate SSE emissions.
@@ -307,6 +324,11 @@ type Todo struct {
 	// MaterialChanged is transaction-authoritative mutation metadata. It ignores
 	// bookkeeping timestamps and is not persisted or projected to clients.
 	MaterialChanged bool `json:"-"`
+	// MoveFromColumnName and MoveToColumnName are transient mutation metadata.
+	// MoveTodo populates them from the workflow columns it already validates in
+	// the authoritative transaction; they are never persisted or projected.
+	MoveFromColumnName string `json:"-"`
+	MoveToColumnName   string `json:"-"`
 }
 
 // Sprint time terminology (see Sprint struct in sprints.go):
@@ -318,9 +340,10 @@ const EstimationModeModifiedFibonacci = "MODIFIED_FIBONACCI"
 
 // TodoLinkTarget holds minimal todo info for link API responses.
 type TodoLinkTarget struct {
-	LocalID  int64
-	Title    string
-	LinkType string
+	LocalID    int64
+	Title      string
+	LinkType   string
+	ArchivedAt *time.Time
 }
 
 type TagCount struct {
@@ -331,6 +354,9 @@ type TagCount struct {
 	Name  string
 	Count int
 	Color *string // Hex color code (e.g., "#FF5733"), nil if no custom color
+	// LastActiveAt is the latest updated_at among non-archived todos that
+	// currently carry this logical tag. It is nil for zero-active selections.
+	LastActiveAt *time.Time
 	// CanDeleteMine is true when the viewer owns at least one backing personal row.
 	// The action is "delete my personal tag", which is global to that user.
 	CanDeleteMine bool

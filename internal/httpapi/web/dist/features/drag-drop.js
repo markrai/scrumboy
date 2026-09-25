@@ -1,6 +1,7 @@
 import { apiFetch } from '../api.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
-import { getAssigneeFromUrl, getPriorityFromUrl, getSlug, getTag, getSearch, getSortFromUrl, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
+import { getAssigneeFromUrl, getPriorityFromUrl, getSlug, getTagsFromUrl, getSearch, getSortFromUrl, getSprintIdFromUrl, getBoardLaneMeta } from '../state/selectors.js';
+import { appendTagParams } from '../state/board-filter-url.js';
 import { showToast } from '../utils.js';
 import { invalidateBoard, setBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { recordBoardInteraction, recordLocalMutation } from '../realtime/guard.js';
@@ -105,7 +106,7 @@ function hasActiveBoardSubsetFilter() {
     const sprintId = getSprintIdFromUrl();
     const assignee = getAssigneeFromUrl();
     const priority = getPriorityFromUrl();
-    return !!((getTag() && getTag().trim() !== "")
+    return !!(getTagsFromUrl().length > 0
         || (getSearch() && getSearch().trim() !== "")
         || (sprintId && sprintId.trim() !== "")
         || (assignee && assignee.trim() !== "")
@@ -132,14 +133,13 @@ async function getHiddenLaneBoundaryLocalId(status) {
     const params = new URLSearchParams();
     params.set("limit", "1");
     params.set("afterCursor", meta.nextCursor);
-    const tag = getTag();
+    const tags = getTagsFromUrl();
     const search = getSearch();
     const sprintId = getSprintIdFromUrl();
     const assignee = getAssigneeFromUrl();
     const sort = getSortFromUrl();
     const priority = getPriorityFromUrl();
-    if (tag)
-        params.set("tag", tag);
+    appendTagParams(params, tags);
     if (search)
         params.set("search", search);
     if (sprintId)
@@ -256,7 +256,7 @@ export function initDnD() {
         }
         catch (err) {
             showToast(apiErrorMessage(err, { fallbackKey: "board.todo.moveFailed" }));
-            invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl())
+            invalidateBoard(getSlug(), getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl())
                 .catch((e) => showToast(apiErrorMessage(e, { fallbackKey: "board.refreshFailed" })));
         }
         finally {

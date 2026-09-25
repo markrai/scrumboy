@@ -38,11 +38,24 @@ func (s *Store) AddLink(ctx context.Context, projectID, fromLocalID, toLocalID i
 	if _, err := s.getProjectForWriteTx(ctx, tx, projectID, mode); err != nil {
 		return err
 	}
-	if _, err := getTodoIDByLocalIDTx(ctx, tx, projectID, fromLocalID); err != nil {
+	fromID, err := getTodoIDByLocalIDTx(ctx, tx, projectID, fromLocalID)
+	if err != nil {
 		return err
 	}
-	if _, err := getTodoIDByLocalIDTx(ctx, tx, projectID, toLocalID); err != nil {
+	toID, err := getTodoIDByLocalIDTx(ctx, tx, projectID, toLocalID)
+	if err != nil {
 		return err
+	}
+	fromTodo, err := getTodoTx(ctx, tx, fromID)
+	if err != nil {
+		return err
+	}
+	toTodo, err := getTodoTx(ctx, tx, toID)
+	if err != nil {
+		return err
+	}
+	if fromTodo.ArchivedAt != nil || toTodo.ArchivedAt != nil {
+		return todoArchivedError()
 	}
 
 	nowMs := time.Now().UTC().UnixMilli()
@@ -84,6 +97,25 @@ func (s *Store) RemoveLink(ctx context.Context, projectID, fromLocalID, toLocalI
 	if _, err := s.getProjectForWriteTx(ctx, tx, projectID, mode); err != nil {
 		return err
 	}
+	fromID, err := getTodoIDByLocalIDTx(ctx, tx, projectID, fromLocalID)
+	if err != nil {
+		return err
+	}
+	toID, err := getTodoIDByLocalIDTx(ctx, tx, projectID, toLocalID)
+	if err != nil {
+		return err
+	}
+	fromTodo, err := getTodoTx(ctx, tx, fromID)
+	if err != nil {
+		return err
+	}
+	toTodo, err := getTodoTx(ctx, tx, toID)
+	if err != nil {
+		return err
+	}
+	if fromTodo.ArchivedAt != nil || toTodo.ArchivedAt != nil {
+		return todoArchivedError()
+	}
 	var linkType string
 	if err := tx.QueryRowContext(ctx, `SELECT link_type FROM todo_links WHERE project_id = ? AND from_local_id = ? AND to_local_id = ?`, projectID, fromLocalID, toLocalID).Scan(&linkType); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -124,7 +156,7 @@ func (s *Store) ListLinksForTodo(ctx context.Context, projectID, localID int64, 
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT t.local_id, t.title, l.link_type
+SELECT t.local_id, t.title, l.link_type, t.archived_at
 FROM todo_links l
 JOIN todos t ON t.project_id = l.project_id AND t.local_id = l.to_local_id
 WHERE l.project_id = ? AND l.from_local_id = ?
@@ -144,7 +176,7 @@ func (s *Store) ListBacklinksForTodo(ctx context.Context, projectID, localID int
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT t.local_id, t.title, l.link_type
+SELECT t.local_id, t.title, l.link_type, t.archived_at
 FROM todo_links l
 JOIN todos t ON t.project_id = l.project_id AND t.local_id = l.from_local_id
 WHERE l.project_id = ? AND l.to_local_id = ?
@@ -185,7 +217,7 @@ func (s *Store) SearchTodosForLinkPicker(ctx context.Context, projectID int64, q
 		rows, err = s.db.QueryContext(ctx, `
 SELECT local_id, title
 FROM todos
-WHERE project_id = ?
+WHERE project_id = ? AND archived_at IS NULL
 ORDER BY updated_at DESC, local_id ASC
 LIMIT ?`,
 			projectID, limit,
@@ -194,7 +226,7 @@ LIMIT ?`,
 		rows, err = s.db.QueryContext(ctx, `
 SELECT local_id, title
 FROM todos
-WHERE project_id = ? AND local_id = ?
+WHERE project_id = ? AND local_id = ? AND archived_at IS NULL
 LIMIT 1`,
 			projectID, n,
 		)
@@ -203,6 +235,7 @@ LIMIT 1`,
 SELECT local_id, title
 FROM todos
 WHERE project_id = ?
+  AND archived_at IS NULL
   AND LOWER(title) LIKE '%' || LOWER(?) || '%'
 ORDER BY local_id ASC
 LIMIT ?`,
@@ -236,8 +269,13 @@ func scanTodoLinkTargets(rows *sql.Rows) ([]TodoLinkTarget, error) {
 	out := make([]TodoLinkTarget, 0, 8)
 	for rows.Next() {
 		var t TodoLinkTarget
-		if err := rows.Scan(&t.LocalID, &t.Title, &t.LinkType); err != nil {
+		var archived sql.NullInt64
+		if err := rows.Scan(&t.LocalID, &t.Title, &t.LinkType, &archived); err != nil {
 			return nil, fmt.Errorf("scan todo link target: %w", err)
+		}
+		if archived.Valid {
+			at := time.UnixMilli(archived.Int64).UTC()
+			t.ArchivedAt = &at
 		}
 		out = append(out, t)
 	}

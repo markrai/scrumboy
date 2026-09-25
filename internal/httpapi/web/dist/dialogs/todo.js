@@ -1,4 +1,4 @@
-import { addTagBtn, closeTodoBtn, deleteTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoPriority, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
+import { addTagBtn, archiveTodoBtn, closeTodoBtn, deleteTodoBtn, restoreTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoPriority, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
 import { renderMarkdownPreviewInto } from '../markdown-preview.js';
@@ -12,6 +12,7 @@ import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
+import { defaultTodoTagSuggestions, loadAllProjectTagSuggestions, mergeTodoTagSuggestions, } from './todo-tag-suggestions.js';
 export { getTodoFormPermissions, } from './todo-permissions.js';
 export { getTagsFromChips, normalizeTagName, removeTag, renderTagAutocomplete, renderTagsChips, setupTagAutocomplete, } from './todo-tags.js';
 let todoNotesMode = "markdown";
@@ -21,6 +22,7 @@ let todoTooltipsApplied = false;
 let todoDialogBaseline = null;
 let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort = null;
+let todoDialogOpenGeneration = 0;
 function sprintStateLabel(state) {
     const key = `todo.sprint.state.${state}`;
     return state && hasI18nKey(key) ? t(key) : state;
@@ -298,6 +300,9 @@ export function __isTodoDialogDirtyForTest() {
 }
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
+    const openGeneration = ++todoDialogOpenGeneration;
+    const isArchived = mode === "edit" && !!todo?.archivedAt;
+    const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
     setEditingTodo(mode === "edit" ? todo : null);
     bindTodoDialogCloseGuards();
     bindTodoDialogLinkLifecycle();
@@ -310,38 +315,19 @@ export async function openTodoDialog(opts) {
         role: opts.role,
     });
     setTodoFormPermissions(permissions);
-    if (getSlug()) {
-        try {
-            let tagsResponse;
-            if (getUser()) {
-                tagsResponse = (await apiFetch(`/api/tags/mine`));
-            }
-            else {
-                tagsResponse = (await apiFetch(`/api/board/${getSlug()}/tags`));
-            }
-            setAvailableTags(tagsResponse.map((tag) => (typeof tag === "string" ? tag : tag.name)));
-            const tagsMap = {};
-            tagsResponse.forEach((tag) => {
-                const tagName = typeof tag === "string" ? tag : tag.name;
-                tagsMap[tagName.toLowerCase()] = tagName;
-                if (tag.color) {
-                    const tagColors = { ...getTagColors() };
-                    tagColors[tagName] = tag.color;
-                    setTagColors(tagColors);
-                }
-            });
-            setAvailableTagsMap(tagsMap);
+    const installTagSuggestions = (suggestions) => {
+        setAvailableTags(suggestions.map((tag) => tag.name));
+        const tagsMap = {};
+        const tagColors = { ...getTagColors() };
+        for (const tag of suggestions) {
+            tagsMap[tag.name.toLocaleLowerCase()] = tag.name;
+            if (tag.color)
+                tagColors[tag.name] = tag.color;
         }
-        catch (err) {
-            console.error("Failed to fetch tags:", err);
-            setAvailableTags([]);
-            setAvailableTagsMap({});
-        }
-    }
-    else {
-        setAvailableTags([]);
-        setAvailableTagsMap({});
-    }
+        setAvailableTagsMap(tagsMap);
+        setTagColors(tagColors);
+    };
+    installTagSuggestions(defaultTodoTagSuggestions(board, tagsToShow));
     const assigneeField = document.getElementById("todoAssigneeField");
     const assigneeSelect = document.getElementById("todoAssignee");
     const showAssignee = assigneeField && assigneeSelect && !isAnonymousBoard(getBoard());
@@ -354,7 +340,7 @@ export async function openTodoDialog(opts) {
         sprintSelect &&
         !isAnonymousBoard(getBoard()) &&
         !!getSlug() &&
-        opts.role === "maintainer" &&
+        (opts.role === "maintainer" || isArchived) &&
         boardSprintsEnabled(getBoard());
     if (sprintField) {
         sprintField.style.display = showSprint ? "" : "none";
@@ -439,6 +425,9 @@ export async function openTodoDialog(opts) {
     const editableWithLinks = mode === "edit" && !!todo?.localId && !!slug;
     if (linksField) {
         linksField.style.display = editableWithLinks ? "" : "none";
+        const controls = linksField.querySelector(".tags-input-row");
+        if (controls)
+            controls.hidden = isArchived;
     }
     if (editableWithLinks) {
         try {
@@ -471,6 +460,8 @@ export async function openTodoDialog(opts) {
     const createdEl = document.getElementById("todoDialogCreated");
     const createdByEl = document.getElementById("todoDialogCreatedBy");
     const updatedEl = document.getElementById("todoDialogUpdated");
+    const archiveBanner = document.getElementById("todoArchiveBanner");
+    const archiveTimestamp = document.getElementById("todoArchiveTimestamp");
     const formatDialogDate = (d) => formatLocalizedDate(d, {
         year: "2-digit",
         month: "numeric",
@@ -526,13 +517,19 @@ export async function openTodoDialog(opts) {
         todoStatus.value = selected;
         populateTodoPriorityOptions(null);
         deleteTodoBtn.style.display = "none";
+        if (archiveTodoBtn)
+            archiveTodoBtn.style.display = "none";
+        if (restoreTodoBtn)
+            restoreTodoBtn.style.display = "none";
+        if (archiveBanner)
+            archiveBanner.hidden = true;
         if (shareTodoBtn)
             shareTodoBtn.style.display = "none";
         setDates(undefined, undefined);
         setCreatedBy(undefined);
     }
     else {
-        setTodoDialogTitleKey(permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
+        setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
         todoTitle.value = todo.title || "";
         todoBody.value = todo.body || "";
         todoTags.value = "";
@@ -541,6 +538,17 @@ export async function openTodoDialog(opts) {
         todoStatus.value = selected;
         populateTodoPriorityOptions(todo.priorityKey);
         deleteTodoBtn.style.display = permissions.canDeleteTodo ? "" : "none";
+        if (archiveTodoBtn)
+            archiveTodoBtn.style.display = permissions.canArchiveTodo ? "" : "none";
+        if (restoreTodoBtn)
+            restoreTodoBtn.style.display = permissions.canRestoreTodo ? "" : "none";
+        if (archiveBanner)
+            archiveBanner.hidden = !isArchived;
+        if (archiveTimestamp) {
+            archiveTimestamp.textContent = isArchived
+                ? t("todo.archive.archivedOn", { date: formatDialogDate(todo.archivedAt) })
+                : "";
+        }
         if (shareTodoBtn)
             shareTodoBtn.style.display = "";
         setDates(todo.createdAt, todo.updatedAt);
@@ -571,15 +579,33 @@ export async function openTodoDialog(opts) {
     todoTitle.readOnly = !permissions.canEditTitle;
     todoStatus.disabled = !permissions.canEditStatus;
     const saveTodoBtn = document.getElementById("saveTodoBtn");
-    if (saveTodoBtn)
+    if (saveTodoBtn) {
         saveTodoBtn.disabled = !permissions.canSubmitTodo;
+        saveTodoBtn.style.display = isArchived ? "none" : "";
+    }
     const tagsChips = document.getElementById("tagsChips");
     if (tagsChips)
         tagsChips.innerHTML = "";
-    const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
     renderTagsChips(tagsToShow, { canRemove: permissions.canEditTags });
     if (permissions.canEditTags) {
         setupTagAutocomplete();
+    }
+    const catalogSlug = getSlug();
+    if (catalogSlug && permissions.canEditTags) {
+        void loadAllProjectTagSuggestions(catalogSlug)
+            .then((catalog) => {
+            const dialog = todoDialog;
+            if (openGeneration !== todoDialogOpenGeneration ||
+                getSlug() !== catalogSlug ||
+                !dialog?.open) {
+                return;
+            }
+            installTagSuggestions(mergeTodoTagSuggestions(catalog, getTagsFromChips()));
+            setupTagAutocomplete();
+        })
+            .catch((err) => {
+            console.error("Failed to fetch project tag catalog:", err);
+        });
     }
     bindShareTodoButton();
     captureTodoDialogBaseline();

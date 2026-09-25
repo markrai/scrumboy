@@ -1,0 +1,113 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+def envRaw = { String name ->
+    def value = System.getenv(name)
+    return value != null ? value : ""
+}
+def envPresent = { String value ->
+    return !value.trim().isEmpty()
+}
+def uploadStoreFile = envRaw("SCRUMBOY_UPLOAD_STORE_FILE")
+def uploadStorePassword = envRaw("SCRUMBOY_UPLOAD_STORE_PASSWORD")
+def uploadKeyAlias = envRaw("SCRUMBOY_UPLOAD_KEY_ALIAS")
+def uploadKeyPassword = envRaw("SCRUMBOY_UPLOAD_KEY_PASSWORD")
+def uploadSigningEnabled =
+        envPresent(uploadStoreFile) &&
+        envPresent(uploadStorePassword) &&
+        envPresent(uploadKeyAlias) &&
+        envPresent(uploadKeyPassword)
+if (uploadSigningEnabled) {
+    logger.lifecycle("Release upload signing is enabled from environment variables.")
+} else {
+    logger.lifecycle("Release upload signing is not enabled; the release build remains unsigned.")
+}
+
+android {
+    namespace = "com.markrai.scrumboy"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.markrai.scrumboy"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "3.34.2"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    if (uploadSigningEnabled) {
+        signingConfigs {
+            release {
+                storeFile file(uploadStoreFile)
+                storePassword uploadStorePassword
+                keyAlias uploadKeyAlias
+                keyPassword uploadKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (uploadSigningEnabled) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    implementation("com.google.mlkit:genai-speech-recognition:1.0.0-alpha1")
+    // ML Kit genai-prompt 1.0.0-beta4 calls Job.cancel$default on the Job
+    // interface (kotlinx-coroutines 1.11.0+). Its POM only requests 1.7.3.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation platform("com.squareup.okhttp3:okhttp-bom:5.5.0")
+    // OkHttp's Android 5.5.0 variant requires compileSdk 37. Capacitor 8 is
+    // intentionally pinned to 36, so use the same release's JVM artifact.
+    implementation "com.squareup.okhttp3:okhttp-jvm:5.5.0"
+    implementation("com.squareup.okhttp3:okhttp-sse") {
+        exclude group: "com.squareup.okhttp3", module: "okhttp"
+    }
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.json:json:20240303"
+    testImplementation("com.squareup.okhttp3:mockwebserver:5.5.0") {
+        exclude group: "com.squareup.okhttp3", module: "okhttp"
+    }
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

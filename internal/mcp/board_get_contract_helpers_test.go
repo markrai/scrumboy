@@ -24,21 +24,22 @@ type boardGetStoreCall struct {
 	Operation string
 	Context   context.Context
 
-	Slug      string
-	Mode      store.Mode
-	ProjectID int64
-	SprintID  int64
-	ColumnKey string
-	Limit     int
-	AfterA    int64
-	AfterB    int64
-	Tag       string
-	Search    string
-	Assignee  store.AssigneeFilter
-	Priority  store.PriorityFilter
-	Sprint    store.SprintFilter
-	Sort      store.SortOrder
-	ResultErr error
+	Slug       string
+	Mode       store.Mode
+	ProjectID  int64
+	SprintID   int64
+	ColumnKey  string
+	Limit      int
+	AfterA     int64
+	AfterB     int64
+	Tag        string
+	TagFilters []string
+	Search     string
+	Assignee   store.AssigneeFilter
+	Priority   store.PriorityFilter
+	Sprint     store.SprintFilter
+	Sort       store.SortOrder
+	ResultErr  error
 }
 
 type boardGetListResult struct {
@@ -54,6 +55,13 @@ type recordingBoardGetStore struct {
 	Errors       map[string]error
 	ListResults  map[string]boardGetListResult
 	CountResults map[string]int
+}
+
+func recordedBoardGetTag(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	return tags[0]
 }
 
 func newRecordingBoardGetStore(st *store.Store) *recordingBoardGetStore {
@@ -162,7 +170,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 	limit int,
 	afterA int64,
 	afterB int64,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -187,7 +195,7 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 			limit,
 			afterA,
 			afterB,
-			tagFilter,
+			tagFilters,
 			searchFilter,
 			assigneeFilter,
 			priorityFilter,
@@ -202,20 +210,21 @@ func (s *recordingBoardGetStore) ListTodosForBoardLane(
 		err = injected
 	}
 	s.Calls = append(s.Calls, boardGetStoreCall{
-		Operation: "list",
-		Context:   ctx,
-		ProjectID: projectID,
-		ColumnKey: columnKey,
-		Limit:     limit,
-		AfterA:    afterA,
-		AfterB:    afterB,
-		Tag:       tagFilter,
-		Search:    searchFilter,
-		Assignee:  assigneeFilter,
-		Priority:  priorityFilter,
-		Sprint:    sprintFilter,
-		Sort:      sortOrder,
-		ResultErr: err,
+		Operation:  "list",
+		Context:    ctx,
+		ProjectID:  projectID,
+		ColumnKey:  columnKey,
+		Limit:      limit,
+		AfterA:     afterA,
+		AfterB:     afterB,
+		Tag:        recordedBoardGetTag(tagFilters),
+		TagFilters: append([]string(nil), tagFilters...),
+		Search:     searchFilter,
+		Assignee:   assigneeFilter,
+		Priority:   priorityFilter,
+		Sprint:     sprintFilter,
+		Sort:       sortOrder,
+		ResultErr:  err,
 	})
 	return todos, cursor, hasMore, err
 }
@@ -224,7 +233,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 	ctx context.Context,
 	projectID int64,
 	columnKey string,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -241,7 +250,7 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 			ctx,
 			projectID,
 			columnKey,
-			tagFilter,
+			tagFilters,
 			searchFilter,
 			assigneeFilter,
 			priorityFilter,
@@ -253,16 +262,17 @@ func (s *recordingBoardGetStore) CountTodosForBoardLane(
 		err = injected
 	}
 	s.Calls = append(s.Calls, boardGetStoreCall{
-		Operation: "count",
-		Context:   ctx,
-		ProjectID: projectID,
-		ColumnKey: columnKey,
-		Tag:       tagFilter,
-		Search:    searchFilter,
-		Assignee:  assigneeFilter,
-		Priority:  priorityFilter,
-		Sprint:    sprintFilter,
-		ResultErr: err,
+		Operation:  "count",
+		Context:    ctx,
+		ProjectID:  projectID,
+		ColumnKey:  columnKey,
+		Tag:        recordedBoardGetTag(tagFilters),
+		TagFilters: append([]string(nil), tagFilters...),
+		Search:     searchFilter,
+		Assignee:   assigneeFilter,
+		Priority:   priorityFilter,
+		Sprint:     sprintFilter,
+		ResultErr:  err,
 	})
 	return count, err
 }

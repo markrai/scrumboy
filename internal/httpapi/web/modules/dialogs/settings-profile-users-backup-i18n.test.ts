@@ -41,26 +41,77 @@ const {
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
 vi.mock('../members-cache.js', () => ({ fetchProjectMembers: fetchProjectMembersMock }));
 
-vi.mock('../utils.js', () => ({
-  escapeHTML: (s: string) =>
-    String(s)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;'),
-  showToast: showToastMock,
-  getAppVersion: () => 'test-version',
-  showConfirmDialog: showConfirmDialogMock,
-  confirmDelete: confirmDeleteMock,
-  isAnonymousBoard: () => false,
-  renderUserAvatar: (_user: unknown, opts?: { id?: string; ariaLabel?: string }) =>
-    `<button class="user-avatar" id="${opts?.id ?? 'userAvatarBtn'}" aria-label="${opts?.ariaLabel ?? ''}"></button>`,
-  processImageFile: vi.fn(),
-  processWallpaperFileForUpload: vi.fn(),
-  renderAvatarContent: () => '',
-  sanitizeHexColor: (color?: string | null, fallback?: string | null) => color ?? fallback ?? null,
-}));
+vi.mock('../utils.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils.js')>();
+  // bindDialogLocale/attachDialogClose are exercised directly by these tests
+  // (relocalizing an open dialog in place). `importOriginal`'s snapshot of
+  // utils.js closes over whichever ../i18n/index.js instance was live the
+  // *first* time this factory ran, which goes stale once a later test's
+  // `vi.resetModules()` + fresh `initI18n()` call creates a new i18n module
+  // instance mid-suite — the stale closure keeps hydrating against the old
+  // instance's (still-bootstrap) catalog. Re-resolve ../i18n/index.js by
+  // dynamic import at call time instead, so it always tracks the current
+  // module-registry epoch. attachDialogClose has no i18n dependency, so the
+  // snapshot from `actual` is safe to reuse as-is.
+  const bindDialogLocale = (dialog: HTMLDialogElement, sync?: () => void): (() => void) => {
+    let removed = false;
+    let cleanupListener: (() => void) | null = null;
+    const handleNativeCleanup: EventListener = () => release();
+    const release = () => {
+      if (removed) return;
+      removed = true;
+      cleanupListener?.();
+      dialog.removeEventListener('cancel', handleNativeCleanup);
+      dialog.removeEventListener('close', handleNativeCleanup);
+    };
+    dialog.addEventListener('cancel', handleNativeCleanup);
+    dialog.addEventListener('close', handleNativeCleanup);
+    // Single import, resolved once: wire the listener and do the immediate
+    // hydrate from the SAME resolved module reference. Two independent
+    // `import('../i18n/index.js')` calls (one for the initial hydrate, one
+    // for the listener) were observed to resolve at different times under
+    // Vitest's mock-factory module runner, letting a locale-change event
+    // dispatch before the listener from the second call had registered.
+    void import('../i18n/index.js').then((i18n) => {
+      if (removed) return;
+      const listener: EventListener = () => {
+        if (!dialog.isConnected) {
+          release();
+          return;
+        }
+        i18n.hydrateI18n(dialog);
+        sync?.();
+      };
+      cleanupListener = () => document.removeEventListener(i18n.I18N_LOCALE_CHANGED, listener);
+      document.addEventListener(i18n.I18N_LOCALE_CHANGED, listener);
+      i18n.hydrateI18n(dialog);
+      sync?.();
+    });
+    return release;
+  };
+  return {
+    bindDialogLocale,
+    attachDialogClose: actual.attachDialogClose,
+    escapeHTML: (s: string) =>
+      String(s)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;'),
+    showToast: showToastMock,
+    getAppVersion: () => 'test-version',
+    showConfirmDialog: showConfirmDialogMock,
+    confirmDelete: confirmDeleteMock,
+    isAnonymousBoard: () => false,
+    renderUserAvatar: (_user: unknown, opts?: { id?: string; ariaLabel?: string }) =>
+      `<button class="user-avatar" id="${opts?.id ?? 'userAvatarBtn'}" aria-label="${opts?.ariaLabel ?? ''}"></button>`,
+    processImageFile: vi.fn(),
+    processWallpaperFileForUpload: vi.fn(),
+    renderAvatarContent: () => '',
+    sanitizeHexColor: (color?: string | null, fallback?: string | null) => color ?? fallback ?? null,
+  };
+});
 
 vi.mock('../theme.js', () => ({
   getStoredTheme: () => 'system',
@@ -170,6 +221,27 @@ async function initI18nFor(locale: 'en' | 'de' = 'en') {
   return i18n;
 }
 
+async function installCapacitorRuntime(): Promise<void> {
+  const runtime = await import('../platform/runtime.js');
+  runtime.installAppRuntime({
+    kind: 'capacitor',
+    capability: () => null,
+    assetOrigin: () => 'capacitor://localhost',
+    serverOrigin: () => 'https://selected.example',
+    publicLinkOrigin: () => 'https://selected.example',
+    supportsPWA: () => false,
+    supportsWebPush: () => false,
+    supportsInteractiveOIDC: () => false,
+    startInteractiveOIDC: vi.fn(async () => undefined),
+    transport: () => ({
+      request: vi.fn(),
+      openEventStream: vi.fn(),
+      acquireResource: vi.fn(),
+      logout: vi.fn(),
+    } as any),
+  });
+}
+
 async function setupSettingsView(options: {
   activeTab: string;
   user?: Record<string, unknown> | null;
@@ -212,6 +284,7 @@ describe('settings i18n (profile / users / backup / customization)', () => {
   beforeEach(() => {
     vi.resetModules();
     installBaseDOM();
+    localStorage.clear();
     window.history.replaceState({}, '', '/');
     apiFetchMock.mockReset();
     fetchProjectMembersMock.mockReset();
@@ -281,6 +354,28 @@ describe('settings i18n (profile / users / backup / customization)', () => {
 	  expect(text).toContain('This owner account has no effective sign-in method');
 	  expect(text).not.toContain('No effective owner login method is available');
 	});
+
+  it('shows selected server/change action and gates interactive OIDC in the Capacitor profile', async () => {
+    await installCapacitorRuntime();
+    const user = {
+      id: 1,
+      name: 'Mobile User',
+      email: 'mobile@example.com',
+      systemRole: 'user',
+      twoFactorEnabled: false,
+      hasLocalPassword: true,
+      oidcLinked: false,
+    };
+    const changeServer = vi.fn();
+    window.addEventListener('scrumboy:mobile-change-server', changeServer, { once: true });
+
+    await setupSettingsView({ activeTab: 'profile', user, oidcEnabled: true, localAuthEnabled: true });
+
+    expect(document.getElementById('settingsTabContent')?.textContent).toContain('https://selected.example');
+    expect(document.getElementById('connectSSOBtn')).toBeNull();
+    document.getElementById('mobileChangeServerBtn')?.click();
+    expect(changeServer).toHaveBeenCalledOnce();
+  });
 
 	it('makes the local-auth-disabled owner warning conditional on SSO becoming unavailable', async () => {
 	  const ssoOnlyOwner = { id: 1, name: 'Owner', email: 'owner@example.com', systemRole: 'owner', twoFactorEnabled: false, hasLocalPassword: false, oidcLinked: true };
@@ -824,6 +919,118 @@ describe('settings i18n (profile / users / backup / customization)', () => {
   });
 
   // ---- Customization residuals (VoiceFlow + Push) -----------------------
+
+  it('shows and directly persists the Capacitor-only Enhanced speech wait controls', async () => {
+    await installCapacitorRuntime();
+    state.voiceFlowEnabled = true;
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    const controls = document.getElementById('enhancedSpeechWaitControls') as HTMLElement;
+    const speechSpeedControls = document.getElementById('voiceSpeechSpeedControls') as HTMLElement;
+    const options = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="enhancedSpeechWaitPreset"]'));
+    expect(controls).not.toBeNull();
+    expect(controls.hidden).toBe(false);
+    expect(speechSpeedControls).not.toBeNull();
+    expect(speechSpeedControls.hidden).toBe(false);
+    expect(options.map(option => option.value)).toEqual(['fast', 'normal', 'patient']);
+    expect(options.find(option => option.value === 'normal')?.checked).toBe(true);
+
+    apiFetchMock.mockClear();
+    const patient = options.find(option => option.value === 'patient')!;
+    patient.checked = true;
+    patient.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(localStorage.getItem('scrumboy.voiceEnhancedSpeechWait')).toBe('patient');
+    expect(apiFetchMock).not.toHaveBeenCalled();
+
+    const voiceToggle = document.getElementById('voiceFlowEnabledToggle') as HTMLInputElement;
+    voiceToggle.checked = false;
+    voiceToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(controls.hidden).toBe(true);
+    expect(speechSpeedControls.hidden).toBe(true);
+    voiceToggle.checked = true;
+    voiceToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    expect(controls.hidden).toBe(false);
+    expect(speechSpeedControls.hidden).toBe(false);
+    expect(setVoiceFlowEnabledPreferenceMock).toHaveBeenLastCalledWith(true);
+  });
+
+  it.each([
+    [null, '0', '1.0x'],
+    ['1.25', '1', '1.25x'],
+    ['1.5', '2', '1.50x'],
+    ['1.75', '3', '1.75x'],
+    ['2', '4', '2.0x'],
+  ] as const)('selects stored speech rate %s at position %s with label %s', async (stored, position, label) => {
+    if (stored !== null) localStorage.setItem('scrumboy.voiceSpeechRate', stored);
+    state.voiceFlowEnabled = true;
+
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    const controls = document.getElementById('voiceSpeechSpeedControls') as HTMLElement;
+    const slider = document.getElementById('voiceSpeechSpeedSlider') as HTMLInputElement;
+    const value = document.getElementById('voiceSpeechSpeedValue') as HTMLOutputElement;
+    const tickLabels = Array.from(controls.querySelectorAll('.voice-speech-speed__ticks span'))
+      .map(tick => tick.textContent);
+    expect(controls.hidden).toBe(false);
+    expect(controls.querySelector('[data-i18n-text="settings.customization.voiceFlow.speechSpeed.title"]')?.textContent)
+      .toBe('Speech speed');
+    expect(controls.querySelector('[data-i18n-text="settings.customization.voiceFlow.speechSpeed.helper"]')?.textContent)
+      .toBe('How fast Scrumboy speaks during VoiceFlow.');
+    expect(slider).toMatchObject({ type: 'range', min: '0', max: '4', step: '1', value: position });
+    expect(value.textContent).toBe(label);
+    expect(slider.getAttribute('aria-valuetext')).toBe(label);
+    expect(tickLabels).toEqual(['1.0x', '1.25x', '1.50x', '1.75x', '2.0x']);
+  });
+
+  it('maps slider position 2 to numeric 1.5, visible 1.50x, and canonical local persistence', async () => {
+    state.voiceFlowEnabled = true;
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+    const slider = document.getElementById('voiceSpeechSpeedSlider') as HTMLInputElement;
+    apiFetchMock.mockClear();
+
+    slider.value = '2';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(localStorage.getItem('scrumboy.voiceSpeechRate')).toBe('1.5');
+    const { getVoiceSpeechRate } = await import('../core/voice-speech-rate-preferences.js');
+    expect(getVoiceSpeechRate()).toBe(1.5);
+    expect(document.getElementById('voiceSpeechSpeedValue')?.textContent).toBe('1.50x');
+    expect(slider.getAttribute('aria-valuetext')).toBe('1.50x');
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('hides and immediately reveals browser speech speed with the VoiceFlow toggle', async () => {
+    state.voiceFlowEnabled = false;
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+    const controls = document.getElementById('voiceSpeechSpeedControls') as HTMLElement;
+    const toggle = document.getElementById('voiceFlowEnabledToggle') as HTMLInputElement;
+    expect(controls.hidden).toBe(true);
+
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(controls.hidden).toBe(false);
+  });
+
+  it.each(['fast', 'patient'] as const)('selects the stored %s Enhanced speech wait preset', async preset => {
+    await installCapacitorRuntime();
+    localStorage.setItem('scrumboy.voiceEnhancedSpeechWait', preset);
+    state.voiceFlowEnabled = true;
+
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    expect(document.querySelector<HTMLInputElement>(`input[name="enhancedSpeechWaitPreset"][value="${preset}"]`)?.checked).toBe(true);
+  });
+
+  it('omits Enhanced speech wait controls from browser/PWA Settings', async () => {
+    state.voiceFlowEnabled = true;
+    await setupSettingsView({ activeTab: 'customization', user: null, authStatusAvailable: true });
+
+    expect(document.getElementById('voiceFlowEnabledToggle')).not.toBeNull();
+    expect(document.getElementById('voiceSpeechSpeedControls')).not.toBeNull();
+    expect(document.getElementById('enhancedSpeechWaitControls')).toBeNull();
+    expect(document.querySelector('input[name="enhancedSpeechWaitPreset"]')).toBeNull();
+  });
 
   it('relocalizes VoiceFlow + Push/PWA copy on locale change while preserving toggle state and triggering no push/preference side effects', async () => {
     const user = { id: 1, name: 'Eve', email: 'eve@example.com', systemRole: 'owner', twoFactorEnabled: false };

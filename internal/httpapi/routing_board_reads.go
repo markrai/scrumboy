@@ -52,7 +52,11 @@ func (s *Server) handlePreparedSlugBoardInitial(
 	ctx context.Context,
 	prepared *boardapp.PreparedSlugRead,
 ) {
-	tag := r.URL.Query().Get("tag")
+	tags, err := parseBoardTagFilters(r.URL.Query()["tag"])
+	if err != nil {
+		writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag"})
+		return
+	}
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 	if search == "" {
 		search = ""
@@ -102,7 +106,7 @@ func (s *Server) handlePreparedSlugBoardInitial(
 		}
 	}
 	result, err := prepared.ReadInitial(boardapp.Query{
-		TagFilter:      tag,
+		TagFilters:     tags,
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -179,7 +183,11 @@ func (s *Server) handlePreparedSlugBoardLane(
 	prepared *boardapp.PreparedSlugRead,
 ) {
 	columnKey := normalizeLaneKey(rawColumnKey)
-	tag := r.URL.Query().Get("tag")
+	tags, err := parseBoardTagFilters(r.URL.Query()["tag"])
+	if err != nil {
+		writeValidationError(w, err.Error(), "too_many_tag_filters", map[string]any{"field": "tag"})
+		return
+	}
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 	assigneeFilter, err := s.parseAssigneeFilterFromQuery(ctx, r)
 	if err != nil {
@@ -230,7 +238,7 @@ func (s *Server) handlePreparedSlugBoardLane(
 		Limit:          limit,
 		AfterA:         afterA,
 		AfterB:         afterB,
-		TagFilter:      tag,
+		TagFilters:     tags,
 		SearchFilter:   search,
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,

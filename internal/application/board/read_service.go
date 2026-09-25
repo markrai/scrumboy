@@ -22,7 +22,7 @@ type LegacyReadStore interface {
 	GetBoard(
 		ctx context.Context,
 		pc *store.ProjectContext,
-		tagFilter string,
+		tagFilters []string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
 		priorityFilter store.PriorityFilter,

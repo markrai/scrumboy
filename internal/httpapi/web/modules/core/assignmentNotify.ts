@@ -1,6 +1,7 @@
 /** Mute assignment toast+sound via localStorage key `scrumboy_assignment_notify_muted` = `'1'`. */
 
 import { t } from '../i18n/index.js';
+import { getAppRuntime } from '../platform/runtime.js';
 
 const MUTE_KEY = "scrumboy_assignment_notify_muted";
 
@@ -41,6 +42,9 @@ export function playAssignmentSound(): void {
 
 /** OS Notification API (optional; permission requested from Settings → Customization). */
 export function showAssignmentDesktopNotification(title: string): void {
+  if (!getAppRuntime().supportsWebPush()) {
+    return;
+  }
   if (typeof Notification === "undefined") {
     return;
   }
@@ -55,6 +59,9 @@ export function showAssignmentDesktopNotification(title: string): void {
 }
 
 export async function requestDesktopNotificationPermission(): Promise<NotificationPermission> {
+  if (!getAppRuntime().supportsWebPush()) {
+    return "denied";
+  }
   if (typeof Notification === "undefined") {
     return "denied";
   }
@@ -66,6 +73,9 @@ export async function requestDesktopNotificationPermission(): Promise<Notificati
 }
 
 export function getDesktopNotificationStatusKind(): DesktopNotificationStatusKind {
+  if (!getAppRuntime().supportsWebPush()) {
+    return "unsupported";
+  }
   if (typeof Notification === "undefined") {
     return "unsupported";
   }

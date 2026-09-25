@@ -1,7 +1,19 @@
 import type { Board } from '../types.js';
 import { renderVoiceMessage, type VoiceMessageDescriptor, type VoiceMessageValues } from './i18n.js';
+import { canonicalizeTagName } from './tag-canonicalization.js';
 
-export type CommandIntent = "todos.create" | "todos.move" | "todos.delete" | "todos.assign" | "open_todo";
+export type CommandIntent =
+  | "todos.create"
+  | "todos.move"
+  | "todos.delete"
+  | "todos.assign"
+  | "todos.unassign"
+  | "todos.update_title"
+  | "todos.append_notes"
+  | "todos.replace_notes"
+  | "todos.add_tag"
+  | "todos.remove_tag"
+  | "open_todo";
 
 export type TodoTargetReference =
   | { kind: "id"; localId: number; ambiguousId?: boolean; display: string }
@@ -17,7 +29,7 @@ export type CommandIR =
       intent: "todos.create";
       projectId: number;
       projectSlug: string;
-      entities: { title: string };
+      entities: { title: string; columnKey: string; body?: string; tags?: string[]; assigneeUserId?: number | null };
     }
   | {
       intent: "todos.move";
@@ -36,6 +48,30 @@ export type CommandIR =
       projectId: number;
       projectSlug: string;
       entities: { localId: number; assigneeUserId: number };
+    }
+  | {
+      intent: "todos.update_title";
+      projectId: number;
+      projectSlug: string;
+      entities: { localId: number; title: string };
+    }
+  | {
+      intent: "todos.append_notes" | "todos.replace_notes";
+      projectId: number;
+      projectSlug: string;
+      entities: { localId: number; body: string; notes: string };
+    }
+  | {
+      intent: "todos.add_tag" | "todos.remove_tag";
+      projectId: number;
+      projectSlug: string;
+      entities: { localId: number; tags: string[]; tag: string };
+    }
+  | {
+      intent: "todos.unassign";
+      projectId: number;
+      projectSlug: string;
+      entities: { localId: number; assigneeUserId: null };
     }
   | {
       intent: "open_todo";
@@ -62,6 +98,8 @@ export type CommandFailureCode =
   | "ambiguous_story"
   | "unknown_user"
   | "ambiguous_user"
+  | "unknown_tag"
+  | "ambiguous_tag"
   | "invalid_schema"
   | "unauthorized"
   | "stale_context"
@@ -154,6 +192,12 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
+export function normalizeTodoTitle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const title = value.trim();
+  return title.length > 0 && title.length <= 200 ? title : null;
+}
+
 function laneKeys(board: Board): Set<string> {
   const keys = new Set<string>();
   const order = board.columnOrder ?? [];
@@ -176,14 +220,25 @@ export function validateCommandIR(value: unknown, context: ValidationContext): C
 
   switch (ir.intent) {
     case "todos.create": {
-      if (!hasExactKeys(ir.entities, ["title"])) {
+      const enriched = hasExactKeys(ir.entities, ["title", "columnKey", "body", "tags", "assigneeUserId"]);
+      if (!enriched && !hasExactKeys(ir.entities, ["title", "columnKey"])) {
         return localizedFail("invalid_schema", "voice.errors.schema.createFieldsInvalid", "Create command fields are invalid.");
       }
-      const title = ir.entities.title;
-      if (typeof title !== "string" || title.trim().length === 0 || title.trim().length > 200) {
+      const title = normalizeTodoTitle(ir.entities.title);
+      if (title === null) {
         return localizedFail("invalid_title", "voice.errors.schema.titleLength", "Todo title must be between 1 and 200 characters.");
       }
-      return { ok: true, value: { ...ir, entities: { title: title.trim() } } };
+      if (typeof ir.entities.columnKey !== "string" || !activeLaneKeys.has(ir.entities.columnKey)) {
+        return localizedFail("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
+      }
+      if (enriched && (new TextEncoder().encode(title).length > 200
+        || typeof ir.entities.body !== 'string' || new TextEncoder().encode(ir.entities.body).length > 20000
+        || !Array.isArray(ir.entities.tags) || ir.entities.tags.length > 20
+        || ir.entities.tags.some(tag => typeof tag !== 'string' || canonicalizeTagName(tag) === null)
+        || !(ir.entities.assigneeUserId === null || isPositiveInteger(ir.entities.assigneeUserId)))) {
+        return localizedFail('invalid_schema', 'voice.errors.schema.createFieldsInvalid', 'Create command fields are invalid.');
+      }
+      return { ok: true, value: { ...ir, entities: { ...ir.entities, title, columnKey: ir.entities.columnKey } } };
     }
     case "todos.move": {
       if (!hasExactKeys(ir.entities, ["localId", "toColumnKey"])) {
@@ -212,6 +267,65 @@ export function validateCommandIR(value: unknown, context: ValidationContext): C
       }
       if (!isPositiveInteger(ir.entities.localId) || !isPositiveInteger(ir.entities.assigneeUserId)) {
         return localizedFail("invalid_schema", "voice.errors.schema.assignmentIdsPositive", "Assignment command IDs must be positive integers.");
+      }
+      return { ok: true, value: ir };
+    }
+    case "todos.update_title": {
+      if (!hasExactKeys(ir.entities, ["localId", "title"])) {
+        return localizedFail("invalid_schema", "voice.errors.schema.updateTitleFieldsInvalid", "Title update command fields are invalid.");
+      }
+      if (!isPositiveInteger(ir.entities.localId)) {
+        return localizedFail("invalid_schema", "voice.errors.schema.todoIdPositive", "Todo ID must be a positive integer.");
+      }
+      const title = normalizeTodoTitle(ir.entities.title);
+      if (title === null) {
+        return localizedFail("invalid_title", "voice.errors.schema.titleLength", "Todo title must be between 1 and 200 characters.");
+      }
+      return { ok: true, value: { ...ir, entities: { localId: ir.entities.localId, title } } };
+    }
+    case "todos.append_notes":
+    case "todos.replace_notes": {
+      if (!hasExactKeys(ir.entities, ["localId", "body", "notes"])) {
+        return localizedFail("invalid_schema", "voice.errors.schema.updateNotesFieldsInvalid", "Notes update command fields are invalid.");
+      }
+      if (!isPositiveInteger(ir.entities.localId)) {
+        return localizedFail("invalid_schema", "voice.errors.schema.todoIdPositive", "Todo ID must be a positive integer.");
+      }
+      if (
+        typeof ir.entities.body !== "string"
+        || typeof ir.entities.notes !== "string"
+        || ir.entities.notes.trim().length === 0
+        || ir.entities.notes.length > 1000
+        || ir.entities.body.length > 100000
+      ) {
+        return localizedFail("invalid_schema", "voice.errors.schema.notesInvalid", "Todo notes are invalid.");
+      }
+      return { ok: true, value: ir };
+    }
+    case "todos.add_tag":
+    case "todos.remove_tag": {
+      if (!hasExactKeys(ir.entities, ["localId", "tags", "tag"])) {
+        return localizedFail("invalid_schema", "voice.errors.schema.updateTagsFieldsInvalid", "Tag update command fields are invalid.");
+      }
+      if (!isPositiveInteger(ir.entities.localId)) {
+        return localizedFail("invalid_schema", "voice.errors.schema.todoIdPositive", "Todo ID must be a positive integer.");
+      }
+      if (
+        !Array.isArray(ir.entities.tags)
+        || ir.entities.tags.some((tag) => typeof tag !== "string" || !tag.trim())
+        || typeof ir.entities.tag !== "string"
+        || !ir.entities.tag.trim()
+      ) {
+        return localizedFail("invalid_schema", "voice.errors.schema.tagsInvalid", "Todo tags are invalid.");
+      }
+      return { ok: true, value: ir };
+    }
+    case "todos.unassign": {
+      if (!hasExactKeys(ir.entities, ["localId", "assigneeUserId"])) {
+        return localizedFail("invalid_schema", "voice.errors.schema.unassignFieldsInvalid", "Unassign command fields are invalid.");
+      }
+      if (!isPositiveInteger(ir.entities.localId) || ir.entities.assigneeUserId !== null) {
+        return localizedFail("invalid_schema", "voice.errors.schema.unassignFieldsInvalid", "Unassign command fields are invalid.");
       }
       return { ok: true, value: ir };
     }

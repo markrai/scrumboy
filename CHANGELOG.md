@@ -1,6 +1,418 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.33.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+
+## [3.36.5] - 2026-09-24
+
+### Added
+
+- **API token management UI** - Profile settings list, create, and revoke
+  personal API tokens (`GET`/`POST`/`DELETE /api/me/tokens`), including an
+  optional service-token flag, a one-time secret-reveal dialog with
+  copy-to-clipboard, and i18n across all locale catalogs.
+
+## [3.36.4] - 2026-09-22
+
+### Added
+
+- **Service API tokens** - `POST /api/me/tokens` accepts an optional
+  `isService` flag marking a user-owned token for bot/automation use. It is
+  not a separate service identity: while its user exists, a service token
+  authenticates as that user with that user's permissions. When an owner
+  deletes the user, each service token's metadata (name, timestamps,
+  revocation state) is archived together with snapshots of who held it and
+  which owner deleted them, and then all of the user's tokens are deleted in
+  the same transaction, so no secret survives. Archive records are immutable
+  and hold no secret. Owners can list them with
+  `GET /api/admin/service-token-archive` and permanently purge older ones
+  with `DELETE /api/admin/service-token-archive?archivedBefore=…`. Omitting
+  `isService` creates a personal token, which is deleted with its owner as
+  before. See [API.md](API.md#service-token-archive).
+
+## [3.36.3] - 2026-09-20
+
+### Fixed
+
+- **VoiceFlow move-to-lane interpretation** - Standalone move utterances
+  (`Move #239 to done`, title-based moves, spoken numbers) are recognized
+  deterministically while the agent is idle, so complete moves no longer
+  depend on the on-device model and incomplete ones clarify the missing
+  story or lane. Compound or continuation moves still go through the model.
+  Target/lane resolution and finish-after-effect completion are hardened so
+  a successful single move ends cleanly without inviting an unintended
+  follow-up skill call.
+
+### Added
+
+- **Voice agent evaluation bridge** - Debug-only Android / Capacitor path to
+  score move utterances (raw, protocol, and application accuracy) against a
+  fixed corpus on the current board without executing mutations.
+
+## [3.36.2] - 2026-09-18
+
+### Fixed
+
+- **Creator card-move email copy** - Card-move SMTP subjects and bodies for
+  ordinary activity and **Cards I opened** share the same move wording and
+  field order (`Project:`, `Card:`, `Moved by:`, `Status:`), omit a redundant
+  event heading, and keep **Assigned to me** subject precedence when a
+  mutation also moved the card.
+- **Unavailable client routes** - Unmatched paths and missing/inaccessible
+  board or archive destinations rewrite to `/` (login entry) without a toast;
+  unauthenticated visits preserve a same-origin `next` for post-login return.
+
+### Changed
+
+- **Story editor tag catalog** - Editing a story hydrates the full
+  archive-inclusive project tag catalog asynchronously for autocomplete
+  instead of requiring an explicit **Show all project tags** action. Voice
+  Create still uses only active project tags by default.
+- **Start sprint confirm** - The sprint activation confirm action uses the
+  success (green) button style instead of the destructive (red) style.
+
+## [3.36.1] - 2026-09-17
+
+### Fixed
+
+- **Android Capacitor packaging** - Include `archive.svg` in the packaged
+  mobile web allowlist, and add a unit test that fails when product UI sources
+  reference a local static asset that is not on that allowlist (so the gap is
+  caught in `npm test` instead of only at Android deploy).
+- **Mobile Dashboard / Projects / Temporary toggles** - Keep the three view
+  chips on one row and scale font/padding/gap to fit full labels without
+  wrapping or clipping on narrow phone widths.
+
+## [3.36.0] - 2026-09-17
+
+### Added
+
+- **Desktop Omni tag Browse and Match shelf** - Empty desktop Omni search now
+  offers active, unpinned project tags ranked by recent board activity; typing
+  switches immediately to the existing exact/prefix/substring matches. Pinned
+  tags stay in an independent region, while chevrons page the horizontally
+  scrollable candidate viewport. Mobile retains its existing single rail of
+  pins and typed matches, with no empty-search Browse shelf or chevrons. REST
+  board-tag objects add optional `lastActiveAt`, the latest `updatedAt` among
+  active stories currently carrying the logical tag; selected count-zero
+  historical exceptions omit it.
+
+- **Multi-tag Omni board filtering** - The compact Omni filter can pin up to 20
+  tags in click order. Repeated `tag` URL parameters use logical AND, compose
+  with text/Sprint/Assignee/Priority filters, and are preserved by pagination,
+  drag/drop boundary reads, realtime refreshes, and deep-link navigation.
+  Durable projects match canonical alias groups; temporary boards retain exact
+  stored-name semantics. Legacy pills display every selected tag while keeping
+  their historical replace-all click behavior. MCP `board_get` now accepts
+  preferred `tags[]` with the same logical AND, while retaining scalar `tag`
+  compatibility. `tag` and `tags` are mutually exclusive; commas are not parsed.
+
+## [3.35.0] - 2026-09-15
+
+### Added
+
+- **Compact Omni board filtering** - Boards now default to an Omni presentation that
+  keeps the existing debounced text search and shows deterministic matching active-tag
+  suggestions beside it. Selecting a suggestion consumes the discovery text, while an
+  applied tag remains independently visible and clearable and composes with Sprint and
+  every other existing URL filter. Settings → Customization offers **Legacy pills** for
+  users who prefer the previous permanent tag/sprint strip; both layouts control the same
+  URL and backend filters.
+
+  Board payload `tags` are now a current-work projection: canonical tags used by at least
+  one non-archived story, counted by unique active story. An explicitly selected inactive
+  tag is included with count zero so deep-linked filters never become invisible. Full,
+  archive-inclusive tag catalogs remain unchanged in tag management, the project catalog
+  APIs/MCP tools, and exports. Story editing hydrates the full archive-inclusive project
+  catalog asynchronously for autocomplete; Voice Create uses only active project tags by
+  default.
+
+- **Story archival** - Stories can be archived and restored without changing their
+  workflow state. Archival is orthogonal to Done: `columnKey`, `rank`, `doneAt`, the
+  story's `updatedAt`, tags, links, sprint, priority, assignment and creator attribution
+  (`createdByUserId`) are all preserved, so completion counts, throughput, average lead
+  time, burndown and sprint history read exactly the same before and after. An archived non-Done story stays historically
+  incomplete; an archived Done story keeps counting as it did.
+
+  Archived stories are hidden from current-work reads (board and lane continuation, board
+  and lane counts, dashboard WIP and assigned work, the default story and link searches,
+  and ordering neighbours) but remain visible to direct reads, reporting, and
+  definition/reference checks - a workflow column or priority tier still referenced only by
+  archived stories cannot be deleted. They are read-only until restored: update, move and
+  link add/remove return **409** with reason `todo_archived`. That check runs *after*
+  authorization, so a caller who could not write the story anyway is refused without
+  learning whether it is archived. Existing links to an archived story stay readable. Hard
+  delete is a separate operation and is still permitted wherever its own authorization
+  already allowed it.
+
+  New REST endpoints: `GET /api/board/{slug}/archive` (cursor-paginated, newest first,
+  ordered by `archivedAt` then id) plus single and batch `POST .../archive` and
+  `.../restore`. New MCP tools `todos_archive` and `todos_restore` take 1-500 unique
+  positive project-local IDs. Both transports call the same atomic store primitive: one
+  unknown ID transitions nothing, and re-archiving an already-archived story is an
+  idempotent no-op rather than an error. **Listing the archive needs only board read
+  access, so viewers can see it; archiving and restoring require maintainer on durable
+  projects.** REST publishes exactly one board refresh per real transition and none for a
+  no-op or failure, while the MCP tools are realtime-silent like every other MCP mutation.
+  Audit records `todo_archived` / `todo_restored`, one event per real transition and none
+  for no-ops. Active stories omit `archivedAt` in REST payloads and report it as `null`
+  over MCP.
+
+  The shared web/Capacitor UI now exposes Archive from every readable board. Viewers can
+  browse the cursor-paginated archive and inspect retained story fields and links in a
+  clearly marked read-only detail view. Maintainers and temporary-board capability holders
+  can archive a story, atomically archive a board selection, restore one or many archived
+  stories, or use the existing confirmed hard Delete action from archived detail. Archive
+  and Restore remain separate from Done and never ask for a destination lane. The archive
+  list uses deterministic `Load more` pagination and reconciles through the existing board
+  refresh stream. Nothing is archived automatically; every transition remains explicit.
+
+  **Known behaviour:** sprint planning counts (`todoCount`, the unscheduled/backlog count)
+  and workflow-column and priority-tier reference counts deliberately still include
+  archived stories, because those are integrity and planning-scope numbers rather than
+  board reads. They can therefore exceed what the board lanes show. Likewise, tag
+  management counts remain archive-inclusive while the board's tag counts are
+  active-only.
+
+### Changed
+
+- **Backup format 1.2** - Exports are now format **1.2** and always represent archive
+  state explicitly (`archivedAt` as Unix milliseconds, or `null`). Imports accept **1.1**
+  and **1.2**. On matched-project merge an absent `archivedAt` preserves the target's
+  state, explicit `null` clears it, and a timestamp archives it. A payload declaring 1.1
+  while carrying `archivedAt` is rejected as mislabeled rather than silently treated as
+  archival data. Outside matched merge (copy, replace, import into a board) an absent
+  `archivedAt` creates an active story, so 1.1 backups import exactly as before. Imported
+  `archivedAt` values are validated: negative timestamps and ones implausibly far in the
+  future are rejected before anything is written.
+
+  **Upgrade impact:** older Scrumboy versions that only understand 1.1 will reject a 1.2
+  backup rather than silently dropping archive state. Export a backup from the older
+  version before downgrading.
+
+- **Trello import: closed cards** - A closed Trello card now becomes a first-class archived
+  story instead of having `[Archived]` prefixed to its title. Closed *lists* are unchanged
+  and remain a separate axis (`[Closed List]` title prefix plus the Done remap), so a card
+  that is both keeps the closed-list marker and gains archival. Trello exports carry no
+  per-card archive time, so archived cards are stamped with the import time.
+
+  **Upgrade impact:** re-importing a Trello board produces different titles than before.
+  Previously imported cards keep their existing `[Archived]` titles; nothing is rewritten.
+
+## [3.34.3] - 2026-09-15
+
+### Added
+
+- **Scrumboy Dashboard Android widget** - Native home-screen widget that
+  projects assigned Dashboard work (counts plus a scrollable list of all
+  assigned todos) from a sanitized on-device snapshot. Logout and server
+  change clear it. Taps open existing `/dashboard` and `/{slug}/t/{localId}`
+  routes through an internal activity extra, not a public URL scheme.
+
+## [3.34.2] - 2026-09-14
+
+### Changed
+
+- **Frontend dependency upgrades** - Bump `dompurify` to `3.4.15`, `mermaid` to
+  `11.17.2`, `@playwright/test` to `^1.63.0`, and `happy-dom` to `^20.14.0`;
+  sync vendored `/vendor` browser assets and documentation pins.
+
+### Security
+
+- **Vitest CVE-2026-84373** - Upgrade `vitest` to `4.1.11` so the web test
+  toolchain resolves the patched release; adjust SSE client tests for Vitest 4
+  compatibility. Dev/test tooling only; no production runtime dependency change.
+
+## [3.34.1] - 2026-09-14
+
+### Added
+
+- **OIDC signup email-domain allowlist** - Optional
+  `SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS` (comma-separated, case-insensitive)
+  restricts which email domains may auto-provision a **new** account on first
+  SSO login. Unset/empty keeps unrestricted signup. Existing users are never
+  re-checked; the first user on a fresh instance is always exempt so a
+  restrictive list cannot lock out bootstrap (especially with local auth
+  disabled). Linking SSO to an already-authenticated account is out of scope.
+  Rejected signups surface `auth.oidc.error.domain_not_allowed`. See
+  [docs/oidc.md](docs/oidc.md).
+
+## [3.34.0] - 2026-09-12
+
+### Added
+
+- **Android Capacitor shell** - `mobile/capacitor` packages a thin Android
+  shell that loads signed web assets from generated `www/`. A server selector
+  and native `ScrumboyTransport` own origin, cookie jar, REST, SSE, and
+  acquired-resource networking. Session cookies stay native (never exposed to
+  JS); changing servers clears session and related state. Settings shows the
+  selected server with Change server; immersive system bars use CSS insets for
+  cutouts. See [mobile/capacitor/README.md](mobile/capacitor/README.md).
+- **Android native OIDC handoff** - Packaged SSO opens the configured IdP in an
+  external browser/Custom Tab, returns via the ordinary HTTPS OIDC callback,
+  then completes a one-time handoff to `com.markrai.scrumboy://oidc/callback`.
+  An app-held S256 verifier exchanges for a normal `scrumboy_session` in the
+  native cookie jar. Browser/PWA OIDC is unchanged; no second IdP client.
+  Push, generic deep links, and iOS remain later. See [docs/oidc.md](docs/oidc.md)
+  and [mobile/capacitor/README.md](mobile/capacitor/README.md).
+- **On-device AI VoiceFlow** - On English, enhanced-capable Android devices,
+  VoiceFlow interprets on device: clear creates use a Create planner; other
+  requests use a skill agent (open, inspect, create, move, rename, note,
+  assign/unassign, tag, delete, count completed this week). Mutations require
+  confirmation; text/models stay on device. **Keep Listening** (off by
+  default) opens one extra listen window after a spoken result. Browser/basic
+  VoiceFlow is unchanged. See [docs/voiceflow.md](docs/voiceflow.md).
+- **Advanced on-device speech + local generation** - Supported devices use ML
+  Kit advanced ASR (multi-segment finals, configurable post-final wait,
+  45s ceiling) and an ML Kit / Gemini Nano text-generation bridge with
+  readiness, cancellation, privacy, and quota handling—no cloud AI fallback.
+  Basic VoiceFlow keeps first-final / 10s acquisition. Runtimes advertise
+  speech I/O, local generation, push, and transport capabilities so enhanced
+  features gate correctly.
+- **VoiceFlow speech preferences** - Settings → Customization: Speech speed
+  (1.0x–2.0x) and Wait after I stop speaking (Fast 2s / Normal 4s /
+  Patient 7s) for AI VoiceFlow on this device.
+
+### Changed
+
+- **Web runtime platform boundary** - Networking, PWA/push, wallpaper, and
+  feature gates go through `AppRuntime` / `ServerTransport` so the packaged
+  web app runs under Capacitor without loading the remote server UI.
+- **Native session fencing** - Crash-consistent cookie ownership and
+  generation fencing prevent stale in-flight session delivery from overwriting
+  a newer selected-server session after switch or restart.
+
+### Fixed
+
+- **Enhanced VoiceFlow hardening** - More reliable Create tag/member
+  resolution, split-acronym tags, story moves/deletes, spoken batch
+  confirmations, dialogue state across replies, and todo pronunciation;
+  ambiguous or unsupported requests fail closed.
+- **Android project thumbnails** - Default thumbnails render correctly in the
+  packaged shell instead of broken remote image URLs.
+
+## [3.33.14] - 2026-09-06
+
+### Fixed
+
+- **Bounded MCP project payloads** - `projects_list` now uses deterministic
+  cursor pagination (default 20, maximum 100) and an image-free database
+  projection. MCP project summaries, including `projects_create` and
+  `projects_update` results, no longer contain image data. REST/browser project
+  resources remain image-capable. JSON-RPC continues to return equivalent text
+  and structured content and now advertises the `projects_list` output schema.
+
+## [3.33.13] - 2026-09-06
+
+### Security
+
+- **golang.org/x/crypto and Go 1.26.8 toolchain** - Bump `golang.org/x/crypto`
+  from `v0.54.0` to `v0.56.0`, raise the `go.mod` language version from
+  `1.25.0` to `1.26.0`, pin the toolchain to `go1.26.8`, and pin the Docker
+  build image to `golang:1.26.8-alpine` by multi-platform manifest digest so
+  OpenSSF Scorecard / OSV findings `GO-2026-6303`, `GO-2026-6354`, and
+  `GO-2026-6355` are no longer reported. macOS binaries still require
+  macOS 12 Monterey or later.
+
+## [3.33.12] - 2026-09-06
+
+### Security
+
+- **Webhook SSRF** - Outbound webhook delivery resolves, classifies, and dials
+  a vetted IP instead of using Go's default HTTP client. Destinations that
+  resolve to loopback, LAN/private, Docker/internal, link-local, metadata, or
+  related blocked ranges are no longer delivered, including URLs already stored
+  before upgrade. Redirects are not followed. Webhook delivery ignores
+  environment `HTTP_PROXY`/`HTTPS_PROXY`. Public `http` and `https` webhook
+  URLs remain supported.
+
+## [3.33.11] - 2026-08-27
+
+### Changed
+
+- **Wall mutation application services** - REST wall note, replacement, edge,
+  and transient flows now go through application-layer services instead of
+  handler-side orchestration. HTTP error mapping, validation, and public
+  behavior are unchanged.
+
+## [3.33.10] - 2026-08-25
+
+### Enhancements
+
+- **macOS executable releases** - GitHub Actions workflow natively builds,
+  smoke-tests, and attaches `scrumboy-*-darwin-arm64.tar.gz` and
+  `scrumboy-*-darwin-amd64.tar.gz` plus matching `.sha256` checksums and
+  `.intoto.jsonl` provenance bundles to GitHub Releases on publish; manual
+  `workflow_dispatch` runs upload build artifacts for ad-hoc testing. Binaries
+  require macOS 12 Monterey or later. Apple signing and notarization are not
+  included.
+
+## [3.33.9] - 2026-08-25
+
+### Enhancements
+
+- **Activity email layout** - SMTP activity bodies use a deterministic plain-text
+  hierarchy: event heading, actor, entity, project, event-specific details, then
+  CTA. Fields use action/domain labels such as `Moved by:`, `Card:`, `Sprint:`,
+  `Column:`, `Tag:`, `Project:`, and `Status:`; unavailable optional fields are
+  omitted.
+- **Activity email card links** - Live card notifications with a valid card
+  identity link to the canonical `/<project-slug>/t/<localId>` card route.
+  Deleted-card and project-level notifications link to the project when a live
+  destination exists, and deleted projects have no dead CTA.
+- **Move notification status** - Card move emails include a `Status:` line with
+  source → destination workflow column names when both trimmed names are
+  non-empty and differ. Same-column reorders omit `Status:`.
+
+## [3.33.8] - 2026-08-25
+
+### Fixed
+
+- **Anonymous Mode Customization** - Settings → Customization no longer
+  shows user-only controls (Cards per lane, Desktop notifications,
+  Background/PWA notifications) when nobody is signed in. Those sections
+  still appear for signed-in users. VoiceFlow stays hidden in Anonymous
+  Mode because its command runtime requires durable authenticated boards.
+
+## [3.33.7] - 2026-08-25
+
+### Fixed
+
+- **Agenda short timed cards** - Timed Agenda cards shorter than one hour
+  (including same-clock / missing-end events and 15-minute ranges) paint at a
+  1-hour height so title and time stay readable. Overlap packing still uses
+  the 15-minute span, so a later event 20 minutes after still sits full-width.
+  Events that last one hour or more keep their true span (a 2-hour card stays
+  two hours tall).
+- **Agenda missing end time** - Timed ICS events with a `DTSTART` but no
+  `DTEND` or `DURATION` are treated as point-in-time (end equals start), not
+  as a one-hour block. Agenda shows only the start clock, matching RFC 5545.
+- **Mobile todo Save button** - In the card dialog footer below 620px, Save
+  and Delete use 14px type and a 44px minimum height so they stay tappable.
+  The share control stays compact.
+- **Mobile todo Add button label** - The Tags/Links Add control vertically
+  centers its label inside the fixed-height button.
+- **New todo Save alignment** - With Delete and created-date hidden, the
+  New Todo Save button stays on the right, matching Edit Todo.
+- **Mobile todo title clipping** - On viewports below 620px the todo dialog
+  is centered without a CSS transform, and the title field accepts caret
+  gestures so a long title no longer clips the last characters on Android
+  Chrome.
+
+### Enhancements
+
+- **Agenda event duration** - Ranged timed Agenda labels include a compact
+  duration in parentheses, such as `5:00 PM - 6:00 PM (1h)` and
+  `5:00 PM - 5:15 PM (15m)`. Same-clock events still show only the start time,
+  with no parentheses.
+
+## [3.33.6] - 2026-08-24
+
+### Changed
+
+- **User administration application services** - REST user create, role-change,
+  and delete flows, plus MCP user role-change and delete, now go through
+  application-layer services instead of handler-side orchestration. HTTP/MCP
+  error mapping, validation, and public behavior are unchanged.
 
 ## [3.33.5] - 2026-08-23
 

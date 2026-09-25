@@ -6,7 +6,7 @@ import {
   getAuthStatusAvailable,
   getProjectId,
   getSlug,
-  getTag,
+  getTagsFromUrl,
   getSearch,
   getSprintIdFromUrl,
   getUser,
@@ -232,7 +232,7 @@ function flushPendingRealtimeRefresh(force = false): void {
 
   clearPendingRealtimeRefresh();
   debugLog(force ? "flushPendingRealtimeRefresh forcing invalidateBoard" : "flushPendingRealtimeRefresh running invalidateBoard", slug);
-  invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err: any) => {
+  invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err: any) => {
     console.warn("Realtime board refresh failed:", err?.message || err);
   });
 }
@@ -282,8 +282,7 @@ export function connectBoardEvents(slug: string): void {
     return;
   }
 
-  const url = new URL(`/api/board/${slug}/events`, window.location.origin).toString();
-  const manager = new SseConnectionManager(url, {
+  const manager = new SseConnectionManager(`/api/board/${slug}/events`, {
     label: `board/${slug}/events`,
     // Anonymous-board onopen is conservative: skip reconnect refetches while
     // the initial board load is still in flight, while the manager/slug is

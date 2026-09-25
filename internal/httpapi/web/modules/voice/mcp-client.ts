@@ -1,4 +1,5 @@
 import { voiceText } from './i18n.js';
+import { getAppRuntime } from '../platform/runtime.js';
 
 export type McpToolName =
   | "todos_create"
@@ -7,6 +8,7 @@ export type McpToolName =
   | "todos_move"
   | "todos_delete"
   | "todos_update"
+  | "todos_countCompleted"
   | "members_list";
 
 type McpEnvelope<T> =
@@ -29,7 +31,7 @@ function mcpError(message: string, status: number, data: unknown): Error {
 }
 
 export async function callMcpTool<T = unknown>(tool: McpToolName, input: Record<string, unknown>, options: McpCallOptions = {}): Promise<T> {
-  const res = await fetch("/mcp", {
+  const res = await getAppRuntime().transport().request("/mcp", {
     method: "POST",
     credentials: "same-origin",
     signal: options.signal,

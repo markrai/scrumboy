@@ -26,9 +26,9 @@ func TestCreateTodo_AnonymousTempBoard_WithAuthEnabled_AllowsCreateWithoutUser(t
 	}
 
 	_, err = st.CreateTodo(ctx, p.ID, CreateTodoInput{
-		Title:  "t",
-		Body:   "",
-		Tags:   []string{},
+		Title:     "t",
+		Body:      "",
+		Tags:      []string{},
 		ColumnKey: DefaultColumnBacklog,
 	}, ModeAnonymous)
 	if err != nil {
@@ -184,4 +184,3 @@ func TestMoveTodo_DurableProject_WithAuthEnabled_DeniesAnonymous(t *testing.T) {
 		t.Fatalf("MoveTodo durable without user: want ErrUnauthorized, got %v", err)
 	}
 }
-

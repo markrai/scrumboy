@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -101,6 +102,59 @@ func TestToolCatalog_NamesUniqueAndClaudeCompatible(t *testing.T) {
 	}
 }
 
+func TestToolCatalog_OutputSchemasAreOptionalObjectRoots(t *testing.T) {
+	for name, def := range toolCatalogDefinitions() {
+		if name != "projects_list" && def.OutputSchema != nil {
+			t.Errorf("tool %q unexpectedly advertises an output schema", name)
+		}
+		if def.OutputSchema == nil {
+			continue
+		}
+		schema, ok := def.OutputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("tool %q output schema type=%T, want map[string]any", name, def.OutputSchema)
+		}
+		if schema["type"] != "object" {
+			t.Errorf("tool %q output schema root type=%v, want object", name, schema["type"])
+		}
+		if _, err := json.Marshal(schema); err != nil {
+			t.Errorf("tool %q output schema is not JSON serializable: %v", name, err)
+		}
+	}
+}
+
+func TestToolCatalog_TodoArchivalSchemasAdvertiseBoundedUniqueIDs(t *testing.T) {
+	implemented := make(map[string]bool)
+	for _, name := range New(nil, Options{Mode: "full"}).implementedTools() {
+		implemented[name] = true
+	}
+	for _, name := range []string{"todos_archive", "todos_restore"} {
+		def, ok := toolCatalogDefinitions()[name]
+		if !ok || !implemented[name] {
+			t.Fatalf("%s must be both implemented and cataloged", name)
+		}
+		schema, ok := def.InputSchema.(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema type=%T", name, def.InputSchema)
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s properties=%#v", name, schema["properties"])
+		}
+		ids, ok := properties["localIds"].(map[string]any)
+		// maxItems must be derived from the store's authoritative bound, not a
+		// repeated literal: the advertised schema and the batch the store will
+		// actually accept have to stay in lockstep.
+		if !ok || ids["type"] != "array" || ids["minItems"] != 1 || ids["maxItems"] != store.MaxTodoArchiveBatch || ids["uniqueItems"] != true {
+			t.Fatalf("%s localIds schema=%#v (store bound %d)", name, properties["localIds"], store.MaxTodoArchiveBatch)
+		}
+		required := requiredFieldNamesFromSchema(schema)
+		if len(required) != 2 || required[0] != "projectSlug" || required[1] != "localIds" {
+			t.Fatalf("%s required=%v", name, required)
+		}
+	}
+}
+
 func TestToolCatalog_BoardGetAssigneeIsDocumentedStringUnion(t *testing.T) {
 	def, ok := toolCatalogDefinitions()["board_get"]
 	if !ok {
@@ -188,6 +242,65 @@ func TestToolCatalog_BoardGetSprintIDAdvertisesStoredIdentity(t *testing.T) {
 	for _, required := range requiredFieldNamesFromSchema(schema) {
 		if required == "sprintId" {
 			t.Fatal("board_get sprintId must remain optional")
+		}
+	}
+}
+
+func TestToolCatalog_BoardGetTagsIsDocumentedStringArray(t *testing.T) {
+	def, ok := toolCatalogDefinitions()["board_get"]
+	if !ok {
+		t.Fatal("board_get missing from tool catalog")
+	}
+	schema, ok := def.InputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("board_get input schema has unexpected type %T", def.InputSchema)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get schema properties have unexpected shape: %#v", schema)
+	}
+	tag, ok := properties["tag"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get tag schema has unexpected shape: %#v", properties["tag"])
+	}
+	if tag["type"] != "string" {
+		t.Fatalf("board_get tag type = %#v, want string", tag["type"])
+	}
+	tagDescription, _ := tag["description"].(string)
+	for _, requiredText := range []string{"Legacy", "Prefer tags", "Commas"} {
+		if !strings.Contains(tagDescription, requiredText) {
+			t.Fatalf("board_get tag description %q missing %q", tagDescription, requiredText)
+		}
+	}
+	tags, ok := properties["tags"].(map[string]any)
+	if !ok {
+		t.Fatalf("board_get tags schema has unexpected shape: %#v", properties["tags"])
+	}
+	if tags["type"] != "array" {
+		t.Fatalf("board_get tags type = %#v, want array", tags["type"])
+	}
+	if _, ok := tags["maxItems"]; ok {
+		t.Fatalf("board_get tags must not advertise maxItems; the cap is 20 unique names after normalization: %#v", tags)
+	}
+	if tags["minItems"] != 1 {
+		t.Fatalf("board_get tags minItems = %#v, want 1", tags["minItems"])
+	}
+	items, ok := tags["items"].(map[string]any)
+	if !ok || items["type"] != "string" {
+		t.Fatalf("board_get tags items = %#v, want string", tags["items"])
+	}
+	tagsDescription, _ := tags["description"].(string)
+	for _, requiredText := range []string{"20 unique", "after normalization", "every selected", "`tag`"} {
+		if !strings.Contains(tagsDescription, requiredText) {
+			t.Fatalf("board_get tags description %q missing %q", tagsDescription, requiredText)
+		}
+	}
+	if !strings.Contains(def.Description, "Prefer tags") || !strings.Contains(def.Description, "comma-separate") {
+		t.Fatalf("board_get tool description = %q", def.Description)
+	}
+	for _, required := range requiredFieldNamesFromSchema(schema) {
+		if required == "tag" || required == "tags" {
+			t.Fatalf("board_get %s must remain optional", required)
 		}
 	}
 }
