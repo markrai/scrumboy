@@ -22,6 +22,8 @@ const {
   confirmDeleteMock,
   isAnonymousBoardMock,
   navigateMock,
+  showToastMock,
+  routerImportShouldFail,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   fetchProjectMembersMock: vi.fn(),
@@ -34,6 +36,8 @@ const {
   confirmDeleteMock: vi.fn().mockResolvedValue(false),
   isAnonymousBoardMock: vi.fn(() => false),
   navigateMock: vi.fn(),
+  showToastMock: vi.fn(),
+  routerImportShouldFail: { value: false },
 }));
 
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
@@ -47,7 +51,7 @@ vi.mock('../utils.js', () => ({
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;'),
-  showToast: vi.fn(),
+  showToast: showToastMock,
   getAppVersion: () => 'test-version',
   showConfirmDialog: showConfirmDialogMock,
   confirmDelete: confirmDeleteMock,
@@ -115,7 +119,19 @@ vi.mock('../orchestration/board-refresh.js', () => ({
 
 vi.mock('../realtime/guard.js', () => ({ recordLocalMutation: recordLocalMutationMock }));
 
-vi.mock('../router.js', () => ({ navigate: navigateMock }));
+vi.mock('../router.js', () => {
+  if (routerImportShouldFail.value) {
+    throw new Error('router import failed');
+  }
+  return {
+    get navigate() {
+      if (routerImportShouldFail.value) {
+        throw new Error('router import failed');
+      }
+      return navigateMock;
+    },
+  };
+});
 
 vi.mock('../core/keybindings.js', () => ({
   KEY_ACTION_LIST: [],
@@ -195,6 +211,7 @@ async function setupSettingsView(options: {
   board?: Record<string, unknown> | null;
   user?: Record<string, unknown> | null;
   boardMembers?: any[];
+  projectId?: number | null;
   open?: boolean;
 } = { activeTab: 'tag-colors' }) {
   const i18n = await initI18nFor('en');
@@ -206,7 +223,7 @@ async function setupSettingsView(options: {
   mutations.setSlug(options.slug ?? null);
   mutations.setBoard((options.board as any) ?? null);
   mutations.setProjects(null);
-  mutations.setProjectId(null);
+  mutations.setProjectId(options.projectId ?? null);
   mutations.setSettingsProjectId(null);
   mutations.setSettingsActiveTab(options.activeTab);
   mutations.setBoardMembers(options.boardMembers ?? []);
@@ -262,6 +279,8 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     isAnonymousBoardMock.mockReset();
     isAnonymousBoardMock.mockReturnValue(false);
     navigateMock.mockReset();
+    showToastMock.mockReset();
+    routerImportShouldFail.value = false;
     showConfirmDialogMock.mockReset();
     showConfirmDialogMock.mockResolvedValue(false);
   });
@@ -794,6 +813,84 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     expect(recordLocalMutationMock).toHaveBeenCalled();
     expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7', { method: 'DELETE' });
     expect(navigateMock).toHaveBeenCalledWith('/');
+  });
+
+  it('hides Delete when getProjectId disagrees with the board snapshot', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+      projectId: 99,
+    });
+
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+  });
+
+  it('stamps Delete from the board snapshot when getProjectId is aligned', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+      projectId: 7,
+    });
+
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn?.getAttribute('data-project-id')).toBe('7');
+    expect(deleteBtn?.getAttribute('data-project-name')).toBe('Alpha');
+  });
+
+  it('does not show deleteFailed toast when post-delete navigation fails', async () => {
+    apiFetchMock.mockImplementation(async (url: string, opts?: { method?: string }) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      if (url === '/api/projects/7' && opts?.method === 'DELETE') return {};
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    confirmDeleteMock.mockResolvedValue(true);
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    confirmDeleteMock.mockClear();
+    recordLocalMutationMock.mockClear();
+    apiFetchMock.mockClear();
+    navigateMock.mockClear();
+    showToastMock.mockClear();
+    confirmDeleteMock.mockResolvedValue(true);
+    routerImportShouldFail.value = true;
+
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    deleteBtn!.click();
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7', { method: 'DELETE' });
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalled();
   });
 
   it('hides the board tab row when no board-scoped tabs are visible', async () => {

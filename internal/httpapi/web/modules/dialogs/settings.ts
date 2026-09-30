@@ -625,22 +625,20 @@ function syncProfileLocaleState(): void {
   }
 }
 
-function currentBoardProjectId(): number | null {
-  const fromState = getProjectId();
-  if (fromState) return fromState;
-  const fromBoard = getBoard()?.project?.id;
-  return typeof fromBoard === "number" && fromBoard > 0 ? fromBoard : null;
-}
-
-function canDeleteCurrentProject(): boolean {
+function resolveDeletableProject(): { id: number; name: string } | null {
   const board = getBoard();
-  const projectId = currentBoardProjectId();
-  if (!projectId || !board) return false;
-  if (isAnonymousBoard(board)) return false;
+  const project = board?.project;
+  const id = project?.id;
+  if (typeof id !== "number" || id <= 0) return null;
+  const stateId = getProjectId();
+  if (stateId != null && stateId !== id) return null;
+  if (isAnonymousBoard(board)) return null;
   const currentUser = getUser();
-  if (!currentUser) return false;
+  if (!currentUser) return null;
   const myMember = getBoardMembers().find((m: any) => m.userId === currentUser.id);
-  return myMember?.role === "maintainer";
+  if (myMember?.role !== "maintainer") return null;
+  const name = typeof project.name === "string" ? project.name : "";
+  return { id, name };
 }
 
 async function handleDeleteCurrentProject(btn: HTMLElement): Promise<void> {
@@ -651,11 +649,16 @@ async function handleDeleteCurrentProject(btn: HTMLElement): Promise<void> {
   try {
     recordLocalMutation();
     await apiFetch(`/api/projects/${projectId}`, { method: "DELETE" });
+  } catch (err: any) {
+    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "board.project.deleteFailed" }));
+    return;
+  }
+  try {
     (settingsDialog as HTMLDialogElement | null)?.close();
     const { navigate } = await import("../router.js");
     navigate("/");
-  } catch (err: any) {
-    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "board.project.deleteFailed" }));
+  } catch (err) {
+    console.warn("post-delete navigation failed", err);
   }
 }
 
@@ -664,14 +667,13 @@ export function renderBackupTabHTML(): string {
   const isAnonymousMode = !getAuthStatusAvailable();
   const replaceDisabled = isAnonymousMode ? 'disabled' : '';
   const replaceHidden = isAnonymousMode ? 'style="display: none;"' : '';
-  const projectId = currentBoardProjectId();
-  const projectName = typeof getBoard()?.project?.name === "string" ? getBoard()!.project.name : "";
-  const deleteHTML = canDeleteCurrentProject() && projectId
+  const deletable = resolveDeletableProject();
+  const deleteHTML = deletable
     ? `<div class="settings-backup-delete">
         <div class="settings-backup-delete__danger" data-i18n-text="settings.backup.delete.dangerZone">Danger zone</div>
         <div class="settings-section__title" data-i18n-text="settings.backup.delete.title">Delete project</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.delete.description">Permanently delete this project and all its todos.</div>
-        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-project-id="${projectId}" data-project-name="${escapeHTML(projectName)}" data-i18n-text="settings.backup.delete.action">Delete project</button>
+        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-project-id="${deletable.id}" data-project-name="${escapeHTML(deletable.name)}" data-i18n-text="settings.backup.delete.action">Delete project</button>
       </div>`
     : "";
 
