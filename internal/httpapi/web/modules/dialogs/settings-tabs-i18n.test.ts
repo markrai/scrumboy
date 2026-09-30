@@ -19,6 +19,9 @@ const {
   refreshSprintsAndChipsMock,
   recordLocalMutationMock,
   showConfirmDialogMock,
+  confirmDeleteMock,
+  isAnonymousBoardMock,
+  navigateMock,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   fetchProjectMembersMock: vi.fn(),
@@ -28,6 +31,9 @@ const {
   refreshSprintsAndChipsMock: vi.fn(),
   recordLocalMutationMock: vi.fn(),
   showConfirmDialogMock: vi.fn(),
+  confirmDeleteMock: vi.fn().mockResolvedValue(false),
+  isAnonymousBoardMock: vi.fn(() => false),
+  navigateMock: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
@@ -44,8 +50,8 @@ vi.mock('../utils.js', () => ({
   showToast: vi.fn(),
   getAppVersion: () => 'test-version',
   showConfirmDialog: showConfirmDialogMock,
-  confirmDelete: vi.fn(),
-  isAnonymousBoard: () => false,
+  confirmDelete: confirmDeleteMock,
+  isAnonymousBoard: (...args: unknown[]) => isAnonymousBoardMock(...args),
   renderUserAvatar: () => '',
   processImageFile: vi.fn(),
   processWallpaperFileForUpload: vi.fn(),
@@ -108,6 +114,8 @@ vi.mock('../orchestration/board-refresh.js', () => ({
 }));
 
 vi.mock('../realtime/guard.js', () => ({ recordLocalMutation: recordLocalMutationMock }));
+
+vi.mock('../router.js', () => ({ navigate: navigateMock }));
 
 vi.mock('../core/keybindings.js', () => ({
   KEY_ACTION_LIST: [],
@@ -249,6 +257,11 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     invalidateBoardMock.mockReset();
     refreshSprintsAndChipsMock.mockReset();
     recordLocalMutationMock.mockReset();
+    confirmDeleteMock.mockReset();
+    confirmDeleteMock.mockResolvedValue(false);
+    isAnonymousBoardMock.mockReset();
+    isAnonymousBoardMock.mockReturnValue(false);
+    navigateMock.mockReset();
     showConfirmDialogMock.mockReset();
     showConfirmDialogMock.mockResolvedValue(false);
   });
@@ -675,6 +688,101 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
     expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'calendar', 'charts']);
     expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
+  });
+
+  it('shows the delete project block at the top of Backup / Delete for a maintainer board', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    expect(document.querySelector('.settings-tab[data-tab="backup"]')?.textContent)
+      .toBe(enCatalog['settings.tabs.backup']);
+    const deleteSection = document.querySelector('.settings-backup-delete');
+    const exportSection = document.querySelector('.settings-backup-export');
+    expect(deleteSection).toBeTruthy();
+    expect(exportSection).toBeTruthy();
+    expect(deleteSection?.compareDocumentPosition(exportSection!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(document.getElementById('settingsDeleteProjectBtn')).toBeTruthy();
+  });
+
+  it('omits the delete project block without a board, for non-maintainers, and for anonymous boards', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/tags/mine') return [];
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      user: USER,
+    });
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: [{ userId: 1, role: 'contributor' }],
+    });
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+
+    isAnonymousBoardMock.mockReturnValue(true);
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, expiresAt: '2026-01-01T00:00:00.000Z' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+  });
+
+  it('deletes the current project from Backup / Delete with the same confirm and API flow', async () => {
+    apiFetchMock.mockImplementation(async (url: string, opts?: { method?: string }) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      if (url === '/api/projects/7' && opts?.method === 'DELETE') return {};
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    confirmDeleteMock.mockResolvedValue(true);
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    confirmDeleteMock.mockClear();
+    recordLocalMutationMock.mockClear();
+    apiFetchMock.mockClear();
+    navigateMock.mockClear();
+    confirmDeleteMock.mockResolvedValue(true);
+
+    document.getElementById('settingsDeleteProjectBtn')!.click();
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+
+    expect(confirmDeleteMock).toHaveBeenCalledWith(enCatalog['projects.delete.confirmMessage']);
+    expect(recordLocalMutationMock).toHaveBeenCalled();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7', { method: 'DELETE' });
+    expect(navigateMock).toHaveBeenCalledWith('/');
   });
 
   it('hides the board tab row when no board-scoped tabs are visible', async () => {

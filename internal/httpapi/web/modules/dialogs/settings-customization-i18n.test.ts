@@ -195,7 +195,7 @@ const enCatalog = {
   'settings.tabs.customization': 'Customization',
   'settings.tabs.tagColors': 'Tag Colors',
   'settings.tabs.charts': 'Charts',
-  'settings.tabs.backup': 'Backup',
+  'settings.tabs.backup': 'Backup / Delete',
   'settings.customization.theme.title': 'Theme',
   'settings.customization.theme.description': 'Choose your preferred color scheme.',
   'settings.customization.theme.option.system': 'System',
@@ -274,6 +274,9 @@ const enCatalog = {
   'settings.customization.emailNotify.category.sprintActivity': 'Sprint activity',
   'settings.customization.emailNotify.category.projectActivity': 'Project, workflow, or tag changes',
   'settings.customization.emailNotify.category.addedToProject': "When I'm added to a project",
+  'settings.backup.delete.title': 'Delete project',
+  'settings.backup.delete.description': 'Permanently delete this project and all its todos.',
+  'settings.backup.delete.action': 'Delete project',
   'settings.backup.export.title': 'Export Data',
   'settings.backup.export.description': 'Download all your projects, todos, and tags as a JSON file.',
   'settings.backup.export.action': 'Export Backup',
@@ -725,7 +728,7 @@ describe('settings customization i18n', () => {
 
     expect(document.querySelector('.settings-tab--active[data-tab="backup"]')).toBe(activeTab);
     expect(document.getElementById('settingsDialogTitleLabel')?.textContent).toBe('DE Settings');
-    expect(document.querySelector('.settings-tab[data-tab="backup"]')?.textContent).toBe('DE Backup');
+    expect(document.querySelector('.settings-tab[data-tab="backup"]')?.textContent).toBe('DE Backup / Delete');
     expect(document.querySelector('.settings-backup-export .settings-section__title')?.textContent).toBe('DE Export Data');
     expect(document.getElementById('backupImportBtn')?.textContent).toBe('DE Import');
     const confirmInput = document.getElementById('backupConfirmationInput') as HTMLInputElement | null;

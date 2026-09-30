@@ -2854,7 +2854,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 }
 
 .settings-backup-export,
-.settings-backup-import {
+.settings-backup-import,
+.settings-backup-delete {
   display: flex;
   flex-direction: column;
   gap: var(--s-12);

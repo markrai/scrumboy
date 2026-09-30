@@ -276,7 +276,6 @@ export function buildTopbarHtml(args) {
     const settingsLabel = escapeHTML(t("board.actions.settings"));
     const archiveLabel = escapeHTML(hasI18nKey("board.actions.openArchive") ? t("board.actions.openArchive") : "Archive");
     const changeProjectImageLabel = escapeHTML(t("board.actions.changeProjectImage"));
-    const deleteProjectLabel = escapeHTML(t("board.actions.deleteProject"));
     // Legacy and Omni both keep text search in the topbar (between Archive and
     // New Todo). Omni tag suggestions stay in the second-row filter surface.
     const topbarSearchLayout = boardFilterLayout === 'legacy' || boardFilterLayout === 'omni' ? boardFilterLayout : null;
@@ -340,7 +339,6 @@ export function buildTopbarHtml(args) {
         ${searchControlsHTML}
         ${isAnonymousTempBoard ? `<button class="btn btn--ghost" id="renameProjectBtn" title="${renameProjectLabel}" data-i18n-title="board.actions.renameProject" data-i18n-text="board.actions.renameProject">${renameProjectLabel}</button>` : ''}
         ${(isTemporaryBoard(board) || currentUserProjectRole === 'maintainer') ? `<button class="btn" id="newTodoBtn" title="${newTodoLabel}" aria-label="${newTodoLabel}" data-i18n-title="board.actions.newTodo" data-i18n-aria-label="board.actions.newTodo"><img src="/new.svg" alt="" width="20" height="20" /></button>` : ''}
-        ${!isAnonymousTempBoard && currentUserProjectRole === 'maintainer' ? `<button class="btn btn--danger" id="deleteProjectBtn" title="${deleteProjectLabel}" aria-label="${deleteProjectLabel}" data-i18n-title="board.actions.deleteProject" data-i18n-aria-label="board.actions.deleteProject"><img src="/trash.svg" alt="" width="20" height="20" /></button>` : ''}
         ${!isMobile && !isAnonymousTempBoard && (currentUserProjectRole === 'maintainer' || currentUserProjectRole === 'contributor') ? `<button class="btn btn--success" id="manageMembersBtn" title="${manageMembersLabel}" aria-label="${manageMembersLabel}" data-i18n-title="board.actions.manageMembers" data-i18n-aria-label="board.actions.manageMembers"><img src="/members.svg" alt="" width="20" height="20" decoding="async" /></button>` : ''}
         ${!user ? `<button class="btn btn--ghost" id="settingsBtn" aria-label="${settingsLabel}" data-i18n-aria-label="board.actions.settings">
           <span class="hamburger">☰</span>

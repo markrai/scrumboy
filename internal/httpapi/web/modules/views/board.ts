@@ -3,7 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { fetchProjectMembers, invalidateMembersCache } from '../members-cache.js';
 import { navigate } from '../router.js';
-import { escapeHTML, showToast, processImageFile, confirmDelete, showConfirmDialog, showPromptDialog } from '../utils.js';
+import { escapeHTML, showToast, processImageFile, showConfirmDialog, showPromptDialog } from '../utils.js';
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import {
@@ -1692,20 +1692,6 @@ function renderBoardFromData(board: Board, projectId: number, tags: readonly str
 
   setupManageMembersButton(projectId, board.project.name);
 
-  const deleteProjectBtn = document.getElementById("deleteProjectBtn");
-  if (deleteProjectBtn && !(deleteProjectBtn as any)[BOUND_FLAG]) {
-    deleteProjectBtn.addEventListener("click", async () => {
-      if (!await confirmDelete(t("projects.delete.confirmMessage"))) return;
-      try {
-        recordLocalMutation();
-        await apiFetch(`/api/projects/${projectId}`, { method: "DELETE" });
-        navigate("/");
-      } catch (err: any) {
-        showToast(apiErrorMessage(err, { fallbackKey: "board.project.deleteFailed" }));
-      }
-    });
-    (deleteProjectBtn as any)[BOUND_FLAG] = true;
-  }
   bindBoardFilterUi({
     reloadBoard: loadBoardBySlug,
     showError: (message) => showToast(message),

@@ -136,6 +136,7 @@ import {
   bindCalendarTabInteractions,
   loadCalendarTabContent,
 } from './settings-calendar.js';
+import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
 import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
@@ -624,14 +625,55 @@ function syncProfileLocaleState(): void {
   }
 }
 
+function currentBoardProjectId(): number | null {
+  const fromState = getProjectId();
+  if (fromState) return fromState;
+  const fromBoard = getBoard()?.project?.id;
+  return typeof fromBoard === "number" && fromBoard > 0 ? fromBoard : null;
+}
+
+function canDeleteCurrentProject(): boolean {
+  const board = getBoard();
+  const projectId = currentBoardProjectId();
+  if (!projectId || !board) return false;
+  if (isAnonymousBoard(board)) return false;
+  const currentUser = getUser();
+  if (!currentUser) return false;
+  const myMember = getBoardMembers().find((m: any) => m.userId === currentUser.id);
+  return myMember?.role === "maintainer";
+}
+
+async function handleDeleteCurrentProject(): Promise<void> {
+  const projectId = currentBoardProjectId();
+  if (!projectId) return;
+  if (!await confirmDelete(t("projects.delete.confirmMessage"))) return;
+  try {
+    recordLocalMutation();
+    await apiFetch(`/api/projects/${projectId}`, { method: "DELETE" });
+    (settingsDialog as HTMLDialogElement | null)?.close();
+    const { navigate } = await import("../router.js");
+    navigate("/");
+  } catch (err: any) {
+    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "board.project.deleteFailed" }));
+  }
+}
+
 // Render backup tab HTML
 export function renderBackupTabHTML(): string {
   const isAnonymousMode = !getAuthStatusAvailable();
   const replaceDisabled = isAnonymousMode ? 'disabled' : '';
   const replaceHidden = isAnonymousMode ? 'style="display: none;"' : '';
-  
+  const deleteHTML = canDeleteCurrentProject()
+    ? `<div class="settings-backup-delete">
+        <div class="settings-section__title" data-i18n-text="settings.backup.delete.title">Delete project</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.backup.delete.description">Permanently delete this project and all its todos.</div>
+        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-i18n-text="settings.backup.delete.action">Delete project</button>
+      </div>`
+    : "";
+
   return `
     <div class="settings-backup-section">
+      ${deleteHTML}
       <div class="settings-backup-export">
         <div class="settings-section__title" data-i18n-text="settings.backup.export.title">Export Data</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.export.description">Download all your projects, todos, and tags as a JSON file.</div>
@@ -1237,6 +1279,11 @@ export async function handleTrelloImport(): Promise<void> {
 }
 
 async function setupBackupTab(signal?: AbortSignal): Promise<void> {
+  const deleteBtn = document.getElementById("settingsDeleteProjectBtn");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", () => { void handleDeleteCurrentProject(); }, signal ? { signal } : undefined);
+  }
+
   // Export button
   const exportBtn = document.getElementById("backupExportBtn");
   if (exportBtn) {
@@ -1952,7 +1999,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
         <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
         <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
-        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
+        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>
       </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
