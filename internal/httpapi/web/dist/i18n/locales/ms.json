@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Papan lalai disimpan",
   "settings.users.defaultBoard.toast.cleared": "Papan lalai dimatikan",
   "settings.users.defaultBoard.toast.saveFailed": "Gagal mengemas kini papan lalai",
+  "settings.backup.delete.dangerZone": "Zon bahaya",
   "settings.backup.delete.title": "Padam projek",
   "settings.backup.delete.description": "Padam projek ini dan semua todo-nya secara kekal.",
   "settings.backup.delete.action": "Padam projek",

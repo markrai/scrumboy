@@ -431,6 +431,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "shell.bulkEdit.tagsPlaceholder": "Type tag and press Enter",
   "shell.contextMenu.newTodo": "New Todo",
   "settings.backup.delete.action": "Delete project",
+  "settings.backup.delete.dangerZone": "Danger zone",
   "settings.backup.delete.description": "Permanently delete this project and all its todos.",
   "settings.backup.delete.title": "Delete project",
   "settings.language.description": "Choose the language used for Scrumboy on this browser.",

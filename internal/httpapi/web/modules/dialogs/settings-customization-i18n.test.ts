@@ -274,6 +274,7 @@ const enCatalog = {
   'settings.customization.emailNotify.category.sprintActivity': 'Sprint activity',
   'settings.customization.emailNotify.category.projectActivity': 'Project, workflow, or tag changes',
   'settings.customization.emailNotify.category.addedToProject': "When I'm added to a project",
+  'settings.backup.delete.dangerZone': 'Danger zone',
   'settings.backup.delete.title': 'Delete project',
   'settings.backup.delete.description': 'Permanently delete this project and all its todos.',
   'settings.backup.delete.action': 'Delete project',

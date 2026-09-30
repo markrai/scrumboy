@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Zapisano domyślną tablicę",
   "settings.users.defaultBoard.toast.cleared": "Wyłączono domyślną tablicę",
   "settings.users.defaultBoard.toast.saveFailed": "Nie udało się zaktualizować domyślnej tablicy",
+  "settings.backup.delete.dangerZone": "Strefa niebezpieczna",
   "settings.backup.delete.title": "Usuń projekt",
   "settings.backup.delete.description": "Trwale usuwa ten projekt i wszystkie jego todo.",
   "settings.backup.delete.action": "Usuń projekt",

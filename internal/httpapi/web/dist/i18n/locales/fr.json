@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Tableau par défaut enregistré",
   "settings.users.defaultBoard.toast.cleared": "Tableau par défaut désactivé",
   "settings.users.defaultBoard.toast.saveFailed": "Échec de la mise à jour du tableau par défaut",
+  "settings.backup.delete.dangerZone": "Zone de danger",
   "settings.backup.delete.title": "Supprimer le projet",
   "settings.backup.delete.description": "Supprime définitivement ce projet et tous ses todos.",
   "settings.backup.delete.action": "Supprimer le projet",

@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "デフォルトボードを保存しました",
   "settings.users.defaultBoard.toast.cleared": "デフォルトボードを無効にしました",
   "settings.users.defaultBoard.toast.saveFailed": "デフォルトボードの更新に失敗しました",
+  "settings.backup.delete.dangerZone": "危険ゾーン",
   "settings.backup.delete.title": "プロジェクトを削除",
   "settings.backup.delete.description": "このプロジェクトとそのすべての Todo を完全に削除します。",
   "settings.backup.delete.action": "プロジェクトを削除",

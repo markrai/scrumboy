@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "默认看板已保存",
   "settings.users.defaultBoard.toast.cleared": "默认看板已关闭",
   "settings.users.defaultBoard.toast.saveFailed": "更新默认看板失败",
+  "settings.backup.delete.dangerZone": "危险区域",
   "settings.backup.delete.title": "删除项目",
   "settings.backup.delete.description": "永久删除此项目及其所有待办事项。",
   "settings.backup.delete.action": "删除项目",

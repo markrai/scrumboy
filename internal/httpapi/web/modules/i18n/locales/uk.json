@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Дошку за замовчуванням збережено",
   "settings.users.defaultBoard.toast.cleared": "Дошку за замовчуванням вимкнено",
   "settings.users.defaultBoard.toast.saveFailed": "Не вдалося оновити дошку за замовчуванням",
+  "settings.backup.delete.dangerZone": "Небезпечна зона",
   "settings.backup.delete.title": "Видалити проєкт",
   "settings.backup.delete.description": "Остаточно видаляє цей проєкт і всі його задачі.",
   "settings.backup.delete.action": "Видалити проєкт",

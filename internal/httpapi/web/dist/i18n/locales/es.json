@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Tablero predeterminado guardado",
   "settings.users.defaultBoard.toast.cleared": "Tablero predeterminado desactivado",
   "settings.users.defaultBoard.toast.saveFailed": "No se pudo actualizar el tablero predeterminado",
+  "settings.backup.delete.dangerZone": "Zona de peligro",
   "settings.backup.delete.title": "Eliminar proyecto",
   "settings.backup.delete.description": "Elimina este proyecto y todos sus todos de forma permanente.",
   "settings.backup.delete.action": "Eliminar proyecto",

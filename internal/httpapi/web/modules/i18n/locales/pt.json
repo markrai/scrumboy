@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Quadro padrão salvo",
   "settings.users.defaultBoard.toast.cleared": "Quadro padrão desativado",
   "settings.users.defaultBoard.toast.saveFailed": "Falha ao atualizar o quadro padrão",
+  "settings.backup.delete.dangerZone": "Zona de perigo",
   "settings.backup.delete.title": "Excluir projeto",
   "settings.backup.delete.description": "Exclui este projeto e todos os seus todos permanentemente.",
   "settings.backup.delete.action": "Excluir projeto",

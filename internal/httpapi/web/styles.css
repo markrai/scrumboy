@@ -2854,11 +2854,27 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 }
 
 .settings-backup-export,
-.settings-backup-import,
+.settings-backup-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+}
+
 .settings-backup-delete {
   display: flex;
   flex-direction: column;
   gap: var(--s-12);
+  margin-top: var(--s-8);
+  padding-top: var(--s-24);
+  border-top: 1px solid var(--danger);
+}
+
+.settings-backup-delete__danger {
+  font-size: var(--fs-13);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--danger);
 }
 
 .settings-backup-preview {

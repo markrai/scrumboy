@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Ubao chaguo-msingi umehifadhiwa",
   "settings.users.defaultBoard.toast.cleared": "Ubao chaguo-msingi umezimwa",
   "settings.users.defaultBoard.toast.saveFailed": "Imeshindwa kusasisha ubao chaguo-msingi",
+  "settings.backup.delete.dangerZone": "Eneo hatari",
   "settings.backup.delete.title": "Futa mradi",
   "settings.backup.delete.description": "Futa mradi huu na todos zake zote kabisa.",
   "settings.backup.delete.action": "Futa mradi",

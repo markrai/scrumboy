@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "บันทึกบอร์ดเริ่มต้นแล้ว",
   "settings.users.defaultBoard.toast.cleared": "ปิดบอร์ดเริ่มต้นแล้ว",
   "settings.users.defaultBoard.toast.saveFailed": "อัปเดตบอร์ดเริ่มต้นไม่สำเร็จ",
+  "settings.backup.delete.dangerZone": "โซนอันตราย",
   "settings.backup.delete.title": "ลบโปรเจกต์",
   "settings.backup.delete.description": "ลบโปรเจกต์นี้และทูดูทั้งหมดอย่างถาวร",
   "settings.backup.delete.action": "ลบโปรเจกต์",

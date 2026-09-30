@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Papan default disimpan",
   "settings.users.defaultBoard.toast.cleared": "Papan default dinonaktifkan",
   "settings.users.defaultBoard.toast.saveFailed": "Gagal memperbarui papan default",
+  "settings.backup.delete.dangerZone": "Zona berbahaya",
   "settings.backup.delete.title": "Hapus proyek",
   "settings.backup.delete.description": "Menghapus proyek ini dan semua todonya secara permanen.",
   "settings.backup.delete.action": "Hapus proyek",

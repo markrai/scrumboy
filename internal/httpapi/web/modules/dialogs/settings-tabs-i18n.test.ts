@@ -709,11 +709,19 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
       .toBe(enCatalog['settings.tabs.backup']);
     const deleteSection = document.querySelector('.settings-backup-delete');
     const exportSection = document.querySelector('.settings-backup-export');
+    const importSection = document.querySelector('.settings-backup-import');
     expect(deleteSection).toBeTruthy();
     expect(exportSection).toBeTruthy();
-    expect(deleteSection?.compareDocumentPosition(exportSection!) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(importSection).toBeTruthy();
+    expect(exportSection?.compareDocumentPosition(deleteSection!) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(document.getElementById('settingsDeleteProjectBtn')).toBeTruthy();
+    expect(importSection?.compareDocumentPosition(deleteSection!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn?.getAttribute('data-project-id')).toBe('7');
+    expect(deleteSection?.querySelector('.settings-backup-delete__danger')?.textContent)
+      .toBe(enCatalog['settings.backup.delete.dangerZone']);
   });
 
   it('omits the delete project block without a board, for non-maintainers, and for anonymous boards', async () => {
@@ -762,7 +770,7 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     await setupSettingsView({
       activeTab: 'backup',
       slug: 'alpha',
-      board: { project: { id: 7 } },
+      board: { project: { id: 7, name: 'Alpha' } },
       user: USER,
       boardMembers: MAINTAINER,
     });
@@ -774,7 +782,10 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     navigateMock.mockClear();
     confirmDeleteMock.mockResolvedValue(true);
 
-    document.getElementById('settingsDeleteProjectBtn')!.click();
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    expect(deleteBtn?.getAttribute('data-project-id')).toBe('7');
+    expect(deleteBtn?.getAttribute('data-project-name')).toBe('Alpha');
+    deleteBtn!.click();
     await flushPromises();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await flushPromises();

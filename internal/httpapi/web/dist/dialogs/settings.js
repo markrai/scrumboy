@@ -485,9 +485,10 @@ function canDeleteCurrentProject() {
     const myMember = getBoardMembers().find((m) => m.userId === currentUser.id);
     return myMember?.role === "maintainer";
 }
-async function handleDeleteCurrentProject() {
-    const projectId = currentBoardProjectId();
-    if (!projectId)
+async function handleDeleteCurrentProject(btn) {
+    const rawId = btn.getAttribute("data-project-id");
+    const projectId = rawId ? Number(rawId) : NaN;
+    if (!Number.isInteger(projectId) || projectId <= 0)
         return;
     if (!await confirmDelete(t("projects.delete.confirmMessage")))
         return;
@@ -507,16 +508,18 @@ export function renderBackupTabHTML() {
     const isAnonymousMode = !getAuthStatusAvailable();
     const replaceDisabled = isAnonymousMode ? 'disabled' : '';
     const replaceHidden = isAnonymousMode ? 'style="display: none;"' : '';
-    const deleteHTML = canDeleteCurrentProject()
+    const projectId = currentBoardProjectId();
+    const projectName = typeof getBoard()?.project?.name === "string" ? getBoard().project.name : "";
+    const deleteHTML = canDeleteCurrentProject() && projectId
         ? `<div class="settings-backup-delete">
+        <div class="settings-backup-delete__danger" data-i18n-text="settings.backup.delete.dangerZone">Danger zone</div>
         <div class="settings-section__title" data-i18n-text="settings.backup.delete.title">Delete project</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.delete.description">Permanently delete this project and all its todos.</div>
-        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-i18n-text="settings.backup.delete.action">Delete project</button>
+        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-project-id="${projectId}" data-project-name="${escapeHTML(projectName)}" data-i18n-text="settings.backup.delete.action">Delete project</button>
       </div>`
         : "";
     return `
     <div class="settings-backup-section">
-      ${deleteHTML}
       <div class="settings-backup-export">
         <div class="settings-section__title" data-i18n-text="settings.backup.export.title">Export Data</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.export.description">Download all your projects, todos, and tags as a JSON file.</div>
@@ -559,6 +562,7 @@ export function renderBackupTabHTML() {
         <div id="trelloImportWarnings" class="settings-backup-warnings" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 4px; color: var(--muted);"></div>
         <div id="trelloImportResult" class="settings-backup-preview" style="display: none; padding: 12px; background: var(--panel); border-radius: 4px;"></div>
       </div>
+      ${deleteHTML}
     </div>
   `;
 }
@@ -1098,7 +1102,7 @@ export async function handleTrelloImport() {
 async function setupBackupTab(signal) {
     const deleteBtn = document.getElementById("settingsDeleteProjectBtn");
     if (deleteBtn) {
-        deleteBtn.addEventListener("click", () => { void handleDeleteCurrentProject(); }, signal ? { signal } : undefined);
+        deleteBtn.addEventListener("click", () => { void handleDeleteCurrentProject(deleteBtn); }, signal ? { signal } : undefined);
     }
     // Export button
     const exportBtn = document.getElementById("backupExportBtn");

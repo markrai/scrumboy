@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "डिफ़ॉल्ट बोर्ड सहेजा गया",
   "settings.users.defaultBoard.toast.cleared": "डिफ़ॉल्ट बोर्ड बंद कर दिया गया",
   "settings.users.defaultBoard.toast.saveFailed": "डिफ़ॉल्ट बोर्ड अपडेट करने में विफल",
+  "settings.backup.delete.dangerZone": "खतरनाक क्षेत्र",
   "settings.backup.delete.title": "परियोजना हटाएँ",
   "settings.backup.delete.description": "इस प्रोजेक्ट और इसके सभी टोडो को स्थायी रूप से हटाता है।",
   "settings.backup.delete.action": "परियोजना हटाएँ",

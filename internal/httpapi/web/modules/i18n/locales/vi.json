@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Đã lưu bảng mặc định",
   "settings.users.defaultBoard.toast.cleared": "Đã tắt bảng mặc định",
   "settings.users.defaultBoard.toast.saveFailed": "Không thể cập nhật bảng mặc định",
+  "settings.backup.delete.dangerZone": "Vùng nguy hiểm",
   "settings.backup.delete.title": "Xóa dự án",
   "settings.backup.delete.description": "Xóa vĩnh viễn dự án này và tất cả todo của nó.",
   "settings.backup.delete.action": "Xóa dự án",

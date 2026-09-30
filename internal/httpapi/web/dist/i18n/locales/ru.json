@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Доска по умолчанию сохранена",
   "settings.users.defaultBoard.toast.cleared": "Доска по умолчанию отключена",
   "settings.users.defaultBoard.toast.saveFailed": "Не удалось обновить доску по умолчанию",
+  "settings.backup.delete.dangerZone": "Опасная зона",
   "settings.backup.delete.title": "Удалить проект",
   "settings.backup.delete.description": "Безвозвратно удаляет этот проект и все его задачи.",
   "settings.backup.delete.action": "Удалить проект",

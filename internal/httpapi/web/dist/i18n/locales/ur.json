@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "ڈیفالٹ بورڈ محفوظ ہو گیا",
   "settings.users.defaultBoard.toast.cleared": "ڈیفالٹ بورڈ بند کر دیا گیا",
   "settings.users.defaultBoard.toast.saveFailed": "ڈیفالٹ بورڈ اپ ڈیٹ کرنے میں ناکام",
+  "settings.backup.delete.dangerZone": "خطرناک زون",
   "settings.backup.delete.title": "پروجیکٹ حذف کریں",
   "settings.backup.delete.description": "اس پروجیکٹ اور اس کے تمام ٹوڈوز کو مستقل طور پر حذف کرتا ہے۔",
   "settings.backup.delete.action": "پروجیکٹ حذف کریں",

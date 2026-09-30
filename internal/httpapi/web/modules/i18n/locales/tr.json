@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "Varsayılan pano kaydedildi",
   "settings.users.defaultBoard.toast.cleared": "Varsayılan pano kapatıldı",
   "settings.users.defaultBoard.toast.saveFailed": "Varsayılan pano güncellenemedi",
+  "settings.backup.delete.dangerZone": "Tehlikeli bölge",
   "settings.backup.delete.title": "Projeyi sil",
   "settings.backup.delete.description": "Bu projeyi ve tüm todolarını kalıcı olarak siler.",
   "settings.backup.delete.action": "Projeyi sil",

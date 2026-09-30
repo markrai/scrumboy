@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "ডিফল্ট বোর্ড সংরক্ষিত হয়েছে",
   "settings.users.defaultBoard.toast.cleared": "ডিফল্ট বোর্ড বন্ধ করা হয়েছে",
   "settings.users.defaultBoard.toast.saveFailed": "ডিফল্ট বোর্ড আপডেট করা যায়নি",
+  "settings.backup.delete.dangerZone": "বিপজ্জনক অঞ্চল",
   "settings.backup.delete.title": "প্রোজেক্ট মুছুন",
   "settings.backup.delete.description": "এই প্রজেক্ট এবং এর সব টুডো স্থায়ীভাবে মুছে ফেলে।",
   "settings.backup.delete.action": "প্রোজেক্ট মুছুন",

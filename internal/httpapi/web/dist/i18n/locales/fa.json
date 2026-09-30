@@ -846,6 +846,7 @@
   "settings.users.defaultBoard.toast.saved": "تخته پیش‌فرض ذخیره شد",
   "settings.users.defaultBoard.toast.cleared": "تخته پیش‌فرض خاموش شد",
   "settings.users.defaultBoard.toast.saveFailed": "به‌روزرسانی تخته پیش‌فرض ناموفق بود",
+  "settings.backup.delete.dangerZone": "منطقه خطر",
   "settings.backup.delete.title": "حذف پروژه",
   "settings.backup.delete.description": "این پروژه و همه تودوهای آن را برای همیشه حذف می‌کند.",
   "settings.backup.delete.action": "حذف پروژه",
