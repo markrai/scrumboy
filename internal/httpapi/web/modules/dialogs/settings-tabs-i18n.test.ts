@@ -1,9 +1,14 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import enCatalog from '../i18n/locales/en.json';
 import deCatalog from '../i18n/locales/de.json';
 import pseudoCatalog from '../i18n/locales/pseudo.json';
+
+const stylesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles.css'), 'utf8');
 
 const {
   apiFetchMock,
@@ -214,6 +219,22 @@ async function setupSettingsView(options: {
 
 const MAINTAINER = [{ userId: 1, role: 'maintainer' }];
 const USER = { id: 1, name: 'Alex' };
+
+describe('settings tabs desktop layout', () => {
+  it('keeps desktop tabs on one scaled nowrap row while mobile uses a wrapping grid', () => {
+    expect(stylesSource).toMatch(/\.settings-tabs-nav\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(stylesSource).toMatch(/\.settings-tabs-nav\s*\{[^}]*--settings-tabs-scale:\s*1/s);
+    expect(stylesSource).toMatch(/\.settings-tabs\s*\{[^}]*display:\s*contents/s);
+    expect(stylesSource).toMatch(/\.settings-tab\s*\{[^}]*flex:\s*0 0 auto/s);
+    expect(stylesSource).toMatch(/\.settings-tab\s*\{[^}]*white-space:\s*nowrap/s);
+    expect(stylesSource).toMatch(
+      /\.settings-tab\s*\{[^}]*font-size:\s*calc\(var\(--fs-14\) \* var\(--settings-tabs-scale\)\)/s,
+    );
+    expect(stylesSource).toMatch(
+      /@media \(max-width:\s*620px\)[\s\S]*?\.settings-tabs-nav\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+  });
+});
 
 describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
   beforeEach(() => {
@@ -628,6 +649,81 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
 
     expect(document.getElementById('settingsTabContent')?.innerHTML).toBe(bodyBefore);
     expect(document.getElementById('settingsDialogTitleLabel')?.textContent).toBe(titleBefore);
+  });
+
+  it('groups board tabs and personal tabs in separate markup rows for a durable maintainer board', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    const boardRow = document.querySelector('.settings-tabs--board');
+    const personalRow = document.querySelector('.settings-tabs--personal');
+    expect(boardRow).toBeTruthy();
+    expect(personalRow).toBeTruthy();
+
+    const boardTabs = Array.from(boardRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
+    const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
+    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'calendar', 'charts']);
+    expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
+  });
+
+  it('hides the board tab row when no board-scoped tabs are visible', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/tags/mine') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'customization',
+      user: USER,
+    });
+
+    expect(document.querySelector('.settings-tabs--board')).toBeNull();
+    const personalRow = document.querySelector('.settings-tabs--personal');
+    expect(personalRow).toBeTruthy();
+    const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
+    expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
+  });
+
+  it('relocalizes tab labels in both rows on locale change', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    const { i18n } = await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    apiFetchMock.mockClear();
+    await i18n.setLocale('de');
+    await flushPromises();
+
+    expect(document.querySelector('.settings-tabs--board .settings-tab[data-tab="sprints"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.sprints']);
+    expect(document.querySelector('.settings-tabs--board .settings-tab[data-tab="charts"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.charts']);
+    expect(document.querySelector('.settings-tabs--personal .settings-tab[data-tab="profile"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.profile']);
+    expect(document.querySelector('.settings-tabs--personal .settings-tab[data-tab="backup"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.backup']);
+    expect(apiFetchMock).not.toHaveBeenCalled();
   });
 
   it('relocalizes backup tab static chrome in place on locale change without API calls', async () => {

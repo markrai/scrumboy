@@ -29,6 +29,7 @@ import { bindSprintsTabInteractions, refreshSprintDateLabels, renderSprintsTabCo
 import { bindCalendarTabInteractions, loadCalendarTabContent, } from './settings-calendar.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
+import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 export { invalidateTagsCache } from './settings-tags.js';
 /** Active keybinding capture listener (settings customization); removed when starting a new capture or on abort. */
@@ -304,9 +305,10 @@ function applySettingsLocaleToOpenDialog() {
     if (headerEl) {
         hydrateI18n(headerEl);
     }
-    const tabsEl = settingsDialog.querySelector(".settings-tabs");
-    if (tabsEl) {
-        hydrateI18n(tabsEl);
+    const tabsNavEl = settingsDialog.querySelector(".settings-tabs-nav");
+    if (tabsNavEl) {
+        hydrateI18n(tabsNavEl);
+        fitSettingsTabsNav(tabsNavEl);
     }
     syncSettingsDialogVersionText();
     const activeTab = getSettingsActiveTab();
@@ -1722,19 +1724,27 @@ export async function renderSettingsModal(options) {
     if (showPrioritiesTab && getSettingsActiveTab() === "priorities" && slug) {
         prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
     }
-    destroyBurndownChart();
-    contentEl.innerHTML = `
-    <div class="settings-tabs">
-      ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
-      ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+    const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCalendarTab || showChartsTab;
+    const boardTabsHTML = showBoardTabRow
+        ? `<div class="settings-tabs settings-tabs--board">
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
       ${showWorkflowTab ? `<button class="settings-tab ${activeSettingsTab === "workflow" ? "settings-tab--active" : ""}" data-tab="workflow" data-i18n-text="settings.tabs.workflow">Workflow</button>` : ``}
       ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
       ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
-      <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
-      <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
-      <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
+    </div>`
+        : "";
+    destroyBurndownChart();
+    contentEl.innerHTML = `
+    <div class="settings-tabs-nav">
+      ${boardTabsHTML}
+      <div class="settings-tabs settings-tabs--personal">
+        ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
+        ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+        <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
+        <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
+        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
+      </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
       ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
@@ -1783,6 +1793,9 @@ export async function renderSettingsModal(options) {
     else {
         contentEl.classList.remove("settings-content--profile");
     }
+    // Desktop: shrink tab padding/labels so board + personal tabs stay on one row.
+    // Mobile keeps the multi-row grid via CSS and skips shrink-to-fit.
+    bindSettingsTabsFit(document.querySelector(".settings-tabs-nav"));
     // Setup tab switching (click)
     document.querySelectorAll(".settings-tab").forEach(tab => {
         tab.addEventListener("click", (e) => {
