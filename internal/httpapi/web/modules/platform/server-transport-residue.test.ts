@@ -28,11 +28,11 @@ function locationsFor(pattern: RegExp): string[] {
 
 describe('server transport residue', () => {
   it('allows direct fetch only for the browser transport and packaged assets', () => {
-    expect(locationsFor(/\bfetch\s*\(/g)).toEqual([
-      'i18n/index.ts:683',
-      'mermaid-semantic-edges.ts:110',
-      'platform/browser-server-transport.ts:13',
-      'views/board-prefetch-cache.ts:22',
+    expect(locationsFor(/\bfetch\s*\(/g).map((location) => location.replace(/:\d+$/, ''))).toEqual([
+      'i18n/index.ts',
+      'mermaid-semantic-edges.ts',
+      'platform/browser-server-transport.ts',
+      'views/board-prefetch-cache.ts',
     ]);
   });
 
