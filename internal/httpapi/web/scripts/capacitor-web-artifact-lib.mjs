@@ -36,6 +36,7 @@ const explicitRuntimeFiles = [
   'scrumboy.png',
   'scrumboytext.png',
   'archive.svg',
+  'members.svg',
   'mic.svg',
   'new.svg',
   'postit.svg',

@@ -136,8 +136,10 @@ import {
   bindCalendarTabInteractions,
   loadCalendarTabContent,
 } from './settings-calendar.js';
+import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
+import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 
 export { invalidateTagsCache } from './settings-tags.js';
@@ -452,9 +454,10 @@ function applySettingsLocaleToOpenDialog(): void {
   if (headerEl) {
     hydrateI18n(headerEl);
   }
-  const tabsEl = settingsDialog.querySelector(".settings-tabs");
-  if (tabsEl) {
-    hydrateI18n(tabsEl);
+  const tabsNavEl = settingsDialog.querySelector(".settings-tabs-nav");
+  if (tabsNavEl) {
+    hydrateI18n(tabsNavEl);
+    fitSettingsTabsNav(tabsNavEl as HTMLElement);
   }
   syncSettingsDialogVersionText();
 
@@ -622,12 +625,58 @@ function syncProfileLocaleState(): void {
   }
 }
 
+function resolveDeletableProject(): { id: number; name: string } | null {
+  const board = getBoard();
+  const project = board?.project;
+  const id = project?.id;
+  if (typeof id !== "number" || id <= 0) return null;
+  const stateId = getProjectId();
+  if (stateId != null && stateId !== id) return null;
+  if (isAnonymousBoard(board)) return null;
+  const currentUser = getUser();
+  if (!currentUser) return null;
+  const myMember = getBoardMembers().find((m: any) => m.userId === currentUser.id);
+  if (myMember?.role !== "maintainer") return null;
+  const name = typeof project.name === "string" ? project.name : "";
+  return { id, name };
+}
+
+async function handleDeleteCurrentProject(btn: HTMLElement): Promise<void> {
+  const rawId = btn.getAttribute("data-project-id");
+  const projectId = rawId ? Number(rawId) : NaN;
+  if (!Number.isInteger(projectId) || projectId <= 0) return;
+  if (!await confirmDelete(t("projects.delete.confirmMessage"))) return;
+  try {
+    recordLocalMutation();
+    await apiFetch(`/api/projects/${projectId}`, { method: "DELETE" });
+  } catch (err: any) {
+    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "board.project.deleteFailed" }));
+    return;
+  }
+  try {
+    (settingsDialog as HTMLDialogElement | null)?.close();
+    const { navigate } = await import("../router.js");
+    navigate("/");
+  } catch (err) {
+    console.warn("post-delete navigation failed", err);
+  }
+}
+
 // Render backup tab HTML
 export function renderBackupTabHTML(): string {
   const isAnonymousMode = !getAuthStatusAvailable();
   const replaceDisabled = isAnonymousMode ? 'disabled' : '';
   const replaceHidden = isAnonymousMode ? 'style="display: none;"' : '';
-  
+  const deletable = resolveDeletableProject();
+  const deleteHTML = deletable
+    ? `<div class="settings-backup-delete">
+        <div class="settings-backup-delete__danger" data-i18n-text="settings.backup.delete.dangerZone">Danger zone</div>
+        <div class="settings-section__title" data-i18n-text="settings.backup.delete.title">Delete project</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.backup.delete.description">Permanently delete this project and all its todos.</div>
+        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-project-id="${deletable.id}" data-project-name="${escapeHTML(deletable.name)}" data-i18n-text="settings.backup.delete.action">Delete project</button>
+      </div>`
+    : "";
+
   return `
     <div class="settings-backup-section">
       <div class="settings-backup-export">
@@ -672,6 +721,7 @@ export function renderBackupTabHTML(): string {
         <div id="trelloImportWarnings" class="settings-backup-warnings" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 4px; color: var(--muted);"></div>
         <div id="trelloImportResult" class="settings-backup-preview" style="display: none; padding: 12px; background: var(--panel); border-radius: 4px;"></div>
       </div>
+      ${deleteHTML}
     </div>
   `;
 }
@@ -1235,6 +1285,11 @@ export async function handleTrelloImport(): Promise<void> {
 }
 
 async function setupBackupTab(signal?: AbortSignal): Promise<void> {
+  const deleteBtn = document.getElementById("settingsDeleteProjectBtn");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", () => { void handleDeleteCurrentProject(deleteBtn); }, signal ? { signal } : undefined);
+  }
+
   // Export button
   const exportBtn = document.getElementById("backupExportBtn");
   if (exportBtn) {
@@ -1930,19 +1985,28 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
   }
 
-  destroyBurndownChart();
-  contentEl.innerHTML = `
-    <div class="settings-tabs">
-      ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
-      ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+  const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCalendarTab || showChartsTab;
+  const boardTabsHTML = showBoardTabRow
+    ? `<div class="settings-tabs settings-tabs--board">
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
       ${showWorkflowTab ? `<button class="settings-tab ${activeSettingsTab === "workflow" ? "settings-tab--active" : ""}" data-tab="workflow" data-i18n-text="settings.tabs.workflow">Workflow</button>` : ``}
       ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
       ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
-      <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
-      <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
-      <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
+    </div>`
+    : "";
+
+  destroyBurndownChart();
+  contentEl.innerHTML = `
+    <div class="settings-tabs-nav">
+      ${boardTabsHTML}
+      <div class="settings-tabs settings-tabs--personal">
+        ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
+        ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+        <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
+        <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
+        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>
+      </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
       ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
@@ -1997,6 +2061,10 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   } else {
     contentEl.classList.remove("settings-content--profile");
   }
+
+  // Desktop: shrink tab padding/labels so board + personal tabs stay on one row.
+  // Mobile keeps the multi-row grid via CSS and skips shrink-to-fit.
+  bindSettingsTabsFit(document.querySelector(".settings-tabs-nav"));
 
   // Setup tab switching (click)
   document.querySelectorAll(".settings-tab").forEach(tab => {

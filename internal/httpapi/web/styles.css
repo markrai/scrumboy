@@ -1799,7 +1799,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 #newTodoBtn,
 #deleteProjectBtn,
 #wallBtn,
-#archiveBtn {
+#archiveBtn,
+#manageMembersBtn {
   white-space: nowrap;
   width: 40px;
   min-width: 40px;
@@ -1815,7 +1816,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 #newTodoBtn img,
 #deleteProjectBtn img,
 #wallBtn img,
-#archiveBtn img {
+#archiveBtn img,
+#manageMembersBtn img {
   width: 20px;
   height: 20px;
   max-width: 20px;
@@ -1828,7 +1830,8 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 #newTodoBtn img,
 #deleteProjectBtn img,
 #wallBtn img,
-#archiveBtn img {
+#archiveBtn img,
+#manageMembersBtn img {
   display: block;
   filter: var(--voice-command-icon-filter);
   object-fit: contain;
@@ -2574,27 +2577,39 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   user-select: none;
 }
 
-.settings-tabs {
+/* Desktop: one nowrap row (board + personal tabs via display:contents).
+   --settings-tabs-scale is set by settings-tabs-fit.ts so labels always fit. */
+.settings-tabs-nav {
+  --settings-tabs-scale: 1;
   display: flex;
-  gap: var(--s-8);
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: calc(var(--s-8) * var(--settings-tabs-scale));
   margin-bottom: var(--s-20);
   border-bottom: 1px solid var(--border);
   padding-bottom: 8px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.settings-tabs {
+  display: contents;
 }
 
 .settings-tab {
-  padding: var(--s-8) 16px;
+  padding: calc(var(--s-8) * var(--settings-tabs-scale)) calc(16px * var(--settings-tabs-scale));
   background: transparent;
   border: none;
   color: var(--muted);
   font-weight: 600;
-  font-size: var(--fs-14);
+  font-size: calc(var(--fs-14) * var(--settings-tabs-scale));
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -8px;
   transition: color 0.2s, border-color 0.2s;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 0 0 auto;
 }
 
 .settings-tab:hover {
@@ -2843,6 +2858,23 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   display: flex;
   flex-direction: column;
   gap: var(--s-12);
+}
+
+.settings-backup-delete {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-12);
+  margin-top: var(--s-8);
+  padding-top: var(--s-24);
+  border-top: 1px solid var(--danger);
+}
+
+.settings-backup-delete__danger {
+  font-size: var(--fs-13);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--danger);
 }
 
 .settings-backup-preview {
@@ -4223,6 +4255,11 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     padding-right: 0;
   }
 
+  .topbar .btn#manageMembersBtn {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
   .topbar .btn#archiveBtn {
     width: 40px;
     min-width: 40px;
@@ -4538,22 +4575,31 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     opacity: 0.6;
   }
 
-  /* Settings modal tabs: horizontal scrolling without scrollbars */
-  .settings-tabs {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+  /* Settings modal tabs: one wrapping grid, 3 per row — ignore board/personal split */
+  .settings-tabs-nav {
+    --settings-tabs-scale: 1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-8);
     margin-bottom: var(--s-16);
+    border-bottom: none;
+    padding-bottom: 0;
   }
 
-  .settings-tabs::-webkit-scrollbar {
-    display: none;
+  .settings-tabs {
+    display: contents;
+    overflow: visible;
   }
 
   .settings-tab {
-    flex-shrink: 0;
+    margin-bottom: 0;
+    padding: var(--s-8) 8px;
+    font-size: var(--fs-14);
+    text-align: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: unset;
   }
 
   /* Prevent horizontal scroll on settings dialog itself */
