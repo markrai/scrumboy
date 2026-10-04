@@ -102,7 +102,7 @@ Preview typography and colors are scoped under `#todoDialog .todo-markdown-previ
 
 ### 1. markdown-it
 
-Loaded from `/vendor/markdown-it.min.js` (global `window.markdownit`). Pinned dependency: `markdown-it@14.3.0` in `internal/httpapi/web/package.json`, copied by `scripts/sync-vendor.mjs`.
+Loaded from `/vendor/markdown-it.min.js` (global `window.markdownit`). Pinned dependency: `markdown-it@14.3.2` in `internal/httpapi/web/package.json`, copied by `scripts/sync-vendor.mjs`.
 
 Instance options (`getMarkdownRenderer()`):
 
@@ -116,7 +116,7 @@ Instance options (`getMarkdownRenderer()`):
 
 ### 2. DOMPurify
 
-Second pass via `/vendor/purify.min.js` (`dompurify@3.4.15`):
+Second pass via `/vendor/purify.min.js` (`dompurify@3.4.16`):
 
 - **`ALLOWED_TAGS`:** `a`, `blockquote`, `br`, `code`, `em`, `h1`–`h6`, `hr`, `li`, `ol`, `p`, `pre`, `strong`, `ul`
 - **`ALLOWED_ATTR`:** `href`, `rel`, `target` only
