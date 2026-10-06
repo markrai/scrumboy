@@ -1,11 +1,13 @@
+import { classifyVoiceCommandSafety } from './command-safety.js';
 import type { Board } from '../types.js';
 import type { BoardMember } from '../state/state.js';
-import { normalizeLookup } from './normalize.js';
+import { normalizeLookup, spokenReferenceIdentity } from './normalize.js';
 import { cloneCommandFailure, localizedCommandFailure, isCommandFailure, validateCommandIR, type CommandFailure, type CommandIR, type CommandResult, type ParsedCommandDraft, type ResolvedCommand } from './schema.js';
 import type { McpToolName } from './mcp-client.js';
 import { BUILTIN_STATUS_ALIASES } from './vocabulary.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { voiceText } from './i18n.js';
+import type { VoiceCreateTag } from './voice-create-tags.js';
 
 export type ResolveContext = {
   projectId: number;
@@ -15,7 +17,7 @@ export type ResolveContext = {
   callTool?: <T = unknown>(tool: McpToolName, input: Record<string, unknown>) => Promise<T>;
 };
 
-type LaneRef = { key: string; name: string; isDone: boolean };
+export type VoiceLaneReference = { key: string; name: string; isDone: boolean };
 
 type MembersListResponse = {
   items?: BoardMember[];
@@ -26,7 +28,7 @@ export type ResolveCommandOptions = {
   allowedLocalIds?: number[];
 };
 
-function boardLanes(board: Board): LaneRef[] {
+export function voiceBoardLanes(board: Board): VoiceLaneReference[] {
   if (board.columnOrder && board.columnOrder.length > 0) {
     return board.columnOrder.map((lane) => ({
       key: lane.key,
@@ -41,18 +43,22 @@ function boardLanes(board: Board): LaneRef[] {
   }));
 }
 
-function addAlias(aliases: Map<string, Set<LaneRef>>, alias: string, lane: LaneRef): void {
+function addAlias(
+  aliases: Map<string, Set<VoiceLaneReference>>,
+  alias: string,
+  lane: VoiceLaneReference,
+): void {
   const key = normalizeLookup(alias);
   if (!key) return;
-  const existing = aliases.get(key) ?? new Set<LaneRef>();
+  const existing = aliases.get(key) ?? new Set<VoiceLaneReference>();
   existing.add(lane);
   aliases.set(key, existing);
 }
 
-function buildLaneAliasMap(board: Board): Map<string, Set<LaneRef>> {
-  const lanes = boardLanes(board);
+function buildLaneAliasMap(board: Board): Map<string, Set<VoiceLaneReference>> {
+  const lanes = voiceBoardLanes(board);
   const byKey = new Map(lanes.map((lane) => [lane.key, lane]));
-  const aliases = new Map<string, Set<LaneRef>>();
+  const aliases = new Map<string, Set<VoiceLaneReference>>();
 
   for (const lane of lanes) {
     addAlias(aliases, lane.name, lane);
@@ -71,7 +77,10 @@ function buildLaneAliasMap(board: Board): Map<string, Set<LaneRef>> {
   return aliases;
 }
 
-function resolveStatus(rawStatus: string, board: Board): CommandResult<LaneRef> {
+export function resolveVoiceLane(
+  rawStatus: string,
+  board: Board,
+): CommandResult<VoiceLaneReference> {
   const alias = normalizeLookup(rawStatus);
   const matches = buildLaneAliasMap(board).get(alias);
   if (!matches || matches.size === 0) {
@@ -98,6 +107,44 @@ function findMatchingMembers(rawUser: string, members: BoardMember[]): BoardMemb
   const wanted = normalizeLookup(rawUser);
   if (!wanted) return [];
   return members.filter((member) => memberAliases(member).includes(wanted));
+}
+
+/** Shared conservative matching for local agent skills and semantic create preparation. */
+export function matchVoiceMembers<T extends BoardMember>(reference: string, members: readonly T[]): T[] {
+  const wanted = normalizeLookup(reference);
+  const unique = [...new Map(members.map(member => [member.userId, member])).values()];
+  const exact = unique.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);
+  return exact.length ? exact : unique.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
+}
+
+export type VoiceTagMatch = Readonly<{
+  matches: string[];
+  kind: 'stored_exact' | 'normalized_exact' | 'spoken_identity' | 'prefix' | 'none';
+}>;
+
+export function matchVoiceTagsDetailed(reference: string, tags: readonly VoiceCreateTag[]): VoiceTagMatch {
+  const names = [...new Set(tags.map(tag => tag.name))];
+  const raw = reference.trim();
+  const storedExact = names.filter(name => name === raw);
+  if (storedExact.length) return { matches: storedExact, kind: 'stored_exact' };
+
+  const wanted = spokenReferenceIdentity(reference);
+  const normalizedExact = names.filter(name => normalizeLookup(name) === wanted.lookup);
+  if (normalizedExact.length) return { matches: normalizedExact, kind: 'normalized_exact' };
+
+  if (wanted.spelled) {
+    const speechExact = names.filter(name => spokenReferenceIdentity(name).spelled === wanted.spelled);
+    if (speechExact.length) return { matches: speechExact, kind: 'spoken_identity' };
+  }
+
+  // Prefix matching is intentionally last. Stronger equality must not become
+  // ambiguous merely because another authoritative label shares a prefix.
+  const prefix = names.filter(name => wanted.lookup.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted.lookup)));
+  return { matches: prefix, kind: prefix.length ? 'prefix' : 'none' };
+}
+
+export function matchVoiceTags(reference: string, board: Board): string[] {
+  return matchVoiceTagsDetailed(reference, board.tags ?? []).matches;
 }
 
 async function resolveMember(rawUser: string, context: ResolveContext): Promise<CommandResult<BoardMember>> {
@@ -152,6 +199,14 @@ export function formatResolvedCommand(command: ResolvedCommand): Pick<ResolvedCo
   switch (command.ir.intent) {
     case "todos.create": {
       const title = command.ir.entities.title;
+      if ('body' in command.ir.entities) {
+        const { body, tags, assigneeUserId } = command.ir.entities;
+        const lines = [voiceText('voice.create.summary', 'Create "{title}" in {lane}', { title, lane: command.statusName ?? command.ir.entities.columnKey })];
+        if (assigneeUserId != null) lines.push(voiceText('voice.create.assign', 'Assign {person}', { person: command.assigneeName ?? String(assigneeUserId) }));
+        if (tags?.length) lines.push(voiceText('voice.create.tags', 'Tags: {tags}', { tags: tags.join(', ') }));
+        if (body) lines.push(voiceText('voice.create.notes', 'Notes: {notes}', { notes: body }));
+        return { summary: lines.join('\n'), confirmLabel: voiceText('common.confirm', 'Confirm') };
+      }
       return {
         summary: voiceText("voice.summary.create", "Create todo \"{title}\"", { title }),
         confirmLabel: voiceText("voice.action.create", "Create"),
@@ -191,6 +246,49 @@ export function formatResolvedCommand(command: ResolvedCommand): Pick<ResolvedCo
         confirmLabel: voiceText("voice.action.assign", "Assign"),
       };
     }
+    case "todos.update_title": {
+      const localId = command.ir.entities.localId;
+      const title = command.ir.entities.title;
+      return {
+        summary: voiceText("voice.summary.updateTitle", "Change the title of #{localId} to \"{title}\"", { localId, title }),
+        confirmLabel: voiceText("voice.action.updateTitle", "Change title"),
+      };
+    }
+    case "todos.append_notes": {
+      const { localId, notes } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.appendNotes", "Add to the notes of #{localId}: \"{notes}\"", { localId, notes }),
+        confirmLabel: voiceText("voice.action.appendNotes", "Add notes"),
+      };
+    }
+    case "todos.replace_notes": {
+      const { localId, notes } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.replaceNotes", "Replace the notes of #{localId} with \"{notes}\"", { localId, notes }),
+        confirmLabel: voiceText("voice.action.replaceNotes", "Replace notes"),
+      };
+    }
+    case "todos.add_tag": {
+      const { localId, tag } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.addTag", "Add tag {tag} to todo #{localId}", { localId, tag }),
+        confirmLabel: voiceText("voice.action.addTag", "Add tag"),
+      };
+    }
+    case "todos.remove_tag": {
+      const { localId, tag } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.removeTag", "Remove tag {tag} from todo #{localId}", { localId, tag }),
+        confirmLabel: voiceText("voice.action.removeTag", "Remove tag"),
+      };
+    }
+    case "todos.unassign": {
+      const { localId } = command.ir.entities;
+      return {
+        summary: voiceText("voice.summary.unassign", "Unassign todo #{localId}", { localId }),
+        confirmLabel: voiceText("voice.action.unassign", "Unassign"),
+      };
+    }
     default: {
       const exhaustive: never = command.ir;
       return exhaustive;
@@ -198,8 +296,45 @@ export function formatResolvedCommand(command: ResolvedCommand): Pick<ResolvedCo
   }
 }
 
-function withResolvedCommandDisplay(command: ResolvedCommand): ResolvedCommand {
-  return { ...command, ...formatResolvedCommand(command) };
+function withResolvedCommandDisplay(command: Omit<ResolvedCommand, 'danger'>): ResolvedCommand {
+  const classified = { ...command, danger: classifyVoiceCommandSafety(command.ir).danger };
+  return { ...classified, ...formatResolvedCommand(classified) };
+}
+
+export async function resolveTodoTitleUpdate(
+  localId: number,
+  title: string,
+  context: ResolveContext,
+): Promise<CommandResult<ResolvedCommand>> {
+  const target = await resolveTodoTarget({
+    kind: "id",
+    localId,
+    display: String(localId),
+  }, {
+    projectSlug: context.projectSlug,
+    board: context.board,
+    callTool: context.callTool,
+  });
+  if (isCommandFailure(target)) return target;
+
+  const ir: CommandIR = {
+    intent: "todos.update_title",
+    projectId: context.projectId,
+    projectSlug: context.projectSlug,
+    entities: { localId: target.value.todo.localId, title },
+  };
+  const validated = validateResolvedIR(ir, context);
+  if (isCommandFailure(validated)) return validated;
+  return {
+    ok: true,
+    value: withResolvedCommandDisplay({
+      ir: validated.value,
+      summary: "",
+      confirmLabel: "",
+      requiresConfirmation: true,
+      storyTitle: target.value.todo.title,
+    }),
+  };
 }
 
 export async function resolveCommandDraft(
@@ -208,11 +343,15 @@ export async function resolveCommandDraft(
   options: ResolveCommandOptions = {},
 ): Promise<CommandResult<ResolvedCommand>> {
   if (draft.intent === "todos.create") {
+    const destination = voiceBoardLanes(context.board)[0];
+    if (!destination) {
+      return localizedCommandFailure("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
+    }
     const ir: CommandIR = {
       intent: "todos.create",
       projectId: context.projectId,
       projectSlug: context.projectSlug,
-      entities: { title: draft.title },
+      entities: { title: draft.title, columnKey: destination.key },
     };
     const validated = validateResolvedIR(ir, context);
     if (isCommandFailure(validated)) return validated;
@@ -222,7 +361,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: false,
         requiresConfirmation: true,
       }),
     };
@@ -246,7 +384,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: false,
         requiresConfirmation: !!target.value.ambiguousId,
         storyTitle: todo.title,
       }),
@@ -271,7 +408,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: true,
         requiresConfirmation: true,
         storyTitle: todo.title,
       }),
@@ -279,7 +415,7 @@ export async function resolveCommandDraft(
   }
 
   if (draft.intent === "todos.move") {
-    const lane = resolveStatus(draft.rawStatus, context.board);
+    const lane = resolveVoiceLane(draft.rawStatus, context.board);
     if (isCommandFailure(lane)) return lane;
     const target = await resolveDraftTarget(draft, context, options);
     if (isCommandFailure(target)) return target;
@@ -298,7 +434,6 @@ export async function resolveCommandDraft(
         ir: validated.value,
         summary: "",
         confirmLabel: "",
-        danger: false,
         requiresConfirmation: true,
         storyTitle: todo.title,
         statusName: lane.value.name,
@@ -325,7 +460,6 @@ export async function resolveCommandDraft(
       ir: validated.value,
       summary: "",
       confirmLabel: "",
-      danger: false,
       requiresConfirmation: true,
       storyTitle: todo.title,
       assigneeName: member.value.name || member.value.email,

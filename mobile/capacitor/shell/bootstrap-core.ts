@@ -1,0 +1,209 @@
+import { Preferences } from '@capacitor/preferences';
+import { emptyClientCapabilityRegistry } from '../../../internal/httpapi/web/modules/platform/client-capabilities.js';
+import type { AppCapabilityRegistry } from '../../../internal/httpapi/web/modules/platform/client-capabilities.js';
+import { NativeServerTransport } from './native-server-transport.js';
+import { clearScrumboyWebState, installRuntimeAndStartProduct } from './native-runtime.js';
+import { nativeOIDC, type NativeOIDCCoordinator } from './native-oidc.js';
+import { ScrumboyTransport, PENDING_OPEN_PATH_EVENT, type ScrumboyTransportPlugin } from './native-plugin.js';
+import { renderServerSelector } from './server-selection.js';
+
+export const SELECTED_SERVER_KEY = 'scrumboy.server.origin.v1';
+export const CHANGE_SERVER_EVENT = 'scrumboy:mobile-change-server';
+const THEME_STORAGE_KEY = 'scrumboy_theme';
+
+type PreferenceStore = Pick<typeof Preferences, 'get' | 'set' | 'remove'>;
+type Importer = (path: string) => Promise<unknown>;
+
+export interface BootstrapDependencies {
+  capabilities: AppCapabilityRegistry;
+  invalidateCapabilities(): Promise<void>;
+  preferences: PreferenceStore;
+  plugin: ScrumboyTransportPlugin;
+  oidc: NativeOIDCCoordinator;
+  importer: Importer;
+  reload(): void;
+  confirmChange(): boolean;
+}
+
+const defaults: BootstrapDependencies = {
+  capabilities: emptyClientCapabilityRegistry,
+  invalidateCapabilities: async () => undefined,
+  preferences: Preferences,
+  plugin: ScrumboyTransport,
+  oidc: nativeOIDC,
+  importer: (path) => import(path),
+  reload: () => globalThis.location?.reload(),
+  confirmChange: () => globalThis.confirm('Change Scrumboy server? The current mobile session will be cleared.'),
+};
+
+let removeServerChangeHandler: (() => void) | null = null;
+
+export function applyMobileBootstrapTheme(): void {
+  const stored = localStorage.getItem(THEME_STORAGE_KEY) || 'system';
+  const systemIsDark = typeof globalThis.matchMedia === 'function'
+    ? globalThis.matchMedia('(prefers-color-scheme: dark)').matches
+    : true;
+  const effective = stored === 'system' ? (systemIsDark ? 'dark' : 'light') : stored;
+  if (effective === 'light') {
+    document.documentElement.dataset.theme = 'light';
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+}
+
+async function invalidateCapabilitiesBestEffort(deps: BootstrapDependencies): Promise<void> {
+  await deps.invalidateCapabilities().catch(() => undefined);
+}
+
+function assertPackagedRuntime(): void {
+  const runtimeMarker = document.head.querySelector('meta[name="scrumboy-runtime"]');
+  if (runtimeMarker?.getAttribute('content') !== 'capacitor') {
+    throw new Error('Refusing to start the mobile bootstrap outside the packaged Capacitor runtime');
+  }
+}
+
+async function startProduct(origin: string, deps: BootstrapDependencies): Promise<void> {
+  const transport = new NativeServerTransport({
+    plugin: deps.plugin,
+    onLogout: async () => {
+      await invalidateCapabilitiesBestEffort(deps);
+      await deps.oidc.clearPending();
+      clearScrumboyWebState();
+      globalThis.location?.reload();
+    },
+  });
+  await deps.oidc.configure(origin, transport);
+  await installRuntimeAndStartProduct(
+    origin,
+    transport,
+    deps.importer,
+    (returnTo) => deps.oidc.start(returnTo),
+    deps.capabilities,
+  );
+  deps.oidc.markProductReady();
+  await installWidgetOpenPathHandoff(deps.plugin);
+  let serverChangeStarted = false;
+  const handleServerChange = () => {
+    if (serverChangeStarted || !deps.confirmChange()) return;
+    serverChangeStarted = true;
+    void (async () => {
+      try {
+        await invalidateCapabilitiesBestEffort(deps);
+        await deps.oidc.clearPending();
+        await deps.plugin.resetForServerChange();
+        clearScrumboyWebState();
+        await deps.preferences.remove({ key: SELECTED_SERVER_KEY });
+        deps.reload();
+      } catch {
+        serverChangeStarted = false;
+      }
+    })();
+  };
+  removeServerChangeHandler?.();
+  window.addEventListener(CHANGE_SERVER_EVENT, handleServerChange);
+  removeServerChangeHandler = () => window.removeEventListener(CHANGE_SERVER_EVENT, handleServerChange);
+}
+
+export function sanitizeWidgetOpenPath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\') || raw.includes('://')) return null;
+  if (raw.includes('?') || raw.includes('#') || raw.includes('..')) return null;
+  if (raw.includes('/oidc/') || raw.includes('/callback') || raw.startsWith('/auth/')) return null;
+  const path = raw.length > 1 && raw.endsWith('/') ? raw.slice(0, -1) : raw;
+  if (path === '/dashboard') return path;
+  if (/^\/[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\/t\/[1-9]\d*$/.test(path) && !path.includes('--')) return path;
+  return null;
+}
+
+function applyWidgetOpenPath(path: string): void {
+  const sanitized = sanitizeWidgetOpenPath(path);
+  if (!sanitized || typeof history === 'undefined' || typeof window === 'undefined') return;
+  history.replaceState({}, '', sanitized);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+async function consumeWidgetOpenPath(plugin: ScrumboyTransportPlugin): Promise<void> {
+  try {
+    const result = await plugin.consumePendingOpenPath();
+    if (result?.path) applyWidgetOpenPath(result.path);
+  } catch {
+    // Widget navigation is best-effort and must not block product startup.
+  }
+}
+
+async function installWidgetOpenPathHandoff(plugin: ScrumboyTransportPlugin): Promise<void> {
+  try {
+    await plugin.addListener(PENDING_OPEN_PATH_EVENT, () => {
+      void consumeWidgetOpenPath(plugin);
+    });
+  } catch {
+    // Cold start still consumes the pending path below.
+  }
+  await consumeWidgetOpenPath(plugin);
+}
+
+async function connectCandidate(
+  candidate: string,
+  previousOrigin: string | null,
+  deps: BootstrapDependencies,
+): Promise<void> {
+  const probe = await deps.plugin.probeServer({ origin: candidate });
+  const changed = !!previousOrigin && previousOrigin !== probe.normalizedOrigin;
+  try {
+    await deps.preferences.set({ key: SELECTED_SERVER_KEY, value: probe.normalizedOrigin });
+    await deps.plugin.configure({ origin: probe.normalizedOrigin, resetSession: changed });
+  } catch (error) {
+    if (previousOrigin) {
+      await deps.preferences.set({ key: SELECTED_SERVER_KEY, value: previousOrigin }).catch(() => undefined);
+    } else {
+      await deps.preferences.remove({ key: SELECTED_SERVER_KEY }).catch(() => undefined);
+    }
+    throw error;
+  }
+  await startProduct(probe.normalizedOrigin, deps);
+}
+
+function showEntry(previousOrigin: string | null, deps: BootstrapDependencies): void {
+  renderServerSelector(
+    { kind: 'entry', initialOrigin: previousOrigin || undefined },
+    { connect: (candidate) => connectCandidate(candidate, previousOrigin, deps) },
+  );
+}
+
+function showSavedUnavailable(origin: string, failure: unknown, deps: BootstrapDependencies): void {
+  renderServerSelector(
+    { kind: 'saved-unreachable', origin, failure },
+    {
+      retry: async () => {
+        try {
+          await deps.plugin.configure({ origin, resetSession: false });
+          const probe = await deps.plugin.probeServer({ origin });
+          await startProduct(probe.normalizedOrigin, deps);
+        } catch (error) {
+          showSavedUnavailable(origin, error, deps);
+        }
+      },
+      change: () => showEntry(origin, deps),
+      connect: async () => undefined,
+    },
+  );
+}
+
+export async function startMobileBootstrap(overrides: Partial<BootstrapDependencies> = {}): Promise<void> {
+  applyMobileBootstrapTheme();
+  assertPackagedRuntime();
+  const deps = { ...defaults, ...overrides };
+  const saved = (await deps.preferences.get({ key: SELECTED_SERVER_KEY })).value?.trim() || null;
+  if (!saved) {
+    showEntry(null, deps);
+    return;
+  }
+  try {
+    await deps.plugin.configure({ origin: saved, resetSession: false });
+    const probe = await deps.plugin.probeServer({ origin: saved });
+    await startProduct(probe.normalizedOrigin, deps);
+  } catch (error) {
+    showSavedUnavailable(saved, error, deps);
+  }
+}

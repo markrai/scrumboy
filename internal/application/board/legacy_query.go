@@ -7,7 +7,7 @@ import "scrumboy/internal/store"
 // Transport adapters remain responsible for parsing and validating their
 // public request formats before constructing a LegacyQuery.
 type LegacyQuery struct {
-	TagFilter      string
+	TagFilters     []string
 	SearchFilter   string
 	AssigneeFilter store.AssigneeFilter
 	PriorityFilter store.PriorityFilter

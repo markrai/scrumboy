@@ -271,6 +271,27 @@ func TestDeletePriorityTier_BlockedWhenInUse(t *testing.T) {
 	}
 }
 
+func TestDeletePriorityTier_BlockedWhenOnlyArchivedTodoUsesIt(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	project, err := st.CreateProject(ctx, "priority-delete-archived")
+	if err != nil {
+		t.Fatal(err)
+	}
+	low := "low"
+	todo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived priority", PriorityKey: &low}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodoByLocalID(ctx, project.ID, todo.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeletePriorityTier(ctx, project.ID, low); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete archived-used tier err=%v want conflict", err)
+	}
+}
+
 func TestDeletePriorityTier_BlockedWhenLastTier(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()

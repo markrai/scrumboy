@@ -9,7 +9,7 @@ import {
   getSettingsProjectId,
   getSlug,
   getSprintIdFromUrl,
-  getTag,
+  getTagsFromUrl,
   getTagColors,
   getUser,
 } from '../state/selectors.js';
@@ -68,7 +68,7 @@ async function applyTagColorSuccess(tagName: string, color: string | null): Prom
     invalidateTagsCache();
 
     if (getSlug()) {
-      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+      await invalidateBoard(getSlug(), getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     }
 
     showToast(t('settings.tagColors.toast.colorUpdated'));
@@ -192,7 +192,7 @@ async function deleteTag(
     await rerender();
 
     if (getSlug()) {
-      await invalidateBoard(getSlug(), getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+      await invalidateBoard(getSlug(), getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     }
 
     showToast(t('settings.tagColors.toast.deleted', { name: tagName }));

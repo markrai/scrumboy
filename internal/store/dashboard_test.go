@@ -103,6 +103,55 @@ func TestDashboardSummary_CustomDoneKey(t *testing.T) {
 	}
 }
 
+func TestDashboardArchivalSeparatesCurrentWorkFromHistory(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx, user := dashboardTestContext(t, st)
+	project, err := st.CreateProject(ctx, "Archived dashboard semantics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	active, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "active", ColumnKey: DefaultColumnDoing, AssigneeUserID: &user.ID}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedWIP, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived wip", ColumnKey: DefaultColumnTesting, AssigneeUserID: &user.ID}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := int64(5)
+	archivedDone, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived done", ColumnKey: DefaultColumnDone, AssigneeUserID: &user.ID, EstimationPoints: &points}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := time.Now().UTC().Add(-48 * time.Hour)
+	setTodoTimes(t, st, archivedDone.ID, created, created)
+	if _, err := st.db.ExecContext(ctx, `UPDATE todos SET done_at = ? WHERE id = ?`, time.Now().UTC().Add(-time.Hour).UnixMilli(), archivedDone.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodosByLocalID(ctx, project.ID, []int64{archivedWIP.LocalID, archivedDone.LocalID}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := st.GetDashboardSummary(ctx, user.ID, "UTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.AssignedCount != 1 || summary.WipCount != 1 || summary.WipInProgressCount != 1 || summary.WipTestingCount != 0 {
+		t.Fatalf("current dashboard summary=%+v", summary)
+	}
+	if summary.StoriesCompletedThisWeek != 1 || summary.PointsCompletedThisWeek != points || summary.AvgLeadTimeDays == nil {
+		t.Fatalf("historical dashboard summary=%+v", summary)
+	}
+	items, _, err := st.ListDashboardTodos(ctx, user.ID, 20, nil, "activity")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].LocalID != active.LocalID {
+		t.Fatalf("dashboard items=%+v want active todo only", items)
+	}
+}
+
 func TestDashboardSummary_CustomWIPKeys_AllNonDoneCountAsWipWithoutLegacySplit(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()
@@ -655,5 +704,44 @@ func TestListDashboardTodos_CursorSortMismatch(t *testing.T) {
 	_, _, err = st.ListDashboardTodos(ctx, user.ID, 10, &boardCursor, "activity")
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("activity sort + board-shaped cursor: want ErrValidation, got %v", err)
+	}
+}
+
+func TestNormalizeDashboardTodoPageLimits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		limit          int
+		wantPageLimit  int
+		wantFetchLimit int
+	}{
+		{name: "zero defaults", limit: 0, wantPageLimit: 20, wantFetchLimit: 21},
+		{name: "negative defaults", limit: -1, wantPageLimit: 20, wantFetchLimit: 21},
+		{name: "min page", limit: 1, wantPageLimit: 1, wantFetchLimit: 2},
+		{name: "near max", limit: 99, wantPageLimit: 99, wantFetchLimit: 100},
+		{name: "exact max", limit: 100, wantPageLimit: 100, wantFetchLimit: 101},
+		{name: "above max clamps", limit: 101, wantPageLimit: 100, wantFetchLimit: 101},
+		{name: "far above max clamps", limit: 1000, wantPageLimit: 100, wantFetchLimit: 101},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			pageLimit, fetchLimit := normalizeDashboardTodoPageLimits(tt.limit)
+			if pageLimit != tt.wantPageLimit || fetchLimit != tt.wantFetchLimit {
+				t.Fatalf("normalizeDashboardTodoPageLimits(%d) = (%d, %d); want (%d, %d)",
+					tt.limit, pageLimit, fetchLimit, tt.wantPageLimit, tt.wantFetchLimit)
+			}
+			if fetchLimit != pageLimit+1 {
+				t.Fatalf("fetchLimit %d is not pageLimit+1 (%d)", fetchLimit, pageLimit+1)
+			}
+			if pageLimit < 1 || pageLimit > 100 {
+				t.Fatalf("pageLimit %d outside [1,100]", pageLimit)
+			}
+			if fetchLimit < 2 || fetchLimit > 101 {
+				t.Fatalf("fetchLimit %d outside [2,101]", fetchLimit)
+			}
+		})
 	}
 }

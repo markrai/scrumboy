@@ -1,6 +1,6 @@
 import { fetchProjectMembers } from '../members-cache.js';
 import { getAuthStatusAvailable, getUser } from '../state/selectors.js';
-import { setBoardLaneMeta, setBoardMembers, setProjectId, setSearch, setSlug, setTag, } from '../state/mutations.js';
+import { setBoardLaneMeta, setBoardMembers, setProjectId, setSearch, setSlug, } from '../state/mutations.js';
 import { isAnonymousBoard } from '../utils.js';
 import { getBoardColumns } from './board-rendering.js';
 function laneMetaKeyCandidates(key) {
@@ -36,14 +36,13 @@ function buildLaneMetaFromBoard(board) {
     return out;
 }
 export async function bootstrapLoadedBoardView(args) {
-    const { board, slug, tag, search } = args;
+    const { board, slug, search } = args;
     const projectId = board?.project?.id;
     if (!projectId) {
         throw new Error("Invalid board response");
     }
     setSlug(slug);
     setProjectId(projectId);
-    setTag(tag || "");
     setSearch(search || "");
     setBoardLaneMeta(buildLaneMetaFromBoard(board));
     const user = getUser();

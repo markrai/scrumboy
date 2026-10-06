@@ -75,6 +75,29 @@ func TestSetUserPreference_CardsPerLane_AllowlistOnly(t *testing.T) {
 	}
 }
 
+func TestSetUserPreference_BoardFilterLayout_AllowlistOnly(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	user, err := st.BootstrapUser(ctx, "board-filter-layout@example.com", "password123", "Test")
+	if err != nil {
+		t.Fatalf("bootstrap user: %v", err)
+	}
+
+	for _, allowed := range []string{"omni", "legacy"} {
+		if err := st.SetUserPreference(ctx, user.ID, "boardFilterLayout", allowed); err != nil {
+			t.Fatalf("set valid boardFilterLayout %q: %v", allowed, err)
+		}
+	}
+	for _, bad := range []string{"", "compact", "LEGACY", "invalid"} {
+		err := st.SetUserPreference(ctx, user.ID, "boardFilterLayout", bad)
+		if !errors.Is(err, ErrValidation) {
+			t.Fatalf("boardFilterLayout=%q error=%v, want ErrValidation", bad, err)
+		}
+	}
+}
+
 func TestSetUserPreference_EmailNotifications_RoundTripAndRejectsInvalid(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()

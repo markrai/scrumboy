@@ -3,14 +3,21 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
+	projectapp "scrumboy/internal/application/project"
 	"scrumboy/internal/store"
 )
 
 type createProjectInput struct {
 	Name string `json:"name"`
+}
+
+type projectsListInput struct {
+	Limit  *int    `json:"limit"`
+	Cursor *string `json:"cursor"`
 }
 
 type updateProjectEnvelope struct {
@@ -92,7 +99,6 @@ func projectToItem(slug string, p store.Project, role store.ProjectRole) project
 		ProjectSlug:        slug,
 		ProjectID:          p.ID,
 		Name:               p.Name,
-		Image:              p.Image,
 		DominantColor:      p.DominantColor,
 		DefaultSprintWeeks: p.DefaultSprintWeeks,
 		ExpiresAt:          p.ExpiresAt,
@@ -102,29 +108,24 @@ func projectToItem(slug string, p store.Project, role store.ProjectRole) project
 	}
 }
 
-// requireProjectManageContext resolves a project slug and verifies the caller may
-// update or delete it. Durable projects require Maintainer+; Temporary Boards require
-// Temporary Board owner; Anonymous Boards return not found.
-func (a *Adapter) requireProjectManageContext(ctx context.Context, projectSlug string) (store.ProjectContext, *adapterError) {
-	pc, pcErr := a.store.GetProjectContextBySlug(ctx, projectSlug, a.storeMode())
-	if pcErr != nil {
-		return store.ProjectContext{}, mapStoreError(pcErr)
+func normalizeProjectsListLimit(limit *int) (int, *adapterError) {
+	if limit == nil {
+		return 20, nil
 	}
-
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return store.ProjectContext{}, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	if *limit <= 0 || *limit > 100 {
+		return 0, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid limit", map[string]any{"field": "limit"})
 	}
+	return *limit, nil
+}
 
-	if err := a.store.CheckCanManageProject(ctx, pc.Project.ID, requesterID); err != nil {
-		return store.ProjectContext{}, mapStoreError(err)
+// mapProjectApplicationError owns only the MCP projection of the neutral
+// application actor sentinel. Store errors retain the established shared MCP
+// mapping authority.
+func mapProjectApplicationError(err error) *adapterError {
+	if errors.Is(err, projectapp.ErrActorRequired) {
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
-
-	if pc.Project.ExpiresAt != nil && pc.Project.CreatorUserID != nil && *pc.Project.CreatorUserID == requesterID {
-		pc.Role = store.RoleMaintainer
-	}
-
-	return pc, nil
+	return mapStoreError(err)
 }
 
 func (a *Adapter) handleProjectsCreate(ctx context.Context, input any) (any, map[string]any, *adapterError) {
@@ -150,13 +151,15 @@ func (a *Adapter) handleProjectsCreate(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing name", map[string]any{"field": "name"})
 	}
 
-	project, createErr := a.store.CreateProject(ctx, in.Name)
+	result, createErr := a.projectCreations.Create(ctx, projectapp.MCPDurableCreationCommand{
+		Name: in.Name,
+	})
 	if createErr != nil {
 		return nil, nil, mapStoreError(createErr)
 	}
 
 	return map[string]any{
-		"project": projectToItem(project.Slug, project, store.RoleMaintainer),
+		"project": projectToItem(result.Project.Slug, result.Project, result.Role),
 	}, map[string]any{}, nil
 }
 
@@ -191,31 +194,27 @@ func (a *Adapter) handleProjectsUpdate(ctx context.Context, input any) (any, map
 		return nil, nil, patchErr
 	}
 
-	pc, pcErr := a.requireProjectManageContext(ctx, env.ProjectSlug)
-	if pcErr != nil {
-		return nil, nil, pcErr
+	prepared, prepareErr := a.projectUpdates.Prepare(
+		ctx,
+		projectapp.ProjectSlugTarget{
+			ProjectSlug: env.ProjectSlug,
+			Mode:        a.storeMode(),
+		},
+		projectapp.MCPUpdateCommand{
+			Name:               patch.Name,
+			DefaultSprintWeeks: patch.DefaultSprintWeeks,
+		},
+	)
+	if prepareErr != nil {
+		return nil, nil, mapProjectApplicationError(prepareErr)
 	}
-
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-
-	storePatch := store.UpdateProjectPatch{
-		Name:               patch.Name,
-		DefaultSprintWeeks: patch.DefaultSprintWeeks,
-	}
-	if updErr := a.store.UpdateProjectPatch(ctx, pc.Project.ID, requesterID, storePatch); updErr != nil {
-		return nil, nil, mapStoreError(updErr)
-	}
-
-	updated, getErr := a.store.GetProject(ctx, pc.Project.ID)
-	if getErr != nil {
-		return nil, nil, mapStoreError(getErr)
+	result, updateErr := prepared.Update()
+	if updateErr != nil {
+		return nil, nil, mapProjectApplicationError(updateErr)
 	}
 
 	return map[string]any{
-		"project": projectToItem(updated.Slug, updated, pc.Role),
+		"project": projectToItem(result.Project.Slug, result.Project, result.Role),
 	}, map[string]any{}, nil
 }
 
@@ -242,25 +241,24 @@ func (a *Adapter) handleProjectsDelete(ctx context.Context, input any) (any, map
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
-	pc, pcErr := a.requireProjectManageContext(ctx, in.ProjectSlug)
-	if pcErr != nil {
-		return nil, nil, pcErr
+	prepared, prepareErr := a.projectDeletions.Prepare(ctx, projectapp.MCPDeletionCommand{
+		Project: projectapp.ProjectSlugTarget{
+			ProjectSlug: in.ProjectSlug,
+			Mode:        a.storeMode(),
+		},
+	})
+	if prepareErr != nil {
+		return nil, nil, mapProjectApplicationError(prepareErr)
 	}
-
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
-	}
-
-	deleted, deleteErr := a.store.DeleteProject(ctx, pc.Project.ID, requesterID)
+	result, deleteErr := prepared.Delete()
 	if deleteErr != nil {
-		return nil, nil, mapStoreError(deleteErr)
+		return nil, nil, mapProjectApplicationError(deleteErr)
 	}
 
 	return map[string]any{
 		"status":      "deleted",
-		"projectSlug": pc.Project.Slug,
-		"projectId":   deleted.ProjectID,
+		"projectSlug": result.ProjectSlug,
+		"projectId":   result.ProjectID,
 	}, map[string]any{}, nil
 }
 
@@ -279,30 +277,41 @@ func (a *Adapter) handleProjectsList(ctx context.Context, input any) (any, map[s
 		return nil, nil, newAdapterError(401, CodeAuthRequired, "Sign-in required for this tool", nil)
 	}
 
-	entries, listErr := a.store.ListProjects(ctx)
+	var in projectsListInput
+	if err := decodeInput(input, &in); err != nil {
+		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid input", map[string]any{"detail": err.Error()})
+	}
+	limit, limitErr := normalizeProjectsListLimit(in.Limit)
+	if limitErr != nil {
+		return nil, nil, limitErr
+	}
+
+	summaries, nextCursor, listErr := a.store.ListProjectSummaries(ctx, limit, in.Cursor)
 	if listErr != nil {
 		return nil, nil, mapStoreError(listErr)
 	}
 
-	items := make([]projectItem, 0, len(entries))
-	for _, entry := range entries {
-		items = append(items, projectListEntryToItem(entry))
+	items := make([]projectItem, 0, len(summaries))
+	for _, summary := range summaries {
+		items = append(items, projectSummaryToItem(summary))
 	}
 
-	return map[string]any{"items": items}, map[string]any{}, nil
+	return map[string]any{"items": items}, map[string]any{
+		"nextCursor": nextCursor,
+		"hasMore":    nextCursor != nil,
+	}, nil
 }
 
-func projectListEntryToItem(entry store.ProjectListEntry) projectItem {
+func projectSummaryToItem(summary store.ProjectSummary) projectItem {
 	return projectItem{
-		ProjectSlug:        entry.Project.Slug,
-		ProjectID:          entry.Project.ID,
-		Name:               entry.Project.Name,
-		Image:              entry.Project.Image,
-		DominantColor:      entry.Project.DominantColor,
-		DefaultSprintWeeks: entry.Project.DefaultSprintWeeks,
-		ExpiresAt:          entry.Project.ExpiresAt,
-		CreatedAt:          entry.Project.CreatedAt,
-		UpdatedAt:          entry.Project.UpdatedAt,
-		Role:               entry.Role.String(),
+		ProjectSlug:        summary.Slug,
+		ProjectID:          summary.ID,
+		Name:               summary.Name,
+		DominantColor:      summary.DominantColor,
+		DefaultSprintWeeks: summary.DefaultSprintWeeks,
+		ExpiresAt:          summary.ExpiresAt,
+		CreatedAt:          summary.CreatedAt,
+		UpdatedAt:          summary.UpdatedAt,
+		Role:               summary.Role.String(),
 	}
 }

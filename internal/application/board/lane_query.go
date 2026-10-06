@@ -11,7 +11,7 @@ type LaneQuery struct {
 	Limit          int
 	AfterA         int64
 	AfterB         int64
-	TagFilter      string
+	TagFilters     []string
 	SearchFilter   string
 	AssigneeFilter store.AssigneeFilter
 	PriorityFilter store.PriorityFilter

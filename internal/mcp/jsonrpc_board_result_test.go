@@ -116,6 +116,28 @@ func TestJSONRPCToolResultCompositionAddsApprovedNonBoardMetadata(t *testing.T) 
 			want:     map[string]any{"serverMode": "anonymous", "adapterVersion": 1},
 		},
 		{
+			name:     "projects",
+			toolName: "projects_list",
+			data:     map[string]any{"items": []any{"project"}},
+			meta: map[string]any{
+				"nextCursor": "opaque",
+				"hasMore":    true,
+				"unrelated":  "must not leak",
+			},
+			want: map[string]any{
+				"items":      []any{"project"},
+				"nextCursor": "opaque",
+				"hasMore":    true,
+			},
+		},
+		{
+			name:     "projects dotted alias",
+			toolName: "projects.list",
+			data:     map[string]any{"items": []any{}},
+			meta:     map[string]any{"nextCursor": nil, "hasMore": false},
+			want:     map[string]any{"items": []any{}, "nextCursor": nil, "hasMore": false},
+		},
+		{
 			name:     "sprints",
 			toolName: "sprints_list",
 			data:     map[string]any{"items": []any{"sprint"}},
@@ -163,7 +185,7 @@ func TestJSONRPCToolResultCompositionLeavesUnapprovedToolsUnchanged(t *testing.T
 	data := map[string]any{"items": []any{"kept"}}
 	meta := map[string]any{"nextCursor": "must remain private", "hasMore": true}
 
-	got := jsonRPCToolStructuredContent("projects_list", data, meta)
+	got := jsonRPCToolStructuredContent("members_list", data, meta)
 
 	if !reflect.DeepEqual(got, data) {
 		t.Fatalf("unrelated tool data changed: got=%#v want=%#v", got, data)

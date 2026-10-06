@@ -1,0 +1,571 @@
+name: Build macOS executables
+
+on:
+  workflow_dispatch:
+    inputs:
+      repair_v3_34_0:
+        description: Rebuild and replace missing macOS assets for existing v3.34.0 release
+        required: false
+        default: false
+        type: boolean
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-executable:
+    name: Build and smoke-test ${{ matrix.platform }}
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runs-on: macos-latest # currently macOS 26 ARM64
+            goarch: arm64
+            platform: darwin-arm64
+          - runs-on: macos-15-intel
+            goarch: amd64
+            platform: darwin-amd64
+
+    steps:
+      - name: Checkout repository
+        if: github.event_name == 'release' || inputs.repair_v3_34_0 != true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+
+      - name: Checkout v3.34.0 release source
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          clean: true
+          ref: 6ada7879e9529725422ad79b4333f6be2e5eff37
+
+      - name: Verify checkout commit for release event
+        if: github.event_name == 'release'
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "$EXPECTED_SHA" ]; then
+            echo "Checkout mismatch: HEAD is '${actual}', expected '${EXPECTED_SHA}'." >&2
+            exit 1
+          fi
+          echo "Verified HEAD matches release-event commit ${EXPECTED_SHA}."
+
+      - name: Verify checkout commit for v3.34.0 repair
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [ "$actual" != "6ada7879e9529725422ad79b4333f6be2e5eff37" ]; then
+            echo "Checkout mismatch: HEAD is '${actual}', expected '6ada7879e9529725422ad79b4333f6be2e5eff37'." >&2
+            exit 1
+          fi
+          echo "Verified HEAD matches reviewed v3.34.0 commit 6ada7879e9529725422ad79b4333f6be2e5eff37."
+
+      - name: Verify live v3.34.0 tag matches reviewed SHA
+        if: github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Verification only. Literals below are the reviewed repair identity;
+          # API results never influence checkout, naming, or upload tag selection.
+          expected_sha="6ada7879e9529725422ad79b4333f6be2e5eff37"
+          release_tag="v3.34.0"
+
+          if ! gh release view "$release_tag" --repo "$GH_REPO" >/dev/null; then
+            echo "No GitHub Release exists for tag '${release_tag}'." >&2
+            echo "Repair mode only attaches assets to an existing release; it will not create one." >&2
+            exit 1
+          fi
+
+          tag_ref_json="$(gh api "repos/${GH_REPO}/git/ref/tags/${release_tag}")" || {
+            echo "Git tag '${release_tag}' does not exist in the repository." >&2
+            exit 1
+          }
+          object_type="$(printf '%s' "$tag_ref_json" | jq -r '.object.type')"
+          object_sha="$(printf '%s' "$tag_ref_json" | jq -r '.object.sha')"
+          if [ "$object_type" = "commit" ]; then
+            current_tag_commit="$object_sha"
+          elif [ "$object_type" = "tag" ]; then
+            tag_obj_json="$(gh api "repos/${GH_REPO}/git/tags/${object_sha}")"
+            peeled_type="$(printf '%s' "$tag_obj_json" | jq -r '.object.type')"
+            current_tag_commit="$(printf '%s' "$tag_obj_json" | jq -r '.object.sha')"
+            if [ "$peeled_type" != "commit" ]; then
+              echo "Annotated tag '${release_tag}' does not point at a commit (object type: ${peeled_type})." >&2
+              exit 1
+            fi
+          else
+            echo "Git tag '${release_tag}' has unexpected object type '${object_type}'." >&2
+            exit 1
+          fi
+
+          if [ "$current_tag_commit" != "$expected_sha" ]; then
+            echo "Tag '${release_tag}' currently resolves to '${current_tag_commit}'," >&2
+            echo "but the reviewed repair SHA is '${expected_sha}'." >&2
+            echo "Refusing to continue; update the reviewed repair checkout after investigating the mismatch." >&2
+            exit 1
+          fi
+
+          echo "Live tag '${release_tag}' still resolves to reviewed commit ${expected_sha}."
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            internal/httpapi/web/package-lock.json
+            mobile/capacitor/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: internal/httpapi/web
+        run: npm ci
+
+      - name: Install Capacitor dependencies for frontend tests
+        working-directory: mobile/capacitor
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: internal/httpapi/web
+        run: npm run build
+
+      - name: Test frontend
+        working-directory: internal/httpapi/web
+        run: npm test
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test Go
+        run: go test ./... -count=1 -p=1 -timeout=15m
+
+      - name: Prepare artifact names
+        id: names
+        env:
+          RELEASE_TAG_EVENT: ${{ github.event.release.tag_name }}
+          REPAIR_V3_34_0: ${{ inputs.repair_v3_34_0 }}
+          RUN_NUMBER: ${{ github.run_number }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -e
+          artifact_dir="${RUNNER_TEMP}/scrumboy-artifacts"
+          mkdir -p "$artifact_dir"
+
+          if [ "$GITHUB_EVENT_NAME" = "release" ]; then
+            tag="$RELEASE_TAG_EVENT"
+            if [ -z "$tag" ]; then
+              echo "Release event did not provide a tag name." >&2
+              exit 1
+            fi
+            case "$tag" in
+              *[!A-Za-z0-9._-]*)
+                echo "Release tag '$tag' contains characters that are invalid in artifact filenames." >&2
+                exit 1
+                ;;
+            esac
+            artifact_stem="scrumboy-${tag}-${PLATFORM}"
+          elif [ "$REPAIR_V3_34_0" = "true" ]; then
+            # Reviewed constant — not derived from workflow inputs.
+            tag="v3.34.0"
+            artifact_stem="scrumboy-${tag}-${PLATFORM}"
+          else
+            artifact_stem="scrumboy-manual-${RUN_NUMBER}-${PLATFORM}"
+          fi
+
+          bin_path="${artifact_dir}/scrumboy"
+          archive_name="${artifact_stem}.tar.gz"
+          archive_path="${artifact_dir}/${archive_name}"
+          sha_path="${archive_path}.sha256"
+
+          {
+            echo "artifact_stem=${artifact_stem}"
+            echo "bin_path=${bin_path}"
+            echo "archive_name=${archive_name}"
+            echo "archive_path=${archive_path}"
+            echo "sha_path=${sha_path}"
+            echo "artifact_dir=${artifact_dir}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build macOS executable
+        env:
+          CGO_ENABLED: "0"
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          BIN_PATH: ${{ steps.names.outputs.bin_path }}
+        run: |
+          set -e
+          go build -trimpath -ldflags="-s -w" -o "$BIN_PATH" ./cmd/scrumboy
+          chmod 0755 "$BIN_PATH"
+
+      - name: Smoke-test macOS executable
+        env:
+          BIN_PATH: ${{ steps.names.outputs.bin_path }}
+        run: |
+          set -e
+
+          run_dir="${RUNNER_TEMP}/scrumboy-smoke-run"
+          data_dir="${RUNNER_TEMP}/scrumboy-smoke-data"
+          stdout_log="${RUNNER_TEMP}/scrumboy-smoke.stdout.log"
+          stderr_log="${RUNNER_TEMP}/scrumboy-smoke.stderr.log"
+          PID=""
+
+          rm -rf "$run_dir" "$data_dir"
+          mkdir -p "$run_dir" "$data_dir"
+
+          cleanup() {
+            if [ -n "${PID:-}" ]; then
+              if kill -0 "$PID" 2>/dev/null; then
+                kill -TERM "$PID" 2>/dev/null || true
+                for _ in $(seq 1 15); do
+                  if ! kill -0 "$PID" 2>/dev/null; then
+                    break
+                  fi
+                  sleep 1
+                done
+                if kill -0 "$PID" 2>/dev/null; then
+                  kill -KILL "$PID" 2>/dev/null || true
+                fi
+              fi
+              wait "$PID" 2>/dev/null || true
+            fi
+
+            echo "===== Scrumboy stdout ====="
+            if [ -f "$stdout_log" ]; then
+              cat "$stdout_log"
+            fi
+            echo "===== Scrumboy stderr ====="
+            if [ -f "$stderr_log" ]; then
+              cat "$stderr_log"
+            fi
+          }
+
+          trap cleanup EXIT
+          trap 'exit 1' INT TERM
+
+          export DATA_DIR="$data_dir"
+          export BIND_ADDR="127.0.0.1:18080"
+
+          (
+            cd "$run_dir"
+            exec "$BIN_PATH"
+          ) >"$stdout_log" 2>"$stderr_log" &
+          PID=$!
+
+          health_ok=0
+          attempt=1
+          while [ "$attempt" -le 60 ]; do
+            if ! kill -0 "$PID" 2>/dev/null; then
+              echo "Scrumboy exited before /healthz became available." >&2
+              wait "$PID" || true
+              exit 1
+            fi
+
+            code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:18080/healthz") || code="000"
+            if [ "$code" = "200" ]; then
+              health_ok=1
+              break
+            fi
+            sleep 1
+            attempt=$((attempt + 1))
+          done
+
+          if [ "$health_ok" -ne 1 ]; then
+            echo "Timed out waiting for /healthz to return HTTP 200." >&2
+            exit 1
+          fi
+
+          root_code=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 "http://127.0.0.1:18080/") || root_code="000"
+          if [ "$root_code" != "200" ]; then
+            echo "Expected / to return HTTP 200, got HTTP ${root_code}." >&2
+            exit 1
+          fi
+
+          if [ ! -f "${data_dir}/app.db" ]; then
+            echo "Expected SQLite database to be created at '${data_dir}/app.db'." >&2
+            exit 1
+          fi
+
+          kill -TERM "$PID"
+          for _ in $(seq 1 15); do
+            if ! kill -0 "$PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "Scrumboy did not exit after SIGTERM" >&2
+            exit 1
+          fi
+          wait "$PID"
+          PID=""
+
+      - name: Package tar.gz and checksum
+        env:
+          BIN_PATH: ${{ steps.names.outputs.bin_path }}
+          ARCHIVE_NAME: ${{ steps.names.outputs.archive_name }}
+          ARCHIVE_PATH: ${{ steps.names.outputs.archive_path }}
+          SHA_PATH: ${{ steps.names.outputs.sha_path }}
+          ARTIFACT_DIR: ${{ steps.names.outputs.artifact_dir }}
+        run: |
+          set -e
+
+          stage_dir="${RUNNER_TEMP}/scrumboy-tar-stage"
+          extract_dir="${RUNNER_TEMP}/scrumboy-tar-extract"
+          rm -rf "$stage_dir" "$extract_dir"
+          mkdir -p "$stage_dir" "$extract_dir"
+
+          cp "$BIN_PATH" "${stage_dir}/scrumboy"
+          chmod 0755 "${stage_dir}/scrumboy"
+
+          COPYFILE_DISABLE=1
+          export COPYFILE_DISABLE
+          tar -czf "$ARCHIVE_PATH" -C "$stage_dir" scrumboy
+
+          listing=$(tar -tzf "$ARCHIVE_PATH")
+          if [ "$listing" != "scrumboy" ]; then
+            echo "Expected archive to contain only 'scrumboy', got:" >&2
+            echo "$listing" >&2
+            exit 1
+          fi
+
+          tar -xzf "$ARCHIVE_PATH" -C "$extract_dir"
+          if [ ! -x "${extract_dir}/scrumboy" ]; then
+            echo "Extracted archive did not retain the executable bit on 'scrumboy'." >&2
+            exit 1
+          fi
+
+          (
+            cd "$ARTIFACT_DIR"
+            shasum -a 256 "$ARCHIVE_NAME" > "${ARCHIVE_NAME}.sha256"
+          )
+
+          if [ ! -s "$SHA_PATH" ]; then
+            echo "Checksum file was not created at '$SHA_PATH'." >&2
+            exit 1
+          fi
+
+      - name: Upload archive artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.names.outputs.artifact_stem }}.tar.gz
+          path: ${{ steps.names.outputs.archive_path }}
+          if-no-files-found: error
+          archive: false
+
+      - name: Upload checksum artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.names.outputs.artifact_stem }}.tar.gz.sha256
+          path: ${{ steps.names.outputs.sha_path }}
+          if-no-files-found: error
+          archive: false
+
+  upload-release-assets:
+    name: Attach assets to GitHub Release
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.repair_v3_34_0 == true)
+    needs: build-macos-executable
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Download executable artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/release-assets
+          pattern: scrumboy-*-darwin-*
+          merge-multiple: true
+
+      - name: Resolve and verify release assets
+        id: resolve
+        run: |
+          set -e
+          asset_dir="${RUNNER_TEMP}/release-assets"
+
+          count_matches() {
+            find "$asset_dir" -type f -name "$1" | wc -l | tr -d ' '
+          }
+
+          arm64_count=$(count_matches 'scrumboy-*-darwin-arm64.tar.gz')
+          amd64_count=$(count_matches 'scrumboy-*-darwin-amd64.tar.gz')
+          arm64_sha_count=$(count_matches 'scrumboy-*-darwin-arm64.tar.gz.sha256')
+          amd64_sha_count=$(count_matches 'scrumboy-*-darwin-amd64.tar.gz.sha256')
+
+          if [ "$arm64_count" -ne 1 ]; then
+            echo "Expected exactly one darwin-arm64 archive, found ${arm64_count}." >&2
+            exit 1
+          fi
+          if [ "$amd64_count" -ne 1 ]; then
+            echo "Expected exactly one darwin-amd64 archive, found ${amd64_count}." >&2
+            exit 1
+          fi
+          if [ "$arm64_sha_count" -ne 1 ]; then
+            echo "Expected exactly one darwin-arm64 checksum, found ${arm64_sha_count}." >&2
+            exit 1
+          fi
+          if [ "$amd64_sha_count" -ne 1 ]; then
+            echo "Expected exactly one darwin-amd64 checksum, found ${amd64_sha_count}." >&2
+            exit 1
+          fi
+
+          arm64_archive=$(find "$asset_dir" -type f -name 'scrumboy-*-darwin-arm64.tar.gz')
+          amd64_archive=$(find "$asset_dir" -type f -name 'scrumboy-*-darwin-amd64.tar.gz')
+          arm64_sha=$(find "$asset_dir" -type f -name 'scrumboy-*-darwin-arm64.tar.gz.sha256')
+          amd64_sha=$(find "$asset_dir" -type f -name 'scrumboy-*-darwin-amd64.tar.gz.sha256')
+
+          (
+            cd "$(dirname "$arm64_archive")"
+            sha256sum -c "$arm64_sha"
+          )
+          (
+            cd "$(dirname "$amd64_archive")"
+            sha256sum -c "$amd64_sha"
+          )
+
+          {
+            echo "arm64_archive=${arm64_archive}"
+            echo "amd64_archive=${amd64_archive}"
+            echo "arm64_sha=${arm64_sha}"
+            echo "amd64_sha=${amd64_sha}"
+            echo "arm64_provenance=${arm64_archive}.intoto.jsonl"
+            echo "amd64_provenance=${amd64_archive}.intoto.jsonl"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Attest darwin-arm64 archive
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ steps.resolve.outputs.arm64_archive }}
+
+      - name: Attest darwin-amd64 archive
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: ${{ steps.resolve.outputs.amd64_archive }}
+
+      - name: Export provenance bundles
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARM64_ARCHIVE: ${{ steps.resolve.outputs.arm64_archive }}
+          AMD64_ARCHIVE: ${{ steps.resolve.outputs.amd64_archive }}
+          ARM64_PROVENANCE: ${{ steps.resolve.outputs.arm64_provenance }}
+          AMD64_PROVENANCE: ${{ steps.resolve.outputs.amd64_provenance }}
+        run: |
+          set -e
+
+          export_bundle() {
+            archive_path="$1"
+            provenance_path="$2"
+            export_dir="${RUNNER_TEMP}/attestation-export-$(basename "$archive_path")"
+            rm -rf "$export_dir"
+            mkdir -p "$export_dir"
+            (
+              cd "$export_dir"
+              gh attestation download "$archive_path" \
+                -R "$GH_REPO" \
+                --predicate-type "https://slsa.dev/provenance/v1"
+            )
+
+            bundle_count=$(find "$export_dir" -maxdepth 1 -type f \( -name 'sha256-*.jsonl' -o -name 'sha256:*.jsonl' \) | wc -l | tr -d ' ')
+            if [ "$bundle_count" -ne 1 ]; then
+              echo "Expected exactly one attestation bundle from gh attestation download for '$archive_path', found ${bundle_count}." >&2
+              exit 1
+            fi
+
+            bundle_path=$(find "$export_dir" -maxdepth 1 -type f \( -name 'sha256-*.jsonl' -o -name 'sha256:*.jsonl' \))
+            if [ ! -s "$bundle_path" ]; then
+              echo "Attestation bundle '$bundle_path' is empty." >&2
+              exit 1
+            fi
+
+            cp "$bundle_path" "$provenance_path"
+            if [ ! -s "$provenance_path" ]; then
+              echo "Provenance file '$provenance_path' is missing or empty." >&2
+              exit 1
+            fi
+            case "$provenance_path" in
+              *.intoto.jsonl) ;;
+              *)
+                echo "Provenance filename must end with .intoto.jsonl." >&2
+                exit 1
+                ;;
+            esac
+
+            gh attestation verify "$archive_path" \
+              -R "$GH_REPO" \
+              --bundle "$provenance_path" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --signer-workflow "${GH_REPO}/.github/workflows/macos-executable-release.yml" \
+              --deny-self-hosted-runners
+          }
+
+          export_bundle "$ARM64_ARCHIVE" "$ARM64_PROVENANCE"
+          export_bundle "$AMD64_ARCHIVE" "$AMD64_PROVENANCE"
+
+      - name: Attach assets to existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG_EVENT: ${{ github.event.release.tag_name }}
+          REPAIR_V3_34_0: ${{ inputs.repair_v3_34_0 }}
+          ARM64_ARCHIVE: ${{ steps.resolve.outputs.arm64_archive }}
+          AMD64_ARCHIVE: ${{ steps.resolve.outputs.amd64_archive }}
+          ARM64_SHA: ${{ steps.resolve.outputs.arm64_sha }}
+          AMD64_SHA: ${{ steps.resolve.outputs.amd64_sha }}
+          ARM64_PROVENANCE: ${{ steps.resolve.outputs.arm64_provenance }}
+          AMD64_PROVENANCE: ${{ steps.resolve.outputs.amd64_provenance }}
+        run: |
+          set -e
+
+          if [ "$EVENT_NAME" = "release" ]; then
+            release_tag="$RELEASE_TAG_EVENT"
+            if [ -z "$release_tag" ]; then
+              echo "Release event did not provide a tag name." >&2
+              exit 1
+            fi
+          elif [ "$REPAIR_V3_34_0" = "true" ]; then
+            # Reviewed constant — not derived from workflow inputs.
+            release_tag="v3.34.0"
+          else
+            echo "Upload job ran without a release event or approved repair mode." >&2
+            exit 1
+          fi
+
+          for path in \
+            "$ARM64_ARCHIVE" "$ARM64_SHA" "$ARM64_PROVENANCE" \
+            "$AMD64_ARCHIVE" "$AMD64_SHA" "$AMD64_PROVENANCE"
+          do
+            if [ ! -s "$path" ]; then
+              echo "Required release asset missing: '$path'." >&2
+              exit 1
+            fi
+          done
+
+          # --clobber replaces only assets whose filenames match the files being
+          # uploaded (e.g. scrumboy-vX.Y.Z-darwin-*.tar.gz[.sha256|.intoto.jsonl]).
+          # Unrelated release assets (Windows binaries, notes, etc.) are left intact.
+          gh release upload "$release_tag" \
+            "$ARM64_ARCHIVE" \
+            "$ARM64_SHA" \
+            "$ARM64_PROVENANCE" \
+            "$AMD64_ARCHIVE" \
+            "$AMD64_SHA" \
+            "$AMD64_PROVENANCE" \
+            --clobber

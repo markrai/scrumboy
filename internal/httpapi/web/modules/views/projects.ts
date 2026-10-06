@@ -3,6 +3,7 @@ import { apiFetch } from '../api.js';
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
+import { bindViewTabsFit } from './view-tabs.js';
 import { navigate } from '../router.js';
 import type { Board } from '../types.js';
 import { escapeHTML, showToast, renderUserAvatar, confirmDelete, showPromptDialog } from '../utils.js';
@@ -398,9 +399,9 @@ function renderProjectsContent(projects: Project[]): void {
       : "projects.actions.create";
   const temporaryLabelKey = temporaryBoardsNavLabelKey();
   const tabsHTML = `
-    <div class="chips" style="margin-top: 10px; margin-bottom: 12px;">
-      <button class="chip" id="dashboardTabBtn" type="button" data-i18n-text="projects.tabs.dashboard">
-        ${escapeHTML(t("projects.tabs.dashboard"))}
+    <div class="chips chips--view-tabs">
+      <button class="chip" id="dashboardTabBtn" type="button">
+        <span class="projects-tab__label" data-i18n-text="projects.tabs.dashboard">${escapeHTML(t("projects.tabs.dashboard"))}</span>
       </button>
       <button class="chip ${getProjectsTab() === "projects" ? "chip--active" : ""}" data-projects-tab="projects">
         <span class="projects-tab__label" data-i18n-text="projects.tabs.projects">${escapeHTML(t("projects.tabs.projects"))}</span>
@@ -518,6 +519,7 @@ function renderProjectsContent(projects: Project[]): void {
     });
     (dashboardTabBtn as any)[BOUND_FLAG] = true;
   }
+  bindViewTabsFit(document.querySelector(".chips--view-tabs"));
 
   const createProjectForm = document.getElementById("createProjectForm");
   if (createProjectForm && !(createProjectForm as any)[BOUND_FLAG]) {

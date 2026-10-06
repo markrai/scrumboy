@@ -273,6 +273,7 @@ describe("projects i18n shell", () => {
       await mod.renderProjects();
 
       expect(document.querySelector(".panel__title")?.textContent).toBe("Projects");
+      expect(document.querySelector(".chips--view-tabs")).not.toBeNull();
       expect(document.getElementById("dashboardTabBtn")?.textContent?.trim()).toBe("Dashboard");
       expect(document.querySelector('[data-projects-tab="projects"] .projects-tab__label')?.textContent).toBe("Projects");
       expect(document.querySelector('[data-projects-tab="temporary"] .projects-tab__label')?.textContent).toBe("Temporary Boards");

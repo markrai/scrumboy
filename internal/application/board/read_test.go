@@ -15,7 +15,7 @@ type recordingReadStore struct {
 
 	ctx            context.Context
 	projectContext *store.ProjectContext
-	tagFilter      string
+	tagFilters     []string
 	searchFilter   string
 	assigneeFilter store.AssigneeFilter
 	priorityFilter store.PriorityFilter
@@ -49,7 +49,7 @@ func (s *recordingPriorityReadStore) GetProjectPriorities(ctx context.Context, p
 func (s *recordingReadStore) GetBoardPaged(
 	ctx context.Context,
 	pc *store.ProjectContext,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -67,7 +67,7 @@ func (s *recordingReadStore) GetBoardPaged(
 	s.calls++
 	s.ctx = ctx
 	s.projectContext = pc
-	s.tagFilter = tagFilter
+	s.tagFilters = tagFilters
 	s.searchFilter = searchFilter
 	s.assigneeFilter = assigneeFilter
 	s.priorityFilter = priorityFilter
@@ -96,7 +96,7 @@ func TestServiceReadInitial_DelegatesExactlyAndNamesResult(t *testing.T) {
 		Role:    store.RoleViewer,
 	}
 	query := Query{
-		TagFilter:      "make space",
+		TagFilters:     []string{"make space"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -134,8 +134,8 @@ func TestServiceReadInitial_DelegatesExactlyAndNamesResult(t *testing.T) {
 	if readStore.projectContext != pc {
 		t.Fatal("ReadInitial did not forward the same project context pointer")
 	}
-	if readStore.tagFilter != query.TagFilter {
-		t.Fatalf("tagFilter = %q, want %q", readStore.tagFilter, query.TagFilter)
+	if !reflect.DeepEqual(readStore.tagFilters, query.TagFilters) {
+		t.Fatalf("tagFilters = %q, want %q", readStore.tagFilters, query.TagFilters)
 	}
 	if readStore.searchFilter != query.SearchFilter {
 		t.Fatalf("searchFilter = %q, want %q", readStore.searchFilter, query.SearchFilter)

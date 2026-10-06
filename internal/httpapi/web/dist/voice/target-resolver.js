@@ -1,8 +1,10 @@
-import { normalizeTitleReference } from './normalize.js';
+import { normalizeTitleReference, stripWrappingQuotes } from './normalize.js';
 import { localizedCommandFailure, isCommandFailure } from './schema.js';
 const MIN_CANDIDATE_SCORE = 70;
 const SINGLE_CANDIDATE_AUTO_SCORE = 75;
 const CLEAR_WIN_SCORE_GAP = 12;
+const TODO_REFERENCE_PREFIX = /^(?:the\s+)?(?:story|todo|to[-\s]?do|card|task|item)(?:\s+(?:called|named|titled))?\s+(.+)$/i;
+const TODO_REFERENCE_SUFFIX = /^(.+?)\s+(?:story|todo|to[-\s]?do|card|task|item)$/i;
 function boardTodos(board) {
     return Object.values(board.columns ?? {}).flat();
 }
@@ -119,26 +121,89 @@ export function rankTitleCandidates(phrase, candidates) {
         return a.localId - b.localId;
     });
 }
-async function resolveTodoByTitle(target, context) {
+/** Exact title first, then the same unique-winner rule as resolveTodoByTitle. */
+export function selectUniqueTitleCandidate(phrase, candidates) {
+    const ranked = rankTitleCandidates(phrase, candidates);
+    const exact = ranked.filter((candidate) => candidate.score === 100);
+    if (exact.length === 1)
+        return exact[0];
+    if (exact.length > 1)
+        return null;
+    const [first, second] = ranked;
+    if (!first)
+        return null;
+    const hasClearSingle = !second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE;
+    const hasClearWinner = !!second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE && first.score - second.score >= CLEAR_WIN_SCORE_GAP;
+    return hasClearSingle || hasClearWinner ? first : null;
+}
+/** Removes a grammatical Todo wrapper without deciding whether stripping is safe for a particular board. */
+export function unwrapTodoReference(reference) {
+    const trimmed = stripWrappingQuotes(reference.trim());
+    const prefix = TODO_REFERENCE_PREFIX.exec(trimmed)?.[1]?.trim();
+    if (prefix)
+        return prefix;
+    const suffix = TODO_REFERENCE_SUFFIX.exec(trimmed)?.[1]?.trim();
+    if (!suffix)
+        return null;
+    return suffix.replace(/^(?:the|a|an)\s+/i, '').trim() || suffix;
+}
+/** Wrapper stripping is safe only when it improves the selected candidate's title score. */
+export function strippedReferenceIsStronger(reference, stripped, candidate) {
+    const candidates = [candidate];
+    const originalScore = rankTitleCandidates(reference, candidates)[0]?.score ?? 0;
+    const strippedScore = rankTitleCandidates(stripped, candidates)[0]?.score ?? 0;
+    return strippedScore > originalScore;
+}
+/** Exact literal title first, then a unique and demonstrably stronger wrapper-stripped interpretation. */
+export function selectUniqueTodoReferenceCandidate(reference, candidates) {
+    const original = rankTitleCandidates(reference, candidates);
+    const exact = original.filter(candidate => candidate.score === 100);
+    if (exact.length === 1)
+        return exact[0];
+    if (exact.length > 1)
+        return null;
+    const unwrapped = unwrapTodoReference(reference);
+    if (!unwrapped)
+        return selectUniqueTitleCandidate(reference, candidates);
+    const selected = selectUniqueTitleCandidate(unwrapped, candidates);
+    return selected && strippedReferenceIsStronger(reference, unwrapped, selected) ? selected : null;
+}
+async function rankedTitleCandidates(phrase, context) {
     const candidates = new Map();
     mergeCandidates(candidates, localTitleCandidates(context.board));
-    mergeCandidates(candidates, await remoteTitleCandidates(target.phrase, context));
-    const ranked = rankTitleCandidates(target.phrase, Array.from(candidates.values()));
-    if (ranked.length === 0) {
-        return localizedCommandFailure("unknown_story", "voice.errors.noStrongTitleMatch", "No strong todo title match was found in this project.");
-    }
+    mergeCandidates(candidates, await remoteTitleCandidates(phrase, context));
+    return rankTitleCandidates(phrase, Array.from(candidates.values()));
+}
+async function resolveExactRankedTitle(ranked, context) {
     const exactMatches = ranked.filter((candidate) => candidate.score === 100);
+    if (exactMatches.length === 0)
+        return null;
     if (exactMatches.length === 1) {
         const resolved = await resolveTodoByLocalId(exactMatches[0].localId, context);
         if (isCommandFailure(resolved))
             return resolved;
         return { ok: true, value: { todo: resolved.value } };
     }
-    if (exactMatches.length > 1) {
-        return localizedCommandFailure("ambiguous_story", "voice.errors.todoAmbiguous", "More than one todo matched. Choose one.", {}, {
-            candidates: exactMatches.slice(0, 3).map(({ localId, title }) => ({ localId, title })),
-        });
+    return localizedCommandFailure("ambiguous_story", "voice.errors.todoAmbiguous", "More than one todo matched. Choose one.", {}, {
+        candidates: exactMatches.slice(0, 3).map(({ localId, title }) => ({ localId, title })),
+    });
+}
+/**
+ * Resolves only an exact/normalized-exact title across the board snapshot and
+ * authoritative search fallback. A null result means no exact title exists;
+ * normal fuzzy resolution has not run.
+ */
+export async function resolveExactTodoTitle(phrase, context) {
+    return resolveExactRankedTitle(await rankedTitleCandidates(phrase, context), context);
+}
+async function resolveTodoByTitle(target, context) {
+    const ranked = await rankedTitleCandidates(target.phrase, context);
+    if (ranked.length === 0) {
+        return localizedCommandFailure("unknown_story", "voice.errors.noStrongTitleMatch", "No strong todo title match was found in this project.");
     }
+    const exact = await resolveExactRankedTitle(ranked, context);
+    if (exact)
+        return exact;
     const [first, second] = ranked;
     const hasClearSingle = !second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE;
     const hasClearWinner = !!second && first.score >= SINGLE_CANDIDATE_AUTO_SCORE && first.score - second.score >= CLEAR_WIN_SCORE_GAP;

@@ -1,0 +1,400 @@
+{
+  "description": "Synthetic goldens for physical Nano evaluation. Do not count mocked generation as model accuracy. Compare semantic fields; capitalization differences in entity references may resolve equivalently, literal title/notes must preserve content.",
+  "fixtures": {
+    "normal": {
+      "leftmost": "Triage",
+      "lanes": [
+        "Triage",
+        "Backlog",
+        "Done"
+      ],
+      "members": [
+        "Mark"
+      ],
+      "tags": [
+        "urgent",
+        "customer"
+      ]
+    },
+    "duplicate-mark": {
+      "members": [
+        "Mark Jones",
+        "Mark Smith"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "id": "terse",
+      "transcript": "Create Big Man.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "called",
+      "transcript": "Make a story called Big Man.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "default-language",
+      "transcript": "Hey, make me a card called Big Man and just throw it wherever new cards normally go.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "done-lane",
+      "transcript": "Create Big Man in Done and assign Mark.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "lane": "Done",
+        "assignee": "Mark"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "all-fields",
+      "transcript": "Let's make a new story. Call it The big boy who had it all, put it in backlog, give it to Mark, tag it urgent, and add a note saying this guy really did have it all.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "The big boy who had it all",
+        "lane": "backlog",
+        "assignee": "Mark",
+        "tags": [
+          "urgent"
+        ],
+        "notes": "this guy really did have it all"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "done-title",
+      "transcript": "Create a story called Done.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Done"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "settings-title",
+      "transcript": "Create a story called Settings in Backlog.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Settings",
+        "lane": "Backlog"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "unsupported-extra",
+      "transcript": "Create Fred in Backlog and assign Mark and schedule it for Tuesday.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Fred",
+        "lane": "Backlog",
+        "assignee": "Mark",
+        "unhandled": [
+          {
+            "text": "schedule it for Tuesday",
+            "reason": "unsupported"
+          }
+        ]
+      },
+      "expectedPreparation": "blocked-unhandled"
+    },
+    {
+      "id": "named",
+      "transcript": "Make a task named Fix the sink.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Fix the sink"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "titled",
+      "transcript": "Create an item titled The cat is coming home.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "The cat is coming home"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "call-it",
+      "transcript": "I'd like a new story. Call it Happy Birthday.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Happy Birthday"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "filler",
+      "transcript": "Hey, so what I wanted to do was make another story. Let's call it Big Man. Throw that into backlog, give that one to Mark and tag it urgent.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "lane": "backlog",
+        "assignee": "Mark",
+        "tags": [
+          "urgent"
+        ]
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "assignee-only",
+      "transcript": "Create Big Man and assign it to Mark.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "assignee": "Mark"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "tag-only",
+      "transcript": "Create Big Man, tag it urgent.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "tags": [
+          "urgent"
+        ]
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "notes-only",
+      "transcript": "Create Big Man with notes Call the customer tomorrow.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "notes": "Call the customer tomorrow"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "two-tags",
+      "transcript": "Make a card called Customer call and tag it urgent and customer.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Customer call",
+        "tags": [
+          "urgent",
+          "customer"
+        ]
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "all-simple",
+      "transcript": "Create Big Man in Backlog, assign Mark, tag urgent, and add a note saying Call the customer tomorrow.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "lane": "Backlog",
+        "assignee": "Mark",
+        "tags": [
+          "urgent"
+        ],
+        "notes": "Call the customer tomorrow"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "no-punctuation",
+      "transcript": "hey make a story call it Big Man put it in backlog give it to Mark tag urgent and add notes Call tomorrow",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "lane": "backlog",
+        "assignee": "Mark",
+        "tags": [
+          "urgent"
+        ],
+        "notes": "Call tomorrow"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "quoted-title",
+      "transcript": "Please create a card called \"Big Man\" in Done.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "lane": "Done"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "backlog-title",
+      "transcript": "Create a story named Backlog.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Backlog"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "question-form",
+      "transcript": "Can you make a story called Big Man for me?",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "missing-title",
+      "transcript": "Create a story.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create"
+      },
+      "expectedPreparation": "missing-title"
+    },
+    {
+      "id": "duplicate-mark",
+      "transcript": "Create Big Man and give it to Mark.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "assignee": "Mark"
+      },
+      "expectedPreparation": "member-choice"
+    },
+    {
+      "id": "unresolved-tag",
+      "transcript": "Make a card called Big Man and tag it nonexistent.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "tags": [
+          "nonexistent"
+        ]
+      },
+      "expectedPreparation": "blocked-resolution"
+    },
+    {
+      "id": "unknown-lane",
+      "transcript": "Create Big Man in Nowhere.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "lane": "Nowhere"
+      },
+      "expectedPreparation": "blocked-resolution"
+    },
+    {
+      "id": "literal-notes",
+      "transcript": "Create a task called Call tomorrow and add notes Don't forget the customer's birthday.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Call tomorrow",
+        "notes": "Don't forget the customer's birthday"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "rambly",
+      "transcript": "Hey, I'd like to create a new story. Let's call it The big boy who had it all. That's the title I want. And, um, put it in the backlog, assign it to Mark, tag it urgent, and add a note saying this guy really did have it all.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "The big boy who had it all",
+        "lane": "backlog",
+        "assignee": "Mark",
+        "tags": [
+          "urgent"
+        ],
+        "notes": "this guy really did have it all"
+      },
+      "expectedPreparation": "review"
+    },
+    {
+      "id": "two-creates",
+      "transcript": "Create two stories called Fred and Sarah.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "unhandled": [
+          {
+            "text": "create two stories called Fred and Sarah",
+            "reason": "unsupported"
+          }
+        ]
+      },
+      "expectedPreparation": "blocked-unhandled"
+    },
+    {
+      "id": "cross-project",
+      "transcript": "Create Big Man in the Other project.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "unhandled": [
+          {
+            "text": "in the Other project",
+            "reason": "unsupported"
+          }
+        ]
+      },
+      "expectedPreparation": "blocked-unhandled"
+    },
+    {
+      "id": "multiple-assignees",
+      "transcript": "Create Big Man and assign Mark and Sarah.",
+      "expectedPlan": {
+        "version": 1,
+        "kind": "create",
+        "title": "Big Man",
+        "unhandled": [
+          {
+            "text": "assign Mark and Sarah",
+            "reason": "unsupported"
+          }
+        ]
+      },
+      "expectedPreparation": "blocked-unhandled"
+    }
+  ]
+}

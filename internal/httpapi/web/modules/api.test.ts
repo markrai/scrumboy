@@ -37,4 +37,64 @@ describe('apiFetch', () => {
       },
     });
   });
+
+  it('preserves status/data errors and 204 responses', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, status: 204, json: vi.fn() })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: { message: 'conflict' }, detail: 'kept' }),
+      });
+    const { apiFetch } = await import('./api.js');
+
+    await expect(apiFetch('/api/empty')).resolves.toBeNull();
+    await expect(apiFetch('/api/conflict')).rejects.toMatchObject({
+      message: 'conflict',
+      status: 409,
+      data: { error: { message: 'conflict' }, detail: 'kept' },
+    });
+  });
+
+  it('preserves multipart form data and lets fetch create the boundary', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ rev: 2 }) });
+    const { apiFetchForm } = await import('./api.js');
+    const form = new FormData();
+    form.append('file', new Blob(['image']), 'wallpaper.jpg');
+
+    await expect(apiFetchForm('/api/user/wallpaper/image', form)).resolves.toEqual({ rev: 2 });
+    expect(fetchMock).toHaveBeenCalledWith('/api/user/wallpaper/image', {
+      method: 'POST',
+      headers: { 'X-Scrumboy': '1' },
+      body: form,
+    });
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Content-Type');
+  });
+
+  it('uses the cursor archive endpoint and atomic batch request shapes', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ todos: [], hasMore: false }),
+    });
+    const { archiveTodos, listArchivedTodos, restoreTodos } = await import('./api.js');
+
+    await listArchivedTodos('alpha board', { limit: 50, afterCursor: '123:9' });
+    await archiveTodos('alpha', [12, 14]);
+    await restoreTodos('alpha', [19]);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/board/alpha%20board/archive?limit=50&afterCursor=123%3A9', {
+      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/board/alpha/todos/archive', {
+      method: 'POST',
+      body: JSON.stringify({ localIds: [12, 14] }),
+      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/board/alpha/todos/restore', {
+      method: 'POST',
+      body: JSON.stringify({ localIds: [19] }),
+      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
+    });
+  });
 });

@@ -233,7 +233,7 @@ func (s *Store) RemoveProjectMember(ctx context.Context, requesterID, projectID,
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id
 		FROM todos
-		WHERE project_id = ? AND assignee_user_id = ?
+		WHERE project_id = ? AND assignee_user_id = ? AND archived_at IS NULL
 	`, projectID, targetUserID)
 	if err != nil {
 		return fmt.Errorf("list assigned todos: %w", err)

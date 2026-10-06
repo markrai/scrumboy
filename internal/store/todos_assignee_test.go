@@ -334,6 +334,53 @@ func TestTodoAssignee_AuditAndMemberRemovalUnassign(t *testing.T) {
 	}
 }
 
+func TestTodoAssignee_MemberRemovalDoesNotMutateArchivedAssignment(t *testing.T) {
+	st, cleanup, ctx, project, maintainer, contributor, _ := setupAssigneeTestProject(t)
+	defer cleanup()
+	ctxMaintainer := WithUserID(ctx, maintainer.ID)
+	createAssigned := func(title string) Todo {
+		todo, err := st.CreateTodo(ctxMaintainer, project.ID, CreateTodoInput{
+			Title: title, ColumnKey: DefaultColumnBacklog, AssigneeUserID: ptrInt64(contributor.ID),
+		}, ModeFull)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return todo
+	}
+	active := createAssigned("active assignment")
+	archived := createAssigned("archived assignment")
+	if _, err := st.ArchiveTodoByLocalID(ctxMaintainer, project.ID, archived.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RemoveProjectMember(ctxMaintainer, maintainer.ID, project.ID, contributor.ID); err != nil {
+		t.Fatal(err)
+	}
+	activeAfter, err := st.GetTodoByLocalID(ctxMaintainer, project.ID, active.LocalID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archivedAfter, err := st.GetTodoByLocalID(ctxMaintainer, project.ID, archived.LocalID, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activeAfter.AssigneeUserID != nil {
+		t.Fatalf("active assignment survived member removal: %+v", activeAfter)
+	}
+	if archivedAfter.AssigneeUserID == nil || *archivedAfter.AssigneeUserID != contributor.ID {
+		t.Fatalf("archived assignment was mutated: %+v", archivedAfter)
+	}
+	var activeEvents, archivedEvents int
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM todo_assignee_events WHERE todo_id = ? AND reason = 'member_removed'`, active.ID).Scan(&activeEvents); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM todo_assignee_events WHERE todo_id = ? AND reason = 'member_removed'`, archived.ID).Scan(&archivedEvents); err != nil {
+		t.Fatal(err)
+	}
+	if activeEvents != 1 || archivedEvents != 0 {
+		t.Fatalf("member-removal assignment events active=%d archived=%d", activeEvents, archivedEvents)
+	}
+}
+
 func TestTodoAssignee_AssignNonMemberRejected(t *testing.T) {
 	st, cleanup, ctx, project, maintainer, _, _ := setupAssigneeTestProject(t)
 	defer cleanup()

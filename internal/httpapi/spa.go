@@ -61,7 +61,7 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
 			return
 		}
-		project, err := s.store.CreateAnonymousBoard(s.requestContext(r))
+		project, err := s.anonymousBoardCreations.Create(s.requestContext(r))
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "INTERNAL", "failed to create board", nil)
 			return

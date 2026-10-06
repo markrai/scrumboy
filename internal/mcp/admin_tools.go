@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
+	useradminapp "scrumboy/internal/application/useradmin"
 	"scrumboy/internal/store"
 )
 
@@ -44,6 +46,39 @@ func parseAdminUpdatableSystemRole(role string) (store.SystemRole, *adapterError
 	return parsed, nil
 }
 
+func mapUserAdminRolePrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, useradminapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, useradminapp.ErrOwnerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
+func mapUserAdminRoleUpdateError(err error) *adapterError {
+	if errors.Is(err, useradminapp.ErrMCPRoleProjectionFailed) {
+		cause := errors.Unwrap(err)
+		if cause != nil {
+			return mapStoreError(cause)
+		}
+		return mapStoreError(err)
+	}
+	return mapPrivilegedStoreError(err)
+}
+
+func mapUserAdminDeletionPrepareError(err error) *adapterError {
+	switch {
+	case errors.Is(err, useradminapp.ErrActorRequired):
+		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	case errors.Is(err, useradminapp.ErrOwnerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
+	default:
+		return mapStoreError(err)
+	}
+}
+
 func requesterHasAnySystemRole(u store.User, allowed ...store.SystemRole) bool {
 	for _, role := range allowed {
 		if u.SystemRole == role {
@@ -59,17 +94,6 @@ func (a *Adapter) requireRequesterAdminOrOwner(ctx context.Context, requesterID 
 		return mapStoreError(err)
 	}
 	if !requesterHasAnySystemRole(u, store.SystemRoleOwner, store.SystemRoleAdmin) {
-		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
-	}
-	return nil
-}
-
-func (a *Adapter) requireRequesterOwner(ctx context.Context, requesterID int64) *adapterError {
-	u, err := a.store.GetUser(ctx, requesterID)
-	if err != nil {
-		return mapStoreError(err)
-	}
-	if u.SystemRole != store.SystemRoleOwner {
 		return newAdapterError(http.StatusForbidden, CodeForbidden, "forbidden", nil)
 	}
 	return nil
@@ -142,22 +166,17 @@ func (a *Adapter) handleAdminUpdateUserRole(ctx context.Context, input any) (any
 		return nil, nil, roleErr
 	}
 
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	prepared, prepareErr := a.userRoleMutations.Prepare(ctx, useradminapp.RoleChangeCommand{
+		TargetUserID: in.UserId,
+		NewRole:      newRole,
+	})
+	if prepareErr != nil {
+		return nil, nil, mapUserAdminRolePrepareError(prepareErr)
 	}
 
-	if roleErr := a.requireRequesterOwner(ctx, requesterID); roleErr != nil {
-		return nil, nil, roleErr
-	}
-
-	if updErr := a.store.UpdateUserRole(ctx, requesterID, in.UserId, newRole); updErr != nil {
-		return nil, nil, mapPrivilegedStoreError(updErr)
-	}
-
-	updated, getErr := a.store.GetUser(ctx, in.UserId)
-	if getErr != nil {
-		return nil, nil, mapStoreError(getErr)
+	updated, updateErr := prepared.Update()
+	if updateErr != nil {
+		return nil, nil, mapUserAdminRoleUpdateError(updateErr)
 	}
 
 	return map[string]any{
@@ -188,16 +207,14 @@ func (a *Adapter) handleAdminDeleteUser(ctx context.Context, input any) (any, ma
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid userId", map[string]any{"field": "userId"})
 	}
 
-	requesterID, ok := store.UserIDFromContext(ctx)
-	if !ok {
-		return nil, nil, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
+	prepared, prepareErr := a.userDeletions.Prepare(ctx, useradminapp.DeleteCommand{
+		TargetUserID: in.UserId,
+	})
+	if prepareErr != nil {
+		return nil, nil, mapUserAdminDeletionPrepareError(prepareErr)
 	}
 
-	if roleErr := a.requireRequesterOwner(ctx, requesterID); roleErr != nil {
-		return nil, nil, roleErr
-	}
-
-	if delErr := a.store.DeleteUser(ctx, requesterID, in.UserId); delErr != nil {
+	if delErr := prepared.Delete(); delErr != nil {
 		return nil, nil, mapPrivilegedStoreError(delErr)
 	}
 

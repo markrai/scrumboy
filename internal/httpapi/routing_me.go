@@ -102,7 +102,8 @@ func (s *Server) handleMeTokens(w http.ResponseWriter, r *http.Request, ctx cont
 			return
 		case http.MethodPost:
 			var in struct {
-				Name *string `json:"name"`
+				Name      *string `json:"name"`
+				IsService bool    `json:"isService"`
 			}
 			if err := readJSON(w, r, s.maxBody, &in); err != nil {
 				return
@@ -114,7 +115,7 @@ func (s *Server) handleMeTokens(w http.ResponseWriter, r *http.Request, ctx cont
 					namePtr = &n
 				}
 			}
-			id, plain, createdAt, err := s.store.CreateUserAPIToken(ctx, userID, namePtr)
+			id, plain, createdAt, err := s.store.CreateUserAPIToken(ctx, userID, namePtr, in.IsService)
 			if err != nil {
 				writeStoreErr(w, err, false)
 				return
@@ -124,6 +125,7 @@ func (s *Server) handleMeTokens(w http.ResponseWriter, r *http.Request, ctx cont
 				Name:      namePtr,
 				CreatedAt: createdAt,
 				Token:     plain,
+				IsService: in.IsService,
 			})
 			return
 		default:

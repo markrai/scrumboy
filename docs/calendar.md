@@ -34,7 +34,7 @@ Paste the provider’s **secret or published ICS address**, not a calendar webpa
 | Outlook | Calendar settings → **Publish a calendar** → ICS link |
 | Apple / iCloud | An `https://` calendar URL. `webcal://` is rejected. |
 
-Only `https` is accepted. Userinfo in the URL (`https://user:pass@…`) is rejected. Loopback, private, and link-local destinations are blocked when the server stores or fetches a feed.
+Only `https` is accepted. Userinfo in the URL (`https://user:pass@…`) is rejected. Loopback, private, and link-local destinations are blocked when the server stores or fetches a feed. Address classification is shared with outbound webhook delivery.
 
 ## Using the lane
 

@@ -44,10 +44,16 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: internal/httpapi/web/package-lock.json
+          cache-dependency-path: |
+            internal/httpapi/web/package-lock.json
+            mobile/capacitor/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: internal/httpapi/web
+        run: npm ci
+
+      - name: Install Capacitor dependencies for frontend tests
+        working-directory: mobile/capacitor
         run: npm ci
 
       - name: Test frontend
@@ -58,7 +64,7 @@ jobs:
         working-directory: internal/httpapi/web
         run: rm -rf dist && npm run build
 
-      - name: Verify committed dist matches sources
+      - name: Verify committed generated files match sources
         run: |
-          git diff --exit-code -- internal/httpapi/web/dist
-          test -z "$(git status --porcelain internal/httpapi/web/dist)"
+          git diff --exit-code -- internal/httpapi/web/dist internal/httpapi/web/vendor
+          test -z "$(git status --porcelain internal/httpapi/web/dist internal/httpapi/web/vendor)"

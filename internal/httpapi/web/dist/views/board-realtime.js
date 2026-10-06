@@ -1,5 +1,5 @@
 import { showToast } from '../utils.js';
-import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getAuthStatusAvailable, getProjectId, getSlug, getTag, getSearch, getSprintIdFromUrl, getUser, } from '../state/selectors.js';
+import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getAuthStatusAvailable, getProjectId, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getUser, } from '../state/selectors.js';
 import { invalidateMembersCache } from '../members-cache.js';
 import { on, off, emit } from '../events.js';
 import { getLastBoardInteractionTimestamp, getLastLocalMutationTimestamp, recordBoardInteraction, isBulkUpdating, } from '../realtime/guard.js';
@@ -185,7 +185,7 @@ function flushPendingRealtimeRefresh(force = false) {
     }
     clearPendingRealtimeRefresh();
     debugLog(force ? "flushPendingRealtimeRefresh forcing invalidateBoard" : "flushPendingRealtimeRefresh running invalidateBoard", slug);
-    invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
+    invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
         console.warn("Realtime board refresh failed:", err?.message || err);
     });
 }
@@ -231,8 +231,7 @@ export function connectBoardEvents(slug) {
         boardRealtimeBound = true;
         return;
     }
-    const url = new URL(`/api/board/${slug}/events`, window.location.origin).toString();
-    const manager = new SseConnectionManager(url, {
+    const manager = new SseConnectionManager(`/api/board/${slug}/events`, {
         label: `board/${slug}/events`,
         // Anonymous-board onopen is conservative: skip reconnect refetches while
         // the initial board load is still in flight, while the manager/slug is

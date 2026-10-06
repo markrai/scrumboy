@@ -104,6 +104,7 @@ func TestMCPBoardGetTransportContract_LegacySuccessEnvelope(t *testing.T) {
 		t.Fatalf("backlog items = %#v, want first page of 2", items)
 	}
 	if got, want := sortedMapKeys(items[0].(map[string]any)), []string{
+		"archivedAt",
 		"assigneeUserId",
 		"body",
 		"columnKey",
@@ -788,6 +789,20 @@ func TestMCPBoardGetTransportContract_ToolsListAdvertisesCanonicalAndSort(t *tes
 	description, _ := sortProperty["description"].(string)
 	if !strings.Contains(description, "omit for manual drag-rank order") {
 		t.Fatalf("board_get sort description = %q", description)
+	}
+	tags, ok := properties["tags"].(map[string]any)
+	if !ok || tags["type"] != "array" {
+		t.Fatalf("board_get tags schema = %#v", properties["tags"])
+	}
+	if _, ok := tags["maxItems"]; ok {
+		t.Fatalf("board_get tags must not advertise maxItems: %#v", tags)
+	}
+	if tags["minItems"] != 1 && tags["minItems"] != float64(1) {
+		t.Fatalf("board_get tags minItems = %#v, want 1", tags["minItems"])
+	}
+	items, ok := tags["items"].(map[string]any)
+	if !ok || items["type"] != "string" {
+		t.Fatalf("board_get tags items = %#v", tags["items"])
 	}
 }
 

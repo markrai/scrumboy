@@ -63,7 +63,7 @@ vi.mock('../state/selectors.js', () => ({
   getSettingsProjectId: () => selectorState.projectId,
   getSlug: () => selectorState.slug,
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => selectorState.tag ? [selectorState.tag] : [],
   getTagColors: () => selectorState.tagColors,
   getUser: () => selectorState.user,
 }));
@@ -206,7 +206,7 @@ describe('settings-tags', () => {
       body: JSON.stringify({ color: '#123456' }),
     });
     expect(selectorState.tagColors).toEqual({ bug: '#123456' });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['bug'], 'query', '42', null, null, null);
     expect(rerender).not.toHaveBeenCalled();
   });
 
@@ -234,7 +234,7 @@ describe('settings-tags', () => {
       body: JSON.stringify({ color: null }),
     });
     expect(selectorState.tagColors).toEqual({ keep: '#00ff00' });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['bug'], 'query', '42', null, null, null);
     expect(rerender).not.toHaveBeenCalled();
   });
 

@@ -5,6 +5,7 @@ import { escapeHTML, showToast } from '../utils.js';
 import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessage, t } from '../i18n/index.js';
 import { getTodoFormPermissions } from './todo-permissions.js';
+import { getAppRuntime } from '../platform/runtime.js';
 const BOUND_FLAG = Symbol('bound');
 let linksSearchDebounce = null;
 let linksSearchController = null;
@@ -28,7 +29,8 @@ function removeLinksAutocompleteOverlay() {
         existing.remove();
 }
 function formatLinkedStoryLabel(item) {
-    return `#${item.localId} ${item.title || ""}`.trim();
+    const archived = item.archivedAt ? ` (${t("todo.archive.banner")})` : "";
+    return `#${item.localId} ${item.title || ""}${archived}`.trim();
 }
 function getLinkedStorySuggestionText(item, q) {
     const label = formatLinkedStoryLabel(item);
@@ -152,7 +154,7 @@ function renderLinksChips(slug, currentLocalId, onNavigateToLinkedTodo) {
             : "";
         return `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="outbound">
-      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
+      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}${item.archivedAt ? ` · ${escapeHTML(t("todo.archive.banner"))}` : ""}</button>
       ${removeBtn}
     </span>
   `;
@@ -161,7 +163,7 @@ function renderLinksChips(slug, currentLocalId, onNavigateToLinkedTodo) {
     const inbound = currentLinks.inbound
         .map((item) => `
     <span class="tag-chip" data-link-local-id="${item.localId}" data-link-direction="inbound">
-      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}</button>
+      <button type="button" class="tag-chip-link" data-link-open="${item.localId}">#${item.localId} ${escapeHTML(item.title)}${item.archivedAt ? ` · ${escapeHTML(t("todo.archive.banner"))}` : ""}</button>
     </span>
   `)
         .join("");
@@ -352,7 +354,7 @@ export function bindShareTodoButton() {
             showToast(t("todo.links.cannotShare"));
             return;
         }
-        const url = `${window.location.origin}/${slug}/t/${editing.localId}`;
+        const url = buildPublicTodoUrl(slug, editing.localId);
         const title = editing.title ? `${editing.title} (#${editing.localId})` : t("todo.links.storyFallbackTitle", { id: editing.localId });
         if (typeof navigator.share === "function") {
             try {
@@ -379,4 +381,7 @@ export function bindShareTodoButton() {
             }
         }
     });
+}
+export function buildPublicTodoUrl(slug, localId) {
+    return `${getAppRuntime().publicLinkOrigin()}/${slug}/t/${localId}`;
 }

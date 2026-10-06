@@ -1,6 +1,76 @@
 import { toast } from './dom/elements.js';
-import { t } from './i18n/index.js';
+import { hydrateI18n, I18N_LOCALE_CHANGED, t } from './i18n/index.js';
 import { User, Board } from './types.js';
+
+/**
+ * Keeps a dynamically-created `<dialog>` re-localized as the active locale changes,
+ * without needing to reopen it. Call once right after `showModal()`; pass an
+ * optional `sync` callback for any stateful, non-`data-i18n-*` text the dialog
+ * renders (see `syncProfileLocaleState`-style helpers for the pattern).
+ *
+ * Returns a `release()` that stops listening — call it as part of the dialog's
+ * own close/cleanup so the listener doesn't outlive the node.
+ */
+export function bindDialogLocale(dialog: HTMLDialogElement, sync?: () => void): () => void {
+  let removed = false;
+  const handleNativeCleanup: EventListener = () => {
+    release();
+  };
+  const release = () => {
+    if (removed) return;
+    removed = true;
+    document.removeEventListener(I18N_LOCALE_CHANGED, listener);
+    dialog.removeEventListener("cancel", handleNativeCleanup);
+    dialog.removeEventListener("close", handleNativeCleanup);
+  };
+  const listener: EventListener = () => {
+    // Self-clean if the dialog was detached without calling the cleanup
+    // (defensive: avoids leaked listeners hydrating stale nodes).
+    if (!dialog.isConnected) {
+      release();
+      return;
+    }
+    hydrateI18n(dialog);
+    sync?.();
+  };
+  // Localize immediately so non-English locales render correctly on open.
+  hydrateI18n(dialog);
+  sync?.();
+  document.addEventListener(I18N_LOCALE_CHANGED, listener);
+  dialog.addEventListener("cancel", handleNativeCleanup);
+  dialog.addEventListener("close", handleNativeCleanup);
+  return release;
+}
+
+/**
+ * Wire uniform, orphan-free teardown for a dynamically-created dialog.
+ *
+ * Returns an idempotent `close()` that releases the locale listener, runs any
+ * caller cleanup, and removes the node from the DOM. Native dismiss paths
+ * (Escape / light-dismiss `cancel`, and the `close` event) are routed through
+ * the same `close()` so the node can never be left detached-but-present, which
+ * would otherwise duplicate element IDs and misbind handlers on reopen.
+ */
+export function attachDialogClose(
+  dialog: HTMLDialogElement,
+  releaseLocale: () => void,
+  extraCleanup?: () => void
+): () => void {
+  let removed = false;
+  const close = () => {
+    if (removed) return;
+    removed = true;
+    extraCleanup?.();
+    releaseLocale();
+    dialog.remove();
+  };
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    close();
+  });
+  dialog.addEventListener("close", close);
+  return close;
+}
 
 /**
  * Returns true if the board is anonymous (temporary, no creator).
@@ -208,12 +278,62 @@ export function renderUserAvatar(user: User | null, options?: { id?: string; ari
 }
 
 /**
+ * Sanitize a post-auth client destination to a same-origin path (+ optional query).
+ * Mirrors the defensive shape of server oidc.SanitizeReturnTo for local SPA redirects.
+ * OIDC return_to remains enforced server-side separately; this guards password/2FA
+ * `location.replace` and any other caller of redirectAfterAuth.
+ */
+export function sanitizePostAuthNext(raw: string | null | undefined): string {
+  if (typeof raw !== "string") return "/";
+  const trimmed = raw.trim();
+  if (!trimmed) return "/";
+
+  let pathPart = trimmed;
+  let queryPart = "";
+  const qIdx = trimmed.indexOf("?");
+  if (qIdx >= 0) {
+    pathPart = trimmed.slice(0, qIdx);
+    queryPart = trimmed.slice(qIdx);
+  }
+
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(pathPart);
+  } catch {
+    return "/";
+  }
+  decodedPath = decodedPath.trim();
+  if (!decodedPath) return "/";
+
+  const hasRejectedChar = (s: string): boolean => {
+    for (let i = 0; i < s.length; i++) {
+      const code = s.charCodeAt(i);
+      if (code === 0 || code === 0x0a || code === 0x0d || s[i] === "\\") return true;
+    }
+    return false;
+  };
+  if (hasRejectedChar(trimmed) || hasRejectedChar(decodedPath)) return "/";
+
+  if (!decodedPath.startsWith("/")) return "/";
+  if (decodedPath.startsWith("//")) return "/";
+  if (decodedPath.includes("://")) return "/";
+  if (trimmed.includes("#") || decodedPath.includes("#")) return "/";
+
+  for (const seg of decodedPath.split("/")) {
+    if (seg === "." || seg === "..") return "/";
+  }
+
+  return decodedPath + queryPart;
+}
+
+/**
  * Redirect to a path with a cache-busting query param so the browser always does a fresh load.
  * Required when redirecting to the same URL (e.g. / after login or logout) — otherwise the browser
  * may serve from cache and the UI won't reflect the new auth state.
+ * Always sanitizes to a same-origin client path first (invalid → `/`).
  */
 export function redirectAfterAuth(path: string): void {
-  const base = path || "/";
+  const base = sanitizePostAuthNext(path);
   const sep = base.includes("?") ? "&" : "?";
   window.location.replace(base + sep + "_=" + Date.now());
 }
@@ -236,6 +356,14 @@ export interface PromptDialogOptions {
   maxLength?: number;
 }
 
+export type ConfirmDialogTone = "default" | "success" | "danger";
+
+function confirmDialogToneClass(tone: ConfirmDialogTone): string {
+  if (tone === "success") return " btn--success";
+  if (tone === "danger") return " btn--danger";
+  return "";
+}
+
 /**
  * Shows a custom confirmation dialog matching the site's design.
  * Returns a Promise that resolves to true if confirmed, false if cancelled.
@@ -251,11 +379,13 @@ export interface PromptDialogOptions {
  * @param message - Body text
  * @param title - Dialog title (default "Confirm")
  * @param confirmLabel - Label for confirm button (default "Confirm")
+ * @param tone - Semantic confirm-button tone (default "danger" for existing callers)
  */
 export function showConfirmDialog(
   message: string,
   title: string = t("common.confirm"),
   confirmLabel: string = t("common.confirm"),
+  tone: ConfirmDialogTone = "danger",
 ): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const dialog = document.createElement('dialog');
@@ -273,7 +403,7 @@ export function showConfirmDialog(
         <div class="dialog__footer">
           <div class="spacer"></div>
           <button class="btn btn--ghost" type="button" id="confirmDialogCancel">${escapeHTML(t("common.cancel"))}</button>
-          <button class="btn btn--danger" type="button" id="confirmDialogConfirm">${escapeHTML(confirmLabel)}</button>
+          <button class="btn${confirmDialogToneClass(tone)}" type="button" id="confirmDialogConfirm">${escapeHTML(confirmLabel)}</button>
         </div>
       </div>
     `;

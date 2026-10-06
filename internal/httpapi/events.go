@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	membershipapp "scrumboy/internal/application/membership"
+	projectapp "scrumboy/internal/application/project"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	tagapp "scrumboy/internal/application/tag"
@@ -21,6 +22,39 @@ var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
 
 func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
 	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated", refresh.Entity{})
+}
+
+type projectUpdatePublisher struct {
+	server *Server
+}
+
+var _ projectapp.RESTUpdatePublisher = projectUpdatePublisher{}
+
+func (p projectUpdatePublisher) PublishProjectUpdated(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "project_updated", refresh.Entity{})
+}
+
+type projectDeletionPublisher struct {
+	server *Server
+}
+
+var _ projectapp.RESTDeletionPublisher = projectDeletionPublisher{}
+
+func (p projectDeletionPublisher) PublishProjectDeleted(
+	ctx context.Context,
+	snapshot store.DeletedProjectSnapshot,
+) {
+	p.server.emitProjectDeleted(ctx, snapshot)
+}
+
+type projectClaimPublisher struct {
+	server *Server
+}
+
+var _ projectapp.RESTClaimPublisher = projectClaimPublisher{}
+
+func (p projectClaimPublisher) PublishBoardClaimed(ctx context.Context, projectID int64) {
+	p.server.emitRefreshNeeded(ctx, projectID, "board_claimed", refresh.Entity{})
 }
 
 type tagColorPublisher struct {
@@ -107,6 +141,8 @@ type refreshNeededPayload struct {
 	LocalID     int64  `json:"localId,omitempty"`
 	Title       string `json:"title,omitempty"`
 	Name        string `json:"name,omitempty"`
+	FromName    string `json:"fromName,omitempty"`
+	ToName      string `json:"toName,omitempty"`
 }
 
 type refreshNeededEvent struct {
@@ -144,6 +180,8 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 		LocalID:     entity.LocalID,
 		Title:       entity.Title,
 		Name:        entity.Name,
+		FromName:    entity.FromName,
+		ToName:      entity.ToName,
 	})
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      "board.refresh_needed",

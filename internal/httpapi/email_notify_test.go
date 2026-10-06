@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
@@ -316,8 +315,9 @@ func TestEmailNotifier_RefreshNeeded_CopyReflectsReasonAndActor(t *testing.T) {
 	if got[0].Subject != "Copy Project: sprint closed" {
 		t.Fatalf("unexpected subject: %q", got[0].Subject)
 	}
-	if !strings.Contains(got[0].Body, "Alex closed a sprint in Copy Project.") {
-		t.Fatalf("expected actor-led body, got %q", got[0].Body)
+	wantBody := "Sprint closed\n\nClosed by: Alex\nProject: Copy Project\n\nView project:\nhttps://scrumboy.example.com/copy-project\n"
+	if got[0].Body != wantBody {
+		t.Fatalf("expected exact structured body %q, got %q", wantBody, got[0].Body)
 	}
 }
 

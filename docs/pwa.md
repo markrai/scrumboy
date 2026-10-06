@@ -2,7 +2,7 @@
 
 Normative enablement, status/reason contract, and assignment **payload fields**: [`docs/vapid.md`](vapid.md). This document covers PWA install, Docker wiring, verification, client auto-subscribe, and notification click deep-links.
 
-Scrumboy can be installed as a PWA. **Background assignment notifications** need Web Push **effectively enabled** on the server (validated matching VAPID key pair in full mode — not merely non-empty env strings). Users must still **allow notifications** in the browser; there is no bypass for OS/browser permission.
+Scrumboy can be installed as a PWA. Installing the PWA provides a standalone app-like window and a better mobile experience. **Background assignment notifications** need Web Push **effectively enabled** on the server (validated matching VAPID key pair in full mode - not merely non-empty env strings). Users must still **allow notifications** in the browser; there is no bypass for OS/browser permission.
 
 ## Enablement (summary)
 

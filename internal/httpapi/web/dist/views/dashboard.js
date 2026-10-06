@@ -8,6 +8,8 @@ import { appendDashboardTodos, setDashboardLoading, setDashboardNextCursor, setD
 import { ingestProjectsFromApp } from '../core/notifications.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
+import { bindViewTabsFit } from './view-tabs.js';
+import { publishCompleteDashboardWidgetSnapshot } from '../dashboard-widget-publish.js';
 const BOUND_FLAG = Symbol('bound');
 const DASHBOARD_MOBILE_BREAKPOINT = 767;
 let dashboardI18nBound = false;
@@ -70,8 +72,10 @@ function renderTopTabs() {
     const temporaryBoards = projects.filter((p) => !!p.expiresAt);
     const temporaryLabelKey = temporaryBoardsNavLabelKey();
     return `
-    <div class="chips" style="margin-top: 10px;">
-      <button class="chip chip--active" id="dashboardTabBtn" type="button" data-i18n-text="dashboard.tabs.dashboard">${escapeHTML(t("dashboard.tabs.dashboard"))}</button>
+    <div class="chips chips--view-tabs">
+      <button class="chip chip--active" id="dashboardTabBtn" type="button">
+        <span class="dashboard-tab__label" data-i18n-text="dashboard.tabs.dashboard">${escapeHTML(t("dashboard.tabs.dashboard"))}</span>
+      </button>
       <button class="chip" id="projectsTabBtn" type="button">
         <span class="dashboard-tab__label" data-i18n-text="dashboard.tabs.projects">${escapeHTML(t("dashboard.tabs.projects"))}</span>
         <span class="chip__count">${durableProjects.length}</span>
@@ -392,6 +396,7 @@ function renderDashboardTodo(todo) {
   `;
 }
 function bindTopNav() {
+    bindViewTabsFit(document.querySelector('.chips--view-tabs'));
     const projectsBtn = document.getElementById('projectsTabBtn');
     if (projectsBtn && !projectsBtn[BOUND_FLAG]) {
         projectsBtn.addEventListener('click', () => {
@@ -455,6 +460,7 @@ function bindDashboardSort() {
             setDashboardSummary(summary);
             setDashboardTodos(todosResp.items || []);
             setDashboardNextCursor(todosResp.nextCursor || null);
+            void publishCompleteDashboardWidgetSnapshot(getUser()?.id);
         }
         catch (err) {
             setDashboardTodoSort(prev);
@@ -516,6 +522,7 @@ export async function renderDashboard() {
         setDashboardSummary(summary);
         setDashboardTodos(todosResp.items || []);
         setDashboardNextCursor(todosResp.nextCursor || null);
+        void publishCompleteDashboardWidgetSnapshot(getUser()?.id);
         if (projects) {
             setProjects(projects);
             ingestProjectsFromApp(projects);

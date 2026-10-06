@@ -265,13 +265,13 @@ func TestBuildImportBundle_ComprehensiveFixture(t *testing.T) {
 	}
 
 	var openTodoBody string
-	var archivedTodoTitle string
+	var archivedTodo *store.TodoExport
 	for _, todo := range project.Todos {
 		switch {
 		case todo.Title == "Real open card":
 			openTodoBody = todo.Body
 		case strings.Contains(todo.Title, "Archived from closed list"):
-			archivedTodoTitle = todo.Title
+			archivedTodo = &todo
 		}
 	}
 	if !strings.Contains(openTodoBody, "## Trello dates") {
@@ -292,8 +292,11 @@ func TestBuildImportBundle_ComprehensiveFixture(t *testing.T) {
 	if !strings.Contains(openTodoBody, "## Trello custom fields") || !strings.Contains(openTodoBody, "Priority: High") || !strings.Contains(openTodoBody, "Estimate: 8") {
 		t.Fatalf("expected custom fields section, body=%q", openTodoBody)
 	}
-	if !strings.HasPrefix(archivedTodoTitle, "[Archived] [Closed List] ") {
-		t.Fatalf("expected archived + closed-list markers, got %q", archivedTodoTitle)
+	if archivedTodo == nil || !strings.HasPrefix(archivedTodo.Title, "[Closed List] ") {
+		t.Fatalf("expected only the closed-list marker, got %+v", archivedTodo)
+	}
+	if archivedTodo.ArchivedAt == nil || !archivedTodo.ArchivedAtPresent {
+		t.Fatalf("expected closed Trello card to use first-class archival, got %+v", archivedTodo)
 	}
 
 	var projectMeta map[string]any
@@ -382,4 +385,85 @@ func containsTagName(tags []store.TagExport, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestBuildImportBundle_CardClosureIsFirstClassArchival pins the post-A1 Trello contract:
+// a closed card becomes an archived Scrumboy story rather than a card with an "[Archived]"
+// title marker, and card closure stays a separate axis from list closure. The preview
+// warning must describe what actually happens, including the import-time approximation
+// Trello forces on us (its export carries no per-card archive timestamp).
+func TestBuildImportBundle_CardClosureIsFirstClassArchival(t *testing.T) {
+	now := fixedNow()
+	raw := []byte(`{
+		"id":"board-closure",
+		"name":"Closure Axes",
+		"lists":[
+			{"id":"list-open","name":"Doing","pos":10,"closed":false},
+			{"id":"list-done","name":"Done","pos":20,"closed":false},
+			{"id":"list-closed","name":"Retired","pos":30,"closed":true}
+		],
+		"cards":[
+			{"id":"card-open","name":"Open card","idList":"list-open","pos":10,"closed":false,"idLabels":[],"idMembers":[]},
+			{"id":"card-closed","name":"Closed card","idList":"list-open","pos":20,"closed":true,"idLabels":[],"idMembers":[]},
+			{"id":"card-in-closed-list","name":"Card in closed list","idList":"list-closed","pos":30,"closed":false,"idLabels":[],"idMembers":[]}
+		]
+	}`)
+	bundle, err := BuildImportBundle(raw, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byTitle := make(map[string]store.TodoExport)
+	for _, todo := range bundle.ExportData.Projects[0].Todos {
+		byTitle[todo.Title] = todo
+	}
+
+	// An open card in an open list is never archived, and always declares the field
+	// so a 1.2 export represents its active state explicitly.
+	open, ok := byTitle["Open card"]
+	if !ok {
+		t.Fatalf("open card missing; titles=%v", byTitle)
+	}
+	if open.ArchivedAt != nil || !open.ArchivedAtPresent {
+		t.Fatalf("open card archivedAt=%v present=%v want nil/true", open.ArchivedAt, open.ArchivedAtPresent)
+	}
+
+	// Card closure: first-class archival, title untouched.
+	closed, ok := byTitle["Closed card"]
+	if !ok {
+		t.Fatalf("closed card missing; titles=%v", byTitle)
+	}
+	if closed.ArchivedAt == nil || *closed.ArchivedAt != now.UnixMilli() {
+		t.Fatalf("closed card archivedAt=%v want %d", closed.ArchivedAt, now.UnixMilli())
+	}
+	if !strings.Contains(closed.Body, "- Archived in Trello: true") {
+		t.Fatalf("closed card body lost its archival note: %q", closed.Body)
+	}
+
+	// List closure is the other axis: title marker, remapped column, no archival.
+	inClosedList, ok := byTitle["[Closed List] Card in closed list"]
+	if !ok {
+		t.Fatalf("closed-list card missing; titles=%v", byTitle)
+	}
+	if inClosedList.ArchivedAt != nil {
+		t.Fatalf("a closed list must not archive its open cards: %+v", inClosedList)
+	}
+
+	for title := range byTitle {
+		if strings.Contains(title, "[Archived]") {
+			t.Fatalf("the legacy [Archived] title marker is back: %q", title)
+		}
+	}
+
+	var warning string
+	for _, w := range bundle.Preview.Warnings {
+		if strings.Contains(w, "Archived Trello cards") {
+			warning = w
+		}
+		if strings.Contains(w, "archived marker") {
+			t.Fatalf("stale warning still advertises a title marker: %q", w)
+		}
+	}
+	if !strings.Contains(warning, "not cards with a title marker") || !strings.Contains(warning, "import time") {
+		t.Fatalf("archival warning does not describe the shipped behaviour: %q", warning)
+	}
 }

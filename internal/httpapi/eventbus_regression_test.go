@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	projectapp "scrumboy/internal/application/project"
 	"scrumboy/internal/application/refresh"
 	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
@@ -141,6 +142,10 @@ func TestEventbus_CreateWithoutAssignee_SingleRefresh(t *testing.T) {
 
 func TestEventbus_DeleteProjectPublishesCommittedSnapshotOnce(t *testing.T) {
 	srv, st, collector := newTestServerWithCollector(t)
+	srv.projectDeletions = projectapp.NewRESTDeletionService(projectapp.RESTDeletionServiceDependencies{
+		Projects:  st,
+		Publisher: projectDeletionPublisher{server: srv},
+	})
 	ctx, owner, project := setupAuthenticatedProject(t, st)
 	member, err := st.CreateUser(context.Background(), "delete-member@example.com", "pass1234A!", "Member")
 	if err != nil {
@@ -603,11 +608,12 @@ func TestWebhookWorker_SignatureHeader(t *testing.T) {
 	defer ts.Close()
 
 	q := newWebhookQueue(log.New(io.Discard, "", 0))
-	w := newWebhookWorker(q, log.New(io.Discard, "", 0))
+	client, publicURL := webhookClientToTestServer(t, ts, "hooks.example")
+	w := newWebhookWorkerWithClient(q, log.New(io.Discard, "", 0), client)
 
 	q.Enqueue(webhookDelivery{
 		WebhookID: 1,
-		URL:       ts.URL,
+		URL:       publicURL + "/",
 		Secret:    &secret,
 		EventID:   "evt-1",
 		EventType: "todo.assigned",

@@ -17,6 +17,8 @@ const todoEstimationField = document.getElementById("todoEstimationField");
 const todoEstimationPoints = document.getElementById("todoEstimationPoints");
 const todoPriority = document.getElementById("todoPriority");
 const deleteTodoBtn = document.getElementById("deleteTodoBtn");
+const archiveTodoBtn = document.getElementById("archiveTodoBtn");
+const restoreTodoBtn = document.getElementById("restoreTodoBtn");
 const closeTodoBtn = document.getElementById("closeTodoBtn");
 const shareTodoBtn = document.getElementById("shareTodoBtn");
 
@@ -52,6 +54,8 @@ export {
   todoEstimationPoints,
   todoPriority,
   deleteTodoBtn,
+  archiveTodoBtn,
+  restoreTodoBtn,
   closeTodoBtn,
   shareTodoBtn,
   settingsDialog,

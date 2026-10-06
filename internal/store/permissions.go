@@ -19,6 +19,13 @@ func CanDeleteTodo(role ProjectRole) bool {
 	return role == RoleMaintainer
 }
 
+// CanArchiveTodo returns true if the role may archive or restore todos.
+// Archival is a lifecycle mutation on durable projects and follows deletion's
+// existing maintainer-only permission semantics.
+func CanArchiveTodo(role ProjectRole) bool {
+	return role.HasMinimumRole(RoleMaintainer)
+}
+
 // CanMoveTodo returns true if the role may move todos.
 func CanMoveTodo(role ProjectRole) bool {
 	return role == RoleMaintainer

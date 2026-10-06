@@ -1,9 +1,14 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import enCatalog from '../i18n/locales/en.json';
 import deCatalog from '../i18n/locales/de.json';
 import pseudoCatalog from '../i18n/locales/pseudo.json';
+
+const stylesSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles.css'), 'utf8');
 
 const {
   apiFetchMock,
@@ -14,6 +19,11 @@ const {
   refreshSprintsAndChipsMock,
   recordLocalMutationMock,
   showConfirmDialogMock,
+  confirmDeleteMock,
+  isAnonymousBoardMock,
+  navigateMock,
+  showToastMock,
+  routerImportShouldFail,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   fetchProjectMembersMock: vi.fn(),
@@ -23,6 +33,11 @@ const {
   refreshSprintsAndChipsMock: vi.fn(),
   recordLocalMutationMock: vi.fn(),
   showConfirmDialogMock: vi.fn(),
+  confirmDeleteMock: vi.fn().mockResolvedValue(false),
+  isAnonymousBoardMock: vi.fn(() => false),
+  navigateMock: vi.fn(),
+  showToastMock: vi.fn(),
+  routerImportShouldFail: { value: false },
 }));
 
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
@@ -36,11 +51,11 @@ vi.mock('../utils.js', () => ({
       .replaceAll('>', '&gt;')
       .replaceAll('"', '&quot;')
       .replaceAll("'", '&#039;'),
-  showToast: vi.fn(),
+  showToast: showToastMock,
   getAppVersion: () => 'test-version',
   showConfirmDialog: showConfirmDialogMock,
-  confirmDelete: vi.fn(),
-  isAnonymousBoard: () => false,
+  confirmDelete: confirmDeleteMock,
+  isAnonymousBoard: (...args: unknown[]) => isAnonymousBoardMock(...args),
   renderUserAvatar: () => '',
   processImageFile: vi.fn(),
   processWallpaperFileForUpload: vi.fn(),
@@ -103,6 +118,20 @@ vi.mock('../orchestration/board-refresh.js', () => ({
 }));
 
 vi.mock('../realtime/guard.js', () => ({ recordLocalMutation: recordLocalMutationMock }));
+
+vi.mock('../router.js', () => {
+  if (routerImportShouldFail.value) {
+    throw new Error('router import failed');
+  }
+  return {
+    get navigate() {
+      if (routerImportShouldFail.value) {
+        throw new Error('router import failed');
+      }
+      return navigateMock;
+    },
+  };
+});
 
 vi.mock('../core/keybindings.js', () => ({
   KEY_ACTION_LIST: [],
@@ -182,6 +211,7 @@ async function setupSettingsView(options: {
   board?: Record<string, unknown> | null;
   user?: Record<string, unknown> | null;
   boardMembers?: any[];
+  projectId?: number | null;
   open?: boolean;
 } = { activeTab: 'tag-colors' }) {
   const i18n = await initI18nFor('en');
@@ -193,7 +223,7 @@ async function setupSettingsView(options: {
   mutations.setSlug(options.slug ?? null);
   mutations.setBoard((options.board as any) ?? null);
   mutations.setProjects(null);
-  mutations.setProjectId(null);
+  mutations.setProjectId(options.projectId ?? null);
   mutations.setSettingsProjectId(null);
   mutations.setSettingsActiveTab(options.activeTab);
   mutations.setBoardMembers(options.boardMembers ?? []);
@@ -215,6 +245,22 @@ async function setupSettingsView(options: {
 const MAINTAINER = [{ userId: 1, role: 'maintainer' }];
 const USER = { id: 1, name: 'Alex' };
 
+describe('settings tabs desktop layout', () => {
+  it('keeps desktop tabs on one scaled nowrap row while mobile uses a wrapping grid', () => {
+    expect(stylesSource).toMatch(/\.settings-tabs-nav\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(stylesSource).toMatch(/\.settings-tabs-nav\s*\{[^}]*--settings-tabs-scale:\s*1/s);
+    expect(stylesSource).toMatch(/\.settings-tabs\s*\{[^}]*display:\s*contents/s);
+    expect(stylesSource).toMatch(/\.settings-tab\s*\{[^}]*flex:\s*0 0 auto/s);
+    expect(stylesSource).toMatch(/\.settings-tab\s*\{[^}]*white-space:\s*nowrap/s);
+    expect(stylesSource).toMatch(
+      /\.settings-tab\s*\{[^}]*font-size:\s*calc\(var\(--fs-14\) \* var\(--settings-tabs-scale\)\)/s,
+    );
+    expect(stylesSource).toMatch(
+      /@media \(max-width:\s*620px\)[\s\S]*?\.settings-tabs-nav\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
+    );
+  });
+});
+
 describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -228,6 +274,13 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     invalidateBoardMock.mockReset();
     refreshSprintsAndChipsMock.mockReset();
     recordLocalMutationMock.mockReset();
+    confirmDeleteMock.mockReset();
+    confirmDeleteMock.mockResolvedValue(false);
+    isAnonymousBoardMock.mockReset();
+    isAnonymousBoardMock.mockReturnValue(false);
+    navigateMock.mockReset();
+    showToastMock.mockReset();
+    routerImportShouldFail.value = false;
     showConfirmDialogMock.mockReset();
     showConfirmDialogMock.mockResolvedValue(false);
   });
@@ -628,6 +681,265 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
 
     expect(document.getElementById('settingsTabContent')?.innerHTML).toBe(bodyBefore);
     expect(document.getElementById('settingsDialogTitleLabel')?.textContent).toBe(titleBefore);
+  });
+
+  it('groups board tabs and personal tabs in separate markup rows for a durable maintainer board', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    const boardRow = document.querySelector('.settings-tabs--board');
+    const personalRow = document.querySelector('.settings-tabs--personal');
+    expect(boardRow).toBeTruthy();
+    expect(personalRow).toBeTruthy();
+
+    const boardTabs = Array.from(boardRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
+    const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
+    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'calendar', 'charts']);
+    expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
+  });
+
+  it('shows the delete project block at the top of Backup / Delete for a maintainer board', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    expect(document.querySelector('.settings-tab[data-tab="backup"]')?.textContent)
+      .toBe(enCatalog['settings.tabs.backup']);
+    const deleteSection = document.querySelector('.settings-backup-delete');
+    const exportSection = document.querySelector('.settings-backup-export');
+    const importSection = document.querySelector('.settings-backup-import');
+    expect(deleteSection).toBeTruthy();
+    expect(exportSection).toBeTruthy();
+    expect(importSection).toBeTruthy();
+    expect(exportSection?.compareDocumentPosition(deleteSection!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(importSection?.compareDocumentPosition(deleteSection!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn?.getAttribute('data-project-id')).toBe('7');
+    expect(deleteSection?.querySelector('.settings-backup-delete__danger')?.textContent)
+      .toBe(enCatalog['settings.backup.delete.dangerZone']);
+  });
+
+  it('omits the delete project block without a board, for non-maintainers, and for anonymous boards', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/tags/mine') return [];
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      user: USER,
+    });
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: [{ userId: 1, role: 'contributor' }],
+    });
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+
+    isAnonymousBoardMock.mockReturnValue(true);
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, expiresAt: '2026-01-01T00:00:00.000Z' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+  });
+
+  it('deletes the current project from Backup / Delete with the same confirm and API flow', async () => {
+    apiFetchMock.mockImplementation(async (url: string, opts?: { method?: string }) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      if (url === '/api/projects/7' && opts?.method === 'DELETE') return {};
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    confirmDeleteMock.mockResolvedValue(true);
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    confirmDeleteMock.mockClear();
+    recordLocalMutationMock.mockClear();
+    apiFetchMock.mockClear();
+    navigateMock.mockClear();
+    confirmDeleteMock.mockResolvedValue(true);
+
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    expect(deleteBtn?.getAttribute('data-project-id')).toBe('7');
+    expect(deleteBtn?.getAttribute('data-project-name')).toBe('Alpha');
+    deleteBtn!.click();
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+
+    expect(confirmDeleteMock).toHaveBeenCalledWith(enCatalog['projects.delete.confirmMessage']);
+    expect(recordLocalMutationMock).toHaveBeenCalled();
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7', { method: 'DELETE' });
+    expect(navigateMock).toHaveBeenCalledWith('/');
+  });
+
+  it('hides Delete when getProjectId disagrees with the board snapshot', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+      projectId: 99,
+    });
+
+    expect(document.querySelector('.settings-backup-delete')).toBeNull();
+  });
+
+  it('stamps Delete from the board snapshot when getProjectId is aligned', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+      projectId: 7,
+    });
+
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    expect(deleteBtn).toBeTruthy();
+    expect(deleteBtn?.getAttribute('data-project-id')).toBe('7');
+    expect(deleteBtn?.getAttribute('data-project-name')).toBe('Alpha');
+  });
+
+  it('does not show deleteFailed toast when post-delete navigation fails', async () => {
+    apiFetchMock.mockImplementation(async (url: string, opts?: { method?: string }) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      if (url === '/api/projects/7' && opts?.method === 'DELETE') return {};
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+    confirmDeleteMock.mockResolvedValue(true);
+
+    await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7, name: 'Alpha' } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    confirmDeleteMock.mockClear();
+    recordLocalMutationMock.mockClear();
+    apiFetchMock.mockClear();
+    navigateMock.mockClear();
+    showToastMock.mockClear();
+    confirmDeleteMock.mockResolvedValue(true);
+    routerImportShouldFail.value = true;
+
+    const deleteBtn = document.getElementById('settingsDeleteProjectBtn');
+    deleteBtn!.click();
+    await flushPromises();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/projects/7', { method: 'DELETE' });
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it('hides the board tab row when no board-scoped tabs are visible', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/tags/mine') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    await setupSettingsView({
+      activeTab: 'customization',
+      user: USER,
+    });
+
+    expect(document.querySelector('.settings-tabs--board')).toBeNull();
+    const personalRow = document.querySelector('.settings-tabs--personal');
+    expect(personalRow).toBeTruthy();
+    const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
+    expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
+  });
+
+  it('relocalizes tab labels in both rows on locale change', async () => {
+    apiFetchMock.mockImplementation(async (url: string) => {
+      if (url === '/api/board/alpha/tags') return [];
+      if (url === '/api/me') return USER;
+      throw new Error(`unexpected apiFetch url: ${url}`);
+    });
+
+    const { i18n } = await setupSettingsView({
+      activeTab: 'backup',
+      slug: 'alpha',
+      board: { project: { id: 7 } },
+      user: USER,
+      boardMembers: MAINTAINER,
+    });
+
+    apiFetchMock.mockClear();
+    await i18n.setLocale('de');
+    await flushPromises();
+
+    expect(document.querySelector('.settings-tabs--board .settings-tab[data-tab="sprints"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.sprints']);
+    expect(document.querySelector('.settings-tabs--board .settings-tab[data-tab="charts"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.charts']);
+    expect(document.querySelector('.settings-tabs--personal .settings-tab[data-tab="profile"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.profile']);
+    expect(document.querySelector('.settings-tabs--personal .settings-tab[data-tab="backup"]')?.textContent)
+      .toBe(deCatalog['settings.tabs.backup']);
+    expect(apiFetchMock).not.toHaveBeenCalled();
   });
 
   it('relocalizes backup tab static chrome in place on locale change without API calls', async () => {

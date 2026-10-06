@@ -3,7 +3,8 @@ import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, Dashboar
 export interface BoardMember {
   userId: number;
   name: string;
-  email: string;
+  /** Intentionally absent from the reduced board-members REST projection. */
+  email?: string;
   image?: string;
   role: string;
 }
@@ -13,7 +14,6 @@ export interface State {
   projectId: number | null;
   slug: string | null;
   board: Board | null;
-  tag: string;
   search: string;
   openTodoSegment: string | null;
   editingTodo: Todo | null;
@@ -36,6 +36,7 @@ export interface State {
   _emailNotifyAvailable?: boolean;
   emailNotifyPreference: EmailNotifyPreferenceState;
   _oidcEnabled?: boolean;
+  _mobileOidcEnabled?: boolean;
   _localAuthEnabled?: boolean;
   _wallEnabled?: boolean;
   _markdownNotesEnabled?: boolean;
@@ -66,7 +67,6 @@ let _current: State = {
   projectId: null,
   slug: null,
   board: null,
-  tag: "",
   search: "",
   openTodoSegment: null,
   editingTodo: null,

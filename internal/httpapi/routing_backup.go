@@ -106,13 +106,12 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 			s.logger.Printf("BACKUP IMPORT: readJSON error: %v", err)
 			return
 		}
-		s.logger.Printf("BACKUP IMPORT: JSON read successfully, importMode=%s, projects=%d", in.ImportMode, len(in.Data.Projects))
-
 		if in.Data == nil {
 			s.logger.Printf("BACKUP IMPORT: ERROR - missing data")
 			writeValidationError(w, "missing data", "missing_data", nil)
 			return
 		}
+		s.logger.Printf("BACKUP IMPORT: JSON read successfully, importMode=%s, projects=%d", in.ImportMode, len(in.Data.Projects))
 
 		// Validate confirmation for replace mode
 		if in.ImportMode == "replace" && in.Confirmation != "REPLACE" {

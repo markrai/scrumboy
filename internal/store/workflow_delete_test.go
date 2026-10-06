@@ -60,6 +60,30 @@ func TestDeleteLane_NonEmptyLaneRejected(t *testing.T) {
 	}
 }
 
+func TestDeleteLane_ArchivedReferenceStillRejected(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	project, err := st.CreateProject(ctx, "workflow-delete-archived")
+	if err != nil {
+		t.Fatal(err)
+	}
+	added, err := st.AddWorkflowColumn(ctx, project.ID, "Archived Review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{Title: "archived reference", ColumnKey: added.Key}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodoByLocalID(ctx, project.ID, todo.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteWorkflowColumn(ctx, project.ID, added.Key); !errors.Is(err, ErrConflict) {
+		t.Fatalf("delete archived-referenced lane err=%v want conflict", err)
+	}
+}
+
 func TestDeleteLane_DoneLaneRejected(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()

@@ -9,7 +9,7 @@ import {
   getSortFromUrl,
   getAuthStatusAvailable,
   getSlug,
-  getTag,
+  getTagsFromUrl,
   getSearch,
   getSprintIdFromUrl,
   getUser,
@@ -49,7 +49,7 @@ async function runResumeResync(reason: string): Promise<void> {
   const slug = getSlug();
   if (slug) {
     try {
-      await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+      await invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     } catch (err) {
       console.warn("Resume board resync failed:", err);
     }

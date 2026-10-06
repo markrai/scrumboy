@@ -4,7 +4,9 @@ package refresh
 // Entity is optional identity carried with a board refresh publication.
 // Zero value means no enrichment; consumers must fall back to generic copy.
 type Entity struct {
-	LocalID int64  // cards
-	Title   string // cards
-	Name    string // sprint / column / tag display name only
+	LocalID  int64  // cards
+	Title    string // cards
+	Name     string // sprint / column / tag display name only
+	FromName string // optional source workflow-column name for card moves
+	ToName   string // optional destination workflow-column name for card moves
 }

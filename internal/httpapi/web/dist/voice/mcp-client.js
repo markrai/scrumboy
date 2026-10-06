@@ -1,4 +1,5 @@
 import { voiceText } from './i18n.js';
+import { getAppRuntime } from '../platform/runtime.js';
 function isObject(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -9,7 +10,7 @@ function mcpError(message, status, data) {
     return err;
 }
 export async function callMcpTool(tool, input, options = {}) {
-    const res = await fetch("/mcp", {
+    const res = await getAppRuntime().transport().request("/mcp", {
         method: "POST",
         credentials: "same-origin",
         signal: options.signal,

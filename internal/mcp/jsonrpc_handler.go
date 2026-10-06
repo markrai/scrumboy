@@ -456,6 +456,10 @@ var jsonRPCToolMetadataKeys = map[string][]string{
 	"system_getCapabilities": {
 		"adapterVersion",
 	},
+	"projects_list": {
+		"nextCursor",
+		"hasMore",
+	},
 	"sprints_list": {
 		"unscheduledCount",
 	},

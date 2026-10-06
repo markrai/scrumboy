@@ -4,6 +4,9 @@
  * Server tick interval must match internal/httpapi/sse.go heartbeatInterval (25s).
  */
 
+import { getAppRuntime } from '../platform/runtime.js';
+import type { ServerEventStream } from '../platform/server-transport.js';
+
 /** Must match server heartbeatInterval (25s). */
 export const SSE_SERVER_TICK_MS = 25_000;
 /** Three missed server ticks → force reconnect. */
@@ -37,9 +40,9 @@ export type SseConnectionHandlers = {
 };
 
 export class SseConnectionManager {
-  private readonly url: string;
+  private readonly path: string;
   private readonly handlers: SseConnectionHandlers;
-  private es: EventSource | null = null;
+  private es: ServerEventStream | null = null;
   /** Incremented when closing or starting a new connection; handlers capture myGen at creation. */
   private generation = 0;
   private restartDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -47,13 +50,13 @@ export class SseConnectionManager {
   private backoffTimer: ReturnType<typeof setTimeout> | null = null;
   private consecutiveErrors = 0;
 
-  constructor(url: string, handlers: SseConnectionHandlers) {
-    this.url = url;
+  constructor(path: string, handlers: SseConnectionHandlers) {
+    this.path = path;
     this.handlers = handlers;
   }
 
   private label(): string {
-    return this.handlers.label ?? this.url;
+    return this.handlers.label ?? this.path;
   }
 
   /** Start or recycle the connection (closes any existing socket first). */
@@ -68,7 +71,7 @@ export class SseConnectionManager {
     const myGen = this.generation;
     dbg(this.label(), "open gen=", myGen);
 
-    const es = new EventSource(this.url);
+    const es = getAppRuntime().transport().openEventStream(this.path);
     this.es = es;
 
     es.onopen = () => {

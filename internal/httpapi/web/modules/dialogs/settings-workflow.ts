@@ -10,7 +10,7 @@ import {
   getSettingsActiveTab,
   getSlug,
   getSprintIdFromUrl,
-  getTag,
+  getTagsFromUrl,
 } from '../state/selectors.js';
 import { escapeHTML, showConfirmDialog, showToast } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
@@ -260,7 +260,7 @@ async function addWorkflowLane(name: string, rerender: RerenderFn): Promise<void
       body: JSON.stringify({ name: trimmed }),
     });
     invalidateWorkflowLaneCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    await invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncWorkflowDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.workflow.toast.laneAdded'));
@@ -297,7 +297,7 @@ async function saveWorkflowDraftChanges(rerender: RerenderFn): Promise<void> {
         body: JSON.stringify({ name, color }),
       });
     }
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    await invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncWorkflowDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.workflow.toast.updated'));
@@ -333,7 +333,7 @@ async function deleteWorkflowLane(key: string, rerender: RerenderFn): Promise<vo
       method: 'DELETE',
     });
     invalidateWorkflowLaneCountsCache();
-    await invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+    await invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
     syncWorkflowDraftFromBoardAfterMutation();
     await rerender();
     showToast(t('settings.workflow.toast.laneDeleted'));

@@ -196,6 +196,29 @@ describe('settings-push', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it('omits Background notifications when there is no signed-in user', async () => {
+    const settings = await loadSettingsModule();
+    const state = await loadStateMutations();
+    state.setAuthStatusAvailable(false);
+    state.setPushConfigured(false);
+    state.setPushStatus({ state: 'not_configured', reason: null });
+    state.setUser(null);
+    state.setSlug(null);
+    state.setBoard(null);
+    state.setProjects(null);
+    state.setProjectId(null);
+    state.setSettingsProjectId(null);
+    state.setSettingsActiveTab('customization');
+    state.setBoardMembers([]);
+    await settings.renderSettingsModal();
+
+    expect(document.querySelector('.settings-section--push-pwa')).toBeNull();
+    expect(document.getElementById('pushNotifyToggle')).toBeNull();
+    expect(document.querySelector('[data-i18n-text="settings.customization.push.title"]')).toBeNull();
+    expect(document.querySelector('.settings-push-vapid-notice')).toBeNull();
+    expect(document.getElementById('desktopNotifyEnableBtn')).toBeNull();
+  });
+
   it('renders the disabled push notice from auth status without probing the vapid route', async () => {
     await renderPushSettings({ pushStatus: { state: 'not_configured', reason: null } });
 

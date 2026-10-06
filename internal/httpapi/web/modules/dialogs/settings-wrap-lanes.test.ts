@@ -6,11 +6,13 @@ const {
   fetchProjectMembersMock,
   loadTagSettingsContentMock,
   syncOpenBoardWrapLanesClassMock,
+  emitMock,
 } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   fetchProjectMembersMock: vi.fn(),
   loadTagSettingsContentMock: vi.fn().mockResolvedValue(''),
   syncOpenBoardWrapLanesClassMock: vi.fn(),
+  emitMock: vi.fn(),
 }));
 
 vi.mock('../api.js', () => ({ apiFetch: apiFetchMock }));
@@ -54,7 +56,7 @@ vi.mock('../charts/burndown.js', () => ({
   mountBurndownChart: vi.fn(),
 }));
 
-vi.mock('../events.js', () => ({ emit: vi.fn() }));
+vi.mock('../events.js', () => ({ emit: emitMock }));
 vi.mock('../sprints.js', () => ({ normalizeSprints: () => [] }));
 vi.mock('../core/keybindings.js', () => ({
   KEY_ACTION_LIST: [],
@@ -173,6 +175,7 @@ describe('settings wrap lanes', () => {
     fetchProjectMembersMock.mockReset();
     fetchProjectMembersMock.mockResolvedValue([]);
     syncOpenBoardWrapLanesClassMock.mockReset();
+    emitMock.mockReset();
     apiFetchMock.mockResolvedValue({ ok: true });
   });
 
@@ -203,5 +206,25 @@ describe('settings wrap lanes', () => {
     ]);
     expect(localStorage.getItem('scrumboy.wrapLanes')).toBe('true');
     expect(syncOpenBoardWrapLanesClassMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults to Omni and persists a runtime switch to Legacy', async () => {
+    await renderCustomizationSettings();
+    const omni = document.querySelector('input[name="boardFilterLayout"][value="omni"]') as HTMLInputElement;
+    const legacy = document.querySelector('input[name="boardFilterLayout"][value="legacy"]') as HTMLInputElement;
+    expect(omni.checked).toBe(true);
+    expect(legacy.checked).toBe(false);
+
+    window.history.replaceState({}, '', '/alpha?tag=bug&search=query&sprintId=7&assignee=me&sort=newest&priority=high');
+    legacy.checked = true;
+    legacy.dispatchEvent(new Event('change', { bubbles: true }));
+
+    expect(localStorage.getItem('scrumboy.boardFilterLayout')).toBe('legacy');
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/user/preferences', {
+      method: 'PUT',
+      body: JSON.stringify({ key: 'boardFilterLayout', value: 'legacy' }),
+    });
+    expect(emitMock).toHaveBeenCalledWith('board-filter-layout-changed', 'legacy');
+    expect(window.location.search).toBe('?tag=bug&search=query&sprintId=7&assignee=me&sort=newest&priority=high');
   });
 });

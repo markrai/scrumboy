@@ -1,13 +1,13 @@
 import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
-import { escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent } from '../utils.js';
+import { attachDialogClose, bindDialogLocale, escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent } from '../utils.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
 import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWallpaperImage } from '../wallpaper.js';
 import { CARDS_PER_LANE_ALLOWED, CARDS_PER_LANE_PREFERENCE_KEY, getDefaultCardsPerLane, setDefaultCardsPerLane, invalidateBoard, usePreferenceLimitOnNextBoardRequest, } from '../orchestration/board-refresh.js';
 import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
-import { getSlug, getTag, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers } from '../state/selectors.js';
+import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers } from '../state/selectors.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
 import { emit } from '../events.js';
@@ -15,15 +15,22 @@ import { normalizeSprints } from '../sprints.js';
 import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getResolvedChordForAction, isTypingInTextField, reloadKeybindingsFromStorage, saveKeybindingOverride, setKeybindingsCaptureListening, } from '../core/keybindings.js';
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, getDesktopNotificationStatusKind, } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
+import { getAppRuntime } from '../platform/runtime.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
+import { getEnhancedSpeechWaitPreset, setEnhancedSpeechWaitPreset, } from '../core/enhanced-speech-wait-preferences.js';
+import { VOICE_SPEECH_RATE_PRESETS, getVoiceSpeechRate, setVoiceSpeechRate, sliderPositionForVoiceSpeechRate, voiceSpeechRateDisplayLabel, voiceSpeechRateFromSliderPosition, } from '../core/voice-speech-rate-preferences.js';
 import { getWrapLanesPreference, setWrapLanesPreference, syncOpenBoardWrapLanesClass, } from '../core/wrap-lanes-preferences.js';
+import { getBoardFilterLayoutPreference, setBoardFilterLayoutPreference, } from '../core/board-filter-layout-preferences.js';
 import { getEmailNotifyViewState, setEmailNotifyPref } from '../core/email-notify-preferences.js';
 import { bindWorkflowTabInteractions, clearWorkflowDraftState, invalidateWorkflowLaneCountsCache, isWorkflowDraftDirty, loadWorkflowTabContent, resetWorkflowDraftToBaseline, } from './settings-workflow.js';
 import { bindPriorityTabInteractions, clearPriorityDraftState, invalidatePriorityTierCountsCache, isPriorityDraftDirty, loadPriorityTabContent, resetPriorityDraftToBaseline, syncPriorityLocaleState, } from './settings-priorities.js';
 import { bindTagTabInteractions, invalidateTagsCache as invalidateTagSettingsCache, loadTagSettingsContent, } from './settings-tags.js';
 import { bindSprintsTabInteractions, refreshSprintDateLabels, renderSprintsTabContent } from './settings-sprints.js';
 import { bindCalendarTabInteractions, loadCalendarTabContent, } from './settings-calendar.js';
+import { recordLocalMutation } from '../realtime/guard.js';
 import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
+import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
+import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
 export { invalidateTagsCache } from './settings-tags.js';
 /** Active keybinding capture listener (settings customization); removed when starting a new capture or on abort. */
@@ -299,9 +306,10 @@ function applySettingsLocaleToOpenDialog() {
     if (headerEl) {
         hydrateI18n(headerEl);
     }
-    const tabsEl = settingsDialog.querySelector(".settings-tabs");
-    if (tabsEl) {
-        hydrateI18n(tabsEl);
+    const tabsNavEl = settingsDialog.querySelector(".settings-tabs-nav");
+    if (tabsNavEl) {
+        hydrateI18n(tabsNavEl);
+        fitSettingsTabsNav(tabsNavEl);
     }
     syncSettingsDialogVersionText();
     const activeTab = getSettingsActiveTab();
@@ -403,63 +411,6 @@ function ensureSettingsLocaleListener() {
  * Returns an idempotent cleanup that manual close handlers can call; native
  * dialog `cancel` and `close` also release the listener automatically.
  */
-function bindDialogLocale(dialog, sync) {
-    let removed = false;
-    const handleNativeCleanup = () => {
-        release();
-    };
-    const release = () => {
-        if (removed)
-            return;
-        removed = true;
-        document.removeEventListener(I18N_LOCALE_CHANGED, listener);
-        dialog.removeEventListener("cancel", handleNativeCleanup);
-        dialog.removeEventListener("close", handleNativeCleanup);
-    };
-    const listener = () => {
-        // Self-clean if the dialog was detached without calling the cleanup
-        // (defensive: avoids leaked listeners hydrating stale nodes).
-        if (!dialog.isConnected) {
-            release();
-            return;
-        }
-        hydrateI18n(dialog);
-        sync?.();
-    };
-    // Localize immediately so non-English locales render correctly on open.
-    hydrateI18n(dialog);
-    sync?.();
-    document.addEventListener(I18N_LOCALE_CHANGED, listener);
-    dialog.addEventListener("cancel", handleNativeCleanup);
-    dialog.addEventListener("close", handleNativeCleanup);
-    return release;
-}
-/**
- * Wire uniform, orphan-free teardown for a dynamically-created dialog.
- *
- * Returns an idempotent `close()` that releases the locale listener, runs any
- * caller cleanup, and removes the node from the DOM. Native dismiss paths
- * (Escape / light-dismiss `cancel`, and the `close` event) are routed through
- * the same `close()` so the node can never be left detached-but-present, which
- * would otherwise duplicate element IDs and misbind handlers on reopen.
- */
-function attachDialogClose(dialog, releaseLocale, extraCleanup) {
-    let removed = false;
-    const close = () => {
-        if (removed)
-            return;
-        removed = true;
-        extraCleanup?.();
-        releaseLocale();
-        dialog.remove();
-    };
-    dialog.addEventListener("cancel", (event) => {
-        event.preventDefault();
-        close();
-    });
-    dialog.addEventListener("close", close);
-    return close;
-}
 /**
  * Re-localize the Web Push hint without probing push capability or changing the
  * toggle/subscription state. Only the unsupported-browser hint is locale-driven;
@@ -470,7 +421,7 @@ function syncPushLocaleState() {
     if (!hint)
         return;
     const pushReady = getAuthStatusAvailable() && getPushConfigured();
-    const unsupported = !("serviceWorker" in navigator) || !("PushManager" in window);
+    const unsupported = !getAppRuntime().supportsWebPush() || !("serviceWorker" in navigator) || !("PushManager" in window);
     if (pushReady && unsupported) {
         hint.textContent = t("settings.customization.push.unsupported");
     }
@@ -514,11 +465,64 @@ function syncProfileLocaleState() {
         avatarBtn.setAttribute("aria-label", t("settings.profile.changeAvatar"));
     }
 }
+function resolveDeletableProject() {
+    const board = getBoard();
+    const project = board?.project;
+    const id = project?.id;
+    if (typeof id !== "number" || id <= 0)
+        return null;
+    const stateId = getProjectId();
+    if (stateId != null && stateId !== id)
+        return null;
+    if (isAnonymousBoard(board))
+        return null;
+    const currentUser = getUser();
+    if (!currentUser)
+        return null;
+    const myMember = getBoardMembers().find((m) => m.userId === currentUser.id);
+    if (myMember?.role !== "maintainer")
+        return null;
+    const name = typeof project.name === "string" ? project.name : "";
+    return { id, name };
+}
+async function handleDeleteCurrentProject(btn) {
+    const rawId = btn.getAttribute("data-project-id");
+    const projectId = rawId ? Number(rawId) : NaN;
+    if (!Number.isInteger(projectId) || projectId <= 0)
+        return;
+    if (!await confirmDelete(t("projects.delete.confirmMessage")))
+        return;
+    try {
+        recordLocalMutation();
+        await apiFetch(`/api/projects/${projectId}`, { method: "DELETE" });
+    }
+    catch (err) {
+        showToast(apiErrorMessageOrRaw(err, { fallbackKey: "board.project.deleteFailed" }));
+        return;
+    }
+    try {
+        settingsDialog?.close();
+        const { navigate } = await import("../router.js");
+        navigate("/");
+    }
+    catch (err) {
+        console.warn("post-delete navigation failed", err);
+    }
+}
 // Render backup tab HTML
 export function renderBackupTabHTML() {
     const isAnonymousMode = !getAuthStatusAvailable();
     const replaceDisabled = isAnonymousMode ? 'disabled' : '';
     const replaceHidden = isAnonymousMode ? 'style="display: none;"' : '';
+    const deletable = resolveDeletableProject();
+    const deleteHTML = deletable
+        ? `<div class="settings-backup-delete">
+        <div class="settings-backup-delete__danger" data-i18n-text="settings.backup.delete.dangerZone">Danger zone</div>
+        <div class="settings-section__title" data-i18n-text="settings.backup.delete.title">Delete project</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.backup.delete.description">Permanently delete this project and all its todos.</div>
+        <button class="btn btn--danger" type="button" id="settingsDeleteProjectBtn" data-project-id="${deletable.id}" data-project-name="${escapeHTML(deletable.name)}" data-i18n-text="settings.backup.delete.action">Delete project</button>
+      </div>`
+        : "";
     return `
     <div class="settings-backup-section">
       <div class="settings-backup-export">
@@ -563,11 +567,36 @@ export function renderBackupTabHTML() {
         <div id="trelloImportWarnings" class="settings-backup-warnings" style="display: none; margin-bottom: 16px; padding: 12px; background: var(--panel); border-radius: 4px; color: var(--muted);"></div>
         <div id="trelloImportResult" class="settings-backup-preview" style="display: none; padding: 12px; background: var(--panel); border-radius: 4px;"></div>
       </div>
+      ${deleteHTML}
     </div>
   `;
 }
 function renderVoiceFlowCustomizationHTML() {
     const enabled = getVoiceFlowEnabledPreference();
+    const speechRate = getVoiceSpeechRate();
+    const speechRatePosition = sliderPositionForVoiceSpeechRate(speechRate);
+    const speechRateLabel = voiceSpeechRateDisplayLabel(speechRate);
+    const enhancedSpeechWaitPreset = getEnhancedSpeechWaitPreset();
+    const enhancedSpeechWaitHTML = getAppRuntime().kind === 'capacitor' ? `
+      <div id="enhancedSpeechWaitControls" ${enabled ? '' : 'hidden'} style="margin:12px 0 0 24px;">
+        <div class="settings-section__title" data-i18n-text="settings.customization.voiceFlow.speechWait.title">Wait after I stop speaking</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.voiceFlow.speechWait.helper">How long Scrumboy should wait before it decides you are done. Applies to AI VoiceFlow on this device.</div>
+        <div style="display:grid;gap:8px;margin-top:10px;">
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="enhancedSpeechWaitPreset" value="fast" ${enhancedSpeechWaitPreset === 'fast' ? 'checked' : ''} />
+            <span data-i18n-text="settings.customization.voiceFlow.speechWait.fast">Fast — 2 seconds</span>
+          </label>
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="enhancedSpeechWaitPreset" value="normal" ${enhancedSpeechWaitPreset === 'normal' ? 'checked' : ''} />
+            <span data-i18n-text="settings.customization.voiceFlow.speechWait.normal">Normal — 4 seconds</span>
+          </label>
+          <label class="row" style="align-items:center;gap:8px;cursor:pointer;">
+            <input type="radio" name="enhancedSpeechWaitPreset" value="patient" ${enhancedSpeechWaitPreset === 'patient' ? 'checked' : ''} />
+            <span data-i18n-text="settings.customization.voiceFlow.speechWait.patient">Patient — 7 seconds</span>
+          </label>
+        </div>
+      </div>
+  ` : '';
     return `
     <div class="settings-section">
       <div class="settings-section__title" data-i18n-text="settings.customization.voiceFlow.title">VoiceFlow</div>
@@ -575,6 +604,27 @@ function renderVoiceFlowCustomizationHTML() {
         <input type="checkbox" id="voiceFlowEnabledToggle" ${enabled ? "checked" : ""} />
         <span data-i18n-text="settings.customization.voiceFlow.toggleLabel">Use voice commands to move, create and delete todos.</span>
       </label>
+      <div id="voiceSpeechSpeedControls" class="voice-speech-speed" ${enabled ? '' : 'hidden'}>
+        <div class="voice-speech-speed__heading">
+          <label for="voiceSpeechSpeedSlider" class="settings-section__title" data-i18n-text="settings.customization.voiceFlow.speechSpeed.title">Speech speed</label>
+          <output id="voiceSpeechSpeedValue" for="voiceSpeechSpeedSlider">${speechRateLabel}</output>
+        </div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.voiceFlow.speechSpeed.helper">How fast Scrumboy speaks during VoiceFlow.</div>
+        <input
+          id="voiceSpeechSpeedSlider"
+          class="voice-speech-speed__slider"
+          type="range"
+          min="0"
+          max="4"
+          step="1"
+          value="${speechRatePosition}"
+          aria-valuetext="${speechRateLabel}"
+        />
+        <div class="voice-speech-speed__ticks" aria-hidden="true">
+          ${VOICE_SPEECH_RATE_PRESETS.map(rate => `<span>${voiceSpeechRateDisplayLabel(rate)}</span>`).join('')}
+        </div>
+      </div>
+      ${enhancedSpeechWaitHTML}
     </div>
   `;
 }
@@ -630,7 +680,7 @@ function renderBackupWarnings(warnings) {
 // Backup handlers
 async function handleBackupExport() {
     try {
-        const response = await fetch("/api/backup/export", {
+        const response = await getAppRuntime().transport().request("/api/backup/export", {
             headers: {
                 "X-Scrumboy": "1"
             }
@@ -1055,6 +1105,10 @@ export async function handleTrelloImport() {
     }
 }
 async function setupBackupTab(signal) {
+    const deleteBtn = document.getElementById("settingsDeleteProjectBtn");
+    if (deleteBtn) {
+        deleteBtn.addEventListener("click", () => { void handleDeleteCurrentProject(deleteBtn); }, signal ? { signal } : undefined);
+    }
     // Export button
     const exportBtn = document.getElementById("backupExportBtn");
     if (exportBtn) {
@@ -1340,7 +1394,8 @@ export async function renderSettingsModal(options) {
                     ? "settings.profile.authentication.sso"
                     : "settings.profile.authentication.none";
         const effectiveLocal = !!u?.hasLocalPassword && getLocalAuthEnabled();
-        const effectiveSSO = !!u?.oidcLinked && getOidcEnabled();
+        const interactiveOIDC = getAppRuntime().supportsInteractiveOIDC();
+        const effectiveSSO = !!u?.oidcLinked && getOidcEnabled() && interactiveOIDC;
         const ownerWarning = u?.systemRole === "owner" && !effectiveLocal && !effectiveSSO
             ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.noEffectiveOwner">This owner account has no effective sign-in method under the current authentication configuration. The current session may be temporary; host recovery may be required.</div>`
             : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO && !getLocalAuthEnabled()
@@ -1348,12 +1403,12 @@ export async function renderSettingsModal(options) {
                 : u?.systemRole === "owner" && !effectiveLocal && effectiveSSO
                     ? `<div class="settings-section__description" role="alert" data-i18n-text="settings.profile.authentication.warning.providerOnly">This owner relies on the external SSO provider. Set a local recovery password to prepare for an outage.</div>`
                     : "";
-        const connectSSOAction = u && getOidcEnabled() && !u.oidcLinked
+        const connectSSOAction = u && getOidcEnabled() && interactiveOIDC && !u.oidcLinked
             ? u.hasLocalPassword
                 ? `<button class="btn" id="connectSSOBtn" data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</button>`
                 : `<div class="muted"><strong data-i18n-text="settings.profile.authentication.connectSSO">Connect SSO</strong>: <span data-i18n-text="settings.profile.authentication.connectRequiresLocal">Set or recover a Scrumboy password before connecting the current SSO provider.</span></div>`
             : "";
-        const methodActions = u ? `
+        const methodActions = u && interactiveOIDC ? `
 	  <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px;">
 	    ${u.oidcLinked && !u.hasLocalPassword ? `<button class="btn" id="setScrumboyPasswordBtn" data-i18n-text="settings.profile.authentication.setPassword">Set Scrumboy password</button>` : ""}
 	    ${connectSSOAction}
@@ -1376,7 +1431,15 @@ export async function renderSettingsModal(options) {
           <button class="btn" id="enable2FABtn" style="margin-top: 8px;" data-i18n-text="settings.profile.twoFactor.enable">Enable 2FA</button>
         </div>
       `) : "";
+        const runtime = getAppRuntime();
+        const mobileServerSection = runtime.kind === 'capacitor' ? `
+      <div class="settings-section" style="margin-bottom: 24px;">
+        <div class="settings-section__title">Server</div>
+        <div class="settings-section__description muted">${escapeHTML(runtime.serverOrigin())}</div>
+        <button class="btn btn--ghost" id="mobileChangeServerBtn" type="button" style="margin-top: 8px;">Change server</button>
+      </div>` : "";
         return `
+      ${mobileServerSection}
       <div class="settings-section" style="position: relative;">
         <div class="settings-section__title" data-i18n-text="settings.profile.title">Profile</div>
         <div class="settings-section__description muted" data-i18n-text="settings.profile.description">Signed-in user for this instance.</div>
@@ -1421,6 +1484,7 @@ export async function renderSettingsModal(options) {
         </button>
       </div>`;
     }).join("");
+    const hasUser = currentUser != null;
     const desktopNotifyStatusKind = getDesktopNotificationStatusKind();
     const desktopNotifyGranted = desktopNotifyStatusKind === "granted";
     const pushVapidServerReady = showProfileTab && getPushConfigured();
@@ -1473,18 +1537,17 @@ export async function renderSettingsModal(options) {
       </div>
     `
         : "";
-    const cardsPerLaneSectionHTML = `
+    const cardsPerLaneSectionHTML = hasUser ? `
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.customization.cardsPerLane.title">Cards per lane</div>
         <div class="settings-section__description muted" data-i18n-text="settings.customization.cardsPerLane.description">Number of cards shown by default in each lane before "Load more" is needed.</div>
         <label class="row" style="align-items:center;gap:10px;margin-top:10px;">
-          <select id="cardsPerLaneSelect" style="width:80px;" ${getUser() ? "" : "disabled"}>
+          <select id="cardsPerLaneSelect" style="width:80px;">
             ${CARDS_PER_LANE_ALLOWED.map((n) => `<option value="${n}"${getDefaultCardsPerLane() === n ? " selected" : ""}>${n}</option>`).join("")}
           </select>
         </label>
-        ${!getUser() ? `<p class="muted" style="margin-top:10px;font-size:13px;" data-i18n-text="settings.customization.cardsPerLane.signInHint">Sign in to save this preference.</p>` : ""}
       </div>
-    `;
+    ` : "";
     const wrapLanesSectionHTML = `
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.customization.wrapLanes.title">Wrap lanes into rows</div>
@@ -1493,6 +1556,23 @@ export async function renderSettingsModal(options) {
           <input type="checkbox" id="wrapLanesToggle" ${getWrapLanesPreference() ? "checked" : ""} />
           <span data-i18n-text="settings.customization.wrapLanes.toggleLabel">Wrap lanes into rows</span>
         </label>
+      </div>
+    `;
+    const boardFilterLayout = getBoardFilterLayoutPreference();
+    const boardFilterLayoutSectionHTML = `
+      <div class="settings-section">
+        <div class="settings-section__title" data-i18n-text="settings.customization.boardFilterLayout.title">Board filter layout</div>
+        <div class="settings-section__description muted" data-i18n-text="settings.customization.boardFilterLayout.description">Choose compact search-based tag discovery or the permanent tag and sprint pills.</div>
+        <div class="theme-selector theme-selector--inline" style="margin-top:10px;">
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="omni" ${boardFilterLayout === "omni" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.omni">Omni / compact filtering</span>
+          </label>
+          <label class="theme-option theme-option--inline">
+            <input type="radio" name="boardFilterLayout" value="legacy" ${boardFilterLayout === "legacy" ? "checked" : ""} />
+            <span data-i18n-text="settings.customization.boardFilterLayout.legacy">Legacy pills</span>
+          </label>
+        </div>
       </div>
     `;
     let pushPwaDisabledNoticeKey = "";
@@ -1599,8 +1679,10 @@ export async function renderSettingsModal(options) {
       </div>
       ${wallpaperSectionHTML}
       ${cardsPerLaneSectionHTML}
+      ${boardFilterLayoutSectionHTML}
       ${wrapLanesSectionHTML}
       ${getAuthStatusAvailable() ? renderVoiceFlowCustomizationHTML() : ""}
+      ${hasUser ? `
       <div class="settings-section">
         <div class="settings-section__title" data-i18n-text="settings.customization.notifications.title">Desktop notifications</div>
         <div class="settings-section__description muted" data-i18n-text="settings.customization.notifications.description">OS-level alerts when someone assigns you a todo (works when this tab is in the background).</div>
@@ -1617,6 +1699,7 @@ export async function renderSettingsModal(options) {
         </label>
         <p class="muted" id="pushNotifyHint" style="margin:8px 0 0 0;font-size:13px;"></p>
       </div>
+      ` : ""}
       ${emailNotifySectionHTML}
       <div class="settings-section settings-section--keybindings">
         <div class="settings-section__title" data-i18n-text="settings.customization.keybindings.title">Keybindings</div>
@@ -1670,6 +1753,14 @@ export async function renderSettingsModal(options) {
         <div class="muted" data-i18n-text="settings.charts.noProjects">No projects available. Create a project to view charts.</div>
       </div>
     `;
+    // Render API tokens section if needed (part of the Profile tab, not its own tab)
+    let apiTokensHTML = "";
+    if (showProfileTab && getSettingsActiveTab() === "profile" && getUser()) {
+        apiTokensHTML = await renderApiTokensSectionHTML();
+    }
+    else {
+        invalidateApiTokensCache();
+    }
     // Render users tab content if needed
     let usersHTML = "";
     if (showUsersTab && getSettingsActiveTab() === "users") {
@@ -1692,22 +1783,30 @@ export async function renderSettingsModal(options) {
     if (showPrioritiesTab && getSettingsActiveTab() === "priorities" && slug) {
         prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
     }
-    destroyBurndownChart();
-    contentEl.innerHTML = `
-    <div class="settings-tabs">
-      ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
-      ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+    const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCalendarTab || showChartsTab;
+    const boardTabsHTML = showBoardTabRow
+        ? `<div class="settings-tabs settings-tabs--board">
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
       ${showWorkflowTab ? `<button class="settings-tab ${activeSettingsTab === "workflow" ? "settings-tab--active" : ""}" data-tab="workflow" data-i18n-text="settings.tabs.workflow">Workflow</button>` : ``}
       ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
       ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
-      <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
-      <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
-      <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup</button>
+    </div>`
+        : "";
+    destroyBurndownChart();
+    contentEl.innerHTML = `
+    <div class="settings-tabs-nav">
+      ${boardTabsHTML}
+      <div class="settings-tabs settings-tabs--personal">
+        ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
+        ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
+        <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
+        <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
+        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>
+      </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
     </div>
   `;
     if (!dialogWasOpen) {
@@ -1753,6 +1852,9 @@ export async function renderSettingsModal(options) {
     else {
         contentEl.classList.remove("settings-content--profile");
     }
+    // Desktop: shrink tab padding/labels so board + personal tabs stay on one row.
+    // Mobile keeps the multi-row grid via CSS and skips shrink-to-fit.
+    bindSettingsTabsFit(document.querySelector(".settings-tabs-nav"));
     // Setup tab switching (click)
     document.querySelectorAll(".settings-tab").forEach(tab => {
         tab.addEventListener("click", (e) => {
@@ -1817,11 +1919,13 @@ export async function renderSettingsModal(options) {
     if (logoutBtn) {
         logoutBtn.addEventListener("click", () => {
             settingsDialog.close();
-            const form = document.createElement("form");
-            form.method = "POST";
-            form.action = "/api/auth/logout";
-            document.body.appendChild(form);
-            form.submit();
+            void getAppRuntime().transport().logout();
+        }, { signal });
+    }
+    const mobileChangeServerBtn = document.getElementById("mobileChangeServerBtn");
+    if (mobileChangeServerBtn) {
+        mobileChangeServerBtn.addEventListener("click", () => {
+            window.dispatchEvent(new CustomEvent("scrumboy:mobile-change-server"));
         }, { signal });
     }
     // Profile avatar click: open file picker to change avatar
@@ -1911,6 +2015,13 @@ export async function renderSettingsModal(options) {
     const regenerateRecoveryCodesBtn = document.getElementById("regenerateRecoveryCodesBtn");
     if (regenerateRecoveryCodesBtn) {
         regenerateRecoveryCodesBtn.addEventListener("click", () => showRegenerateRecoveryCodesDialog(), { signal });
+    }
+    // Setup API token management (Profile tab)
+    if (showProfileTab && getSettingsActiveTab() === "profile" && getUser()) {
+        bindApiTokensInteractions({
+            signal,
+            rerender: () => renderSettingsModal(),
+        });
     }
     // Setup user management actions (users tab)
     if (getSettingsActiveTab() === "users") {
@@ -2115,7 +2226,7 @@ export async function renderSettingsModal(options) {
                 const slug = getSlug();
                 if (slug) {
                     usePreferenceLimitOnNextBoardRequest();
-                    void invalidateBoard(slug, getTag(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
+                    void invalidateBoard(slug, getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
                 }
                 showToast(t("settings.customization.cardsPerLane.toast.updated"));
             }
@@ -2222,9 +2333,33 @@ export async function renderSettingsModal(options) {
         if (voiceFlowEnabledToggle) {
             voiceFlowEnabledToggle.addEventListener("change", () => {
                 setVoiceFlowEnabledPreference(voiceFlowEnabledToggle.checked);
+                const voiceSpeechSpeedControls = document.getElementById("voiceSpeechSpeedControls");
+                if (voiceSpeechSpeedControls)
+                    voiceSpeechSpeedControls.hidden = !voiceFlowEnabledToggle.checked;
+                const enhancedSpeechWaitControls = document.getElementById("enhancedSpeechWaitControls");
+                if (enhancedSpeechWaitControls)
+                    enhancedSpeechWaitControls.hidden = !voiceFlowEnabledToggle.checked;
                 emit("voiceflow:enabled-changed", voiceFlowEnabledToggle.checked);
             }, { signal });
         }
+        const voiceSpeechSpeedSlider = document.getElementById("voiceSpeechSpeedSlider");
+        if (voiceSpeechSpeedSlider) {
+            voiceSpeechSpeedSlider.addEventListener("input", () => {
+                const rate = voiceSpeechRateFromSliderPosition(Number(voiceSpeechSpeedSlider.value));
+                const label = voiceSpeechRateDisplayLabel(rate);
+                voiceSpeechSpeedSlider.setAttribute("aria-valuetext", label);
+                const currentValue = document.getElementById("voiceSpeechSpeedValue");
+                if (currentValue)
+                    currentValue.textContent = label;
+                setVoiceSpeechRate(rate);
+            }, { signal });
+        }
+        document.querySelectorAll('input[name="enhancedSpeechWaitPreset"]').forEach((option) => {
+            option.addEventListener("change", () => {
+                if (option.checked)
+                    setEnhancedSpeechWaitPreset(option.value);
+            }, { signal });
+        });
         const wrapLanesToggle = document.getElementById("wrapLanesToggle");
         if (wrapLanesToggle) {
             wrapLanesToggle.addEventListener("change", () => {
@@ -2232,6 +2367,12 @@ export async function renderSettingsModal(options) {
                 syncOpenBoardWrapLanesClass();
             }, { signal });
         }
+        document.querySelectorAll('input[name="boardFilterLayout"]').forEach((option) => {
+            option.addEventListener("change", () => {
+                if (option.checked)
+                    setBoardFilterLayoutPreference(option.value);
+            }, { signal });
+        });
         const desktopNotifyBtn = document.getElementById("desktopNotifyEnableBtn");
         if (desktopNotifyBtn && !desktopNotifyBtn.hasAttribute("disabled")) {
             desktopNotifyBtn.addEventListener("click", async () => {
@@ -2257,7 +2398,7 @@ export async function renderSettingsModal(options) {
                     pushHint.textContent = "";
                 }
             }
-            else if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+            else if (!getAppRuntime().supportsWebPush() || !("serviceWorker" in navigator) || !("PushManager" in window)) {
                 pushToggle.disabled = true;
                 if (pushHint) {
                     pushHint.textContent = t("settings.customization.push.unsupported");
@@ -2786,7 +2927,7 @@ function showCreateUserDialog() {
     }
 }
 function submitOIDCAuthorizationForm(request) {
-    const endpoint = new URL(request.authorizationEndpoint, window.location.origin);
+    const endpoint = new URL(request.authorizationEndpoint, getAppRuntime().serverOrigin());
     if (endpoint.protocol !== "https:" && endpoint.protocol !== "http:") {
         throw new Error(t("settings.profile.authentication.providerInvalid"));
     }

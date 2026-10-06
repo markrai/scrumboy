@@ -123,6 +123,13 @@ describe('voice command parser', () => {
     });
   });
 
+  it('keeps enhanced discovery synonyms out of the deterministic basic grammar', () => {
+    expect(parseCommand('open Goblin').ok).toBe(true);
+    for (const text of ['find Goblin', 'search for Goblin', 'look up Goblin']) {
+      expect(parseCommand(text).ok, text).toBe(false);
+    }
+  });
+
   it('allows bare IDs only for whitelisted complete commands', () => {
     expect(parseCommand('delete 12')).toEqual({
       ok: true,

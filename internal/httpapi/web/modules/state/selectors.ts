@@ -2,6 +2,8 @@ import { current } from './state.js';
 import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
 import type { BoardMember } from './state.js';
 
+export { getTagsFromUrl } from './board-filter-url.js';
+
 export function getRoute(): RouteName | null {
   return current.route;
 }
@@ -16,10 +18,6 @@ export function getSlug(): string | null {
 
 export function getBoard(): Board | null {
   return current.board;
-}
-
-export function getTag(): string {
-  return current.tag;
 }
 
 export function getSearch(): string {
@@ -128,6 +126,10 @@ export function getEmailNotifyPreferenceState(): EmailNotifyPreferenceState {
 
 export function getOidcEnabled(): boolean {
   return !!current._oidcEnabled;
+}
+
+export function getMobileOidcEnabled(): boolean {
+  return !!current._mobileOidcEnabled;
 }
 
 export function getLocalAuthEnabled(): boolean {

@@ -559,20 +559,34 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 		return fmt.Errorf("%w: cannot delete yourself", ErrValidation)
 	}
 
-	// Require owner role
-	if err := s.requireOwner(ctx, requesterID); err != nil {
-		return err
-	}
-
-	// Check if target is an owner
-	target, err := s.GetUser(ctx, targetUserID)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
+		return fmt.Errorf("begin delete user tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Keep authorization, last-owner enforcement, service-token archival, and user
+	// deletion on one database snapshot. The archive permanently records the
+	// requester as the deleting owner and joins on the requester's row: if a
+	// concurrent mutation demoted or deleted the requester after a preflight
+	// read, the archive would name a non-owner or silently record nothing while
+	// the tokens still cascade away.
+	if err := requireOwnerTx(ctx, tx, requesterID); err != nil {
 		return err
 	}
-
-	// Prevent deletion of the last owner
-	if target.SystemRole == SystemRoleOwner {
-		count, err := s.countOwners(ctx)
+	var targetRoleRaw string
+	if err := tx.QueryRowContext(ctx, `SELECT system_role FROM users WHERE id = ?`, targetUserID).Scan(&targetRoleRaw); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get target user role: %w", err)
+	}
+	targetRole, ok := ParseSystemRole(targetRoleRaw)
+	if !ok {
+		targetRole = SystemRoleUser
+	}
+	if targetRole == SystemRoleOwner {
+		count, err := countOwnersTx(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -581,13 +595,15 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 		}
 	}
 
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("begin delete user tx: %w", err)
+	// Archive the target's service (bot/automation) API token metadata, with immutable origin
+	// provenance, before the user row disappears. The api_tokens rows themselves (service and
+	// personal) still cascade-delete below, so every secret stops authenticating atomically with
+	// the deletion; the archive never holds a token hash.
+	if err := archiveServiceAPITokensTx(ctx, tx, targetUserID, requesterID, time.Now().UTC()); err != nil {
+		return err
 	}
-	defer func() { _ = tx.Rollback() }()
 
-	// Delete user (cascade will handle sessions)
+	// Delete user (cascade will handle sessions and API tokens)
 	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, targetUserID); err != nil {
 		return fmt.Errorf("delete user: %w", err)
 	}
@@ -685,12 +701,25 @@ WHERE oi.issuer = ? AND oi.subject = ?
 }
 
 // CreateUserOIDC creates a new user from an OIDC login and links the identity.
+// It preserves the unrestricted creation contract used by existing store callers.
+func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (User, error) {
+	return s.createUserOIDC(ctx, configuredIssuer, issuer, subject, email, name, true)
+}
+
+// CreateUserOIDCWithDomainPolicy creates a new OIDC user subject to the supplied
+// email-domain decision. The first user remains exempt.
+func (s *Store) CreateUserOIDCWithDomainPolicy(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (User, error) {
+	return s.createUserOIDC(ctx, configuredIssuer, issuer, subject, email, name, emailDomainAllowed)
+}
+
 // If CountUsers==0 AND issuer==configuredIssuer, the user becomes owner (plan section I).
 // configuredIssuer is the canonical issuer from config; ownership is only granted
 // when the identity's issuer matches it, preventing a misconfigured or rogue issuer
 // from claiming the first-owner slot.
+// emailDomainAllowed gates non-bootstrap creation inside the same transaction as
+// the authoritative user count. The first user is always exempt.
 // Returns ErrConflict if the email is already taken by another user.
-func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string) (User, error) {
+func (s *Store) createUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (User, error) {
 	email = normalizeEmail(email)
 	if email == "" || !strings.Contains(email, "@") {
 		return User{}, fmt.Errorf("%w: invalid email", ErrValidation)
@@ -716,6 +745,9 @@ func (s *Store) CreateUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 	}
 	if canonicalOwners != 0 {
 		return User{}, ErrConflict
+	}
+	if n > 0 && !emailDomainAllowed {
+		return User{}, ErrOIDCSignupDomainNotAllowed
 	}
 
 	role := SystemRoleUser

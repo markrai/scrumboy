@@ -1,9 +1,10 @@
-import { normalizeLookup } from './normalize.js';
+import { classifyVoiceCommandSafety } from './command-safety.js';
+import { normalizeLookup, spokenReferenceIdentity } from './normalize.js';
 import { cloneCommandFailure, localizedCommandFailure, isCommandFailure, validateCommandIR } from './schema.js';
 import { BUILTIN_STATUS_ALIASES } from './vocabulary.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { voiceText } from './i18n.js';
-function boardLanes(board) {
+export function voiceBoardLanes(board) {
     if (board.columnOrder && board.columnOrder.length > 0) {
         return board.columnOrder.map((lane) => ({
             key: lane.key,
@@ -26,7 +27,7 @@ function addAlias(aliases, alias, lane) {
     aliases.set(key, existing);
 }
 function buildLaneAliasMap(board) {
-    const lanes = boardLanes(board);
+    const lanes = voiceBoardLanes(board);
     const byKey = new Map(lanes.map((lane) => [lane.key, lane]));
     const aliases = new Map();
     for (const lane of lanes) {
@@ -45,7 +46,7 @@ function buildLaneAliasMap(board) {
     }
     return aliases;
 }
-function resolveStatus(rawStatus, board) {
+export function resolveVoiceLane(rawStatus, board) {
     const alias = normalizeLookup(rawStatus);
     const matches = buildLaneAliasMap(board).get(alias);
     if (!matches || matches.size === 0) {
@@ -72,6 +73,36 @@ function findMatchingMembers(rawUser, members) {
     if (!wanted)
         return [];
     return members.filter((member) => memberAliases(member).includes(wanted));
+}
+/** Shared conservative matching for local agent skills and semantic create preparation. */
+export function matchVoiceMembers(reference, members) {
+    const wanted = normalizeLookup(reference);
+    const unique = [...new Map(members.map(member => [member.userId, member])).values()];
+    const exact = unique.filter(member => normalizeLookup(member.name) === wanted || normalizeLookup(member.email) === wanted);
+    return exact.length ? exact : unique.filter(member => normalizeLookup(member.name).split(' ').some(part => part === wanted || (wanted.length >= 2 && part.startsWith(wanted))));
+}
+export function matchVoiceTagsDetailed(reference, tags) {
+    const names = [...new Set(tags.map(tag => tag.name))];
+    const raw = reference.trim();
+    const storedExact = names.filter(name => name === raw);
+    if (storedExact.length)
+        return { matches: storedExact, kind: 'stored_exact' };
+    const wanted = spokenReferenceIdentity(reference);
+    const normalizedExact = names.filter(name => normalizeLookup(name) === wanted.lookup);
+    if (normalizedExact.length)
+        return { matches: normalizedExact, kind: 'normalized_exact' };
+    if (wanted.spelled) {
+        const speechExact = names.filter(name => spokenReferenceIdentity(name).spelled === wanted.spelled);
+        if (speechExact.length)
+            return { matches: speechExact, kind: 'spoken_identity' };
+    }
+    // Prefix matching is intentionally last. Stronger equality must not become
+    // ambiguous merely because another authoritative label shares a prefix.
+    const prefix = names.filter(name => wanted.lookup.length >= 2 && normalizeLookup(name).split(' ').some(part => part.startsWith(wanted.lookup)));
+    return { matches: prefix, kind: prefix.length ? 'prefix' : 'none' };
+}
+export function matchVoiceTags(reference, board) {
+    return matchVoiceTagsDetailed(reference, board.tags ?? []).matches;
 }
 async function resolveMember(rawUser, context) {
     let matches = findMatchingMembers(rawUser, context.members);
@@ -122,6 +153,17 @@ export function formatResolvedCommand(command) {
     switch (command.ir.intent) {
         case "todos.create": {
             const title = command.ir.entities.title;
+            if ('body' in command.ir.entities) {
+                const { body, tags, assigneeUserId } = command.ir.entities;
+                const lines = [voiceText('voice.create.summary', 'Create "{title}" in {lane}', { title, lane: command.statusName ?? command.ir.entities.columnKey })];
+                if (assigneeUserId != null)
+                    lines.push(voiceText('voice.create.assign', 'Assign {person}', { person: command.assigneeName ?? String(assigneeUserId) }));
+                if (tags?.length)
+                    lines.push(voiceText('voice.create.tags', 'Tags: {tags}', { tags: tags.join(', ') }));
+                if (body)
+                    lines.push(voiceText('voice.create.notes', 'Notes: {notes}', { notes: body }));
+                return { summary: lines.join('\n'), confirmLabel: voiceText('common.confirm', 'Confirm') };
+            }
             return {
                 summary: voiceText("voice.summary.create", "Create todo \"{title}\"", { title }),
                 confirmLabel: voiceText("voice.action.create", "Create"),
@@ -161,6 +203,49 @@ export function formatResolvedCommand(command) {
                 confirmLabel: voiceText("voice.action.assign", "Assign"),
             };
         }
+        case "todos.update_title": {
+            const localId = command.ir.entities.localId;
+            const title = command.ir.entities.title;
+            return {
+                summary: voiceText("voice.summary.updateTitle", "Change the title of #{localId} to \"{title}\"", { localId, title }),
+                confirmLabel: voiceText("voice.action.updateTitle", "Change title"),
+            };
+        }
+        case "todos.append_notes": {
+            const { localId, notes } = command.ir.entities;
+            return {
+                summary: voiceText("voice.summary.appendNotes", "Add to the notes of #{localId}: \"{notes}\"", { localId, notes }),
+                confirmLabel: voiceText("voice.action.appendNotes", "Add notes"),
+            };
+        }
+        case "todos.replace_notes": {
+            const { localId, notes } = command.ir.entities;
+            return {
+                summary: voiceText("voice.summary.replaceNotes", "Replace the notes of #{localId} with \"{notes}\"", { localId, notes }),
+                confirmLabel: voiceText("voice.action.replaceNotes", "Replace notes"),
+            };
+        }
+        case "todos.add_tag": {
+            const { localId, tag } = command.ir.entities;
+            return {
+                summary: voiceText("voice.summary.addTag", "Add tag {tag} to todo #{localId}", { localId, tag }),
+                confirmLabel: voiceText("voice.action.addTag", "Add tag"),
+            };
+        }
+        case "todos.remove_tag": {
+            const { localId, tag } = command.ir.entities;
+            return {
+                summary: voiceText("voice.summary.removeTag", "Remove tag {tag} from todo #{localId}", { localId, tag }),
+                confirmLabel: voiceText("voice.action.removeTag", "Remove tag"),
+            };
+        }
+        case "todos.unassign": {
+            const { localId } = command.ir.entities;
+            return {
+                summary: voiceText("voice.summary.unassign", "Unassign todo #{localId}", { localId }),
+                confirmLabel: voiceText("voice.action.unassign", "Unassign"),
+            };
+        }
         default: {
             const exhaustive = command.ir;
             return exhaustive;
@@ -168,15 +253,52 @@ export function formatResolvedCommand(command) {
     }
 }
 function withResolvedCommandDisplay(command) {
-    return { ...command, ...formatResolvedCommand(command) };
+    const classified = { ...command, danger: classifyVoiceCommandSafety(command.ir).danger };
+    return { ...classified, ...formatResolvedCommand(classified) };
+}
+export async function resolveTodoTitleUpdate(localId, title, context) {
+    const target = await resolveTodoTarget({
+        kind: "id",
+        localId,
+        display: String(localId),
+    }, {
+        projectSlug: context.projectSlug,
+        board: context.board,
+        callTool: context.callTool,
+    });
+    if (isCommandFailure(target))
+        return target;
+    const ir = {
+        intent: "todos.update_title",
+        projectId: context.projectId,
+        projectSlug: context.projectSlug,
+        entities: { localId: target.value.todo.localId, title },
+    };
+    const validated = validateResolvedIR(ir, context);
+    if (isCommandFailure(validated))
+        return validated;
+    return {
+        ok: true,
+        value: withResolvedCommandDisplay({
+            ir: validated.value,
+            summary: "",
+            confirmLabel: "",
+            requiresConfirmation: true,
+            storyTitle: target.value.todo.title,
+        }),
+    };
 }
 export async function resolveCommandDraft(draft, context, options = {}) {
     if (draft.intent === "todos.create") {
+        const destination = voiceBoardLanes(context.board)[0];
+        if (!destination) {
+            return localizedCommandFailure("unknown_status", "voice.errors.statusNotFound", "Status was not found on this board.");
+        }
         const ir = {
             intent: "todos.create",
             projectId: context.projectId,
             projectSlug: context.projectSlug,
-            entities: { title: draft.title },
+            entities: { title: draft.title, columnKey: destination.key },
         };
         const validated = validateResolvedIR(ir, context);
         if (isCommandFailure(validated))
@@ -187,7 +309,6 @@ export async function resolveCommandDraft(draft, context, options = {}) {
                 ir: validated.value,
                 summary: "",
                 confirmLabel: "",
-                danger: false,
                 requiresConfirmation: true,
             }),
         };
@@ -212,7 +333,6 @@ export async function resolveCommandDraft(draft, context, options = {}) {
                 ir: validated.value,
                 summary: "",
                 confirmLabel: "",
-                danger: false,
                 requiresConfirmation: !!target.value.ambiguousId,
                 storyTitle: todo.title,
             }),
@@ -238,14 +358,13 @@ export async function resolveCommandDraft(draft, context, options = {}) {
                 ir: validated.value,
                 summary: "",
                 confirmLabel: "",
-                danger: true,
                 requiresConfirmation: true,
                 storyTitle: todo.title,
             }),
         };
     }
     if (draft.intent === "todos.move") {
-        const lane = resolveStatus(draft.rawStatus, context.board);
+        const lane = resolveVoiceLane(draft.rawStatus, context.board);
         if (isCommandFailure(lane))
             return lane;
         const target = await resolveDraftTarget(draft, context, options);
@@ -267,7 +386,6 @@ export async function resolveCommandDraft(draft, context, options = {}) {
                 ir: validated.value,
                 summary: "",
                 confirmLabel: "",
-                danger: false,
                 requiresConfirmation: true,
                 storyTitle: todo.title,
                 statusName: lane.value.name,
@@ -296,7 +414,6 @@ export async function resolveCommandDraft(draft, context, options = {}) {
             ir: validated.value,
             summary: "",
             confirmLabel: "",
-            danger: false,
             requiresConfirmation: true,
             storyTitle: todo.title,
             assigneeName: member.value.name || member.value.email,

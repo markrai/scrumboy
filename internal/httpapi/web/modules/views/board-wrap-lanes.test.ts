@@ -150,10 +150,12 @@ const enCatalog = {
   'board.agenda.empty': 'No events today.',
   'board.agenda.stale': 'Calendar may be out of date.',
   'board.filters.all': 'All',
+  'board.filters.allSprints': 'All sprints',
   'board.filters.allAssignees': 'All assignees',
   'board.filters.allPriorities': 'All priorities',
   'board.filters.assignee': 'Assignee',
   'board.filters.assignedToMe': 'Assigned to me',
+  'board.filters.clearTag': 'Clear tag {name}',
   'board.filters.defaultOrder': 'Default order',
   'board.filters.filteringOn': 'Filtering: {value}',
   'board.filters.label': 'Tags:',
@@ -165,6 +167,7 @@ const enCatalog = {
   'board.filters.previous': 'Previous tags',
   'board.filters.priority': 'Priority',
   'board.filters.scheduled': 'Scheduled',
+  'board.filters.sprint': 'Sprint',
   'board.filters.sort': 'Sort',
   'board.filters.sortedBy': 'Sorted: {value}',
   'board.filters.unassigned': 'Unassigned',
@@ -211,7 +214,7 @@ async function renderPrefetchedBoard(
   mod: typeof import('./board.js'),
   board: Board,
 ): Promise<void> {
-  await mod.renderBoard('alpha', '', '', null, null, null, null, null, null, {
+  await mod.renderBoard('alpha', [], '', null, null, null, null, null, null, {
     prefetchedBoard: board,
   });
   await flushPromises();

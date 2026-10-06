@@ -41,6 +41,13 @@ func validateCardsPerLaneValue(value string) error {
 	return nil
 }
 
+func validateBoardFilterLayoutValue(value string) error {
+	if value != "omni" && value != "legacy" {
+		return fmt.Errorf("%w: boardFilterLayout must be omni or legacy", ErrValidation)
+	}
+	return nil
+}
+
 // validateTagColorsJSON returns ErrValidation if any color in the tagColors JSON is invalid.
 func validateTagColorsJSON(value string) error {
 	var m map[string]string
@@ -85,6 +92,11 @@ func (s *Store) SetUserPreference(ctx context.Context, userID int64, key, value 
 	}
 	if key == "cardsPerLane" {
 		if err := validateCardsPerLaneValue(value); err != nil {
+			return err
+		}
+	}
+	if key == "boardFilterLayout" {
+		if err := validateBoardFilterLayoutValue(value); err != nil {
 			return err
 		}
 	}

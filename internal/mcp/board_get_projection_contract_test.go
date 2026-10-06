@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"reflect"
 	"testing"
@@ -150,6 +151,105 @@ func TestBoardGetContract_FilterForwardingAndCardinality(t *testing.T) {
 			t.Fatalf("count forwarding = %#v", call)
 		}
 	}
+}
+
+func TestBoardGetContract_TagsForwardingNormalizationAndLiteralComma(t *testing.T) {
+	t.Run("array input is deduped and forwarded to every lane query", func(t *testing.T) {
+		h := newBoardGetContractHarness(t)
+		_, _, err := h.call(map[string]any{
+			"projectSlug": h.Project.Slug,
+			"tags":        []any{" feature ", "UX", "ux", ""},
+		})
+		if err != nil {
+			t.Fatalf("board_get: %v", err)
+		}
+		want := []string{"feature", "UX"}
+		listCalls := h.Recording.callsFor("list")
+		countCalls := h.Recording.callsFor("count")
+		if len(listCalls) != 3 || len(countCalls) != 3 {
+			t.Fatalf("list/count calls = %d/%d, want 3/3", len(listCalls), len(countCalls))
+		}
+		for _, call := range append(append([]boardGetStoreCall{}, listCalls...), countCalls...) {
+			if !reflect.DeepEqual(call.TagFilters, want) {
+				t.Fatalf("tagFilters = %#v, want %#v", call.TagFilters, want)
+			}
+		}
+	})
+
+	t.Run("case-insensitive duplicates keep first spelling", func(t *testing.T) {
+		h := newBoardGetContractHarness(t)
+		_, _, err := h.call(map[string]any{
+			"projectSlug": h.Project.Slug,
+			"tags":        []any{"feature", "FEATURE", "ux"},
+		})
+		if err != nil {
+			t.Fatalf("board_get: %v", err)
+		}
+		want := []string{"feature", "ux"}
+		for _, call := range append(append([]boardGetStoreCall{}, h.Recording.callsFor("list")...), h.Recording.callsFor("count")...) {
+			if !reflect.DeepEqual(call.TagFilters, want) {
+				t.Fatalf("tagFilters = %#v, want %#v", call.TagFilters, want)
+			}
+		}
+	})
+
+	t.Run("raw length above 20 is accepted when unique count is 20", func(t *testing.T) {
+		h := newBoardGetContractHarness(t)
+		tags := make([]any, 21)
+		want := make([]string, 20)
+		for i := 0; i < 20; i++ {
+			name := fmt.Sprintf("tag-%d", i)
+			tags[i] = name
+			want[i] = name
+		}
+		tags[20] = "TAG-0"
+		_, _, err := h.call(map[string]any{
+			"projectSlug": h.Project.Slug,
+			"tags":        tags,
+		})
+		if err != nil {
+			t.Fatalf("board_get: %v", err)
+		}
+		for _, call := range h.Recording.callsFor("list") {
+			if !reflect.DeepEqual(call.TagFilters, want) {
+				t.Fatalf("tagFilters = %#v, want %#v", call.TagFilters, want)
+			}
+		}
+	})
+
+	t.Run("scalar comma value remains one literal filter", func(t *testing.T) {
+		h := newBoardGetContractHarness(t)
+		_, _, err := h.call(map[string]any{
+			"projectSlug": h.Project.Slug,
+			"tag":         "feature,ux",
+		})
+		if err != nil {
+			t.Fatalf("board_get: %v", err)
+		}
+		want := []string{"feature,ux"}
+		for _, call := range h.Recording.callsFor("list") {
+			if !reflect.DeepEqual(call.TagFilters, want) {
+				t.Fatalf("tagFilters = %#v, want %#v", call.TagFilters, want)
+			}
+		}
+	})
+
+	t.Run("single-element tags matches scalar tag forwarding", func(t *testing.T) {
+		h := newBoardGetContractHarness(t)
+		_, _, err := h.call(map[string]any{
+			"projectSlug": h.Project.Slug,
+			"tags":        []any{"feature"},
+		})
+		if err != nil {
+			t.Fatalf("board_get: %v", err)
+		}
+		want := []string{"feature"}
+		for _, call := range h.Recording.callsFor("list") {
+			if !reflect.DeepEqual(call.TagFilters, want) || call.Tag != "feature" {
+				t.Fatalf("list forwarding = %#v", call)
+			}
+		}
+	})
 }
 
 func TestBoardGetContract_SprintSemantics(t *testing.T) {

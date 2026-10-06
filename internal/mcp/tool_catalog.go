@@ -1,10 +1,37 @@
 package mcp
 
+import (
+	"scrumboy/internal/store"
+)
+
 // mcpToolDef is the MCP-spec shape returned by tools/list for each tool.
 type mcpToolDef struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	InputSchema any    `json:"inputSchema"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	InputSchema  any    `json:"inputSchema"`
+	OutputSchema any    `json:"outputSchema,omitempty"`
+}
+
+func projectsListOutputSchema() map[string]any {
+	project := jsonSchema("object", map[string]any{
+		"projectSlug":        jsonProp("string", "Project identifier (slug)"),
+		"projectId":          jsonProp("integer", "Project database ID"),
+		"name":               jsonProp("string", "Project name"),
+		"dominantColor":      jsonProp("string", "Project dominant color"),
+		"defaultSprintWeeks": jsonProp("integer", "Default sprint duration in weeks"),
+		"expiresAt":          jsonPropWithNull("string", "Expiration timestamp for temporary projects"),
+		"createdAt":          jsonProp("string", "Creation timestamp in RFC3339 format"),
+		"updatedAt":          jsonProp("string", "Last update timestamp in RFC3339 format"),
+		"role":               jsonProp("string", "Authenticated user's project role"),
+	}, []string{"projectSlug", "projectId", "name", "dominantColor", "defaultSprintWeeks", "expiresAt", "createdAt", "updatedAt", "role"})
+	return jsonSchema("object", map[string]any{
+		"items": map[string]any{
+			"type":  "array",
+			"items": project,
+		},
+		"nextCursor": jsonPropWithNull("string", "Cursor for the next page, or null on the final page"),
+		"hasMore":    jsonProp("boolean", "Whether another page is available"),
+	}, []string{"items", "nextCursor", "hasMore"})
 }
 
 // toolCatalogDefinitions holds MCP metadata for every callable tool.
@@ -17,8 +44,18 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"projects_list": {
 			Name:        "projects_list",
-			Description: "List all projects visible to the authenticated user, with their role in each project.",
-			InputSchema: jsonSchema("object", map[string]any{}, nil),
+			Description: "List a page of projects visible to the authenticated user, with their role in each project.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"limit": map[string]any{
+					"type":        []string{"integer", "null"},
+					"description": "Maximum results to return (default 20, max 100)",
+					"default":     20,
+					"minimum":     1,
+					"maximum":     100,
+				},
+				"cursor": jsonPropWithNull("string", "Pagination cursor from a previous projects_list call"),
+			}, nil),
+			OutputSchema: projectsListOutputSchema(),
 		},
 		"projects_create": {
 			Name:        "projects_create",
@@ -99,6 +136,15 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				}, nil),
 			}, []string{"projectSlug", "localId", "patch"}),
 		},
+		"todos_countCompleted": {
+			Name:        "todos_countCompleted",
+			Description: "Count todos completed in one project during a bounded calendar period using authoritative completion timestamps and the complete project scope.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"period":      jsonStringEnumProp("Bounded completion period", []string{"this-week"}),
+				"timezone":    jsonProp("string", "IANA timezone used for Monday calendar-week boundaries; defaults to UTC"),
+			}, []string{"projectSlug", "period"}),
+		},
 		"todos_delete": {
 			Name:        "todos_delete",
 			Description: "Delete a todo by its project-scoped local ID.",
@@ -106,6 +152,22 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"localId":     jsonProp("integer", "Project-scoped todo ID"),
 			}, []string{"projectSlug", "localId"}),
+		},
+		"todos_archive": {
+			Name:        "todos_archive",
+			Description: "Archive one or more todos without changing their workflow state or historical timestamps. Requires maintainer access.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"localIds":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "minItems": 1, "maxItems": store.MaxTodoArchiveBatch, "uniqueItems": true},
+			}, []string{"projectSlug", "localIds"}),
+		},
+		"todos_restore": {
+			Name:        "todos_restore",
+			Description: "Restore one or more archived todos, preserving their workflow state and historical timestamps.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"localIds":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "minItems": 1, "maxItems": store.MaxTodoArchiveBatch, "uniqueItems": true},
+			}, []string{"projectSlug", "localIds"}),
 		},
 		"todos_move": {
 			Name:        "todos_move",
@@ -305,17 +367,21 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"board_get": {
 			Name:        "board_get",
-			Description: "Get board columns and paginated todo items for a project board view. Returned projectSlug fields use the stored canonical slug.",
+			Description: "Get board columns and paginated todo items for a project board view. Prefer tags for multi-tag AND filtering; tag remains the legacy single-tag input. Do not supply tag and tags together, and do not comma-separate tag names. Returned projectSlug fields use the stored canonical slug.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
-				"tag":         jsonProp("string", "Filter by tag"),
-				"search":      jsonProp("string", "Filter by search text"),
-				"assignee":    jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
-				"priority":    jsonProp("string", "Filter by a priority tier key, or \"**none**\" for todos without a priority; omit for all priorities"),
-				"sort":        jsonStringEnumProp("Sort items within each lane by creation time: newest or oldest; omit for manual drag-rank order", []string{"newest", "oldest"}),
-				"sprintId":    jsonPropWithNull("integer", "Filter by the stored sprint row ID returned as sprintId by sprints_list; this is not the project-local sprint number returned as number"),
-				"columnKey":   jsonProp("string", "Restrict the response to a single workflow column key (as returned by workflow_list); other columns are omitted entirely instead of being queried and paginated"),
-				"limit":       jsonProp("integer", "Maximum items per column"),
+				"tag":         jsonProp("string", "Legacy single-tag filter. Prefer tags. Do not supply together with tags. Commas are literal, not separators."),
+				"tags": jsonStringArrayProp(
+					"Optional list of up to 20 unique tag names after normalization. Todos must match every selected logical tag. Do not supply together with `tag`.",
+					1,
+				),
+				"search":    jsonProp("string", "Filter by search text"),
+				"assignee":  jsonProp("string", "Filter by \"me\", \"unassigned\", or a positive user ID encoded as a string"),
+				"priority":  jsonProp("string", "Filter by a priority tier key, or \"**none**\" for todos without a priority; omit for all priorities"),
+				"sort":      jsonStringEnumProp("Sort items within each lane by creation time: newest or oldest; omit for manual drag-rank order", []string{"newest", "oldest"}),
+				"sprintId":  jsonPropWithNull("integer", "Filter by the stored sprint row ID returned as sprintId by sprints_list; this is not the project-local sprint number returned as number"),
+				"columnKey": jsonProp("string", "Restrict the response to a single workflow column key (as returned by workflow_list); other columns are omitted entirely instead of being queried and paginated"),
+				"limit":     jsonProp("integer", "Maximum items per column"),
 				"cursorByColumn": map[string]any{
 					"type":                 "object",
 					"description":          "Pagination cursor token per workflow column key",
@@ -501,6 +567,15 @@ func jsonArrayProp(itemType, description string) map[string]any {
 		"type":        "array",
 		"description": description,
 		"items":       map[string]any{"type": itemType},
+	}
+}
+
+func jsonStringArrayProp(description string, minItems int) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"description": description,
+		"items":       map[string]any{"type": "string"},
+		"minItems":    minItems,
 	}
 }
 

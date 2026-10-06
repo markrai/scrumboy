@@ -29,7 +29,8 @@ type Config struct {
 	// TLS (optional). If both TLSCertFile and TLSKeyFile exist, server uses HTTPS. Used by f.bat/a.bat with mkcert.
 	TLSCertFile string // default ./cert.pem
 	TLSKeyFile  string // default ./key.pem
-	// IntranetIP is the LAN IP to log for intranet access (e.g. 192.168.1.250). Set via SCRUMBOY_INTRANET_IP.
+	// IntranetIP is an optional LAN IP for startup intranet URL / mkcert hints
+	// (e.g. 192.0.2.10). Set via SCRUMBOY_INTRANET_IP; empty when unset. Does not bind.
 	IntranetIP string
 
 	// OIDC (optional). All four required fields must be set to enable OIDC login.
@@ -39,6 +40,11 @@ type Config struct {
 	OIDCClientSecret      string
 	OIDCRedirectURL       string // Absolute callback URL
 	OIDCLocalAuthDisabled bool   // If true, disable password login/bootstrap when OIDC is configured
+	// OIDCAllowedEmailDomains restricts which email domains may auto-provision a new
+	// account on first SSO login. Empty means unrestricted. Set via
+	// SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS as a comma-separated list (e.g. "example.com,example.org").
+	// Only gates signup of brand-new users; existing users can still log in regardless of domain.
+	OIDCAllowedEmailDomains []string
 
 	// Web Push VAPID (optional). Both public and private must be set for push subscribe and assignment notifications.
 	VAPIDPublicKey  string
@@ -121,14 +127,15 @@ func FromEnv() Config {
 
 		TLSCertFile: getenv("SCRUMBOY_TLS_CERT", "./cert.pem"),
 		TLSKeyFile:  getenv("SCRUMBOY_TLS_KEY", "./key.pem"),
-		IntranetIP:  getenv("SCRUMBOY_INTRANET_IP", "192.168.1.250"),
+		IntranetIP:  getenv("SCRUMBOY_INTRANET_IP", ""),
 
-		OIDCIssuer:            strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
-		OIDCIssuerCanonical:   normalizeIssuer(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
-		OIDCClientID:          strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_ID")),
-		OIDCClientSecret:      strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_SECRET")),
-		OIDCRedirectURL:       strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_REDIRECT_URL")),
-		OIDCLocalAuthDisabled: strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED"))) == "true",
+		OIDCIssuer:              strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
+		OIDCIssuerCanonical:     normalizeIssuer(os.Getenv("SCRUMBOY_OIDC_ISSUER")),
+		OIDCClientID:            strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_ID")),
+		OIDCClientSecret:        strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_CLIENT_SECRET")),
+		OIDCRedirectURL:         strings.TrimSpace(os.Getenv("SCRUMBOY_OIDC_REDIRECT_URL")),
+		OIDCLocalAuthDisabled:   strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED"))) == "true",
+		OIDCAllowedEmailDomains: oidcAllowedEmailDomainsFromEnv(),
 
 		VAPIDPublicKey:  strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PUBLIC_KEY")),
 		VAPIDPrivateKey: strings.TrimSpace(os.Getenv("SCRUMBOY_VAPID_PRIVATE_KEY")),
@@ -280,6 +287,26 @@ func normalizeIssuer(raw string) string {
 	s := strings.TrimSpace(raw)
 	s = strings.TrimRight(s, "/")
 	return s
+}
+
+// oidcAllowedEmailDomainsFromEnv parses SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS as
+// a comma-separated list of domains, trimmed, lowercased, and with any leading
+// "@" stripped. Empty entries are dropped. An unset/empty variable returns nil,
+// meaning no domain restriction.
+func oidcAllowedEmailDomainsFromEnv() []string {
+	raw := os.Getenv("SCRUMBOY_OIDC_ALLOWED_EMAIL_DOMAINS")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var domains []string
+	for _, part := range strings.Split(raw, ",") {
+		d := strings.ToLower(strings.TrimSpace(part))
+		d = strings.TrimPrefix(d, "@")
+		if d != "" {
+			domains = append(domains, d)
+		}
+	}
+	return domains
 }
 
 // ResolveDataDir returns the resolved data directory and db path.

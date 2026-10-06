@@ -6,7 +6,7 @@ export const NO_PRIORITY_FILTER_VALUE = '**none**';
 
 export type TodoStatus = string;
 export type ProjectView = 'list' | 'grid';
-export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'reset-password' | 'notfound';
+export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'archiveBySlug' | 'reset-password' | 'notfound';
 export type MobileTab = string;
 export type Theme = 'system' | 'dark' | 'light';
 
@@ -17,6 +17,7 @@ export interface Todo {
   title: string;
   body?: string;
   status: TodoStatus;
+  columnKey?: string;
   tags?: string[];
   estimationPoints?: number | null;
   assigneeUserId?: number | null;
@@ -25,6 +26,8 @@ export interface Todo {
   priorityKey?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  doneAt?: string;
+  archivedAt?: string;
 }
 
 export interface PriorityTier {
@@ -38,6 +41,8 @@ export interface Tag {
   name: string;
   color?: string;
   count: number;
+  // Latest updatedAt among active stories currently carrying this tag.
+  lastActiveAt?: string;
   // tagId is present only for board-scoped tags; grouped personal labels omit it.
   tagId?: number;
   // deleteScope is "mine", "project", or "none"; canDelete is a compatibility alias.
@@ -102,6 +107,24 @@ export interface LanePageResponse {
   hasMore: boolean;
 }
 
+export interface ArchivePageResponse {
+  todos: Todo[];
+  nextCursor?: string | null;
+  hasMore: boolean;
+}
+
+export type TodoArchiveTargetState = 'archived' | 'active';
+
+export interface TodoArchiveBatchResult {
+  targetState: TodoArchiveTargetState;
+  requestedCount: number;
+  transitionedCount: number;
+  unchangedCount: number;
+  transitionedLocalIds: number[];
+  unchangedLocalIds: number[];
+  transitionedAt?: string | null;
+}
+
 export interface User {
   id: number;
   name?: string;
@@ -112,6 +135,19 @@ export interface User {
   twoFactorEnabled?: boolean;
   hasLocalPassword?: boolean;
   oidcLinked?: boolean;
+}
+
+export interface ApiToken {
+  id: number | string;
+  name?: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+  isService?: boolean;
+}
+
+export interface ApiTokenCreateResponse extends ApiToken {
+  token: string;
 }
 
 export interface ActiveSprintInfo {
@@ -247,6 +283,7 @@ export interface AuthStatusResponse {
   selfServicePasswordResetEnabled?: boolean;
   emailNotifyAvailable?: boolean;
   oidcEnabled?: boolean;
+  mobileOidcEnabled?: boolean;
   localAuthEnabled?: boolean;
   wallEnabled?: boolean;
   markdownNotesEnabled?: boolean;

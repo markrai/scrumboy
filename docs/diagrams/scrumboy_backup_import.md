@@ -16,7 +16,7 @@ flowchart TB
   Mode --> Replace[replace plus confirmation REPLACE]
   Mode --> Merge[merge]
   Mode --> Copy[copy]
-  Merge --> Presence["Priority presence: absent preserve, null clear, string assign"]
+  Merge --> Presence["Presence-aware priority and archive merge"]
   Presence --> Invariant["In-transaction project/todo priority anti-join"]
   Replace --> Native["store.ImportProjectsWithTarget"]
   Merge --> Native
@@ -32,13 +32,21 @@ flowchart TB
 
 Native backup: preview via `PreviewImport`; mutate via `ImportProjectsWithTarget` (`replace` / `merge` / `copy`). Replace requires `confirmation: "REPLACE"`.
 
-Export format 1.1 uses syntactic presence for priorities without a version
-bump. New exports write `priorityTiers` for every project (`[]` means the four
+Export format 1.2 adds presence-aware `archivedAt` while retaining the
+presence-aware priority behavior introduced in 1.1. New exports write
+`priorityTiers` for every project (`[]` means the four
 canonical defaults) and `priorityKey` for every todo (`null` means no
-assignment). A legacy 1.1 backup may omit these fields. On a matched-project
+assignment), plus `archivedAt` for every todo (`null` means active). A legacy
+1.1 backup may omit these fields. On a matched-project
 merge, omitted project definitions and todo assignments are preserved;
 explicit arrays replace definitions, explicit todo `null` clears, and a string
-assigns. Replacement and merge run under project-writer serialization and
+assigns. An omitted archival field preserves target state, explicit null
+clears archival, and a Unix-millisecond timestamp archives; outside matched
+merge there is no target state, so an omitted field creates an active story.
+The version gate accepts only 1.1 and 1.2, rejects a 1.1 payload carrying
+`archivedAt` as mislabeled, and rejects an `archivedAt` that is negative or
+implausibly far in the future. Replacement
+and merge run under project-writer serialization and
 abort if any effective non-null todo key would not resolve in the project.
 
 Todo exports may include `createdByUserId` as additive historical metadata;
@@ -66,5 +74,17 @@ flowchart LR
 ```
 
 Trello members do **not** become Scrumboy assignees automatically; member information is preserved in note text where applicable (see Trello import warnings).
+
+**Card closure and list closure are separate axes.** A closed **card** becomes a first-class
+archived story: `archivedAt` is set and the title is left alone — there is no `[Archived]`
+title prefix. Trello's export carries no per-card archive time, so every closed card is
+stamped with the **import time**. A closed **list** is unrelated to archival: its cards keep
+the `[Closed List] ` title prefix and the closed-list/Done column remap, and are not archived.
+A card that is both keeps the closed-list prefix and is additionally archived.
+
+Both closure facts are also retained outside the archive flag: the body's `## Trello import
+notes` section records `- Archived in Trello: true` for a closed card and `- Original Trello
+list: <name> (closed in Trello)` for a closed list, and the per-todo import metadata keeps
+`trelloClosed` and `trelloListClosed`.
 
 Backup and Trello import paths do **not** append import audit events. Do not treat imports as audited actions unless product code adds that later.

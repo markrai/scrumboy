@@ -22,7 +22,10 @@ See also [CONTRIBUTING.md](../CONTRIBUTING.md) (documentation-impact gate).
 
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
+| [install-from-releases.md](install-from-releases.md) | Operators / users | Windows and macOS GitHub Release binaries; checksum and provenance verification; runtime-data location; macOS signing/notarization and Gatekeeper troubleshooting | current |
+| [docker.md](docker.md) | Operators / users | Published GHCR image; `docker run`; Compose with published image; `/data` persistence; Docker-facing backup; container environment configuration | current |
 | [recovery.md](recovery.md) | Operators / owners | `cmd/scrumboy` recover-owner; `DATA_DIR` | current |
+| [backup-and-import.md](backup-and-import.md) | Operators / users | JSON export scope, Replace/Merge/Create copy, anonymous-mode behavior, format compatibility; distinct from full `DATA_DIR` disaster-recovery backup | current |
 | [smtp.md](smtp.md) | Operators | `internal/mailer`, SMTP env vars | current |
 | [vapid.md](vapid.md) | Operators | `prepareWebPushConfiguration` / push status | current |
 | [pwa.md](pwa.md) | Operators / UX | `sw.js`, push client, Compose env | current |
@@ -33,12 +36,21 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 
 ---
 
+## Developer / mobile
+
+| Doc | Audience | Source of truth | Status |
+|-----|----------|-----------------|--------|
+| [android.md](android.md) | Developers / contributors | `mobile/capacitor`, Android Gradle project, `internal/httpapi/web` Capacitor web artifact scripts | current |
+
+---
+
 ## User features
 
 | Doc | Audience | Source of truth | Status |
 |-----|----------|-----------------|--------|
 | [wall.md](wall.md) | Users / contributors | wall modules + API | current |
 | [voiceflow.md](voiceflow.md) | Users / contributors | VoiceFlow parser / UI | current |
+| [enhanced-voiceflow.md](enhanced-voiceflow.md) | Users / contributors | Android AI VoiceFlow (capability gating, on-device speech/Nano planning, capture, confirmation, speech settings, Keep Listening) | current |
 | [calendar.md](calendar.md) | Users / operators | Agenda ICS feeds (`internal/application/calendar`) | current |
 | [markdown-and-mermaid.md](markdown-and-mermaid.md) | Users / contributors | `internal/httpapi/web` markdown/mermaid deps | current |
 

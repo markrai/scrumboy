@@ -108,13 +108,17 @@ func main() {
 	var oidcSvc *oidc.Service
 	if cfg.OIDCEnabled() {
 		oidcSvc = oidc.New(oidc.Config{
-			IssuerCanonical:   cfg.OIDCIssuerCanonical,
-			ClientID:          cfg.OIDCClientID,
-			ClientSecret:      cfg.OIDCClientSecret,
-			RedirectURL:       cfg.OIDCRedirectURL,
-			LocalAuthDisabled: cfg.OIDCLocalAuthDisabled,
+			IssuerCanonical:     cfg.OIDCIssuerCanonical,
+			ClientID:            cfg.OIDCClientID,
+			ClientSecret:        cfg.OIDCClientSecret,
+			RedirectURL:         cfg.OIDCRedirectURL,
+			LocalAuthDisabled:   cfg.OIDCLocalAuthDisabled,
+			AllowedEmailDomains: cfg.OIDCAllowedEmailDomains,
 		})
 		logger.Printf("OIDC enabled (issuer: %s)", cfg.OIDCIssuerCanonical)
+		if len(cfg.OIDCAllowedEmailDomains) > 0 {
+			logger.Printf("OIDC signup restricted to domains: %s", strings.Join(cfg.OIDCAllowedEmailDomains, ", "))
+		}
 	}
 	logWebPushConfiguration(logger, cfg.ScrumboyMode, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey)
 	logSMTPConfiguration(logger, cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom, cfg.SMTPPortExplicit, cfg.PublicBaseURL)
@@ -181,12 +185,14 @@ func main() {
 		}
 		logger.Printf("listening on %s", cfg.BindAddr)
 		logger.Printf("  Local:    %s://127.0.0.1:%s/", protocol, port)
-		logger.Printf("  Intranet: %s://%s:%s/", protocol, cfg.IntranetIP, port)
+		if cfg.IntranetIP != "" {
+			logger.Printf("  Intranet: %s://%s:%s/", protocol, cfg.IntranetIP, port)
+		}
 		if useTLS {
 			logger.Printf("HTTPS enabled (secure context).")
 			logger.Printf("Plain http:// on this port is redirected to https:// (same host and path).")
-		} else {
-			logger.Printf("HTTP mode. To enable HTTPS for intranet: install mkcert, run mkcert -install, then mkcert %s localhost", cfg.IntranetIP)
+		} else if cfg.IntranetIP != "" {
+			logger.Printf("HTTP mode. To enable HTTPS for intranet: install mkcert, run mkcert -install, then mkcert %s localhost 127.0.0.1", cfg.IntranetIP)
 		}
 		var err error
 		if useTLS {

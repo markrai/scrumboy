@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../api.js", () => {
   const apiFetch = vi.fn();
@@ -21,6 +21,10 @@ import {
 } from "./wall-api.js";
 
 const mock = apiFetch as unknown as ReturnType<typeof vi.fn>;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("wall-api", () => {
   beforeEach(() => {

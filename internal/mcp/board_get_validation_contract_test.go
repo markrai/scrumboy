@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -87,6 +88,35 @@ func TestBoardGetContract_TargetStatePrecedenceMatrix(t *testing.T) {
 			preAccess: true,
 			message:   "invalid sort",
 			details:   map[string]any{"field": "sort"},
+		},
+		{
+			name:      "tags JSON type",
+			input:     func(slug string) map[string]any { return map[string]any{"projectSlug": slug, "tags": 42} },
+			preAccess: true,
+			message:   "invalid tags",
+			details:   map[string]any{"field": "tags"},
+		},
+		{
+			name: "tag and tags together",
+			input: func(slug string) map[string]any {
+				return map[string]any{"projectSlug": slug, "tag": "feature", "tags": []any{"ux"}}
+			},
+			preAccess: true,
+			message:   "tag and tags are mutually exclusive",
+			details:   map[string]any{},
+		},
+		{
+			name: "too many tags",
+			input: func(slug string) map[string]any {
+				tags := make([]any, 21)
+				for i := range tags {
+					tags[i] = fmt.Sprintf("tag-%d", i)
+				}
+				return map[string]any{"projectSlug": slug, "tags": tags}
+			},
+			preAccess: true,
+			message:   "too many tag filters",
+			details:   map[string]any{"field": "tags"},
 		},
 		{
 			name: "sprint",
@@ -235,6 +265,54 @@ func TestBoardGetContract_ValidationBeforeAccess(t *testing.T) {
 			input:   map[string]any{"projectSlug": "unused", "sort": "rank-desc"},
 			message: "invalid sort",
 			details: map[string]any{"field": "sort"},
+		},
+		{
+			name:    "tags JSON number is rejected by the type guard",
+			input:   map[string]any{"projectSlug": "unused", "tags": 42},
+			message: "invalid tags",
+			details: map[string]any{"field": "tags"},
+		},
+		{
+			name:    "tags JSON null is rejected by the type guard",
+			input:   map[string]any{"projectSlug": "unused", "tags": nil},
+			message: "invalid tags",
+			details: map[string]any{"field": "tags"},
+		},
+		{
+			name:    "tags array item must be a string",
+			input:   map[string]any{"projectSlug": "unused", "tags": []any{"feature", 1}},
+			message: "invalid tags",
+			details: map[string]any{"field": "tags"},
+		},
+		{
+			name:    "tag and tags are mutually exclusive",
+			input:   map[string]any{"projectSlug": "unused", "tag": "feature", "tags": []any{"ux"}},
+			message: "tag and tags are mutually exclusive",
+			details: map[string]any{},
+		},
+		{
+			name:    "empty tags array",
+			input:   map[string]any{"projectSlug": "unused", "tags": []any{}},
+			message: "invalid tags",
+			details: map[string]any{"field": "tags"},
+		},
+		{
+			name:    "whitespace-only tags normalize to empty",
+			input:   map[string]any{"projectSlug": "unused", "tags": []any{"  ", ""}},
+			message: "invalid tags",
+			details: map[string]any{"field": "tags"},
+		},
+		{
+			name: "more than twenty unique tags",
+			input: func() map[string]any {
+				tags := make([]any, 21)
+				for i := range tags {
+					tags[i] = fmt.Sprintf("tag-%d", i)
+				}
+				return map[string]any{"projectSlug": "unused", "tags": tags}
+			}(),
+			message: "too many tag filters",
+			details: map[string]any{"field": "tags"},
 		},
 	}
 

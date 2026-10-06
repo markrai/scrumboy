@@ -64,7 +64,7 @@ type cancellationReadStore struct {
 func (s *cancellationReadStore) GetBoardPaged(
 	ctx context.Context,
 	pc *store.ProjectContext,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -82,7 +82,7 @@ func (s *cancellationReadStore) GetBoardPaged(
 	project, tags, workflow, columns, columnsMeta, _ := s.recordingReadStore.GetBoardPaged(
 		ctx,
 		pc,
-		tagFilter,
+		tagFilters,
 		searchFilter,
 		assigneeFilter,
 		priorityFilter,
@@ -104,7 +104,7 @@ func (s *cancellationLaneReadStore) ListTodosForBoardLane(
 	limit int,
 	afterA int64,
 	afterB int64,
-	tagFilter string,
+	tagFilters []string,
 	searchFilter string,
 	assigneeFilter store.AssigneeFilter,
 	priorityFilter store.PriorityFilter,
@@ -118,7 +118,7 @@ func (s *cancellationLaneReadStore) ListTodosForBoardLane(
 		limit,
 		afterA,
 		afterB,
-		tagFilter,
+		tagFilters,
 		searchFilter,
 		assigneeFilter,
 		priorityFilter,
@@ -394,7 +394,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesExactly(t *testing.T) {
 		t.Fatalf("ParsePriorityFilter: %v", err)
 	}
 	query := Query{
-		TagFilter:      "focus",
+		TagFilters:     []string{"focus"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -439,7 +439,7 @@ func TestPreparedSlugRead_ReadInitialDelegatesExactly(t *testing.T) {
 	if h.initial.projectContext == &h.access.projectContext {
 		t.Fatal("ReadInitial retained the access store's project-context pointer")
 	}
-	if h.initial.tagFilter != query.TagFilter ||
+	if !reflect.DeepEqual(h.initial.tagFilters, query.TagFilters) ||
 		h.initial.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(h.initial.assigneeFilter, query.AssigneeFilter) ||
 		!reflect.DeepEqual(h.initial.priorityFilter, query.PriorityFilter) ||
@@ -524,7 +524,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesExactly(t *testing.T) {
 		Limit:          17,
 		AfterA:         301,
 		AfterB:         302,
-		TagFilter:      "focus",
+		TagFilters:     []string{"focus"},
 		SearchFilter:   "needle",
 		AssigneeFilter: assigneeFilter,
 		PriorityFilter: priorityFilter,
@@ -564,7 +564,7 @@ func TestPreparedSlugRead_ReadLaneDelegatesExactly(t *testing.T) {
 		h.lane.limit != query.Limit ||
 		h.lane.afterA != query.AfterA ||
 		h.lane.afterB != query.AfterB ||
-		h.lane.tagFilter != query.TagFilter ||
+		!reflect.DeepEqual(h.lane.tagFilters, query.TagFilters) ||
 		h.lane.searchFilter != query.SearchFilter ||
 		!reflect.DeepEqual(h.lane.assigneeFilter, query.AssigneeFilter) ||
 		!reflect.DeepEqual(h.lane.priorityFilter, query.PriorityFilter) ||

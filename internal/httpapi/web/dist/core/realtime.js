@@ -13,6 +13,8 @@ import { scheduleResumeResync } from './foreground-resume.js';
 import { t } from '../i18n/index.js';
 const MAX_SEEN_IDS = 500;
 const seenEventIds = new Set();
+export const NATIVE_FOREGROUND_EVENT = 'scrumboy:native-foreground';
+export const NATIVE_BACKGROUND_EVENT = 'scrumboy:native-background';
 let globalManager = null;
 let anonymousSseRestart = null;
 let foregroundLifecycleInited = false;
@@ -60,7 +62,8 @@ export function registerAnonymousSseRestart(fn) {
     anonymousSseRestart = fn;
 }
 /**
- * One-time: visibility / bfcache pageshow / online → debounced global + anonymous SSE restart + resume resync.
+ * One-time: native active / visibility / bfcache pageshow / online →
+ * debounced global + anonymous SSE restart + resume resync.
  * Idempotent and safe to call from router on load; listeners attach at most once.
  */
 export function initForegroundLifecycle() {
@@ -96,9 +99,13 @@ export function initForegroundLifecycle() {
     const onOnline = () => {
         onForeground('online');
     };
+    const onNativeForeground = () => {
+        onForeground('native-foreground');
+    };
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('pageshow', onPageShow);
     window.addEventListener('online', onOnline);
+    window.addEventListener(NATIVE_FOREGROUND_EVENT, onNativeForeground);
 }
 /** For tests / diagnostics: true after initForegroundLifecycle attached listeners. */
 export function isForegroundLifecycleInitialized() {
@@ -116,8 +123,7 @@ export function startGlobalRealtime() {
         return;
     }
     if (!globalManager) {
-        const url = new URL('/api/me/realtime', window.location.origin).toString();
-        globalManager = new SseConnectionManager(url, {
+        globalManager = new SseConnectionManager('/api/me/realtime', {
             label: 'me/realtime',
             onMessage: handleIncomingMessage,
         });

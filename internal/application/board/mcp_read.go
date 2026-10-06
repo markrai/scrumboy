@@ -54,7 +54,7 @@ type MCPBoardReadTarget struct {
 // MCPBoardReadQuery contains input already normalized by the MCP adapter plus
 // the later, access-dependent sprint and cursor inputs.
 type MCPBoardReadQuery struct {
-	TagFilter      string
+	TagFilters     []string
 	SearchFilter   string
 	AssigneeFilter store.AssigneeFilter
 	PriorityFilter store.PriorityFilter
@@ -105,7 +105,7 @@ type MCPBoardReadLaneStore interface {
 		limit int,
 		afterA int64,
 		afterB int64,
-		tagFilter string,
+		tagFilters []string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
 		priorityFilter store.PriorityFilter,
@@ -116,7 +116,7 @@ type MCPBoardReadLaneStore interface {
 		ctx context.Context,
 		projectID int64,
 		columnKey string,
-		tagFilter string,
+		tagFilters []string,
 		searchFilter string,
 		assigneeFilter store.AssigneeFilter,
 		priorityFilter store.PriorityFilter,
@@ -258,7 +258,7 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 			query.Limit,
 			afterA,
 			afterB,
-			query.TagFilter,
+			query.TagFilters,
 			query.SearchFilter,
 			query.AssigneeFilter,
 			query.PriorityFilter,
@@ -274,7 +274,7 @@ func (r *PreparedMCPBoardRead) Read(query MCPBoardReadQuery) (MCPBoardReadResult
 			r.ctx,
 			projectID,
 			column.Key,
-			query.TagFilter,
+			query.TagFilters,
 			query.SearchFilter,
 			query.AssigneeFilter,
 			query.PriorityFilter,

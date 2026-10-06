@@ -161,7 +161,7 @@ func assertTodoLinkMCPItems(t *testing.T, data map[string]any, outbound, inbound
 			if !ok {
 				t.Fatalf("%s[%d] type=%T", name, i, items[i])
 			}
-			if got, wantKeys := sortedMapKeys(item), []string{"linkType", "localId", "title"}; !reflect.DeepEqual(got, wantKeys) {
+			if got, wantKeys := sortedMapKeys(item), []string{"archivedAt", "linkType", "localId", "title"}; !reflect.DeepEqual(got, wantKeys) {
 				t.Fatalf("%s[%d] keys=%v want=%v item=%+v", name, i, got, wantKeys, item)
 			}
 			if item["localId"] != float64(expected.localID) || item["title"] != expected.title || item["linkType"] != expected.linkType {

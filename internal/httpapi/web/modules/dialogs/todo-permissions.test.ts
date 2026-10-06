@@ -65,6 +65,8 @@ describe('todo-permissions', () => {
       canEditStatus: true,
       canSubmitTodo: true,
       canEditLinks: true,
+      canArchiveTodo: true,
+      canRestoreTodo: false,
     });
   });
 
@@ -90,6 +92,8 @@ describe('todo-permissions', () => {
       canEditStatus: false,
       canSubmitTodo: true,
       canEditLinks: true,
+      canArchiveTodo: false,
+      canRestoreTodo: false,
     });
   });
 
@@ -115,6 +119,8 @@ describe('todo-permissions', () => {
       canEditStatus: false,
       canSubmitTodo: false,
       canEditLinks: true,
+      canArchiveTodo: false,
+      canRestoreTodo: false,
     });
   });
 
@@ -140,6 +146,8 @@ describe('todo-permissions', () => {
       canEditStatus: false,
       canSubmitTodo: false,
       canEditLinks: false,
+      canArchiveTodo: false,
+      canRestoreTodo: false,
     });
   });
 
@@ -166,6 +174,8 @@ describe('todo-permissions', () => {
       canEditStatus: true,
       canSubmitTodo: true,
       canEditLinks: true,
+      canArchiveTodo: true,
+      canRestoreTodo: false,
     });
   });
 
@@ -190,7 +200,51 @@ describe('todo-permissions', () => {
       canEditStatus: true,
       canSubmitTodo: true,
       canEditLinks: false,
+      canArchiveTodo: false,
+      canRestoreTodo: false,
     });
+  });
+
+  it('makes archived stories read-only while preserving maintainer lifecycle actions', async () => {
+    selectorState.user = { id: 42 };
+    const mod = await loadPermissionsModule();
+
+    const permissions = mod.computeTodoDialogPermissions({
+      board: { project: { creatorUserId: 1 } },
+      mode: 'edit',
+      todo: { assigneeUserId: 42, archivedAt: '2026-09-15T12:00:00Z' },
+      role: 'maintainer',
+    });
+
+    expect(permissions).toEqual({
+      canChangeSprint: false,
+      canChangeEstimation: false,
+      canEditTags: false,
+      canEditNotes: false,
+      canEditAssignment: false,
+      canDeleteTodo: true,
+      canEditTitle: false,
+      canEditStatus: false,
+      canSubmitTodo: false,
+      canEditLinks: false,
+      canArchiveTodo: false,
+      canRestoreTodo: true,
+    });
+  });
+
+  it('lets viewers inspect archived stories without lifecycle controls', async () => {
+    const mod = await loadPermissionsModule();
+    const permissions = mod.computeTodoDialogPermissions({
+      board: { project: { creatorUserId: 1 } },
+      mode: 'edit',
+      todo: { archivedAt: '2026-09-15T12:00:00Z' },
+      role: 'viewer',
+    });
+
+    expect(permissions.canSubmitTodo).toBe(false);
+    expect(permissions.canArchiveTodo).toBe(false);
+    expect(permissions.canRestoreTodo).toBe(false);
+    expect(permissions.canDeleteTodo).toBe(false);
   });
 
   it('exposes the mutable permission snapshot through set/get without leaking caller mutations back in', async () => {

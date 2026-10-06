@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgendaEvent, Board } from '../types.js';
 import {
@@ -88,7 +91,7 @@ describe('agenda virtual lane', () => {
     const timeOpts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' };
     const start = new Date('2026-08-17T20:00:00Z').toLocaleTimeString(undefined, timeOpts);
     const end = new Date('2026-08-17T20:30:00Z').toLocaleTimeString(undefined, timeOpts);
-    expect(html).toContain(`${start} - ${end}`);
+    expect(html).toContain(`${start} - ${end} (30m)`);
     expect(html).not.toContain('>Family<');
     expect(html).not.toContain('data-todo-id');
     expect(html).not.toContain('data-todo-local-id');
@@ -234,6 +237,42 @@ describe('agenda virtual lane', () => {
     expect(html).not.toContain('card--selected');
     expect(html).not.toContain('checkbox');
     expect(AGENDA_COLUMN_KEY).toBe('agenda');
+  });
+
+  it('renders a same-clock event with the start time only', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const html = renderAgendaEventCard(
+      timedEvent('point', '2026-08-17T15:00:00Z', '2026-08-17T15:00:00Z', { title: 'Point' }),
+      'UTC',
+    );
+    expect(html).toContain('Point');
+    expect(html).toContain('card__agenda-meta');
+    expect(html).not.toContain(' - ');
+    expect(html).not.toContain('(');
+  });
+
+  it('renders a ranged timed event with a start–end time and hour duration', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const html = renderAgendaEventCard(
+      timedEvent('hour', '2026-08-17T15:00:00Z', '2026-08-17T16:00:00Z', { title: 'Hour' }),
+      'UTC',
+    );
+    expect(html).toContain('Hour');
+    expect(html).toContain(' - ');
+    expect(html).toContain('(1h)');
+  });
+
+  it('renders a mixed-duration event as hours and leftover minutes', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const html = renderAgendaEventCard(
+      timedEvent('mixed', '2026-08-17T15:00:00Z', '2026-08-17T16:15:00Z', { title: 'Mixed' }),
+      'UTC',
+    );
+    expect(html).toContain('Mixed');
+    expect(html).toContain('(1h 15m)');
   });
 
   it('omits empty copy when first fetch failed with no events', async () => {
@@ -568,6 +607,46 @@ describe('agenda day window, focus, and timed layout', () => {
     expect(layout.every((item) => item.columnCount === 1 && item.column === 0)).toBe(true);
   });
 
+  it('pads a zero-duration event to a 15-minute layout span', () => {
+    const events = [timedEvent('point', '2026-08-17T15:00:00Z', '2026-08-17T15:00:00Z')];
+    const layout = layoutAgendaTimedEvents(events, 'UTC', agendaDayWindow(), utcNoon);
+    expect(layout).toHaveLength(1);
+    expect(layout[0].startMinute).toBe(900);
+    expect(layout[0].endMinute - layout[0].startMinute).toBe(15);
+  });
+
+  it('pads a 5-minute event to a 15-minute layout span', () => {
+    const events = [timedEvent('short', '2026-08-17T15:00:00Z', '2026-08-17T15:05:00Z')];
+    const layout = layoutAgendaTimedEvents(events, 'UTC', agendaDayWindow(), utcNoon);
+    expect(layout).toHaveLength(1);
+    expect(layout[0].startMinute).toBe(900);
+    expect(layout[0].endMinute - layout[0].startMinute).toBe(15);
+  });
+
+  it('keeps a 60-minute event as its actual layout span', () => {
+    const events = [timedEvent('hour', '2026-08-17T15:00:00Z', '2026-08-17T16:00:00Z')];
+    const layout = layoutAgendaTimedEvents(events, 'UTC', agendaDayWindow(), utcNoon);
+    expect(layout).toHaveLength(1);
+    expect(layout[0].startMinute).toBe(900);
+    expect(layout[0].endMinute - layout[0].startMinute).toBe(60);
+  });
+
+  it('packs short events 20 minutes apart at full width using layout spans', () => {
+    const events = [
+      timedEvent('first', '2026-08-17T15:00:00Z', '2026-08-17T15:00:00Z'),
+      timedEvent('second', '2026-08-17T15:20:00Z', '2026-08-17T15:20:00Z'),
+    ];
+    const layout = layoutAgendaTimedEvents(events, 'UTC', agendaDayWindow(), utcNoon);
+    const byId = Object.fromEntries(layout.map((item) => [item.event.id, item]));
+    expect(byId.first.endMinute - byId.first.startMinute).toBe(15);
+    expect(byId.second.endMinute - byId.second.startMinute).toBe(15);
+    expect(byId.first.endMinute).toBeLessThanOrEqual(byId.second.startMinute);
+    expect(byId.first.column).toBe(0);
+    expect(byId.second.column).toBe(0);
+    expect(byId.first.columnCount).toBe(1);
+    expect(byId.second.columnCount).toBe(1);
+  });
+
   it('keeps all-day events out of timed packing', () => {
     const events = [
       {
@@ -797,8 +876,63 @@ describe('agenda day grid HTML', () => {
     const html = buildAgendaColumnHtml(board, null, now);
     expect(html).toContain('--agenda-start-min:360');
     expect(html).toContain('--agenda-span-min:60');
+    expect(html).toMatch(/card__agenda-meta">[^<]* - /);
+    expect(html).toMatch(/card__agenda-meta">[^<]*\(1h\)/);
     expect(html).not.toContain(`height:${AGENDA_HOUR_HEIGHT_PX}px`);
     expect(html).not.toMatch(/style="[^"]*top:\d/);
+  });
+
+  it('paints a zero-duration event as a 60-minute CSS span without baking pixel height', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('point', '2026-08-17T15:00:00Z', '2026-08-17T15:00:00Z', { title: 'Point' })],
+    };
+    const html = buildAgendaColumnHtml(board, null, now);
+    expect(html).toContain('--agenda-start-min:900');
+    expect(html).toContain('--agenda-span-min:60');
+    expect(html).not.toMatch(/style="[^"]*height:/);
+    expect(html).not.toMatch(/card__agenda-meta">[^<]* - /);
+    expect(html).not.toMatch(/card__agenda-meta">[^<]*\(/);
+  });
+
+  it('paints a 15-minute event as a 60-minute CSS span and keeps the range label', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('short', '2026-08-17T15:00:00Z', '2026-08-17T15:15:00Z', { title: 'Short' })],
+    };
+    const html = buildAgendaColumnHtml(board, null, now);
+    expect(html).toContain('--agenda-start-min:900');
+    expect(html).toContain('--agenda-span-min:60');
+    expect(html).toMatch(/card__agenda-meta">[^<]* - /);
+    expect(html).toMatch(/card__agenda-meta">[^<]*\(15m\)/);
+    expect(html).not.toMatch(/style="[^"]*height:/);
+  });
+
+  it('keeps a 2-hour timed card as a 120-minute CSS span', async () => {
+    const i18n = await import('../i18n/index.js');
+    await i18n.initI18n({ locale: 'en', loadLocale: vi.fn(async () => enCatalog) });
+    const board = agendaBoard();
+    board.agenda = {
+      ...board.agenda!,
+      stale: false,
+      error: null,
+      events: [timedEvent('long', '2026-08-17T15:00:00Z', '2026-08-17T17:00:00Z', { title: 'Long' })],
+    };
+    const html = buildAgendaColumnHtml(board, null, now);
+    expect(html).toContain('--agenda-start-min:900');
+    expect(html).toContain('--agenda-span-min:120');
+    expect(html).not.toContain('--agenda-span-min:60');
+    expect(html).not.toMatch(/style="[^"]*height:/);
   });
 
   it('does not bake 96px slot pixels; mobile hour height stays a CSS variable', async () => {
@@ -1316,5 +1450,46 @@ describe('agenda day grid HTML', () => {
     document.body.innerHTML = buildAgendaColumnHtml(board, null, now);
     applyAgendaScrollAfterRender({ restoreScrollTop: 0, board, now });
     expect(document.querySelector('.agenda-now-line')?.classList.contains('agenda-now-line--prominent')).toBe(true);
+  });
+});
+
+describe('agenda timed-card CSS height floor', () => {
+  const stylesSource = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles.css'),
+    'utf8',
+  );
+
+  function mediaBlockContaining(css: string, query: string, needle: string): string | null {
+    const re = new RegExp(`@media\\s*\\(\\s*${query}\\s*\\)\\s*\\{`, 'g');
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(css)) !== null) {
+      const open = css.indexOf('{', match.index);
+      let depth = 0;
+      for (let i = open; i < css.length; i++) {
+        if (css[i] === '{') depth++;
+        else if (css[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            const body = css.slice(open + 1, i);
+            if (body.includes(needle)) return body;
+            break;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  it('uses a 2.75rem readability floor without baking pixel slot height', () => {
+    expect(stylesSource).toMatch(
+      /\.card--agenda-timed\s*\{[^}]*height:\s*max\(\s*2\.75rem\s*,\s*calc\(\s*var\(--agenda-span-min\)\s*\/\s*60\s*\*\s*var\(--agenda-hour-height\)\s*\)\s*\)/,
+    );
+  });
+
+  it('does not let the mobile card rule replace the explicit height: max(...)', () => {
+    const mobile = mediaBlockContaining(stylesSource, 'max-width:\\s*767px', '.card.card--agenda-timed');
+    expect(mobile).not.toBeNull();
+    expect(mobile!).toMatch(/\.card\.card--agenda-timed\s*\{[^}]*min-height:\s*0/);
+    expect(mobile!).not.toMatch(/\.card\.card--agenda-timed\s*\{[^}]*[^-]height\s*:/);
   });
 });

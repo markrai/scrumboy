@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Whole-screen cold-start splash only. Matches PWA background_color / app theme-color (#000000). -->
+    <color name="splash_screen_background">#000000</color>
+</resources>

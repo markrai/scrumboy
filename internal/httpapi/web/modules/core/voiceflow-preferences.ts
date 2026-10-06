@@ -15,6 +15,8 @@ export const VOICE_FLOW_MODE_STORAGE_KEY = "scrumboy.voiceFlowMode";
 export const VOICE_FLOW_MODE_PREFERENCE_KEY = "voiceFlowMode";
 export const VOICE_FLOW_HANDS_FREE_CONFIRMATION_STORAGE_KEY = "scrumboy.voiceFlowHandsFreeConfirmation";
 export const VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY = "voiceFlowHandsFreeConfirmation";
+export const VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY = "scrumboy.voiceFlowContinueConversation";
+export const VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY = "voiceFlowContinueConversation";
 
 export function normalizeVoiceFlowEnabled(value: unknown): boolean {
   return value === false || value === "false" || value === "0" || value === "off"
@@ -28,6 +30,10 @@ export function normalizeVoiceFlowMode(value: unknown): VoiceFlowMode {
 
 export function normalizeVoiceFlowHandsFreeConfirmation(value: unknown): VoiceFlowHandsFreeConfirmation {
   return value === VOICE_FLOW_CONFIRM_MUTATIONS ? VOICE_FLOW_CONFIRM_MUTATIONS : VOICE_FLOW_CONFIRM_DELETES;
+}
+
+export function normalizeVoiceFlowContinueConversation(value: unknown): boolean {
+  return value === true || value === "true" || value === "1" || value === "on";
 }
 
 export function getVoiceFlowModePreference(): VoiceFlowMode {
@@ -51,6 +57,14 @@ export function getVoiceFlowHandsFreeConfirmationPreference(): VoiceFlowHandsFre
     return normalizeVoiceFlowHandsFreeConfirmation(localStorage.getItem(VOICE_FLOW_HANDS_FREE_CONFIRMATION_STORAGE_KEY));
   } catch {
     return VOICE_FLOW_CONFIRM_DELETES;
+  }
+}
+
+export function getVoiceFlowContinueConversationPreference(): boolean {
+  try {
+    return normalizeVoiceFlowContinueConversation(localStorage.getItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY));
+  } catch {
+    return false;
   }
 }
 
@@ -97,6 +111,23 @@ export function setVoiceFlowHandsFreeConfirmationPreference(
   }).catch(() => {});
 }
 
+export function setVoiceFlowContinueConversationPreference(
+  enabled: boolean,
+  opts?: { skipRemote?: boolean },
+): void {
+  const next = normalizeVoiceFlowContinueConversation(enabled);
+  const serialized = String(next);
+  try {
+    localStorage.setItem(VOICE_FLOW_CONTINUE_CONVERSATION_STORAGE_KEY, serialized);
+  } catch {
+  }
+  if (opts?.skipRemote || !getUser()) return;
+  void apiFetch('/api/user/preferences', {
+    method: 'PUT',
+    body: JSON.stringify({ key: VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY, value: serialized }),
+  }).catch(() => {});
+}
+
 export function hydrateVoiceFlowModeFromServer(value: unknown): void {
   setVoiceFlowModePreference(normalizeVoiceFlowMode(value), { skipRemote: true });
 }
@@ -107,4 +138,8 @@ export function hydrateVoiceFlowEnabledFromServer(value: unknown): void {
 
 export function hydrateVoiceFlowHandsFreeConfirmationFromServer(value: unknown): void {
   setVoiceFlowHandsFreeConfirmationPreference(normalizeVoiceFlowHandsFreeConfirmation(value), { skipRemote: true });
+}
+
+export function hydrateVoiceFlowContinueConversationFromServer(value: unknown): void {
+  setVoiceFlowContinueConversationPreference(normalizeVoiceFlowContinueConversation(value), { skipRemote: true });
 }

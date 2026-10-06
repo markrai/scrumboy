@@ -61,7 +61,7 @@ vi.mock('../state/selectors.js', () => ({
   getSettingsActiveTab: () => selectorState.activeTab,
   getSlug: () => selectorState.slug,
   getSprintIdFromUrl: () => new URL(window.location.href).searchParams.get('sprintId'),
-  getTag: () => selectorState.tag,
+  getTagsFromUrl: () => selectorState.tag ? [selectorState.tag] : [],
 }));
 
 vi.mock('../utils.js', () => ({
@@ -280,7 +280,7 @@ describe('settings-workflow', () => {
       method: 'POST',
       body: JSON.stringify({ name: 'Review' }),
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['bug'], 'query', '42', null, null, null);
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 
@@ -356,7 +356,7 @@ describe('settings-workflow', () => {
       method: 'PATCH',
       body: JSON.stringify({ name: 'Working', color: '#222222' }),
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['bug'], 'query', '42', null, null, null);
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 
@@ -384,7 +384,7 @@ describe('settings-workflow', () => {
     expect(apiFetchMock).toHaveBeenCalledWith('/api/board/alpha/workflow/backlog', {
       method: 'DELETE',
     });
-    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', 'bug', 'query', '42', null, null, null);
+    expect(invalidateBoardMock).toHaveBeenCalledWith('alpha', ['bug'], 'query', '42', null, null, null);
     expect(rerender).toHaveBeenCalledTimes(1);
   });
 

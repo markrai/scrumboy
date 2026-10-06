@@ -128,7 +128,7 @@ function cookieValue(name: string): string | null {
 }
 
 function clearLocaleCookieForTests(): void {
-  document.cookie = "scrumboy.locale=; Path=/; Max-Age=0";
+  document.cookie = "scrumboy.locale=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
 }
 
 describe("i18n locale detection", () => {

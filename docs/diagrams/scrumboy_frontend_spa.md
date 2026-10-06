@@ -80,6 +80,8 @@ See also [`docs/i18n.md`](../i18n.md) (catalogs, landings, change gates) and [`A
 | `/{slug}/t/{id}` | board with todo open |
 | `/auth/reset-password` | password reset form |
 
+Unmatched client paths, and board/archive destinations that return API 404, are rewritten to `/` (full mode: SPA `replaceState`; anonymous mode: full navigation so the server can serve the marketing landing). Signed-out full mode preserves the original same-origin path as auth `next` so a private-board deep link can open after login without changing existence-hiding 404s.
+
 Login, bootstrap, and 2FA render as **auth overlays** when unauthenticated (not separate URL routes). Anonymous-mode server routes `/{locale}/` marketing landings in `spa.go` (see `scrumboy_http_routing.md`).
 
 Theme preference defaults to `system` (`theme.ts` / `THEME_SYSTEM`), resolving via `prefers-color-scheme`. Effective dark leaves `data-theme` unset (CSS `:root` dark tokens); light sets `[data-theme="light"]`. Pre-hydration CSS may still look dark. Density via `--ui-scale`. PWA: `sw.js` with version injected at server startup, `manifest.json`.

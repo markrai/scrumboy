@@ -196,6 +196,7 @@ type apiTokenListItemJSON struct {
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 	RevokedAt  *time.Time `json:"revokedAt,omitempty"`
+	IsService  bool       `json:"isService"`
 }
 
 type apiTokenCreateJSON struct {
@@ -203,6 +204,52 @@ type apiTokenCreateJSON struct {
 	Name      *string   `json:"name,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	Token     string    `json:"token"`
+	IsService bool      `json:"isService"`
+}
+
+type archivedServiceAPITokenUserJSON struct {
+	ID    int64  `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name,omitempty"`
+}
+
+type archivedServiceAPITokenJSON struct {
+	ID               int64                           `json:"id"`
+	TokenID          int64                           `json:"tokenId"`
+	Name             *string                         `json:"name,omitempty"`
+	CreatedAt        time.Time                       `json:"createdAt"`
+	LastUsedAt       *time.Time                      `json:"lastUsedAt,omitempty"`
+	RevokedAt        time.Time                       `json:"revokedAt"`
+	RevokedOnArchive bool                            `json:"revokedOnArchive"`
+	OriginUser       archivedServiceAPITokenUserJSON `json:"originUser"`
+	ArchivedAt       time.Time                       `json:"archivedAt"`
+	ArchivedBy       archivedServiceAPITokenUserJSON `json:"archivedBy"`
+}
+
+func archivedServiceAPITokensToJSON(items []store.ArchivedServiceAPIToken) []archivedServiceAPITokenJSON {
+	out := make([]archivedServiceAPITokenJSON, 0, len(items))
+	for _, item := range items {
+		out = append(out, archivedServiceAPITokenJSON{
+			ID:               item.ID,
+			TokenID:          item.TokenID,
+			Name:             item.Name,
+			CreatedAt:        item.CreatedAt,
+			LastUsedAt:       item.LastUsedAt,
+			RevokedAt:        item.RevokedAt,
+			RevokedOnArchive: item.RevokedOnArchive,
+			OriginUser: archivedServiceAPITokenUserJSON{
+				ID:    item.OriginUserID,
+				Email: item.OriginUserEmail,
+				Name:  item.OriginUserName,
+			},
+			ArchivedAt: item.ArchivedAt,
+			ArchivedBy: archivedServiceAPITokenUserJSON{
+				ID:    item.ArchivedByUserID,
+				Email: item.ArchivedByUserEmail,
+			},
+		})
+	}
+	return out
 }
 
 func apiTokensToJSON(tokens []store.APITokenMeta) []apiTokenListItemJSON {
@@ -214,6 +261,7 @@ func apiTokensToJSON(tokens []store.APITokenMeta) []apiTokenListItemJSON {
 			CreatedAt:  t.CreatedAt,
 			LastUsedAt: t.LastUsedAt,
 			RevokedAt:  t.RevokedAt,
+			IsService:  t.IsService,
 		})
 	}
 	return out
@@ -293,6 +341,7 @@ type todoJSON struct {
 	CreatedAt        time.Time  `json:"createdAt"`
 	UpdatedAt        time.Time  `json:"updatedAt"`
 	DoneAt           *time.Time `json:"doneAt,omitempty"`
+	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
 }
 
 func todoToJSON(t store.Todo) todoJSON {
@@ -314,6 +363,7 @@ func todoToJSON(t store.Todo) todoJSON {
 		CreatedAt:        t.CreatedAt,
 		UpdatedAt:        t.UpdatedAt,
 		DoneAt:           t.DoneAt,
+		ArchivedAt:       t.ArchivedAt,
 	}
 }
 
@@ -538,6 +588,8 @@ type tagCountJSON struct {
 	Name  string  `json:"name"`
 	Count int     `json:"count"`
 	Color *string `json:"color,omitempty"`
+	// LastActiveAt is recent board activity, not tag-association history.
+	LastActiveAt *time.Time `json:"lastActiveAt,omitempty"`
 	// DeleteScope is one of "mine", "project", "none". canDelete is a
 	// compatibility alias equal to deleteScope != "none".
 	DeleteScope string `json:"deleteScope"`
@@ -677,6 +729,7 @@ func boardToJSONWithMeta(p store.Project, workflow []store.WorkflowColumn, prior
 			Name:           tc.Name,
 			Count:          tc.Count,
 			Color:          tc.Color,
+			LastActiveAt:   tc.LastActiveAt,
 			DeleteScope:    scope,
 			CanDelete:      scope != "none",
 			CanUpdateColor: tc.CanUpdateColor,
@@ -798,6 +851,7 @@ type todoExportJSON struct {
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 	DoneAt           *int64    `json:"doneAt,omitempty"`
+	ArchivedAt       *int64    `json:"archivedAt"`
 }
 
 type tagExportJSON struct {
@@ -830,6 +884,7 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 				CreatedAt:        t.CreatedAt,
 				UpdatedAt:        t.UpdatedAt,
 				DoneAt:           t.DoneAt,
+				ArchivedAt:       t.ArchivedAt,
 			})
 		}
 
