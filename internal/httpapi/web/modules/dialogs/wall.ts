@@ -965,7 +965,7 @@ function bindSurfaceHandlers(state: Mounted): void {
       // ordinary story open/drag interaction below.
       if (ev.shiftKey && ev.button === 0) {
         ev.preventDefault();
-        beginEdgeDrag(state, ev, storyEl, formatWallStoryEndpoint(localId));
+        beginEdgeDrag(state, ev, formatWallStoryEndpoint(localId));
         return;
       }
       armStoryInteraction(state, ev, storyEl, localId);
@@ -1008,7 +1008,7 @@ function bindSurfaceHandlers(state: Mounted): void {
       // an edge drag from button !== 0.
       if (ev.shiftKey && ev.button === 0) {
         ev.preventDefault();
-        beginEdgeDrag(state, ev, noteEl, noteId);
+        beginEdgeDrag(state, ev, noteId);
         return;
       }
       // Ctrl/Meta+click: toggle this note in the selection and do not arm
@@ -1223,7 +1223,7 @@ function beginMarquee(state: Mounted, ev: PointerEvent): void {
 
 // ---- Shift+drag edge creation -------------------------------------------
 
-function beginEdgeDrag(state: Mounted, ev: PointerEvent, sourceEl: HTMLElement, sourceEndpoint: string): void {
+function beginEdgeDrag(state: Mounted, ev: PointerEvent, sourceEndpoint: string): void {
   const content = wallContentLayer();
   if (!content) return;
   const parsed = parseWallEdgeEndpoint(sourceEndpoint);
@@ -1241,18 +1241,25 @@ function beginEdgeDrag(state: Mounted, ev: PointerEvent, sourceEl: HTMLElement, 
   const onUp = (up: PointerEvent) => {
     document.removeEventListener("pointermove", onMove);
     document.removeEventListener("pointerup", onUp);
-    document.removeEventListener("pointercancel", onUp);
+    document.removeEventListener("pointercancel", onCancel);
     preview.end();
 
     // Screen-space OK: elementFromPoint is a screen-based hit test API.
+    // Only pointerup may resolve a drop and create an edge.
     const dropTarget = document.elementFromPoint(up.clientX, up.clientY) as HTMLElement | null;
     const targetEndpoint = canonicalEndpointForElement(dropTarget);
     if (!targetEndpoint || targetEndpoint === sourceEndpoint) return;
     void createEdge(sourceEndpoint, targetEndpoint);
   };
+  const onCancel = () => {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onCancel);
+    preview.end();
+  };
   document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
   document.addEventListener("pointerup", onUp, { signal: state.abort.signal });
-  document.addEventListener("pointercancel", onUp, { signal: state.abort.signal });
+  document.addEventListener("pointercancel", onCancel, { signal: state.abort.signal });
 }
 
 function cancelColorTimer(state: Mounted, noteId: string): void {

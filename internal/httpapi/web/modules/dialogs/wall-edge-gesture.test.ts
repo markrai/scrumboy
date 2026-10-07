@@ -262,6 +262,24 @@ describe("wall edge gesture across endpoint types", () => {
     expect(edgePosts()).toEqual([]);
   });
 
+  it("pointercancel removes the preview without posting or moving state", async () => {
+    await openWall();
+    // A valid different endpoint sits under the cursor, but cancellation
+    // must never hit-test or create an edge.
+    setDropTarget(getNoteEl("n2"));
+    const story = getStoryEl(7);
+    dispatchPointer(story, "pointerdown", { button: 0, pointerId: 1, pointerType: "mouse", shiftKey: true, clientX: 90, clientY: 310 });
+    dispatchPointer(document, "pointermove", { button: 0, pointerId: 1, pointerType: "mouse", shiftKey: true, clientX: 300, clientY: 300 });
+    expect(previewLine()).not.toBeNull();
+    dispatchPointer(document, "pointercancel", { button: 0, pointerId: 1, pointerType: "mouse", shiftKey: true, clientX: 300, clientY: 300 });
+    await flushPromises();
+
+    expect(previewLine()).toBeNull();
+    expect(edgePosts()).toEqual([]);
+    expect(storyPatchPosts(7)).toBe(0);
+    expect(openTodoDialogMock).not.toHaveBeenCalled();
+  });
+
   it("removes the preview line after successful and cancelled drops", async () => {
     await openWall();
     const n1 = getNoteEl("n1");
