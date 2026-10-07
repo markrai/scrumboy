@@ -804,9 +804,14 @@ ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.
 		return fmt.Errorf("upsert wall for import: %w", err)
 	}
 
-	// A present Wall payload replaces its story placements just like notes and
-	// edges. Legacy Wall payloads omit stories and therefore import as an empty
-	// placement set without failing.
+	// Current-format Wall payloads replace placements, including an explicit
+	// empty array. Legacy payloads omitted stories entirely; preserving the
+	// target placements matters for merge, while replace/copy targets are new
+	// projects and therefore already have an empty placement set.
+	storiesPresent := payload.StoriesPresent || payload.Stories != nil
+	if !storiesPresent {
+		return nil
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM wall_story_placements WHERE project_id = ?`, projectID); err != nil {
 		return fmt.Errorf("clear wall story placements for import: %w", err)
 	}

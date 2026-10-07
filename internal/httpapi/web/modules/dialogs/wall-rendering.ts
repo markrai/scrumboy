@@ -21,6 +21,7 @@ import { screenToCanvas } from "./wall-viewport.js";
 import type { Todo } from "../types.js";
 import type { BoardMember } from "../state/state.js";
 import { renderStoryCardContent, type RenderTodoCardOpts } from "../views/board-rendering.js";
+import { WALL_STORY_WIDTH } from "./wall-story-geometry.js";
 
 export interface WallNote {
   id: string;
@@ -57,9 +58,6 @@ export interface WallDocument {
   version: number;
   updatedAt?: number;
 }
-
-export const WALL_STORY_WIDTH = 280;
-export const WALL_STORY_HEIGHT = 148;
 
 export function buildStoryElement(
   story: WallStory,

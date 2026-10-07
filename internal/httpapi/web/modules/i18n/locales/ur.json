@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "ٹیگ لکھیں اور Enter دبائیں",
   "shell.contextMenu.newTodo": "نیا Todo",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "وال پر بھیجیں",
   "settings.language.description": "اس براؤزر پر Scrumboy کے لیے زبان منتخب کریں۔",
   "settings.language.selectLabel": "زبان",
   "settings.language.title": "زبان",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "نوٹ بنائیں:",
   "wall.shortcuts.createNote.hint": "کینوس پر دائیں کلک",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "Todo بنائیں:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + کینوس پر دایاں کلک",
   "wall.shortcuts.changeColor.label": "رنگ بدلیں:",
   "wall.shortcuts.changeColor.hint": "نوٹ پر سنگل کلک",
   "wall.shortcuts.editNote.label": "نوٹ ترمیم:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "نوٹ متن ترمیم",
   "wall.menu.createTodoFromNote": "نوٹ سے Todo بنائیں",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Todo کھولیں",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "وال سے ہٹائیں",
   "wall.menu.deleteCount": "{count} نوٹس حذف",
   "wall.confirm.deleteNote": "یہ نوٹ حذف؟",
   "wall.confirm.deleteNotesCount": "{count} نوٹس حذف؟",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "نوٹ وال یہاں دستیاب نہیں۔",
   "wall.toast.addNoteFailed": "نوٹ شامل نہیں ہو سکا",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Todo کو وال میں شامل نہیں کیا جا سکا",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Todo کو منتقل نہیں کیا جا سکا",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Todo کو وال سے نہیں ہٹایا جا سکا",
   "wall.toast.staleReload": "دوسرے ایڈیٹر نے نوٹ بدلا — نوٹ وال دوبارہ لوڈ۔",
   "wall.toast.updateNoteFailed": "نوٹ اپ ڈیٹ نہیں ہو سکا",
   "wall.toast.deleteNoteFailed": "نوٹ حذف نہیں ہو سکا",

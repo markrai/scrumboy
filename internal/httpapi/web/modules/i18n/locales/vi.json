@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "Nhập thẻ và nhấn Enter",
   "shell.contextMenu.newTodo": "Todo mới",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "Gửi lên bảng ghi chú",
   "settings.language.description": "Chọn ngôn ngữ dùng cho Scrumboy trên trình duyệt này.",
   "settings.language.selectLabel": "Ngôn ngữ",
   "settings.language.title": "Ngôn ngữ",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "tạo ghi chú:",
   "wall.shortcuts.createNote.hint": "nhấp phải trên canvas",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "tạo Todo:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + nhấp phải trên canvas",
   "wall.shortcuts.changeColor.label": "đổi màu:",
   "wall.shortcuts.changeColor.hint": "nhấp một lần vào ghi chú",
   "wall.shortcuts.editNote.label": "sửa ghi chú:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "Sửa văn bản ghi chú",
   "wall.menu.createTodoFromNote": "Tạo Todo từ ghi chú",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Mở Todo",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "Gỡ khỏi bảng ghi chú",
   "wall.menu.deleteCount": "Xóa {count} ghi chú",
   "wall.confirm.deleteNote": "Xóa ghi chú này?",
   "wall.confirm.deleteNotesCount": "Xóa {count} ghi chú?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "Bảng ghi chú không khả dụng ở đây.",
   "wall.toast.addNoteFailed": "Không thêm được ghi chú",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Không thể thêm Todo vào bảng ghi chú",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Không thể di chuyển Todo",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Không thể gỡ Todo khỏi bảng ghi chú",
   "wall.toast.staleReload": "Người khác đã sửa ghi chú này — đang tải lại bảng ghi chú.",
   "wall.toast.updateNoteFailed": "Không cập nhật được ghi chú",
   "wall.toast.deleteNoteFailed": "Không xóa được ghi chú",

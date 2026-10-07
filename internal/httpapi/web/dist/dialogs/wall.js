@@ -28,7 +28,7 @@ import { confirmDelete, showToast } from "../utils.js";
 import { hydrateI18n, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
 import { getBoard, getBoardMembers, getTagColors, getUser } from "../state/selectors.js";
 import { canEditWall } from "./wall-permissions.js";
-import { buildNoteElement, buildStoryElement, renderEmptyWallHtml, isEditing, ensureEdgeOverlay, renderEdges, updateEdgesForNote, beginEdgePreview, getNoteCenterFromElement, WALL_STORY_HEIGHT, WALL_STORY_WIDTH, } from "./wall-rendering.js";
+import { buildNoteElement, buildStoryElement, renderEmptyWallHtml, isEditing, ensureEdgeOverlay, renderEdges, updateEdgesForNote, beginEdgePreview, getNoteCenterFromElement, } from "./wall-rendering.js";
 import { DOUBLE_TAP_MS, DRAG_THRESHOLD_PX, DEFAULT_NOTE_WIDTH, DEFAULT_NOTE_HEIGHT, RAINBOW_COLORS, nextColor, } from "./wall-postbaby-constants.js";
 import { getMounted, setMounted, resetEditGuards, setDragActive, } from "./wall-state.js";
 import { clearSelection, pruneSelection, setSelection, syncSelectionDom, toggleSelection, } from "./wall-selection.js";
@@ -38,6 +38,7 @@ import { beginEdit as beginEditController } from "./wall-edit-controller.js";
 import { openWallNoteContextMenu } from "./wall-note-context-menu.js";
 import { openWallStoryContextMenu } from "./wall-story-context-menu.js";
 import { chooseWallStoryPosition } from "./wall-story-placement.js";
+import { measureStoryCanvasRect, WALL_STORY_ESTIMATED_HEIGHT, WALL_STORY_WIDTH, } from "./wall-story-geometry.js";
 import { clampCanvasCoord, ensureWallContent, fitToNotes, getWallContent, getViewportState, initWallViewport, screenToCanvas, setViewportState, teardownWallViewport, } from "./wall-viewport.js";
 import { bindWallNavigation, cancelWallNavigationGestures, isSpacePanArmed, } from "./wall-viewport-nav.js";
 import { getWallCanvasMode, isWallPanMode, loadWallCanvasMode, toggleWallCanvasMode, } from "./wall-canvas-mode.js";
@@ -629,18 +630,14 @@ function visibleCanvasRect() {
     };
 }
 function automaticStoryPosition(state) {
+    const viewport = getViewportState();
     const occupied = [
         ...state.doc.notes.map((note) => ({ x: note.x, y: note.y, width: note.width, height: note.height })),
-        ...(state.doc.stories ?? []).map((story) => ({
-            x: story.x,
-            y: story.y,
-            width: WALL_STORY_WIDTH,
-            height: WALL_STORY_HEIGHT,
-        })),
+        ...(state.doc.stories ?? []).map((story) => measureStoryCanvasRect(story, storyElementByLocalId(story.localId), viewport.zoom)),
     ];
     return chooseWallStoryPosition(visibleCanvasRect(), occupied, {
         width: WALL_STORY_WIDTH,
-        height: WALL_STORY_HEIGHT,
+        height: WALL_STORY_ESTIMATED_HEIGHT,
     });
 }
 async function pinStoryAt(localId, x, y) {
@@ -688,11 +685,12 @@ function focusStory(localId) {
     if (!story || !element || !surface)
         return;
     const viewport = getViewportState();
+    const measured = measureStoryCanvasRect(story, element, viewport.zoom);
     const rect = surface.getBoundingClientRect();
     setViewportState({
         ...viewport,
-        panX: rect.width / 2 - (story.x + WALL_STORY_WIDTH / 2) * viewport.zoom,
-        panY: rect.height / 2 - (story.y + WALL_STORY_HEIGHT / 2) * viewport.zoom,
+        panX: rect.width / 2 - (story.x + measured.width / 2) * viewport.zoom,
+        panY: rect.height / 2 - (story.y + measured.height / 2) * viewport.zoom,
     });
     element.classList.add("wall-story--highlight");
     setTimeout(() => element.classList.remove("wall-story--highlight"), 1600);

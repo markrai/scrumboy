@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "พิมพ์แท็กแล้วกด Enter",
   "shell.contextMenu.newTodo": "Todo ใหม่",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "ส่งไปยังกระดานโน้ต",
   "settings.language.description": "เลือกภาษาที่ใช้กับ Scrumboy บนเบราว์เซอร์นี้",
   "settings.language.selectLabel": "ภาษา",
   "settings.language.title": "ภาษา",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "สร้างโน้ต:",
   "wall.shortcuts.createNote.hint": "คลิกขวาบนแคนวาส",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "สร้าง Todo:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + คลิกขวาบนแคนวาส",
   "wall.shortcuts.changeColor.label": "เปลี่ยนสี:",
   "wall.shortcuts.changeColor.hint": "คลิกโน้ตครั้งเดียว",
   "wall.shortcuts.editNote.label": "แก้ไขโน้ต:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "แก้ไขข้อความโน้ต",
   "wall.menu.createTodoFromNote": "สร้าง Todo จากโน้ต",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "เปิด Todo",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "นำออกจากกระดานโน้ต",
   "wall.menu.deleteCount": "ลบ {count} โน้ต",
   "wall.confirm.deleteNote": "ลบโน้ตนี้?",
   "wall.confirm.deleteNotesCount": "ลบ {count} โน้ต?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "กระดานโน้ตไม่พร้อมใช้งานที่นี่",
   "wall.toast.addNoteFailed": "เพิ่มโน้ตไม่ได้",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "ไม่สามารถเพิ่ม Todo ไปยังกระดานโน้ตได้",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "ไม่สามารถย้าย Todo ได้",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "ไม่สามารถนำ Todo ออกจากกระดานโน้ตได้",
   "wall.toast.staleReload": "มีคนแก้โน้ตนี้ — กำลังโหลดกระดานโน้ตใหม่",
   "wall.toast.updateNoteFailed": "อัปเดตโน้ตไม่ได้",
   "wall.toast.deleteNoteFailed": "ลบโน้ตไม่ได้",

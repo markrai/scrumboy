@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "Saisir un tag et appuyer sur Entrée",
   "shell.contextMenu.newTodo": "Nouveau todo",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "Envoyer vers le mur",
   "settings.language.description": "Choisissez la langue utilisée par Scrumboy dans ce navigateur.",
   "settings.language.selectLabel": "Langue",
   "settings.language.title": "Langue",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "créer une note :",
   "wall.shortcuts.createNote.hint": "clic droit sur le canevas",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "créer un todo :",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + clic droit sur le canevas",
   "wall.shortcuts.changeColor.label": "changer la couleur :",
   "wall.shortcuts.changeColor.hint": "simple clic sur la note",
   "wall.shortcuts.editNote.label": "modifier la note :",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "Modifier le texte de la note",
   "wall.menu.createTodoFromNote": "Créer un todo à partir de la note",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Ouvrir le todo",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "Retirer du mur",
   "wall.menu.deleteCount": "Supprimer {count} notes",
   "wall.confirm.deleteNote": "Supprimer cette note ?",
   "wall.confirm.deleteNotesCount": "Supprimer {count} notes ?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "Le mur n'est pas disponible ici.",
   "wall.toast.addNoteFailed": "Impossible d'ajouter la note",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Impossible d’ajouter le todo au mur",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Impossible de déplacer le todo",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Impossible de retirer le todo du mur",
   "wall.toast.staleReload": "Un autre éditeur a modifié cette note — rechargement du mur.",
   "wall.toast.updateNoteFailed": "Impossible de mettre à jour la note",
   "wall.toast.deleteNoteFailed": "Impossible de supprimer la note",

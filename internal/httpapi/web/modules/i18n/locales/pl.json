@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "Wpisz tag i naciśnij Enter",
   "shell.contextMenu.newTodo": "Nowe Todo",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "Wyślij na ścianę",
   "settings.language.description": "Wybierz język Scrumboy w tej przeglądarce.",
   "settings.language.selectLabel": "Język",
   "settings.language.title": "Język",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "utwórz notatkę:",
   "wall.shortcuts.createNote.hint": "kliknij prawym przyciskiem na kanwie",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "utwórz Todo:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + kliknij prawym przyciskiem na kanwie",
   "wall.shortcuts.changeColor.label": "zmień kolor:",
   "wall.shortcuts.changeColor.hint": "pojedyncze kliknięcie notatki",
   "wall.shortcuts.editNote.label": "edytuj notatkę:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "Edytuj tekst notatki",
   "wall.menu.createTodoFromNote": "Utwórz Todo z notatki",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Otwórz Todo",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "Usuń ze ściany",
   "wall.menu.deleteCount": "Usuń {count} notatek",
   "wall.confirm.deleteNote": "Usunąć tę notatkę?",
   "wall.confirm.deleteNotesCount": "Usunąć {count} notatek?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "Ściana notatek jest tu niedostępna.",
   "wall.toast.addNoteFailed": "Nie udało się dodać notatki",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Nie udało się dodać Todo do ściany",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Nie udało się przenieść Todo",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Nie udało się usunąć Todo ze ściany",
   "wall.toast.staleReload": "Inny edytor zmienił tę notatkę — przeładowuję ścianę.",
   "wall.toast.updateNoteFailed": "Nie udało się zaktualizować notatki",
   "wall.toast.deleteNoteFailed": "Nie udało się usunąć notatki",

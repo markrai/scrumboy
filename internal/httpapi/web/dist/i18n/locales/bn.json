@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "ট্যাগ লিখে Enter চাপুন",
   "shell.contextMenu.newTodo": "নতুন Todo",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "ওয়ালে পাঠান",
   "settings.language.description": "এই ব্রাউজারে Scrumboy-এর ভাষা বেছে নিন।",
   "settings.language.selectLabel": "ভাষা",
   "settings.language.title": "ভাষা",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "নোট তৈরি:",
   "wall.shortcuts.createNote.hint": "canvas-এ right-click",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "Todo তৈরি:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + ক্যানভাসে রাইট-ক্লিক",
   "wall.shortcuts.changeColor.label": "রং বদল:",
   "wall.shortcuts.changeColor.hint": "নোটে single-click",
   "wall.shortcuts.editNote.label": "নোট সম্পাদনা:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "নোট পাঠ সম্পাদনা",
   "wall.menu.createTodoFromNote": "নোট থেকে Todo তৈরি",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Todo খুলুন",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "ওয়াল থেকে সরান",
   "wall.menu.deleteCount": "{count}টি নোট মুছুন",
   "wall.confirm.deleteNote": "এই নোট মুছবেন?",
   "wall.confirm.deleteNotesCount": "{count}টি নোট মুছবেন?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "এখানে Wall নেই।",
   "wall.toast.addNoteFailed": "নোট যোগ হয়নি",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Todo-টি ওয়ালে যোগ করা যায়নি",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Todo-টি সরানো যায়নি",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Todo-টি ওয়াল থেকে সরানো যায়নি",
   "wall.toast.staleReload": "অন্য editor নোট বদলেছে — wall পুনরায় লোড।",
   "wall.toast.updateNoteFailed": "নোট আপডেট হয়নি",
   "wall.toast.deleteNoteFailed": "নোট মুছতে পারেনি",

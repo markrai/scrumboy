@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "Введи тег і натисни Enter",
   "shell.contextMenu.newTodo": "Нове Todo",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "Надіслати на стіну нотаток",
   "settings.language.description": "Обери мову Scrumboy у цьому браузері.",
   "settings.language.selectLabel": "Мова",
   "settings.language.title": "Мова",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "створити нотатку:",
   "wall.shortcuts.createNote.hint": "клацни правою кнопкою на канві",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "створити Todo:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + клацніть правою кнопкою на канві",
   "wall.shortcuts.changeColor.label": "змінити колір:",
   "wall.shortcuts.changeColor.hint": "одинарний клік по нотатці",
   "wall.shortcuts.editNote.label": "редагувати нотатку:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "Редагувати текст нотатки",
   "wall.menu.createTodoFromNote": "Створити Todo з нотатки",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Відкрити Todo",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "Прибрати зі стіни нотаток",
   "wall.menu.deleteCount": "Видалити {count} нотаток",
   "wall.confirm.deleteNote": "Видалити цю нотатку?",
   "wall.confirm.deleteNotesCount": "Видалити {count} нотаток?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "Стіна нотаток тут недоступна.",
   "wall.toast.addNoteFailed": "Не вдалося додати нотатку",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Не вдалося додати Todo на стіну нотаток",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Не вдалося перемістити Todo",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Не вдалося прибрати Todo зі стіни нотаток",
   "wall.toast.staleReload": "Інший редактор змінив цю нотатку — перезавантажую стіну нотаток.",
   "wall.toast.updateNoteFailed": "Не вдалося оновити нотатку",
   "wall.toast.deleteNoteFailed": "Не вдалося видалити нотатку",

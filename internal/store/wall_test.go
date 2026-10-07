@@ -4,9 +4,101 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func backupWithWallStoriesField(t *testing.T, source *ExportData, slug string, present bool, stories []WallStoryPlacementExport) *ExportData {
+	t.Helper()
+	raw, err := json.Marshal(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tree map[string]any
+	if err := json.Unmarshal(raw, &tree); err != nil {
+		t.Fatal(err)
+	}
+	projects, ok := tree["projects"].([]any)
+	if !ok {
+		t.Fatalf("projects JSON=%T", tree["projects"])
+	}
+	found := false
+	for _, item := range projects {
+		project, ok := item.(map[string]any)
+		if !ok || project["slug"] != slug {
+			continue
+		}
+		wall, ok := project["wall"].(map[string]any)
+		if !ok {
+			t.Fatalf("wall JSON=%T", project["wall"])
+		}
+		if present {
+			encoded, err := json.Marshal(stories)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var value any
+			if err := json.Unmarshal(encoded, &value); err != nil {
+				t.Fatal(err)
+			}
+			wall["stories"] = value
+		} else {
+			delete(wall, "stories")
+		}
+		found = true
+		break
+	}
+	if !found {
+		t.Fatalf("project %q not found in backup JSON", slug)
+	}
+	raw, err = json.Marshal(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded ExportData
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return &decoded
+}
+
+func setupWallStoryBackup(t *testing.T) (*Store, func(), context.Context, Project, Todo, Todo, *ExportData) {
+	t.Helper()
+	st, cleanup := newTestStore(t)
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, fmt.Sprintf("wall-presence-%s@example.com", strings.ReplaceAll(t.Name(), "/", "-")), "password", "Owner")
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Wall presence")
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	first, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "First story"}, ModeFull)
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	second, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Second story"}, ModeFull)
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	if _, _, err := st.PinWallStory(ownerCtx, project.ID, first.LocalID, 10, 20); err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	exported, err := st.ExportAllProjects(ownerCtx, ModeFull)
+	if err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	return st, cleanup, ownerCtx, project, first, second, exported
+}
 
 func TestWallGetIsSideEffectFree(t *testing.T) {
 	st, cleanup := newTestStore(t)
@@ -108,6 +200,153 @@ func TestWallStoryPlacementBackupRoundTripUsesPortableLocalID(t *testing.T) {
 	}
 	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "dangling Wall placement") {
 		t.Fatalf("dangling placement warnings=%v", result.Warnings)
+	}
+}
+
+func TestWallStoryPlacementMergeLegacyWallPreservesExistingPlacements(t *testing.T) {
+	st, cleanup, ctx, project, first, _, exported := setupWallStoryBackup(t)
+	defer cleanup()
+	legacy := backupWithWallStoriesField(t, exported, project.Slug, false, nil)
+	if legacy.Projects[0].Wall.StoriesPresent {
+		t.Fatal("legacy Wall unexpectedly marked stories present")
+	}
+	if _, err := st.ImportProjects(ctx, legacy, ModeFull, "merge"); err != nil {
+		t.Fatal(err)
+	}
+	wall, err := st.GetWall(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wall.Stories) != 1 || wall.Stories[0].TodoLocalID != first.LocalID {
+		t.Fatalf("legacy merge placements=%+v", wall.Stories)
+	}
+}
+
+func TestWallStoryPlacementMergeExplicitEmptyClearsPlacements(t *testing.T) {
+	st, cleanup, ctx, project, _, _, exported := setupWallStoryBackup(t)
+	defer cleanup()
+	current := backupWithWallStoriesField(t, exported, project.Slug, true, []WallStoryPlacementExport{})
+	if !current.Projects[0].Wall.StoriesPresent {
+		t.Fatal("explicit empty stories not marked present")
+	}
+	if _, err := st.ImportProjects(ctx, current, ModeFull, "merge"); err != nil {
+		t.Fatal(err)
+	}
+	wall, err := st.GetWall(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wall.Stories) != 0 {
+		t.Fatalf("explicit empty merge placements=%+v", wall.Stories)
+	}
+}
+
+func TestWallStoryPlacementMergeExplicitSetReplacesPlacements(t *testing.T) {
+	st, cleanup, ctx, project, first, second, exported := setupWallStoryBackup(t)
+	defer cleanup()
+	current := backupWithWallStoriesField(t, exported, project.Slug, true, []WallStoryPlacementExport{{
+		LocalID: second.LocalID, X: 333, Y: -444, Version: 7,
+	}})
+	if _, err := st.ImportProjects(ctx, current, ModeFull, "merge"); err != nil {
+		t.Fatal(err)
+	}
+	wall, err := st.GetWall(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wall.Stories) != 1 || wall.Stories[0].TodoLocalID != second.LocalID || wall.Stories[0].X != 333 || wall.Stories[0].Y != -444 || wall.Stories[0].Version != 7 {
+		t.Fatalf("replacement placements=%+v (old localId=%d)", wall.Stories, first.LocalID)
+	}
+}
+
+func TestWallStoryPlacementLegacyReplaceAndCopyStartEmpty(t *testing.T) {
+	t.Run("replace", func(t *testing.T) {
+		st, cleanup, ctx, project, _, _, exported := setupWallStoryBackup(t)
+		defer cleanup()
+		legacy := backupWithWallStoriesField(t, exported, project.Slug, false, nil)
+		if _, err := st.ImportProjects(ctx, legacy, ModeFull, "replace"); err != nil {
+			t.Fatal(err)
+		}
+		restored, err := st.GetProjectBySlug(ctx, project.Slug)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wall, err := st.GetWall(ctx, restored.ID)
+		if err != nil || len(wall.Stories) != 0 {
+			t.Fatalf("legacy replace placements=%+v err=%v", wall.Stories, err)
+		}
+	})
+
+	t.Run("copy", func(t *testing.T) {
+		st, cleanup, ctx, project, first, _, exported := setupWallStoryBackup(t)
+		defer cleanup()
+		legacy := backupWithWallStoriesField(t, exported, project.Slug, false, nil)
+		if _, err := st.ImportProjects(ctx, legacy, ModeFull, "copy"); err != nil {
+			t.Fatal(err)
+		}
+		copied, err := st.GetProjectBySlug(ctx, project.Slug+"-imported")
+		if err != nil {
+			t.Fatal(err)
+		}
+		copiedWall, err := st.GetWall(ctx, copied.ID)
+		if err != nil || len(copiedWall.Stories) != 0 {
+			t.Fatalf("legacy copy placements=%+v err=%v", copiedWall.Stories, err)
+		}
+		originalWall, err := st.GetWall(ctx, project.ID)
+		if err != nil || len(originalWall.Stories) != 1 || originalWall.Stories[0].TodoLocalID != first.LocalID {
+			t.Fatalf("copy changed original placements=%+v err=%v", originalWall.Stories, err)
+		}
+	})
+}
+
+func TestWallExportRoundTripKeepsExplicitEmptyStoriesDistinctFromLegacyOmission(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-empty-stories@example.com", "password", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Empty story export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.CreateNote(ownerCtx, project.ID, CreateNoteInput{X: 0, Y: 0, Width: 180, Height: 140, Color: "#FFFFFF", Text: "keep wall present"}); err != nil {
+		t.Fatal(err)
+	}
+	exported, err := st.ExportAllProjects(ownerCtx, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"stories":[]`) {
+		t.Fatalf("current export omitted explicit empty stories: %s", raw)
+	}
+	var roundTripped ExportData
+	if err := json.Unmarshal(raw, &roundTripped); err != nil {
+		t.Fatal(err)
+	}
+	if roundTripped.Projects[0].Wall == nil || !roundTripped.Projects[0].Wall.StoriesPresent || roundTripped.Projects[0].Wall.Stories == nil {
+		t.Fatalf("round-tripped current Wall=%+v", roundTripped.Projects[0].Wall)
+	}
+
+	var legacy WallExport
+	if err := json.Unmarshal([]byte(`{"notes":[]}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.StoriesPresent || legacy.Stories != nil {
+		t.Fatalf("legacy Wall presence=%v stories=%v", legacy.StoriesPresent, legacy.Stories)
+	}
+	legacyRaw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(legacyRaw), `"stories"`) {
+		t.Fatalf("legacy round trip invented stories field: %s", legacyRaw)
 	}
 }
 

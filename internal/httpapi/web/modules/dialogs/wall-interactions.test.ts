@@ -252,6 +252,38 @@ describe("wall interactions", () => {
     expect(wallDialogEl.querySelector('[data-action="remove"]')).toBeNull();
   });
 
+  it("centers a focused tall story using its rendered height", async () => {
+    apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes("/wall") && !init?.method) return createStoryWallDoc();
+      return {};
+    });
+    wallSurfaceEl.getBoundingClientRect = () => ({
+      x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const widthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function () {
+      return this.classList.contains("wall-story") ? 280 : 0;
+    });
+    const heightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function () {
+      return this.classList.contains("wall-story") ? 480 : 0;
+    });
+
+    try {
+      const mod = await import("./wall.js");
+      await mod.openWallDialog({ projectId: 1, slug: "alpha", role: "maintainer", storyLocalId: 7 });
+      const viewport = await import("./wall-viewport.js");
+
+      expect(viewport.getViewportState()).toMatchObject({
+        panX: 180,
+        panY: -30,
+        zoom: 1,
+      });
+    } finally {
+      widthSpy.mockRestore();
+      heightSpy.mockRestore();
+    }
+  });
+
   it("Ctrl+right-click creates a Todo and pins the returned canonical local ID at the captured point", async () => {
     apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/wall") && !init?.method) return { notes: [], edges: [], stories: [], version: 0 };

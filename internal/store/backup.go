@@ -251,7 +251,54 @@ type WallExport struct {
 	Notes   []WallNote                 `json:"notes"`
 	Edges   []WallEdge                 `json:"edges,omitempty"`
 	Stories []WallStoryPlacementExport `json:"stories,omitempty"`
-	Version int64                      `json:"version,omitempty"`
+	// StoriesPresent distinguishes a legacy omission from an explicitly empty
+	// current-format placement set. Merge imports preserve existing placements
+	// only for the legacy omission.
+	StoriesPresent bool  `json:"-"`
+	Version        int64 `json:"version,omitempty"`
+}
+
+func (w WallExport) MarshalJSON() ([]byte, error) {
+	type alias WallExport
+	raw, err := json.Marshal(alias(w))
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	present := w.StoriesPresent || w.Stories != nil
+	if !present {
+		delete(fields, "stories")
+	} else {
+		stories := w.Stories
+		if stories == nil {
+			stories = []WallStoryPlacementExport{}
+		}
+		storiesJSON, err := json.Marshal(stories)
+		if err != nil {
+			return nil, err
+		}
+		fields["stories"] = storiesJSON
+	}
+	return json.Marshal(fields)
+}
+
+func (w *WallExport) UnmarshalJSON(data []byte) error {
+	type alias WallExport
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, present := fields["stories"]
+	*w = WallExport(decoded)
+	w.StoriesPresent = present
+	return nil
 }
 
 // WallStoryPlacementExport keeps Wall spatial state portable by referring to
@@ -995,10 +1042,11 @@ func (s *Store) exportWallForProject(ctx context.Context, projectID int64) (*Wal
 		})
 	}
 	return &WallExport{
-		Notes:   wall.Notes,
-		Edges:   wall.Edges,
-		Stories: stories,
-		Version: wall.Version,
+		Notes:          wall.Notes,
+		Edges:          wall.Edges,
+		Stories:        stories,
+		StoriesPresent: true,
+		Version:        wall.Version,
 	}, nil
 }
 

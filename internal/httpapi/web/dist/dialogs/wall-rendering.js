@@ -18,8 +18,7 @@ import { t } from "../i18n/index.js";
 import { colorIndexFromHex } from "./wall-postbaby-constants.js";
 import { screenToCanvas } from "./wall-viewport.js";
 import { renderStoryCardContent } from "../views/board-rendering.js";
-export const WALL_STORY_WIDTH = 280;
-export const WALL_STORY_HEIGHT = 148;
+import { WALL_STORY_WIDTH } from "./wall-story-geometry.js";
 export function buildStoryElement(story, membersByUserId, opts) {
     const el = document.createElement("div");
     const archivedClass = story.todo.archivedAt ? " wall-story--archived" : "";

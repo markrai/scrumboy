@@ -57,8 +57,6 @@ import {
   type WallEdge,
   type WallNote,
   type WallStory,
-  WALL_STORY_HEIGHT,
-  WALL_STORY_WIDTH,
 } from "./wall-rendering.js";
 import {
   DOUBLE_TAP_MS,
@@ -96,6 +94,11 @@ import { beginEdit as beginEditController } from "./wall-edit-controller.js";
 import { openWallNoteContextMenu } from "./wall-note-context-menu.js";
 import { openWallStoryContextMenu } from "./wall-story-context-menu.js";
 import { chooseWallStoryPosition } from "./wall-story-placement.js";
+import {
+  measureStoryCanvasRect,
+  WALL_STORY_ESTIMATED_HEIGHT,
+  WALL_STORY_WIDTH,
+} from "./wall-story-geometry.js";
 import {
   clampCanvasCoord,
   ensureWallContent,
@@ -719,18 +722,18 @@ function visibleCanvasRect(): { x: number; y: number; width: number; height: num
 }
 
 function automaticStoryPosition(state: Mounted): { x: number; y: number } {
+  const viewport = getViewportState();
   const occupied = [
     ...state.doc.notes.map((note) => ({ x: note.x, y: note.y, width: note.width, height: note.height })),
-    ...(state.doc.stories ?? []).map((story) => ({
-      x: story.x,
-      y: story.y,
-      width: WALL_STORY_WIDTH,
-      height: WALL_STORY_HEIGHT,
-    })),
+    ...(state.doc.stories ?? []).map((story) => measureStoryCanvasRect(
+      story,
+      storyElementByLocalId(story.localId),
+      viewport.zoom,
+    )),
   ];
   return chooseWallStoryPosition(visibleCanvasRect(), occupied, {
     width: WALL_STORY_WIDTH,
-    height: WALL_STORY_HEIGHT,
+    height: WALL_STORY_ESTIMATED_HEIGHT,
   });
 }
 
@@ -775,11 +778,12 @@ function focusStory(localId: number): void {
   const surface = wallSurface;
   if (!story || !element || !surface) return;
   const viewport = getViewportState();
+  const measured = measureStoryCanvasRect(story, element, viewport.zoom);
   const rect = surface.getBoundingClientRect();
   setViewportState({
     ...viewport,
-    panX: rect.width / 2 - (story.x + WALL_STORY_WIDTH / 2) * viewport.zoom,
-    panY: rect.height / 2 - (story.y + WALL_STORY_HEIGHT / 2) * viewport.zoom,
+    panX: rect.width / 2 - (story.x + measured.width / 2) * viewport.zoom,
+    panY: rect.height / 2 - (story.y + measured.height / 2) * viewport.zoom,
   });
   element.classList.add("wall-story--highlight");
   setTimeout(() => element.classList.remove("wall-story--highlight"), 1600);

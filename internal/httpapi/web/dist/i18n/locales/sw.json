@@ -477,7 +477,7 @@
   "shell.bulkEdit.tagsPlaceholder": "Andika tag kisha bonyeza Enter",
   "shell.contextMenu.newTodo": "Todo mpya",
 
-  "shell.contextMenu.sendToWall": "Send to Wall",
+  "shell.contextMenu.sendToWall": "Tuma kwenye ukuta",
   "settings.language.description": "Chagua lugha ya Scrumboy kwenye kivinjari hiki.",
   "settings.language.selectLabel": "Lugha",
   "settings.language.title": "Lugha",
@@ -1250,9 +1250,9 @@
   "wall.shortcuts.createNote.label": "tengeneza noti:",
   "wall.shortcuts.createNote.hint": "right-click kwenye canvas",
 
-  "wall.shortcuts.createStory.label": "create story:",
+  "wall.shortcuts.createStory.label": "tengeneza Todo:",
 
-  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
+  "wall.shortcuts.createStory.hint": "Ctrl + bofya kulia kwenye canvas",
   "wall.shortcuts.changeColor.label": "badilisha rangi:",
   "wall.shortcuts.changeColor.hint": "single-click noti",
   "wall.shortcuts.editNote.label": "hariri noti:",
@@ -1280,9 +1280,9 @@
   "wall.note.edit": "Hariri maandishi ya noti",
   "wall.menu.createTodoFromNote": "Tengeneza Todo kutoka noti",
 
-  "wall.menu.openStory": "Open Story",
+  "wall.menu.openStory": "Fungua Todo",
 
-  "wall.menu.removeStory": "Remove from Wall",
+  "wall.menu.removeStory": "Ondoa kwenye ukuta",
   "wall.menu.deleteCount": "Futa noti {count}",
   "wall.confirm.deleteNote": "Futa noti hii?",
   "wall.confirm.deleteNotesCount": "Futa noti {count}?",
@@ -1290,11 +1290,11 @@
   "wall.toast.unavailable": "Ukuta haupatikani hapa.",
   "wall.toast.addNoteFailed": "Imeshindwa kuongeza noti",
 
-  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+  "wall.toast.pinStoryFailed": "Imeshindikana kuongeza Todo kwenye ukuta",
 
-  "wall.toast.moveStoryFailed": "Could not move story",
+  "wall.toast.moveStoryFailed": "Imeshindikana kuhamisha Todo",
 
-  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
+  "wall.toast.removeStoryFailed": "Imeshindikana kuondoa Todo kwenye ukuta",
   "wall.toast.staleReload": "Editor mwingine amebadilisha noti hii — inapakia wall upya.",
   "wall.toast.updateNoteFailed": "Imeshindwa kusasisha noti",
   "wall.toast.deleteNoteFailed": "Imeshindwa kufuta noti",
