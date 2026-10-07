@@ -28,7 +28,7 @@ import { confirmDelete, showToast } from "../utils.js";
 import { hydrateI18n, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
 import { getBoard, getBoardMembers, getTagColors, getUser } from "../state/selectors.js";
 import { canEditWall } from "./wall-permissions.js";
-import { buildNoteElement, buildStoryElement, renderEmptyWallHtml, isEditing, ensureEdgeOverlay, renderEdges, updateEdgesForEndpoint, beginEdgePreview, getNoteCenterFromElement, } from "./wall-rendering.js";
+import { buildNoteElement, buildStoryElement, renderEmptyWallHtml, isEditing, ensureEdgeOverlay, renderEdges, updateEdgesForEndpoint, beginEdgePreview, } from "./wall-rendering.js";
 import { DOUBLE_TAP_MS, DRAG_THRESHOLD_PX, DEFAULT_NOTE_WIDTH, DEFAULT_NOTE_HEIGHT, RAINBOW_COLORS, nextColor, } from "./wall-postbaby-constants.js";
 import { getMounted, setMounted, resetEditGuards, setDragActive, } from "./wall-state.js";
 import { clearSelection, pruneSelection, setSelection, syncSelectionDom, toggleSelection, } from "./wall-selection.js";
@@ -39,7 +39,7 @@ import { openWallNoteContextMenu } from "./wall-note-context-menu.js";
 import { openWallStoryContextMenu } from "./wall-story-context-menu.js";
 import { chooseWallStoryPosition } from "./wall-story-placement.js";
 import { measureStoryCanvasRect, WALL_STORY_ESTIMATED_HEIGHT, WALL_STORY_WIDTH, } from "./wall-story-geometry.js";
-import { formatWallStoryEndpoint, parseWallEdgeEndpoint, wallEdgeEndpointCenter, } from "./wall-edge-endpoint.js";
+import { canonicalEndpointForElement, formatWallStoryEndpoint, parseWallEdgeEndpoint, wallEdgeEndpointCenter, } from "./wall-edge-endpoint.js";
 import { clampCanvasCoord, ensureWallContent, fitToNotes, getWallContent, getViewportState, initWallViewport, screenToCanvas, setViewportState, teardownWallViewport, } from "./wall-viewport.js";
 import { bindWallNavigation, cancelWallNavigationGestures, isSpacePanArmed, } from "./wall-viewport-nav.js";
 import { getWallCanvasMode, isWallPanMode, loadWallCanvasMode, toggleWallCanvasMode, } from "./wall-canvas-mode.js";
@@ -783,19 +783,20 @@ function confirmAndDeleteSelectedNotes(state) {
     const isGroup = state.selected.size > 1;
     confirmAndDeleteNotes(state, Array.from(state.selected), isGroup);
 }
-async function createEdge(fromId, toId) {
+async function createEdge(fromEndpoint, toEndpoint) {
     const state = getMounted();
     if (!state || !state.canEdit)
         return;
-    if (fromId === toId)
+    if (fromEndpoint === toEndpoint)
         return;
     // Local duplicate guard so we don't fire a useless POST when the user
-    // re-draws an existing connection.
-    const existing = (state.doc.edges ?? []).find((e) => (e.from === fromId && e.to === toId) || (e.from === toId && e.to === fromId));
+    // re-draws an existing connection. Both endpoints are canonical, so plain
+    // string comparison covers note and story endpoints in either direction.
+    const existing = (state.doc.edges ?? []).find((e) => (e.from === fromEndpoint && e.to === toEndpoint) || (e.from === toEndpoint && e.to === fromEndpoint));
     if (existing)
         return;
     try {
-        const created = await createEdgeRemote(state.slug, fromId, toId);
+        const created = await createEdgeRemote(state.slug, fromEndpoint, toEndpoint);
         if (getMounted() !== state)
             return;
         if (!state.doc.edges)
@@ -876,6 +877,13 @@ function bindSurfaceHandlers(state) {
             if (!state.canEdit) {
                 ev.preventDefault();
                 void openStory(localId);
+                return;
+            }
+            // Shift+primary begins an edge drag, taking precedence over the
+            // ordinary story open/drag interaction below.
+            if (ev.shiftKey && ev.button === 0) {
+                ev.preventDefault();
+                beginEdgeDrag(state, ev, storyEl, formatWallStoryEndpoint(localId));
                 return;
             }
             armStoryInteraction(state, ev, storyEl, localId);
@@ -1131,11 +1139,14 @@ function beginMarquee(state, ev) {
     document.addEventListener("pointercancel", onUp, { signal: state.abort.signal });
 }
 // ---- Shift+drag edge creation -------------------------------------------
-function beginEdgeDrag(state, ev, sourceEl, sourceId) {
+function beginEdgeDrag(state, ev, sourceEl, sourceEndpoint) {
     const content = wallContentLayer();
     if (!content)
         return;
-    const start = getNoteCenterFromElement(content, sourceEl);
+    const parsed = parseWallEdgeEndpoint(sourceEndpoint);
+    const start = parsed ? wallEdgeEndpointCenter(content, parsed, getViewportState().zoom) : null;
+    if (!start)
+        return;
     const preview = beginEdgePreview(content, start);
     const initial = screenToCanvas(ev.clientX, ev.clientY);
     preview.update(initial.x, initial.y);
@@ -1151,13 +1162,10 @@ function beginEdgeDrag(state, ev, sourceEl, sourceId) {
         preview.end();
         // Screen-space OK: elementFromPoint is a screen-based hit test API.
         const dropTarget = document.elementFromPoint(up.clientX, up.clientY);
-        const targetNote = dropTarget?.closest(".wall-note") ?? null;
-        if (!targetNote)
+        const targetEndpoint = canonicalEndpointForElement(dropTarget);
+        if (!targetEndpoint || targetEndpoint === sourceEndpoint)
             return;
-        const targetId = targetNote.dataset.noteId || "";
-        if (!targetId || targetId === sourceId)
-            return;
-        void createEdge(sourceId, targetId);
+        void createEdge(sourceEndpoint, targetEndpoint);
     };
     document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
     document.addEventListener("pointerup", onUp, { signal: state.abort.signal });

@@ -33,6 +33,19 @@ export function parseWallEdgeEndpoint(raw: string): WallEdgeEndpoint | null {
   return { kind: "note", noteId: trimmed, storyLocalId: null, canonical: trimmed };
 }
 
+export function canonicalEndpointForElement(target: HTMLElement | null): string | null {
+  const storyEl = target?.closest<HTMLElement>(".wall-story");
+  if (storyEl) {
+    const localId = Number(storyEl.dataset.storyLocalId);
+    if (!Number.isSafeInteger(localId) || localId <= 0) return null;
+    return formatWallStoryEndpoint(localId);
+  }
+  const noteEl = target?.closest<HTMLElement>(".wall-note");
+  const noteId = noteEl?.dataset.noteId || "";
+  if (noteEl && noteId) return noteId;
+  return null;
+}
+
 export function resolveWallEdgeElement(
   surface: HTMLElement,
   endpoint: WallEdgeEndpoint,

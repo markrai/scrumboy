@@ -23,6 +23,20 @@ export function parseWallEdgeEndpoint(raw) {
     }
     return { kind: "note", noteId: trimmed, storyLocalId: null, canonical: trimmed };
 }
+export function canonicalEndpointForElement(target) {
+    const storyEl = target?.closest(".wall-story");
+    if (storyEl) {
+        const localId = Number(storyEl.dataset.storyLocalId);
+        if (!Number.isSafeInteger(localId) || localId <= 0)
+            return null;
+        return formatWallStoryEndpoint(localId);
+    }
+    const noteEl = target?.closest(".wall-note");
+    const noteId = noteEl?.dataset.noteId || "";
+    if (noteEl && noteId)
+        return noteId;
+    return null;
+}
 export function resolveWallEdgeElement(surface, endpoint) {
     if (endpoint.kind === "story") {
         return surface.querySelector(`.wall-story[data-story-local-id="${endpoint.storyLocalId}"]`);

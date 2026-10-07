@@ -52,7 +52,6 @@ import {
   renderEdges,
   updateEdgesForEndpoint,
   beginEdgePreview,
-  getNoteCenterFromElement,
   type WallDocument,
   type WallEdge,
   type WallNote,
@@ -100,6 +99,7 @@ import {
   WALL_STORY_WIDTH,
 } from "./wall-story-geometry.js";
 import {
+  canonicalEndpointForElement,
   formatWallStoryEndpoint,
   parseWallEdgeEndpoint,
   wallEdgeEndpointCenter,
@@ -872,18 +872,19 @@ function confirmAndDeleteSelectedNotes(state: Mounted): void {
   confirmAndDeleteNotes(state, Array.from(state.selected), isGroup);
 }
 
-async function createEdge(fromId: string, toId: string): Promise<void> {
+async function createEdge(fromEndpoint: string, toEndpoint: string): Promise<void> {
   const state = getMounted();
   if (!state || !state.canEdit) return;
-  if (fromId === toId) return;
+  if (fromEndpoint === toEndpoint) return;
   // Local duplicate guard so we don't fire a useless POST when the user
-  // re-draws an existing connection.
+  // re-draws an existing connection. Both endpoints are canonical, so plain
+  // string comparison covers note and story endpoints in either direction.
   const existing = (state.doc.edges ?? []).find(
-    (e) => (e.from === fromId && e.to === toId) || (e.from === toId && e.to === fromId),
+    (e) => (e.from === fromEndpoint && e.to === toEndpoint) || (e.from === toEndpoint && e.to === fromEndpoint),
   );
   if (existing) return;
   try {
-    const created = await createEdgeRemote(state.slug, fromId, toId);
+    const created = await createEdgeRemote(state.slug, fromEndpoint, toEndpoint);
     if (getMounted() !== state) return;
     if (!state.doc.edges) state.doc.edges = [];
     // Server returns the existing edge on duplicate (idempotent); de-dupe.
@@ -958,6 +959,13 @@ function bindSurfaceHandlers(state: Mounted): void {
       if (!state.canEdit) {
         ev.preventDefault();
         void openStory(localId);
+        return;
+      }
+      // Shift+primary begins an edge drag, taking precedence over the
+      // ordinary story open/drag interaction below.
+      if (ev.shiftKey && ev.button === 0) {
+        ev.preventDefault();
+        beginEdgeDrag(state, ev, storyEl, formatWallStoryEndpoint(localId));
         return;
       }
       armStoryInteraction(state, ev, storyEl, localId);
@@ -1215,10 +1223,12 @@ function beginMarquee(state: Mounted, ev: PointerEvent): void {
 
 // ---- Shift+drag edge creation -------------------------------------------
 
-function beginEdgeDrag(state: Mounted, ev: PointerEvent, sourceEl: HTMLElement, sourceId: string): void {
+function beginEdgeDrag(state: Mounted, ev: PointerEvent, sourceEl: HTMLElement, sourceEndpoint: string): void {
   const content = wallContentLayer();
   if (!content) return;
-  const start = getNoteCenterFromElement(content, sourceEl);
+  const parsed = parseWallEdgeEndpoint(sourceEndpoint);
+  const start = parsed ? wallEdgeEndpointCenter(content, parsed, getViewportState().zoom) : null;
+  if (!start) return;
   const preview = beginEdgePreview(content, start);
   const initial = screenToCanvas(ev.clientX, ev.clientY);
   preview.update(initial.x, initial.y);
@@ -1236,11 +1246,9 @@ function beginEdgeDrag(state: Mounted, ev: PointerEvent, sourceEl: HTMLElement, 
 
     // Screen-space OK: elementFromPoint is a screen-based hit test API.
     const dropTarget = document.elementFromPoint(up.clientX, up.clientY) as HTMLElement | null;
-    const targetNote = dropTarget?.closest<HTMLElement>(".wall-note") ?? null;
-    if (!targetNote) return;
-    const targetId = targetNote.dataset.noteId || "";
-    if (!targetId || targetId === sourceId) return;
-    void createEdge(sourceId, targetId);
+    const targetEndpoint = canonicalEndpointForElement(dropTarget);
+    if (!targetEndpoint || targetEndpoint === sourceEndpoint) return;
+    void createEdge(sourceEndpoint, targetEndpoint);
   };
   document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
   document.addEventListener("pointerup", onUp, { signal: state.abort.signal });
