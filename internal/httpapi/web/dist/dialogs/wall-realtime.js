@@ -21,7 +21,7 @@ import { getWallContent } from "./wall-viewport.js";
 import { on, off } from "../events.js";
 import { showToast } from "../utils.js";
 import { t } from "../i18n/index.js";
-import { updateEdgesForNote } from "./wall-rendering.js";
+import { updateEdgesForEndpoint } from "./wall-rendering.js";
 import { fetchWall } from "./wall-api.js";
 import { getActiveEditNoteId, getMounted, isDragActive, setPendingRefetch, } from "./wall-state.js";
 /**
@@ -125,7 +125,7 @@ export function applyTransient(payload, noteElementById, storyElementByLocalId) 
         return;
     const edgeRoot = getWallContent() ?? wallSurface;
     if (edgeRoot) {
-        updateEdgesForNote(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);
+        updateEdgesForEndpoint(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);
     }
 }
 let currentDebounceHandle = null;

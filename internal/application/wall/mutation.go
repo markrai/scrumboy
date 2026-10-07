@@ -96,9 +96,9 @@ type ReplaceWallCommand struct {
 	Notes []NoteDraft
 }
 
-// CreateEdgeCommand contains the two adapter-decoded note endpoints. Endpoint
-// validation, undirected duplicate detection, and ID generation remain in the
-// store.
+// CreateEdgeCommand contains the two adapter-decoded wall edge endpoints (raw
+// note IDs or canonical story endpoints). Endpoint validation, undirected
+// duplicate detection, and ID generation remain in the store.
 type CreateEdgeCommand struct {
 	From string
 	To   string
@@ -172,8 +172,8 @@ type EdgeMutationStore interface {
 	CreateEdge(
 		ctx context.Context,
 		projectID int64,
-		fromNoteID string,
-		toNoteID string,
+		fromEndpoint string,
+		toEndpoint string,
 	) (store.WallEdge, store.Wall, error)
 	DeleteEdge(
 		ctx context.Context,

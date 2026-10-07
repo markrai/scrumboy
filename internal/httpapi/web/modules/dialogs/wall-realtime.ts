@@ -22,7 +22,7 @@ import { getWallContent } from "./wall-viewport.js";
 import { on, off } from "../events.js";
 import { showToast } from "../utils.js";
 import { t } from "../i18n/index.js";
-import { updateEdgesForNote, type WallDocument } from "./wall-rendering.js";
+import { updateEdgesForEndpoint, type WallDocument } from "./wall-rendering.js";
 import { fetchWall } from "./wall-api.js";
 import {
   getActiveEditNoteId,
@@ -136,7 +136,7 @@ export function applyTransient(
   if (noteId === null) return;
   const edgeRoot = getWallContent() ?? wallSurface;
   if (edgeRoot) {
-    updateEdgesForNote(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);
+    updateEdgesForEndpoint(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);
   }
 }
 

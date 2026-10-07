@@ -418,7 +418,7 @@ type storeAPI interface {
 	PatchNote(ctx context.Context, projectID int64, noteID string, in store.PatchNoteInput) (store.WallNote, store.Wall, error)
 	DeleteNote(ctx context.Context, projectID int64, noteID string) (store.Wall, error)
 	ReplaceWall(ctx context.Context, projectID int64, notes []store.WallNote) (store.Wall, error)
-	CreateEdge(ctx context.Context, projectID int64, fromNoteID, toNoteID string) (store.WallEdge, store.Wall, error)
+	CreateEdge(ctx context.Context, projectID int64, fromEndpoint, toEndpoint string) (store.WallEdge, store.Wall, error)
 	DeleteEdge(ctx context.Context, projectID int64, edgeID string) (store.Wall, error)
 	PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (store.WallStoryPlacement, bool, error)
 	PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (store.WallStoryPlacement, error)

@@ -389,8 +389,9 @@ type wallEdgeInputJSON struct {
 	To   string `json:"to"`
 }
 
-// handleWallCreateEdge creates an undirected edge between two notes
-// (Postbaby-parity Shift+drag). CreateEdge is store-idempotent. HTTP
+// handleWallCreateEdge creates an undirected edge between two wall endpoints
+// (raw note IDs or canonical story endpoints). CreateEdge is
+// store-idempotent. HTTP
 // compatibility still returns 201 and refreshes after every nil store result,
 // including duplicate no-ops.
 func (s *Server) handleWallCreateEdge(w http.ResponseWriter, r *http.Request, projectID int64) {

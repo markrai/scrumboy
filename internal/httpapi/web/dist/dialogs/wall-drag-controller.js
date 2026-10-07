@@ -15,7 +15,7 @@
 // The injection shape is small on purpose: one options bag per top-level
 // gesture function, filled in once from `wall.ts::bindSurfaceHandlers`.
 import { wallSurface, wallTrash } from "../dom/elements.js";
-import { clampDim, updateEdgesForNote, MAX_NOTE_HEIGHT, MAX_NOTE_WIDTH, MIN_NOTE_HEIGHT, MIN_NOTE_WIDTH, } from "./wall-rendering.js";
+import { clampDim, updateEdgesForEndpoint, MAX_NOTE_HEIGHT, MAX_NOTE_WIDTH, MIN_NOTE_HEIGHT, MIN_NOTE_WIDTH, } from "./wall-rendering.js";
 import { DRAG_TRANSIENT_COALESCE_MS, TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
 import { postTransient } from "./wall-api.js";
 import { getMounted, setDragActive } from "./wall-state.js";
@@ -266,7 +266,7 @@ export function beginDrag(opts) {
                 storeTransientPosition(p.id, nx, ny);
                 const edgeRoot = getWallContent() ?? wallSurface;
                 if (edgeRoot) {
-                    updateEdgesForNote(edgeRoot, p.id, nx + p.el.offsetWidth / 2, ny + p.el.offsetHeight / 2);
+                    updateEdgesForEndpoint(edgeRoot, p.id, nx + p.el.offsetWidth / 2, ny + p.el.offsetHeight / 2);
                     edgeCallsThisTick += 1;
                 }
             }
@@ -327,7 +327,7 @@ export function beginDrag(opts) {
                 p.el.style.top = `${Math.round(p.startY)}px`;
                 const edgeRoot = getWallContent() ?? wallSurface;
                 if (edgeRoot) {
-                    updateEdgesForNote(edgeRoot, p.id, p.startX + p.el.offsetWidth / 2, p.startY + p.el.offsetHeight / 2);
+                    updateEdgesForEndpoint(edgeRoot, p.id, p.startX + p.el.offsetWidth / 2, p.startY + p.el.offsetHeight / 2);
                 }
             }
             opts.onDropOnTrash(participants.map((p) => p.id), isGroup);

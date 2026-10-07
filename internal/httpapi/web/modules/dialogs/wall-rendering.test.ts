@@ -17,7 +17,7 @@ import {
   renderEdges,
   renderEmptyWallHtml,
   sanitizeNoteColor,
-  updateEdgesForNote,
+  updateEdgesForEndpoint,
   type WallNote,
   type WallStory,
 } from './wall-rendering.js';
@@ -164,7 +164,7 @@ describe('wall edge overlay', () => {
     );
     surface.append(a, b);
     // happy-dom does not compute layout; emulate offsetLeft/Top/Width/Height
-    // so getNoteCenterFromElement and noteCenter() can resolve coordinates.
+    // so endpoint centers can resolve coordinates.
     function stubBox(el: HTMLElement, l: number, t: number, w: number, h: number) {
       Object.defineProperty(el, 'offsetLeft', { configurable: true, value: l });
       Object.defineProperty(el, 'offsetTop', { configurable: true, value: t });
@@ -174,6 +174,18 @@ describe('wall edge overlay', () => {
     stubBox(a, 100, 100, 200, 100);
     stubBox(b, 400, 200, 200, 100);
     return { surface, a, b };
+  }
+
+  function addStory(surface: HTMLElement, localId: number, l: number, t: number, w: number, h: number): HTMLElement {
+    const el = document.createElement('div');
+    el.className = 'wall-story';
+    el.dataset.storyLocalId = String(localId);
+    surface.appendChild(el);
+    Object.defineProperty(el, 'offsetLeft', { configurable: true, value: l });
+    Object.defineProperty(el, 'offsetTop', { configurable: true, value: t });
+    Object.defineProperty(el, 'offsetWidth', { configurable: true, value: w });
+    Object.defineProperty(el, 'offsetHeight', { configurable: true, value: h });
+    return el;
   }
 
   it('ensureEdgeOverlay creates a single SVG that ignores pointer events', () => {
@@ -206,7 +218,7 @@ describe('wall edge overlay', () => {
 
   it('renderEdges draws hit + visible lines between note centers', () => {
     const { surface } = mountSurfaceWithNotes();
-    renderEdges(surface, [{ id: 'e1', from: 'na', to: 'nb' }]);
+    renderEdges(surface, [{ id: 'e1', from: 'na', to: 'nb' }], 1);
     const groups = surface.querySelectorAll('.wall-edge-group');
     expect(groups.length).toBe(1);
     const g = groups[0] as SVGGElement;
@@ -231,14 +243,91 @@ describe('wall edge overlay', () => {
       { id: 'good', from: 'na', to: 'nb' },
       { id: 'orphan', from: 'na', to: 'gone' },
       { id: 'self', from: 'na', to: 'na' },
-    ]);
+    ], 1);
     expect(surface.querySelectorAll('.wall-edge-group').length).toBe(1);
   });
 
-  it('updateEdgesForNote moves only the lines that touch the given note', () => {
+  it('skips malformed story endpoints and missing story elements safely', () => {
     const { surface } = mountSurfaceWithNotes();
-    renderEdges(surface, [{ id: 'e1', from: 'na', to: 'nb' }]);
-    updateEdgesForNote(surface, 'na', 999, 999);
+    renderEdges(surface, [
+      { id: 'good', from: 'na', to: 'nb' },
+      { id: 'malformed', from: 'story:abc', to: 'na' },
+      { id: 'empty', from: 'story:', to: 'na' },
+      { id: 'missing-story', from: 'na', to: 'story:99' },
+    ], 1);
+    const groups = surface.querySelectorAll('.wall-edge-group');
+    expect(groups.length).toBe(1);
+    expect((groups[0] as SVGGElement).dataset.edgeId).toBe('good');
+  });
+
+  it('renderEdges draws note to story edges at the story rendered center', () => {
+    const { surface } = mountSurfaceWithNotes();
+    // Rendered box (400,300,280,200) centers at (540,400): the measured
+    // height (200) must win over the unrendered-story estimate (148).
+    const story = addStory(surface, 7, 400, 300, 280, 200);
+    expect(story.dataset.storyLocalId).toBe('7');
+    renderEdges(surface, [{ id: 'e1', from: 'na', to: 'story:7' }], 1);
+    const g = surface.querySelector('.wall-edge-group') as SVGGElement;
+    expect(g.dataset.edgeId).toBe('e1');
+    expect(g.dataset.from).toBe('na');
+    expect(g.dataset.to).toBe('story:7');
+    const line = g.querySelector('.wall-edge-line') as SVGLineElement;
+    expect(line.getAttribute('x1')).toBe('200');
+    expect(line.getAttribute('y1')).toBe('150');
+    expect(line.getAttribute('x2')).toBe('540');
+    expect(line.getAttribute('y2')).toBe('400');
+  });
+
+  it('renderEdges draws story to story edges', () => {
+    const { surface } = mountSurfaceWithNotes();
+    addStory(surface, 7, 0, 0, 280, 200);
+    addStory(surface, 8, 600, 400, 280, 100);
+    renderEdges(surface, [{ id: 'e1', from: 'story:7', to: 'story:8' }], 1);
+    const line = surface.querySelector('.wall-edge-line') as SVGLineElement;
+    expect(line.getAttribute('x1')).toBe('140');
+    expect(line.getAttribute('y1')).toBe('100');
+    expect(line.getAttribute('x2')).toBe('740');
+    expect(line.getAttribute('y2')).toBe('450');
+  });
+
+  it('stores canonical endpoint identity on edge groups', () => {
+    const { surface } = mountSurfaceWithNotes();
+    addStory(surface, 7, 0, 0, 280, 200);
+    renderEdges(surface, [{ id: 'e1', from: 'story:007', to: 'na' }], 1);
+    const g = surface.querySelector('.wall-edge-group') as SVGGElement;
+    expect(g.dataset.from).toBe('story:7');
+    expect(g.dataset.to).toBe('na');
+  });
+
+  it('replacing a story repositions only its incident edges', () => {
+    const { surface } = mountSurfaceWithNotes();
+    addStory(surface, 7, 400, 300, 280, 200);
+    renderEdges(surface, [
+      { id: 'mixed', from: 'na', to: 'story:7' },
+      { id: 'plain', from: 'na', to: 'nb' },
+    ], 1);
+    // Authoritative DOM replacement: swap the story element, then glue
+    // incident edges to the replacement's measured center.
+    surface.querySelector('.wall-story[data-story-local-id="7"]')?.remove();
+    addStory(surface, 7, 600, 100, 280, 200);
+    updateEdgesForEndpoint(surface, 'story:7', 740, 200);
+    const mixed = surface.querySelector('.wall-edge-group[data-edge-id="mixed"] .wall-edge-line') as SVGLineElement;
+    expect(mixed.getAttribute('x2')).toBe('740');
+    expect(mixed.getAttribute('y2')).toBe('200');
+    // The note endpoint of the mixed edge and the unrelated edge are untouched.
+    expect(mixed.getAttribute('x1')).toBe('200');
+    expect(mixed.getAttribute('y1')).toBe('150');
+    const plain = surface.querySelector('.wall-edge-group[data-edge-id="plain"] .wall-edge-line') as SVGLineElement;
+    expect(plain.getAttribute('x1')).toBe('200');
+    expect(plain.getAttribute('y1')).toBe('150');
+    expect(plain.getAttribute('x2')).toBe('500');
+    expect(plain.getAttribute('y2')).toBe('250');
+  });
+
+  it('updateEdgesForEndpoint moves only the lines that touch the given endpoint', () => {
+    const { surface } = mountSurfaceWithNotes();
+    renderEdges(surface, [{ id: 'e1', from: 'na', to: 'nb' }], 1);
+    updateEdgesForEndpoint(surface, 'na', 999, 999);
     const line = surface.querySelector('.wall-edge-line') as SVGLineElement;
     expect(line.getAttribute('x1')).toBe('999');
     expect(line.getAttribute('y1')).toBe('999');

@@ -28,10 +28,10 @@ type WallNote struct {
 	Version int64   `json:"version"`
 }
 
-// WallEdge is a simple connection between two notes (Postbaby-parity
-// Shift+drag edges). Edges are intentionally undirected and have no
-// per-edge version; they are write-once / delete-once. The document-level
-// `version` on Wall is the only realtime fingerprint.
+// WallEdge is a simple connection between two wall endpoints: raw note IDs or
+// canonical story endpoints ("story:<todo local ID>"). Edges are intentionally
+// undirected and have no per-edge version; they are write-once / delete-once.
+// The document-level `version` on Wall is the only realtime fingerprint.
 type WallEdge struct {
 	ID   string `json:"id"`
 	From string `json:"from"`
@@ -617,17 +617,26 @@ func (s *Store) DeleteNote(ctx context.Context, projectID int64, noteID string) 
 	return wall, nil
 }
 
-// CreateEdge appends an undirected edge between two notes. Rejects self-loops
-// and duplicates in either direction. Returns ErrNotFound if either endpoint
-// note does not exist on the wall, ErrValidation on bad input, and a no-op
-// (returning the existing edge) if a duplicate already exists.
-func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromNoteID, toNoteID string) (WallEdge, Wall, error) {
-	fromNoteID = strings.TrimSpace(fromNoteID)
-	toNoteID = strings.TrimSpace(toNoteID)
-	if fromNoteID == "" || toNoteID == "" {
+// CreateEdge appends an undirected edge between two wall endpoints: raw note
+// IDs or canonical story endpoints ("story:<todo local ID>"). Rejects
+// self-loops and duplicates in either direction. Returns ErrNotFound if
+// either endpoint does not exist on the wall, ErrValidation on bad input, and
+// a no-op (returning the existing edge) if a duplicate already exists.
+func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromEndpoint, toEndpoint string) (WallEdge, Wall, error) {
+	fromEndpoint = strings.TrimSpace(fromEndpoint)
+	toEndpoint = strings.TrimSpace(toEndpoint)
+	if fromEndpoint == "" || toEndpoint == "" {
 		return WallEdge{}, Wall{}, fmt.Errorf("%w: from and to required", ErrValidation)
 	}
-	if fromNoteID == toNoteID {
+	from, err := ParseWallEdgeEndpoint(fromEndpoint)
+	if err != nil {
+		return WallEdge{}, Wall{}, err
+	}
+	to, err := ParseWallEdgeEndpoint(toEndpoint)
+	if err != nil {
+		return WallEdge{}, Wall{}, err
+	}
+	if from.Canonical() == to.Canonical() {
 		return WallEdge{}, Wall{}, fmt.Errorf("%w: self-edges not allowed", ErrValidation)
 	}
 
@@ -638,20 +647,11 @@ func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromNoteID, toN
 	if err != nil {
 		return WallEdge{}, Wall{}, err
 	}
-	haveFrom, haveTo := false, false
-	for _, n := range wall.Notes {
-		if n.ID == fromNoteID {
-			haveFrom = true
-		}
-		if n.ID == toNoteID {
-			haveTo = true
-		}
-	}
-	if !haveFrom || !haveTo {
+	if !resolveWallEdgeEndpoint(wall, from) || !resolveWallEdgeEndpoint(wall, to) {
 		return WallEdge{}, Wall{}, ErrNotFound
 	}
 	for _, e := range wall.Edges {
-		if (e.From == fromNoteID && e.To == toNoteID) || (e.From == toNoteID && e.To == fromNoteID) {
+		if (e.From == from.Canonical() && e.To == to.Canonical()) || (e.From == to.Canonical() && e.To == from.Canonical()) {
 			// Idempotent: return the existing edge unchanged, no version bump.
 			return e, wall, nil
 		}
@@ -659,7 +659,7 @@ func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromNoteID, toN
 	if len(wall.Edges) >= maxWallEdges {
 		return WallEdge{}, Wall{}, fmt.Errorf("%w: wall edge limit reached", ErrValidation)
 	}
-	edge := WallEdge{ID: newEdgeID(), From: fromNoteID, To: toNoteID}
+	edge := WallEdge{ID: newEdgeID(), From: from.Canonical(), To: to.Canonical()}
 	wall.Edges = append(wall.Edges, edge)
 	wall.Version++
 	if err := s.writeWallLocked(ctx, projectID, wall); err != nil {

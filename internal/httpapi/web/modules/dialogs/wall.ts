@@ -50,7 +50,7 @@ import {
   isEditing,
   ensureEdgeOverlay,
   renderEdges,
-  updateEdgesForNote,
+  updateEdgesForEndpoint,
   beginEdgePreview,
   getNoteCenterFromElement,
   type WallDocument,
@@ -99,6 +99,11 @@ import {
   WALL_STORY_ESTIMATED_HEIGHT,
   WALL_STORY_WIDTH,
 } from "./wall-story-geometry.js";
+import {
+  formatWallStoryEndpoint,
+  parseWallEdgeEndpoint,
+  wallEdgeEndpointCenter,
+} from "./wall-edge-endpoint.js";
 import {
   clampCanvasCoord,
   ensureWallContent,
@@ -445,7 +450,7 @@ function diffWallDoc(prev: WallDocument, next: WallDocument): WallDocDiff {
     if (!prevEdge) return { kind: "full" };
     // Endpoint change for the same id should never happen on the server,
     // but if it does we prefer the full rebuild since edge endpoints are
-    // only repainted via renderEdges / updateEdgesForNote.
+    // only repainted via renderEdges / updateEdgesForEndpoint.
     if (prevEdge.from !== e.from || prevEdge.to !== e.to) return { kind: "full" };
   }
 
@@ -564,10 +569,10 @@ function renderSurface(): void {
     }
   }
   content.appendChild(frag);
-  // SVG overlay must be appended after notes are in the DOM so noteCenter()
-  // can read offsetLeft/offsetWidth on the freshly-mounted note elements.
+  // SVG overlay must be appended after notes and stories are in the DOM so
+  // endpoint centers can read offsets on the freshly-mounted elements.
   ensureEdgeOverlay(content);
-  renderEdges(content, state.doc.edges ?? []);
+  renderEdges(content, state.doc.edges ?? [], getViewportState().zoom);
   // Drop selection entries whose notes no longer exist (remote delete,
   // server-side reconcile), then reapply the `--selected` class.
   pruneSelection();
@@ -603,6 +608,17 @@ function updateStoryElement(story: WallStory): void {
   const cardContext = wallCardRenderContext();
   const replacement = buildStoryElement(story, cardContext.members, cardContext.opts);
   current.replaceWith(replacement);
+  // Keep incident mixed edges glued to the replacement's measured center
+  // without requiring a full wall rebuild.
+  const content = wallContentLayer();
+  if (content) {
+    const endpoint = formatWallStoryEndpoint(story.localId);
+    const parsed = parseWallEdgeEndpoint(endpoint);
+    if (parsed) {
+      const center = wallEdgeEndpointCenter(content, parsed, getViewportState().zoom);
+      if (center) updateEdgesForEndpoint(content, endpoint, center.cx, center.cy);
+    }
+  }
 }
 
 function updateNoteElement(note: WallNote): void {
@@ -625,7 +641,7 @@ function updateNoteElement(note: WallNote): void {
   // size or position change (e.g. resize commit, remote PATCH echo).
   const content = wallContentLayer();
   if (content) {
-    updateEdgesForNote(content, note.id, note.x + note.width / 2, note.y + note.height / 2);
+    updateEdgesForEndpoint(content, note.id, note.x + note.width / 2, note.y + note.height / 2);
   }
 }
 
@@ -875,7 +891,7 @@ async function createEdge(fromId: string, toId: string): Promise<void> {
       state.doc.edges.push(created);
     }
     const content = wallContentLayer();
-    if (content) renderEdges(content, state.doc.edges);
+    if (content) renderEdges(content, state.doc.edges, getViewportState().zoom);
   } catch (err) {
     console.warn("wall edge create failed", err);
     showToast(t("wall.toast.drawEdgeFailed"));
@@ -892,7 +908,7 @@ async function deleteEdge(edgeId: string): Promise<void> {
       state.doc.edges = state.doc.edges.filter((e) => e.id !== edgeId);
     }
     const content = wallContentLayer();
-    if (content) renderEdges(content, state.doc.edges ?? []);
+    if (content) renderEdges(content, state.doc.edges ?? [], getViewportState().zoom);
   } catch (err) {
     console.warn("wall edge delete failed", err);
     showToast(t("wall.toast.deleteEdgeFailed"));

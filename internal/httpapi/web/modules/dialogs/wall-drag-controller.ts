@@ -18,7 +18,7 @@
 import { wallSurface, wallTrash } from "../dom/elements.js";
 import {
   clampDim,
-  updateEdgesForNote,
+  updateEdgesForEndpoint,
   MAX_NOTE_HEIGHT,
   MAX_NOTE_WIDTH,
   MIN_NOTE_HEIGHT,
@@ -332,7 +332,7 @@ export function beginDrag(opts: BeginDragOptions): void {
         storeTransientPosition(p.id, nx, ny);
         const edgeRoot = getWallContent() ?? wallSurface;
         if (edgeRoot) {
-          updateEdgesForNote(edgeRoot, p.id, nx + p.el.offsetWidth / 2, ny + p.el.offsetHeight / 2);
+          updateEdgesForEndpoint(edgeRoot, p.id, nx + p.el.offsetWidth / 2, ny + p.el.offsetHeight / 2);
           edgeCallsThisTick += 1;
         }
       }
@@ -396,7 +396,7 @@ export function beginDrag(opts: BeginDragOptions): void {
         p.el.style.top = `${Math.round(p.startY)}px`;
         const edgeRoot = getWallContent() ?? wallSurface;
         if (edgeRoot) {
-          updateEdgesForNote(edgeRoot, p.id, p.startX + p.el.offsetWidth / 2, p.startY + p.el.offsetHeight / 2);
+          updateEdgesForEndpoint(edgeRoot, p.id, p.startX + p.el.offsetWidth / 2, p.startY + p.el.offsetHeight / 2);
         }
       }
       opts.onDropOnTrash(participants.map((p) => p.id), isGroup);
