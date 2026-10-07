@@ -257,9 +257,10 @@ type wallTransientInputJSON struct {
 // never persisted; it flows through common event fanout. Throttling is the
 // caller's responsibility (~100ms coalesce).
 //
-// Transient payload shape: {noteId, x, y, by}. The `by` field is the authenticated
-// user id of the caller and exists solely so the originating client can
-// suppress its own echoes when applying transients.
+// Transient payload shape is exactly one target plus coordinates:
+// {noteId, x, y, by} or {storyLocalId, x, y, by}. The `by` field is the
+// authenticated user id of the caller and exists solely so the originating
+// client can suppress its own echoes when applying transients.
 func (s *Server) handleWallTransient(w http.ResponseWriter, r *http.Request, projectID int64) {
 	mutationCtx := s.requestContext(r)
 	effectCtx := r.Context()

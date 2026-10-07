@@ -139,14 +139,29 @@ func newEdgeID() string {
 // GetWall reads the wall document for a project. Side-effect free: no row is
 // created when none exists; a synthetic empty wall is returned instead. The
 // row is materialized only on the first durable write.
+//
+// Notes/edges/version and hydrated story placements are read inside one
+// read-only SQLite transaction so a single returned Wall comes from one
+// database snapshot. This does not acquire lockWall: Wall mutations already
+// own that non-reentrant mutex, and GetWall must remain safe to call under it.
 func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
-	row := s.db.QueryRowContext(ctx,
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return Wall{}, fmt.Errorf("get wall begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx,
 		`SELECT notes, edges, version, updated_at FROM project_walls WHERE project_id = ?`,
 		projectID)
 	var notesJSON, edgesJSON string
 	var version, updatedAt int64
 	if err := row.Scan(&notesJSON, &edgesJSON, &version, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// Preserve historical behavior: a missing project_walls row yields the
+			// synthetic empty Wall immediately, without consulting placements.
+			// Placements FK projects, not project_walls, so orphans are possible,
+			// but GetWall has never surfaced them when the JSON row is absent.
 			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Stories: []WallStoryPlacement{}, Version: 0, UpdatedAt: 0}, nil
 		}
 		return Wall{}, fmt.Errorf("get wall: %w", err)
@@ -169,15 +184,15 @@ func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
 	if edges == nil {
 		edges = []WallEdge{}
 	}
-	stories, err := s.listWallStoryPlacements(ctx, projectID)
+	stories, err := listWallStoryPlacementsTx(ctx, tx, projectID)
 	if err != nil {
 		return Wall{}, err
 	}
 	return Wall{Notes: notes, Edges: edges, Stories: stories, Version: version, UpdatedAt: updatedAt}, nil
 }
 
-func (s *Store) listWallStoryPlacements(ctx context.Context, projectID int64) ([]WallStoryPlacement, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func listWallStoryPlacementsTx(ctx context.Context, tx *sql.Tx, projectID int64) ([]WallStoryPlacement, error) {
+	rows, err := tx.QueryContext(ctx, `
 SELECT wsp.todo_id, t.local_id, wsp.x, wsp.y, wsp.version,
        t.title, t.body, t.column_key, t.rank, t.estimation_points,
        t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key,
@@ -706,9 +721,10 @@ func (s *Store) DeleteEdge(ctx context.Context, projectID int64, edgeID string) 
 // upsertWallForImportTx writes a wall payload into project_walls inside an
 // import transaction. Validation is best-effort: invalid colors are rewritten
 // to a safe default and over-long text is truncated, so one bad row in a
-// backup does not fail the whole import. Edges referencing unknown notes are
-// dropped. Passing a nil payload is a no-op; callers decide whether a missing
-// wall field in the backup should wipe or preserve an existing wall row.
+// backup does not fail the whole import. Edges referencing unknown Wall
+// endpoints (notes or story local IDs) are dropped. Passing a nil payload is a
+// no-op; callers decide whether a missing wall field in the backup should wipe
+// or preserve an existing wall row.
 func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport, warnings *[]string) error {
 	if payload == nil {
 		return nil

@@ -26,7 +26,7 @@ import {
   type WallNote,
   type WallStory,
 } from "./wall-rendering.js";
-import { storyEdgeCenter } from "./wall-edge-endpoint.js";
+import { formatWallStoryEndpoint, storyEdgeCenter } from "./wall-edge-endpoint.js";
 import { DRAG_TRANSIENT_COALESCE_MS, TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
 import { postTransient } from "./wall-api.js";
 import { getMounted, setDragActive, type Mounted } from "./wall-state.js";
@@ -162,7 +162,7 @@ export function sendTransientNow(state: Mounted, noteId: string): void {
 }
 
 function storyTransientKey(localId: number): string {
-  return `story:${localId}`;
+  return formatWallStoryEndpoint(localId);
 }
 
 function scheduleStoryTransient(state: Mounted, localId: number, x: number, y: number): void {

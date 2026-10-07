@@ -16,7 +16,7 @@
 // gesture function, filled in once from `wall.ts::bindSurfaceHandlers`.
 import { wallSurface, wallTrash } from "../dom/elements.js";
 import { clampDim, updateEdgesForEndpoint, MAX_NOTE_HEIGHT, MAX_NOTE_WIDTH, MIN_NOTE_HEIGHT, MIN_NOTE_WIDTH, } from "./wall-rendering.js";
-import { storyEdgeCenter } from "./wall-edge-endpoint.js";
+import { formatWallStoryEndpoint, storyEdgeCenter } from "./wall-edge-endpoint.js";
 import { DRAG_TRANSIENT_COALESCE_MS, TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
 import { postTransient } from "./wall-api.js";
 import { getMounted, setDragActive } from "./wall-state.js";
@@ -92,7 +92,7 @@ export function sendTransientNow(state, noteId) {
     void postTransient(state.slug, { ...target, x: entry.lastX, y: entry.lastY });
 }
 function storyTransientKey(localId) {
-    return `story:${localId}`;
+    return formatWallStoryEndpoint(localId);
 }
 function scheduleStoryTransient(state, localId, x, y) {
     const key = storyTransientKey(localId);

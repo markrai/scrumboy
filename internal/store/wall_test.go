@@ -117,6 +117,9 @@ func TestWallGetIsSideEffectFree(t *testing.T) {
 	if len(wall.Notes) != 0 {
 		t.Fatalf("expected synthetic empty wall, got %d notes", len(wall.Notes))
 	}
+	if len(wall.Edges) != 0 || len(wall.Stories) != 0 {
+		t.Fatalf("expected empty edges/stories on synthetic wall, got edges=%d stories=%d", len(wall.Edges), len(wall.Stories))
+	}
 	if wall.Version != 0 {
 		t.Fatalf("expected version 0 for synthetic wall, got %d", wall.Version)
 	}
@@ -128,6 +131,101 @@ func TestWallGetIsSideEffectFree(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("GET should not materialize row, got count=%d", count)
+	}
+}
+
+func TestGetWallHydratesPinnedStoriesWithNotesAndVersion(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-get-hydrate@example.com", "password", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Wall get hydrate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, _, err := st.CreateNote(ownerCtx, project.ID, CreateNoteInput{Color: "#ffd966", Text: "note"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Pinned"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PinWallStory(ownerCtx, project.ID, todo.LocalID, 11, 22); err != nil {
+		t.Fatal(err)
+	}
+
+	wall, err := st.GetWall(ownerCtx, project.ID)
+	if err != nil {
+		t.Fatalf("GetWall: %v", err)
+	}
+	if wall.Version <= 0 {
+		t.Fatalf("expected persisted wall version, got %d", wall.Version)
+	}
+	if len(wall.Notes) != 1 || wall.Notes[0].ID != note.ID {
+		t.Fatalf("notes=%+v", wall.Notes)
+	}
+	if len(wall.Stories) != 1 {
+		t.Fatalf("stories=%+v", wall.Stories)
+	}
+	story := wall.Stories[0]
+	if story.TodoLocalID != todo.LocalID || story.X != 11 || story.Y != 22 {
+		t.Fatalf("placement=%+v", story)
+	}
+	if story.Todo.Title != "Pinned" || story.Todo.ID != todo.ID {
+		t.Fatalf("hydrated todo=%+v", story.Todo)
+	}
+}
+
+func TestGetWallMissingRowIgnoresOrphanPlacements(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-get-orphan@example.com", "password", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Wall get orphan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Orphan pin"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ownerCtx, `
+INSERT INTO wall_story_placements (project_id, todo_id, x, y, version)
+VALUES (?, ?, 1, 2, 1)`, project.ID, todo.ID); err != nil {
+		t.Fatalf("insert orphan placement: %v", err)
+	}
+
+	wall, err := st.GetWall(ownerCtx, project.ID)
+	if err != nil {
+		t.Fatalf("GetWall: %v", err)
+	}
+	if wall.Version != 0 || len(wall.Notes) != 0 || len(wall.Edges) != 0 || len(wall.Stories) != 0 {
+		t.Fatalf("missing project_walls must stay synthetic-empty, got %+v", wall)
+	}
+	var wallRows int
+	if err := st.db.QueryRowContext(ownerCtx, `SELECT COUNT(*) FROM project_walls WHERE project_id = ?`, project.ID).Scan(&wallRows); err != nil {
+		t.Fatal(err)
+	}
+	if wallRows != 0 {
+		t.Fatalf("GetWall materialized project_walls, count=%d", wallRows)
+	}
+	var placementRows int
+	if err := st.db.QueryRowContext(ownerCtx, `SELECT COUNT(*) FROM wall_story_placements WHERE project_id = ?`, project.ID).Scan(&placementRows); err != nil {
+		t.Fatal(err)
+	}
+	if placementRows != 1 {
+		t.Fatalf("orphan placement should remain stored, count=%d", placementRows)
 	}
 }
 

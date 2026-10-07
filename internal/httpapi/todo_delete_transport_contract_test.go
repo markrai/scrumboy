@@ -185,10 +185,10 @@ func TestTodoDeleteRESTRealtimeContracts(t *testing.T) {
 
 		wireEvents := collectTodoUpdateEvents(t, stream)
 		if len(wireEvents) != 2 || wireEvents[0].Type != "refresh_needed" || wireEvents[0].ProjectID != project.ID || wireEvents[0].Reason != "todo_deleted" {
-			t.Fatalf("SSE events=%+v want todo_deleted then wall_todo_deleted refresh for project %d", wireEvents, project.ID)
+			t.Fatalf("SSE events=%+v want refresh_needed/todo_deleted then wall.refresh_needed/wall_todo_deleted for project %d", wireEvents, project.ID)
 		}
-		if wireEvents[1].Type != "refresh_needed" || wireEvents[1].ProjectID != project.ID || wireEvents[1].Reason != "wall_todo_deleted" {
-			t.Fatalf("SSE events=%+v want todo_deleted then wall_todo_deleted refresh for project %d", wireEvents, project.ID)
+		if wireEvents[1].Type != "wall.refresh_needed" || wireEvents[1].ProjectID != project.ID || wireEvents[1].Reason != "wall_todo_deleted" {
+			t.Fatalf("SSE events=%+v want refresh_needed/todo_deleted then wall.refresh_needed/wall_todo_deleted for project %d", wireEvents, project.ID)
 		}
 	})
 

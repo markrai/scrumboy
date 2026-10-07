@@ -38,11 +38,17 @@ func TestLegacyTodoDeleteSuccessAndRealtimeContract(t *testing.T) {
 	if int64(audits[0].Metadata["local_id"].(float64)) != todo.LocalID || audits[0].Metadata["column_key"] != store.DefaultColumnTesting {
 		t.Fatalf("delete audit metadata=%+v", audits[0].Metadata)
 	}
-	legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_deleted", maintainer.ID)
+	legacyTodoAssertDeleteRefresh(t, fixture, project.ID, maintainer.ID)
 	if gotAssigned := legacyTodoCountEvents(t, fixture, project.ID, "todo.assigned"); gotAssigned != 0 {
 		t.Fatalf("delete assignment events=%d, want 0", gotAssigned)
 	}
-	assertTodoUpdateRefreshes(t, collectTodoUpdateEvents(t, stream), project.ID, "todo_deleted", 0)
+	wireEvents := collectTodoUpdateEvents(t, stream)
+	if len(wireEvents) != 2 || wireEvents[0].Type != "refresh_needed" || wireEvents[0].ProjectID != project.ID || wireEvents[0].Reason != "todo_deleted" {
+		t.Fatalf("SSE events=%+v want refresh_needed/todo_deleted then wall.refresh_needed/wall_todo_deleted for project %d", wireEvents, project.ID)
+	}
+	if wireEvents[1].Type != "wall.refresh_needed" || wireEvents[1].ProjectID != project.ID || wireEvents[1].Reason != "wall_todo_deleted" {
+		t.Fatalf("SSE events=%+v want refresh_needed/todo_deleted then wall.refresh_needed/wall_todo_deleted for project %d", wireEvents, project.ID)
+	}
 }
 
 func TestLegacyTodoDeleteAccessAndModeContracts(t *testing.T) {
@@ -100,7 +106,7 @@ func TestLegacyTodoDeleteAccessAndModeContracts(t *testing.T) {
 			t.Fatal("temporary DELETE retained Todo")
 		}
 		legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_deleted", todo.ID)
-		legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_deleted", 0)
+		legacyTodoAssertDeleteRefresh(t, fixture, project.ID, 0)
 	})
 
 	t.Run("expired_temporary_rejected", func(t *testing.T) {

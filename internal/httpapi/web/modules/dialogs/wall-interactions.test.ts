@@ -301,7 +301,9 @@ describe("wall interactions", () => {
       clientX: 110,
       clientY: 125,
     }));
-    await flushPromises();
+    await vi.waitFor(() => {
+      expect(openTodoDialogMock).toHaveBeenCalledTimes(1);
+    });
     const options = openTodoDialogMock.mock.calls.at(-1)?.[0];
     expect(options).toEqual(expect.objectContaining({ mode: "create", role: "maintainer" }));
     await options.onCreated({ id: 210, localId: 21, title: "Created", status: "BACKLOG" });
@@ -366,11 +368,9 @@ describe("wall interactions", () => {
     const createBtn = wallDialogEl.querySelector<HTMLButtonElement>('.wall-note-context-menu [data-action="create-todo"]');
     if (!createBtn) throw new Error("missing create-todo menu item");
     createBtn.click();
-    // Dynamic import + two awaited then-chains inside wall.ts; flush a few
-    // extra microtask turns so vitest's module resolver settles.
-    await flushPromises(20);
-
-    expect(openTodoDialogMock).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(openTodoDialogMock).toHaveBeenCalledTimes(1);
+    });
     const call = openTodoDialogMock.mock.calls[0][0];
     expect(call).toMatchObject({ mode: "create", role: "maintainer", initialTitle: "Hello" });
     expect(confirmDeleteMock).not.toHaveBeenCalled();
