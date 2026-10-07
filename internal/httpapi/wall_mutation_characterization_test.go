@@ -382,7 +382,7 @@ func TestWallMutationCharacterizationSelectedSurfaceSuccesses(t *testing.T) {
 		"notes": []any{wallNoteInput("replacement")},
 	}, &replaced)
 	assertWallStatus(t, resp, body, http.StatusOK)
-	assertExactJSONKeys(t, replaced, "notes", "edges", "version", "updatedAt")
+	assertExactJSONKeys(t, replaced, "notes", "edges", "stories", "version", "updatedAt")
 	notes, ok := replaced["notes"].([]any)
 	if !ok || len(notes) != 1 {
 		t.Fatalf("replacement notes=%+v", replaced["notes"])
@@ -735,7 +735,7 @@ func TestWallMutationCharacterizationEmptyReplacementAndLimitOrdering(t *testing
 		var replaced map[string]any
 		resp, body := doWallRawJSON(t, fx.client, http.MethodPut, wallMutationURL(fx, ""), `{"notes":[]}`, false, &replaced)
 		assertWallStatus(t, resp, body, http.StatusOK)
-		assertExactJSONKeys(t, replaced, "notes", "edges", "version", "updatedAt")
+		assertExactJSONKeys(t, replaced, "notes", "edges", "stories", "version", "updatedAt")
 		notes, notesOK := replaced["notes"].([]any)
 		edges, edgesOK := replaced["edges"].([]any)
 		if !notesOK || len(notes) != 0 || !edgesOK || len(edges) != 0 || replaced["version"] != float64(1) {

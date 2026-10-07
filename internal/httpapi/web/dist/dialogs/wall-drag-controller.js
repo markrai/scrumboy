@@ -85,7 +85,44 @@ export function sendTransientNow(state, noteId) {
         entry.timer = null;
     }
     entry.lastSentAt = performance.now();
-    void postTransient(state.slug, { noteId, x: entry.lastX, y: entry.lastY });
+    const target = entry.storyLocalId == null
+        ? { noteId }
+        : { storyLocalId: entry.storyLocalId };
+    void postTransient(state.slug, { ...target, x: entry.lastX, y: entry.lastY });
+}
+function storyTransientKey(localId) {
+    return `story:${localId}`;
+}
+function scheduleStoryTransient(state, localId, x, y) {
+    const key = storyTransientKey(localId);
+    let entry = state.transient.get(key);
+    if (!entry) {
+        entry = { storyLocalId: localId, lastX: x, lastY: y, lastSentAt: 0, timer: null };
+        state.transient.set(key, entry);
+    }
+    entry.lastX = x;
+    entry.lastY = y;
+    const elapsed = performance.now() - entry.lastSentAt;
+    if (elapsed >= TRANSIENT_COALESCE_MS) {
+        sendTransientNow(state, key);
+    }
+    else if (!entry.timer) {
+        entry.timer = setTimeout(() => {
+            if (getMounted() === state)
+                sendTransientNow(state, key);
+        }, TRANSIENT_COALESCE_MS - elapsed);
+    }
+}
+function flushStoryTransient(state, localId) {
+    const key = storyTransientKey(localId);
+    const entry = state.transient.get(key);
+    if (!entry)
+        return;
+    if (entry.timer)
+        clearTimeout(entry.timer);
+    entry.timer = null;
+    sendTransientNow(state, key);
+    state.transient.delete(key);
 }
 // ---- Trash strip -------------------------------------------------------
 export function showTrash(visible) {
@@ -317,6 +354,61 @@ export function beginDrag(opts) {
     document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
     document.addEventListener("pointerup", onUp, { signal: state.abort.signal });
     document.addEventListener("pointercancel", onUp, { signal: state.abort.signal });
+}
+/** Drag a canonical story placement without sticky-note selection/trash semantics. */
+export function beginStoryDrag(opts) {
+    const { state, ev, storyEl, story, downX, downY } = opts;
+    const surface = wallSurface;
+    if (!surface)
+        return;
+    const surfaceRect = surface.getBoundingClientRect();
+    const itemRect = storyEl.getBoundingClientRect();
+    const { panX, panY, zoom } = getViewportState();
+    const shiftX = downX - itemRect.left;
+    const shiftY = downY - itemRect.top;
+    let frame = null;
+    let clientX = ev.clientX;
+    let clientY = ev.clientY;
+    storyEl.classList.add("wall-story--dragging");
+    setDragActive(true);
+    const paint = () => {
+        frame = null;
+        const x = clampCanvasCoord((clientX - shiftX - surfaceRect.left - panX) / zoom);
+        const y = clampCanvasCoord((clientY - shiftY - surfaceRect.top - panY) / zoom);
+        storyEl.style.left = `${Math.round(x)}px`;
+        storyEl.style.top = `${Math.round(y)}px`;
+        scheduleStoryTransient(state, story.localId, x, y);
+    };
+    const onMove = (move) => {
+        move.preventDefault();
+        clientX = move.clientX;
+        clientY = move.clientY;
+        if (frame === null)
+            frame = requestAnimationFrame(paint);
+    };
+    const onUp = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        if (frame !== null) {
+            cancelAnimationFrame(frame);
+            frame = null;
+            paint();
+        }
+        storyEl.classList.remove("wall-story--dragging");
+        setDragActive(false);
+        const x = parseInt(storyEl.style.left || String(story.x), 10);
+        const y = parseInt(storyEl.style.top || String(story.y), 10);
+        scheduleStoryTransient(state, story.localId, x, y);
+        flushStoryTransient(state, story.localId);
+        if (x !== story.x || y !== story.y)
+            opts.onCommit(story.localId, x, y);
+    };
+    document.addEventListener("pointermove", onMove, { signal: state.abort.signal, passive: false });
+    document.addEventListener("pointerup", onUp, { signal: state.abort.signal });
+    document.addEventListener("pointercancel", onUp, { signal: state.abort.signal });
+    // Apply the threshold-crossing move that promoted this gesture to a drag.
+    onMove(ev);
 }
 export function startResize(opts) {
     const { state, ev, noteEl, noteId } = opts;

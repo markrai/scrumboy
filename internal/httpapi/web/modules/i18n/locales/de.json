@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Tag eingeben und Enter drücken",
   "shell.contextMenu.newTodo": "Neues Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Wähle die Sprache, die Scrumboy in diesem Browser verwendet.",
   "settings.language.selectLabel": "Sprache",
   "settings.language.title": "Sprache",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "Notiz zum Löschen hierher ziehen",
   "wall.shortcuts.createNote.label": "Notiz erstellen:",
   "wall.shortcuts.createNote.hint": "Rechtsklick auf die Leinwand",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "Farbe ändern:",
   "wall.shortcuts.changeColor.hint": "einfacher Klick auf Notiz",
   "wall.shortcuts.editNote.label": "Notiz bearbeiten:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "Notizgröße ändern",
   "wall.note.edit": "Notiztext bearbeiten",
   "wall.menu.createTodoFromNote": "Todo aus Notiz erstellen",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "{count} Notizen löschen",
   "wall.confirm.deleteNote": "Diese Notiz löschen?",
   "wall.confirm.deleteNotesCount": "{count} Notizen löschen?",
   "wall.confirm.deleteConnection": "Diese Verbindung löschen?",
   "wall.toast.unavailable": "Die Wand ist hier nicht verfügbar.",
   "wall.toast.addNoteFailed": "Notiz konnte nicht hinzugefügt werden",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Ein anderer Bearbeiter hat diese Notiz geändert — Wand wird neu geladen.",
   "wall.toast.updateNoteFailed": "Notiz konnte nicht aktualisiert werden",
   "wall.toast.deleteNoteFailed": "Notiz konnte nicht gelöscht werden",

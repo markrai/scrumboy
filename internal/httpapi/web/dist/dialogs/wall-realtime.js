@@ -95,7 +95,7 @@ export async function refetchDoc(opts) {
  * Echo suppression: transients originated by the local user are ignored.
  * Drag suppression: notes the local user is currently dragging are ignored.
  */
-export function applyTransient(payload, noteElementById) {
+export function applyTransient(payload, noteElementById, storyElementByLocalId) {
     const state = getMounted();
     if (!state || !wallSurface)
         return;
@@ -104,20 +104,25 @@ export function applyTransient(payload, noteElementById) {
     if (!p || typeof p !== "object")
         return;
     const noteId = typeof p.noteId === "string" ? p.noteId : null;
+    const storyLocalId = typeof p.storyLocalId === "number" ? p.storyLocalId : null;
     const x = typeof p.x === "number" ? p.x : null;
     const y = typeof p.y === "number" ? p.y : null;
     const by = typeof p.by === "number" ? p.by : null;
-    if (!noteId || x === null || y === null)
+    if ((noteId === null) === (storyLocalId === null) || x === null || y === null)
         return;
     if (by !== null && state.userId !== null && by === state.userId)
         return;
-    const el = noteElementById(noteId);
+    const el = noteId !== null
+        ? noteElementById(noteId)
+        : storyElementByLocalId?.(storyLocalId) ?? null;
     if (!el)
         return;
-    if (el.classList.contains("wall-note--dragging"))
+    if (el.classList.contains("wall-note--dragging") || el.classList.contains("wall-story--dragging"))
         return;
     el.style.left = `${Math.round(x)}px`;
     el.style.top = `${Math.round(y)}px`;
+    if (noteId === null)
+        return;
     const edgeRoot = getWallContent() ?? wallSurface;
     if (edgeRoot) {
         updateEdgesForNote(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);

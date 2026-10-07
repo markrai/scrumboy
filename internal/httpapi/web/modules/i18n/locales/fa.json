@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "وضعیت",
   "shell.bulkEdit.tagsPlaceholder": "tag را تایپ کنید و Enter بزنید",
   "shell.contextMenu.newTodo": "Todo جدید",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "زبانی که Scrumboy در این مرورگر با آن نمایش داده می‌شود را انتخاب کنید.",
   "settings.language.selectLabel": "زبان",
   "settings.language.title": "زبان",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "یادداشت را اینجا بکشید تا حذف شود",
   "wall.shortcuts.createNote.label": "ایجاد یادداشت:",
   "wall.shortcuts.createNote.hint": "right-click روی canvas",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "تغییر رنگ:",
   "wall.shortcuts.changeColor.hint": "single-click روی یادداشت",
   "wall.shortcuts.editNote.label": "ویرایش یادداشت:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "تغییر اندازهٔ یادداشت",
   "wall.note.edit": "ویرایش متن یادداشت",
   "wall.menu.createTodoFromNote": "ایجاد Todo از یادداشت",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "حذف {count} یادداشت",
   "wall.confirm.deleteNote": "این یادداشت حذف شود؟",
   "wall.confirm.deleteNotesCount": "{count} یادداشت حذف شود؟",
   "wall.confirm.deleteConnection": "این اتصال حذف شود؟",
   "wall.toast.unavailable": "Wall اینجا در دسترس نیست.",
   "wall.toast.addNoteFailed": "یادداشت اضافه نشد",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "یک editor دیگر این یادداشت را تغییر داد — wall دوباره بارگذاری می‌شود.",
   "wall.toast.updateNoteFailed": "یادداشت به‌روزرسانی نشد",
   "wall.toast.deleteNoteFailed": "یادداشت حذف نشد",

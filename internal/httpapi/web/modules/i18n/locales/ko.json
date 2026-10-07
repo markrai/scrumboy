@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "상태",
   "shell.bulkEdit.tagsPlaceholder": "태그를 입력하고 Enter를 누르세요",
   "shell.contextMenu.newTodo": "새 Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "이 브라우저에서 Scrumboy에 사용할 언어를 선택하세요.",
   "settings.language.selectLabel": "언어",
   "settings.language.title": "언어",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "메모를 여기로 드래그하여 삭제",
   "wall.shortcuts.createNote.label": "메모 만들기:",
   "wall.shortcuts.createNote.hint": "캔버스에서 오른쪽 클릭",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "색상 변경:",
   "wall.shortcuts.changeColor.hint": "메모를 한 번 클릭",
   "wall.shortcuts.editNote.label": "메모 편집:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "메모 크기 조정",
   "wall.note.edit": "메모 텍스트 편집",
   "wall.menu.createTodoFromNote": "메모에서 Todo 만들기",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "{count}개 메모 삭제",
   "wall.confirm.deleteNote": "이 메모를 삭제하시겠습니까?",
   "wall.confirm.deleteNotesCount": "{count}개 메모를 삭제하시겠습니까?",
   "wall.confirm.deleteConnection": "이 연결선을 삭제하시겠습니까?",
   "wall.toast.unavailable": "여기서는 Wall을 사용할 수 없습니다.",
   "wall.toast.addNoteFailed": "메모를 추가할 수 없습니다",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "다른 편집자가 이 메모를 변경했습니다 — Wall을 다시 불러옵니다.",
   "wall.toast.updateNoteFailed": "메모를 업데이트할 수 없습니다",
   "wall.toast.deleteNoteFailed": "메모를 삭제할 수 없습니다",

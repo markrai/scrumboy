@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "Durum",
   "shell.bulkEdit.tagsPlaceholder": "Etiket yazın ve Enter'a basın",
   "shell.contextMenu.newTodo": "Yeni Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Bu tarayıcıda Scrumboy için kullanılacak dili seçin.",
   "settings.language.selectLabel": "Dil",
   "settings.language.title": "Dil",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "Silmek için notu buraya sürükleyin",
   "wall.shortcuts.createNote.label": "not oluştur:",
   "wall.shortcuts.createNote.hint": "tuvalde sağ tıklama",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "renk değiştir:",
   "wall.shortcuts.changeColor.hint": "nota tek tıklama",
   "wall.shortcuts.editNote.label": "notu düzenle:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "Notu yeniden boyutlandır",
   "wall.note.edit": "Not metnini düzenle",
   "wall.menu.createTodoFromNote": "Nottan Todo oluştur",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "{count} notu sil",
   "wall.confirm.deleteNote": "Bu not silinsin mi?",
   "wall.confirm.deleteNotesCount": "{count} not silinsin mi?",
   "wall.confirm.deleteConnection": "Bu bağlantı silinsin mi?",
   "wall.toast.unavailable": "Duvar burada kullanılamıyor.",
   "wall.toast.addNoteFailed": "Not eklenemedi",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Başka bir düzenleyici bu notu değiştirdi — duvar yeniden yükleniyor.",
   "wall.toast.updateNoteFailed": "Not güncellenemedi",
   "wall.toast.deleteNoteFailed": "Not silinemedi",

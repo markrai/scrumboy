@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Wpisz tag i naciśnij Enter",
   "shell.contextMenu.newTodo": "Nowe Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Wybierz język Scrumboy w tej przeglądarce.",
   "settings.language.selectLabel": "Język",
   "settings.language.title": "Język",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "Przeciągnij notatkę tutaj, aby usunąć",
   "wall.shortcuts.createNote.label": "utwórz notatkę:",
   "wall.shortcuts.createNote.hint": "kliknij prawym przyciskiem na kanwie",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "zmień kolor:",
   "wall.shortcuts.changeColor.hint": "pojedyncze kliknięcie notatki",
   "wall.shortcuts.editNote.label": "edytuj notatkę:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "Zmień rozmiar notatki",
   "wall.note.edit": "Edytuj tekst notatki",
   "wall.menu.createTodoFromNote": "Utwórz Todo z notatki",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "Usuń {count} notatek",
   "wall.confirm.deleteNote": "Usunąć tę notatkę?",
   "wall.confirm.deleteNotesCount": "Usunąć {count} notatek?",
   "wall.confirm.deleteConnection": "Usunąć to połączenie?",
   "wall.toast.unavailable": "Ściana notatek jest tu niedostępna.",
   "wall.toast.addNoteFailed": "Nie udało się dodać notatki",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Inny edytor zmienił tę notatkę — przeładowuję ścianę.",
   "wall.toast.updateNoteFailed": "Nie udało się zaktualizować notatki",
   "wall.toast.deleteNoteFailed": "Nie udało się usunąć notatki",

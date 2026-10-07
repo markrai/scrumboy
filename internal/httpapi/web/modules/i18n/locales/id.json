@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Ketik tag lalu tekan Enter",
   "shell.contextMenu.newTodo": "Todo Baru",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Pilih bahasa yang digunakan Scrumboy di browser ini.",
   "settings.language.selectLabel": "Bahasa",
   "settings.language.title": "Bahasa",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "Seret catatan ke sini untuk menghapus",
   "wall.shortcuts.createNote.label": "buat catatan:",
   "wall.shortcuts.createNote.hint": "klik kanan di kanvas",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "ubah warna:",
   "wall.shortcuts.changeColor.hint": "klik tunggal catatan",
   "wall.shortcuts.editNote.label": "edit catatan:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "Ubah ukuran catatan",
   "wall.note.edit": "Edit teks catatan",
   "wall.menu.createTodoFromNote": "Buat Todo dari Catatan",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "Hapus {count} catatan",
   "wall.confirm.deleteNote": "Hapus catatan ini?",
   "wall.confirm.deleteNotesCount": "Hapus {count} catatan?",
   "wall.confirm.deleteConnection": "Hapus koneksi ini?",
   "wall.toast.unavailable": "Wall tidak tersedia di sini.",
   "wall.toast.addNoteFailed": "Tidak dapat menambahkan catatan",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Editor lain mengubah catatan ini — memuat ulang wall.",
   "wall.toast.updateNoteFailed": "Tidak dapat memperbarui catatan",
   "wall.toast.deleteNoteFailed": "Tidak dapat menghapus catatan",

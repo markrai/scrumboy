@@ -216,12 +216,12 @@ export function zoomAround(clientX, clientY, factor) {
     scheduleSaveViewport();
 }
 /** Fit all notes in the viewport; empty wall resets to origin @ 100%. */
-export function fitToNotes(notes) {
+export function fitToNotes(notes, stories = []) {
     if (!viewportSurface) {
         setViewportState(identityViewport());
         return;
     }
-    if (!notes.length) {
+    if (!notes.length && !stories.length) {
         setViewportState(identityViewport());
         return;
     }
@@ -234,6 +234,12 @@ export function fitToNotes(notes) {
         minY = Math.min(minY, n.y);
         maxX = Math.max(maxX, n.x + n.width);
         maxY = Math.max(maxY, n.y + n.height);
+    }
+    for (const story of stories) {
+        minX = Math.min(minX, story.x);
+        minY = Math.min(minY, story.y);
+        maxX = Math.max(maxX, story.x + 280);
+        maxY = Math.max(maxY, story.y + 148);
     }
     const bboxW = Math.max(1, maxX - minX);
     const bboxH = Math.max(1, maxY - minY);

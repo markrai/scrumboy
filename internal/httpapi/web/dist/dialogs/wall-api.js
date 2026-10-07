@@ -41,6 +41,21 @@ export function deleteEdgeRemote(slug, id) {
         method: "DELETE",
     });
 }
+export function pinStoryRemote(slug, body) {
+    return apiFetch(`${wallBase(slug)}/stories`, {
+        method: "POST",
+        body: JSON.stringify(body),
+    });
+}
+export function patchStoryRemote(slug, localId, body) {
+    return apiFetch(`${wallBase(slug)}/stories/${localId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+    });
+}
+export function unpinStoryRemote(slug, localId) {
+    return apiFetch(`${wallBase(slug)}/stories/${localId}`, { method: "DELETE" });
+}
 /**
  * Post a transient (non-durable) drag update.
  *

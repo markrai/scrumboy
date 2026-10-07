@@ -210,7 +210,7 @@ func assertWallReplacementMigrationResponse(
 	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode replacement response %s: %v", response.Body.Bytes(), err)
 	}
-	assertExactJSONKeys(t, got, "notes", "edges", "version", "updatedAt")
+	assertExactJSONKeys(t, got, "notes", "edges", "stories", "version", "updatedAt")
 	notes, ok := got["notes"].([]any)
 	if !ok {
 		t.Fatalf("response notes=%T want array", got["notes"])
@@ -254,8 +254,9 @@ func wallReplacementMigrationJSONValue(wall store.Wall) map[string]any {
 			"id": edge.ID, "from": edge.From, "to": edge.To,
 		})
 	}
+	stories := make([]any, 0, len(wall.Stories))
 	return map[string]any{
-		"notes": notes, "edges": edges,
+		"notes": notes, "edges": edges, "stories": stories,
 		"version": float64(wall.Version), "updatedAt": float64(wall.UpdatedAt),
 	}
 }
@@ -339,7 +340,7 @@ func TestWallReplacementMigrationHandlerDelegatesOnceWithRetainedContexts(t *tes
 	req := newWallReplacementMigrationDirectRequest(t, fx, rawCtx, body, true)
 	response := httptest.NewRecorder()
 
-	fx.server.handleWallPut(response, req, fx.project.ID)
+	fx.server.handleWallPut(response, req, fx.project)
 	assertWallReplacementMigrationResponse(t, response, wantWall)
 	assertWallReplacementMigrationTrace(t, recorder.trace, "role", "body", "replace", "refresh")
 	if recorder.roleCalls != 1 || recorder.rolePID != fx.project.ID || recorder.roleUID != fx.owner.ID {
@@ -419,7 +420,7 @@ func TestWallReplacementMigrationEmptyInputsRemainNonNil(t *testing.T) {
 			req := newWallReplacementMigrationDirectRequest(t, fx, context.Background(), body, true)
 			response := httptest.NewRecorder()
 
-			fx.server.handleWallPut(response, req, fx.project.ID)
+			fx.server.handleWallPut(response, req, fx.project)
 			assertWallReplacementMigrationResponse(t, response, wantWall)
 			assertWallReplacementMigrationTrace(t, recorder.trace, "role", "body", "replace", "refresh")
 			if len(recorder.replaceCalls) != 1 {
@@ -485,7 +486,7 @@ func TestWallReplacementMigrationPreparationPrecedesBody(t *testing.T) {
 			)
 			response := httptest.NewRecorder()
 
-			fx.server.handleWallPut(response, req, fx.project.ID)
+			fx.server.handleWallPut(response, req, fx.project)
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, tt.wantStatus, response.Body.Bytes())
 			}
@@ -603,7 +604,7 @@ func TestWallReplacementMigrationExecutionErrorsUseExistingProjectionAndPublishN
 			req := newWallReplacementMigrationDirectRequest(t, fx, context.Background(), body, true)
 			response := httptest.NewRecorder()
 
-			fx.server.handleWallPut(response, req, fx.project.ID)
+			fx.server.handleWallPut(response, req, fx.project)
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, tt.wantStatus, response.Body.Bytes())
 			}

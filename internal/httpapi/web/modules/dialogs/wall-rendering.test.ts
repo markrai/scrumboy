@@ -5,6 +5,7 @@ import enCatalog from '../i18n/locales/en.json';
 import {
   beginEdgePreview,
   buildNoteElement,
+  buildStoryElement,
   clampDim,
   ensureEdgeOverlay,
   enterEditMode,
@@ -18,6 +19,7 @@ import {
   sanitizeNoteColor,
   updateEdgesForNote,
   type WallNote,
+  type WallStory,
 } from './wall-rendering.js';
 
 function note(overrides: Partial<WallNote> = {}): WallNote {
@@ -82,6 +84,32 @@ describe('wall-rendering helpers', () => {
     expect(el.querySelector('.wall-note__display')).not.toBeNull();
     expect(el.querySelector('textarea')).toBeNull();
     expect(el.querySelector('.wall-note__resize-handle')).toBeNull();
+  });
+
+  it('renders a Wall story from the shared canonical board-card content', () => {
+    const story: WallStory = {
+      localId: 42,
+      x: 30,
+      y: 40,
+      version: 2,
+      todo: {
+        id: 99,
+        localId: 42,
+        title: 'Canonical story',
+        status: 'DOING',
+        tags: ['shared'],
+        estimationPoints: 5,
+      },
+    };
+    const el = buildStoryElement(story, {}, { showPointsMode: true });
+    expect(el.classList.contains('wall-story')).toBe(true);
+    expect(el.classList.contains('card--doing')).toBe(true);
+    expect(el.dataset.storyLocalId).toBe('42');
+    expect(el.style.left).toBe('30px');
+    expect(el.textContent).toContain('#42');
+    expect(el.textContent).toContain('Canonical story');
+    expect(el.textContent).toContain('shared');
+    expect(el.querySelector('.card__drag-handle')).toBeNull();
   });
 
   it('stamps data-color-index from the palette', () => {

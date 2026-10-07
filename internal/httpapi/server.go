@@ -158,6 +158,7 @@ type Server struct {
 	wallReplacements              *wallapp.RESTReplacementService
 	wallEdgeMutations             *wallapp.RESTEdgeService
 	wallTransientMutations        *wallapp.RESTTransientService
+	wallStoryMutations            *wallapp.RESTStoryService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -419,6 +420,9 @@ type storeAPI interface {
 	ReplaceWall(ctx context.Context, projectID int64, notes []store.WallNote) (store.Wall, error)
 	CreateEdge(ctx context.Context, projectID int64, fromNoteID, toNoteID string) (store.WallEdge, store.Wall, error)
 	DeleteEdge(ctx context.Context, projectID int64, edgeID string) (store.Wall, error)
+	PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (store.WallStoryPlacement, bool, error)
+	PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (store.WallStoryPlacement, error)
+	UnpinWallStory(ctx context.Context, projectID, localID int64) error
 }
 
 //go:embed web/**
@@ -677,6 +681,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 	server.wallTransientMutations = wallapp.NewRESTTransientService(wallapp.RESTTransientServiceDependencies{
 		Roles:     st,
 		Publisher: wallTransientPublisher{server: server},
+	})
+	server.wallStoryMutations = wallapp.NewRESTStoryService(wallapp.RESTStoryServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
 	})
 	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
 	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)

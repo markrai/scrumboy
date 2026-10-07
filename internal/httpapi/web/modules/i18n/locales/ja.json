@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "ステータス",
   "shell.bulkEdit.tagsPlaceholder": "タグを入力して Enter",
   "shell.contextMenu.newTodo": "新しい Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "このブラウザで Scrumboy に使用する言語を選択してください。",
   "settings.language.selectLabel": "言語",
   "settings.language.title": "言語",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "ノートをここにドラッグして削除",
   "wall.shortcuts.createNote.label": "ノート作成:",
   "wall.shortcuts.createNote.hint": "キャンバスを右クリック",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "色を変更:",
   "wall.shortcuts.changeColor.hint": "ノートをシングルクリック",
   "wall.shortcuts.editNote.label": "ノートを編集:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "ノートのサイズ変更",
   "wall.note.edit": "ノートテキストを編集",
   "wall.menu.createTodoFromNote": "ノートから Todo を作成",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "{count} 件のノートを削除",
   "wall.confirm.deleteNote": "このノートを削除しますか？",
   "wall.confirm.deleteNotesCount": "{count} 件のノートを削除しますか？",
   "wall.confirm.deleteConnection": "この接続を削除しますか？",
   "wall.toast.unavailable": "ここではウォールを利用できません。",
   "wall.toast.addNoteFailed": "ノートを追加できませんでした",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "別の編集者がこのノートを変更しました — ウォールを再読み込みしています。",
   "wall.toast.updateNoteFailed": "ノートを更新できませんでした",
   "wall.toast.deleteNoteFailed": "ノートを削除できませんでした",

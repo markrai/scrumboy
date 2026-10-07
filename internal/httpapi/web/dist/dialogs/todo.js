@@ -23,6 +23,7 @@ let todoDialogBaseline = null;
 let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort = null;
 let todoDialogOpenGeneration = 0;
+let todoCreatedCallback = null;
 function sprintStateLabel(state) {
     const key = `todo.sprint.state.${state}`;
     return state && hasI18nKey(key) ? t(key) : state;
@@ -226,6 +227,7 @@ function resetTodoDialogCloseState() {
     todoDialogClosePromptOpen = false;
     todoCreatorLocaleAbort?.abort();
     todoCreatorLocaleAbort = null;
+    todoCreatedCallback = null;
 }
 async function closeTodoDialogInternal(options = {}) {
     const dialog = todoDialog;
@@ -298,9 +300,32 @@ export function requestTodoDialogClose(options = {}) {
 export function __isTodoDialogDirtyForTest() {
     return isTodoDialogDirty();
 }
+// Called by the actual create-submit path after the server has returned the
+// canonical Todo. The callback is one-shot and scoped to the current dialog
+// generation, so it cannot leak into a later create or fire for edits.
+export function getTodoDialogOpenGeneration() {
+    return todoDialogOpenGeneration;
+}
+export async function notifyTodoCreated(todo, generation = todoDialogOpenGeneration) {
+    const pending = todoCreatedCallback;
+    if (!pending || pending.generation !== generation || generation !== todoDialogOpenGeneration)
+        return;
+    todoCreatedCallback = null;
+    try {
+        await pending.callback(todo);
+    }
+    catch (err) {
+        // Todo creation already succeeded. A caller-owned follow-up must not turn
+        // that success into a misleading Todo save failure.
+        console.warn("todo created callback failed", err);
+    }
+}
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
     const openGeneration = ++todoDialogOpenGeneration;
+    todoCreatedCallback = mode === "create" && opts.onCreated
+        ? { generation: openGeneration, callback: opts.onCreated }
+        : null;
     const isArchived = mode === "edit" && !!todo?.archivedAt;
     const tagsToShow = mode === "create" ? [] : (todo?.tags || []);
     setEditingTodo(mode === "edit" ? todo : null);

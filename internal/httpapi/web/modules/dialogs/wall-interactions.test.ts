@@ -34,6 +34,12 @@ vi.mock("../events.js", () => ({
 
 vi.mock("../state/selectors.js", () => ({
   getUser: () => ({ id: 1 }),
+  getBoard: () => ({
+    project: { estimationMode: "MODIFIED_FIBONACCI" },
+    priorityOrder: [],
+  }),
+  getBoardMembers: () => [],
+  getTagColors: () => ({}),
 }));
 
 vi.mock("../dom/elements.js", () => ({
@@ -104,6 +110,21 @@ function createMultiNoteWallDoc() {
   };
 }
 
+function createStoryWallDoc() {
+  return {
+    notes: [],
+    edges: [],
+    stories: [{
+      localId: 7,
+      x: 80,
+      y: 90,
+      version: 1,
+      todo: { id: 70, localId: 7, title: "Pinned canonical", status: "BACKLOG", tags: ["wall"] },
+    }],
+    version: 1,
+  };
+}
+
 function dispatchPointer(target: EventTarget, type: string, extra: Record<string, unknown> = {}): void {
   const ev = new Event(type, { bubbles: true, cancelable: true }) as Event & Record<string, unknown>;
   Object.assign(ev, {
@@ -136,6 +157,7 @@ describe("wall interactions", () => {
     await initWallTestI18n({ en: enCatalog as Record<string, string> });
     installDialogPolyfill();
     setupDom();
+    localStorage.clear();
     apiFetchMock.mockReset();
     confirmDeleteMock.mockReset();
     onMock.mockReset();
@@ -186,6 +208,76 @@ describe("wall interactions", () => {
     expect(menu?.querySelector('[data-action="create-todo"]')?.textContent).toBe("Create Todo from Note");
     expect(menu?.querySelector('[data-action="delete"]')?.textContent).toBe("Delete");
     expect(confirmDeleteMock).not.toHaveBeenCalled();
+  });
+
+  it("opens and removes a canonical story from its Wall context menu", async () => {
+    apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes("/wall") && !init?.method) return createStoryWallDoc();
+      return {};
+    });
+    const mod = await import("./wall.js");
+    await mod.openWallDialog({ projectId: 1, slug: "alpha", role: "maintainer" });
+    const story = wallSurfaceEl.querySelector<HTMLElement>(".wall-story");
+    expect(story?.textContent).toContain("Pinned canonical");
+
+    story?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    await flushPromises();
+    wallDialogEl.querySelector<HTMLButtonElement>('[data-action="open"]')?.click();
+    await vi.waitFor(() => {
+      expect(openTodoDialogMock).toHaveBeenCalledWith(expect.objectContaining({
+        mode: "edit",
+        todo: expect.objectContaining({ localId: 7, title: "Pinned canonical" }),
+      }));
+    });
+
+    story?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    await flushPromises();
+    wallDialogEl.querySelector<HTMLButtonElement>('[data-action="remove"]')?.click();
+    await flushPromises();
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/board/alpha/wall/stories/7", { method: "DELETE" });
+  });
+
+  it("keeps viewer story menus read-only", async () => {
+    apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes("/wall") && !init?.method) return createStoryWallDoc();
+      return {};
+    });
+    const mod = await import("./wall.js");
+    await mod.openWallDialog({ projectId: 1, slug: "alpha", role: "viewer" });
+    wallSurfaceEl.querySelector<HTMLElement>(".wall-story")?.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }),
+    );
+    await flushPromises();
+    expect(wallDialogEl.querySelector('[data-action="open"]')).toBeTruthy();
+    expect(wallDialogEl.querySelector('[data-action="remove"]')).toBeNull();
+  });
+
+  it("Ctrl+right-click creates a Todo and pins the returned canonical local ID at the captured point", async () => {
+    apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/wall") && !init?.method) return { notes: [], edges: [], stories: [], version: 0 };
+      if (url.endsWith("/wall/stories") && init?.method === "POST") {
+        return { localId: 21, x: 110, y: 125, version: 1 };
+      }
+      return {};
+    });
+    const mod = await import("./wall.js");
+    await mod.openWallDialog({ projectId: 1, slug: "alpha", role: "maintainer" });
+    wallSurfaceEl.dispatchEvent(new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+      clientX: 110,
+      clientY: 125,
+    }));
+    await flushPromises();
+    const options = openTodoDialogMock.mock.calls.at(-1)?.[0];
+    expect(options).toEqual(expect.objectContaining({ mode: "create", role: "maintainer" }));
+    await options.onCreated({ id: 210, localId: 21, title: "Created", status: "BACKLOG" });
+    await flushPromises();
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/board/alpha/wall/stories", {
+      method: "POST",
+      body: JSON.stringify({ localId: 21, x: 110, y: 125 }),
+    });
   });
 
   it("deletes a note after choosing Delete in the context menu and confirming", async () => {

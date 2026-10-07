@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "Estado",
   "shell.bulkEdit.tagsPlaceholder": "Escribe una etiqueta y presiona Enter",
   "shell.contextMenu.newTodo": "Nuevo Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Elige el idioma de Scrumboy en este navegador.",
   "settings.language.selectLabel": "Idioma",
   "settings.language.title": "Idioma",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "Arrastra una nota aquí para eliminarla",
   "wall.shortcuts.createNote.label": "crear nota:",
   "wall.shortcuts.createNote.hint": "clic derecho en el lienzo",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "cambiar color:",
   "wall.shortcuts.changeColor.hint": "clic simple en la nota",
   "wall.shortcuts.editNote.label": "editar nota:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "Redimensionar nota",
   "wall.note.edit": "Editar texto de la nota",
   "wall.menu.createTodoFromNote": "Crear Todo desde nota",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "Eliminar {count} notas",
   "wall.confirm.deleteNote": "¿Eliminar esta nota?",
   "wall.confirm.deleteNotesCount": "¿Eliminar {count} notas?",
   "wall.confirm.deleteConnection": "¿Eliminar esta conexión?",
   "wall.toast.unavailable": "El muro de notas no está disponible aquí.",
   "wall.toast.addNoteFailed": "No se pudo agregar la nota",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Otro editor cambió esta nota — recargando muro de notas.",
   "wall.toast.updateNoteFailed": "No se pudo actualizar la nota",
   "wall.toast.deleteNoteFailed": "No se pudo eliminar la nota",

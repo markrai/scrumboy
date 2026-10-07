@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "状态",
   "shell.bulkEdit.tagsPlaceholder": "输入标签后按 Enter",
   "shell.contextMenu.newTodo": "新建 Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "选择此浏览器上 Scrumboy 使用的语言。",
   "settings.language.selectLabel": "语言",
   "settings.language.title": "语言",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "将便签拖到这里删除",
   "wall.shortcuts.createNote.label": "创建便签：",
   "wall.shortcuts.createNote.hint": "在画布上右键",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "更改颜色：",
   "wall.shortcuts.changeColor.hint": "单击便签",
   "wall.shortcuts.editNote.label": "编辑便签：",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "调整便签大小",
   "wall.note.edit": "编辑便签文本",
   "wall.menu.createTodoFromNote": "从便签创建 Todo",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "删除 {count} 个便签",
   "wall.confirm.deleteNote": "删除此便签？",
   "wall.confirm.deleteNotesCount": "删除 {count} 个便签？",
   "wall.confirm.deleteConnection": "删除此连接？",
   "wall.toast.unavailable": "此处不可用便签墙。",
   "wall.toast.addNoteFailed": "无法添加便签",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "其他编辑者更改了此便签 — 正在重新加载便签墙。",
   "wall.toast.updateNoteFailed": "无法更新便签",
   "wall.toast.deleteNoteFailed": "无法删除便签",

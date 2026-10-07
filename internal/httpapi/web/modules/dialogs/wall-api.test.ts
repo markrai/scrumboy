@@ -17,7 +17,10 @@ import {
   deleteNoteRemote,
   fetchWall,
   patchNoteRemote,
+  patchStoryRemote,
+  pinStoryRemote,
   postTransient,
+  unpinStoryRemote,
 } from "./wall-api.js";
 
 const mock = apiFetch as unknown as ReturnType<typeof vi.fn>;
@@ -89,6 +92,26 @@ describe("wall-api", () => {
       method: "POST",
       body: JSON.stringify({ noteId: "n1", x: 5, y: 6 }),
     });
+  });
+
+  it("uses canonical story placement routes and story transient targets", async () => {
+    await pinStoryRemote("abc", { localId: 12, x: 5, y: 6 });
+    expect(mock).toHaveBeenLastCalledWith("/api/board/abc/wall/stories", {
+      method: "POST",
+      body: JSON.stringify({ localId: 12, x: 5, y: 6 }),
+    });
+    await patchStoryRemote("abc", 12, { ifVersion: 2, x: 7, y: 8 });
+    expect(mock).toHaveBeenLastCalledWith("/api/board/abc/wall/stories/12", {
+      method: "PATCH",
+      body: JSON.stringify({ ifVersion: 2, x: 7, y: 8 }),
+    });
+    await postTransient("abc", { storyLocalId: 12, x: 9, y: 10 });
+    expect(mock).toHaveBeenLastCalledWith("/api/board/abc/wall/transient", {
+      method: "POST",
+      body: JSON.stringify({ storyLocalId: 12, x: 9, y: 10 }),
+    });
+    await unpinStoryRemote("abc", 12);
+    expect(mock).toHaveBeenLastCalledWith("/api/board/abc/wall/stories/12", { method: "DELETE" });
   });
 
   it("postTransient swallows rejections so callers never see unhandled errors", async () => {

@@ -13,7 +13,7 @@ import { apiFetch, archiveTodos, restoreTodos } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
 import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
 import { setProjectId, setBoard, setSlug, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
-import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose } from './dist/dialogs/todo.js';
+import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload, shouldSubmitSprintAssignment } from './dist/dialogs/todo-submit.js';
 import { renderSettingsModal, invalidateTagsCache, resumeAuthenticationMethodFlow } from './dist/dialogs/settings.js';
 import { initDnD, columnsSpec, dragInProgress, dragJustEnded } from './dist/features/drag-drop.js';
@@ -212,6 +212,7 @@ todoForm.addEventListener("submit", async (e) => {
   }
 
   const title = todoTitle.value;
+  const todoDialogGeneration = getTodoDialogOpenGeneration();
   const body = todoBody.value;
   const tags = getTagsFromChips();
   const columnKey = todoStatus.value;
@@ -276,10 +277,11 @@ todoForm.addEventListener("submit", async (e) => {
 		priorityKey,
       });
       recordLocalMutation();
-      await apiFetch(`/api/board/${getSlug()}/todos`, {
+      const createdTodo = await apiFetch(`/api/board/${getSlug()}/todos`, {
         method: "POST",
         body: JSON.stringify(createPayload),
       });
+      await notifyTodoCreated(createdTodo, todoDialogGeneration);
       showToast(t("todo.created"));
     }
 

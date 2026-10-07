@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -34,6 +36,78 @@ func TestWallGetIsSideEffectFree(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("GET should not materialize row, got count=%d", count)
+	}
+}
+
+func TestWallStoryPlacementBackupRoundTripUsesPortableLocalID(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "wall-backup@example.com", "password", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(ownerCtx, "Wall backup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Portable story"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PinWallStory(ownerCtx, project.ID, todo.LocalID, 123, -456); err != nil {
+		t.Fatal(err)
+	}
+
+	exported, err := st.ExportAllProjects(ownerCtx, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projectExport *ProjectExport
+	for i := range exported.Projects {
+		if exported.Projects[i].Slug == project.Slug {
+			projectExport = &exported.Projects[i]
+			break
+		}
+	}
+	if projectExport == nil || projectExport.Wall == nil || len(projectExport.Wall.Stories) != 1 {
+		t.Fatalf("exported wall=%+v", projectExport)
+	}
+	placement := projectExport.Wall.Stories[0]
+	if placement.LocalID != todo.LocalID || placement.X != 123 || placement.Y != -456 {
+		t.Fatalf("portable placement=%+v", placement)
+	}
+	raw, err := json.Marshal(projectExport.Wall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "todoId") || strings.Contains(string(raw), "Portable story") {
+		t.Fatalf("wall backup copied internal/canonical Todo data: %s", raw)
+	}
+
+	if _, err := st.ImportProjects(ownerCtx, exported, ModeFull, "replace"); err != nil {
+		t.Fatal(err)
+	}
+	restoredProject, err := st.GetProjectBySlug(ownerCtx, project.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := st.GetWall(ownerCtx, restoredProject.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.Stories) != 1 || restored.Stories[0].TodoLocalID != todo.LocalID || restored.Stories[0].Todo.Title != "Portable story" {
+		t.Fatalf("restored stories=%+v", restored.Stories)
+	}
+
+	projectExport.Wall.Stories[0].LocalID = 999999
+	result, err := st.ImportProjects(ownerCtx, exported, ModeFull, "replace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) == 0 || !strings.Contains(strings.Join(result.Warnings, "\n"), "dangling Wall placement") {
+		t.Fatalf("dangling placement warnings=%v", result.Warnings)
 	}
 }
 
@@ -70,6 +144,96 @@ func TestWallCreateMaterializesRow(t *testing.T) {
 	}
 	if len(reloaded.Notes) != 1 || reloaded.Notes[0].ID != note.ID {
 		t.Fatalf("expected persisted note, got %#v", reloaded)
+	}
+}
+
+func TestWallStoryPlacementLifecycleIsIdempotentAndCanonical(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	project, err := st.CreateProject(ctx, "wall stories")
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ctx, project.ID, CreateTodoInput{
+		Title: "Canonical title", Tags: []string{"wall", "shared"}, ColumnKey: DefaultColumnBacklog,
+	}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	placement, created, err := st.PinWallStory(ctx, project.ID, todo.LocalID, 12.5, -8)
+	if err != nil || !created {
+		t.Fatalf("first pin placement=%+v created=%v err=%v", placement, created, err)
+	}
+	again, created, err := st.PinWallStory(ctx, project.ID, todo.LocalID, 999, 999)
+	if err != nil || created {
+		t.Fatalf("second pin placement=%+v created=%v err=%v", again, created, err)
+	}
+	if again.X != placement.X || again.Y != placement.Y || again.Version != placement.Version {
+		t.Fatalf("idempotent pin moved placement: first=%+v second=%+v", placement, again)
+	}
+
+	wall, err := st.GetWall(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wall.Stories) != 1 || wall.Stories[0].Todo.ID != todo.ID || wall.Stories[0].Todo.Title != "Canonical title" {
+		t.Fatalf("wall canonical projection=%+v", wall.Stories)
+	}
+	updated, err := st.PatchWallStory(ctx, project.ID, todo.LocalID, placement.Version, 45, 67)
+	if err != nil || updated.Version != placement.Version+1 || updated.X != 45 || updated.Y != 67 {
+		t.Fatalf("patch placement=%+v err=%v", updated, err)
+	}
+	if _, err := st.PatchWallStory(ctx, project.ID, todo.LocalID, placement.Version, 1, 2); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale patch err=%v want conflict", err)
+	}
+	if err := st.UnpinWallStory(ctx, project.ID, todo.LocalID); err != nil {
+		t.Fatal(err)
+	}
+	wall, err = st.GetWall(ctx, project.ID)
+	if err != nil || len(wall.Stories) != 0 {
+		t.Fatalf("wall after unpin=%+v err=%v", wall.Stories, err)
+	}
+	if persisted, err := st.GetTodoByLocalID(ctx, project.ID, todo.LocalID, ModeFull); err != nil || persisted.ID != todo.ID {
+		t.Fatalf("unpin changed canonical todo=%+v err=%v", persisted, err)
+	}
+}
+
+func TestWallStoryPlacementRejectsCrossProjectAndCascadesOnTodoDelete(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	wallProject, _ := st.CreateProject(ctx, "wall")
+	otherProject, _ := st.CreateProject(ctx, "other")
+	otherTodo, err := st.CreateTodo(ctx, otherProject.ID, CreateTodoInput{Title: "Other"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PinWallStory(ctx, wallProject.ID, otherTodo.LocalID, 0, 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-project pin err=%v want not found", err)
+	}
+
+	todo, err := st.CreateTodo(ctx, wallProject.ID, CreateTodoInput{Title: "Delete me"}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.PinWallStory(ctx, wallProject.ID, todo.LocalID, 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ArchiveTodoByLocalID(ctx, wallProject.ID, todo.LocalID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	archivedWall, err := st.GetWall(ctx, wallProject.ID)
+	if err != nil || len(archivedWall.Stories) != 1 || archivedWall.Stories[0].Todo.ArchivedAt == nil {
+		t.Fatalf("archived story projection=%+v err=%v", archivedWall.Stories, err)
+	}
+	if err := st.DeleteTodo(ctx, todo.ID, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	wall, err := st.GetWall(ctx, wallProject.ID)
+	if err != nil || len(wall.Stories) != 0 {
+		t.Fatalf("cascade wall=%+v err=%v", wall.Stories, err)
 	}
 }
 

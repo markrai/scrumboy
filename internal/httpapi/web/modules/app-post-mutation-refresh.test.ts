@@ -112,6 +112,8 @@ vi.mock("../dist/state/mutations.js", () => ({
 
 vi.mock("../dist/dialogs/todo.js", () => ({
   openTodoDialog: vi.fn(),
+  getTodoDialogOpenGeneration: vi.fn(() => 1),
+  notifyTodoCreated: vi.fn().mockResolvedValue(undefined),
   renderTagsChips: vi.fn(),
   setupTagAutocomplete: vi.fn(),
   removeTag: vi.fn(),

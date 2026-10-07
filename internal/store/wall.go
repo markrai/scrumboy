@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -37,18 +38,33 @@ type WallEdge struct {
 	To   string `json:"to"`
 }
 
+// WallStoryPlacement is the Wall-owned spatial placement for one canonical
+// Todo. Todo content is hydrated at read time and is never copied into this
+// relation. TodoLocalID is the portable, project-scoped identity exposed at
+// API and backup boundaries; TodoID remains an internal database key.
+type WallStoryPlacement struct {
+	TodoID      int64
+	TodoLocalID int64
+	X           float64
+	Y           float64
+	Version     int64
+	Todo        Todo
+}
+
 // Wall is the shape returned by GetWall. Version is a coarse document-level
 // counter used as a change fingerprint for realtime clients; per-note versions
 // are the authoritative conflict unit.
 type Wall struct {
-	Notes     []WallNote `json:"notes"`
-	Edges     []WallEdge `json:"edges"`
-	Version   int64      `json:"version"`
-	UpdatedAt int64      `json:"updatedAt"`
+	Notes     []WallNote           `json:"notes"`
+	Edges     []WallEdge           `json:"edges"`
+	Stories   []WallStoryPlacement `json:"stories"`
+	Version   int64                `json:"version"`
+	UpdatedAt int64                `json:"updatedAt"`
 }
 
 const (
 	maxWallNotes      = 500
+	maxWallStories    = 500
 	maxWallEdges      = 2000
 	maxWallTextBytes  = 4000
 	defaultNoteWidth  = 180
@@ -131,7 +147,7 @@ func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
 	var version, updatedAt int64
 	if err := row.Scan(&notesJSON, &edgesJSON, &version, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Version: 0, UpdatedAt: 0}, nil
+			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Stories: []WallStoryPlacement{}, Version: 0, UpdatedAt: 0}, nil
 		}
 		return Wall{}, fmt.Errorf("get wall: %w", err)
 	}
@@ -153,7 +169,99 @@ func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
 	if edges == nil {
 		edges = []WallEdge{}
 	}
-	return Wall{Notes: notes, Edges: edges, Version: version, UpdatedAt: updatedAt}, nil
+	stories, err := s.listWallStoryPlacements(ctx, projectID)
+	if err != nil {
+		return Wall{}, err
+	}
+	return Wall{Notes: notes, Edges: edges, Stories: stories, Version: version, UpdatedAt: updatedAt}, nil
+}
+
+func (s *Store) listWallStoryPlacements(ctx context.Context, projectID int64) ([]WallStoryPlacement, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT wsp.todo_id, t.local_id, wsp.x, wsp.y, wsp.version,
+       t.title, t.body, t.column_key, t.rank, t.estimation_points,
+       t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key,
+       t.created_at, t.updated_at, t.done_at, t.archived_at,
+       COALESCE(GROUP_CONCAT(g.name, ','), '')
+FROM wall_story_placements wsp
+JOIN todos t ON t.id = wsp.todo_id AND t.project_id = wsp.project_id
+LEFT JOIN todo_tags tt ON tt.todo_id = t.id
+LEFT JOIN tags g ON g.id = tt.tag_id
+WHERE wsp.project_id = ?
+GROUP BY wsp.todo_id, t.id
+ORDER BY wsp.todo_id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list wall story placements: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]WallStoryPlacement, 0)
+	for rows.Next() {
+		var p WallStoryPlacement
+		var estimation, assignee, creator, sprint, doneAt, archivedAt sql.NullInt64
+		var priority sql.NullString
+		var createdAt, updatedAt int64
+		var tagsCSV string
+		p.Todo.ProjectID = projectID
+		if err := rows.Scan(
+			&p.TodoID, &p.TodoLocalID, &p.X, &p.Y, &p.Version,
+			&p.Todo.Title, &p.Todo.Body, &p.Todo.ColumnKey, &p.Todo.Rank, &estimation,
+			&assignee, &creator, &sprint, &priority, &createdAt, &updatedAt,
+			&doneAt, &archivedAt, &tagsCSV,
+		); err != nil {
+			return nil, fmt.Errorf("scan wall story placement: %w", err)
+		}
+		p.Todo.ID = p.TodoID
+		p.Todo.LocalID = p.TodoLocalID
+		if estimation.Valid {
+			v := estimation.Int64
+			p.Todo.EstimationPoints = &v
+		}
+		if assignee.Valid {
+			v := assignee.Int64
+			p.Todo.AssigneeUserID = &v
+		}
+		if creator.Valid {
+			v := creator.Int64
+			p.Todo.CreatedByUserID = &v
+		}
+		if sprint.Valid {
+			v := sprint.Int64
+			p.Todo.SprintID = &v
+		}
+		if priority.Valid {
+			v := priority.String
+			p.Todo.PriorityKey = &v
+		}
+		p.Todo.CreatedAt = time.UnixMilli(createdAt).UTC()
+		p.Todo.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+		if doneAt.Valid {
+			v := time.UnixMilli(doneAt.Int64).UTC()
+			p.Todo.DoneAt = &v
+		}
+		if archivedAt.Valid {
+			v := time.UnixMilli(archivedAt.Int64).UTC()
+			p.Todo.ArchivedAt = &v
+		}
+		if tagsCSV != "" {
+			seen := make(map[string]struct{})
+			for _, tag := range strings.Split(tagsCSV, ",") {
+				seen[tag] = struct{}{}
+			}
+			p.Todo.Tags = make([]string, 0, len(seen))
+			for tag := range seen {
+				p.Todo.Tags = append(p.Todo.Tags, tag)
+			}
+			sort.Strings(p.Todo.Tags)
+		} else {
+			p.Todo.Tags = []string{}
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows wall story placements: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Store) writeWallLocked(ctx context.Context, projectID int64, wall Wall) error {
@@ -176,6 +284,168 @@ ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.
 `, projectID, string(notesRaw), string(edgesRaw), wall.Version, nowMs)
 	if err != nil {
 		return fmt.Errorf("write wall: %w", err)
+	}
+	return nil
+}
+
+// PinWallStory idempotently places the canonical project Todo identified by
+// localID on the Wall. The bool reports whether a new placement was created.
+func (s *Store) PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (WallStoryPlacement, bool, error) {
+	if localID <= 0 {
+		return WallStoryPlacement{}, false, fmt.Errorf("%w: invalid todo local id", ErrValidation)
+	}
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("begin pin wall story: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var todoID int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
+		projectID, localID,
+	).Scan(&todoID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return WallStoryPlacement{}, false, ErrNotFound
+		}
+		return WallStoryPlacement{}, false, fmt.Errorf("resolve wall story todo: %w", err)
+	}
+
+	var existing WallStoryPlacement
+	err = tx.QueryRowContext(ctx,
+		`SELECT x, y, version FROM wall_story_placements WHERE project_id = ? AND todo_id = ?`,
+		projectID, todoID,
+	).Scan(&existing.X, &existing.Y, &existing.Version)
+	if err == nil {
+		existing.TodoID = todoID
+		existing.TodoLocalID = localID
+		if err := tx.Commit(); err != nil {
+			return WallStoryPlacement{}, false, fmt.Errorf("commit existing wall story: %w", err)
+		}
+		return existing, false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return WallStoryPlacement{}, false, fmt.Errorf("get existing wall story: %w", err)
+	}
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wall_story_placements WHERE project_id = ?`, projectID,
+	).Scan(&count); err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("count wall stories: %w", err)
+	}
+	if count >= maxWallStories {
+		return WallStoryPlacement{}, false, fmt.Errorf("%w: wall story limit reached", ErrValidation)
+	}
+
+	p := WallStoryPlacement{
+		TodoID: todoID, TodoLocalID: localID,
+		X: clampNoteCoord(x), Y: clampNoteCoord(y), Version: 1,
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
+VALUES (?, ?, ?, ?, 1)`, projectID, todoID, p.X, p.Y); err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("insert wall story placement: %w", err)
+	}
+	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
+		return WallStoryPlacement{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("commit pin wall story: %w", err)
+	}
+	return p, true, nil
+}
+
+// PatchWallStory moves one Wall placement without changing Todo workflow data.
+func (s *Store) PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (WallStoryPlacement, error) {
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return WallStoryPlacement{}, fmt.Errorf("begin patch wall story: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var p WallStoryPlacement
+	err = tx.QueryRowContext(ctx, `
+SELECT wsp.todo_id, t.local_id, wsp.x, wsp.y, wsp.version
+FROM wall_story_placements wsp
+JOIN todos t ON t.id = wsp.todo_id AND t.project_id = wsp.project_id
+WHERE wsp.project_id = ? AND t.local_id = ?`, projectID, localID).
+		Scan(&p.TodoID, &p.TodoLocalID, &p.X, &p.Y, &p.Version)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return WallStoryPlacement{}, ErrNotFound
+		}
+		return WallStoryPlacement{}, fmt.Errorf("get wall story placement: %w", err)
+	}
+	if ifVersion != 0 && p.Version != ifVersion {
+		return WallStoryPlacement{}, fmt.Errorf("%w: story placement version mismatch", ErrConflict)
+	}
+	p.X = clampNoteCoord(x)
+	p.Y = clampNoteCoord(y)
+	p.Version++
+	if _, err := tx.ExecContext(ctx, `
+UPDATE wall_story_placements SET x = ?, y = ?, version = ?
+WHERE project_id = ? AND todo_id = ?`, p.X, p.Y, p.Version, projectID, p.TodoID); err != nil {
+		return WallStoryPlacement{}, fmt.Errorf("update wall story placement: %w", err)
+	}
+	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
+		return WallStoryPlacement{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return WallStoryPlacement{}, fmt.Errorf("commit patch wall story: %w", err)
+	}
+	return p, nil
+}
+
+// UnpinWallStory removes only the Wall placement; the canonical Todo remains.
+func (s *Store) UnpinWallStory(ctx context.Context, projectID, localID int64) error {
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin unpin wall story: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `
+DELETE FROM wall_story_placements
+WHERE project_id = ? AND todo_id = (
+  SELECT id FROM todos WHERE project_id = ? AND local_id = ?
+)`, projectID, projectID, localID)
+	if err != nil {
+		return fmt.Errorf("delete wall story placement: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("wall story delete rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit unpin wall story: %w", err)
+	}
+	return nil
+}
+
+func bumpWallVersionTx(ctx context.Context, tx *sql.Tx, projectID int64) error {
+	nowMs := time.Now().UTC().UnixMilli()
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO project_walls(project_id, notes, edges, version, updated_at)
+VALUES (?, '[]', '[]', 1, ?)
+ON CONFLICT(project_id) DO UPDATE SET
+  version = project_walls.version + 1,
+  updated_at = excluded.updated_at`, projectID, nowMs); err != nil {
+		return fmt.Errorf("bump wall version: %w", err)
 	}
 	return nil
 }
@@ -434,7 +704,7 @@ func (s *Store) DeleteEdge(ctx context.Context, projectID int64, edgeID string) 
 // backup does not fail the whole import. Edges referencing unknown notes are
 // dropped. Passing a nil payload is a no-op; callers decide whether a missing
 // wall field in the backup should wipe or preserve an existing wall row.
-func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport) error {
+func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport, warnings *[]string) error {
 	if payload == nil {
 		return nil
 	}
@@ -532,6 +802,51 @@ VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.edges, version = excluded.version, updated_at = excluded.updated_at
 `, projectID, string(notesJSON), string(edgesJSON), version, nowMs); err != nil {
 		return fmt.Errorf("upsert wall for import: %w", err)
+	}
+
+	// A present Wall payload replaces its story placements just like notes and
+	// edges. Legacy Wall payloads omit stories and therefore import as an empty
+	// placement set without failing.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM wall_story_placements WHERE project_id = ?`, projectID); err != nil {
+		return fmt.Errorf("clear wall story placements for import: %w", err)
+	}
+	seenStories := make(map[int64]struct{}, len(payload.Stories))
+	for _, story := range payload.Stories {
+		if story.LocalID <= 0 {
+			if warnings != nil {
+				*warnings = append(*warnings, "Dropped Wall story placement with invalid localId")
+			}
+			continue
+		}
+		if _, duplicate := seenStories[story.LocalID]; duplicate {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped duplicate Wall placement for story #%d", story.LocalID))
+			}
+			continue
+		}
+		seenStories[story.LocalID] = struct{}{}
+		var todoID int64
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
+			projectID, story.LocalID,
+		).Scan(&todoID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("Dropped dangling Wall placement for story #%d", story.LocalID))
+				}
+				continue
+			}
+			return fmt.Errorf("resolve imported wall story #%d: %w", story.LocalID, err)
+		}
+		placementVersion := story.Version
+		if placementVersion <= 0 {
+			placementVersion = 1
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
+VALUES (?, ?, ?, ?, ?)`, projectID, todoID, clampNoteCoord(story.X), clampNoteCoord(story.Y), placementVersion); err != nil {
+			return fmt.Errorf("insert imported wall story #%d: %w", story.LocalID, err)
+		}
 	}
 	return nil
 }

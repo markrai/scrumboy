@@ -13,7 +13,7 @@ import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
-import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
+import { setContextMenuStatus, setContextMenuRole, setContextMenuStory } from '../features/context-menu-button.js';
 import { NO_PRIORITY_FILTER_VALUE } from '../types.js';
 import { applyMobileLaneTabStyles, buildMobileTabsInnerHtml, } from './mobile-lane-tabs.js';
 import { registerBoardRefresher, registerSprintsRefresher, getBoardLimitPerLaneFloor, resetBoardLimitPerLaneFloor, getDefaultCardsPerLane, consumeForcePreferenceLimit } from '../orchestration/board-refresh.js';
@@ -407,6 +407,24 @@ function attachBoardDelegationHandlers() {
                 contextMenuNewTodo.style.display =
                     isTemporaryBoard(getBoard()) || currentUserProjectRole === "maintainer" ? "" : "none";
             }
+            const card = e.target.closest("[data-todo-local-id]");
+            const sendToWall = document.getElementById("contextMenuSendToWall");
+            const localId = Number(card?.dataset.todoLocalId);
+            const projectId = getProjectId();
+            const slug = getSlug();
+            const canSendToWall = !!card &&
+                Number.isSafeInteger(localId) &&
+                localId > 0 &&
+                projectId != null &&
+                !!slug &&
+                getWallEnabled() &&
+                !isTemporaryBoard(getBoard()) &&
+                (currentUserProjectRole === "maintainer" || currentUserProjectRole === "contributor");
+            setContextMenuStory(canSendToWall
+                ? { localId, projectId: projectId, slug: slug, role: currentUserProjectRole }
+                : null);
+            if (sendToWall)
+                sendToWall.style.display = canSendToWall ? "" : "none";
             const mouseEvent = e;
             contextMenu.style.display = "block";
             contextMenu.style.left = `${mouseEvent.pageX}px`;

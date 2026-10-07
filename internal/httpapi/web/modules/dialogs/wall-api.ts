@@ -8,7 +8,7 @@
 // coverage in `wall-api.test.ts`.
 
 import { apiFetch } from "../api.js";
-import type { WallDocument, WallEdge, WallNote } from "./wall-rendering.js";
+import type { WallDocument, WallEdge, WallNote, WallStory } from "./wall-rendering.js";
 
 export type NoteCreateInput = {
   x: number;
@@ -24,11 +24,14 @@ export type NotePatchInput = {
   ifVersion: number;
 } & Partial<Pick<WallNote, "x" | "y" | "width" | "height" | "color" | "text">>;
 
-export type TransientInput = {
-  noteId: string;
+export type TransientInput = ({ noteId: string } | { storyLocalId: number }) & {
   x: number;
   y: number;
 };
+
+export type StoryPinInput = Pick<WallStory, "localId" | "x" | "y">;
+export type StoryPatchInput = { ifVersion: number; x: number; y: number };
+export type StoryPlacement = Pick<WallStory, "localId" | "x" | "y" | "version">;
 
 function wallBase(slug: string): string {
   return `/api/board/${encodeURIComponent(slug)}/wall`;
@@ -69,6 +72,24 @@ export function deleteEdgeRemote(slug: string, id: string): Promise<void> {
   return apiFetch<void>(`${wallBase(slug)}/edges/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export function pinStoryRemote(slug: string, body: StoryPinInput): Promise<StoryPlacement> {
+  return apiFetch<StoryPlacement>(`${wallBase(slug)}/stories`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function patchStoryRemote(slug: string, localId: number, body: StoryPatchInput): Promise<StoryPlacement> {
+  return apiFetch<StoryPlacement>(`${wallBase(slug)}/stories/${localId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function unpinStoryRemote(slug: string, localId: number): Promise<void> {
+  return apiFetch<void>(`${wallBase(slug)}/stories/${localId}`, { method: "DELETE" });
 }
 
 /**

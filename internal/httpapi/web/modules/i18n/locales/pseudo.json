@@ -479,6 +479,8 @@
   "shell.bulkEdit.status": "[!! Status !!]",
   "shell.bulkEdit.tagsPlaceholder": "[!! Type tag and press Enter !!]",
   "shell.contextMenu.newTodo": "[!! New Todo !!]",
+
+  "shell.contextMenu.sendToWall": "[!! Send to Wall !!]",
   "settings.language.description": "[!! Choose the language used for Scrumboy on this browser. !!]",
   "settings.language.selectLabel": "[!! Language !!]",
   "settings.language.title": "[!! Language !!]",
@@ -1254,6 +1256,10 @@
   "wall.shell.trashAlt": "[!! Drag a note here to delete !!]",
   "wall.shortcuts.createNote.label": "[!! create note: !!]",
   "wall.shortcuts.createNote.hint": "[!! right-click on canvas !!]",
+
+  "wall.shortcuts.createStory.label": "[!! create story: !!]",
+
+  "wall.shortcuts.createStory.hint": "[!! Ctrl + right-click on canvas !!]",
   "wall.shortcuts.changeColor.label": "[!! change color: !!]",
   "wall.shortcuts.changeColor.hint": "[!! single-click note !!]",
   "wall.shortcuts.editNote.label": "[!! edit note: !!]",
@@ -1280,12 +1286,22 @@
   "wall.note.resize": "[!! Resize note !!]",
   "wall.note.edit": "[!! Edit note text !!]",
   "wall.menu.createTodoFromNote": "[!! Create Todo from Note !!]",
+
+  "wall.menu.openStory": "[!! Open Story !!]",
+
+  "wall.menu.removeStory": "[!! Remove from Wall !!]",
   "wall.menu.deleteCount": "[!! Delete {count} notes !!]",
   "wall.confirm.deleteNote": "[!! Delete this note? !!]",
   "wall.confirm.deleteNotesCount": "[!! Delete {count} notes? !!]",
   "wall.confirm.deleteConnection": "[!! Delete this connection? !!]",
   "wall.toast.unavailable": "[!! Wall is not available here. !!]",
   "wall.toast.addNoteFailed": "[!! Could not add note !!]",
+
+  "wall.toast.pinStoryFailed": "[!! Could not add story to Wall !!]",
+
+  "wall.toast.moveStoryFailed": "[!! Could not move story !!]",
+
+  "wall.toast.removeStoryFailed": "[!! Could not remove story from Wall !!]",
   "wall.toast.staleReload": "[!! Another editor changed this note - reloading wall. !!]",
   "wall.toast.updateNoteFailed": "[!! Could not update note !!]",
   "wall.toast.deleteNoteFailed": "[!! Could not delete note !!]",

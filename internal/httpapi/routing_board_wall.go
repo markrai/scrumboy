@@ -38,11 +38,11 @@ func (s *Server) handleBoardWallRoutes(w http.ResponseWriter, r *http.Request, r
 
 	switch {
 	case len(rest) == 2 && r.Method == http.MethodGet:
-		s.handleWallGet(w, r, project.ID)
+		s.handleWallGet(w, r, project)
 		return true
 
 	case len(rest) == 2 && r.Method == http.MethodPut:
-		s.handleWallPut(w, r, project.ID)
+		s.handleWallPut(w, r, project)
 		return true
 
 	case len(rest) == 3 && rest[2] == "transient" && r.Method == http.MethodPost:
@@ -51,6 +51,18 @@ func (s *Server) handleBoardWallRoutes(w http.ResponseWriter, r *http.Request, r
 
 	case len(rest) == 3 && rest[2] == "notes" && r.Method == http.MethodPost:
 		s.handleWallCreateNote(w, r, project.ID)
+		return true
+
+	case len(rest) == 3 && rest[2] == "stories" && r.Method == http.MethodPost:
+		s.handleWallPinStory(w, r, project.ID)
+		return true
+
+	case len(rest) == 4 && rest[2] == "stories" && r.Method == http.MethodPatch:
+		s.handleWallPatchStory(w, r, project.ID, rest[3])
+		return true
+
+	case len(rest) == 4 && rest[2] == "stories" && r.Method == http.MethodDelete:
+		s.handleWallUnpinStory(w, r, project.ID, rest[3])
 		return true
 
 	case len(rest) == 4 && rest[2] == "notes" && r.Method == http.MethodPatch:
@@ -85,13 +97,13 @@ func writeWallMutationPreparationError(w http.ResponseWriter, err error) {
 	}
 }
 
-func (s *Server) handleWallGet(w http.ResponseWriter, r *http.Request, projectID int64) {
-	wall, err := s.store.GetWall(s.requestContext(r), projectID)
+func (s *Server) handleWallGet(w http.ResponseWriter, r *http.Request, project store.Project) {
+	wall, err := s.store.GetWall(s.requestContext(r), project.ID)
 	if err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
-	writeJSON(w, http.StatusOK, wallToJSON(wall))
+	writeJSON(w, http.StatusOK, wallToJSON(wall, project))
 }
 
 type wallNoteInputJSON struct {
@@ -202,7 +214,8 @@ type wallReplaceJSON struct {
 	Notes []wallNoteInputJSON `json:"notes"`
 }
 
-func (s *Server) handleWallPut(w http.ResponseWriter, r *http.Request, projectID int64) {
+func (s *Server) handleWallPut(w http.ResponseWriter, r *http.Request, project store.Project) {
+	projectID := project.ID
 	mutationCtx := s.requestContext(r)
 	effectCtx := r.Context()
 	prepared, err := s.wallReplacements.Prepare(
@@ -230,13 +243,14 @@ func (s *Server) handleWallPut(w http.ResponseWriter, r *http.Request, projectID
 		writeStoreErr(w, err, true)
 		return
 	}
-	writeJSON(w, http.StatusOK, wallToJSON(wall))
+	writeJSON(w, http.StatusOK, wallToJSON(wall, project))
 }
 
 type wallTransientInputJSON struct {
-	NoteID string  `json:"noteId"`
-	X      float64 `json:"x"`
-	Y      float64 `json:"y"`
+	NoteID       string  `json:"noteId"`
+	StoryLocalID *int64  `json:"storyLocalId"`
+	X            float64 `json:"x"`
+	Y            float64 `json:"y"`
 }
 
 // handleWallTransient publishes an ephemeral drag/move event. The payload is
@@ -262,16 +276,109 @@ func (s *Server) handleWallTransient(w http.ResponseWriter, r *http.Request, pro
 	if err := readJSON(w, r, s.maxBody, &in); err != nil {
 		return
 	}
-	if strings.TrimSpace(in.NoteID) == "" {
+	hasNote := strings.TrimSpace(in.NoteID) != ""
+	if !hasNote && in.StoryLocalID == nil {
 		writeValidationError(w, "noteId required", "note_id_required", map[string]any{"field": "noteId"})
 		return
 	}
+	if hasNote == (in.StoryLocalID != nil) || (in.StoryLocalID != nil && *in.StoryLocalID <= 0) {
+		writeValidationError(w, "exactly one wall transient target required", "wall_transient_target_required", nil)
+		return
+	}
 	if err := prepared.Publish(wallapp.TransientCommand{
-		NoteID: in.NoteID,
-		X:      in.X,
-		Y:      in.Y,
+		NoteID:       in.NoteID,
+		StoryLocalID: in.StoryLocalID,
+		X:            in.X,
+		Y:            in.Y,
 	}); err != nil {
 		writeInternal(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type wallStoryPinJSON struct {
+	LocalID int64   `json:"localId"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+}
+
+type wallStoryPatchJSON struct {
+	IfVersion int64   `json:"ifVersion"`
+	X         float64 `json:"x"`
+	Y         float64 `json:"y"`
+}
+
+func (s *Server) handleWallPinStory(w http.ResponseWriter, r *http.Request, projectID int64) {
+	prepared, err := s.wallStoryMutations.Prepare(
+		s.requestContext(r), r.Context(), wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
+		return
+	}
+	var in wallStoryPinJSON
+	if err := readJSON(w, r, s.maxBody, &in); err != nil {
+		return
+	}
+	if in.LocalID <= 0 {
+		writeValidationError(w, "valid localId required", "invalid_todo_id", map[string]any{"field": "localId"})
+		return
+	}
+	placement, created, err := prepared.Pin(wallapp.PinStoryCommand{LocalID: in.LocalID, X: in.X, Y: in.Y})
+	if err != nil {
+		writeStoreErr(w, err, true)
+		return
+	}
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, wallStoryPlacementToJSON(placement))
+}
+
+func (s *Server) handleWallPatchStory(w http.ResponseWriter, r *http.Request, projectID int64, rawLocalID string) {
+	prepared, err := s.wallStoryMutations.Prepare(
+		s.requestContext(r), r.Context(), wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
+		return
+	}
+	localID, ok := parseInt64(rawLocalID)
+	if !ok || localID <= 0 {
+		writeValidationError(w, "invalid todo id", "invalid_todo_id", map[string]any{"field": "localId"})
+		return
+	}
+	var in wallStoryPatchJSON
+	if err := readJSON(w, r, s.maxBody, &in); err != nil {
+		return
+	}
+	placement, err := prepared.Patch(wallapp.PatchStoryCommand{
+		LocalID: localID, IfVersion: in.IfVersion, X: in.X, Y: in.Y,
+	})
+	if err != nil {
+		writeStoreErr(w, err, true)
+		return
+	}
+	writeJSON(w, http.StatusOK, wallStoryPlacementToJSON(placement))
+}
+
+func (s *Server) handleWallUnpinStory(w http.ResponseWriter, r *http.Request, projectID int64, rawLocalID string) {
+	prepared, err := s.wallStoryMutations.Prepare(
+		s.requestContext(r), r.Context(), wallapp.ResolvedRESTTarget{ProjectID: projectID},
+	)
+	if err != nil {
+		writeWallMutationPreparationError(w, err)
+		return
+	}
+	localID, ok := parseInt64(rawLocalID)
+	if !ok || localID <= 0 {
+		writeValidationError(w, "invalid todo id", "invalid_todo_id", map[string]any{"field": "localId"})
+		return
+	}
+	if err := prepared.Unpin(wallapp.UnpinStoryCommand{LocalID: localID}); err != nil {
+		writeStoreErr(w, err, true)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -361,7 +468,11 @@ func wallNoteToJSON(n store.WallNote) map[string]any {
 	}
 }
 
-func wallToJSON(wall store.Wall) map[string]any {
+func wallStoryPlacementToJSON(p store.WallStoryPlacement) map[string]any {
+	return map[string]any{"localId": p.TodoLocalID, "x": p.X, "y": p.Y, "version": p.Version}
+}
+
+func wallToJSON(wall store.Wall, project store.Project) map[string]any {
 	notes := make([]map[string]any, 0, len(wall.Notes))
 	for _, n := range wall.Notes {
 		notes = append(notes, wallNoteToJSON(n))
@@ -370,9 +481,16 @@ func wallToJSON(wall store.Wall) map[string]any {
 	for _, e := range wall.Edges {
 		edges = append(edges, wallEdgeToJSON(e))
 	}
+	stories := make([]map[string]any, 0, len(wall.Stories))
+	for _, story := range wall.Stories {
+		item := wallStoryPlacementToJSON(story)
+		item["todo"] = todoToJSONForProject(story.Todo, project)
+		stories = append(stories, item)
+	}
 	return map[string]any{
 		"notes":     notes,
 		"edges":     edges,
+		"stories":   stories,
 		"version":   wall.Version,
 		"updatedAt": wall.UpdatedAt,
 	}

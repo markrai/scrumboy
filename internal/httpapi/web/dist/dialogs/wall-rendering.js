@@ -17,6 +17,25 @@ import { escapeHTML, HEX_COLOR_RE, sanitizeHexColor } from "../utils.js";
 import { t } from "../i18n/index.js";
 import { colorIndexFromHex } from "./wall-postbaby-constants.js";
 import { screenToCanvas } from "./wall-viewport.js";
+import { renderStoryCardContent } from "../views/board-rendering.js";
+export const WALL_STORY_WIDTH = 280;
+export const WALL_STORY_HEIGHT = 148;
+export function buildStoryElement(story, membersByUserId, opts) {
+    const el = document.createElement("div");
+    const archivedClass = story.todo.archivedAt ? " wall-story--archived" : "";
+    el.className = `wall-story card card--${story.todo.status.toLowerCase()}${archivedClass}`;
+    el.dataset.storyLocalId = String(story.localId);
+    el.dataset.version = String(story.version);
+    el.dataset.todoId = String(story.todo.id);
+    el.style.left = `${Math.round(story.x)}px`;
+    el.style.top = `${Math.round(story.y)}px`;
+    el.style.width = `${WALL_STORY_WIDTH}px`;
+    el.setAttribute("role", "button");
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("aria-label", `${t("wall.menu.openStory")} #${story.localId}`);
+    el.innerHTML = renderStoryCardContent(story.todo, membersByUserId, opts);
+    return el;
+}
 const DEFAULT_NOTE_COLOR = "#ffd966";
 // Clamp to the same limits the backend enforces. Keep in sync with
 // internal/store/wall.go (clampNoteDim / validateWallColor).

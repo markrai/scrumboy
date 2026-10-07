@@ -59,6 +59,25 @@ type DeleteNoteCommand struct {
 	NoteID string
 }
 
+// PinStoryCommand identifies a canonical project Todo by its portable local
+// id and supplies the Wall-owned initial coordinates.
+type PinStoryCommand struct {
+	LocalID int64
+	X       float64
+	Y       float64
+}
+
+// PatchStoryCommand moves one existing Wall story placement.
+type PatchStoryCommand struct {
+	LocalID   int64
+	IfVersion int64
+	X         float64
+	Y         float64
+}
+
+// UnpinStoryCommand removes only the spatial placement.
+type UnpinStoryCommand struct{ LocalID int64 }
+
 // NoteDraft contains one REST-decoded replacement note. IDs and versions are
 // intentionally absent because the public replacement input cannot supply
 // them and the store remains their source.
@@ -93,9 +112,17 @@ type DeleteEdgeCommand struct {
 // TransientCommand contains an accepted ephemeral note-position update. Actor
 // identity is deliberately absent and will be bound from prepared context.
 type TransientCommand struct {
-	NoteID string
-	X      float64
-	Y      float64
+	NoteID       string
+	StoryLocalID *int64
+	X            float64
+	Y            float64
+}
+
+// StoryMutationStore exposes canonical-Todo Wall placement operations.
+type StoryMutationStore interface {
+	PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (store.WallStoryPlacement, bool, error)
+	PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (store.WallStoryPlacement, error)
+	UnpinWallStory(ctx context.Context, projectID, localID int64) error
 }
 
 // RESTWriterRoleStore reads the caller's fresh project role at the REST Wall
@@ -173,7 +200,10 @@ const (
 	// the store's undirected duplicate no-op.
 	RefreshEdgeCreated RefreshReason = "wall_edge_created"
 	// RefreshEdgeDeleted follows one successful edge deletion.
-	RefreshEdgeDeleted RefreshReason = "wall_edge_deleted"
+	RefreshEdgeDeleted   RefreshReason = "wall_edge_deleted"
+	RefreshStoryPinned   RefreshReason = "wall_story_pinned"
+	RefreshStoryMoved    RefreshReason = "wall_story_moved"
+	RefreshStoryUnpinned RefreshReason = "wall_story_unpinned"
 )
 
 // WallRefreshPublisher publishes the semantic refresh required after one
@@ -190,10 +220,11 @@ type WallRefreshPublisher interface {
 // TransientEvent is the semantic payload for one ephemeral note-position
 // publication. By is supplied from the trusted actor bound during preparation.
 type TransientEvent struct {
-	NoteID string
-	X      float64
-	Y      float64
-	By     int64
+	NoteID       string
+	StoryLocalID *int64
+	X            float64
+	Y            float64
+	By           int64
 }
 
 // WallTransientPublisher publishes one ephemeral Wall movement. Its error is

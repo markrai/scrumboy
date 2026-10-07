@@ -10,7 +10,7 @@
 //
 // See wall-viewport-coord-audit.md for the full pointer-path checklist.
 
-import type { WallNote } from "./wall-rendering.js";
+import type { WallNote, WallStory } from "./wall-rendering.js";
 
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 3;
@@ -239,12 +239,12 @@ export function zoomAround(clientX: number, clientY: number, factor: number): vo
 }
 
 /** Fit all notes in the viewport; empty wall resets to origin @ 100%. */
-export function fitToNotes(notes: WallNote[]): void {
+export function fitToNotes(notes: WallNote[], stories: WallStory[] = []): void {
   if (!viewportSurface) {
     setViewportState(identityViewport());
     return;
   }
-  if (!notes.length) {
+  if (!notes.length && !stories.length) {
     setViewportState(identityViewport());
     return;
   }
@@ -257,6 +257,12 @@ export function fitToNotes(notes: WallNote[]): void {
     minY = Math.min(minY, n.y);
     maxX = Math.max(maxX, n.x + n.width);
     maxY = Math.max(maxY, n.y + n.height);
+  }
+  for (const story of stories) {
+    minX = Math.min(minX, story.x);
+    minY = Math.min(minY, story.y);
+    maxX = Math.max(maxX, story.x + 280);
+    maxY = Math.max(maxY, story.y + 148);
   }
   const bboxW = Math.max(1, maxX - minX);
   const bboxH = Math.max(1, maxY - minY);

@@ -35,13 +35,17 @@ import {
   deleteEdgeRemote,
   deleteNoteRemote,
   patchNoteRemote,
+  patchStoryRemote,
+  pinStoryRemote,
+  unpinStoryRemote,
 } from "./wall-api.js";
 import { confirmDelete, showToast } from "../utils.js";
 import { hydrateI18n, I18N_LOCALE_CHANGED, t } from "../i18n/index.js";
-import { getUser } from "../state/selectors.js";
+import { getBoard, getBoardMembers, getTagColors, getUser } from "../state/selectors.js";
 import { canEditWall, type WallRole } from "./wall-permissions.js";
 import {
   buildNoteElement,
+  buildStoryElement,
   renderEmptyWallHtml,
   isEditing,
   ensureEdgeOverlay,
@@ -52,6 +56,9 @@ import {
   type WallDocument,
   type WallEdge,
   type WallNote,
+  type WallStory,
+  WALL_STORY_HEIGHT,
+  WALL_STORY_WIDTH,
 } from "./wall-rendering.js";
 import {
   DOUBLE_TAP_MS,
@@ -77,6 +84,7 @@ import {
 } from "./wall-selection.js";
 import {
   beginDrag as beginDragController,
+  beginStoryDrag,
   startResize as startResizeController,
 } from "./wall-drag-controller.js";
 import {
@@ -86,13 +94,17 @@ import {
 } from "./wall-realtime.js";
 import { beginEdit as beginEditController } from "./wall-edit-controller.js";
 import { openWallNoteContextMenu } from "./wall-note-context-menu.js";
+import { openWallStoryContextMenu } from "./wall-story-context-menu.js";
+import { chooseWallStoryPosition } from "./wall-story-placement.js";
 import {
   clampCanvasCoord,
   ensureWallContent,
   fitToNotes,
   getWallContent,
+  getViewportState,
   initWallViewport,
   screenToCanvas,
+  setViewportState,
   teardownWallViewport,
 } from "./wall-viewport.js";
 import {
@@ -107,11 +119,14 @@ import {
   toggleWallCanvasMode,
   type WallCanvasMode,
 } from "./wall-canvas-mode.js";
+import { buildPriorityTierMap } from "../views/board-rendering.js";
 
 export interface OpenWallDialogOptions {
   projectId: number;
   slug: string;
   role: WallRole;
+  /** When supplied, pin idempotently and focus this canonical story. */
+  storyLocalId?: number;
 }
 
 const TEARDOWN_MARKER = Symbol("wallMounted");
@@ -205,6 +220,9 @@ function syncWallLocaleState(): void {
   wallSurface.querySelectorAll(".wall-note__editor").forEach((el) => {
     el.setAttribute("aria-label", t("wall.note.edit"));
   });
+  wallSurface.querySelectorAll<HTMLElement>(".wall-story[data-story-local-id]").forEach((el) => {
+    el.setAttribute("aria-label", `${t("wall.menu.openStory")} #${el.dataset.storyLocalId}`);
+  });
 
   // An open note context menu hosted in #wallDialog: hydrateI18n already
   // handled the create item and the single-note delete label. Re-resolve the
@@ -228,6 +246,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
   const dialog = wallDialog as HTMLDialogElement;
   if (getMounted()) {
     if (!dialog.open) dialog.showModal();
+    if (opts.storyLocalId != null) await ensureStoryOnWall(opts.storyLocalId);
     return;
   }
 
@@ -238,7 +257,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
     slug: opts.slug,
     role: opts.role,
     canEdit,
-    doc: { notes: [], edges: [], version: 0 },
+    doc: { notes: [], edges: [], stories: [], version: 0 },
     userId: user?.id ?? null,
     onRefreshNeeded: () => { void refetchDoc(); },
     onTransient: (payload) => applyTransient(payload),
@@ -267,7 +286,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
   if (fitBtn) {
     fitBtn.addEventListener("click", () => {
       const m = getMounted();
-      if (m) fitToNotes(m.doc.notes);
+      if (m) fitToNotes(m.doc.notes, m.doc.stories);
       if (fitBtn instanceof HTMLButtonElement) fitBtn.blur();
     }, { signal: state.abort.signal });
   }
@@ -286,7 +305,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
     if (!m) return;
     if (ev.key === "f" || ev.key === "F") {
       ev.preventDefault();
-      fitToNotes(m.doc.notes);
+      fitToNotes(m.doc.notes, m.doc.stories);
       return;
     }
     if (ev.key === "s" || ev.key === "S") {
@@ -323,6 +342,7 @@ export async function openWallDialog(opts: OpenWallDialogOptions): Promise<void>
 
   dialog.showModal();
   await refetchDoc();
+  if (opts.storyLocalId != null) await ensureStoryOnWall(opts.storyLocalId);
 }
 
 function teardown(): void {
@@ -379,6 +399,7 @@ function refetchDoc(): Promise<void> {
       }
       if (diff.kind === "incremental") {
         for (const note of diff.changedNotes) updateNoteElement(note);
+        for (const story of diff.changedStories) updateStoryElement(story);
       }
     },
   });
@@ -387,7 +408,7 @@ function refetchDoc(): Promise<void> {
 type WallDocDiff =
   | { kind: "full" }
   | { kind: "noop" }
-  | { kind: "incremental"; changedNotes: WallNote[] };
+  | { kind: "incremental"; changedNotes: WallNote[]; changedStories: WallStory[] };
 
 // Compare the currently-rendered doc against an incoming one. We only take
 // the fast path when the set of notes and the set of edges are unchanged
@@ -399,8 +420,11 @@ function diffWallDoc(prev: WallDocument, next: WallDocument): WallDocDiff {
   const nextNotes = next.notes ?? [];
   const prevEdges = prev.edges ?? [];
   const nextEdges = next.edges ?? [];
+  const prevStories = prev.stories ?? [];
+  const nextStories = next.stories ?? [];
   if (prevNotes.length !== nextNotes.length) return { kind: "full" };
   if (prevEdges.length !== nextEdges.length) return { kind: "full" };
+  if (prevStories.length !== nextStories.length) return { kind: "full" };
 
   const prevNotesById = new Map<string, WallNote>();
   for (const n of prevNotes) prevNotesById.set(n.id, n);
@@ -422,8 +446,22 @@ function diffWallDoc(prev: WallDocument, next: WallDocument): WallDocDiff {
     if (prevEdge.from !== e.from || prevEdge.to !== e.to) return { kind: "full" };
   }
 
-  if (changedNotes.length === 0) return { kind: "noop" };
-  return { kind: "incremental", changedNotes };
+  const prevStoriesById = new Map<number, WallStory>();
+  for (const story of prevStories) prevStoriesById.set(story.localId, story);
+  const changedStories: WallStory[] = [];
+  for (const story of nextStories) {
+    const previous = prevStoriesById.get(story.localId);
+    if (!previous) return { kind: "full" };
+    if (
+      previous.x !== story.x ||
+      previous.y !== story.y ||
+      previous.version !== story.version ||
+      JSON.stringify(previous.todo) !== JSON.stringify(story.todo)
+    ) changedStories.push(story);
+  }
+
+  if (changedNotes.length === 0 && changedStories.length === 0) return { kind: "noop" };
+  return { kind: "incremental", changedNotes, changedStories };
 }
 
 function wallNoteFieldsDiffer(a: WallNote, b: WallNote): boolean {
@@ -442,14 +480,17 @@ function wallNoteFieldsDiffer(a: WallNote, b: WallNote): boolean {
 export const __diffWallDocForTest = diffWallDoc;
 
 function applyTransient(payload: unknown): void {
-  applyTransientImpl(payload, noteElementById);
+  applyTransientImpl(payload, noteElementById, storyElementByLocalId);
 }
 
 function normalizeDoc(doc: WallDocument | null | undefined): WallDocument {
-  if (!doc || !Array.isArray(doc.notes)) return { notes: [], edges: [], version: 0 };
+  if (!doc || !Array.isArray(doc.notes)) return { notes: [], edges: [], stories: [], version: 0 };
   return {
     notes: doc.notes.map((n) => ({ ...n })),
     edges: Array.isArray(doc.edges) ? doc.edges.map((e) => ({ ...e })) : [],
+    stories: Array.isArray(doc.stories)
+      ? doc.stories.map((story) => ({ ...story, todo: { ...story.todo, tags: [...(story.todo.tags ?? [])] } }))
+      : [],
     version: typeof doc.version === "number" ? doc.version : 0,
     updatedAt: doc.updatedAt,
   };
@@ -498,18 +539,26 @@ function renderSurface(): void {
       fullRebuilds: wallRenderCounters.fullRebuilds,
       incrementalPatches: wallRenderCounters.incrementalPatches,
       notes: state.doc.notes.length,
+      stories: state.doc.stories?.length ?? 0,
       edges: state.doc.edges?.length ?? 0,
     });
   }
   wallSurface.querySelectorAll(".wall-empty").forEach((el) => el.remove());
   content.innerHTML = "";
-  if (state.doc.notes.length === 0) {
+  if (state.doc.notes.length === 0 && (state.doc.stories?.length ?? 0) === 0) {
     wallSurface.insertAdjacentHTML("beforeend", renderEmptyWallHtml(state.canEdit));
     return;
   }
   const frag = document.createDocumentFragment();
   for (const note of state.doc.notes) {
     frag.appendChild(buildNoteElement(note, state.canEdit));
+  }
+  const stories = state.doc.stories ?? [];
+  if (stories.length > 0) {
+    const cardContext = wallCardRenderContext();
+    for (const story of stories) {
+      frag.appendChild(buildStoryElement(story, cardContext.members, cardContext.opts));
+    }
   }
   content.appendChild(frag);
   // SVG overlay must be appended after notes are in the DOM so noteCenter()
@@ -522,9 +571,35 @@ function renderSurface(): void {
   syncSelectionDom();
 }
 
+function wallCardRenderContext() {
+  const members = Object.fromEntries(getBoardMembers().map((member) => [member.userId, member]));
+  const board = getBoard();
+  return {
+    members,
+    opts: {
+      tagColors: getTagColors(),
+      showPointsMode: board?.project?.estimationMode == null || board.project.estimationMode === "MODIFIED_FIBONACCI",
+      priorityTiers: board ? buildPriorityTierMap(board) : undefined,
+    },
+  };
+}
+
 function noteElementById(id: string): HTMLElement | null {
   if (!wallSurface) return null;
   return wallSurface.querySelector<HTMLElement>(`.wall-note[data-note-id="${CSS.escape(id)}"]`);
+}
+
+function storyElementByLocalId(localId: number): HTMLElement | null {
+  if (!wallSurface) return null;
+  return wallSurface.querySelector<HTMLElement>(`.wall-story[data-story-local-id="${localId}"]`);
+}
+
+function updateStoryElement(story: WallStory): void {
+  const current = storyElementByLocalId(story.localId);
+  if (!current || current.classList.contains("wall-story--dragging")) return;
+  const cardContext = wallCardRenderContext();
+  const replacement = buildStoryElement(story, cardContext.members, cardContext.opts);
+  current.replaceWith(replacement);
 }
 
 function updateNoteElement(note: WallNote): void {
@@ -553,6 +628,10 @@ function updateNoteElement(note: WallNote): void {
 
 function findNote(id: string): WallNote | undefined {
   return getMounted()?.doc.notes.find((n) => n.id === id);
+}
+
+function findStory(localId: number): WallStory | undefined {
+  return getMounted()?.doc.stories?.find((story) => story.localId === localId);
 }
 
 function replaceNoteInDoc(updated: WallNote): void {
@@ -627,6 +706,134 @@ async function deleteNote(id: string): Promise<void> {
   }
 }
 
+function visibleCanvasRect(): { x: number; y: number; width: number; height: number } {
+  const rect = wallSurface?.getBoundingClientRect() ?? new DOMRect(0, 0, 800, 600);
+  const topLeft = screenToCanvas(rect.left, rect.top);
+  const bottomRight = screenToCanvas(rect.right, rect.bottom);
+  return {
+    x: topLeft.x,
+    y: topLeft.y,
+    width: Math.max(1, bottomRight.x - topLeft.x),
+    height: Math.max(1, bottomRight.y - topLeft.y),
+  };
+}
+
+function automaticStoryPosition(state: Mounted): { x: number; y: number } {
+  const occupied = [
+    ...state.doc.notes.map((note) => ({ x: note.x, y: note.y, width: note.width, height: note.height })),
+    ...(state.doc.stories ?? []).map((story) => ({
+      x: story.x,
+      y: story.y,
+      width: WALL_STORY_WIDTH,
+      height: WALL_STORY_HEIGHT,
+    })),
+  ];
+  return chooseWallStoryPosition(visibleCanvasRect(), occupied, {
+    width: WALL_STORY_WIDTH,
+    height: WALL_STORY_HEIGHT,
+  });
+}
+
+async function pinStoryAt(localId: number, x: number, y: number): Promise<void> {
+  const state = getMounted();
+  if (!state || !state.canEdit) return;
+  const existing = findStory(localId);
+  if (existing) {
+    focusStory(localId);
+    return;
+  }
+  try {
+    await pinStoryRemote(state.slug, {
+      localId,
+      x: Math.round(clampCanvasCoord(x)),
+      y: Math.round(clampCanvasCoord(y)),
+    });
+    if (getMounted() !== state) return;
+    await refetchDoc();
+    focusStory(localId);
+  } catch (err) {
+    console.warn("wall pin story failed", err);
+    showToast(t("wall.toast.pinStoryFailed"));
+  }
+}
+
+async function ensureStoryOnWall(localId: number): Promise<void> {
+  const state = getMounted();
+  if (!state) return;
+  if (findStory(localId)) {
+    focusStory(localId);
+    return;
+  }
+  if (!state.canEdit) return;
+  const position = automaticStoryPosition(state);
+  await pinStoryAt(localId, position.x, position.y);
+}
+
+function focusStory(localId: number): void {
+  const story = findStory(localId);
+  const element = storyElementByLocalId(localId);
+  const surface = wallSurface;
+  if (!story || !element || !surface) return;
+  const viewport = getViewportState();
+  const rect = surface.getBoundingClientRect();
+  setViewportState({
+    ...viewport,
+    panX: rect.width / 2 - (story.x + WALL_STORY_WIDTH / 2) * viewport.zoom,
+    panY: rect.height / 2 - (story.y + WALL_STORY_HEIGHT / 2) * viewport.zoom,
+  });
+  element.classList.add("wall-story--highlight");
+  setTimeout(() => element.classList.remove("wall-story--highlight"), 1600);
+}
+
+async function patchStory(localId: number, x: number, y: number): Promise<void> {
+  const state = getMounted();
+  const current = findStory(localId);
+  if (!state || !current) return;
+  try {
+    const placement = await patchStoryRemote(state.slug, localId, {
+      ifVersion: current.version,
+      x: Math.round(clampCanvasCoord(x)),
+      y: Math.round(clampCanvasCoord(y)),
+    });
+    if (getMounted() !== state) return;
+    const story = findStory(localId);
+    if (!story) return;
+    Object.assign(story, placement);
+    updateStoryElement(story);
+  } catch (err: any) {
+    if (err?.status === 409) {
+      showToast(t("wall.toast.staleReload"));
+      await refetchDoc();
+      return;
+    }
+    console.warn("wall move story failed", err);
+    showToast(t("wall.toast.moveStoryFailed"));
+    await refetchDoc();
+  }
+}
+
+async function unpinStory(localId: number): Promise<void> {
+  const state = getMounted();
+  if (!state || !state.canEdit) return;
+  try {
+    await unpinStoryRemote(state.slug, localId);
+    if (getMounted() !== state) return;
+    state.doc.stories = (state.doc.stories ?? []).filter((story) => story.localId !== localId);
+    renderSurface();
+  } catch (err) {
+    console.warn("wall unpin story failed", err);
+    showToast(t("wall.toast.removeStoryFailed"));
+  }
+}
+
+async function openStory(localId: number): Promise<void> {
+  const state = getMounted();
+  const story = findStory(localId);
+  if (!state || !story) return;
+  const mod = await import("./todo.js");
+  await mod.openTodoDialog({ mode: "edit", role: state.role, todo: story.todo });
+}
+
 function confirmAndDeleteNotes(state: Mounted, ids: string[], isGroup: boolean): void {
   if (!state.canEdit || ids.length === 0) return;
   const prompt = isGroup
@@ -693,7 +900,6 @@ async function deleteEdge(edgeId: string): Promise<void> {
 function bindSurfaceHandlers(state: Mounted): void {
   const surface = wallSurface;
   if (!surface) return;
-  if (!state.canEdit) return;
 
   // Prevent native dblclick from selecting text or zooming; also acts as our
   // hook for note-vs-canvas distinctions that single pointerdown can't catch
@@ -702,7 +908,7 @@ function bindSurfaceHandlers(state: Mounted): void {
     const target = ev.target as HTMLElement | null;
     if (!target) return;
     const noteEl = target.closest<HTMLElement>(".wall-note");
-    if (noteEl) {
+    if (noteEl && state.canEdit) {
       // Note dblclick handled via pointerdown/tapLength logic below, but we
       // also intercept here so browser-native dblclick doesn't select text.
       ev.preventDefault();
@@ -723,13 +929,27 @@ function bindSurfaceHandlers(state: Mounted): void {
     if (!target) return;
 
     const noteEl = target.closest<HTMLElement>(".wall-note");
+    const storyEl = target.closest<HTMLElement>(".wall-story");
+
+    if (storyEl) {
+      if (isSpacePanArmed() || ev.button !== 0) return;
+      const localId = Number(storyEl.dataset.storyLocalId);
+      if (!Number.isSafeInteger(localId) || localId <= 0) return;
+      if (!state.canEdit) {
+        ev.preventDefault();
+        void openStory(localId);
+        return;
+      }
+      armStoryInteraction(state, ev, storyEl, localId);
+      return;
+    }
 
     // Click landed on the editor textarea itself: let native focus and text
     // editing handle it; pointer events stop here.
     if (target.classList.contains("wall-note__editor")) return;
 
     // Resize handle starts a resize, not a drag or color cycle.
-    if (target.classList.contains("wall-note__resize-handle") && noteEl) {
+    if (state.canEdit && target.classList.contains("wall-note__resize-handle") && noteEl) {
       const noteId = noteEl.dataset.noteId || "";
       if (noteId) {
         ev.preventDefault();
@@ -748,6 +968,7 @@ function bindSurfaceHandlers(state: Mounted): void {
     }
 
     if (noteEl) {
+      if (!state.canEdit) return;
       if (isSpacePanArmed()) return;
       const noteId = noteEl.dataset.noteId || "";
       if (!noteId) return;
@@ -788,7 +1009,7 @@ function bindSurfaceHandlers(state: Mounted): void {
     // Empty canvas, primary button: begin marquee (unless Shift is held —
     // Shift is reserved for edge-from-note and has no empty-canvas meaning).
     // Space+drag is reserved for viewport pan (wall-viewport-nav).
-    if (ev.button === 0 && !ev.shiftKey && !isSpacePanArmed() && !isWallPanMode()) {
+    if (state.canEdit && ev.button === 0 && !ev.shiftKey && !isSpacePanArmed() && !isWallPanMode()) {
       beginMarquee(state, ev);
       return;
     }
@@ -799,9 +1020,21 @@ function bindSurfaceHandlers(state: Mounted): void {
   surface.addEventListener("contextmenu", (ev: MouseEvent) => {
     const target = ev.target as HTMLElement | null;
     if (!target) return;
+    const storyEl = target.closest<HTMLElement>(".wall-story");
     const noteEl = target.closest<HTMLElement>(".wall-note");
     const edgeHit = target.closest<SVGElement>(".wall-edge-hit");
-    if (edgeHit) {
+    if (storyEl) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const localId = Number(storyEl.dataset.storyLocalId);
+      if (!Number.isSafeInteger(localId) || localId <= 0) return;
+      void openWallStoryContextMenu(ev.clientX, ev.clientY, state.abort.signal, state.canEdit).then((choice) => {
+        if (choice === "open") void openStory(localId);
+        if (choice === "remove") void unpinStory(localId);
+      });
+      return;
+    }
+    if (edgeHit && state.canEdit) {
       ev.preventDefault();
       ev.stopPropagation();
       const groupNode = edgeHit.parentNode as Element | null;
@@ -818,7 +1051,7 @@ function bindSurfaceHandlers(state: Mounted): void {
       }
       return;
     }
-    if (noteEl) {
+    if (noteEl && state.canEdit) {
       ev.preventDefault();
       const noteId = noteEl.dataset.noteId || "";
       if (!noteId) return;
@@ -860,6 +1093,15 @@ function bindSurfaceHandlers(state: Mounted): void {
     }
     ev.preventDefault();
     const { x, y } = screenToCanvas(ev.clientX, ev.clientY);
+    if (!state.canEdit) return;
+    if (ev.ctrlKey) {
+      void import("./todo.js").then((mod) => mod.openTodoDialog({
+        mode: "create",
+        role: state.role,
+        onCreated: (todo) => pinStoryAt(todo.localId, x, y),
+      }));
+      return;
+    }
     void createNoteAt(x, y);
   }, { signal: state.abort.signal });
 }
@@ -991,6 +1233,48 @@ function cancelColorTimer(state: Mounted, noteId: string): void {
     clearTimeout(t);
     state.colorTimers.delete(noteId);
   }
+}
+
+function armStoryInteraction(
+  state: Mounted,
+  ev: PointerEvent,
+  storyEl: HTMLElement,
+  localId: number,
+): void {
+  ev.preventDefault();
+  const startX = ev.clientX;
+  const startY = ev.clientY;
+  let promoted = false;
+  const onMove = (move: PointerEvent) => {
+    if (promoted) return;
+    const dx = move.clientX - startX;
+    const dy = move.clientY - startY;
+    if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) return;
+    const story = findStory(localId);
+    if (!story) return;
+    promoted = true;
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    beginStoryDrag({
+      state,
+      ev: move,
+      storyEl,
+      story,
+      downX: startX,
+      downY: startY,
+      onCommit: (id, x, y) => { void patchStory(id, x, y); },
+    });
+  };
+  const onUp = () => {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+    if (!promoted) void openStory(localId);
+  };
+  document.addEventListener("pointermove", onMove, { signal: state.abort.signal });
+  document.addEventListener("pointerup", onUp, { signal: state.abort.signal });
+  document.addEventListener("pointercancel", onUp, { signal: state.abort.signal });
 }
 
 // Arm a potential drag. If pointer up without significant movement, treat as

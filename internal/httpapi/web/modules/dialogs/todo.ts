@@ -50,6 +50,7 @@ import {
   loadAllProjectTagSuggestions,
   mergeTodoTagSuggestions,
 } from './todo-tag-suggestions.js';
+import type { Todo } from '../types.js';
 
 export {
   getTodoFormPermissions,
@@ -85,6 +86,8 @@ let todoDialogBaseline: TodoDialogSnapshot | null = null;
 let todoDialogClosePromptOpen = false;
 let todoCreatorLocaleAbort: AbortController | null = null;
 let todoDialogOpenGeneration = 0;
+type TodoCreatedCallback = (todo: Todo) => void | Promise<void>;
+let todoCreatedCallback: { generation: number; callback: TodoCreatedCallback } | null = null;
 
 function sprintStateLabel(state: string): string {
   const key = `todo.sprint.state.${state}`;
@@ -313,6 +316,7 @@ function resetTodoDialogCloseState(): void {
   todoDialogClosePromptOpen = false;
   todoCreatorLocaleAbort?.abort();
   todoCreatorLocaleAbort = null;
+  todoCreatedCallback = null;
 }
 
 async function closeTodoDialogInternal(
@@ -401,6 +405,26 @@ export function __isTodoDialogDirtyForTest(): boolean {
   return isTodoDialogDirty();
 }
 
+// Called by the actual create-submit path after the server has returned the
+// canonical Todo. The callback is one-shot and scoped to the current dialog
+// generation, so it cannot leak into a later create or fire for edits.
+export function getTodoDialogOpenGeneration(): number {
+  return todoDialogOpenGeneration;
+}
+
+export async function notifyTodoCreated(todo: Todo, generation = todoDialogOpenGeneration): Promise<void> {
+  const pending = todoCreatedCallback;
+  if (!pending || pending.generation !== generation || generation !== todoDialogOpenGeneration) return;
+  todoCreatedCallback = null;
+  try {
+    await pending.callback(todo);
+  } catch (err) {
+    // Todo creation already succeeded. A caller-owned follow-up must not turn
+    // that success into a misleading Todo save failure.
+    console.warn("todo created callback failed", err);
+  }
+}
+
 export async function openTodoDialog(opts: {
   mode: string;
   todo?: any;
@@ -408,9 +432,13 @@ export async function openTodoDialog(opts: {
   initialTitle?: string;
   onNavigateToLinkedTodo?: (path: string) => void;
   role?: string | null;
+  onCreated?: TodoCreatedCallback;
 }): Promise<void> {
   const { mode, todo, status, onNavigateToLinkedTodo } = opts;
   const openGeneration = ++todoDialogOpenGeneration;
+  todoCreatedCallback = mode === "create" && opts.onCreated
+    ? { generation: openGeneration, callback: opts.onCreated }
+    : null;
   const isArchived = mode === "edit" && !!todo?.archivedAt;
   const tagsToShow: string[] = mode === "create" ? [] : (todo?.tags || []);
   setEditingTodo(mode === "edit" ? todo : null);

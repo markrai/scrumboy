@@ -476,6 +476,8 @@
   "shell.bulkEdit.status": "Статус",
   "shell.bulkEdit.tagsPlaceholder": "Введите тег и нажмите Enter",
   "shell.contextMenu.newTodo": "Новая задача",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Выберите язык Scrumboy для этого браузера.",
   "settings.language.selectLabel": "Язык",
   "settings.language.title": "Язык",
@@ -1247,6 +1249,10 @@
   "wall.shell.trashAlt": "Перетащите заметку сюда для удаления",
   "wall.shortcuts.createNote.label": "создать заметку:",
   "wall.shortcuts.createNote.hint": "правый клик по холсту",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "изменить цвет:",
   "wall.shortcuts.changeColor.hint": "одиночный клик по заметке",
   "wall.shortcuts.editNote.label": "редактировать заметку:",
@@ -1273,12 +1279,22 @@
   "wall.note.resize": "Изменить размер заметки",
   "wall.note.edit": "Редактировать текст заметки",
   "wall.menu.createTodoFromNote": "Создать задачу из заметки",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "Удалить заметки ({count})",
   "wall.confirm.deleteNote": "Удалить эту заметку?",
   "wall.confirm.deleteNotesCount": "Удалить заметки ({count})?",
   "wall.confirm.deleteConnection": "Удалить эту связь?",
   "wall.toast.unavailable": "Стена здесь недоступна.",
   "wall.toast.addNoteFailed": "Не удалось добавить заметку",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Другой редактор изменил эту заметку — перезагрузка стены.",
   "wall.toast.updateNoteFailed": "Не удалось обновить заметку",
   "wall.toast.deleteNoteFailed": "Не удалось удалить заметку",
