@@ -16,6 +16,12 @@ function onContextMenuEscapeKeydown(ev: KeyboardEvent): void {
 
   ev.preventDefault();
   hideContextMenu();
+  releaseInvokerFocus();
+}
+
+function releaseInvokerFocus(): void {
+  const active = document.activeElement as HTMLElement | null;
+  if (active && active.closest("#contextMenu, [data-todo-id]")) active.blur();
 }
 
 export function setupContextMenuCloseHandler(): void {

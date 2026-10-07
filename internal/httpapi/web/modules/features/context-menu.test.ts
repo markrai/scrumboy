@@ -81,6 +81,35 @@ describe("board context menu ESC dismissal", () => {
     expect(claim.claimed()).toBe(false);
   });
 
+  it("releases focus from the invoking Todo card on dismissal", () => {
+    const menu = visibleMenu();
+    const card = document.createElement("button");
+    card.setAttribute("data-todo-id", "42");
+    card.textContent = "Todo";
+    document.body.appendChild(card);
+    card.focus();
+    expect(document.activeElement).toBe(card);
+
+    dispatchEscape();
+
+    expect(menu.style.display).toBe("none");
+    expect(document.activeElement).not.toBe(card);
+  });
+
+  it("does not blur an unrelated focused control on dismissal", () => {
+    const menu = visibleMenu();
+    const control = document.createElement("button");
+    control.textContent = "Elsewhere";
+    document.body.appendChild(control);
+    control.focus();
+    expect(document.activeElement).toBe(control);
+
+    dispatchEscape();
+
+    expect(menu.style.display).toBe("none");
+    expect(document.activeElement).toBe(control);
+  });
+
   it("lets native dialog cancel handling win", () => {
     const menu = visibleMenu();
     const claim = observeClaim();
