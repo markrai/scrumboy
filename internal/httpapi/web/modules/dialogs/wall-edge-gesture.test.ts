@@ -393,4 +393,21 @@ describe("wall edge gesture across endpoint types", () => {
 
     expect(storyPatchPosts(7)).toBeGreaterThan(0);
   });
+
+  it("unpin removes the story and its incident local edges immediately", async () => {
+    await openWall("maintainer", dragEdgeDoc());
+    expect(wallSurfaceEl.querySelectorAll(".wall-edge-group").length).toBe(3);
+    const story = getStoryEl(7);
+    story.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    await flushPromises();
+    wallDialogEl.querySelector<HTMLButtonElement>('[data-action="remove"]')?.click();
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith("/api/board/alpha/wall/stories/7", { method: "DELETE" });
+    expect(wallSurfaceEl.querySelector('.wall-story[data-story-local-id="7"]')).toBeNull();
+    expect(wallSurfaceEl.querySelector('.wall-story[data-story-local-id="8"]')).not.toBeNull();
+    const groups = wallSurfaceEl.querySelectorAll(".wall-edge-group");
+    expect(groups.length).toBe(1);
+    expect((groups[0] as SVGGElement).dataset.edgeId).toBe("e3");
+  });
 });

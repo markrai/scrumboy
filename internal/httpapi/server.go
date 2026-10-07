@@ -712,8 +712,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh: boardRefreshPublisher,
 	})
 	server.todoDeletes = todoapp.NewDeleteService(todoapp.DeleteServiceDependencies{
-		Delete:  st,
-		Refresh: boardRefreshPublisher,
+		Delete:      st,
+		Refresh:     boardRefreshPublisher,
+		WallRefresh: wallRefreshPublisher{server: server},
 	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
 		Move:            st,
@@ -731,9 +732,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.todoArchiveReads = todoapp.NewArchiveReadService(st)
 	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
-		Projects: st,
-		Delete:   st,
-		Refresh:  boardRefreshPublisher,
+		Projects:    st,
+		Delete:      st,
+		Refresh:     boardRefreshPublisher,
+		WallRefresh: wallRefreshPublisher{server: server},
 	})
 	server.todoLegacyMoves = todoapp.NewLegacyMoveService(todoapp.LegacyMoveServiceDependencies{
 		Move:            st,

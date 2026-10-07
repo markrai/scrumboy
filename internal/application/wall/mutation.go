@@ -204,6 +204,10 @@ const (
 	RefreshStoryPinned   RefreshReason = "wall_story_pinned"
 	RefreshStoryMoved    RefreshReason = "wall_story_moved"
 	RefreshStoryUnpinned RefreshReason = "wall_story_unpinned"
+	// RefreshTodoDeleted follows one successful Todo hard-delete, whose store
+	// transaction also removes the deleted Todo's pinned placement and
+	// incident story edges.
+	RefreshTodoDeleted RefreshReason = "wall_todo_deleted"
 )
 
 // WallRefreshPublisher publishes the semantic refresh required after one

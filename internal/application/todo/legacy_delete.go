@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"scrumboy/internal/application/refresh"
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/store"
 )
 
@@ -23,18 +24,20 @@ type LegacyGlobalDeleteStore interface {
 // global-ID deletion, and REST refresh capabilities used by the numeric
 // DELETE compatibility use case.
 type LegacyDeleteServiceDependencies struct {
-	Projects LegacyDeleteProjectStore
-	Delete   LegacyGlobalDeleteStore
-	Refresh  BoardRefreshPublisher
+	Projects    LegacyDeleteProjectStore
+	Delete      LegacyGlobalDeleteStore
+	Refresh     BoardRefreshPublisher
+	WallRefresh wallapp.WallRefreshPublisher
 }
 
 // LegacyDeleteService preserves the numeric DELETE route's existing
 // project-lookup, global-ID deletion, and post-commit refresh sequence.
 // Authorization and durable side effects remain store-owned.
 type LegacyDeleteService struct {
-	projects LegacyDeleteProjectStore
-	delete   LegacyGlobalDeleteStore
-	refresh  BoardRefreshPublisher
+	projects    LegacyDeleteProjectStore
+	delete      LegacyGlobalDeleteStore
+	refresh     BoardRefreshPublisher
+	wallRefresh wallapp.WallRefreshPublisher
 }
 
 func NewLegacyDeleteService(deps LegacyDeleteServiceDependencies) *LegacyDeleteService {
@@ -42,10 +45,15 @@ func NewLegacyDeleteService(deps LegacyDeleteServiceDependencies) *LegacyDeleteS
 	if refresh == nil {
 		refresh = nopBoardRefreshPublisher{}
 	}
+	wallRefresh := deps.WallRefresh
+	if wallRefresh == nil {
+		wallRefresh = nopWallRefreshPublisher{}
+	}
 	return &LegacyDeleteService{
-		projects: deps.Projects,
-		delete:   deps.Delete,
-		refresh:  refresh,
+		projects:    deps.Projects,
+		delete:      deps.Delete,
+		refresh:     refresh,
+		wallRefresh: wallRefresh,
 	}
 }
 
@@ -92,5 +100,6 @@ func (d *PreparedLegacyDelete) Delete() error {
 	}
 
 	d.service.refresh.PublishBoardRefresh(d.ctx, d.projectID, RefreshReasonTodoDeleted, refresh.Entity{})
+	d.service.wallRefresh.PublishWallRefresh(d.ctx, d.projectID, wallapp.RefreshTodoDeleted)
 	return nil
 }

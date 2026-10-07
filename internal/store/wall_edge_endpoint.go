@@ -1,6 +1,10 @@
 package store
 
 import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -84,6 +88,48 @@ func (e WallEdgeEndpoint) TodoLocalID() int64 {
 // Canonical returns the persisted/API form of the endpoint.
 func (e WallEdgeEndpoint) Canonical() string {
 	return e.raw
+}
+
+// removeWallStoryEdgesTx removes every edge incident to one canonical story
+// endpoint from the project's wall row. Survivor order is preserved. It
+// reports whether any edge was removed and writes only in that case; a
+// missing wall row simply reports no change. It never commits and never bumps
+// the wall version: the caller owns version-bump policy and the surrounding
+// transaction, so cleanup either commits or rolls back atomically with the
+// placement or Todo deletion it accompanies.
+func removeWallStoryEdgesTx(ctx context.Context, tx *sql.Tx, projectID int64, endpoint string) (bool, error) {
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT edges FROM project_walls WHERE project_id = ?`, projectID).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("load wall edges for story cleanup: %w", err)
+	}
+	var edges []WallEdge
+	if err := json.Unmarshal([]byte(raw), &edges); err != nil {
+		return false, fmt.Errorf("decode wall edges for story cleanup: %w", err)
+	}
+	kept := make([]WallEdge, 0, len(edges))
+	changed := false
+	for _, e := range edges {
+		if e.From == endpoint || e.To == endpoint {
+			changed = true
+			continue
+		}
+		kept = append(kept, e)
+	}
+	if !changed {
+		return false, nil
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return false, fmt.Errorf("encode wall edges for story cleanup: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE project_walls SET edges = ? WHERE project_id = ?`, string(out), projectID); err != nil {
+		return false, fmt.Errorf("write wall edges for story cleanup: %w", err)
+	}
+	return true, nil
 }
 
 // resolveWallEdgeEndpoint reports whether an endpoint refers to something

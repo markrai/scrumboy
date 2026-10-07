@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -185,24 +186,322 @@ func TestWallEdgeMixedEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("other project placement local id does not resolve", func(t *testing.T) {
-		targetProject, err := st.CreateProject(ctx, "p-target")
-		if err != nil {
-			t.Fatalf("CreateProject: %v", err)
+}
+
+func mustWallEdgeLifecycleFixture(t *testing.T, st *Store, ctx context.Context) (int64, WallNote, WallNote, int64, int64) {
+	t.Helper()
+	p, err := st.CreateProject(ctx, "lifecycle")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	first, _, err := st.CreateNote(ctx, p.ID, CreateNoteInput{Color: "#ffd966"})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	second, _, err := st.CreateNote(ctx, p.ID, CreateNoteInput{Color: "#ffd966"})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	firstLocalID := mustWallEdgeStoryFixture(t, st, ctx, p.ID, "First")
+	secondLocalID := mustWallEdgeStoryFixture(t, st, ctx, p.ID, "Second")
+	if _, _, err := st.CreateEdge(ctx, p.ID, first.ID, FormatWallStoryEndpoint(firstLocalID)); err != nil {
+		t.Fatalf("CreateEdge note story: %v", err)
+	}
+	if _, _, err := st.CreateEdge(ctx, p.ID, FormatWallStoryEndpoint(firstLocalID), FormatWallStoryEndpoint(secondLocalID)); err != nil {
+		t.Fatalf("CreateEdge story story: %v", err)
+	}
+	if _, _, err := st.CreateEdge(ctx, p.ID, first.ID, second.ID); err != nil {
+		t.Fatalf("CreateEdge note note: %v", err)
+	}
+	return p.ID, first, second, firstLocalID, secondLocalID
+}
+
+func wallEdgeEndpointStrings(edges []WallEdge) []string {
+	out := make([]string, 0, len(edges))
+	for _, e := range edges {
+		out = append(out, e.From+"->"+e.To)
+	}
+	return out
+}
+
+func TestUnpinWallStoryRemovesIncidentEdges(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID, first, second, firstLocalID, _ := mustWallEdgeLifecycleFixture(t, st, ctx)
+	before, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Edges) != 3 {
+		t.Fatalf("edges=%d want 3", len(before.Edges))
+	}
+
+	if err := st.UnpinWallStory(ctx, projectID, firstLocalID); err != nil {
+		t.Fatalf("UnpinWallStory: %v", err)
+	}
+	after, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, placement := range after.Stories {
+		if placement.TodoLocalID == firstLocalID {
+			t.Fatalf("placement %d survived unpin", firstLocalID)
 		}
-		targetNote, _, err := st.CreateNote(ctx, targetProject.ID, CreateNoteInput{Color: "#ffd966"})
-		if err != nil {
-			t.Fatalf("CreateNote: %v", err)
+	}
+	want := []string{first.ID + "->" + second.ID}
+	if got := wallEdgeEndpointStrings(after.Edges); !reflect.DeepEqual(got, want) {
+		t.Fatalf("edges=%q want %q", got, want)
+	}
+	if after.Version != before.Version+1 {
+		t.Fatalf("version=%d want %d", after.Version, before.Version+1)
+	}
+}
+
+func TestUnpinWallStoryNotFoundChangesNothing(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID, _, _, _, _ := mustWallEdgeLifecycleFixture(t, st, ctx)
+	before, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UnpinWallStory(ctx, projectID, 999999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unpin missing err=%v want ErrNotFound", err)
+	}
+	after, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Version != before.Version || !reflect.DeepEqual(after.Edges, before.Edges) {
+		t.Fatalf("failed unpin changed wall state")
+	}
+}
+
+func TestDeleteTodoByLocalIDRemovesPinnedStoryAndEdges(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID, first, second, firstLocalID, _ := mustWallEdgeLifecycleFixture(t, st, ctx)
+	before, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteTodoByLocalID(ctx, projectID, firstLocalID, ModeFull); err != nil {
+		t.Fatalf("DeleteTodoByLocalID: %v", err)
+	}
+	if _, err := st.GetTodoByLocalID(ctx, projectID, firstLocalID, ModeFull); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("todo lookup err=%v want ErrNotFound", err)
+	}
+	after, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, placement := range after.Stories {
+		if placement.TodoLocalID == firstLocalID {
+			t.Fatalf("placement %d survived todo delete", firstLocalID)
 		}
-		sourceProject, err := st.CreateProject(ctx, "p-source")
-		if err != nil {
-			t.Fatalf("CreateProject: %v", err)
-		}
-		sourceLocalID := mustWallEdgeStoryFixture(t, st, ctx, sourceProject.ID, "Elsewhere")
-		// The target wall holds notes but no story placements at all, so the
-		// source project's local ID cannot resolve there by construction.
-		if _, _, err := st.CreateEdge(ctx, targetProject.ID, targetNote.ID, FormatWallStoryEndpoint(sourceLocalID)); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("cross-project err=%v want ErrNotFound", err)
-		}
-	})
+	}
+	want := []string{first.ID + "->" + second.ID}
+	if got := wallEdgeEndpointStrings(after.Edges); !reflect.DeepEqual(got, want) {
+		t.Fatalf("edges=%q want %q", got, want)
+	}
+	if after.Version != before.Version+1 {
+		t.Fatalf("version=%d want %d", after.Version, before.Version+1)
+	}
+}
+
+func TestDeleteTodoByLocalIDPinnedWithoutEdgesBumpsOnce(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "pinned-no-edges")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	localID := mustWallEdgeStoryFixture(t, st, ctx, p.ID, "Lone")
+	before, err := st.GetWall(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteTodoByLocalID(ctx, p.ID, localID, ModeFull); err != nil {
+		t.Fatalf("DeleteTodoByLocalID: %v", err)
+	}
+	after, err := st.GetWall(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Stories) != 0 {
+		t.Fatalf("stories=%d want 0", len(after.Stories))
+	}
+	if after.Version != before.Version+1 {
+		t.Fatalf("version=%d want %d", after.Version, before.Version+1)
+	}
+}
+
+func TestDeleteTodoByLocalIDWithoutWallRefsLeavesWallAlone(t *testing.T) {
+	st, sqlDB, cleanup := newTestStoreWithSQL(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "no-wall-refs")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	todo, err := st.CreateTodo(ctx, p.ID, CreateTodoInput{Title: "Plain"}, ModeFull)
+	if err != nil {
+		t.Fatalf("CreateTodo: %v", err)
+	}
+	if err := st.DeleteTodoByLocalID(ctx, p.ID, todo.LocalID, ModeFull); err != nil {
+		t.Fatalf("DeleteTodoByLocalID: %v", err)
+	}
+	var rows int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM project_walls WHERE project_id = ?`, p.ID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Fatalf("wall rows=%d want 0 (no materialization)", rows)
+	}
+}
+
+func TestDeleteTodoByLocalIDRemovesDanglingStoryEdge(t *testing.T) {
+	st, sqlDB, cleanup := newTestStoreWithSQL(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID, first, second, firstLocalID, _ := mustWallEdgeLifecycleFixture(t, st, ctx)
+	if _, err := sqlDB.Exec(`DELETE FROM wall_story_placements WHERE project_id = ?`, projectID); err != nil {
+		t.Fatalf("drop placements: %v", err)
+	}
+	before, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Edges) != 3 {
+		t.Fatalf("edges=%d want 3", len(before.Edges))
+	}
+	if err := st.DeleteTodoByLocalID(ctx, projectID, firstLocalID, ModeFull); err != nil {
+		t.Fatalf("DeleteTodoByLocalID: %v", err)
+	}
+	after, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{first.ID + "->" + second.ID}
+	if got := wallEdgeEndpointStrings(after.Edges); !reflect.DeepEqual(got, want) {
+		t.Fatalf("edges=%q want %q", got, want)
+	}
+	if after.Version != before.Version+1 {
+		t.Fatalf("version=%d want %d", after.Version, before.Version+1)
+	}
+}
+
+func TestDeleteTodoByLocalIDRollsBackWhenWallCleanupFails(t *testing.T) {
+	st, sqlDB, cleanup := newTestStoreWithSQL(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID, _, _, firstLocalID, _ := mustWallEdgeLifecycleFixture(t, st, ctx)
+	before, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`UPDATE project_walls SET edges = 'not-json' WHERE project_id = ?`, projectID); err != nil {
+		t.Fatalf("corrupt edges: %v", err)
+	}
+	if err := st.DeleteTodoByLocalID(ctx, projectID, firstLocalID, ModeFull); err == nil {
+		t.Fatal("DeleteTodoByLocalID unexpectedly succeeded")
+	}
+	todo, err := st.GetTodoByLocalID(ctx, projectID, firstLocalID, ModeFull)
+	if err != nil {
+		t.Fatalf("todo missing after rollback: %v", err)
+	}
+	var placementCount, version int64
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM wall_story_placements WHERE project_id = ? AND todo_id = ?`, projectID, todo.ID).Scan(&placementCount); err != nil {
+		t.Fatal(err)
+	}
+	if placementCount != 1 {
+		t.Fatal("placement missing after rollback")
+	}
+	if err := sqlDB.QueryRow(`SELECT version FROM project_walls WHERE project_id = ?`, projectID).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != int64(before.Version) {
+		t.Fatalf("version=%d want %d", version, before.Version)
+	}
+	var raw string
+	if err := sqlDB.QueryRow(`SELECT edges FROM project_walls WHERE project_id = ?`, projectID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw != "not-json" {
+		t.Fatalf("edges=%q want corrupted value preserved", raw)
+	}
+}
+
+func TestUnpinWallStoryCleanupFailureRollsBack(t *testing.T) {
+	st, sqlDB, cleanup := newTestStoreWithSQL(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	projectID, _, _, firstLocalID, _ := mustWallEdgeLifecycleFixture(t, st, ctx)
+	before, err := st.GetWall(ctx, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.Exec(`UPDATE project_walls SET edges = 'not-json' WHERE project_id = ?`, projectID); err != nil {
+		t.Fatalf("corrupt edges: %v", err)
+	}
+	if err := st.UnpinWallStory(ctx, projectID, firstLocalID); err == nil {
+		t.Fatal("UnpinWallStory unexpectedly succeeded")
+	}
+	var placementCount, version int64
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM wall_story_placements WHERE project_id = ?`, projectID).Scan(&placementCount); err != nil {
+		t.Fatal(err)
+	}
+	if placementCount != 2 {
+		t.Fatalf("placements=%d want 2 after rollback", placementCount)
+	}
+	if err := sqlDB.QueryRow(`SELECT version FROM project_walls WHERE project_id = ?`, projectID).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != int64(before.Version) {
+		t.Fatalf("version=%d want %d", version, before.Version)
+	}
+	var raw string
+	if err := sqlDB.QueryRow(`SELECT edges FROM project_walls WHERE project_id = ?`, projectID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw != "not-json" {
+		t.Fatalf("edges=%q want corrupted value preserved", raw)
+	}
+}
+
+func TestWallEdgeCrossProjectLocalIDDoesNotResolve(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	targetProject, err := st.CreateProject(ctx, "p-target")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	targetNote, _, err := st.CreateNote(ctx, targetProject.ID, CreateNoteInput{Color: "#ffd966"})
+	if err != nil {
+		t.Fatalf("CreateNote: %v", err)
+	}
+	sourceProject, err := st.CreateProject(ctx, "p-source")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	sourceLocalID := mustWallEdgeStoryFixture(t, st, ctx, sourceProject.ID, "Elsewhere")
+	// The target wall holds notes but no story placements at all, so the
+	// source project's local ID cannot resolve there by construction.
+	if _, _, err := st.CreateEdge(ctx, targetProject.ID, targetNote.ID, FormatWallStoryEndpoint(sourceLocalID)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-project err=%v want ErrNotFound", err)
+	}
 }

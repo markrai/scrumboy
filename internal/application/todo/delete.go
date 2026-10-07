@@ -3,6 +3,7 @@ package todo
 import (
 	"context"
 
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/store"
 )
 
@@ -25,3 +26,7 @@ type DeleteStore interface {
 		mode store.Mode,
 	) error
 }
+
+type nopWallRefreshPublisher struct{}
+
+func (nopWallRefreshPublisher) PublishWallRefresh(context.Context, int64, wallapp.RefreshReason) {}

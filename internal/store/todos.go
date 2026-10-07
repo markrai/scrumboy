@@ -846,6 +846,17 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 }
 
 func (s *Store) DeleteTodo(ctx context.Context, todoID int64, mode Mode) error {
+	// Resolve the project first so the project Wall lock is held across the
+	// whole delete. Edge creation validates placements under the same lock,
+	// so no stale story edge can be written while a placement disappears.
+	// The Todo itself is re-read inside the transaction below.
+	projectID, err := s.GetProjectIDForTodo(ctx, todoID)
+	if err != nil {
+		return err
+	}
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin delete todo: %w", err)
@@ -900,6 +911,10 @@ WHERE project_id = ? AND (from_local_id = ? OR to_local_id = ?)`,
 		return fmt.Errorf("audit todo_deleted: %w", err)
 	}
 
+	var placementCount int64
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM wall_story_placements WHERE project_id = ? AND todo_id = ?`, existing.ProjectID, todoID).Scan(&placementCount); err != nil {
+		return fmt.Errorf("count wall story placements: %w", err)
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM todos WHERE id=?`, todoID)
 	if err != nil {
 		return fmt.Errorf("delete todo: %w", err)
@@ -910,6 +925,20 @@ WHERE project_id = ? AND (from_local_id = ? OR to_local_id = ?)`,
 	}
 	if n == 0 {
 		return ErrNotFound
+	}
+
+	// The placement row FK-cascades with the Todo above. Remove incident
+	// story edges in the same transaction and bump the Wall version exactly
+	// once when the Wall lost a placement or an edge; a Todo with no Wall
+	// references leaves Wall state unmaterialized.
+	wallChanged, err := removeWallStoryEdgesTx(ctx, tx, existing.ProjectID, FormatWallStoryEndpoint(existing.LocalID))
+	if err != nil {
+		return err
+	}
+	if wallChanged || placementCount > 0 {
+		if err := bumpWallVersionTx(ctx, tx, existing.ProjectID); err != nil {
+			return err
+		}
 	}
 
 	nowMs := time.Now().UTC().UnixMilli()

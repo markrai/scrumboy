@@ -404,6 +404,8 @@ WHERE project_id = ? AND todo_id = ?`, p.X, p.Y, p.Version, projectID, p.TodoID)
 }
 
 // UnpinWallStory removes only the Wall placement; the canonical Todo remains.
+// Incident story edges are removed in the same transaction, and the Wall
+// version bumps exactly once.
 func (s *Store) UnpinWallStory(ctx context.Context, projectID, localID int64) error {
 	mu := lockWall(projectID)
 	defer mu.Unlock()
@@ -427,6 +429,9 @@ WHERE project_id = ? AND todo_id = (
 	}
 	if rows == 0 {
 		return ErrNotFound
+	}
+	if _, err := removeWallStoryEdgesTx(ctx, tx, projectID, FormatWallStoryEndpoint(localID)); err != nil {
+		return err
 	}
 	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
 		return err

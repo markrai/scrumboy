@@ -836,6 +836,8 @@ async function unpinStory(localId: number): Promise<void> {
     await unpinStoryRemote(state.slug, localId);
     if (getMounted() !== state) return;
     state.doc.stories = (state.doc.stories ?? []).filter((story) => story.localId !== localId);
+    const endpoint = formatWallStoryEndpoint(localId);
+    state.doc.edges = (state.doc.edges ?? []).filter((edge) => edge.from !== endpoint && edge.to !== endpoint);
     renderSurface();
   } catch (err) {
     console.warn("wall unpin story failed", err);
