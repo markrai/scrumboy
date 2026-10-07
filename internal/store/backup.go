@@ -242,10 +242,12 @@ type LinkExport struct {
 }
 
 // WallExport represents the sticky-note wall document (Scrumbaby) for a project.
-// The wall is a single JSON blob per project (one-to-one with projects); IDs
-// inside are opaque strings, so whole-document copy is safe across projects
-// without id remapping. UpdatedAt is intentionally omitted: each import stamps
-// its own import time on write. A missing field on an imported project means
+// The wall is a single JSON blob per project (one-to-one with projects). Note
+// endpoints are opaque strings, so whole-document copy is safe across projects
+// without id remapping; story endpoints ("story:<todo local ID>") are portable
+// project-scoped references resolved against the imported placements on
+// import. UpdatedAt is intentionally omitted: each import stamps its own
+// import time on write. A missing field on an imported project means
 // "no wall data in this backup" - existing walls on the target are preserved.
 type WallExport struct {
 	Notes   []WallNote                 `json:"notes"`

@@ -752,27 +752,127 @@ func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, pay
 		})
 	}
 
+	// Current-format Wall payloads replace placements, including an explicit
+	// empty array. Legacy payloads omitted stories entirely; preserving the
+	// target placements matters for merge, while replace/copy targets are new
+	// projects and therefore already have an empty placement set. Accepted
+	// story local IDs are resolved before edge filtering so story endpoints
+	// validate against the resulting placement set either way.
+	storiesPresent := payload.StoriesPresent || payload.Stories != nil
+	storyLocalIDs := make(map[int64]struct{})
+	if storiesPresent {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM wall_story_placements WHERE project_id = ?`, projectID); err != nil {
+			return fmt.Errorf("clear wall story placements for import: %w", err)
+		}
+		seenStories := make(map[int64]struct{}, len(payload.Stories))
+		for _, story := range payload.Stories {
+			if story.LocalID <= 0 {
+				if warnings != nil {
+					*warnings = append(*warnings, "Dropped Wall story placement with invalid localId")
+				}
+				continue
+			}
+			if _, duplicate := seenStories[story.LocalID]; duplicate {
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("Dropped duplicate Wall placement for story #%d", story.LocalID))
+				}
+				continue
+			}
+			seenStories[story.LocalID] = struct{}{}
+			var todoID int64
+			if err := tx.QueryRowContext(ctx,
+				`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
+				projectID, story.LocalID,
+			).Scan(&todoID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					if warnings != nil {
+						*warnings = append(*warnings, fmt.Sprintf("Dropped dangling Wall placement for story #%d", story.LocalID))
+					}
+					continue
+				}
+				return fmt.Errorf("resolve imported wall story #%d: %w", story.LocalID, err)
+			}
+			placementVersion := story.Version
+			if placementVersion <= 0 {
+				placementVersion = 1
+			}
+			if _, err := tx.ExecContext(ctx, `
+INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
+VALUES (?, ?, ?, ?, ?)`, projectID, todoID, clampNoteCoord(story.X), clampNoteCoord(story.Y), placementVersion); err != nil {
+				return fmt.Errorf("insert imported wall story #%d: %w", story.LocalID, err)
+			}
+			storyLocalIDs[story.LocalID] = struct{}{}
+		}
+	} else {
+		rows, err := tx.QueryContext(ctx, `
+SELECT t.local_id FROM wall_story_placements AS p
+JOIN todos AS t ON t.id = p.todo_id
+WHERE p.project_id = ?`, projectID)
+		if err != nil {
+			return fmt.Errorf("load preserved wall story placements for import: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var localID int64
+			if err := rows.Scan(&localID); err != nil {
+				rows.Close()
+				return fmt.Errorf("decode preserved wall story placement for import: %w", err)
+			}
+			storyLocalIDs[localID] = struct{}{}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("read preserved wall story placements for import: %w", err)
+		}
+	}
+
 	edges := payload.Edges
 	if len(edges) > maxWallEdges {
 		edges = edges[:maxWallEdges]
 	}
 	keptEdges := make([]WallEdge, 0, len(edges))
 	seenEdges := make(map[string]struct{}, len(edges))
+	resolves := func(endpoint WallEdgeEndpoint) bool {
+		if endpoint.Kind() == WallEdgeEndpointStory {
+			_, ok := storyLocalIDs[endpoint.TodoLocalID()]
+			return ok
+		}
+		_, ok := seenIDs[endpoint.NoteID()]
+		return ok
+	}
 	for _, e := range edges {
-		from := strings.TrimSpace(e.From)
-		to := strings.TrimSpace(e.To)
-		if from == "" || to == "" || from == to {
+		from, err := ParseWallEdgeEndpoint(e.From)
+		if err != nil {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with invalid endpoint %q", strings.TrimSpace(e.From)))
+			}
 			continue
 		}
-		if _, ok := seenIDs[from]; !ok {
+		to, err := ParseWallEdgeEndpoint(e.To)
+		if err != nil {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with invalid endpoint %q", strings.TrimSpace(e.To)))
+			}
 			continue
 		}
-		if _, ok := seenIDs[to]; !ok {
+		if from.Canonical() == to.Canonical() {
+			continue
+		}
+		if !resolves(from) {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with unknown endpoint %q", from.Canonical()))
+			}
+			continue
+		}
+		if !resolves(to) {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with unknown endpoint %q", to.Canonical()))
+			}
 			continue
 		}
 		// Normalize to an undirected key so the same pair imported in either
 		// direction is deduplicated; edge direction is not significant.
-		a, b := from, to
+		a, b := from.Canonical(), to.Canonical()
 		if a > b {
 			a, b = b, a
 		}
@@ -785,7 +885,7 @@ func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, pay
 		if id == "" {
 			id = newEdgeID()
 		}
-		keptEdges = append(keptEdges, WallEdge{ID: id, From: from, To: to})
+		keptEdges = append(keptEdges, WallEdge{ID: id, From: from.Canonical(), To: to.Canonical()})
 	}
 
 	notesJSON, err := json.Marshal(normalized)
@@ -807,56 +907,6 @@ VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.edges, version = excluded.version, updated_at = excluded.updated_at
 `, projectID, string(notesJSON), string(edgesJSON), version, nowMs); err != nil {
 		return fmt.Errorf("upsert wall for import: %w", err)
-	}
-
-	// Current-format Wall payloads replace placements, including an explicit
-	// empty array. Legacy payloads omitted stories entirely; preserving the
-	// target placements matters for merge, while replace/copy targets are new
-	// projects and therefore already have an empty placement set.
-	storiesPresent := payload.StoriesPresent || payload.Stories != nil
-	if !storiesPresent {
-		return nil
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM wall_story_placements WHERE project_id = ?`, projectID); err != nil {
-		return fmt.Errorf("clear wall story placements for import: %w", err)
-	}
-	seenStories := make(map[int64]struct{}, len(payload.Stories))
-	for _, story := range payload.Stories {
-		if story.LocalID <= 0 {
-			if warnings != nil {
-				*warnings = append(*warnings, "Dropped Wall story placement with invalid localId")
-			}
-			continue
-		}
-		if _, duplicate := seenStories[story.LocalID]; duplicate {
-			if warnings != nil {
-				*warnings = append(*warnings, fmt.Sprintf("Dropped duplicate Wall placement for story #%d", story.LocalID))
-			}
-			continue
-		}
-		seenStories[story.LocalID] = struct{}{}
-		var todoID int64
-		if err := tx.QueryRowContext(ctx,
-			`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
-			projectID, story.LocalID,
-		).Scan(&todoID); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				if warnings != nil {
-					*warnings = append(*warnings, fmt.Sprintf("Dropped dangling Wall placement for story #%d", story.LocalID))
-				}
-				continue
-			}
-			return fmt.Errorf("resolve imported wall story #%d: %w", story.LocalID, err)
-		}
-		placementVersion := story.Version
-		if placementVersion <= 0 {
-			placementVersion = 1
-		}
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
-VALUES (?, ?, ?, ?, ?)`, projectID, todoID, clampNoteCoord(story.X), clampNoteCoord(story.Y), placementVersion); err != nil {
-			return fmt.Errorf("insert imported wall story #%d: %w", story.LocalID, err)
-		}
 	}
 	return nil
 }

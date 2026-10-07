@@ -138,7 +138,7 @@ export function renderEmptyWallHtml(canEdit) {
     return `<div class="wall-empty" role="status">${escapeHTML(t("wall.empty.title"))}<br/><span class="muted">${escapeHTML(hint)}</span></div>`;
 }
 // =====================================================================
-// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes)
+// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes and stories)
 //
 // The overlay is a single SVG positioned absolutely over the wall surface.
 // Notes are still positioned in the surface's normal flow; the overlay sits

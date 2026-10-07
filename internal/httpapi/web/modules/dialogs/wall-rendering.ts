@@ -193,7 +193,7 @@ export function renderEmptyWallHtml(canEdit: boolean): string {
 }
 
 // =====================================================================
-// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes)
+// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes and stories)
 //
 // The overlay is a single SVG positioned absolutely over the wall surface.
 // Notes are still positioned in the surface's normal flow; the overlay sits

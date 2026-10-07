@@ -19,7 +19,7 @@ Spatial canvas for sticky notes and canonical project Stories/Todos on durable p
   - **Create Todo from Note** - opens the **New Todo** dialog with the note's text prefilled as the Title. Save or cancel as usual; the wall stays open either way.
   - **Delete** - prompts the same confirmation as before, then deletes the note.
 - **Delete a note (drag-to-trash)** - Drag it onto the **trash** image (bottom-right), then confirm.
-- **Line between two notes** - Hold **Shift**, drag from one note to another.
+- **Draw a line** - Hold **Shift**, drag between notes and pinned stories.
 - **Delete a line** - **Right-click** the line, then confirm.
 - **Select several notes** - **Drag** on empty canvas to draw a selection box.
 - **Add or remove from selection** - **Ctrl**+click (Windows/Linux) or **⌘**+click (Mac) a note.
