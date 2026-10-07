@@ -403,6 +403,10 @@ function getProjectsListJumpElements() {
     }
     return out;
 }
+function isBoardContextMenuOpen() {
+    const menu = document.getElementById("contextMenu");
+    return !!menu && menu.style.display !== "none";
+}
 export function executeAction(actionId) {
     const view = getCurrentView();
     switch (actionId) {
@@ -499,7 +503,8 @@ export function executeAction(actionId) {
                 getAuthStatusAvailable() &&
                 !todoDialog.open &&
                 !settingsDialog.open &&
-                !hasMembersDialogOpen) {
+                !hasMembersDialogOpen &&
+                !isBoardContextMenuOpen()) {
                 navigate("/");
             }
             return;
@@ -599,7 +604,7 @@ function onGlobalKeydown(ev) {
         executeAction(id);
         return true;
     };
-    if (tryExec("boardEscapeBack"))
+    if (!isBoardContextMenuOpen() && tryExec("boardEscapeBack"))
         return;
     if (view === "board") {
         if (tryExec("newTodo"))
