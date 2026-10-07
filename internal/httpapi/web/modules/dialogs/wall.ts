@@ -102,6 +102,7 @@ import {
   canonicalEndpointForElement,
   formatWallStoryEndpoint,
   parseWallEdgeEndpoint,
+  storyEdgeCenter,
   wallEdgeEndpointCenter,
 } from "./wall-edge-endpoint.js";
 import {
@@ -612,12 +613,8 @@ function updateStoryElement(story: WallStory): void {
   // without requiring a full wall rebuild.
   const content = wallContentLayer();
   if (content) {
-    const endpoint = formatWallStoryEndpoint(story.localId);
-    const parsed = parseWallEdgeEndpoint(endpoint);
-    if (parsed) {
-      const center = wallEdgeEndpointCenter(content, parsed, getViewportState().zoom);
-      if (center) updateEdgesForEndpoint(content, endpoint, center.cx, center.cy);
-    }
+    const resolved = storyEdgeCenter(content, story.localId, getViewportState().zoom);
+    if (resolved) updateEdgesForEndpoint(content, resolved.endpoint, resolved.cx, resolved.cy);
   }
 }
 

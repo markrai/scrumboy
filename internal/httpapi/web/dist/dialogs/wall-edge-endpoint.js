@@ -43,6 +43,15 @@ export function resolveWallEdgeElement(surface, endpoint) {
     }
     return surface.querySelector(`.wall-note[data-note-id="${CSS.escape(endpoint.noteId ?? "")}"]`);
 }
+export function storyEdgeCenter(surface, storyLocalId, zoom) {
+    const endpoint = parseWallEdgeEndpoint(formatWallStoryEndpoint(storyLocalId));
+    if (!endpoint)
+        return null;
+    const center = wallEdgeEndpointCenter(surface, endpoint, zoom);
+    if (!center)
+        return null;
+    return { endpoint: endpoint.canonical, cx: center.cx, cy: center.cy };
+}
 export function wallEdgeEndpointCenter(surface, endpoint, zoom) {
     const el = resolveWallEdgeElement(surface, endpoint);
     if (!el)

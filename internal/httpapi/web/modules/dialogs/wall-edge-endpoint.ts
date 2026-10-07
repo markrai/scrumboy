@@ -60,6 +60,24 @@ export function resolveWallEdgeElement(
   );
 }
 
+export interface StoryEdgeCenter {
+  readonly endpoint: string;
+  readonly cx: number;
+  readonly cy: number;
+}
+
+export function storyEdgeCenter(
+  surface: HTMLElement,
+  storyLocalId: number,
+  zoom: number,
+): StoryEdgeCenter | null {
+  const endpoint = parseWallEdgeEndpoint(formatWallStoryEndpoint(storyLocalId));
+  if (!endpoint) return null;
+  const center = wallEdgeEndpointCenter(surface, endpoint, zoom);
+  if (!center) return null;
+  return { endpoint: endpoint.canonical, cx: center.cx, cy: center.cy };
+}
+
 export function wallEdgeEndpointCenter(
   surface: HTMLElement,
   endpoint: WallEdgeEndpoint,

@@ -15,6 +15,8 @@ vi.mock("../dom/elements.js", () => {
 });
 
 import { apiFetch } from "../api.js";
+import { wallSurface } from "../dom/elements.js";
+import { renderEdges } from "./wall-rendering.js";
 import {
   refetchDoc,
   applyTransient,
@@ -159,6 +161,106 @@ describe("wall-realtime.applyTransient", () => {
     const lookup = (id: string) => (id === "n1" ? el : null);
     applyTransient({ payload: { noteId: "n1", x: 42, y: 84, by: 99 } }, lookup);
     expect(el.style.left).toBe("1px");
+  });
+});
+
+describe("wall-realtime.applyTransient story movement", () => {
+  beforeEach(() => {
+    resetEditGuards();
+    setMounted(null);
+    wallSurface.innerHTML = "";
+  });
+
+  function trackLayout(el: HTMLElement): void {
+    Object.defineProperty(el, "offsetLeft", { configurable: true, get: () => parseInt(el.style.left || "0", 10) });
+    Object.defineProperty(el, "offsetTop", { configurable: true, get: () => parseInt(el.style.top || "0", 10) });
+  }
+
+  function mountStorySurface() {
+    setMounted(makeState());
+    const surface = document.createElement("div");
+    wallSurface.appendChild(surface);
+    const note = document.createElement("div");
+    note.className = "wall-note";
+    note.dataset.noteId = "n1";
+    surface.appendChild(note);
+    Object.defineProperty(note, "offsetLeft", { configurable: true, value: 0 });
+    Object.defineProperty(note, "offsetTop", { configurable: true, value: 0 });
+    Object.defineProperty(note, "offsetWidth", { configurable: true, value: 160 });
+    Object.defineProperty(note, "offsetHeight", { configurable: true, value: 100 });
+    const other = document.createElement("div");
+    other.className = "wall-note";
+    other.dataset.noteId = "n2";
+    surface.appendChild(other);
+    Object.defineProperty(other, "offsetLeft", { configurable: true, value: 400 });
+    Object.defineProperty(other, "offsetTop", { configurable: true, value: 200 });
+    Object.defineProperty(other, "offsetWidth", { configurable: true, value: 160 });
+    Object.defineProperty(other, "offsetHeight", { configurable: true, value: 100 });
+    const story = document.createElement("div");
+    story.className = "wall-story";
+    story.dataset.storyLocalId = "7";
+    story.style.left = "80px";
+    story.style.top = "300px";
+    surface.appendChild(story);
+    trackLayout(story);
+    Object.defineProperty(story, "offsetWidth", { configurable: true, value: 280 });
+    Object.defineProperty(story, "offsetHeight", { configurable: true, value: 200 });
+    renderEdges(surface, [
+      { id: "e1", from: "n1", to: "story:7" },
+      { id: "e2", from: "n1", to: "n2" },
+    ], 1);
+    const noteLookup = (id: string) => (id === "n1" ? note : id === "n2" ? other : null);
+    const storyLookup = (localId: number) => (localId === 7 ? story : null);
+    const line = (edgeId: string) => surface.querySelector(
+      `.wall-edge-group[data-edge-id="${edgeId}"] .wall-edge-line`,
+    ) as SVGLineElement;
+    return { surface, note, story, noteLookup, storyLookup, line };
+  }
+
+  it("moves the story and its incident edge to the rendered center", () => {
+    const { story, noteLookup, storyLookup, line } = mountStorySurface();
+    applyTransient({ payload: { storyLocalId: 7, x: 400, y: 300, by: 99 } }, noteLookup, storyLookup);
+    expect(story.style.left).toBe("400px");
+    expect(story.style.top).toBe("300px");
+    // Rendered 280x200 box centers at (540,400): the measured height wins
+    // over the unrendered-story estimate.
+    const mixed = line("e1");
+    expect(mixed.getAttribute("x2")).toBe("540");
+    expect(mixed.getAttribute("y2")).toBe("400");
+  });
+
+  it("leaves unrelated edges unchanged", () => {
+    const { noteLookup, storyLookup, line } = mountStorySurface();
+    applyTransient({ payload: { storyLocalId: 7, x: 400, y: 300, by: 99 } }, noteLookup, storyLookup);
+    expect(line("e2").getAttribute("x1")).toBe("80");
+    expect(line("e2").getAttribute("y1")).toBe("50");
+    expect(line("e2").getAttribute("x2")).toBe("480");
+    expect(line("e2").getAttribute("y2")).toBe("250");
+  });
+
+  it("keeps note transient behavior unchanged", () => {
+    const { noteLookup, storyLookup, line } = mountStorySurface();
+    applyTransient({ payload: { noteId: "n1", x: 42, y: 84, by: 99 } }, noteLookup, storyLookup);
+    const mixed = line("e1");
+    expect(mixed.getAttribute("x1")).toBe("122");
+    expect(mixed.getAttribute("y1")).toBe("134");
+    expect(mixed.getAttribute("x2")).toBe("220");
+    expect(mixed.getAttribute("y2")).toBe("400");
+  });
+
+  it("suppresses locally-originated story transients", () => {
+    const { story, noteLookup, storyLookup, line } = mountStorySurface();
+    applyTransient({ payload: { storyLocalId: 7, x: 400, y: 300, by: 42 } }, noteLookup, storyLookup);
+    expect(story.style.left).toBe("80px");
+    expect(line("e1").getAttribute("x2")).toBe("220");
+  });
+
+  it("ignores story transients while that story is locally dragging", () => {
+    const { story, noteLookup, storyLookup, line } = mountStorySurface();
+    story.classList.add("wall-story--dragging");
+    applyTransient({ payload: { storyLocalId: 7, x: 400, y: 300, by: 99 } }, noteLookup, storyLookup);
+    expect(story.style.left).toBe("80px");
+    expect(line("e1").getAttribute("x2")).toBe("220");
   });
 });
 

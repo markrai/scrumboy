@@ -26,6 +26,7 @@ import {
   type WallNote,
   type WallStory,
 } from "./wall-rendering.js";
+import { storyEdgeCenter } from "./wall-edge-endpoint.js";
 import { DRAG_TRANSIENT_COALESCE_MS, TRANSIENT_COALESCE_MS } from "./wall-postbaby-constants.js";
 import { postTransient } from "./wall-api.js";
 import { getMounted, setDragActive, type Mounted } from "./wall-state.js";
@@ -447,6 +448,13 @@ export function beginStoryDrag(opts: BeginStoryDragOptions): void {
     storyEl.style.left = `${Math.round(x)}px`;
     storyEl.style.top = `${Math.round(y)}px`;
     scheduleStoryTransient(state, story.localId, x, y);
+    // Keep incident edges glued to the story on every painted frame, the
+    // same way note drags do. Runs inside the existing rAF throttle.
+    const edgeRoot = getWallContent() ?? wallSurface;
+    const resolved = edgeRoot ? storyEdgeCenter(edgeRoot, story.localId, zoom) : null;
+    if (edgeRoot && resolved) {
+      updateEdgesForEndpoint(edgeRoot, resolved.endpoint, resolved.cx, resolved.cy);
+    }
   };
   const onMove = (move: PointerEvent) => {
     move.preventDefault();

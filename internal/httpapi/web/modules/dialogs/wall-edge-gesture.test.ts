@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   dispatchPointer,
   flushPromises,
+  flushRaf,
   initWallTestI18n,
   installDialogPolyfill,
   makeNote,
 } from "./wall-test-harness.js";
+import { renderEdges } from "./wall-rendering.js";
 import enCatalog from "../i18n/locales/en.json";
 
 const apiFetchMock = vi.hoisted(() => vi.fn());
@@ -74,10 +76,22 @@ function edgeDoc() {
   };
 }
 
-async function openWall(role = "maintainer") {
+function dragEdgeDoc() {
+  const doc = edgeDoc();
+  return {
+    ...doc,
+    edges: [
+      { id: "e1", from: "n1", to: "story:7" },
+      { id: "e2", from: "story:7", to: "story:8" },
+      { id: "e3", from: "n1", to: "n2" },
+    ],
+  };
+}
+
+async function openWall(role = "maintainer", doc = edgeDoc()) {
   apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     if (typeof url === "string" && url.endsWith("/wall") && !init?.method) {
-      return edgeDoc();
+      return doc;
     }
     if (typeof url === "string" && init?.method === "POST" && url.endsWith("/wall/edges")) {
       const body = init.body ? JSON.parse(String(init.body)) : {};
@@ -133,6 +147,25 @@ function shiftDrag(fromEl: HTMLElement, toEl: Element | null): void {
 
 function previewLine(): Element | null {
   return wallSurfaceEl.querySelector(".wall-edge-preview");
+}
+
+function trackStoryLayout(localId: number, w: number, h: number): void {
+  const el = getStoryEl(localId);
+  Object.defineProperty(el, "offsetLeft", { configurable: true, get: () => parseInt(el.style.left || "0", 10) });
+  Object.defineProperty(el, "offsetTop", { configurable: true, get: () => parseInt(el.style.top || "0", 10) });
+  Object.defineProperty(el, "offsetWidth", { configurable: true, value: w });
+  Object.defineProperty(el, "offsetHeight", { configurable: true, value: h });
+}
+
+function edgeLine(edgeId: string): SVGLineElement {
+  const line = wallSurfaceEl.querySelector(`.wall-edge-group[data-edge-id="${edgeId}"] .wall-edge-line`);
+  if (!line) throw new Error(`missing edge ${edgeId}`);
+  return line as SVGLineElement;
+}
+
+function lineXY(edgeId: string): [string | null, string | null, string | null, string | null] {
+  const line = edgeLine(edgeId);
+  return [line.getAttribute("x1"), line.getAttribute("y1"), line.getAttribute("x2"), line.getAttribute("y2")];
 }
 
 describe("wall edge gesture across endpoint types", () => {
@@ -296,5 +329,68 @@ describe("wall edge gesture across endpoint types", () => {
     dispatchPointer(document, "pointerup", { button: 0, pointerId: 1, pointerType: "mouse", shiftKey: true, clientX: 10, clientY: 500 });
     await flushPromises();
     expect(previewLine()).toBeNull();
+  });
+
+  it("local story drag moves incident note to story edges during the drag", async () => {
+    await openWall("maintainer", dragEdgeDoc());
+    trackStoryLayout(7, 280, 200);
+    trackStoryLayout(8, 280, 200);
+    const story = getStoryEl(7);
+    dispatchPointer(story, "pointerdown", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 90, clientY: 310 });
+    dispatchPointer(document, "pointermove", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 200, clientY: 400 });
+    await flushRaf();
+
+    // Painted to (110,90); rendered 280x200 box centers at (250,190).
+    // No pointerup yet, so no PATCH has committed.
+    expect(lineXY("e1").slice(2)).toEqual(["250", "190"]);
+    expect(storyPatchPosts(7)).toBe(0);
+    expect(openTodoDialogMock).not.toHaveBeenCalled();
+  });
+
+  it("local story drag moves incident story to story edges", async () => {
+    await openWall("maintainer", dragEdgeDoc());
+    trackStoryLayout(7, 280, 200);
+    trackStoryLayout(8, 280, 200);
+    // Re-resolve initial geometry now that layout is observable.
+    renderEdges(wallSurfaceEl, dragEdgeDoc().edges, 1);
+    expect(lineXY("e2").slice(2)).toEqual(["560", "400"]);
+    const story = getStoryEl(7);
+    dispatchPointer(story, "pointerdown", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 90, clientY: 310 });
+    dispatchPointer(document, "pointermove", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 200, clientY: 400 });
+    await flushRaf();
+
+    expect(lineXY("e2").slice(0, 2)).toEqual(["250", "190"]);
+    expect(lineXY("e2").slice(2)).toEqual(["560", "400"]);
+  });
+
+  it("local story drag leaves unrelated edges unchanged", async () => {
+    await openWall("maintainer", dragEdgeDoc());
+    trackStoryLayout(7, 280, 200);
+    trackStoryLayout(8, 280, 200);
+    const before = lineXY("e3");
+    const story = getStoryEl(7);
+    dispatchPointer(story, "pointerdown", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 90, clientY: 310 });
+    dispatchPointer(document, "pointermove", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 200, clientY: 400 });
+    await flushRaf();
+
+    expect(lineXY("e3")).toEqual(before);
+  });
+
+  it("pointerup leaves the edge at the final story center", async () => {
+    await openWall("maintainer", dragEdgeDoc());
+    trackStoryLayout(7, 280, 200);
+    trackStoryLayout(8, 280, 200);
+    const story = getStoryEl(7);
+    dispatchPointer(story, "pointerdown", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 90, clientY: 310 });
+    dispatchPointer(document, "pointermove", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 200, clientY: 400 });
+    await flushRaf();
+    dispatchPointer(document, "pointerup", { button: 0, pointerId: 1, pointerType: "mouse", clientX: 200, clientY: 400 });
+    // The pointerup flush paints the final position synchronously, before
+    // the async PATCH commit and its element replacement below.
+    expect(lineXY("e1").slice(2)).toEqual(["250", "190"]);
+    expect(lineXY("e2").slice(0, 2)).toEqual(["250", "190"]);
+    await flushPromises();
+
+    expect(storyPatchPosts(7)).toBeGreaterThan(0);
   });
 });

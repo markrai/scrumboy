@@ -39,7 +39,7 @@ import { openWallNoteContextMenu } from "./wall-note-context-menu.js";
 import { openWallStoryContextMenu } from "./wall-story-context-menu.js";
 import { chooseWallStoryPosition } from "./wall-story-placement.js";
 import { measureStoryCanvasRect, WALL_STORY_ESTIMATED_HEIGHT, WALL_STORY_WIDTH, } from "./wall-story-geometry.js";
-import { canonicalEndpointForElement, formatWallStoryEndpoint, parseWallEdgeEndpoint, wallEdgeEndpointCenter, } from "./wall-edge-endpoint.js";
+import { canonicalEndpointForElement, formatWallStoryEndpoint, parseWallEdgeEndpoint, storyEdgeCenter, wallEdgeEndpointCenter, } from "./wall-edge-endpoint.js";
 import { clampCanvasCoord, ensureWallContent, fitToNotes, getWallContent, getViewportState, initWallViewport, screenToCanvas, setViewportState, teardownWallViewport, } from "./wall-viewport.js";
 import { bindWallNavigation, cancelWallNavigationGestures, isSpacePanArmed, } from "./wall-viewport-nav.js";
 import { getWallCanvasMode, isWallPanMode, loadWallCanvasMode, toggleWallCanvasMode, } from "./wall-canvas-mode.js";
@@ -510,13 +510,9 @@ function updateStoryElement(story) {
     // without requiring a full wall rebuild.
     const content = wallContentLayer();
     if (content) {
-        const endpoint = formatWallStoryEndpoint(story.localId);
-        const parsed = parseWallEdgeEndpoint(endpoint);
-        if (parsed) {
-            const center = wallEdgeEndpointCenter(content, parsed, getViewportState().zoom);
-            if (center)
-                updateEdgesForEndpoint(content, endpoint, center.cx, center.cy);
-        }
+        const resolved = storyEdgeCenter(content, story.localId, getViewportState().zoom);
+        if (resolved)
+            updateEdgesForEndpoint(content, resolved.endpoint, resolved.cx, resolved.cy);
     }
 }
 function updateNoteElement(note) {
