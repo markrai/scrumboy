@@ -1,6 +1,25 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.36.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.37.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+
+## [3.37.0] - 2026-10-07
+
+### Added
+
+- **Wall edges for pinned stories** - Wall lines can now connect sticky
+  notes and pinned stories in any combination (note to note, note to
+  story, story to story). Story endpoints use the portable Todo local ID
+  (`story:<localId>`); the existing edge `{from,to}` shape, undirected
+  duplicate handling, and self-edge rejection are unchanged. Shift-drag
+  from a note or a story starts an edge, incident edges stay attached
+  while a story is dragged locally or moves through realtime updates, and
+  unpinning a story or hard-deleting its Todo removes incident edges while
+  preserving unrelated ones. Backup, import, merge, replace, and copy
+  carry mixed edges with best-effort validation: malformed or dangling
+  edges are dropped with warnings instead of failing the import. The Wall
+  shortcut help now describes drawing between notes and stories, with a
+  new `wall_edge_invalid_story_endpoint` validation message across all
+  locale catalogs.
 
 ## [3.36.7] - 2026-10-04
 
