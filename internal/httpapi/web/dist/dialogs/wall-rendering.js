@@ -17,6 +17,25 @@ import { escapeHTML, HEX_COLOR_RE, sanitizeHexColor } from "../utils.js";
 import { t } from "../i18n/index.js";
 import { colorIndexFromHex } from "./wall-postbaby-constants.js";
 import { screenToCanvas } from "./wall-viewport.js";
+import { renderStoryCardContent } from "../views/board-rendering.js";
+import { WALL_STORY_WIDTH } from "./wall-story-geometry.js";
+import { parseWallEdgeEndpoint, wallEdgeEndpointCenter } from "./wall-edge-endpoint.js";
+export function buildStoryElement(story, membersByUserId, opts) {
+    const el = document.createElement("div");
+    const archivedClass = story.todo.archivedAt ? " wall-story--archived" : "";
+    el.className = `wall-story card card--${story.todo.status.toLowerCase()}${archivedClass}`;
+    el.dataset.storyLocalId = String(story.localId);
+    el.dataset.version = String(story.version);
+    el.dataset.todoId = String(story.todo.id);
+    el.style.left = `${Math.round(story.x)}px`;
+    el.style.top = `${Math.round(story.y)}px`;
+    el.style.width = `${WALL_STORY_WIDTH}px`;
+    el.setAttribute("role", "button");
+    el.setAttribute("tabindex", "0");
+    el.setAttribute("aria-label", `${t("wall.menu.openStory")} #${story.localId}`);
+    el.innerHTML = renderStoryCardContent(story.todo, membersByUserId, opts);
+    return el;
+}
 const DEFAULT_NOTE_COLOR = "#ffd966";
 // Clamp to the same limits the backend enforces. Keep in sync with
 // internal/store/wall.go (clampNoteDim / validateWallColor).
@@ -119,7 +138,7 @@ export function renderEmptyWallHtml(canEdit) {
     return `<div class="wall-empty" role="status">${escapeHTML(t("wall.empty.title"))}<br/><span class="muted">${escapeHTML(hint)}</span></div>`;
 }
 // =====================================================================
-// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes)
+// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes and stories)
 //
 // The overlay is a single SVG positioned absolutely over the wall surface.
 // Notes are still positioned in the surface's normal flow; the overlay sits
@@ -167,17 +186,7 @@ export function ensureEdgeOverlay(surface) {
     surface.appendChild(svg);
     return svg;
 }
-function noteCenter(surface, noteId) {
-    const el = surface.querySelector(`.wall-note[data-note-id="${CSS.escape(noteId)}"]`);
-    if (!el)
-        return null;
-    // Use offsetLeft/Top + offsetWidth/Height so coordinates are relative to
-    // the surface (matches where SVG sits) rather than the viewport.
-    const cx = el.offsetLeft + el.offsetWidth / 2;
-    const cy = el.offsetTop + el.offsetHeight / 2;
-    return { cx, cy };
-}
-export function renderEdges(surface, edges) {
+export function renderEdges(surface, edges, zoom) {
     const svg = ensureEdgeOverlay(surface);
     // Drop only edge groups; preserve any in-progress preview line so the
     // user's drag isn't visually interrupted by a re-render mid-flight.
@@ -186,17 +195,23 @@ export function renderEdges(surface, edges) {
     for (const edge of edges) {
         if (!edge || !edge.id || !edge.from || !edge.to)
             continue;
-        if (edge.from === edge.to)
+        // Malformed persisted endpoints fail closed: skip the edge rather than
+        // throw or break the wall.
+        const from = parseWallEdgeEndpoint(edge.from);
+        const to = parseWallEdgeEndpoint(edge.to);
+        if (!from || !to)
             continue;
-        const a = noteCenter(surface, edge.from);
-        const b = noteCenter(surface, edge.to);
+        if (from.canonical === to.canonical)
+            continue;
+        const a = wallEdgeEndpointCenter(surface, from, zoom);
+        const b = wallEdgeEndpointCenter(surface, to, zoom);
         if (!a || !b)
             continue;
         const g = document.createElementNS(SVG_NS, "g");
         g.setAttribute("class", "wall-edge-group");
         g.dataset.edgeId = edge.id;
-        g.dataset.from = edge.from;
-        g.dataset.to = edge.to;
+        g.dataset.from = from.canonical;
+        g.dataset.to = to.canonical;
         const hit = document.createElementNS(SVG_NS, "line");
         hit.setAttribute("class", "wall-edge-hit");
         hit.setAttribute("x1", String(a.cx));
@@ -224,10 +239,11 @@ export function renderEdges(surface, edges) {
         svg.appendChild(g);
     }
 }
-// Update the endpoints of every edge that touches `noteId` to the given
-// surface-local center. Used during drag/transient to keep lines glued to
-// the moving note without a full re-render.
-export function updateEdgesForNote(surface, noteId, cx, cy) {
+// Update the endpoints of every edge that touches the given canonical
+// endpoint identity to the given surface-local center. Used during
+// drag/transient and authoritative element replacement to keep lines glued
+// to the moving endpoint without a full re-render.
+export function updateEdgesForEndpoint(surface, endpoint, cx, cy) {
     const svg = surface.querySelector(`#${EDGE_OVERLAY_ID}`);
     if (!svg)
         return;
@@ -235,15 +251,15 @@ export function updateEdgesForNote(surface, noteId, cx, cy) {
     groups.forEach((g) => {
         const from = g.dataset.from;
         const to = g.dataset.to;
-        if (from !== noteId && to !== noteId)
+        if (from !== endpoint && to !== endpoint)
             return;
         const lines = g.querySelectorAll("line");
         lines.forEach((ln) => {
-            if (from === noteId) {
+            if (from === endpoint) {
                 ln.setAttribute("x1", String(cx));
                 ln.setAttribute("y1", String(cy));
             }
-            if (to === noteId) {
+            if (to === endpoint) {
                 ln.setAttribute("x2", String(cx));
                 ln.setAttribute("y2", String(cy));
             }

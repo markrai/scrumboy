@@ -121,6 +121,8 @@ function onBoardRealtimeEvent(_payload: unknown): void {
     }
     if (isBulkUpdating()) return;
     if (payload.type === 'refresh_needed') {
+      // Canonical Todo mutations also change any Wall story projection.
+      emit('wall:refresh_needed', { projectId: payload.projectId });
       refetchBoardFromRealtime(slug);
       return;
     }
@@ -363,6 +365,7 @@ export function connectBoardEvents(slug: string): void {
         }
         if (isBulkUpdating()) return;
         if (payload.type === "refresh_needed") {
+          emit('wall:refresh_needed', { projectId: payload.projectId });
           refetchBoardFromRealtime(slug);
           return;
         }

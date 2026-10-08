@@ -365,6 +365,7 @@ const BOOTSTRAP_EN_CATALOG: MessageCatalog = {
   "errors.VALIDATION_ERROR.unsupported_export_version": "This export version is not supported.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Use null to clear the avatar.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wall edge endpoints are required.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Invalid Wall story endpoint.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Wall edge limit reached.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Wall note limit reached.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Wall note text is too long.",

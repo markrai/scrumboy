@@ -53,12 +53,17 @@ func (p wallTransientPublisher) PublishWallTransient(
 	projectID int64,
 	event wallapp.TransientEvent,
 ) error {
-	payload, err := json.Marshal(map[string]any{
-		"noteId": event.NoteID,
-		"x":      event.X,
-		"y":      event.Y,
-		"by":     event.By,
-	})
+	wire := map[string]any{
+		"x":  event.X,
+		"y":  event.Y,
+		"by": event.By,
+	}
+	if event.StoryLocalID != nil {
+		wire["storyLocalId"] = *event.StoryLocalID
+	} else {
+		wire["noteId"] = event.NoteID
+	}
+	payload, err := json.Marshal(wire)
 	if err != nil {
 		return err
 	}

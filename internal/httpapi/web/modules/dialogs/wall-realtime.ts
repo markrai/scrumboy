@@ -22,7 +22,9 @@ import { getWallContent } from "./wall-viewport.js";
 import { on, off } from "../events.js";
 import { showToast } from "../utils.js";
 import { t } from "../i18n/index.js";
-import { updateEdgesForNote, type WallDocument } from "./wall-rendering.js";
+import { updateEdgesForEndpoint, type WallDocument } from "./wall-rendering.js";
+import { storyEdgeCenter } from "./wall-edge-endpoint.js";
+import { getViewportState } from "./wall-viewport.js";
 import { fetchWall } from "./wall-api.js";
 import {
   getActiveEditNoteId,
@@ -112,6 +114,7 @@ export async function refetchDoc(opts: RefetchDocOptions): Promise<void> {
 export function applyTransient(
   payload: unknown,
   noteElementById: (id: string) => HTMLElement | null,
+  storyElementByLocalId?: (localId: number) => HTMLElement | null,
 ): void {
   const state = getMounted();
   if (!state || !wallSurface) return;
@@ -119,19 +122,29 @@ export function applyTransient(
   const p = envelope?.payload ?? envelope;
   if (!p || typeof p !== "object") return;
   const noteId = typeof p.noteId === "string" ? p.noteId : null;
+  const storyLocalId = typeof p.storyLocalId === "number" ? p.storyLocalId : null;
   const x = typeof p.x === "number" ? p.x : null;
   const y = typeof p.y === "number" ? p.y : null;
   const by = typeof p.by === "number" ? p.by : null;
-  if (!noteId || x === null || y === null) return;
+  if ((noteId === null) === (storyLocalId === null) || x === null || y === null) return;
   if (by !== null && state.userId !== null && by === state.userId) return;
-  const el = noteElementById(noteId);
+  const el = noteId !== null
+    ? noteElementById(noteId)
+    : storyElementByLocalId?.(storyLocalId as number) ?? null;
   if (!el) return;
-  if (el.classList.contains("wall-note--dragging")) return;
+  if (el.classList.contains("wall-note--dragging") || el.classList.contains("wall-story--dragging")) return;
   el.style.left = `${Math.round(x)}px`;
   el.style.top = `${Math.round(y)}px`;
   const edgeRoot = getWallContent() ?? wallSurface;
   if (edgeRoot) {
-    updateEdgesForNote(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);
+    if (noteId !== null) {
+      updateEdgesForEndpoint(edgeRoot, noteId, x + el.offsetWidth / 2, y + el.offsetHeight / 2);
+    } else if (storyLocalId !== null) {
+      const resolved = storyEdgeCenter(edgeRoot, storyLocalId, getViewportState().zoom);
+      if (resolved) {
+        updateEdgesForEndpoint(edgeRoot, resolved.endpoint, resolved.cx, resolved.cy);
+      }
+    }
   }
 }
 

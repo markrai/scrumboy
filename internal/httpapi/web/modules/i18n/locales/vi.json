@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Phiên bản xuất này không được hỗ trợ.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Dùng null để xóa avatar.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Cần điểm cuối cạnh tường.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Điểm cuối story của bảng không hợp lệ.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Đã đạt giới hạn cạnh tường.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Đã đạt giới hạn ghi chú tường.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Văn bản ghi chú tường quá dài.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Trạng thái",
   "shell.bulkEdit.tagsPlaceholder": "Nhập thẻ và nhấn Enter",
   "shell.contextMenu.newTodo": "Todo mới",
+
+  "shell.contextMenu.sendToWall": "Gửi lên bảng ghi chú",
   "settings.language.description": "Chọn ngôn ngữ dùng cho Scrumboy trên trình duyệt này.",
   "settings.language.selectLabel": "Ngôn ngữ",
   "settings.language.title": "Ngôn ngữ",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Kéo ghi chú vào đây để xóa",
   "wall.shortcuts.createNote.label": "tạo ghi chú:",
   "wall.shortcuts.createNote.hint": "nhấp phải trên canvas",
+
+  "wall.shortcuts.createStory.label": "tạo Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + nhấp phải trên canvas",
   "wall.shortcuts.changeColor.label": "đổi màu:",
   "wall.shortcuts.changeColor.hint": "nhấp một lần vào ghi chú",
   "wall.shortcuts.editNote.label": "sửa ghi chú:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "xóa ghi chú:",
   "wall.shortcuts.deleteNote.hint": "nhấp phải ghi chú, kéo vào thùng rác hoặc Del khi đã chọn",
   "wall.shortcuts.drawLines.label": "vẽ đường:",
-  "wall.shortcuts.drawLines.hint": "shift + kéo từ ghi chú này sang ghi chú khác",
+  "wall.shortcuts.drawLines.hint": "Shift + kéo giữa các ghi chú và story",
   "wall.shortcuts.multiSelect.label": "chọn nhiều:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + nhấp trái ghi chú hoặc kéo trên canvas để chọn khung",
   "wall.shortcuts.canvasMode.label": "chế độ canvas:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Chế độ canvas: Chọn",
   "wall.mode.select.title": "Chế độ canvas: Chọn — kéo vùng trống để chọn ghi chú",
   "wall.empty.title": "Chưa có ghi chú.",
-  "wall.empty.hintEditable": "Nhấp phải canvas để thêm ghi chú dán đầu tiên. Giữ Shift và kéo từ ghi chú này sang ghi chú khác để vẽ kết nối.",
+  "wall.empty.hintEditable": "Nhấp phải canvas để thêm ghi chú dán đầu tiên. Giữ Shift và kéo giữa các ghi chú và story để vẽ kết nối.",
   "wall.empty.hintReadonly": "Đang chờ cộng tác viên thêm ghi chú.",
   "wall.note.resize": "Đổi kích thước ghi chú",
   "wall.note.edit": "Sửa văn bản ghi chú",
   "wall.menu.createTodoFromNote": "Tạo Todo từ ghi chú",
+
+  "wall.menu.openStory": "Mở Todo",
+
+  "wall.menu.removeStory": "Gỡ khỏi bảng ghi chú",
   "wall.menu.deleteCount": "Xóa {count} ghi chú",
   "wall.confirm.deleteNote": "Xóa ghi chú này?",
   "wall.confirm.deleteNotesCount": "Xóa {count} ghi chú?",
   "wall.confirm.deleteConnection": "Xóa kết nối này?",
   "wall.toast.unavailable": "Bảng ghi chú không khả dụng ở đây.",
   "wall.toast.addNoteFailed": "Không thêm được ghi chú",
+
+  "wall.toast.pinStoryFailed": "Không thể thêm Todo vào bảng ghi chú",
+
+  "wall.toast.moveStoryFailed": "Không thể di chuyển Todo",
+
+  "wall.toast.removeStoryFailed": "Không thể gỡ Todo khỏi bảng ghi chú",
   "wall.toast.staleReload": "Người khác đã sửa ghi chú này — đang tải lại bảng ghi chú.",
   "wall.toast.updateNoteFailed": "Không cập nhật được ghi chú",
   "wall.toast.deleteNoteFailed": "Không xóa được ghi chú",

@@ -4,22 +4,25 @@ import (
 	"context"
 
 	"scrumboy/internal/application/refresh"
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/store"
 )
 
 // DeleteServiceDependencies names the persistence and ancillary capabilities
 // used by the canonical REST delete use case.
 type DeleteServiceDependencies struct {
-	Delete  DeleteStore
-	Refresh BoardRefreshPublisher
+	Delete      DeleteStore
+	Refresh     BoardRefreshPublisher
+	WallRefresh wallapp.WallRefreshPublisher
 }
 
 // DeleteService owns REST delete persistence and post-commit refresh
 // sequencing. Slug access and local-ID validation remain in the REST adapter,
 // while deletion authorization remains in the store.
 type DeleteService struct {
-	delete  DeleteStore
-	refresh BoardRefreshPublisher
+	delete      DeleteStore
+	refresh     BoardRefreshPublisher
+	wallRefresh wallapp.WallRefreshPublisher
 }
 
 func NewDeleteService(deps DeleteServiceDependencies) *DeleteService {
@@ -27,7 +30,11 @@ func NewDeleteService(deps DeleteServiceDependencies) *DeleteService {
 	if refresh == nil {
 		refresh = nopBoardRefreshPublisher{}
 	}
-	return &DeleteService{delete: deps.Delete, refresh: refresh}
+	wallRefresh := deps.WallRefresh
+	if wallRefresh == nil {
+		wallRefresh = nopWallRefreshPublisher{}
+	}
+	return &DeleteService{delete: deps.Delete, refresh: refresh, wallRefresh: wallRefresh}
 }
 
 // ResolvedDeleteTarget carries the project context already authorized by the
@@ -73,5 +80,6 @@ func (d *PreparedDelete) Delete(command DeleteCommand) error {
 	}
 
 	d.service.refresh.PublishBoardRefresh(d.ctx, project.ID, RefreshReasonTodoDeleted, refresh.Entity{})
+	d.service.wallRefresh.PublishWallRefresh(d.ctx, project.ID, wallapp.RefreshTodoDeleted)
 	return nil
 }

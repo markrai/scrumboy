@@ -9,6 +9,7 @@
 //   canvasX = (clientX - surfaceRect.left - panX) / zoom
 //
 // See wall-viewport-coord-audit.md for the full pointer-path checklist.
+import { measureStoryCanvasRect } from "./wall-story-geometry.js";
 export const ZOOM_MIN = 0.2;
 export const ZOOM_MAX = 3;
 // Fit-view can zoom out further than manual zoom so a wide spread of notes can
@@ -216,12 +217,12 @@ export function zoomAround(clientX, clientY, factor) {
     scheduleSaveViewport();
 }
 /** Fit all notes in the viewport; empty wall resets to origin @ 100%. */
-export function fitToNotes(notes) {
+export function fitToNotes(notes, stories = []) {
     if (!viewportSurface) {
         setViewportState(identityViewport());
         return;
     }
-    if (!notes.length) {
+    if (!notes.length && !stories.length) {
         setViewportState(identityViewport());
         return;
     }
@@ -234,6 +235,14 @@ export function fitToNotes(notes) {
         minY = Math.min(minY, n.y);
         maxX = Math.max(maxX, n.x + n.width);
         maxY = Math.max(maxY, n.y + n.height);
+    }
+    for (const story of stories) {
+        const element = viewportContent?.querySelector(`.wall-story[data-story-local-id="${story.localId}"]`) ?? null;
+        const measured = measureStoryCanvasRect(story, element, zoom);
+        minX = Math.min(minX, measured.x);
+        minY = Math.min(minY, measured.y);
+        maxX = Math.max(maxX, measured.x + measured.width);
+        maxY = Math.max(maxY, measured.y + measured.height);
     }
     const bboxW = Math.max(1, maxX - minX);
     const bboxH = Math.max(1, maxY - minY);

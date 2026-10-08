@@ -7,8 +7,23 @@ import (
 	"testing"
 
 	apprefresh "scrumboy/internal/application/refresh"
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/store"
 )
+
+type restDeleteWallRefreshCall struct {
+	ctx       context.Context
+	projectID int64
+	reason    wallapp.RefreshReason
+}
+
+type restDeleteWallRefreshFake struct {
+	calls []restDeleteWallRefreshCall
+}
+
+func (f *restDeleteWallRefreshFake) PublishWallRefresh(ctx context.Context, projectID int64, reason wallapp.RefreshReason) {
+	f.calls = append(f.calls, restDeleteWallRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+}
 
 type restDeleteStoreCall struct {
 	ctx       context.Context
@@ -136,6 +151,60 @@ func TestDeleteServiceStoreFailureReturnsSameErrorAndSkipsRefresh(t *testing.T) 
 	}
 	if !reflect.DeepEqual(trace, []string{"delete"}) {
 		t.Fatalf("call trace = %#v, want only delete", trace)
+	}
+}
+
+func TestDeleteServicePublishesOneWallRefreshAfterBoardRefresh(t *testing.T) {
+	type contextKey string
+	const key contextKey = "request"
+	ctx := context.WithValue(context.Background(), key, "bound")
+
+	deletes := &restDeleteStoreFake{}
+	refresh := &restDeleteRefreshFake{}
+	wall := &restDeleteWallRefreshFake{}
+	service := NewDeleteService(DeleteServiceDependencies{Delete: deletes, Refresh: refresh, WallRefresh: wall})
+	prepared := service.Prepare(
+		ctx,
+		ResolvedDeleteTarget{ProjectContext: store.ProjectContext{Project: store.Project{ID: 7}}, Mode: store.ModeFull},
+	)
+
+	if err := prepared.Delete(DeleteCommand{LocalID: 4}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(wall.calls) != 1 {
+		t.Fatalf("wall refresh calls = %d, want 1", len(wall.calls))
+	}
+	if got := wall.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != 7 || got.reason != wallapp.RefreshTodoDeleted {
+		t.Fatalf("wall refresh = %+v, want bound context, project 7, reason %q", got, wallapp.RefreshTodoDeleted)
+	}
+}
+
+func TestDeleteServiceStoreFailureSkipsWallRefresh(t *testing.T) {
+	deletes := &restDeleteStoreFake{err: errors.New("delete failed")}
+	refresh := &restDeleteRefreshFake{}
+	wall := &restDeleteWallRefreshFake{}
+	prepared := NewDeleteService(DeleteServiceDependencies{Delete: deletes, Refresh: refresh, WallRefresh: wall}).Prepare(
+		context.Background(),
+		ResolvedDeleteTarget{ProjectContext: store.ProjectContext{Project: store.Project{ID: 7}}, Mode: store.ModeFull},
+	)
+
+	if err := prepared.Delete(DeleteCommand{LocalID: 4}); err == nil {
+		t.Fatal("Delete unexpectedly succeeded")
+	}
+	if len(wall.calls) != 0 {
+		t.Fatalf("wall refresh calls = %d, want 0", len(wall.calls))
+	}
+}
+
+func TestDeleteServiceNilWallRefreshIsNoOp(t *testing.T) {
+	deletes := &restDeleteStoreFake{}
+	prepared := NewDeleteService(DeleteServiceDependencies{Delete: deletes, Refresh: &restDeleteRefreshFake{}}).Prepare(
+		context.Background(),
+		ResolvedDeleteTarget{ProjectContext: store.ProjectContext{Project: store.Project{ID: 7}}, Mode: store.ModeFull},
+	)
+
+	if err := prepared.Delete(DeleteCommand{LocalID: 4}); err != nil {
+		t.Fatalf("Delete: %v", err)
 	}
 }
 

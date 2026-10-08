@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Questa versione di esportazione non è supportata.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Usa null per cancellare l'avatar.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Gli estremi della connessione della bacheca note sono obbligatori.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Endpoint della storia della bacheca non valido.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Limite connessioni della bacheca note raggiunto.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Limite note bacheca note raggiunto.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Il testo della nota della bacheca note è troppo lungo.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Stato",
   "shell.bulkEdit.tagsPlaceholder": "Digita un tag e premi Invio",
   "shell.contextMenu.newTodo": "Nuovo Todo",
+
+  "shell.contextMenu.sendToWall": "Invia alla bacheca",
   "settings.language.description": "Scegli la lingua usata da Scrumboy su questo browser.",
   "settings.language.selectLabel": "Lingua",
   "settings.language.title": "Lingua",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Trascina una nota qui per eliminarla",
   "wall.shortcuts.createNote.label": "crea nota:",
   "wall.shortcuts.createNote.hint": "clic destro sul canvas",
+
+  "wall.shortcuts.createStory.label": "crea Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + clic destro sul canvas",
   "wall.shortcuts.changeColor.label": "cambia colore:",
   "wall.shortcuts.changeColor.hint": "clic singolo sulla nota",
   "wall.shortcuts.editNote.label": "modifica nota:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "elimina nota:",
   "wall.shortcuts.deleteNote.hint": "clic destro sulla nota, trascina nel cestino o Canc se selezionata",
   "wall.shortcuts.drawLines.label": "traccia linee:",
-  "wall.shortcuts.drawLines.hint": "Shift + trascina da una nota all'altra",
+  "wall.shortcuts.drawLines.hint": "Maiusc + trascina tra note e storie",
   "wall.shortcuts.multiSelect.label": "selezione multipla:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + clic sinistro sulla nota o clic e trascina sul canvas per selezionare a riquadro",
   "wall.shortcuts.canvasMode.label": "modalità canvas:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Modalità canvas: Selezione",
   "wall.mode.select.title": "Modalità canvas: Selezione — trascina il canvas vuoto per selezionare note",
   "wall.empty.title": "Nessuna nota.",
-  "wall.empty.hintEditable": "Clic destro sul canvas per aggiungere la prima nota adesiva. Tieni premuto Shift e trascina da una nota all'altra per tracciare una connessione.",
+  "wall.empty.hintEditable": "Clic destro sul canvas per aggiungere la prima nota adesiva. Tieni premuto Shift e trascina tra note e storie per tracciare una connessione.",
   "wall.empty.hintReadonly": "In attesa che un collaboratore ne aggiunga una.",
   "wall.note.resize": "Ridimensiona nota",
   "wall.note.edit": "Modifica testo nota",
   "wall.menu.createTodoFromNote": "Crea Todo dalla nota",
+
+  "wall.menu.openStory": "Apri Todo",
+
+  "wall.menu.removeStory": "Rimuovi dalla bacheca",
   "wall.menu.deleteCount": "Elimina {count} note",
   "wall.confirm.deleteNote": "Eliminare questa nota?",
   "wall.confirm.deleteNotesCount": "Eliminare {count} note?",
   "wall.confirm.deleteConnection": "Eliminare questa connessione?",
   "wall.toast.unavailable": "La bacheca note non è disponibile qui.",
   "wall.toast.addNoteFailed": "Impossibile aggiungere la nota",
+
+  "wall.toast.pinStoryFailed": "Impossibile aggiungere il Todo alla bacheca",
+
+  "wall.toast.moveStoryFailed": "Impossibile spostare il Todo",
+
+  "wall.toast.removeStoryFailed": "Impossibile rimuovere il Todo dalla bacheca",
   "wall.toast.staleReload": "Un altro editor ha modificato questa nota — ricaricamento bacheca note.",
   "wall.toast.updateNoteFailed": "Impossibile aggiornare la nota",
   "wall.toast.deleteNoteFailed": "Impossibile eliminare la nota",

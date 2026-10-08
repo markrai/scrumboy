@@ -159,8 +159,8 @@ func TestTodoDeleteRESTRealtimeContracts(t *testing.T) {
 		}
 
 		internalEvents := todoDeleteRESTEventsForProject(fixture.collector, project.ID)
-		if len(internalEvents) != 1 || internalEvents[0].Type != "board.refresh_needed" {
-			t.Fatalf("internal events=%+v want one board.refresh_needed", internalEvents)
+		if len(internalEvents) != 2 || internalEvents[0].Type != "board.refresh_needed" || internalEvents[1].Type != "wall.refresh_needed" {
+			t.Fatalf("internal events=%+v want board.refresh_needed then wall.refresh_needed", internalEvents)
 		}
 		var payload struct {
 			Reason      string `json:"reason"`
@@ -172,10 +172,23 @@ func TestTodoDeleteRESTRealtimeContracts(t *testing.T) {
 		if payload.Reason != "todo_deleted" || payload.ActorUserID != owner.ID {
 			t.Fatalf("refresh payload=%+v want reason todo_deleted actor %d", payload, owner.ID)
 		}
+		var wallPayload map[string]any
+		if err := json.Unmarshal(internalEvents[1].Payload, &wallPayload); err != nil {
+			t.Fatalf("decode wall refresh payload: %v", err)
+		}
+		if wallPayload["reason"] != "wall_todo_deleted" {
+			t.Fatalf("wall refresh payload=%+v want reason wall_todo_deleted", wallPayload)
+		}
+		if _, present := wallPayload["actorUserId"]; present {
+			t.Fatalf("wall refresh unexpectedly included actor: %+v", wallPayload)
+		}
 
 		wireEvents := collectTodoUpdateEvents(t, stream)
-		if len(wireEvents) != 1 || wireEvents[0].Type != "refresh_needed" || wireEvents[0].ProjectID != project.ID || wireEvents[0].Reason != "todo_deleted" {
-			t.Fatalf("SSE events=%+v want one todo_deleted refresh for project %d", wireEvents, project.ID)
+		if len(wireEvents) != 2 || wireEvents[0].Type != "refresh_needed" || wireEvents[0].ProjectID != project.ID || wireEvents[0].Reason != "todo_deleted" {
+			t.Fatalf("SSE events=%+v want refresh_needed/todo_deleted then wall.refresh_needed/wall_todo_deleted for project %d", wireEvents, project.ID)
+		}
+		if wireEvents[1].Type != "wall.refresh_needed" || wireEvents[1].ProjectID != project.ID || wireEvents[1].Reason != "wall_todo_deleted" {
+			t.Fatalf("SSE events=%+v want refresh_needed/todo_deleted then wall.refresh_needed/wall_todo_deleted for project %d", wireEvents, project.ID)
 		}
 	})
 
@@ -353,8 +366,8 @@ func TestTodoDeleteRESTAccessRoleAndModeContracts(t *testing.T) {
 			t.Fatalf("temporary activity not extended last=%d expiry=%d old=(%d,%d)", lastActivity, expiresAt, oldActivity, oldExpiry)
 		}
 		events := todoDeleteRESTEventsForProject(fixture.collector, project.ID)
-		if len(events) != 1 {
-			t.Fatalf("temporary delete events=%+v want one", events)
+		if len(events) != 2 || events[0].Type != "board.refresh_needed" || events[1].Type != "wall.refresh_needed" {
+			t.Fatalf("temporary delete events=%+v want board then wall refresh", events)
 		}
 		var payload map[string]any
 		if err := json.Unmarshal(events[0].Payload, &payload); err != nil {
@@ -362,6 +375,16 @@ func TestTodoDeleteRESTAccessRoleAndModeContracts(t *testing.T) {
 		}
 		if payload["reason"] != "todo_deleted" {
 			t.Fatalf("temporary refresh payload=%+v", payload)
+		}
+		var wallPayload map[string]any
+		if err := json.Unmarshal(events[1].Payload, &wallPayload); err != nil {
+			t.Fatalf("decode temporary wall refresh payload: %v", err)
+		}
+		if wallPayload["reason"] != "wall_todo_deleted" {
+			t.Fatalf("temporary wall refresh payload=%+v", wallPayload)
+		}
+		if _, present := wallPayload["actorUserId"]; present {
+			t.Fatalf("anonymous temporary wall refresh unexpectedly included actor: %+v", wallPayload)
 		}
 		if _, present := payload["actorUserId"]; present {
 			t.Fatalf("anonymous temporary refresh unexpectedly included actor: %+v", payload)

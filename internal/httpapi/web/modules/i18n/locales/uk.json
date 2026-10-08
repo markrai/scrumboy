@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Ця версія експорту не підтримується.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Використай null, щоб очистити аватар.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Потрібні кінцеві точки зв'язку на стіні.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Неприпустима кінцева точка історії стіни.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Досягнуто ліміт зв'язків на стіні.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Досягнуто ліміт нотаток на стіні.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Текст нотатки на стіні занадто довгий.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Статус",
   "shell.bulkEdit.tagsPlaceholder": "Введи тег і натисни Enter",
   "shell.contextMenu.newTodo": "Нове Todo",
+
+  "shell.contextMenu.sendToWall": "Надіслати на стіну нотаток",
   "settings.language.description": "Обери мову Scrumboy у цьому браузері.",
   "settings.language.selectLabel": "Мова",
   "settings.language.title": "Мова",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Перетягни нотатку сюди, щоб видалити",
   "wall.shortcuts.createNote.label": "створити нотатку:",
   "wall.shortcuts.createNote.hint": "клацни правою кнопкою на канві",
+
+  "wall.shortcuts.createStory.label": "створити Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + клацніть правою кнопкою на канві",
   "wall.shortcuts.changeColor.label": "змінити колір:",
   "wall.shortcuts.changeColor.hint": "одинарний клік по нотатці",
   "wall.shortcuts.editNote.label": "редагувати нотатку:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "видалити нотатку:",
   "wall.shortcuts.deleteNote.hint": "клацни правою кнопкою по нотатці, перетягни в кошик або натисни Del, коли вона обрана",
   "wall.shortcuts.drawLines.label": "малювати лінії:",
-  "wall.shortcuts.drawLines.hint": "Shift + перетягни з нотатки на нотатку",
+  "wall.shortcuts.drawLines.hint": "Shift + перетягування між нотатками та історіями",
   "wall.shortcuts.multiSelect.label": "множинний вибір:",
   "wall.shortcuts.multiSelect.hint": "Ctrl/Cmd + лівий клік по нотатці або виділення рамкою на канві",
   "wall.shortcuts.canvasMode.label": "режим канви:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Режим канви: Вибір",
   "wall.mode.select.title": "Режим канви: Вибір — перетягни порожню канву, щоб виділити нотатки",
   "wall.empty.title": "Ще немає нотаток.",
-  "wall.empty.hintEditable": "Клацни правою кнопкою на канві, щоб додати першу стікер-нотатку. Тримай Shift і перетягни з однієї нотатки на іншу, щоб намалювати зв'язок.",
+  "wall.empty.hintEditable": "Клацни правою кнопкою на канві, щоб додати першу стікер-нотатку. Тримай Shift і перетягни між нотатками та історіями, щоб намалювати зв'язок.",
   "wall.empty.hintReadonly": "Чекаємо, поки Contributor додасть нотатку.",
   "wall.note.resize": "Змінити розмір нотатки",
   "wall.note.edit": "Редагувати текст нотатки",
   "wall.menu.createTodoFromNote": "Створити Todo з нотатки",
+
+  "wall.menu.openStory": "Відкрити Todo",
+
+  "wall.menu.removeStory": "Прибрати зі стіни нотаток",
   "wall.menu.deleteCount": "Видалити {count} нотаток",
   "wall.confirm.deleteNote": "Видалити цю нотатку?",
   "wall.confirm.deleteNotesCount": "Видалити {count} нотаток?",
   "wall.confirm.deleteConnection": "Видалити цей зв'язок?",
   "wall.toast.unavailable": "Стіна нотаток тут недоступна.",
   "wall.toast.addNoteFailed": "Не вдалося додати нотатку",
+
+  "wall.toast.pinStoryFailed": "Не вдалося додати Todo на стіну нотаток",
+
+  "wall.toast.moveStoryFailed": "Не вдалося перемістити Todo",
+
+  "wall.toast.removeStoryFailed": "Не вдалося прибрати Todo зі стіни нотаток",
   "wall.toast.staleReload": "Інший редактор змінив цю нотатку — перезавантажую стіну нотаток.",
   "wall.toast.updateNoteFailed": "Не вдалося оновити нотатку",
   "wall.toast.deleteNoteFailed": "Не вдалося видалити нотатку",

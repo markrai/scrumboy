@@ -18,6 +18,11 @@ import { escapeHTML, HEX_COLOR_RE, sanitizeHexColor } from "../utils.js";
 import { t } from "../i18n/index.js";
 import { colorIndexFromHex } from "./wall-postbaby-constants.js";
 import { screenToCanvas } from "./wall-viewport.js";
+import type { Todo } from "../types.js";
+import type { BoardMember } from "../state/state.js";
+import { renderStoryCardContent, type RenderTodoCardOpts } from "../views/board-rendering.js";
+import { WALL_STORY_WIDTH } from "./wall-story-geometry.js";
+import { parseWallEdgeEndpoint, wallEdgeEndpointCenter } from "./wall-edge-endpoint.js";
 
 export interface WallNote {
   id: string;
@@ -30,20 +35,51 @@ export interface WallNote {
   version: number;
 }
 
-// WallEdge mirrors the backend store: undirected connection between two
-// notes. No per-edge version - the document version on WallDocument is the
-// only realtime fingerprint.
+// WallEdge mirrors the backend store: undirected connection between two wall
+// endpoints (raw note IDs or canonical "story:<todo local ID>" endpoints).
+// No per-edge version - the document version on WallDocument is the only
+// realtime fingerprint.
 export interface WallEdge {
   id: string;
   from: string;
   to: string;
 }
 
+export interface WallStory {
+  localId: number;
+  x: number;
+  y: number;
+  version: number;
+  todo: Todo;
+}
+
 export interface WallDocument {
   notes: WallNote[];
   edges?: WallEdge[];
+  stories?: WallStory[];
   version: number;
   updatedAt?: number;
+}
+
+export function buildStoryElement(
+  story: WallStory,
+  membersByUserId?: Record<number, BoardMember>,
+  opts?: RenderTodoCardOpts,
+): HTMLElement {
+  const el = document.createElement("div");
+  const archivedClass = story.todo.archivedAt ? " wall-story--archived" : "";
+  el.className = `wall-story card card--${story.todo.status.toLowerCase()}${archivedClass}`;
+  el.dataset.storyLocalId = String(story.localId);
+  el.dataset.version = String(story.version);
+  el.dataset.todoId = String(story.todo.id);
+  el.style.left = `${Math.round(story.x)}px`;
+  el.style.top = `${Math.round(story.y)}px`;
+  el.style.width = `${WALL_STORY_WIDTH}px`;
+  el.setAttribute("role", "button");
+  el.setAttribute("tabindex", "0");
+  el.setAttribute("aria-label", `${t("wall.menu.openStory")} #${story.localId}`);
+  el.innerHTML = renderStoryCardContent(story.todo, membersByUserId, opts);
+  return el;
 }
 
 const DEFAULT_NOTE_COLOR = "#ffd966";
@@ -157,7 +193,7 @@ export function renderEmptyWallHtml(canEdit: boolean): string {
 }
 
 // =====================================================================
-// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes)
+// EDGE OVERLAY (Postbaby parity: Shift+drag draws lines between notes and stories)
 //
 // The overlay is a single SVG positioned absolutely over the wall surface.
 // Notes are still positioned in the surface's normal flow; the overlay sits
@@ -207,17 +243,7 @@ export function ensureEdgeOverlay(surface: HTMLElement): SVGSVGElement {
   return svg;
 }
 
-function noteCenter(surface: HTMLElement, noteId: string): { cx: number; cy: number } | null {
-  const el = surface.querySelector<HTMLElement>(`.wall-note[data-note-id="${CSS.escape(noteId)}"]`);
-  if (!el) return null;
-  // Use offsetLeft/Top + offsetWidth/Height so coordinates are relative to
-  // the surface (matches where SVG sits) rather than the viewport.
-  const cx = el.offsetLeft + el.offsetWidth / 2;
-  const cy = el.offsetTop + el.offsetHeight / 2;
-  return { cx, cy };
-}
-
-export function renderEdges(surface: HTMLElement, edges: WallEdge[]): void {
+export function renderEdges(surface: HTMLElement, edges: WallEdge[], zoom: number): void {
   const svg = ensureEdgeOverlay(surface);
   // Drop only edge groups; preserve any in-progress preview line so the
   // user's drag isn't visually interrupted by a re-render mid-flight.
@@ -226,16 +252,21 @@ export function renderEdges(surface: HTMLElement, edges: WallEdge[]): void {
 
   for (const edge of edges) {
     if (!edge || !edge.id || !edge.from || !edge.to) continue;
-    if (edge.from === edge.to) continue;
-    const a = noteCenter(surface, edge.from);
-    const b = noteCenter(surface, edge.to);
+    // Malformed persisted endpoints fail closed: skip the edge rather than
+    // throw or break the wall.
+    const from = parseWallEdgeEndpoint(edge.from);
+    const to = parseWallEdgeEndpoint(edge.to);
+    if (!from || !to) continue;
+    if (from.canonical === to.canonical) continue;
+    const a = wallEdgeEndpointCenter(surface, from, zoom);
+    const b = wallEdgeEndpointCenter(surface, to, zoom);
     if (!a || !b) continue;
 
     const g = document.createElementNS(SVG_NS, "g");
     g.setAttribute("class", "wall-edge-group");
     (g as SVGGElement).dataset.edgeId = edge.id;
-    (g as SVGGElement).dataset.from = edge.from;
-    (g as SVGGElement).dataset.to = edge.to;
+    (g as SVGGElement).dataset.from = from.canonical;
+    (g as SVGGElement).dataset.to = to.canonical;
 
     const hit = document.createElementNS(SVG_NS, "line");
     hit.setAttribute("class", "wall-edge-hit");
@@ -267,24 +298,25 @@ export function renderEdges(surface: HTMLElement, edges: WallEdge[]): void {
   }
 }
 
-// Update the endpoints of every edge that touches `noteId` to the given
-// surface-local center. Used during drag/transient to keep lines glued to
-// the moving note without a full re-render.
-export function updateEdgesForNote(surface: HTMLElement, noteId: string, cx: number, cy: number): void {
+// Update the endpoints of every edge that touches the given canonical
+// endpoint identity to the given surface-local center. Used during
+// drag/transient and authoritative element replacement to keep lines glued
+// to the moving endpoint without a full re-render.
+export function updateEdgesForEndpoint(surface: HTMLElement, endpoint: string, cx: number, cy: number): void {
   const svg = surface.querySelector<SVGSVGElement>(`#${EDGE_OVERLAY_ID}`);
   if (!svg) return;
   const groups = svg.querySelectorAll<SVGGElement>(".wall-edge-group");
   groups.forEach((g) => {
     const from = g.dataset.from;
     const to = g.dataset.to;
-    if (from !== noteId && to !== noteId) return;
+    if (from !== endpoint && to !== endpoint) return;
     const lines = g.querySelectorAll<SVGLineElement>("line");
     lines.forEach((ln) => {
-      if (from === noteId) {
+      if (from === endpoint) {
         ln.setAttribute("x1", String(cx));
         ln.setAttribute("y1", String(cy));
       }
-      if (to === noteId) {
+      if (to === endpoint) {
         ln.setAttribute("x2", String(cx));
         ln.setAttribute("y2", String(cy));
       }

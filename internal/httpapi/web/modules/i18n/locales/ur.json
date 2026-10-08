@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "یہ برآمدی ورژن سپورٹ نہیں ہے۔",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "پروفائل تصویر صاف کرنے کے لیے null استعمال کریں۔",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "نوٹ وال کنکشن کے endpoints ضروری ہیں۔",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "وال اسٹوری کا اختتامی نقطہ غلط ہے۔",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "نوٹ وال کنکشنز کی حد پہنچ گئی۔",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "نوٹ وال نوٹس کی حد پہنچ گئی۔",
   "errors.VALIDATION_ERROR.wall_note_too_long": "نوٹ وال کا نوٹ بہت لمبا ہے۔",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "حالت",
   "shell.bulkEdit.tagsPlaceholder": "ٹیگ لکھیں اور Enter دبائیں",
   "shell.contextMenu.newTodo": "نیا Todo",
+
+  "shell.contextMenu.sendToWall": "وال پر بھیجیں",
   "settings.language.description": "اس براؤزر پر Scrumboy کے لیے زبان منتخب کریں۔",
   "settings.language.selectLabel": "زبان",
   "settings.language.title": "زبان",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "حذف کے لیے نوٹ یہاں کھینچیں",
   "wall.shortcuts.createNote.label": "نوٹ بنائیں:",
   "wall.shortcuts.createNote.hint": "کینوس پر دائیں کلک",
+
+  "wall.shortcuts.createStory.label": "Todo بنائیں:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + کینوس پر دایاں کلک",
   "wall.shortcuts.changeColor.label": "رنگ بدلیں:",
   "wall.shortcuts.changeColor.hint": "نوٹ پر سنگل کلک",
   "wall.shortcuts.editNote.label": "نوٹ ترمیم:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "نوٹ حذف:",
   "wall.shortcuts.deleteNote.hint": "نوٹ پر دائیں کلک، trash میں کھینچیں، یا منتخب ہونے پر Del",
   "wall.shortcuts.drawLines.label": "لکیریں:",
-  "wall.shortcuts.drawLines.hint": "Shift + نوٹ سے نوٹ تک کھینچیں",
+  "wall.shortcuts.drawLines.hint": "نوٹس اور اسٹوریز کے درمیان Shift + ڈریگ",
   "wall.shortcuts.multiSelect.label": "متعدد انتخاب:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + نوٹ پر بائیں کلک یا box-select کے لیے کینوس پر کلک-ڈریگ",
   "wall.shortcuts.canvasMode.label": "کینوس موڈ:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "کینوس موڈ: انتخاب",
   "wall.mode.select.title": "کینوس موڈ: انتخاب — نوٹس منتخب کرنے کے لیے خالی کینوس کھینچیں",
   "wall.empty.title": "ابھی کوئی نوٹ نہیں۔",
-  "wall.empty.hintEditable": "پہلا اسٹکی نوٹ شامل کرنے کے لیے کینوس پر دائیں کلک۔ ایک نوٹ سے دوسرے تک Shift پکڑ کر connection بنائیں۔",
+  "wall.empty.hintEditable": "پہلا اسٹکی نوٹ شامل کرنے کے لیے کینوس پر دائیں کلک۔ نوٹس اور اسٹوریز کے درمیان Shift پکڑ کر connection بنائیں۔",
   "wall.empty.hintReadonly": "معاون کے نوٹ شامل کرنے کا انتظار۔",
   "wall.note.resize": "نوٹ سائز",
   "wall.note.edit": "نوٹ متن ترمیم",
   "wall.menu.createTodoFromNote": "نوٹ سے Todo بنائیں",
+
+  "wall.menu.openStory": "Todo کھولیں",
+
+  "wall.menu.removeStory": "وال سے ہٹائیں",
   "wall.menu.deleteCount": "{count} نوٹس حذف",
   "wall.confirm.deleteNote": "یہ نوٹ حذف؟",
   "wall.confirm.deleteNotesCount": "{count} نوٹس حذف؟",
   "wall.confirm.deleteConnection": "یہ کنکشن حذف کریں؟",
   "wall.toast.unavailable": "نوٹ وال یہاں دستیاب نہیں۔",
   "wall.toast.addNoteFailed": "نوٹ شامل نہیں ہو سکا",
+
+  "wall.toast.pinStoryFailed": "Todo کو وال میں شامل نہیں کیا جا سکا",
+
+  "wall.toast.moveStoryFailed": "Todo کو منتقل نہیں کیا جا سکا",
+
+  "wall.toast.removeStoryFailed": "Todo کو وال سے نہیں ہٹایا جا سکا",
   "wall.toast.staleReload": "دوسرے ایڈیٹر نے نوٹ بدلا — نوٹ وال دوبارہ لوڈ۔",
   "wall.toast.updateNoteFailed": "نوٹ اپ ڈیٹ نہیں ہو سکا",
   "wall.toast.deleteNoteFailed": "نوٹ حذف نہیں ہو سکا",

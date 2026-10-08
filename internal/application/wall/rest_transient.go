@@ -73,10 +73,11 @@ func (p *PreparedRESTTransient) Publish(command TransientCommand) error {
 		p.writer.effectCtx,
 		p.writer.projectID,
 		TransientEvent{
-			NoteID: command.NoteID,
-			X:      command.X,
-			Y:      command.Y,
-			By:     p.writer.actorID,
+			NoteID:       command.NoteID,
+			StoryLocalID: command.StoryLocalID,
+			X:            command.X,
+			Y:            command.Y,
+			By:           p.writer.actorID,
 		},
 	)
 }

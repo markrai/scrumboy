@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Diese Exportversion wird nicht unterstützt.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Verwende null, um den Avatar zu entfernen.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wall-Kanten-Endpunkte sind erforderlich.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Ungültiger Wall-Story-Endpunkt.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Wall-Kantenlimit erreicht.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Wall-Notizlimit erreicht.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Der Wall-Notiztext ist zu lang.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Tag eingeben und Enter drücken",
   "shell.contextMenu.newTodo": "Neues Todo",
+
+  "shell.contextMenu.sendToWall": "An Wand senden",
   "settings.language.description": "Wähle die Sprache, die Scrumboy in diesem Browser verwendet.",
   "settings.language.selectLabel": "Sprache",
   "settings.language.title": "Sprache",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Notiz zum Löschen hierher ziehen",
   "wall.shortcuts.createNote.label": "Notiz erstellen:",
   "wall.shortcuts.createNote.hint": "Rechtsklick auf die Leinwand",
+
+  "wall.shortcuts.createStory.label": "Todo erstellen:",
+
+  "wall.shortcuts.createStory.hint": "Strg + Rechtsklick auf die Leinwand",
   "wall.shortcuts.changeColor.label": "Farbe ändern:",
   "wall.shortcuts.changeColor.hint": "einfacher Klick auf Notiz",
   "wall.shortcuts.editNote.label": "Notiz bearbeiten:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "Notiz löschen:",
   "wall.shortcuts.deleteNote.hint": "Rechtsklick auf Notiz, in den Papierkorb ziehen oder Entf bei Auswahl",
   "wall.shortcuts.drawLines.label": "Linien zeichnen:",
-  "wall.shortcuts.drawLines.hint": "Umschalt + von Notiz zu Notiz ziehen",
+  "wall.shortcuts.drawLines.hint": "Umschalt + Ziehen zwischen Notizen und Storys",
   "wall.shortcuts.multiSelect.label": "Mehrfachauswahl:",
   "wall.shortcuts.multiSelect.hint": "Strg/Cmd + Linksklick auf Notiz oder Klicken-Ziehen auf der Leinwand für Rahmenauswahl",
   "wall.shortcuts.canvasMode.label": "Leinwandmodus:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Leinwandmodus: Auswahl",
   "wall.mode.select.title": "Leinwandmodus: Auswahl — leere Leinwand ziehen, um Notizen auszuwählen",
   "wall.empty.title": "Noch keine Notizen.",
-  "wall.empty.hintEditable": "Rechtsklick auf die Leinwand, um die erste Notiz hinzuzufügen. Umschalt halten und von einer Notiz zu einer anderen ziehen, um eine Verbindung zu zeichnen.",
+  "wall.empty.hintEditable": "Rechtsklick auf die Leinwand, um die erste Notiz hinzuzufügen. Umschalt halten und zwischen Notizen und Storys ziehen, um eine Verbindung zu zeichnen.",
   "wall.empty.hintReadonly": "Warten, bis ein Mitwirkender eine hinzufügt.",
   "wall.note.resize": "Notizgröße ändern",
   "wall.note.edit": "Notiztext bearbeiten",
   "wall.menu.createTodoFromNote": "Todo aus Notiz erstellen",
+
+  "wall.menu.openStory": "Todo öffnen",
+
+  "wall.menu.removeStory": "Von der Wand entfernen",
   "wall.menu.deleteCount": "{count} Notizen löschen",
   "wall.confirm.deleteNote": "Diese Notiz löschen?",
   "wall.confirm.deleteNotesCount": "{count} Notizen löschen?",
   "wall.confirm.deleteConnection": "Diese Verbindung löschen?",
   "wall.toast.unavailable": "Die Wand ist hier nicht verfügbar.",
   "wall.toast.addNoteFailed": "Notiz konnte nicht hinzugefügt werden",
+
+  "wall.toast.pinStoryFailed": "Todo konnte nicht zur Wand hinzugefügt werden",
+
+  "wall.toast.moveStoryFailed": "Todo konnte nicht verschoben werden",
+
+  "wall.toast.removeStoryFailed": "Todo konnte nicht von der Wand entfernt werden",
   "wall.toast.staleReload": "Ein anderer Bearbeiter hat diese Notiz geändert — Wand wird neu geladen.",
   "wall.toast.updateNoteFailed": "Notiz konnte nicht aktualisiert werden",
   "wall.toast.deleteNoteFailed": "Notiz konnte nicht gelöscht werden",

@@ -158,6 +158,7 @@ type Server struct {
 	wallReplacements              *wallapp.RESTReplacementService
 	wallEdgeMutations             *wallapp.RESTEdgeService
 	wallTransientMutations        *wallapp.RESTTransientService
+	wallStoryMutations            *wallapp.RESTStoryService
 
 	logger                  *log.Logger
 	maxBody                 int64
@@ -417,8 +418,11 @@ type storeAPI interface {
 	PatchNote(ctx context.Context, projectID int64, noteID string, in store.PatchNoteInput) (store.WallNote, store.Wall, error)
 	DeleteNote(ctx context.Context, projectID int64, noteID string) (store.Wall, error)
 	ReplaceWall(ctx context.Context, projectID int64, notes []store.WallNote) (store.Wall, error)
-	CreateEdge(ctx context.Context, projectID int64, fromNoteID, toNoteID string) (store.WallEdge, store.Wall, error)
+	CreateEdge(ctx context.Context, projectID int64, fromEndpoint, toEndpoint string) (store.WallEdge, store.Wall, error)
 	DeleteEdge(ctx context.Context, projectID int64, edgeID string) (store.Wall, error)
+	PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (store.WallStoryPlacement, bool, error)
+	PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (store.WallStoryPlacement, error)
+	UnpinWallStory(ctx context.Context, projectID, localID int64) error
 }
 
 //go:embed web/**
@@ -678,6 +682,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Roles:     st,
 		Publisher: wallTransientPublisher{server: server},
 	})
+	server.wallStoryMutations = wallapp.NewRESTStoryService(wallapp.RESTStoryServiceDependencies{
+		Roles:     st,
+		Mutations: st,
+		Refresh:   wallRefreshPublisher{server: server},
+	})
 	server.projectCreations = projectapp.NewRESTDurableCreationService(st)
 	server.anonymousBoardCreations = projectapp.NewAnonymousBoardCreationService(st)
 	server.projectUpdates = projectapp.NewRESTUpdateService(projectapp.RESTUpdateServiceDependencies{
@@ -703,8 +712,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Refresh: boardRefreshPublisher,
 	})
 	server.todoDeletes = todoapp.NewDeleteService(todoapp.DeleteServiceDependencies{
-		Delete:  st,
-		Refresh: boardRefreshPublisher,
+		Delete:      st,
+		Refresh:     boardRefreshPublisher,
+		WallRefresh: wallRefreshPublisher{server: server},
 	})
 	server.todoMoves = todoapp.NewMoveService(todoapp.MoveServiceDependencies{
 		Move:            st,
@@ -722,9 +732,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.todoArchiveReads = todoapp.NewArchiveReadService(st)
 	server.todoLegacyDeletes = todoapp.NewLegacyDeleteService(todoapp.LegacyDeleteServiceDependencies{
-		Projects: st,
-		Delete:   st,
-		Refresh:  boardRefreshPublisher,
+		Projects:    st,
+		Delete:      st,
+		Refresh:     boardRefreshPublisher,
+		WallRefresh: wallRefreshPublisher{server: server},
 	})
 	server.todoLegacyMoves = todoapp.NewLegacyMoveService(todoapp.LegacyMoveServiceDependencies{
 		Move:            st,

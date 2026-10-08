@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Ta wersja eksportu nie jest obsługiwana.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Użyj null, aby wyczyścić awatar.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wymagane są punkty końcowe połączenia na ścianie.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Nieprawidłowy punkt końcowy historii ściany.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Osiągnięto limit połączeń na ścianie.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Osiągnięto limit notatek na ścianie.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Tekst notatki na ścianie jest za długi.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Wpisz tag i naciśnij Enter",
   "shell.contextMenu.newTodo": "Nowe Todo",
+
+  "shell.contextMenu.sendToWall": "Wyślij na ścianę",
   "settings.language.description": "Wybierz język Scrumboy w tej przeglądarce.",
   "settings.language.selectLabel": "Język",
   "settings.language.title": "Język",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Przeciągnij notatkę tutaj, aby usunąć",
   "wall.shortcuts.createNote.label": "utwórz notatkę:",
   "wall.shortcuts.createNote.hint": "kliknij prawym przyciskiem na kanwie",
+
+  "wall.shortcuts.createStory.label": "utwórz Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + kliknij prawym przyciskiem na kanwie",
   "wall.shortcuts.changeColor.label": "zmień kolor:",
   "wall.shortcuts.changeColor.hint": "pojedyncze kliknięcie notatki",
   "wall.shortcuts.editNote.label": "edytuj notatkę:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "usuń notatkę:",
   "wall.shortcuts.deleteNote.hint": "kliknij prawym przyciskiem na notatce, przeciągnij ją do kosza albo naciśnij Del, gdy jest zaznaczona",
   "wall.shortcuts.drawLines.label": "rysuj linie:",
-  "wall.shortcuts.drawLines.hint": "Shift + przeciągnij z notatki do notatki",
+  "wall.shortcuts.drawLines.hint": "Shift + przeciąganie między notatkami a historiami",
   "wall.shortcuts.multiSelect.label": "wielokrotny wybór:",
   "wall.shortcuts.multiSelect.hint": "Ctrl/Cmd + kliknięcie lewym przyciskiem na notatce albo przeciągnięcie po kanwie, aby zaznaczyć ramką",
   "wall.shortcuts.canvasMode.label": "tryb kanwy:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Tryb kanwy: Zaznaczanie",
   "wall.mode.select.title": "Tryb kanwy: Zaznaczanie — przeciągnij pustą kanwę, aby zaznaczyć notatki",
   "wall.empty.title": "Jeszcze brak notatek.",
-  "wall.empty.hintEditable": "Kliknij prawym przyciskiem na kanwie, aby dodać pierwszą karteczkę. Przytrzymaj Shift i przeciągnij z jednej notatki do drugiej, aby narysować połączenie.",
+  "wall.empty.hintEditable": "Kliknij prawym przyciskiem na kanwie, aby dodać pierwszą karteczkę. Przytrzymaj Shift i przeciągnij między notatkami a historiami, aby narysować połączenie.",
   "wall.empty.hintReadonly": "Oczekiwanie, aż Contributor doda notatkę.",
   "wall.note.resize": "Zmień rozmiar notatki",
   "wall.note.edit": "Edytuj tekst notatki",
   "wall.menu.createTodoFromNote": "Utwórz Todo z notatki",
+
+  "wall.menu.openStory": "Otwórz Todo",
+
+  "wall.menu.removeStory": "Usuń ze ściany",
   "wall.menu.deleteCount": "Usuń {count} notatek",
   "wall.confirm.deleteNote": "Usunąć tę notatkę?",
   "wall.confirm.deleteNotesCount": "Usunąć {count} notatek?",
   "wall.confirm.deleteConnection": "Usunąć to połączenie?",
   "wall.toast.unavailable": "Ściana notatek jest tu niedostępna.",
   "wall.toast.addNoteFailed": "Nie udało się dodać notatki",
+
+  "wall.toast.pinStoryFailed": "Nie udało się dodać Todo do ściany",
+
+  "wall.toast.moveStoryFailed": "Nie udało się przenieść Todo",
+
+  "wall.toast.removeStoryFailed": "Nie udało się usunąć Todo ze ściany",
   "wall.toast.staleReload": "Inny edytor zmienił tę notatkę — przeładowuję ścianę.",
   "wall.toast.updateNoteFailed": "Nie udało się zaktualizować notatki",
   "wall.toast.deleteNoteFailed": "Nie udało się usunąć notatki",

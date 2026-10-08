@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Esta versión de exportación no es compatible.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Usa null para borrar la foto de perfil.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Se requieren los extremos de la conexión del muro de notas.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Extremo de historia del muro no válido.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Se alcanzó el límite de conexiones del muro de notas.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Se alcanzó el límite de notas del muro de notas.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "El texto de la nota del muro es demasiado largo.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Estado",
   "shell.bulkEdit.tagsPlaceholder": "Escribe una etiqueta y presiona Enter",
   "shell.contextMenu.newTodo": "Nuevo Todo",
+
+  "shell.contextMenu.sendToWall": "Enviar al muro",
   "settings.language.description": "Elige el idioma de Scrumboy en este navegador.",
   "settings.language.selectLabel": "Idioma",
   "settings.language.title": "Idioma",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Arrastra una nota aquí para eliminarla",
   "wall.shortcuts.createNote.label": "crear nota:",
   "wall.shortcuts.createNote.hint": "clic derecho en el lienzo",
+
+  "wall.shortcuts.createStory.label": "crear Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + clic derecho en el lienzo",
   "wall.shortcuts.changeColor.label": "cambiar color:",
   "wall.shortcuts.changeColor.hint": "clic simple en la nota",
   "wall.shortcuts.editNote.label": "editar nota:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "eliminar nota:",
   "wall.shortcuts.deleteNote.hint": "clic derecho en la nota, arrastra a la papelera o Supr con selección",
   "wall.shortcuts.drawLines.label": "dibujar líneas:",
-  "wall.shortcuts.drawLines.hint": "Shift + arrastrar de una nota a otra",
+  "wall.shortcuts.drawLines.hint": "Mayús + arrastrar entre notas e historias",
   "wall.shortcuts.multiSelect.label": "selección múltiple:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + clic izquierdo en nota o clic y arrastre en el lienzo para seleccionar por área",
   "wall.shortcuts.canvasMode.label": "modo de lienzo:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Modo de lienzo: Seleccionar",
   "wall.mode.select.title": "Modo de lienzo: Seleccionar — arrastra el lienzo vacío para seleccionar notas",
   "wall.empty.title": "Aún no hay notas.",
-  "wall.empty.hintEditable": "Haz clic derecho en el lienzo para agregar tu primera nota adhesiva. Mantén Shift y arrastra de una nota a otra para dibujar una conexión.",
+  "wall.empty.hintEditable": "Haz clic derecho en el lienzo para agregar tu primera nota adhesiva. Mantén Shift y arrastra entre notas e historias para dibujar una conexión.",
   "wall.empty.hintReadonly": "Esperando a que un colaborador agregue una.",
   "wall.note.resize": "Redimensionar nota",
   "wall.note.edit": "Editar texto de la nota",
   "wall.menu.createTodoFromNote": "Crear Todo desde nota",
+
+  "wall.menu.openStory": "Abrir Todo",
+
+  "wall.menu.removeStory": "Quitar del muro",
   "wall.menu.deleteCount": "Eliminar {count} notas",
   "wall.confirm.deleteNote": "¿Eliminar esta nota?",
   "wall.confirm.deleteNotesCount": "¿Eliminar {count} notas?",
   "wall.confirm.deleteConnection": "¿Eliminar esta conexión?",
   "wall.toast.unavailable": "El muro de notas no está disponible aquí.",
   "wall.toast.addNoteFailed": "No se pudo agregar la nota",
+
+  "wall.toast.pinStoryFailed": "No se pudo añadir el Todo al muro",
+
+  "wall.toast.moveStoryFailed": "No se pudo mover el Todo",
+
+  "wall.toast.removeStoryFailed": "No se pudo quitar el Todo del muro",
   "wall.toast.staleReload": "Otro editor cambió esta nota — recargando muro de notas.",
   "wall.toast.updateNoteFailed": "No se pudo actualizar la nota",
   "wall.toast.deleteNoteFailed": "No se pudo eliminar la nota",

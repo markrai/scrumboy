@@ -127,6 +127,31 @@ describe("wall-viewport", () => {
     expect(zoom).toBeGreaterThanOrEqual(FIT_ZOOM_MIN);
   });
 
+  it("fitToNotes measures a rendered story taller than the estimate at non-1 zoom", () => {
+    const content = ensureWallContent(surface);
+    const storyElement = document.createElement("div");
+    storyElement.className = "wall-story";
+    storyElement.dataset.storyLocalId = "7";
+    Object.defineProperties(storyElement, {
+      offsetWidth: { configurable: true, value: 0 },
+      offsetHeight: { configurable: true, value: 0 },
+    });
+    // At the current 0.5 zoom this screen box is 280x800 canvas units.
+    storyElement.getBoundingClientRect = () => rect(0, 0, 140, 400);
+    content.appendChild(storyElement);
+    initWallViewport(surface, content, "tall-story", { panX: 0, panY: 0, zoom: 0.5 });
+
+    fitToNotes([], [{
+      localId: 7,
+      x: 100,
+      y: 100,
+      version: 1,
+      todo: {},
+    } as any]);
+
+    expect(getViewportState().zoom).toBeCloseTo((600 - 48 * 2) / 800, 5);
+  });
+
   it("clampPanForZoom uses the passed zoom, not module state (issue 3)", () => {
     // Bound scales with zoom: a small zoom clamps pan tighter than zoom=3.
     const atLowZoom = clampPanForZoom(1_000_000, 0.02);

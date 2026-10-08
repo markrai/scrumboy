@@ -287,4 +287,51 @@ describe("todo close guard", () => {
     await expect(requestTodoDialogClose({ reason: "button" })).resolves.toBe(true);
     expect(showConfirmDialogMock).not.toHaveBeenCalled();
   });
+
+  it("runs the create-success callback once for the matching dialog generation", async () => {
+    const callback = vi.fn();
+    const { getTodoDialogOpenGeneration, notifyTodoCreated, openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({ mode: "create", role: "maintainer", onCreated: callback });
+    const generation = getTodoDialogOpenGeneration();
+    const todo = { id: 1, localId: 7, title: "Created", status: "BACKLOG" } as any;
+
+    await notifyTodoCreated(todo, generation);
+    await notifyTodoCreated(todo, generation);
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith(todo);
+  });
+
+  it("clears create callbacks on cancel/edit and rejects stale success generations", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { getTodoDialogOpenGeneration, notifyTodoCreated, openTodoDialog, requestTodoDialogClose } = await import("./todo.js");
+    await openTodoDialog({ mode: "create", role: "maintainer", onCreated: first });
+    const firstGeneration = getTodoDialogOpenGeneration();
+    await requestTodoDialogClose({ force: true, reason: "cancel" });
+    await notifyTodoCreated({ id: 1, localId: 1, title: "Late", status: "BACKLOG" } as any, firstGeneration);
+    expect(first).not.toHaveBeenCalled();
+
+    await openTodoDialog({ mode: "create", role: "maintainer", onCreated: second });
+    const secondGeneration = getTodoDialogOpenGeneration();
+    await openTodoDialog({
+      mode: "edit",
+      role: "maintainer",
+      todo: { id: 2, localId: 2, title: "Existing", body: "", columnKey: "backlog", tags: [] },
+    });
+    await notifyTodoCreated({ id: 3, localId: 3, title: "Late", status: "BACKLOG" } as any, secondGeneration);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a successful create into a failure when its callback rejects", async () => {
+    const callback = vi.fn().mockRejectedValue(new Error("placement failed"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { getTodoDialogOpenGeneration, notifyTodoCreated, openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({ mode: "create", role: "maintainer", onCreated: callback });
+    await expect(notifyTodoCreated(
+      { id: 1, localId: 1, title: "Created", status: "BACKLOG" } as any,
+      getTodoDialogOpenGeneration(),
+    )).resolves.toBeUndefined();
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
 });

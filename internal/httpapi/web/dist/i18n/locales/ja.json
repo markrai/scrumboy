@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "このエクスポートバージョンはサポートされていません。",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "アバターをクリアするには null を使用してください。",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "ウォールエッジのエンドポイントが必要です。",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "無効なウォールストーリーのエンドポイントです。",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "ウォールエッジの上限に達しました。",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "ウォールノートの上限に達しました。",
   "errors.VALIDATION_ERROR.wall_note_too_long": "ウォールノートのテキストが長すぎます。",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "ステータス",
   "shell.bulkEdit.tagsPlaceholder": "タグを入力して Enter",
   "shell.contextMenu.newTodo": "新しい Todo",
+
+  "shell.contextMenu.sendToWall": "ウォールに送る",
   "settings.language.description": "このブラウザで Scrumboy に使用する言語を選択してください。",
   "settings.language.selectLabel": "言語",
   "settings.language.title": "言語",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "ノートをここにドラッグして削除",
   "wall.shortcuts.createNote.label": "ノート作成:",
   "wall.shortcuts.createNote.hint": "キャンバスを右クリック",
+
+  "wall.shortcuts.createStory.label": "Todo を作成:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + キャンバスを右クリック",
   "wall.shortcuts.changeColor.label": "色を変更:",
   "wall.shortcuts.changeColor.hint": "ノートをシングルクリック",
   "wall.shortcuts.editNote.label": "ノートを編集:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "ノートを削除:",
   "wall.shortcuts.deleteNote.hint": "ノートを右クリック、ゴミ箱にドラッグ、または選択中に Del",
   "wall.shortcuts.drawLines.label": "線を描画:",
-  "wall.shortcuts.drawLines.hint": "Shift + ノート間をドラッグ",
+  "wall.shortcuts.drawLines.hint": "メモとストーリーの間で Shift + ドラッグ",
   "wall.shortcuts.multiSelect.label": "複数選択:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + ノートを左クリック、またはキャンバスをドラッグして範囲選択",
   "wall.shortcuts.canvasMode.label": "キャンバスモード:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "キャンバスモード: 選択",
   "wall.mode.select.title": "キャンバスモード: 選択 — 空のキャンバスをドラッグしてノートを選択",
   "wall.empty.title": "ノートがまだありません。",
-  "wall.empty.hintEditable": "キャンバスを右クリックして最初の付箋を追加してください。Shift を押しながらノート間をドラッグすると接続線を描画できます。",
+  "wall.empty.hintEditable": "キャンバスを右クリックして最初の付箋を追加してください。Shift を押しながらメモとストーリーの間をドラッグすると接続線を描画できます。",
   "wall.empty.hintReadonly": "コントリビューターによる追加を待っています。",
   "wall.note.resize": "ノートのサイズ変更",
   "wall.note.edit": "ノートテキストを編集",
   "wall.menu.createTodoFromNote": "ノートから Todo を作成",
+
+  "wall.menu.openStory": "Todo を開く",
+
+  "wall.menu.removeStory": "ウォールから削除",
   "wall.menu.deleteCount": "{count} 件のノートを削除",
   "wall.confirm.deleteNote": "このノートを削除しますか？",
   "wall.confirm.deleteNotesCount": "{count} 件のノートを削除しますか？",
   "wall.confirm.deleteConnection": "この接続を削除しますか？",
   "wall.toast.unavailable": "ここではウォールを利用できません。",
   "wall.toast.addNoteFailed": "ノートを追加できませんでした",
+
+  "wall.toast.pinStoryFailed": "Todo をウォールに追加できませんでした",
+
+  "wall.toast.moveStoryFailed": "Todo を移動できませんでした",
+
+  "wall.toast.removeStoryFailed": "Todo をウォールから削除できませんでした",
   "wall.toast.staleReload": "別の編集者がこのノートを変更しました — ウォールを再読み込みしています。",
   "wall.toast.updateNoteFailed": "ノートを更新できませんでした",
   "wall.toast.deleteNoteFailed": "ノートを削除できませんでした",

@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "Versi ekspor ini tidak didukung.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Gunakan null untuk menghapus avatar.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Endpoint edge wall diperlukan.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Endpoint story dinding tidak valid.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Batas edge wall tercapai.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Batas catatan wall tercapai.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Teks catatan wall terlalu panjang.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Ketik tag lalu tekan Enter",
   "shell.contextMenu.newTodo": "Todo Baru",
+
+  "shell.contextMenu.sendToWall": "Kirim ke Wall",
   "settings.language.description": "Pilih bahasa yang digunakan Scrumboy di browser ini.",
   "settings.language.selectLabel": "Bahasa",
   "settings.language.title": "Bahasa",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "Seret catatan ke sini untuk menghapus",
   "wall.shortcuts.createNote.label": "buat catatan:",
   "wall.shortcuts.createNote.hint": "klik kanan di kanvas",
+
+  "wall.shortcuts.createStory.label": "buat Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + klik kanan di kanvas",
   "wall.shortcuts.changeColor.label": "ubah warna:",
   "wall.shortcuts.changeColor.hint": "klik tunggal catatan",
   "wall.shortcuts.editNote.label": "edit catatan:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "hapus catatan:",
   "wall.shortcuts.deleteNote.hint": "klik kanan catatan, seret ke tempat sampah, atau Del saat dipilih",
   "wall.shortcuts.drawLines.label": "gambar garis:",
-  "wall.shortcuts.drawLines.hint": "shift + seret dari catatan ke catatan",
+  "wall.shortcuts.drawLines.hint": "Shift + seret di antara catatan dan story",
   "wall.shortcuts.multiSelect.label": "pilih banyak:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + klik kiri catatan atau klik-seret di kanvas untuk pilih kotak",
   "wall.shortcuts.canvasMode.label": "mode kanvas:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "Mode kanvas: Pilih",
   "wall.mode.select.title": "Mode kanvas: Pilih — seret kanvas kosong untuk memilih catatan",
   "wall.empty.title": "Belum ada catatan.",
-  "wall.empty.hintEditable": "Klik kanan kanvas untuk menambahkan catatan tempel pertama Anda. Tahan Shift dan seret dari satu catatan ke catatan lain untuk menggambar koneksi.",
+  "wall.empty.hintEditable": "Klik kanan kanvas untuk menambahkan catatan tempel pertama Anda. Tahan Shift dan seret di antara catatan dan story untuk menggambar koneksi.",
   "wall.empty.hintReadonly": "Menunggu kontributor menambahkan satu.",
   "wall.note.resize": "Ubah ukuran catatan",
   "wall.note.edit": "Edit teks catatan",
   "wall.menu.createTodoFromNote": "Buat Todo dari Catatan",
+
+  "wall.menu.openStory": "Buka Todo",
+
+  "wall.menu.removeStory": "Hapus dari Wall",
   "wall.menu.deleteCount": "Hapus {count} catatan",
   "wall.confirm.deleteNote": "Hapus catatan ini?",
   "wall.confirm.deleteNotesCount": "Hapus {count} catatan?",
   "wall.confirm.deleteConnection": "Hapus koneksi ini?",
   "wall.toast.unavailable": "Wall tidak tersedia di sini.",
   "wall.toast.addNoteFailed": "Tidak dapat menambahkan catatan",
+
+  "wall.toast.pinStoryFailed": "Todo tidak dapat ditambahkan ke Wall",
+
+  "wall.toast.moveStoryFailed": "Todo tidak dapat dipindahkan",
+
+  "wall.toast.removeStoryFailed": "Todo tidak dapat dihapus dari Wall",
   "wall.toast.staleReload": "Editor lain mengubah catatan ini — memuat ulang wall.",
   "wall.toast.updateNoteFailed": "Tidak dapat memperbarui catatan",
   "wall.toast.deleteNoteFailed": "Tidak dapat menghapus catatan",

@@ -421,6 +421,11 @@ function getProjectsListJumpElements(): HTMLElement[] {
   return out;
 }
 
+function isBoardContextMenuOpen(): boolean {
+  const menu = document.getElementById("contextMenu") as HTMLElement | null;
+  return !!menu && menu.style.display !== "none";
+}
+
 export function executeAction(actionId: KeyActionId): void {
   const view = getCurrentView();
 
@@ -508,7 +513,8 @@ export function executeAction(actionId: KeyActionId): void {
         getAuthStatusAvailable() &&
         !(todoDialog as HTMLDialogElement).open &&
         !(settingsDialog as HTMLDialogElement).open &&
-        !hasMembersDialogOpen
+        !hasMembersDialogOpen &&
+        !isBoardContextMenuOpen()
       ) {
         navigate("/");
       }
@@ -607,7 +613,7 @@ function onGlobalKeydown(ev: KeyboardEvent): void {
     return true;
   };
 
-  if (tryExec("boardEscapeBack")) return;
+  if (!isBoardContextMenuOpen() && tryExec("boardEscapeBack")) return;
   if (view === "board") {
     if (tryExec("newTodo")) return;
     if (tryExec("boardSearch")) return;

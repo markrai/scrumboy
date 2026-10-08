@@ -261,6 +261,7 @@ func TestRefreshReasonsMatchCompatibilityValues(t *testing.T) {
 		{name: "note updated", reason: RefreshNoteUpdated, want: "wall_note_updated"},
 		{name: "note deleted", reason: RefreshNoteDeleted, want: "wall_note_deleted"},
 		{name: "wall replaced", reason: RefreshReplaced, want: "wall_replaced"},
+		{name: "todo deleted", reason: RefreshTodoDeleted, want: "wall_todo_deleted"},
 		{name: "edge created", reason: RefreshEdgeCreated, want: "wall_edge_created"},
 		{name: "edge deleted", reason: RefreshEdgeDeleted, want: "wall_edge_deleted"},
 	}

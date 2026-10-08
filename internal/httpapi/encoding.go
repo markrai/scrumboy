@@ -197,6 +197,7 @@ var validationReasonByMessage = map[string]string{
 	"wall note limit reached":                               "wall_note_limit_reached",
 	"from and to required":                                  "wall_edge_endpoints_required",
 	"self-edges not allowed":                                "self_edges_not_allowed",
+	"invalid story endpoint":                                "wall_edge_invalid_story_endpoint",
 	"wall edge limit reached":                               "wall_edge_limit_reached",
 	"cannot import full scope into anonymous mode":          "import_full_scope_anonymous_forbidden",
 	"Replace All is forbidden in anonymous mode":            "replace_all_anonymous_forbidden",

@@ -13,6 +13,7 @@ import type { WallRole } from "./wall-permissions.js";
 import type { WallDocument } from "./wall-rendering.js";
 
 export type TransientEntry = {
+  storyLocalId?: number;
   lastX: number;
   lastY: number;
   lastSentAt: number;
@@ -30,7 +31,7 @@ export type Mounted = {
   onTransient: (payload: unknown) => void;
   abort: AbortController;
   prevHtmlOverflow: string;
-  /** Per-note transient coalescing. One map entry per actively dragging note. */
+  /** Per-item transient coalescing. Story entries use a `story:{localId}` key. */
   transient: Map<string, TransientEntry>;
   /** Pending single-click color-cycle timers per note. */
   colorTimers: Map<string, ReturnType<typeof setTimeout>>;

@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "이 내보내기 버전은 지원되지 않습니다.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "아바타를 지우려면 null을 사용하세요.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wall 연결선 엔드포인트가 필요합니다.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "유효하지 않은 월 스토리 엔드포인트입니다.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Wall 연결선 한도에 도달했습니다.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Wall 메모 한도에 도달했습니다.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Wall 메모 텍스트가 너무 깁니다.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "상태",
   "shell.bulkEdit.tagsPlaceholder": "태그를 입력하고 Enter를 누르세요",
   "shell.contextMenu.newTodo": "새 Todo",
+
+  "shell.contextMenu.sendToWall": "Wall로 보내기",
   "settings.language.description": "이 브라우저에서 Scrumboy에 사용할 언어를 선택하세요.",
   "settings.language.selectLabel": "언어",
   "settings.language.title": "언어",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "메모를 여기로 드래그하여 삭제",
   "wall.shortcuts.createNote.label": "메모 만들기:",
   "wall.shortcuts.createNote.hint": "캔버스에서 오른쪽 클릭",
+
+  "wall.shortcuts.createStory.label": "Todo 만들기:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + 캔버스에서 오른쪽 클릭",
   "wall.shortcuts.changeColor.label": "색상 변경:",
   "wall.shortcuts.changeColor.hint": "메모를 한 번 클릭",
   "wall.shortcuts.editNote.label": "메모 편집:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "메모 삭제:",
   "wall.shortcuts.deleteNote.hint": "메모를 오른쪽 클릭, 휴지통으로 드래그, 또는 선택 시 Del",
   "wall.shortcuts.drawLines.label": "선 그리기:",
-  "wall.shortcuts.drawLines.hint": "Shift + 메모에서 메모로 드래그",
+  "wall.shortcuts.drawLines.hint": "메모와 스토리 사이에서 Shift + 드래그",
   "wall.shortcuts.multiSelect.label": "다중 선택:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + 메모 왼쪽 클릭 또는 캔버스에서 클릭-드래그로 박스 선택",
   "wall.shortcuts.canvasMode.label": "캔버스 모드:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "캔버스 모드: 선택",
   "wall.mode.select.title": "캔버스 모드: 선택 — 빈 캔버스를 드래그하여 메모 선택",
   "wall.empty.title": "아직 메모가 없습니다.",
-  "wall.empty.hintEditable": "캔버스를 오른쪽 클릭하여 첫 스티키 메모를 추가하세요. Shift를 누른 채 한 메모에서 다른 메모로 드래그하여 연결선을 그리세요.",
+  "wall.empty.hintEditable": "캔버스를 오른쪽 클릭하여 첫 스티키 메모를 추가하세요. Shift를 누른 채 메모와 스토리 사이를 드래그하여 연결선을 그리세요.",
   "wall.empty.hintReadonly": "참여자가 메모를 추가할 때까지 기다리는 중입니다.",
   "wall.note.resize": "메모 크기 조정",
   "wall.note.edit": "메모 텍스트 편집",
   "wall.menu.createTodoFromNote": "메모에서 Todo 만들기",
+
+  "wall.menu.openStory": "Todo 열기",
+
+  "wall.menu.removeStory": "Wall에서 제거",
   "wall.menu.deleteCount": "{count}개 메모 삭제",
   "wall.confirm.deleteNote": "이 메모를 삭제하시겠습니까?",
   "wall.confirm.deleteNotesCount": "{count}개 메모를 삭제하시겠습니까?",
   "wall.confirm.deleteConnection": "이 연결선을 삭제하시겠습니까?",
   "wall.toast.unavailable": "여기서는 Wall을 사용할 수 없습니다.",
   "wall.toast.addNoteFailed": "메모를 추가할 수 없습니다",
+
+  "wall.toast.pinStoryFailed": "Todo를 Wall에 추가하지 못했습니다",
+
+  "wall.toast.moveStoryFailed": "Todo를 이동하지 못했습니다",
+
+  "wall.toast.removeStoryFailed": "Todo를 Wall에서 제거하지 못했습니다",
   "wall.toast.staleReload": "다른 편집자가 이 메모를 변경했습니다 — Wall을 다시 불러옵니다.",
   "wall.toast.updateNoteFailed": "메모를 업데이트할 수 없습니다",
   "wall.toast.deleteNoteFailed": "메모를 삭제할 수 없습니다",

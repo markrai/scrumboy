@@ -389,6 +389,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "This export version is not supported.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "Use null to clear the avatar.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wall edge endpoints are required.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "Invalid Wall story endpoint.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Wall edge limit reached.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Wall note limit reached.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Wall note text is too long.",
@@ -471,6 +472,8 @@
   "shell.bulkEdit.status": "Status",
   "shell.bulkEdit.tagsPlaceholder": "Type tag and press Enter",
   "shell.contextMenu.newTodo": "New Todo",
+
+  "shell.contextMenu.sendToWall": "Send to Wall",
   "settings.language.description": "Choose the language used for Scrumboy on this browser.",
   "settings.language.selectLabel": "Language",
   "settings.language.title": "Language",
@@ -1260,6 +1263,10 @@
   "wall.shell.trashAlt": "Drag a note here to delete",
   "wall.shortcuts.createNote.label": "create note:",
   "wall.shortcuts.createNote.hint": "right-click on canvas",
+
+  "wall.shortcuts.createStory.label": "create story:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + right-click on canvas",
   "wall.shortcuts.changeColor.label": "change color:",
   "wall.shortcuts.changeColor.hint": "single-click note",
   "wall.shortcuts.editNote.label": "edit note:",
@@ -1267,7 +1274,7 @@
   "wall.shortcuts.deleteNote.label": "delete note:",
   "wall.shortcuts.deleteNote.hint": "right-click note, drag to trash, or Del when selected",
   "wall.shortcuts.drawLines.label": "draw lines:",
-  "wall.shortcuts.drawLines.hint": "shift + drag from note to note",
+  "wall.shortcuts.drawLines.hint": "shift + drag between notes and stories",
   "wall.shortcuts.multiSelect.label": "multiple select:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + left-click note or click-drag on canvas to box-select notes",
   "wall.shortcuts.canvasMode.label": "canvas mode:",
@@ -1281,17 +1288,27 @@
   "wall.mode.select.label": "Canvas mode: Select",
   "wall.mode.select.title": "Canvas mode: Select — drag empty canvas to select notes",
   "wall.empty.title": "No notes yet.",
-  "wall.empty.hintEditable": "Right-click the canvas to add your first sticky note. Hold Shift and drag from one note to another to draw a connection.",
+  "wall.empty.hintEditable": "Right-click the canvas to add your first sticky note. Hold Shift and drag between notes and stories to draw a connection.",
   "wall.empty.hintReadonly": "Waiting for a contributor to add one.",
   "wall.note.resize": "Resize note",
   "wall.note.edit": "Edit note text",
   "wall.menu.createTodoFromNote": "Create Todo from Note",
+
+  "wall.menu.openStory": "Open Story",
+
+  "wall.menu.removeStory": "Remove from Wall",
   "wall.menu.deleteCount": "Delete {count} notes",
   "wall.confirm.deleteNote": "Delete this note?",
   "wall.confirm.deleteNotesCount": "Delete {count} notes?",
   "wall.confirm.deleteConnection": "Delete this connection?",
   "wall.toast.unavailable": "Wall is not available here.",
   "wall.toast.addNoteFailed": "Could not add note",
+
+  "wall.toast.pinStoryFailed": "Could not add story to Wall",
+
+  "wall.toast.moveStoryFailed": "Could not move story",
+
+  "wall.toast.removeStoryFailed": "Could not remove story from Wall",
   "wall.toast.staleReload": "Another editor changed this note — reloading wall.",
   "wall.toast.updateNoteFailed": "Could not update note",
   "wall.toast.deleteNoteFailed": "Could not delete note",

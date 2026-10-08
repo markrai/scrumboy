@@ -1,0 +1,64 @@
+import { measureStoryCanvasSize } from "./wall-story-geometry.js";
+const STORY_ENDPOINT_PREFIX = "story:";
+export function formatWallStoryEndpoint(storyLocalId) {
+    return `${STORY_ENDPOINT_PREFIX}${storyLocalId}`;
+}
+export function parseWallEdgeEndpoint(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed)
+        return null;
+    if (trimmed.startsWith(STORY_ENDPOINT_PREFIX)) {
+        const rest = trimmed.slice(STORY_ENDPOINT_PREFIX.length);
+        if (!/^\d+$/.test(rest))
+            return null;
+        const storyLocalId = Number(rest);
+        if (!Number.isSafeInteger(storyLocalId) || storyLocalId <= 0)
+            return null;
+        return {
+            kind: "story",
+            noteId: null,
+            storyLocalId,
+            canonical: formatWallStoryEndpoint(storyLocalId),
+        };
+    }
+    return { kind: "note", noteId: trimmed, storyLocalId: null, canonical: trimmed };
+}
+export function canonicalEndpointForElement(target) {
+    const storyEl = target?.closest(".wall-story");
+    if (storyEl) {
+        const localId = Number(storyEl.dataset.storyLocalId);
+        if (!Number.isSafeInteger(localId) || localId <= 0)
+            return null;
+        return formatWallStoryEndpoint(localId);
+    }
+    const noteEl = target?.closest(".wall-note");
+    const noteId = noteEl?.dataset.noteId || "";
+    if (noteEl && noteId)
+        return noteId;
+    return null;
+}
+export function resolveWallEdgeElement(surface, endpoint) {
+    if (endpoint.kind === "story") {
+        return surface.querySelector(`.wall-story[data-story-local-id="${endpoint.storyLocalId}"]`);
+    }
+    return surface.querySelector(`.wall-note[data-note-id="${CSS.escape(endpoint.noteId ?? "")}"]`);
+}
+export function storyEdgeCenter(surface, storyLocalId, zoom) {
+    const endpoint = parseWallEdgeEndpoint(formatWallStoryEndpoint(storyLocalId));
+    if (!endpoint)
+        return null;
+    const center = wallEdgeEndpointCenter(surface, endpoint, zoom);
+    if (!center)
+        return null;
+    return { endpoint: endpoint.canonical, cx: center.cx, cy: center.cy };
+}
+export function wallEdgeEndpointCenter(surface, endpoint, zoom) {
+    const el = resolveWallEdgeElement(surface, endpoint);
+    if (!el)
+        return null;
+    if (endpoint.kind === "story") {
+        const size = measureStoryCanvasSize(el, zoom);
+        return { cx: el.offsetLeft + size.width / 2, cy: el.offsetTop + size.height / 2 };
+    }
+    return { cx: el.offsetLeft + el.offsetWidth / 2, cy: el.offsetTop + el.offsetHeight / 2 };
+}

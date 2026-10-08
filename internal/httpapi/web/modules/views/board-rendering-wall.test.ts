@@ -43,8 +43,8 @@ function render(args: {
 }
 
 describe('wall topbar gating', () => {
-  it('renders the wall button on durable boards for contributors and maintainers', () => {
-    for (const role of ['maintainer', 'contributor']) {
+  it('renders the wall button on durable boards for viewers, contributors, and maintainers', () => {
+    for (const role of ['maintainer', 'contributor', 'viewer']) {
       const html = render({ role, isAnonymousTempBoard: false, wallEnabled: true });
       expect(html).toContain('id="wallBtn"');
       expect(html).toContain('/postit.svg');
@@ -66,9 +66,9 @@ describe('wall topbar gating', () => {
     expect(html).not.toContain('id="wallBtn"');
   });
 
-  it('hides the wall button for viewers', () => {
+  it('shows the wall button for viewers so pinned stories remain readable', () => {
     const html = render({ role: 'viewer', isAnonymousTempBoard: false, wallEnabled: true });
-    expect(html).not.toContain('id="wallBtn"');
+    expect(html).toContain('id="wallBtn"');
   });
 
   it('hides the wall button on mobile even for maintainers', () => {

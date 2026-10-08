@@ -43,7 +43,7 @@ import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
-import { setContextMenuStatus, setContextMenuRole } from '../features/context-menu-button.js';
+import { setContextMenuStatus, setContextMenuRole, setContextMenuStory } from '../features/context-menu-button.js';
 import type { BoardMember } from '../state/state.js';
 import { Board, Todo, MobileTab, NO_PRIORITY_FILTER_VALUE, TodoStatus, LanePageResponse } from '../types.js';
 import {
@@ -516,6 +516,24 @@ function attachBoardDelegationHandlers(): void {
         (contextMenuNewTodo as HTMLElement).style.display =
           isTemporaryBoard(getBoard()) || currentUserProjectRole === "maintainer" ? "" : "none";
       }
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-todo-local-id]");
+      const sendToWall = document.getElementById("contextMenuSendToWall") as HTMLElement | null;
+      const localId = Number(card?.dataset.todoLocalId);
+      const projectId = getProjectId();
+      const slug = getSlug();
+      const canSendToWall =
+        !!card &&
+        Number.isSafeInteger(localId) &&
+        localId > 0 &&
+        projectId != null &&
+        !!slug &&
+        getWallEnabled() &&
+        !isTemporaryBoard(getBoard()) &&
+        (currentUserProjectRole === "maintainer" || currentUserProjectRole === "contributor");
+      setContextMenuStory(canSendToWall
+        ? { localId, projectId: projectId as number, slug: slug as string, role: currentUserProjectRole }
+        : null);
+      if (sendToWall) sendToWall.style.display = canSendToWall ? "" : "none";
       const mouseEvent = e as MouseEvent;
       (contextMenu as HTMLElement).style.display = "block";
       (contextMenu as HTMLElement).style.left = `${mouseEvent.pageX}px`;

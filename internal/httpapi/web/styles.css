@@ -6790,6 +6790,38 @@ button.omni-tag-pill:focus-visible {
 }
 .wall-surface--readonly .wall-note { cursor: default; }
 
+.wall-story {
+  position: absolute;
+  box-sizing: border-box;
+  min-height: 88px;
+  z-index: 4;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  transition: box-shadow 120ms ease, transform 120ms ease, outline-color 120ms ease;
+}
+.wall-story--dragging {
+  z-index: 1000;
+  cursor: grabbing;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  transition: none;
+}
+.wall-story--highlight {
+  outline: 3px solid var(--accent, #5aa3ff);
+  outline-offset: 4px;
+  animation: wall-story-pulse 700ms ease-in-out 2;
+}
+.wall-story--archived {
+  opacity: 0.62;
+  filter: saturate(0.55);
+}
+.wall-surface--readonly .wall-story { cursor: pointer; }
+.wall-story .card__content { pointer-events: none; }
+@keyframes wall-story-pulse {
+  50% { transform: scale(1.025); }
+}
+
 /* Shared inner inset so display ↔ edit does not move text; breathing room
    between copy and the editor’s inset edge (same numbers on both). */
 .wall-note__display,
@@ -6888,7 +6920,8 @@ button.omni-tag-pill:focus-visible {
 /* Note right-click context menu. Reuses `.context-menu` base styling; this
    override raises it above wall notes and the edge overlay when painted
    inside the wall `<dialog>` top-layer. */
-.wall-note-context-menu {
+.wall-note-context-menu,
+.wall-story-context-menu {
   z-index: 1300;
 }
 

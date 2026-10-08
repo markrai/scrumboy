@@ -115,6 +115,30 @@ export function buildChipsHTML(data) {
     return data.map(buildChipHTML).join("");
 }
 export function renderTodoCard(todo, columnColor, membersByUserId, opts) {
+    const content = renderStoryCardContent(todo, membersByUserId, opts);
+    const borderStyle = columnColor ? ` style="border-color:${escapeHTML(columnColor)}"` : "";
+    const selectedClass = opts?.selectedIds?.has(todo.id) ? " card--selected" : "";
+    const dragHandleHTML = `
+      <div class="card__drag-handle" aria-label="${escapeHTML(t("board.todo.dragCard"))}" data-i18n-aria-label="board.todo.dragCard">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="4" cy="3" r="1.5"/>
+          <circle cx="4" cy="8" r="1.5"/>
+          <circle cx="4" cy="13" r="1.5"/>
+          <circle cx="12" cy="3" r="1.5"/>
+          <circle cx="12" cy="8" r="1.5"/>
+          <circle cx="12" cy="13" r="1.5"/>
+        </svg>
+      </div>
+    `;
+    return `
+    <button class="card card--${todo.status.toLowerCase()}${selectedClass}"${borderStyle} data-todo-id="${todo.id}" data-todo-local-id="${todo.localId}"${todo.assigneeUserId != null ? ` data-assignee-user-id="${todo.assigneeUserId}"` : ""} id="todo_${todo.id}" type="button">
+      ${content}
+      ${dragHandleHTML}
+    </button>
+  `;
+}
+/** Shared canonical story content used by both board cards and Wall pins. */
+export function renderStoryCardContent(todo, membersByUserId, opts) {
     const showPoints = !!opts?.showPointsMode && todo.estimationPoints != null;
     const tagColors = opts?.tagColors ?? null;
     const tags = (todo.tags || [])
@@ -125,7 +149,6 @@ export function renderTodoCard(todo, columnColor, membersByUserId, opts) {
         return `<span class="tag" ${colorStyle}>${escapeHTML(tagName)}</span>`;
     })
         .join("");
-    const borderStyle = columnColor ? ` style="border-color:${escapeHTML(columnColor)}"` : "";
     const assignee = membersByUserId != null && todo.assigneeUserId != null ? membersByUserId[todo.assigneeUserId] : null;
     const avatarHTML = assignee
         ? `<div class="todo-avatar" title="${escapeHTML(assignee.name || assignee.email || '')}">${renderAvatarContent({ name: assignee.name, email: assignee.email, image: assignee.image })}</div>`
@@ -142,21 +165,7 @@ export function renderTodoCard(todo, columnColor, membersByUserId, opts) {
         ? `<span class="card__priority"${priorityStyle}${titleAttr(FIELD_TOOLTIPS.priority)} aria-label="${escapeHTML(t("todo.fields.priority"))}: ${escapeHTML(priorityTier.name)}">${escapeHTML(priorityTier.name)}</span>`
         : "";
     const footerContent = priorityHTML + pointsHTML + avatarHTML;
-    const selectedClass = opts?.selectedIds?.has(todo.id) ? " card--selected" : "";
-    const dragHandleHTML = `
-      <div class="card__drag-handle" aria-label="${escapeHTML(t("board.todo.dragCard"))}" data-i18n-aria-label="board.todo.dragCard">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <circle cx="4" cy="3" r="1.5"/>
-          <circle cx="4" cy="8" r="1.5"/>
-          <circle cx="4" cy="13" r="1.5"/>
-          <circle cx="12" cy="3" r="1.5"/>
-          <circle cx="12" cy="8" r="1.5"/>
-          <circle cx="12" cy="13" r="1.5"/>
-        </svg>
-      </div>
-    `;
     return `
-    <button class="card card--${todo.status.toLowerCase()}${selectedClass}"${borderStyle} data-todo-id="${todo.id}" data-todo-local-id="${todo.localId}"${todo.assigneeUserId != null ? ` data-assignee-user-id="${todo.assigneeUserId}"` : ""} id="todo_${todo.id}" type="button">
       <div class="card__content">
         <div class="card__title-row">
           <span class="card__id-inline">#${todo.localId}</span>
@@ -173,8 +182,6 @@ export function renderTodoCard(todo, columnColor, membersByUserId, opts) {
   </div>
 ` : ""}
       </div>
-      ${dragHandleHTML}
-    </button>
   `;
 }
 export function buildBoardColumnsHtml(args) {
@@ -266,7 +273,7 @@ export function buildTopbarHtml(args) {
     const wallButtonHTML = wallEnabled &&
         !isMobile &&
         !isTemporaryBoard(board) &&
-        (currentUserProjectRole === "maintainer" || currentUserProjectRole === "contributor")
+        (currentUserProjectRole === "maintainer" || currentUserProjectRole === "contributor" || currentUserProjectRole === "viewer")
         ? `<button class="btn btn--ghost" type="button" id="wallBtn" title="${escapeHTML(t("board.actions.openWall"))}" aria-label="${escapeHTML(t("board.actions.openWall"))}" data-i18n-title="board.actions.openWall" data-i18n-aria-label="board.actions.openWall"><img src="/postit.svg" alt="" width="20" height="20" decoding="async" /></button>`
         : "";
     const backLabelAttr = backLabelKey ? ` data-i18n-text="${backLabelKey}"` : "";

@@ -242,15 +242,74 @@ type LinkExport struct {
 }
 
 // WallExport represents the sticky-note wall document (Scrumbaby) for a project.
-// The wall is a single JSON blob per project (one-to-one with projects); IDs
-// inside are opaque strings, so whole-document copy is safe across projects
-// without id remapping. UpdatedAt is intentionally omitted: each import stamps
-// its own import time on write. A missing field on an imported project means
+// The wall is a single JSON blob per project (one-to-one with projects). Note
+// endpoints are opaque strings, so whole-document copy is safe across projects
+// without id remapping; story endpoints ("story:<todo local ID>") are portable
+// project-scoped references resolved against the imported placements on
+// import. UpdatedAt is intentionally omitted: each import stamps its own
+// import time on write. A missing field on an imported project means
 // "no wall data in this backup" - existing walls on the target are preserved.
 type WallExport struct {
-	Notes   []WallNote `json:"notes"`
-	Edges   []WallEdge `json:"edges,omitempty"`
-	Version int64      `json:"version,omitempty"`
+	Notes   []WallNote                 `json:"notes"`
+	Edges   []WallEdge                 `json:"edges,omitempty"`
+	Stories []WallStoryPlacementExport `json:"stories,omitempty"`
+	// StoriesPresent distinguishes a legacy omission from an explicitly empty
+	// current-format placement set. Merge imports preserve existing placements
+	// only for the legacy omission.
+	StoriesPresent bool  `json:"-"`
+	Version        int64 `json:"version,omitempty"`
+}
+
+func (w WallExport) MarshalJSON() ([]byte, error) {
+	type alias WallExport
+	raw, err := json.Marshal(alias(w))
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	present := w.StoriesPresent || w.Stories != nil
+	if !present {
+		delete(fields, "stories")
+	} else {
+		stories := w.Stories
+		if stories == nil {
+			stories = []WallStoryPlacementExport{}
+		}
+		storiesJSON, err := json.Marshal(stories)
+		if err != nil {
+			return nil, err
+		}
+		fields["stories"] = storiesJSON
+	}
+	return json.Marshal(fields)
+}
+
+func (w *WallExport) UnmarshalJSON(data []byte) error {
+	type alias WallExport
+	var decoded alias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, present := fields["stories"]
+	*w = WallExport(decoded)
+	w.StoriesPresent = present
+	return nil
+}
+
+// WallStoryPlacementExport keeps Wall spatial state portable by referring to
+// the Todo's project-local identity, never its internal database id.
+type WallStoryPlacementExport struct {
+	LocalID int64   `json:"localId"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
+	Version int64   `json:"version,omitempty"`
 }
 
 // resolveImportDoneAt returns the done_at value for import. Uses export DoneAt when present;
@@ -972,13 +1031,24 @@ func (s *Store) exportWallForProject(ctx context.Context, projectID int64) (*Wal
 	if err != nil {
 		return nil, fmt.Errorf("get wall: %w", err)
 	}
-	if len(wall.Notes) == 0 && len(wall.Edges) == 0 {
+	if len(wall.Notes) == 0 && len(wall.Edges) == 0 && len(wall.Stories) == 0 {
 		return nil, nil
 	}
+	stories := make([]WallStoryPlacementExport, 0, len(wall.Stories))
+	for _, placement := range wall.Stories {
+		stories = append(stories, WallStoryPlacementExport{
+			LocalID: placement.TodoLocalID,
+			X:       placement.X,
+			Y:       placement.Y,
+			Version: placement.Version,
+		})
+	}
 	return &WallExport{
-		Notes:   wall.Notes,
-		Edges:   wall.Edges,
-		Version: wall.Version,
+		Notes:          wall.Notes,
+		Edges:          wall.Edges,
+		Stories:        stories,
+		StoriesPresent: true,
+		Version:        wall.Version,
 	}, nil
 }
 
@@ -1624,7 +1694,7 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 		// Replace mode: a missing wall field in the backup produces no wall row,
 		// which matches the "nuke & restore" semantics (old rows were deleted by
 		// the project-level swap; ON DELETE CASCADE clears the wall with them).
-		if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall); err != nil {
+		if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall, &result.Warnings); err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 		}
@@ -2192,7 +2262,7 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		// the target project's existing wall untouched so upgraders don't lose
 		// work done between export and import.
 		if pExport.Wall != nil {
-			if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall); err != nil {
+			if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall, &result.Warnings); err != nil {
 				return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 			}
 		}
@@ -2486,7 +2556,7 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		// Copy mode: always write the wall block verbatim when present. The
 		// target project was just created so there is no pre-existing wall
 		// to merge with.
-		if err := upsertWallForImportTx(ctx, tx, newProjectID, pExport.Wall); err != nil {
+		if err := upsertWallForImportTx(ctx, tx, newProjectID, pExport.Wall, &result.Warnings); err != nil {
 			return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 		}
 

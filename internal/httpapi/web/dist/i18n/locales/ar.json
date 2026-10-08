@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "إصدار التصدير هذا غير مدعوم.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "استخدم null لمسح الصورة الرمزية.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "نقاط نهاية حافة الجدار مطلوبة.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "نقطة نهاية قصة الجدار غير صالحة.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "تم بلوغ حد حواف الجدار.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "تم بلوغ حد ملاحظات الجدار.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "نص ملاحظة الجدار طويل جدًا.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "الحالة",
   "shell.bulkEdit.tagsPlaceholder": "اكتب الوسم واضغط Enter",
   "shell.contextMenu.newTodo": "مهمة جديدة",
+
+  "shell.contextMenu.sendToWall": "إرسال إلى الجدار",
   "settings.language.description": "اختر اللغة المستخدمة لـ Scrumboy في هذا المتصفح.",
   "settings.language.selectLabel": "اللغة",
   "settings.language.title": "اللغة",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "اسحب ملاحظة هنا للحذف",
   "wall.shortcuts.createNote.label": "إنشاء ملاحظة:",
   "wall.shortcuts.createNote.hint": "انقر بالزر الأيمن على اللوحة",
+
+  "wall.shortcuts.createStory.label": "إنشاء مهمة:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + انقر بزر الفأرة الأيمن على اللوحة",
   "wall.shortcuts.changeColor.label": "تغيير اللون:",
   "wall.shortcuts.changeColor.hint": "نقرة واحدة على الملاحظة",
   "wall.shortcuts.editNote.label": "تحرير الملاحظة:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "حذف الملاحظة:",
   "wall.shortcuts.deleteNote.hint": "انقر بالزر الأيمن على الملاحظة أو اسحبها إلى سلة المهملات أو Del عند التحديد",
   "wall.shortcuts.drawLines.label": "رسم خطوط:",
-  "wall.shortcuts.drawLines.hint": "Shift + اسحب من ملاحظة إلى ملاحظة",
+  "wall.shortcuts.drawLines.hint": "Shift + السحب بين الملاحظات والقصص",
   "wall.shortcuts.multiSelect.label": "تحديد متعدد:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + نقرة يسار على ملاحظة أو انقر واسحب على اللوحة لتحديد بالمربع",
   "wall.shortcuts.canvasMode.label": "وضع اللوحة:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "وضع اللوحة: التحديد",
   "wall.mode.select.title": "وضع اللوحة: التحديد — اسحب المساحة الفارغة لتحديد الملاحظات",
   "wall.empty.title": "لا توجد ملاحظات بعد.",
-  "wall.empty.hintEditable": "انقر بالزر الأيمن على اللوحة لإضافة أول ملاحظة لاصقة. أمسك Shift واسحب من ملاحظة إلى أخرى لرسم اتصال.",
+  "wall.empty.hintEditable": "انقر بالزر الأيمن على اللوحة لإضافة أول ملاحظة لاصقة. أمسك Shift واسحب بين الملاحظات والقصص لرسم اتصال.",
   "wall.empty.hintReadonly": "بانتظار أن يضيف مساهم واحدة.",
   "wall.note.resize": "تغيير حجم الملاحظة",
   "wall.note.edit": "تحرير نص الملاحظة",
   "wall.menu.createTodoFromNote": "إنشاء مهمة من الملاحظة",
+
+  "wall.menu.openStory": "فتح المهمة",
+
+  "wall.menu.removeStory": "إزالة من الجدار",
   "wall.menu.deleteCount": "حذف {count} ملاحظة",
   "wall.confirm.deleteNote": "حذف هذه الملاحظة؟",
   "wall.confirm.deleteNotesCount": "حذف {count} ملاحظة؟",
   "wall.confirm.deleteConnection": "حذف هذا الاتصال؟",
   "wall.toast.unavailable": "الجدار غير متاح هنا.",
   "wall.toast.addNoteFailed": "تعذّرت إضافة الملاحظة",
+
+  "wall.toast.pinStoryFailed": "تعذّرت إضافة المهمة إلى الجدار",
+
+  "wall.toast.moveStoryFailed": "تعذّر نقل المهمة",
+
+  "wall.toast.removeStoryFailed": "تعذّرت إزالة المهمة من الجدار",
   "wall.toast.staleReload": "غيّر محرر آخر هذه الملاحظة — جارٍ إعادة تحميل الجدار.",
   "wall.toast.updateNoteFailed": "تعذّر تحديث الملاحظة",
   "wall.toast.deleteNoteFailed": "تعذّر حذف الملاحظة",

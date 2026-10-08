@@ -7,8 +7,23 @@ import (
 	"testing"
 
 	apprefresh "scrumboy/internal/application/refresh"
+	wallapp "scrumboy/internal/application/wall"
 	"scrumboy/internal/store"
 )
+
+type legacyDeleteWallRefreshCall struct {
+	ctx       context.Context
+	projectID int64
+	reason    wallapp.RefreshReason
+}
+
+type legacyDeleteWallRefreshFake struct {
+	calls []legacyDeleteWallRefreshCall
+}
+
+func (f *legacyDeleteWallRefreshFake) PublishWallRefresh(ctx context.Context, projectID int64, reason wallapp.RefreshReason) {
+	f.calls = append(f.calls, legacyDeleteWallRefreshCall{ctx: ctx, projectID: projectID, reason: reason})
+}
 
 var (
 	_ LegacyDeleteProjectStore = (*store.Store)(nil)
@@ -215,6 +230,60 @@ func TestLegacyDeleteServiceDeleteFailureReturnsSameErrorAndSkipsRefresh(t *test
 	}
 	if len(projects.calls) != 1 || len(deletes.calls) != 1 || len(refresh.calls) != 0 {
 		t.Fatalf("calls = lookup %d delete %d refresh %d, want 1, 1, 0", len(projects.calls), len(deletes.calls), len(refresh.calls))
+	}
+}
+
+func TestLegacyDeleteServicePublishesOneWallRefresh(t *testing.T) {
+	type contextKey string
+	const key contextKey = "request"
+	ctx := context.WithValue(context.Background(), key, "bound")
+	projects := &legacyDeleteProjectLookupFake{projectID: 17}
+	deletes := &legacyDeleteStoreFake{}
+	refresh := &legacyDeleteRefreshFake{}
+	wall := &legacyDeleteWallRefreshFake{}
+	service := NewLegacyDeleteService(LegacyDeleteServiceDependencies{
+		Projects:    projects,
+		Delete:      deletes,
+		Refresh:     refresh,
+		WallRefresh: wall,
+	})
+
+	prepared, err := service.Prepare(ctx, LegacyDeleteTarget{TodoID: 7001, Mode: store.ModeFull})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if err := prepared.Delete(); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if len(wall.calls) != 1 {
+		t.Fatalf("wall refresh calls = %d, want 1", len(wall.calls))
+	}
+	if got := wall.calls[0]; got.ctx != ctx || got.ctx.Value(key) != "bound" || got.projectID != 17 || got.reason != wallapp.RefreshTodoDeleted {
+		t.Fatalf("wall refresh = %+v, want bound context, project 17, reason %q", got, wallapp.RefreshTodoDeleted)
+	}
+}
+
+func TestLegacyDeleteServiceDeleteFailureSkipsWallRefresh(t *testing.T) {
+	projects := &legacyDeleteProjectLookupFake{projectID: 17}
+	deletes := &legacyDeleteStoreFake{err: errors.New("legacy global delete failed")}
+	refresh := &legacyDeleteRefreshFake{}
+	wall := &legacyDeleteWallRefreshFake{}
+	service := NewLegacyDeleteService(LegacyDeleteServiceDependencies{
+		Projects:    projects,
+		Delete:      deletes,
+		Refresh:     refresh,
+		WallRefresh: wall,
+	})
+
+	prepared, err := service.Prepare(context.Background(), LegacyDeleteTarget{TodoID: 7001, Mode: store.ModeFull})
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if err := prepared.Delete(); err == nil {
+		t.Fatal("Delete unexpectedly succeeded")
+	}
+	if len(wall.calls) != 0 {
+		t.Fatalf("wall refresh calls = %d, want 0", len(wall.calls))
 	}
 }
 

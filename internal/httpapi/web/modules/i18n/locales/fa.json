@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "این نسخهٔ export پشتیبانی نمی‌شود.",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "برای پاک کردن avatar از null استفاده کنید.",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wall edge endpoints لازم است.",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "نقطه پایانی استوری دیوار نامعتبر است.",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "حد Wall edge پر شد.",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "حد Wall note پر شد.",
   "errors.VALIDATION_ERROR.wall_note_too_long": "متن یادداشت دیوار خیلی طولانی است.",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "وضعیت",
   "shell.bulkEdit.tagsPlaceholder": "tag را تایپ کنید و Enter بزنید",
   "shell.contextMenu.newTodo": "Todo جدید",
+
+  "shell.contextMenu.sendToWall": "ارسال به دیوار",
   "settings.language.description": "زبانی که Scrumboy در این مرورگر با آن نمایش داده می‌شود را انتخاب کنید.",
   "settings.language.selectLabel": "زبان",
   "settings.language.title": "زبان",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "یادداشت را اینجا بکشید تا حذف شود",
   "wall.shortcuts.createNote.label": "ایجاد یادداشت:",
   "wall.shortcuts.createNote.hint": "right-click روی canvas",
+
+  "wall.shortcuts.createStory.label": "ایجاد Todo:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + کلیک راست روی بوم",
   "wall.shortcuts.changeColor.label": "تغییر رنگ:",
   "wall.shortcuts.changeColor.hint": "single-click روی یادداشت",
   "wall.shortcuts.editNote.label": "ویرایش یادداشت:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "حذف یادداشت:",
   "wall.shortcuts.deleteNote.hint": "right-click روی یادداشت، drag به سطل زباله، یا Del وقتی انتخاب شده",
   "wall.shortcuts.drawLines.label": "کشیدن خط:",
-  "wall.shortcuts.drawLines.hint": "Shift + drag از یک یادداشت به یادداشت دیگر",
+  "wall.shortcuts.drawLines.hint": "Shift + کشیدن بین یادداشت‌ها و استوری‌ها",
   "wall.shortcuts.multiSelect.label": "انتخاب چندگانه:",
   "wall.shortcuts.multiSelect.hint": "Ctrl/Cmd + left-click روی یادداشت، یا click-drag روی canvas برای box-select کردن یادداشت‌ها",
   "wall.shortcuts.canvasMode.label": "حالت canvas:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "حالت canvas: Select",
   "wall.mode.select.title": "حالت canvas: Select — canvas خالی را بکشید تا یادداشت انتخاب شود",
   "wall.empty.title": "هنوز یادداشتی نیست.",
-  "wall.empty.hintEditable": "برای اضافه کردن اولین sticky note، روی canvas راست‌کلیک کنید. Shift را نگه دارید و از یک یادداشت به یادداشت دیگر drag کنید تا connection بکشید.",
+  "wall.empty.hintEditable": "برای اضافه کردن اولین sticky note، روی canvas راست‌کلیک کنید. Shift را نگه دارید و بین یادداشت‌ها و استوری‌ها drag کنید تا connection بکشید.",
   "wall.empty.hintReadonly": "منتظریم یک contributor یادداشت اضافه کند.",
   "wall.note.resize": "تغییر اندازهٔ یادداشت",
   "wall.note.edit": "ویرایش متن یادداشت",
   "wall.menu.createTodoFromNote": "ایجاد Todo از یادداشت",
+
+  "wall.menu.openStory": "باز کردن Todo",
+
+  "wall.menu.removeStory": "حذف از دیوار",
   "wall.menu.deleteCount": "حذف {count} یادداشت",
   "wall.confirm.deleteNote": "این یادداشت حذف شود؟",
   "wall.confirm.deleteNotesCount": "{count} یادداشت حذف شود؟",
   "wall.confirm.deleteConnection": "این اتصال حذف شود؟",
   "wall.toast.unavailable": "Wall اینجا در دسترس نیست.",
   "wall.toast.addNoteFailed": "یادداشت اضافه نشد",
+
+  "wall.toast.pinStoryFailed": "Todo به دیوار اضافه نشد",
+
+  "wall.toast.moveStoryFailed": "Todo جابه‌جا نشد",
+
+  "wall.toast.removeStoryFailed": "Todo از دیوار حذف نشد",
   "wall.toast.staleReload": "یک editor دیگر این یادداشت را تغییر داد — wall دوباره بارگذاری می‌شود.",
   "wall.toast.updateNoteFailed": "یادداشت به‌روزرسانی نشد",
   "wall.toast.deleteNoteFailed": "یادداشت حذف نشد",

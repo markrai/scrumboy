@@ -394,6 +394,7 @@
   "errors.VALIDATION_ERROR.unsupported_export_version": "এই export সংস্করণ সমর্থিত নয়।",
   "errors.VALIDATION_ERROR.use_null_to_clear_avatar": "avatar মুছতে null ব্যবহার করুন।",
   "errors.VALIDATION_ERROR.wall_edge_endpoints_required": "Wall edge endpoints প্রয়োজন।",
+  "errors.VALIDATION_ERROR.wall_edge_invalid_story_endpoint": "অবৈধ ওয়াল স্টোরি এন্ডপয়েন্ট।",
   "errors.VALIDATION_ERROR.wall_edge_limit_reached": "Wall edge সীমা পূর্ণ।",
   "errors.VALIDATION_ERROR.wall_note_limit_reached": "Wall note সীমা পূর্ণ।",
   "errors.VALIDATION_ERROR.wall_note_too_long": "Wall note পাঠ খুব দীর্ঘ।",
@@ -476,6 +477,8 @@
   "shell.bulkEdit.status": "স্ট্যাটাস",
   "shell.bulkEdit.tagsPlaceholder": "ট্যাগ লিখে Enter চাপুন",
   "shell.contextMenu.newTodo": "নতুন Todo",
+
+  "shell.contextMenu.sendToWall": "ওয়ালে পাঠান",
   "settings.language.description": "এই ব্রাউজারে Scrumboy-এর ভাষা বেছে নিন।",
   "settings.language.selectLabel": "ভাষা",
   "settings.language.title": "ভাষা",
@@ -1247,6 +1250,10 @@
   "wall.shell.trashAlt": "মুছতে নোট এখানে টেনে আনুন",
   "wall.shortcuts.createNote.label": "নোট তৈরি:",
   "wall.shortcuts.createNote.hint": "canvas-এ right-click",
+
+  "wall.shortcuts.createStory.label": "Todo তৈরি:",
+
+  "wall.shortcuts.createStory.hint": "Ctrl + ক্যানভাসে রাইট-ক্লিক",
   "wall.shortcuts.changeColor.label": "রং বদল:",
   "wall.shortcuts.changeColor.hint": "নোটে single-click",
   "wall.shortcuts.editNote.label": "নোট সম্পাদনা:",
@@ -1254,7 +1261,7 @@
   "wall.shortcuts.deleteNote.label": "নোট মুছুন:",
   "wall.shortcuts.deleteNote.hint": "নোটে right-click, trash-এ drag, বা নির্বাচিত থাকলে Del",
   "wall.shortcuts.drawLines.label": "লাইন:",
-  "wall.shortcuts.drawLines.hint": "shift + নোট থেকে নোটে drag",
+  "wall.shortcuts.drawLines.hint": "নোট ও স্টোরির মধ্যে Shift + ড্র্যাগ",
   "wall.shortcuts.multiSelect.label": "একাধিক নির্বাচন:",
   "wall.shortcuts.multiSelect.hint": "ctrl/cmd + নোটে left-click বা box-select-এ canvas click-drag",
   "wall.shortcuts.canvasMode.label": "ক্যানভাস মোড:",
@@ -1268,17 +1275,27 @@
   "wall.mode.select.label": "ক্যানভাস মোড: Select",
   "wall.mode.select.title": "ক্যানভাস মোড: Select — নোট বাছতে খালি ক্যানভাস drag করুন",
   "wall.empty.title": "এখনো কোনো নোট নেই।",
-  "wall.empty.hintEditable": "প্রথম sticky note যোগ করতে canvas-এ right-click। এক নোট থেকে অন্যটিতে Shift ধরে drag করে সংযোগ।",
+  "wall.empty.hintEditable": "প্রথম sticky note যোগ করতে canvas-এ right-click। নোট ও স্টোরির মধ্যে Shift ধরে drag করে সংযোগ।",
   "wall.empty.hintReadonly": "কোনো contributor নোট যোগ করলে এখানে দেখাবে।",
   "wall.note.resize": "নোট আকার বদল",
   "wall.note.edit": "নোট পাঠ সম্পাদনা",
   "wall.menu.createTodoFromNote": "নোট থেকে Todo তৈরি",
+
+  "wall.menu.openStory": "Todo খুলুন",
+
+  "wall.menu.removeStory": "ওয়াল থেকে সরান",
   "wall.menu.deleteCount": "{count}টি নোট মুছুন",
   "wall.confirm.deleteNote": "এই নোট মুছবেন?",
   "wall.confirm.deleteNotesCount": "{count}টি নোট মুছবেন?",
   "wall.confirm.deleteConnection": "এই সংযোগ মুছবেন?",
   "wall.toast.unavailable": "এখানে Wall নেই।",
   "wall.toast.addNoteFailed": "নোট যোগ হয়নি",
+
+  "wall.toast.pinStoryFailed": "Todo-টি ওয়ালে যোগ করা যায়নি",
+
+  "wall.toast.moveStoryFailed": "Todo-টি সরানো যায়নি",
+
+  "wall.toast.removeStoryFailed": "Todo-টি ওয়াল থেকে সরানো যায়নি",
   "wall.toast.staleReload": "অন্য editor নোট বদলেছে — wall পুনরায় লোড।",
   "wall.toast.updateNoteFailed": "নোট আপডেট হয়নি",
   "wall.toast.deleteNoteFailed": "নোট মুছতে পারেনি",

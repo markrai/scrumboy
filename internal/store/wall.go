@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,28 +28,43 @@ type WallNote struct {
 	Version int64   `json:"version"`
 }
 
-// WallEdge is a simple connection between two notes (Postbaby-parity
-// Shift+drag edges). Edges are intentionally undirected and have no
-// per-edge version; they are write-once / delete-once. The document-level
-// `version` on Wall is the only realtime fingerprint.
+// WallEdge is a simple connection between two wall endpoints: raw note IDs or
+// canonical story endpoints ("story:<todo local ID>"). Edges are intentionally
+// undirected and have no per-edge version; they are write-once / delete-once.
+// The document-level `version` on Wall is the only realtime fingerprint.
 type WallEdge struct {
 	ID   string `json:"id"`
 	From string `json:"from"`
 	To   string `json:"to"`
 }
 
+// WallStoryPlacement is the Wall-owned spatial placement for one canonical
+// Todo. Todo content is hydrated at read time and is never copied into this
+// relation. TodoLocalID is the portable, project-scoped identity exposed at
+// API and backup boundaries; TodoID remains an internal database key.
+type WallStoryPlacement struct {
+	TodoID      int64
+	TodoLocalID int64
+	X           float64
+	Y           float64
+	Version     int64
+	Todo        Todo
+}
+
 // Wall is the shape returned by GetWall. Version is a coarse document-level
 // counter used as a change fingerprint for realtime clients; per-note versions
 // are the authoritative conflict unit.
 type Wall struct {
-	Notes     []WallNote `json:"notes"`
-	Edges     []WallEdge `json:"edges"`
-	Version   int64      `json:"version"`
-	UpdatedAt int64      `json:"updatedAt"`
+	Notes     []WallNote           `json:"notes"`
+	Edges     []WallEdge           `json:"edges"`
+	Stories   []WallStoryPlacement `json:"stories"`
+	Version   int64                `json:"version"`
+	UpdatedAt int64                `json:"updatedAt"`
 }
 
 const (
 	maxWallNotes      = 500
+	maxWallStories    = 500
 	maxWallEdges      = 2000
 	maxWallTextBytes  = 4000
 	defaultNoteWidth  = 180
@@ -123,15 +139,30 @@ func newEdgeID() string {
 // GetWall reads the wall document for a project. Side-effect free: no row is
 // created when none exists; a synthetic empty wall is returned instead. The
 // row is materialized only on the first durable write.
+//
+// Notes/edges/version and hydrated story placements are read inside one
+// read-only SQLite transaction so a single returned Wall comes from one
+// database snapshot. This does not acquire lockWall: Wall mutations already
+// own that non-reentrant mutex, and GetWall must remain safe to call under it.
 func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
-	row := s.db.QueryRowContext(ctx,
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return Wall{}, fmt.Errorf("get wall begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	row := tx.QueryRowContext(ctx,
 		`SELECT notes, edges, version, updated_at FROM project_walls WHERE project_id = ?`,
 		projectID)
 	var notesJSON, edgesJSON string
 	var version, updatedAt int64
 	if err := row.Scan(&notesJSON, &edgesJSON, &version, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Version: 0, UpdatedAt: 0}, nil
+			// Preserve historical behavior: a missing project_walls row yields the
+			// synthetic empty Wall immediately, without consulting placements.
+			// Placements FK projects, not project_walls, so orphans are possible,
+			// but GetWall has never surfaced them when the JSON row is absent.
+			return Wall{Notes: []WallNote{}, Edges: []WallEdge{}, Stories: []WallStoryPlacement{}, Version: 0, UpdatedAt: 0}, nil
 		}
 		return Wall{}, fmt.Errorf("get wall: %w", err)
 	}
@@ -153,7 +184,99 @@ func (s *Store) GetWall(ctx context.Context, projectID int64) (Wall, error) {
 	if edges == nil {
 		edges = []WallEdge{}
 	}
-	return Wall{Notes: notes, Edges: edges, Version: version, UpdatedAt: updatedAt}, nil
+	stories, err := listWallStoryPlacementsTx(ctx, tx, projectID)
+	if err != nil {
+		return Wall{}, err
+	}
+	return Wall{Notes: notes, Edges: edges, Stories: stories, Version: version, UpdatedAt: updatedAt}, nil
+}
+
+func listWallStoryPlacementsTx(ctx context.Context, tx *sql.Tx, projectID int64) ([]WallStoryPlacement, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT wsp.todo_id, t.local_id, wsp.x, wsp.y, wsp.version,
+       t.title, t.body, t.column_key, t.rank, t.estimation_points,
+       t.assignee_user_id, t.created_by_user_id, t.sprint_id, t.priority_key,
+       t.created_at, t.updated_at, t.done_at, t.archived_at,
+       COALESCE(GROUP_CONCAT(g.name, ','), '')
+FROM wall_story_placements wsp
+JOIN todos t ON t.id = wsp.todo_id AND t.project_id = wsp.project_id
+LEFT JOIN todo_tags tt ON tt.todo_id = t.id
+LEFT JOIN tags g ON g.id = tt.tag_id
+WHERE wsp.project_id = ?
+GROUP BY wsp.todo_id, t.id
+ORDER BY wsp.todo_id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list wall story placements: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]WallStoryPlacement, 0)
+	for rows.Next() {
+		var p WallStoryPlacement
+		var estimation, assignee, creator, sprint, doneAt, archivedAt sql.NullInt64
+		var priority sql.NullString
+		var createdAt, updatedAt int64
+		var tagsCSV string
+		p.Todo.ProjectID = projectID
+		if err := rows.Scan(
+			&p.TodoID, &p.TodoLocalID, &p.X, &p.Y, &p.Version,
+			&p.Todo.Title, &p.Todo.Body, &p.Todo.ColumnKey, &p.Todo.Rank, &estimation,
+			&assignee, &creator, &sprint, &priority, &createdAt, &updatedAt,
+			&doneAt, &archivedAt, &tagsCSV,
+		); err != nil {
+			return nil, fmt.Errorf("scan wall story placement: %w", err)
+		}
+		p.Todo.ID = p.TodoID
+		p.Todo.LocalID = p.TodoLocalID
+		if estimation.Valid {
+			v := estimation.Int64
+			p.Todo.EstimationPoints = &v
+		}
+		if assignee.Valid {
+			v := assignee.Int64
+			p.Todo.AssigneeUserID = &v
+		}
+		if creator.Valid {
+			v := creator.Int64
+			p.Todo.CreatedByUserID = &v
+		}
+		if sprint.Valid {
+			v := sprint.Int64
+			p.Todo.SprintID = &v
+		}
+		if priority.Valid {
+			v := priority.String
+			p.Todo.PriorityKey = &v
+		}
+		p.Todo.CreatedAt = time.UnixMilli(createdAt).UTC()
+		p.Todo.UpdatedAt = time.UnixMilli(updatedAt).UTC()
+		if doneAt.Valid {
+			v := time.UnixMilli(doneAt.Int64).UTC()
+			p.Todo.DoneAt = &v
+		}
+		if archivedAt.Valid {
+			v := time.UnixMilli(archivedAt.Int64).UTC()
+			p.Todo.ArchivedAt = &v
+		}
+		if tagsCSV != "" {
+			seen := make(map[string]struct{})
+			for _, tag := range strings.Split(tagsCSV, ",") {
+				seen[tag] = struct{}{}
+			}
+			p.Todo.Tags = make([]string, 0, len(seen))
+			for tag := range seen {
+				p.Todo.Tags = append(p.Todo.Tags, tag)
+			}
+			sort.Strings(p.Todo.Tags)
+		} else {
+			p.Todo.Tags = []string{}
+		}
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows wall story placements: %w", err)
+	}
+	return out, nil
 }
 
 func (s *Store) writeWallLocked(ctx context.Context, projectID int64, wall Wall) error {
@@ -176,6 +299,173 @@ ON CONFLICT (project_id) DO UPDATE SET notes = excluded.notes, edges = excluded.
 `, projectID, string(notesRaw), string(edgesRaw), wall.Version, nowMs)
 	if err != nil {
 		return fmt.Errorf("write wall: %w", err)
+	}
+	return nil
+}
+
+// PinWallStory idempotently places the canonical project Todo identified by
+// localID on the Wall. The bool reports whether a new placement was created.
+func (s *Store) PinWallStory(ctx context.Context, projectID, localID int64, x, y float64) (WallStoryPlacement, bool, error) {
+	if localID <= 0 {
+		return WallStoryPlacement{}, false, fmt.Errorf("%w: invalid todo local id", ErrValidation)
+	}
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("begin pin wall story: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var todoID int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
+		projectID, localID,
+	).Scan(&todoID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return WallStoryPlacement{}, false, ErrNotFound
+		}
+		return WallStoryPlacement{}, false, fmt.Errorf("resolve wall story todo: %w", err)
+	}
+
+	var existing WallStoryPlacement
+	err = tx.QueryRowContext(ctx,
+		`SELECT x, y, version FROM wall_story_placements WHERE project_id = ? AND todo_id = ?`,
+		projectID, todoID,
+	).Scan(&existing.X, &existing.Y, &existing.Version)
+	if err == nil {
+		existing.TodoID = todoID
+		existing.TodoLocalID = localID
+		if err := tx.Commit(); err != nil {
+			return WallStoryPlacement{}, false, fmt.Errorf("commit existing wall story: %w", err)
+		}
+		return existing, false, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return WallStoryPlacement{}, false, fmt.Errorf("get existing wall story: %w", err)
+	}
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM wall_story_placements WHERE project_id = ?`, projectID,
+	).Scan(&count); err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("count wall stories: %w", err)
+	}
+	if count >= maxWallStories {
+		return WallStoryPlacement{}, false, fmt.Errorf("%w: wall story limit reached", ErrValidation)
+	}
+
+	p := WallStoryPlacement{
+		TodoID: todoID, TodoLocalID: localID,
+		X: clampNoteCoord(x), Y: clampNoteCoord(y), Version: 1,
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
+VALUES (?, ?, ?, ?, 1)`, projectID, todoID, p.X, p.Y); err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("insert wall story placement: %w", err)
+	}
+	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
+		return WallStoryPlacement{}, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return WallStoryPlacement{}, false, fmt.Errorf("commit pin wall story: %w", err)
+	}
+	return p, true, nil
+}
+
+// PatchWallStory moves one Wall placement without changing Todo workflow data.
+func (s *Store) PatchWallStory(ctx context.Context, projectID, localID int64, ifVersion int64, x, y float64) (WallStoryPlacement, error) {
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return WallStoryPlacement{}, fmt.Errorf("begin patch wall story: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var p WallStoryPlacement
+	err = tx.QueryRowContext(ctx, `
+SELECT wsp.todo_id, t.local_id, wsp.x, wsp.y, wsp.version
+FROM wall_story_placements wsp
+JOIN todos t ON t.id = wsp.todo_id AND t.project_id = wsp.project_id
+WHERE wsp.project_id = ? AND t.local_id = ?`, projectID, localID).
+		Scan(&p.TodoID, &p.TodoLocalID, &p.X, &p.Y, &p.Version)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return WallStoryPlacement{}, ErrNotFound
+		}
+		return WallStoryPlacement{}, fmt.Errorf("get wall story placement: %w", err)
+	}
+	if ifVersion != 0 && p.Version != ifVersion {
+		return WallStoryPlacement{}, fmt.Errorf("%w: story placement version mismatch", ErrConflict)
+	}
+	p.X = clampNoteCoord(x)
+	p.Y = clampNoteCoord(y)
+	p.Version++
+	if _, err := tx.ExecContext(ctx, `
+UPDATE wall_story_placements SET x = ?, y = ?, version = ?
+WHERE project_id = ? AND todo_id = ?`, p.X, p.Y, p.Version, projectID, p.TodoID); err != nil {
+		return WallStoryPlacement{}, fmt.Errorf("update wall story placement: %w", err)
+	}
+	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
+		return WallStoryPlacement{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return WallStoryPlacement{}, fmt.Errorf("commit patch wall story: %w", err)
+	}
+	return p, nil
+}
+
+// UnpinWallStory removes only the Wall placement; the canonical Todo remains.
+// Incident story edges are removed in the same transaction, and the Wall
+// version bumps exactly once.
+func (s *Store) UnpinWallStory(ctx context.Context, projectID, localID int64) error {
+	mu := lockWall(projectID)
+	defer mu.Unlock()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin unpin wall story: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `
+DELETE FROM wall_story_placements
+WHERE project_id = ? AND todo_id = (
+  SELECT id FROM todos WHERE project_id = ? AND local_id = ?
+)`, projectID, projectID, localID)
+	if err != nil {
+		return fmt.Errorf("delete wall story placement: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("wall story delete rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	if _, err := removeWallStoryEdgesTx(ctx, tx, projectID, FormatWallStoryEndpoint(localID)); err != nil {
+		return err
+	}
+	if err := bumpWallVersionTx(ctx, tx, projectID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit unpin wall story: %w", err)
+	}
+	return nil
+}
+
+func bumpWallVersionTx(ctx context.Context, tx *sql.Tx, projectID int64) error {
+	nowMs := time.Now().UTC().UnixMilli()
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO project_walls(project_id, notes, edges, version, updated_at)
+VALUES (?, '[]', '[]', 1, ?)
+ON CONFLICT(project_id) DO UPDATE SET
+  version = project_walls.version + 1,
+  updated_at = excluded.updated_at`, projectID, nowMs); err != nil {
+		return fmt.Errorf("bump wall version: %w", err)
 	}
 	return nil
 }
@@ -347,17 +637,26 @@ func (s *Store) DeleteNote(ctx context.Context, projectID int64, noteID string) 
 	return wall, nil
 }
 
-// CreateEdge appends an undirected edge between two notes. Rejects self-loops
-// and duplicates in either direction. Returns ErrNotFound if either endpoint
-// note does not exist on the wall, ErrValidation on bad input, and a no-op
-// (returning the existing edge) if a duplicate already exists.
-func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromNoteID, toNoteID string) (WallEdge, Wall, error) {
-	fromNoteID = strings.TrimSpace(fromNoteID)
-	toNoteID = strings.TrimSpace(toNoteID)
-	if fromNoteID == "" || toNoteID == "" {
+// CreateEdge appends an undirected edge between two wall endpoints: raw note
+// IDs or canonical story endpoints ("story:<todo local ID>"). Rejects
+// self-loops and duplicates in either direction. Returns ErrNotFound if
+// either endpoint does not exist on the wall, ErrValidation on bad input, and
+// a no-op (returning the existing edge) if a duplicate already exists.
+func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromEndpoint, toEndpoint string) (WallEdge, Wall, error) {
+	fromEndpoint = strings.TrimSpace(fromEndpoint)
+	toEndpoint = strings.TrimSpace(toEndpoint)
+	if fromEndpoint == "" || toEndpoint == "" {
 		return WallEdge{}, Wall{}, fmt.Errorf("%w: from and to required", ErrValidation)
 	}
-	if fromNoteID == toNoteID {
+	from, err := ParseWallEdgeEndpoint(fromEndpoint)
+	if err != nil {
+		return WallEdge{}, Wall{}, err
+	}
+	to, err := ParseWallEdgeEndpoint(toEndpoint)
+	if err != nil {
+		return WallEdge{}, Wall{}, err
+	}
+	if from.Canonical() == to.Canonical() {
 		return WallEdge{}, Wall{}, fmt.Errorf("%w: self-edges not allowed", ErrValidation)
 	}
 
@@ -368,20 +667,11 @@ func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromNoteID, toN
 	if err != nil {
 		return WallEdge{}, Wall{}, err
 	}
-	haveFrom, haveTo := false, false
-	for _, n := range wall.Notes {
-		if n.ID == fromNoteID {
-			haveFrom = true
-		}
-		if n.ID == toNoteID {
-			haveTo = true
-		}
-	}
-	if !haveFrom || !haveTo {
+	if !resolveWallEdgeEndpoint(wall, from) || !resolveWallEdgeEndpoint(wall, to) {
 		return WallEdge{}, Wall{}, ErrNotFound
 	}
 	for _, e := range wall.Edges {
-		if (e.From == fromNoteID && e.To == toNoteID) || (e.From == toNoteID && e.To == fromNoteID) {
+		if (e.From == from.Canonical() && e.To == to.Canonical()) || (e.From == to.Canonical() && e.To == from.Canonical()) {
 			// Idempotent: return the existing edge unchanged, no version bump.
 			return e, wall, nil
 		}
@@ -389,7 +679,7 @@ func (s *Store) CreateEdge(ctx context.Context, projectID int64, fromNoteID, toN
 	if len(wall.Edges) >= maxWallEdges {
 		return WallEdge{}, Wall{}, fmt.Errorf("%w: wall edge limit reached", ErrValidation)
 	}
-	edge := WallEdge{ID: newEdgeID(), From: fromNoteID, To: toNoteID}
+	edge := WallEdge{ID: newEdgeID(), From: from.Canonical(), To: to.Canonical()}
 	wall.Edges = append(wall.Edges, edge)
 	wall.Version++
 	if err := s.writeWallLocked(ctx, projectID, wall); err != nil {
@@ -431,10 +721,11 @@ func (s *Store) DeleteEdge(ctx context.Context, projectID int64, edgeID string) 
 // upsertWallForImportTx writes a wall payload into project_walls inside an
 // import transaction. Validation is best-effort: invalid colors are rewritten
 // to a safe default and over-long text is truncated, so one bad row in a
-// backup does not fail the whole import. Edges referencing unknown notes are
-// dropped. Passing a nil payload is a no-op; callers decide whether a missing
-// wall field in the backup should wipe or preserve an existing wall row.
-func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport) error {
+// backup does not fail the whole import. Edges referencing unknown Wall
+// endpoints (notes or story local IDs) are dropped. Passing a nil payload is a
+// no-op; callers decide whether a missing wall field in the backup should wipe
+// or preserve an existing wall row.
+func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport, warnings *[]string) error {
 	if payload == nil {
 		return nil
 	}
@@ -477,27 +768,127 @@ func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, pay
 		})
 	}
 
+	// Current-format Wall payloads replace placements, including an explicit
+	// empty array. Legacy payloads omitted stories entirely; preserving the
+	// target placements matters for merge, while replace/copy targets are new
+	// projects and therefore already have an empty placement set. Accepted
+	// story local IDs are resolved before edge filtering so story endpoints
+	// validate against the resulting placement set either way.
+	storiesPresent := payload.StoriesPresent || payload.Stories != nil
+	storyLocalIDs := make(map[int64]struct{})
+	if storiesPresent {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM wall_story_placements WHERE project_id = ?`, projectID); err != nil {
+			return fmt.Errorf("clear wall story placements for import: %w", err)
+		}
+		seenStories := make(map[int64]struct{}, len(payload.Stories))
+		for _, story := range payload.Stories {
+			if story.LocalID <= 0 {
+				if warnings != nil {
+					*warnings = append(*warnings, "Dropped Wall story placement with invalid localId")
+				}
+				continue
+			}
+			if _, duplicate := seenStories[story.LocalID]; duplicate {
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("Dropped duplicate Wall placement for story #%d", story.LocalID))
+				}
+				continue
+			}
+			seenStories[story.LocalID] = struct{}{}
+			var todoID int64
+			if err := tx.QueryRowContext(ctx,
+				`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
+				projectID, story.LocalID,
+			).Scan(&todoID); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					if warnings != nil {
+						*warnings = append(*warnings, fmt.Sprintf("Dropped dangling Wall placement for story #%d", story.LocalID))
+					}
+					continue
+				}
+				return fmt.Errorf("resolve imported wall story #%d: %w", story.LocalID, err)
+			}
+			placementVersion := story.Version
+			if placementVersion <= 0 {
+				placementVersion = 1
+			}
+			if _, err := tx.ExecContext(ctx, `
+INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
+VALUES (?, ?, ?, ?, ?)`, projectID, todoID, clampNoteCoord(story.X), clampNoteCoord(story.Y), placementVersion); err != nil {
+				return fmt.Errorf("insert imported wall story #%d: %w", story.LocalID, err)
+			}
+			storyLocalIDs[story.LocalID] = struct{}{}
+		}
+	} else {
+		rows, err := tx.QueryContext(ctx, `
+SELECT t.local_id FROM wall_story_placements AS p
+JOIN todos AS t ON t.id = p.todo_id
+WHERE p.project_id = ?`, projectID)
+		if err != nil {
+			return fmt.Errorf("load preserved wall story placements for import: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var localID int64
+			if err := rows.Scan(&localID); err != nil {
+				rows.Close()
+				return fmt.Errorf("decode preserved wall story placement for import: %w", err)
+			}
+			storyLocalIDs[localID] = struct{}{}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("read preserved wall story placements for import: %w", err)
+		}
+	}
+
 	edges := payload.Edges
 	if len(edges) > maxWallEdges {
 		edges = edges[:maxWallEdges]
 	}
 	keptEdges := make([]WallEdge, 0, len(edges))
 	seenEdges := make(map[string]struct{}, len(edges))
+	resolves := func(endpoint WallEdgeEndpoint) bool {
+		if endpoint.Kind() == WallEdgeEndpointStory {
+			_, ok := storyLocalIDs[endpoint.TodoLocalID()]
+			return ok
+		}
+		_, ok := seenIDs[endpoint.NoteID()]
+		return ok
+	}
 	for _, e := range edges {
-		from := strings.TrimSpace(e.From)
-		to := strings.TrimSpace(e.To)
-		if from == "" || to == "" || from == to {
+		from, err := ParseWallEdgeEndpoint(e.From)
+		if err != nil {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with invalid endpoint %q", strings.TrimSpace(e.From)))
+			}
 			continue
 		}
-		if _, ok := seenIDs[from]; !ok {
+		to, err := ParseWallEdgeEndpoint(e.To)
+		if err != nil {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with invalid endpoint %q", strings.TrimSpace(e.To)))
+			}
 			continue
 		}
-		if _, ok := seenIDs[to]; !ok {
+		if from.Canonical() == to.Canonical() {
+			continue
+		}
+		if !resolves(from) {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with unknown endpoint %q", from.Canonical()))
+			}
+			continue
+		}
+		if !resolves(to) {
+			if warnings != nil {
+				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with unknown endpoint %q", to.Canonical()))
+			}
 			continue
 		}
 		// Normalize to an undirected key so the same pair imported in either
 		// direction is deduplicated; edge direction is not significant.
-		a, b := from, to
+		a, b := from.Canonical(), to.Canonical()
 		if a > b {
 			a, b = b, a
 		}
@@ -510,7 +901,7 @@ func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, pay
 		if id == "" {
 			id = newEdgeID()
 		}
-		keptEdges = append(keptEdges, WallEdge{ID: id, From: from, To: to})
+		keptEdges = append(keptEdges, WallEdge{ID: id, From: from.Canonical(), To: to.Canonical()})
 	}
 
 	notesJSON, err := json.Marshal(normalized)

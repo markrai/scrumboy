@@ -185,6 +185,31 @@ type legacyTodoRefreshPayload struct {
 	ActorUserID int64  `json:"actorUserId"`
 }
 
+func legacyTodoAssertDeleteRefresh(t *testing.T, fixture *legacyTodoMutationFixture, projectID int64, actorID int64) {
+	t.Helper()
+	events := legacyTodoEventsForProject(fixture, projectID)
+	if len(events) != 2 || events[0].Type != "board.refresh_needed" || events[1].Type != "wall.refresh_needed" {
+		t.Fatalf("events=%+v, want board.refresh_needed then wall.refresh_needed", events)
+	}
+	var boardPayload legacyTodoRefreshPayload
+	if err := json.Unmarshal(events[0].Payload, &boardPayload); err != nil {
+		t.Fatalf("decode board refresh payload: %v", err)
+	}
+	if boardPayload.Reason != "todo_deleted" || boardPayload.ActorUserID != actorID {
+		t.Fatalf("board refresh payload=%+v, want reason=%q actor=%d", boardPayload, "todo_deleted", actorID)
+	}
+	var wallPayload map[string]any
+	if err := json.Unmarshal(events[1].Payload, &wallPayload); err != nil {
+		t.Fatalf("decode wall refresh payload: %v", err)
+	}
+	if wallPayload["reason"] != "wall_todo_deleted" {
+		t.Fatalf("wall refresh payload=%+v, want reason=%q", wallPayload, "wall_todo_deleted")
+	}
+	if _, present := wallPayload["actorUserId"]; present {
+		t.Fatalf("wall refresh unexpectedly included actor: %+v", wallPayload)
+	}
+}
+
 func legacyTodoAssertOneRefresh(t *testing.T, fixture *legacyTodoMutationFixture, projectID int64, reason string, actorID int64) {
 	t.Helper()
 	events := legacyTodoEventsForProject(fixture, projectID)
@@ -532,5 +557,5 @@ func TestLegacyTodoMutationsAnonymousModeContract(t *testing.T) {
 		t.Fatal("anonymous DELETE retained Todo")
 	}
 	legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_deleted", deleteTodo.ID)
-	legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_deleted", 0)
+	legacyTodoAssertDeleteRefresh(t, fixture, project.ID, 0)
 }
