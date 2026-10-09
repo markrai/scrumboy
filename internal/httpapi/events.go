@@ -21,7 +21,7 @@ type todoLinkMutationPublisher struct {
 var _ todolinkapp.RESTMutationPublisher = todoLinkMutationPublisher{}
 
 func (p todoLinkMutationPublisher) PublishTodoLinksUpdated(ctx context.Context, projectID int64) {
-	p.server.emitRefreshNeeded(ctx, projectID, "todo_links_updated", refresh.Entity{})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "todo_links_updated", refresh.Entity{})
 }
 
 type projectUpdatePublisher struct {
@@ -31,7 +31,7 @@ type projectUpdatePublisher struct {
 var _ projectapp.RESTUpdatePublisher = projectUpdatePublisher{}
 
 func (p projectUpdatePublisher) PublishProjectUpdated(ctx context.Context, projectID int64) {
-	p.server.emitRefreshNeeded(ctx, projectID, "project_updated", refresh.Entity{})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "project_updated", refresh.Entity{})
 }
 
 type projectDeletionPublisher struct {
@@ -64,7 +64,7 @@ type tagColorPublisher struct {
 var _ tagapp.RESTColorPublisher = tagColorPublisher{}
 
 func (p tagColorPublisher) PublishTagColorUpdated(ctx context.Context, projectID int64, name string) {
-	p.server.emitRefreshNeeded(ctx, projectID, "tag_color_updated", refresh.Entity{Name: name})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "tag_color_updated", refresh.Entity{Name: name})
 }
 
 type tagDeletionPublisher struct {
@@ -74,7 +74,7 @@ type tagDeletionPublisher struct {
 var _ tagapp.RESTDeletionPublisher = tagDeletionPublisher{}
 
 func (p tagDeletionPublisher) PublishTagDeleted(ctx context.Context, projectID int64, name string) {
-	p.server.emitRefreshNeeded(ctx, projectID, "tag_deleted", refresh.Entity{Name: name})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "tag_deleted", refresh.Entity{Name: name})
 }
 
 type sprintDefinitionPublisher struct {
@@ -84,11 +84,11 @@ type sprintDefinitionPublisher struct {
 var _ sprintapp.RESTDefinitionPublisher = sprintDefinitionPublisher{}
 
 func (p sprintDefinitionPublisher) PublishSprintCreated(ctx context.Context, projectID int64, name string) {
-	p.server.emitRefreshNeeded(ctx, projectID, "sprint_created", refresh.Entity{Name: name})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "sprint_created", refresh.Entity{Name: name})
 }
 
 func (p sprintDefinitionPublisher) PublishSprintUpdated(ctx context.Context, projectID int64, name string) {
-	p.server.emitRefreshNeeded(ctx, projectID, "sprint_updated", refresh.Entity{Name: name})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "sprint_updated", refresh.Entity{Name: name})
 }
 
 type sprintTransitionPublisher struct {
@@ -98,11 +98,11 @@ type sprintTransitionPublisher struct {
 var _ sprintapp.RESTTransitionPublisher = sprintTransitionPublisher{}
 
 func (p sprintTransitionPublisher) PublishSprintActivated(ctx context.Context, projectID int64) {
-	p.server.emitRefreshNeeded(ctx, projectID, "sprint_activated", refresh.Entity{})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "sprint_activated", refresh.Entity{})
 }
 
 func (p sprintTransitionPublisher) PublishSprintClosed(ctx context.Context, projectID int64, name string) {
-	p.server.emitRefreshNeeded(ctx, projectID, "sprint_closed", refresh.Entity{Name: name})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "sprint_closed", refresh.Entity{Name: name})
 }
 
 type sprintDeletionPublisher struct {
@@ -112,7 +112,7 @@ type sprintDeletionPublisher struct {
 var _ sprintapp.RESTDeletionPublisher = sprintDeletionPublisher{}
 
 func (p sprintDeletionPublisher) PublishSprintDeleted(ctx context.Context, projectID int64, name string) {
-	p.server.emitRefreshNeeded(ctx, projectID, "sprint_deleted", refresh.Entity{Name: name})
+	p.server.emitPublicRefreshNeeded(ctx, projectID, "sprint_deleted", refresh.Entity{Name: name})
 }
 
 type membershipMutationPublisher struct {
@@ -136,13 +136,14 @@ func (p membershipMutationPublisher) PublishMembershipChanged(
 }
 
 type refreshNeededPayload struct {
-	Reason      string `json:"reason"`
-	ActorUserID int64  `json:"actorUserId,omitempty"`
-	LocalID     int64  `json:"localId,omitempty"`
-	Title       string `json:"title,omitempty"`
-	Name        string `json:"name,omitempty"`
-	FromName    string `json:"fromName,omitempty"`
-	ToName      string `json:"toName,omitempty"`
+	Reason                  string `json:"reason"`
+	ActorUserID             int64  `json:"actorUserId,omitempty"`
+	LocalID                 int64  `json:"localId,omitempty"`
+	Title                   string `json:"title,omitempty"`
+	Name                    string `json:"name,omitempty"`
+	FromName                string `json:"fromName,omitempty"`
+	ToName                  string `json:"toName,omitempty"`
+	PublicProjectionChanged bool   `json:"publicProjectionChanged,omitempty"`
 }
 
 type refreshNeededEvent struct {
@@ -175,13 +176,14 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 		actorUserID = uid
 	}
 	payload, _ := json.Marshal(refreshNeededPayload{
-		Reason:      reason,
-		ActorUserID: actorUserID,
-		LocalID:     entity.LocalID,
-		Title:       entity.Title,
-		Name:        entity.Name,
-		FromName:    entity.FromName,
-		ToName:      entity.ToName,
+		Reason:                  reason,
+		ActorUserID:             actorUserID,
+		LocalID:                 entity.LocalID,
+		Title:                   entity.Title,
+		Name:                    entity.Name,
+		FromName:                entity.FromName,
+		ToName:                  entity.ToName,
+		PublicProjectionChanged: entity.PublicProjectionChanged,
 	})
 	s.PublishEvent(ctx, eventbus.Event{
 		Type:      "board.refresh_needed",
@@ -190,12 +192,17 @@ func (s *Server) emitRefreshNeeded(ctx context.Context, projectID int64, reason 
 	})
 }
 
+func (s *Server) emitPublicRefreshNeeded(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
+	entity.PublicProjectionChanged = true
+	s.emitRefreshNeeded(ctx, projectID, reason, entity)
+}
+
 func (s *Server) emitProjectDeleted(ctx context.Context, deleted store.DeletedProjectSnapshot) {
 	var actorUserID int64
 	if uid, ok := store.UserIDFromContext(ctx); ok {
 		actorUserID = uid
 	}
-	s.emitRefreshNeeded(ctx, deleted.ProjectID, "project_deleted", refresh.Entity{})
+	s.emitPublicRefreshNeeded(ctx, deleted.ProjectID, "project_deleted", refresh.Entity{})
 	if s.emailNotifier != nil {
 		s.emailNotifier.OnProjectDeleted(deleted, actorUserID)
 	}

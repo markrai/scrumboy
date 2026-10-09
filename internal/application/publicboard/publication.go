@@ -16,14 +16,22 @@ type PublicationMutationStore interface {
 	UpdateProjectPublicViewing(ctx context.Context, projectID, actorUserID int64, enabled bool) (store.ProjectPublicationState, error)
 }
 
+// PublicationRevoker is the synchronous, post-commit public-stream lifecycle
+// seam. It deliberately accepts only the internal project key.
+type PublicationRevoker interface {
+	RevokePublicProject(projectID int64)
+}
+
 type PublicationServiceOptions struct {
 	Mutations             PublicationMutationStore
+	Revoker               PublicationRevoker
 	Mode                  store.Mode
 	PublicProjectsEnabled bool
 }
 
 type PublicationService struct {
 	mutations             PublicationMutationStore
+	revoker               PublicationRevoker
 	mode                  store.Mode
 	publicProjectsEnabled bool
 }
@@ -31,6 +39,7 @@ type PublicationService struct {
 func NewPublicationService(opts PublicationServiceOptions) *PublicationService {
 	return &PublicationService{
 		mutations:             opts.Mutations,
+		revoker:               opts.Revoker,
 		mode:                  opts.Mode,
 		publicProjectsEnabled: opts.PublicProjectsEnabled,
 	}
@@ -63,10 +72,14 @@ func (s *PublicationService) SetPublication(ctx context.Context, command Publica
 	if err != nil {
 		return PublicationResult{}, err
 	}
-	return PublicationResult{
+	result := PublicationResult{
 		ProjectID: state.ProjectID,
 		Slug:      state.Slug,
 		Enabled:   state.Enabled,
 		Changed:   state.Changed,
-	}, nil
+	}
+	if result.Changed && !result.Enabled && s.revoker != nil {
+		s.revoker.RevokePublicProject(result.ProjectID)
+	}
+	return result, nil
 }

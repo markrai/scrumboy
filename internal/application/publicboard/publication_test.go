@@ -18,6 +18,14 @@ type publicationMutationFake struct {
 	err     error
 }
 
+type publicationRevokerFake struct {
+	projects []int64
+}
+
+func (f *publicationRevokerFake) RevokePublicProject(projectID int64) {
+	f.projects = append(f.projects, projectID)
+}
+
 func (f *publicationMutationFake) UpdateProjectPublicViewing(ctx context.Context, projectID, actorUserID int64, enabled bool) (store.ProjectPublicationState, error) {
 	f.calls++
 	f.ctx = ctx
@@ -85,5 +93,35 @@ func TestPublicationServiceReturnsStoreErrorUnchanged(t *testing.T) {
 	_, err := service.SetPublication(store.WithUserID(context.Background(), 7), PublicationCommand{ProjectID: 9})
 	if err != wantErr || fake.calls != 1 {
 		t.Fatalf("SetPublication error/calls = %v/%d, want exact error/1", err, fake.calls)
+	}
+}
+
+func TestPublicationServiceRevokesSynchronouslyOnlyAfterChangedDisable(t *testing.T) {
+	ctx := store.WithUserID(context.Background(), 7)
+	for _, tc := range []struct {
+		name       string
+		state      store.ProjectPublicationState
+		storeError error
+		want       []int64
+	}{
+		{name: "changed disable", state: store.ProjectPublicationState{ProjectID: 9, Slug: "ignite", Changed: true}},
+		{name: "changed enable", state: store.ProjectPublicationState{ProjectID: 9, Slug: "ignite", Enabled: true, Changed: true}},
+		{name: "disable no-op", state: store.ProjectPublicationState{ProjectID: 9, Slug: "ignite"}},
+		{name: "store failure", storeError: errors.New("failed")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			revoker := &publicationRevokerFake{}
+			fake := &publicationMutationFake{result: tc.state, err: tc.storeError}
+			service := NewPublicationService(PublicationServiceOptions{
+				Mutations: fake, Revoker: revoker, Mode: store.ModeFull, PublicProjectsEnabled: true,
+			})
+			_, _ = service.SetPublication(ctx, PublicationCommand{ProjectID: 9, Enabled: tc.state.Enabled})
+			if tc.name == "changed disable" {
+				tc.want = []int64{9}
+			}
+			if len(revoker.projects) != len(tc.want) {
+				t.Fatalf("revocations = %v, want %v", revoker.projects, tc.want)
+			}
+		})
 	}
 }

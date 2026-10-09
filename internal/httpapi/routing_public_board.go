@@ -43,6 +43,13 @@ func (s *Server) handlePublicBoard(w http.ResponseWriter, r *http.Request, parts
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return
 	}
+	isEvents := len(parts) == 3 && parts[2] == "events"
+	if isEvents && s.publicStreamAttemptRateLimit != nil && !s.publicStreamAttemptRateLimit.Allow("ip:"+s.clientIP(r), "") {
+		s.logger.Printf("public board stream attempt rate limit exceeded")
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many requests", nil)
+		return
+	}
 
 	prepared, err := s.publicBoardReads.Resolve(r.Context(), parts[1])
 	if err != nil {
@@ -51,6 +58,12 @@ func (s *Server) handlePublicBoard(w http.ResponseWriter, r *http.Request, parts
 	}
 
 	switch {
+	case isEvents:
+		if len(r.URL.Query()) != 0 {
+			s.writePublicBoardError(w, publicboardapp.ErrInvalidPublicQuery)
+			return
+		}
+		s.handlePublicBoardEvents(w, r, prepared)
 	case len(parts) == 2:
 		input, err := parsePublicBoardQuery(r.URL.Query(), true, r.URL.RawQuery)
 		if err != nil {

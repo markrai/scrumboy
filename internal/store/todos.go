@@ -319,8 +319,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		if s.todoAssignedPublisher != nil && hadAssignee {
 			actorID, _ := UserIDFromContext(ctx)
 			s.todoAssignedPublisher(ctx, projectID, todoID, localID, in.Title, p.Slug, "todo_created", nil, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
-				CreatedByUserID: cloneInt64Ptr(todo.CreatedByUserID),
-				DurableProject:  p.ExpiresAt == nil,
+				CreatedByUserID:         cloneInt64Ptr(todo.CreatedByUserID),
+				DurableProject:          p.ExpiresAt == nil,
+				PublicProjectionChanged: true,
 			})
 		}
 		return todo, nil
@@ -837,8 +838,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		actorID, _ := UserIDFromContext(ctx)
 		// Use committed title (existing.Title), not in.Title — partial PATCH may omit title.
 		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
-			CreatedByUserID: cloneInt64Ptr(existing.CreatedByUserID),
-			DurableProject:  p.ExpiresAt == nil,
+			CreatedByUserID:         cloneInt64Ptr(existing.CreatedByUserID),
+			DurableProject:          p.ExpiresAt == nil,
+			PublicProjectionChanged: materialChanged,
 		})
 	}
 

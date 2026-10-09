@@ -117,6 +117,32 @@ func TestReadServiceEligibilityResultAndErrors(t *testing.T) {
 	})
 }
 
+func TestPreparedReadRevalidateBindsExactProjectAndSlug(t *testing.T) {
+	eligibility := &eligibilityFake{id: 42}
+	service := NewReadService(ReadServiceOptions{
+		Eligibility: eligibility, Mode: store.ModeFull, PublicProjectsEnabled: true,
+	})
+	prepared, err := service.Resolve(context.Background(), "ignite")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if prepared.ProjectID() != 42 {
+		t.Fatalf("ProjectID = %d", prepared.ProjectID())
+	}
+	if err := prepared.Revalidate(context.Background()); err != nil {
+		t.Fatalf("Revalidate eligible: %v", err)
+	}
+
+	eligibility.id = 43
+	if err := prepared.Revalidate(context.Background()); !errors.Is(err, ErrPublicNotFound) {
+		t.Fatalf("Revalidate changed project error = %v", err)
+	}
+	eligibility.err = store.ErrNotFound
+	if err := prepared.Revalidate(context.Background()); !errors.Is(err, ErrPublicNotFound) {
+		t.Fatalf("Revalidate missing project error = %v", err)
+	}
+}
+
 func TestPublicLaneCursorIsVersionedProjectLocalAndBoundToLaneAndFilters(t *testing.T) {
 	eligibility := &eligibilityFake{id: 42}
 	projection := &projectionFake{lane: store.PublicLaneProjection{

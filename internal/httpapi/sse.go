@@ -6,9 +6,28 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	publicboardapp "scrumboy/internal/application/publicboard"
 )
 
 const heartbeatInterval = 25 * time.Second
+
+const (
+	defaultPublicStreamHeartbeatInterval  = 15 * time.Second
+	defaultPublicStreamRevalidateInterval = 15 * time.Second
+)
+
+var (
+	publicRefreshNeededPayload = []byte(`{"type":"refresh_needed"}`)
+	publicAccessRevokedPayload = []byte(`{"type":"access_revoked"}`)
+)
+
+func normalizedPublicStreamInterval(value, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
 
 // ssePingPayload is sent as a data: line on the heartbeat ticker so browser EventSource
 // clients can observe keepalives (comment-only : heartbeat is not exposed as onmessage).
@@ -20,6 +39,95 @@ func mustJSON(v any) []byte {
 		panic(err)
 	}
 	return b
+}
+
+func (s *Server) handlePublicBoardEvents(
+	w http.ResponseWriter,
+	r *http.Request,
+	prepared publicboardapp.PreparedRead,
+) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "streaming not supported", nil)
+		return
+	}
+
+	subscription, err := s.publicHub.Subscribe(prepared.ProjectID(), "ip:"+s.clientIP(r))
+	if err != nil {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many requests", nil)
+		return
+	}
+	defer subscription.Unsubscribe()
+
+	// Register first and then revalidate. A committed local revoke either closes
+	// the registration or makes this check fail before the 200 response.
+	if err := prepared.Revalidate(r.Context()); err != nil {
+		s.writePublicBoardError(w, err)
+		return
+	}
+	if !subscription.Active() {
+		s.writePublicBoardError(w, publicboardapp.ErrPublicNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	heartbeat := time.NewTicker(s.publicStreamHeartbeatInterval)
+	defer heartbeat.Stop()
+	revalidate := time.NewTicker(s.publicStreamRevalidateInterval)
+	defer revalidate.Stop()
+
+	writeEvent := func(payload []byte) bool {
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+	revokeAndClose := func() {
+		s.publicHub.RevokePublicProject(prepared.ProjectID())
+		_ = writeEvent(publicAccessRevokedPayload)
+	}
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-revalidate.C:
+			if prepared.Revalidate(r.Context()) != nil {
+				revokeAndClose()
+				return
+			}
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case event, open := <-subscription.Events:
+			if !open {
+				return
+			}
+			switch event {
+			case PublicEventAccessRevoked:
+				_ = writeEvent(publicAccessRevokedPayload)
+				return
+			case PublicEventRefreshNeeded:
+				if prepared.Revalidate(r.Context()) != nil {
+					revokeAndClose()
+					return
+				}
+				if !writeEvent(publicRefreshNeededPayload) {
+					return
+				}
+			}
+		}
+	}
 }
 
 func (s *Server) handleBoardEvents(w http.ResponseWriter, r *http.Request, projectID int64) {

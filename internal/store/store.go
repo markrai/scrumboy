@@ -9,8 +9,9 @@ import (
 // to in-process consumers of the existing assignment publication. They are not
 // part of the public todo.assigned event payload.
 type TodoAssignedMutationFacts struct {
-	CreatedByUserID *int64 `json:"-"`
-	DurableProject  bool   `json:"-"`
+	CreatedByUserID         *int64 `json:"-"`
+	DurableProject          bool   `json:"-"`
+	PublicProjectionChanged bool   `json:"-"`
 }
 
 // TodoAssignedFunc is called after a successful commit when a todo's assignee changes.

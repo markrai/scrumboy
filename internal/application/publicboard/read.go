@@ -76,6 +76,24 @@ type PreparedRead struct {
 
 func (p PreparedRead) Slug() string { return p.slug }
 
+// ProjectID returns the internal subscription key for an already authorized
+// public read. HTTP responses and public event payloads must never serialize it.
+func (p PreparedRead) ProjectID() int64 { return p.projectID }
+
+// Revalidate repeats the complete public eligibility lookup and binds the
+// result to the same project and slug. Streams call this before delivery so a
+// rename, delete, unpublish, or out-of-band eligibility change fails closed.
+func (p PreparedRead) Revalidate(ctx context.Context) error {
+	resolved, err := p.service.Resolve(ctx, p.slug)
+	if err != nil {
+		return err
+	}
+	if resolved.projectID != p.projectID || resolved.slug != p.slug {
+		return ErrPublicNotFound
+	}
+	return nil
+}
+
 func (s *ReadService) Resolve(ctx context.Context, rawSlug string) (PreparedRead, error) {
 	if s.mode != store.ModeFull || !s.publicProjectsEnabled {
 		return PreparedRead{}, ErrPublicNotFound
