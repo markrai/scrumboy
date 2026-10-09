@@ -1,19 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  buildExpectedVendorAssets,
+  findMismatchedVendorAssets,
+  mermaidBundlePath,
+  mermaidMetadataPath,
+  requiredVendorFiles,
+  resolveWebDir,
+} from "./vendor-assets.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const webDir = process.env.SCRUMBOY_WEB_DIR
-  ? path.resolve(process.env.SCRUMBOY_WEB_DIR)
-  : path.resolve(__dirname, "..");
-
-const requiredVendorFiles = [
-  "vendor/uplot.min.js",
-  "vendor/uplot.min.css",
-  "vendor/markdown-it.min.js",
-  "vendor/purify.min.js",
-  "vendor/mermaid.min.js",
-];
+const webDir = resolveWebDir();
 
 async function main() {
   const missing = [];
@@ -41,6 +37,24 @@ async function main() {
     );
     process.exit(1);
   }
+
+  const expectedAssets = (await buildExpectedVendorAssets(webDir)).filter(
+    (asset) => asset.relativePath === mermaidBundlePath || asset.relativePath === mermaidMetadataPath,
+  );
+  const mismatched = await findMismatchedVendorAssets(expectedAssets, webDir);
+  if (mismatched.length > 0) {
+    console.error(
+      [
+        "Stale or mismatched browser vendor assets:",
+        ...mismatched.map((entry) => `- ${entry}`),
+        "",
+        "Run `npm run sync:vendor` in internal/httpapi/web and commit the regenerated assets.",
+      ].join("\n"),
+    );
+    process.exit(1);
+  }
+
+  console.log("Verified deterministic browser vendor assets");
 }
 
 main().catch((err) => {

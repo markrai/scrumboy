@@ -2,6 +2,23 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.37.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.37.1] - 2026-10-09
+
+### Changed
+
+- **Dependency maintenance** - Web pins `katex` to `0.18.2` and
+  `source-map-js` to `1.2.2` (npm overrides; Mermaid itself stays at
+  `11.17.2`) and adds `esbuild` `0.25.12` as the deterministic Mermaid
+  vendor builder. `vendor/mermaid.min.js` is rebuilt through the new
+  `vendor-assets.mjs` pipeline with `vendor/mermaid.meta.json` provenance
+  (sha256, dependency versions, license notices), plus `sync-vendor` /
+  `verify-vendor` checks, a `dependency-security` test, and a Playwright
+  browser smoke test (`test:mermaid-browser`, with a Chromium install step
+  in CI). Mobile bumps `@capacitor/android`, `@capacitor/core`, and
+  `@capacitor/cli` from `8.5.0` to `8.5.1`. Dependabot now also covers
+  `mobile/capacitor` (weekly patch/minor group) and OSV-Scanner watches
+  the Capacitor manifests. Dependency maintenance only; no behavior change.
+
 ## [3.37.0] - 2026-10-07
 
 ### Added

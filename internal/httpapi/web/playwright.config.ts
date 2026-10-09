@@ -4,7 +4,11 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: ".",
-  testMatch: ["scripts/landing-mobile-mascot.playwright.ts", "scripts/cards-per-lane.playwright.ts"],
+  testMatch: [
+    "scripts/landing-mobile-mascot.playwright.ts",
+    "scripts/cards-per-lane.playwright.ts",
+    "scripts/mermaid-vendor.playwright.ts",
+  ],
   outputDir: path.join(os.tmpdir(), "scrumboy-web-playwright-results"),
   reporter: "line",
   timeout: 120_000,
