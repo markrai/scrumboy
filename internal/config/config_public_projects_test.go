@@ -99,6 +99,7 @@ func TestDockerComposeForwardsPublicBoardFeatureFlags(t *testing.T) {
 	}
 	compose := string(contents)
 	for _, want := range []string{
+		"SCRUMBOY_MODE=${SCRUMBOY_MODE:-full}",
 		"SCRUMBOY_PUBLIC_PROJECTS_ENABLED=${SCRUMBOY_PUBLIC_PROJECTS_ENABLED:-}",
 		"SCRUMBOY_LANDING_PAGE_ENABLED=${SCRUMBOY_LANDING_PAGE_ENABLED:-}",
 	} {

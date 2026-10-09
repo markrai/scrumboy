@@ -40,7 +40,7 @@ func TestPhase1FlagsDoNotChangeRootRouting(t *testing.T) {
 	}
 }
 
-func TestPhase1PublishedStateAddsNoPublicEndpointOrExistingReadPermission(t *testing.T) {
+func TestPublishedStateAddsOnlyTheIsolatedPublicReadEndpoint(t *testing.T) {
 	ts, sqlDB, cleanup := newTestHTTPServerWithOptions(t, Options{
 		ScrumboyMode:          "full",
 		PublicProjectsEnabled: true,
@@ -76,19 +76,23 @@ func TestPhase1PublishedStateAddsNoPublicEndpointOrExistingReadPermission(t *tes
 		t.Fatalf("existing board response exposed publication state: %s", memberBody)
 	}
 
-	for _, path := range []string{
-		"/api/public/board/" + project.Slug,
-		"/api/public/board/" + project.Slug + "/events",
-	} {
-		resp, err := http.Get(ts.URL + path)
-		if err != nil {
-			t.Fatalf("GET %s: %v", path, err)
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("GET %s status=%d, want 404", path, resp.StatusCode)
-		}
+	publicResp, err := http.Get(ts.URL + "/api/public/board/" + project.Slug)
+	if err != nil {
+		t.Fatalf("public board GET: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, publicResp.Body)
+	_ = publicResp.Body.Close()
+	if publicResp.StatusCode != http.StatusOK {
+		t.Fatalf("public board status=%d, want 200", publicResp.StatusCode)
+	}
+	eventsResp, err := http.Get(ts.URL + "/api/public/board/" + project.Slug + "/events")
+	if err != nil {
+		t.Fatalf("public events GET: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, eventsResp.Body)
+	_ = eventsResp.Body.Close()
+	if eventsResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("public events status=%d, want 404", eventsResp.StatusCode)
 	}
 
 	for _, path := range []string{

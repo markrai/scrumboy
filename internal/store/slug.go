@@ -11,6 +11,31 @@ import (
 const slugAlphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
 const maxSlugLen = 32
 
+// reservedProjectSlugs is the single store-authoritative list of top-level
+// application and localized landing paths that cannot safely identify a
+// public project. Existing rows are not renamed; durable allocation skips the
+// set and publication rejects legacy collisions.
+var reservedProjectSlugs = map[string]struct{}{
+	"_app":  {},
+	"agora": {}, "anon": {}, "api": {}, "auth": {}, "dashboard": {},
+	"healthz": {}, "mcp": {}, "oauth": {}, "p": {}, "temp": {},
+	// English is the apex landing locale, pseudo is a claimed QA locale, and
+	// the remaining entries are generated localized landing paths.
+	"en": {}, "pseudo": {},
+	"ar": {}, "bn": {}, "de": {}, "es": {}, "fa": {}, "fr": {},
+	"hi": {}, "id": {}, "it": {}, "ja": {}, "ko": {}, "ms": {},
+	"pl": {}, "pt": {}, "ru": {}, "sw": {}, "th": {}, "tr": {},
+	"uk": {}, "ur": {}, "vi": {}, "zh": {},
+}
+
+// IsReservedProjectSlug reports whether slug conflicts with an application or
+// landing route. It is exported so the public application resolver and HTTP
+// route-synchronization tests use exactly the same policy as allocation.
+func IsReservedProjectSlug(slug string) bool {
+	_, reserved := reservedProjectSlugs[strings.ToLower(strings.TrimSpace(slug))]
+	return reserved
+}
+
 func randomSlug(n int) (string, error) {
 	if n <= 0 {
 		return "", fmt.Errorf("invalid slug length")
@@ -98,4 +123,10 @@ func isValidSlug(s string) bool {
 		return false
 	}
 	return true
+}
+
+// IsValidProjectSlug exposes the canonical project slug grammar to narrow
+// application resolvers without duplicating it at transport boundaries.
+func IsValidProjectSlug(slug string) bool {
+	return isValidSlug(slug)
 }

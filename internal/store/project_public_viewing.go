@@ -16,22 +16,8 @@ type ProjectPublicationState struct {
 	Changed   bool
 }
 
-var reservedPublicProjectSlugs = map[string]struct{}{
-	"agora":     {},
-	"anon":      {},
-	"api":       {},
-	"auth":      {},
-	"dashboard": {},
-	"healthz":   {},
-	"mcp":       {},
-	"oauth":     {},
-	"p":         {},
-	"temp":      {},
-}
-
 func isReservedPublicProjectSlug(slug string) bool {
-	_, reserved := reservedPublicProjectSlugs[slug]
-	return reserved
+	return IsReservedProjectSlug(slug)
 }
 
 // UpdateProjectPublicViewing atomically rechecks durable-project Maintainer

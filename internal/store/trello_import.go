@@ -185,6 +185,9 @@ func (s *Store) insertTrelloDurableProjectRow(ctx context.Context, tx *sql.Tx, n
 			}
 			slug = base + suffix
 		}
+		if IsReservedProjectSlug(slug) {
+			continue
+		}
 		exists, err := slugExistsTx(ctx, tx, slug)
 		if err != nil {
 			return 0, Project{}, fmt.Errorf("check Trello project slug: %w", err)

@@ -34,8 +34,8 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `MAX_REQUEST_BODY_BYTES`  | `1048576` (1 MiB)          | Optional  | Max request body size for ordinary API requests                                    |
 | `MAX_TRELLO_IMPORT_BYTES` | `33554432` (32 MiB)        | Optional  | Max Trello JSON import upload size                                                 |
 | `SCRUMBOY_MODE`           | `full`                     | Optional  | `full` (auth-capable) or `anonymous`                                               |
-| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Operator gate for durable-project publication management; does not publish projects by itself |
-| `SCRUMBOY_LANDING_PAGE_ENABLED` | off                   | Optional  | Reserved presentation gate; Phase 1 does not change routing                        |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Operator gate for durable-project publication management and isolated public reads; never publishes by itself |
+| `SCRUMBOY_LANDING_PAGE_ENABLED` | off                   | Optional  | Reserved presentation gate; currently does not change routing                     |
 | `SCRUMBOY_INTRANET_IP`    | empty                      | Optional  | LAN IP for optional startup intranet URL / certificate hints (does not bind)       |
 
 
@@ -68,8 +68,8 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | Variable                          | Default          | Required? | Purpose                                                        |
 | --------------------------------- | ---------------- | --------- | -------------------------------------------------------------- |
 | `SCRUMBOY_WALL_ENABLED`           | on (unset/empty) | Optional  | Sticky-note wall; opt out with `0`/`false`/`off`/`no`          |
-| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Publication-management capability; no public read route exists in Phase 1         |
-| `SCRUMBOY_LANDING_PAGE_ENABLED`    | off              | Optional  | Future Full Mode landing-page presentation gate; routing is unchanged in Phase 1  |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Publication management plus read-only `/api/public/board/{slug}` routes in Full Mode |
+| `SCRUMBOY_LANDING_PAGE_ENABLED`    | off              | Optional  | Future Full Mode landing-page presentation gate; routing is currently unchanged   |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | off              | Optional  | Todo notes Markdown preview; opt in with `1`/`true`/`on`/`yes` |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | off              | Optional  | Mermaid in notes preview; requires Markdown notes enabled      |
 
@@ -279,8 +279,8 @@ Boolean parsing differs by flag. Values are trimmed and compared case-insensitiv
 | Variable                          | Default | How to change                                                                                                                                                  |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SCRUMBOY_WALL_ENABLED`           | **on**  | Disable with `0`, `false`, `off`, or `no`. Unset/empty/other → enabled. Durable projects only; anonymous/temp boards never expose the wall. [wall.md](wall.md) |
-| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. This operator capability gate never publishes a project automatically; Phase 1 adds no public read endpoint. Disabling it leaves stored per-project preferences intact. |
-| `SCRUMBOY_LANDING_PAGE_ENABLED`    | **off** | Enable with the same truthy values. It is independent of public-project capability and `SCRUMBOY_MODE`; in Phase 1 it has no observable routing effect. |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. In Full Mode this gates publication management and the isolated read-only `/api/public/board/{slug}` API. It never publishes a project automatically. Disabling it makes all public-board reads return the generic not-found response while retaining stored per-project preferences. Public reads are limited to 120 requests/minute/IP. |
+| `SCRUMBOY_LANDING_PAGE_ENABLED`    | **off** | Enable with the same truthy values. It is independent of public-project capability and `SCRUMBOY_MODE`; it currently has no observable routing effect. |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. [markdown-and-mermaid.md](markdown-and-mermaid.md)                                                                    |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | **off** | Same truthy set as Markdown; **ignored unless** Markdown notes are already enabled.                                                                            |
 

@@ -9,12 +9,13 @@ import (
 // Limiter is an in-memory rate limiter with dual-key (IP + email) enforcement.
 // Both keys must be under the limit for the request to be allowed.
 type Limiter struct {
-	mu       sync.Mutex
-	entries  map[string]*entry
-	limit    int
-	window   time.Duration
-	cleanup  time.Duration
+	mu        sync.Mutex
+	entries   map[string]*entry
+	limit     int
+	window    time.Duration
+	cleanup   time.Duration
 	lastClean time.Time
+	now       func() time.Time
 }
 
 type entry struct {
@@ -24,12 +25,22 @@ type entry struct {
 
 // New creates a limiter allowing `limit` requests per `window` per key.
 func New(limit int, window time.Duration) *Limiter {
+	return NewWithClock(limit, window, time.Now)
+}
+
+// NewWithClock creates a limiter with an injectable clock for deterministic
+// resource-control tests.
+func NewWithClock(limit int, window time.Duration, now func() time.Time) *Limiter {
+	if now == nil {
+		now = time.Now
+	}
 	return &Limiter{
-		entries:  make(map[string]*entry),
-		limit:    limit,
-		window:   window,
-		cleanup:  window * 2,
-		lastClean: time.Now(),
+		entries:   make(map[string]*entry),
+		limit:     limit,
+		window:    window,
+		cleanup:   window * 2,
+		lastClean: now(),
+		now:       now,
 	}
 }
 
@@ -38,7 +49,7 @@ func (l *Limiter) Allow(ipKey, emailKey string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	now := time.Now()
+	now := l.now()
 	if now.Sub(l.lastClean) > l.cleanup {
 		l.clean(now)
 		l.lastClean = now

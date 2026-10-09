@@ -10,7 +10,8 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	// reuse so auth transitions (login/logout) are reflected immediately.
 	w.Header().Set("Cache-Control", "no-store")
 
-	if r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+	isPublicNamespace := r.URL.Path == "/api/public" || strings.HasPrefix(r.URL.Path, "/api/public/")
+	if !isPublicNamespace && (r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete) {
 		// Minimal CSRF protection for a no-auth, local app:
 		// cross-origin "simple" requests can still POST JSON as text/plain; requiring a custom header forces a preflight.
 		// Exception: /api/auth/logout form POST (Content-Type form) - form submit can't add custom headers;
@@ -35,6 +36,9 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch parts[1] {
+	case "public":
+		s.handlePublicBoard(w, r, parts[2:])
+		return
 	case "projects":
 		s.handleProjects(w, r, parts[2:])
 		return

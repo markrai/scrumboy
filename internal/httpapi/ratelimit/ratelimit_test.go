@@ -153,3 +153,15 @@ func TestAllowCleansStaleEntries(t *testing.T) {
 		t.Fatal("new key entry was not created")
 	}
 }
+
+func TestLimiterInjectedClockResetsDeterministically(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	limiter := NewWithClock(1, time.Minute, func() time.Time { return now })
+	if !limiter.Allow("ip:test", "") || limiter.Allow("ip:test", "") {
+		t.Fatal("injected-clock limiter did not enforce first window")
+	}
+	now = now.Add(time.Minute + time.Nanosecond)
+	if !limiter.Allow("ip:test", "") {
+		t.Fatal("injected-clock limiter did not reset after window")
+	}
+}

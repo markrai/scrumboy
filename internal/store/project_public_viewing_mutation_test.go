@@ -134,12 +134,12 @@ ORDER BY id`, fx.project.ID)
 }
 
 func TestReservedPublicProjectSlugSet(t *testing.T) {
-	for _, slug := range []string{"agora", "anon", "api", "auth", "dashboard", "healthz", "mcp", "oauth", "p", "temp"} {
+	for _, slug := range []string{"_app", "agora", "anon", "api", "auth", "dashboard", "healthz", "mcp", "oauth", "p", "temp", "en", "fr", "zh", "pseudo"} {
 		if !isReservedPublicProjectSlug(slug) {
 			t.Fatalf("slug %q should be reserved", slug)
 		}
 	}
-	for _, slug := range []string{"ignite", "fr", "public-roadmap"} {
+	for _, slug := range []string{"ignite", "roadmap", "public-roadmap"} {
 		if isReservedPublicProjectSlug(slug) {
 			t.Fatalf("slug %q should remain publishable", slug)
 		}
@@ -270,8 +270,11 @@ func TestUpdateProjectPublicViewingReservedSlugFailsClosedOnEnable(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
-	if project.Slug != "dashboard" {
-		t.Fatalf("slug = %q, want dashboard", project.Slug)
+	if project.Slug == "dashboard" || isReservedPublicProjectSlug(project.Slug) {
+		t.Fatalf("new durable slug = %q, want nonreserved allocation", project.Slug)
+	}
+	if _, err := fx.db.Exec(`UPDATE projects SET slug = 'dashboard' WHERE id = ?`, project.ID); err != nil {
+		t.Fatalf("seed legacy reserved slug: %v", err)
 	}
 	if _, err := fx.store.UpdateProjectPublicViewing(fx.ctx, project.ID, fx.owner.ID, true); !errors.Is(err, ErrValidation) {
 		t.Fatalf("enable reserved slug error = %v, want ErrValidation", err)

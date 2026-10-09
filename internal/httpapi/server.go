@@ -49,11 +49,11 @@ type Options struct {
 	MaxRequestBody      int64
 	MaxTrelloImportBody int64
 	ScrumboyMode        string // "full" or "anonymous"
-	// PublicProjectsEnabled gates publication management capabilities. Phase 1
-	// stores the value without adding public read routes.
+	// PublicProjectsEnabled gates publication management and the isolated
+	// read-only public board API. It never publishes a project by itself.
 	PublicProjectsEnabled bool
-	// LandingPageEnabled is independent of public-project capability. Phase 1
-	// stores the value without changing routing.
+	// LandingPageEnabled is independent of public-project capability and is
+	// reserved for the later public presentation phase.
 	LandingPageEnabled bool
 	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
 	// Empty disables wallpaper upload/serve (returns 503 for those routes).
@@ -61,6 +61,7 @@ type Options struct {
 	AuthRateLimit       *ratelimit.Limiter
 	OAuthDCRRateLimit   *ratelimit.Limiter
 	OAuthTokenRateLimit *ratelimit.Limiter
+	PublicReadRateLimit *ratelimit.Limiter
 	MCPHandler          MCPHandler
 	AgoraHandler        http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
@@ -137,6 +138,7 @@ type Server struct {
 	projectDeletions              *projectapp.RESTDeletionService
 	projectClaims                 *projectapp.RESTClaimService
 	publicBoardPublications       *publicboardapp.PublicationService
+	publicBoardReads              *publicboardapp.ReadService
 	todoCreates                   *todoapp.CreateService
 	todoDeletes                   *todoapp.DeleteService
 	todoMoves                     *todoapp.MoveService
@@ -196,6 +198,7 @@ type Server struct {
 	mobileOIDCExchangeRateLimit *ratelimit.Limiter
 	oauthDCRRateLimit           *ratelimit.Limiter
 	oauthTokenRateLimit         *ratelimit.Limiter
+	publicReadRateLimit         *ratelimit.Limiter
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
@@ -301,6 +304,8 @@ type storeAPI interface {
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
 	UpdateProjectBoardSettings(ctx context.Context, projectID, userID int64, patch store.ProjectBoardSettingsPatch) (store.ProjectBoardSettings, error)
 	publicboardapp.PublicationMutationStore
+	publicboardapp.EligibilityStore
+	publicboardapp.ProjectionStore
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	calendarapp.SourceStore
@@ -530,6 +535,10 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if oauthTokenRateLimit == nil {
 		oauthTokenRateLimit = ratelimit.New(60, time.Minute)
 	}
+	publicReadRateLimit := opts.PublicReadRateLimit
+	if publicReadRateLimit == nil {
+		publicReadRateLimit = ratelimit.New(120, time.Minute)
+	}
 	hub := NewHub(defaultSubscriberBuffer)
 	creatorNotificationAuthorizer := todoapp.NewCreatorNotificationAuthorizationService(st)
 	sseBridgeConsumer := newSSEBridge(hub, creatorNotificationAuthorizer)
@@ -622,6 +631,12 @@ func NewServer(st storeAPI, opts Options) *Server {
 			Mode:                  store.Mode(mode),
 			PublicProjectsEnabled: opts.PublicProjectsEnabled,
 		}),
+		publicBoardReads: publicboardapp.NewReadService(publicboardapp.ReadServiceOptions{
+			Eligibility:           st,
+			Projections:           st,
+			Mode:                  store.Mode(mode),
+			PublicProjectsEnabled: opts.PublicProjectsEnabled,
+		}),
 		logger:                      logger,
 		maxBody:                     maxBody,
 		maxTrelloImportBody:         maxTrelloImportBody,
@@ -650,6 +665,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		mobileOIDCExchangeRateLimit: mobileOIDCExchangeRateLimit,
 		oauthDCRRateLimit:           oauthDCRRateLimit,
 		oauthTokenRateLimit:         oauthTokenRateLimit,
+		publicReadRateLimit:         publicReadRateLimit,
 		encryptionKey:               encKey,
 		oidcService:                 opts.OIDCService,
 		passwordResetAdminLimiter:   passwordResetAdminLimiter,
@@ -884,8 +900,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/backup/import" {
 		s.logger.Printf("INCOMING: %s %s (Content-Length: %s)", r.Method, r.URL.Path, r.Header.Get("Content-Length"))
 	}
+	logPath := r.URL.Path
+	if logPath == "/api/public" || strings.HasPrefix(logPath, "/api/public/") {
+		logPath = "/api/public/board/:slug"
+	}
 	defer func() {
-		s.logger.Printf("%s %s %dms", r.Method, r.URL.Path, time.Since(start).Milliseconds())
+		s.logger.Printf("%s %s %dms", r.Method, logPath, time.Since(start).Milliseconds())
 	}()
 
 	if r.URL.Path == "/healthz" {

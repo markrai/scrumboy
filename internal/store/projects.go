@@ -671,6 +671,9 @@ func (s *Store) RewriteDurableProjectSlugs(ctx context.Context) (int, error) {
 				}
 				candidate = base + suffix
 			}
+			if IsReservedProjectSlug(candidate) {
+				continue
+			}
 
 			exists, err := existsExcludingID(candidate, r.id)
 			if err != nil {
@@ -757,6 +760,9 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 			} else {
 				slug = baseSlug + suffix
 			}
+		}
+		if IsReservedProjectSlug(slug) {
+			continue
 		}
 
 		// Check if slug exists before attempting insert
@@ -988,6 +994,9 @@ func (s *Store) ensureProjectHasSlug(ctx context.Context, projectID int64, name 
 			} else {
 				slug = baseSlug + suffix
 			}
+		}
+		if IsReservedProjectSlug(slug) {
+			continue
 		}
 		exists, err := s.slugExists(ctx, slug)
 		if err != nil {

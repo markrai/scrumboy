@@ -77,9 +77,9 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 		idStr = strings.TrimSuffix(idStr, "/")
 		projectID, ok := parseInt64(idStr)
 		if ok {
-			project, err := s.store.GetProject(s.requestContext(r), projectID)
+			projectContext, err := s.store.GetProjectContextForRead(s.requestContext(r), projectID, s.storeMode())
 			if err != nil {
-				if errors.Is(err, store.ErrNotFound) {
+				if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrUnauthorized) || errors.Is(err, store.ErrForbidden) {
 					writeError(w, http.StatusNotFound, "NOT_FOUND", "project not found", nil)
 					return
 				}
@@ -87,7 +87,7 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Redirect to canonical slug URL
-			http.Redirect(w, r, "/"+project.Slug, http.StatusFound)
+			http.Redirect(w, r, "/"+projectContext.Project.Slug, http.StatusFound)
 			return
 		}
 		// If not a valid ID, fall through to SPA (might be a static file or other route)
