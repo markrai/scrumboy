@@ -2,6 +2,25 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.37.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.37.2] - 2026-10-09
+
+### Security
+
+- **Go 1.26.9 toolchain** - Pin the toolchain to `go1.26.9` and the
+  Docker builder to `golang:1.26.9-alpine` (by manifest digest).
+  No code or behavior change.
+
+### Fixed
+
+- **Mermaid vendor metadata line endings** - Track
+  `internal/httpapi/web/vendor/mermaid.meta.json` as LF text so vendor
+  provenance stays stable across platforms. Build metadata only; no
+  runtime change.
+- **Deterministic crypto tamper test** - `TestDecryptTampered` now flips a
+  bit in the decoded AES-GCM payload instead of appending `xx` to the
+  encoded string, so the tampering assertion no longer depends on
+  base64-decoding behavior. Test only; no production change.
+
 ## [3.37.1] - 2026-10-09
 
 ### Changed
