@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "La creazione del token ha restituito una risposta imprevista. Potrebbe essere stato creato un token: controlla l'elenco e revocalo se non utilizzato."
+  "settings.profile.apiTokens.toast.createMalformed": "La creazione del token ha restituito una risposta imprevista. Potrebbe essere stato creato un token: controlla l'elenco e revocalo se non utilizzato.",
+  "publicBoard.badge": "Board pubblica · Sola lettura",
+  "publicBoard.badgeAria": "Board pubblica in sola lettura. Puoi consultare questa board, ma non modificarla.",
+  "publicBoard.loading": "Caricamento…",
+  "publicBoard.emptyLane": "Nessuna storia",
+  "publicBoard.empty": "Nessuna storia corrisponde a questi filtri.",
+  "publicBoard.loadFailed": "Impossibile caricare la board. Riprova.",
+  "publicBoard.unavailable.title": "Questa board non è disponibile",
+  "publicBoard.unavailable.body": "Il link potrebbe essere errato o la board non è più pubblica.",
+  "publicBoard.story.unavailable": "Questa storia non è disponibile.",
+  "publicBoard.story.loadFailed": "Impossibile caricare questa storia.",
+  "publicBoard.story.noNotes": "Nessuna nota",
+  "publicBoard.sprintFilterCleared": "Quello sprint non è più disponibile. Visualizzazione di tutti gli sprint."
 }

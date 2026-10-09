@@ -1,4 +1,4 @@
-import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
+import { Board, BoardAccess, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
 
 export interface BoardMember {
   userId: number;
@@ -14,6 +14,8 @@ export interface State {
   projectId: number | null;
   slug: string | null;
   board: Board | null;
+  /** Access mode of the displayed board; null when no board is resolved. */
+  boardAccess: BoardAccess | null;
   search: string;
   openTodoSegment: string | null;
   editingTodo: Todo | null;
@@ -67,6 +69,7 @@ let _current: State = {
   projectId: null,
   slug: null,
   board: null,
+  boardAccess: null,
   search: "",
   openTodoSegment: null,
   editingTodo: null,

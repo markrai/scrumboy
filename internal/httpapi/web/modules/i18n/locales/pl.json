@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "Tworzenie tokena zwróciło nieoczekiwaną odpowiedź. Token mógł zostać utworzony — sprawdź listę i unieważnij go, jeśli nie jest używany."
+  "settings.profile.apiTokens.toast.createMalformed": "Tworzenie tokena zwróciło nieoczekiwaną odpowiedź. Token mógł zostać utworzony — sprawdź listę i unieważnij go, jeśli nie jest używany.",
+  "publicBoard.badge": "Tablica publiczna · Tylko podgląd",
+  "publicBoard.badgeAria": "Tablica publiczna, tylko podgląd. Możesz przeglądać tę tablicę, ale nie możesz jej zmieniać.",
+  "publicBoard.loading": "Ładowanie…",
+  "publicBoard.emptyLane": "Brak historyjek",
+  "publicBoard.empty": "Żadna historyjka nie pasuje do tych filtrów.",
+  "publicBoard.loadFailed": "Nie udało się wczytać tablicy. Spróbuj ponownie.",
+  "publicBoard.unavailable.title": "Ta tablica jest niedostępna",
+  "publicBoard.unavailable.body": "Link może być błędny albo tablica nie jest już publiczna.",
+  "publicBoard.story.unavailable": "Ta historyjka jest niedostępna.",
+  "publicBoard.story.loadFailed": "Nie udało się wczytać tej historyjki.",
+  "publicBoard.story.noNotes": "Brak notatek",
+  "publicBoard.sprintFilterCleared": "Ten sprint nie jest już dostępny. Wyświetlanie wszystkich sprintów."
 }

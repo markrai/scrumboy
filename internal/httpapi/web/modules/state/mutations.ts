@@ -1,7 +1,7 @@
 import { apiFetch } from '../api.js';
 import { current } from './state.js';
 import { getUser } from './selectors.js';
-import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
+import { Board, BoardAccess, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
 import type { BoardMember } from './state.js';
 
 const DEFAULT_LANE_META = (): Record<TodoStatus, { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number }> => ({});
@@ -29,6 +29,10 @@ export function setSlug(slug: string | null): void {
 
 export function setBoard(board: Board | null): void {
   current.board = board;
+}
+
+export function setBoardAccess(access: BoardAccess | null): void {
+  current.boardAccess = access;
 }
 
 export function setSearch(search: string): void {
@@ -269,6 +273,7 @@ export function resetUserScopedState(): void {
   // Keep global fields (route, slug, search, mobileTab) and user field (updated by router)
   current.projects = null;
   current.board = null;
+  current.boardAccess = null;
   current.projectId = null;
   current.editingTodo = null;
   current.availableTags = [];

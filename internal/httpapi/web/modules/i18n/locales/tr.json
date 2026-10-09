@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "Belirteç oluşturma beklenmeyen bir yanıt döndürdü. Bir belirteç oluşturulmuş olabilir — listenizi kontrol edin ve kullanılmıyorsa iptal edin."
+  "settings.profile.apiTokens.toast.createMalformed": "Belirteç oluşturma beklenmeyen bir yanıt döndürdü. Bir belirteç oluşturulmuş olabilir — listenizi kontrol edin ve kullanılmıyorsa iptal edin.",
+  "publicBoard.badge": "Herkese açık pano · Yalnızca görüntüleme",
+  "publicBoard.badgeAria": "Herkese açık pano, yalnızca görüntüleme. Bu panoyu okuyabilirsiniz ancak değiştiremezsiniz.",
+  "publicBoard.loading": "Yükleniyor…",
+  "publicBoard.emptyLane": "Hikâye yok",
+  "publicBoard.empty": "Bu filtrelerle eşleşen hikâye yok.",
+  "publicBoard.loadFailed": "Pano yüklenemedi. Tekrar deneyin.",
+  "publicBoard.unavailable.title": "Bu pano kullanılamıyor",
+  "publicBoard.unavailable.body": "Bağlantı yanlış olabilir veya pano artık herkese açık değil.",
+  "publicBoard.story.unavailable": "Bu hikâye kullanılamıyor.",
+  "publicBoard.story.loadFailed": "Bu hikâye yüklenemedi.",
+  "publicBoard.story.noNotes": "Not yok",
+  "publicBoard.sprintFilterCleared": "Bu sprint artık kullanılamıyor. Tüm sprintler gösteriliyor."
 }

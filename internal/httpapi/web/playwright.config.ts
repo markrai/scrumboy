@@ -8,6 +8,7 @@ export default defineConfig({
     "scripts/landing-mobile-mascot.playwright.ts",
     "scripts/cards-per-lane.playwright.ts",
     "scripts/mermaid-vendor.playwright.ts",
+    "scripts/public-board.playwright.ts",
   ],
   outputDir: path.join(os.tmpdir(), "scrumboy-web-playwright-results"),
   reporter: "line",

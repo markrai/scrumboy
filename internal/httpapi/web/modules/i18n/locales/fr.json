@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "La création du jeton a renvoyé une réponse inattendue. Un jeton a peut-être été créé : vérifiez votre liste et révoquez-le si vous ne l'utilisez pas."
+  "settings.profile.apiTokens.toast.createMalformed": "La création du jeton a renvoyé une réponse inattendue. Un jeton a peut-être été créé : vérifiez votre liste et révoquez-le si vous ne l'utilisez pas.",
+  "publicBoard.badge": "Tableau public · Lecture seule",
+  "publicBoard.badgeAria": "Tableau public en lecture seule. Vous pouvez consulter ce tableau, mais pas le modifier.",
+  "publicBoard.loading": "Chargement…",
+  "publicBoard.emptyLane": "Aucune story",
+  "publicBoard.empty": "Aucune story ne correspond à ces filtres.",
+  "publicBoard.loadFailed": "Impossible de charger le tableau. Réessayez.",
+  "publicBoard.unavailable.title": "Ce tableau n'est pas disponible",
+  "publicBoard.unavailable.body": "Le lien est peut-être incorrect, ou le tableau n'est plus public.",
+  "publicBoard.story.unavailable": "Cette story n'est pas disponible.",
+  "publicBoard.story.loadFailed": "Impossible de charger cette story.",
+  "publicBoard.story.noNotes": "Aucune note",
+  "publicBoard.sprintFilterCleared": "Ce sprint n'est plus disponible. Affichage de tous les sprints."
 }

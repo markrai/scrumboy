@@ -42,8 +42,10 @@ import {
   getTrelloImportData,
   getTrelloImportPreview,
   getTrelloImportResult,
-  getBoardMembers
+  getBoardMembers,
+  getBoardAccess
 } from '../state/selectors.js';
+import { isPublicBoardAccess } from '../state/board-access.js';
 import { 
   setSettingsProjectId, 
   setSettingsActiveTab, 
@@ -1390,8 +1392,13 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   let tagSettingsScope: TagSettingsScope | null = null;
   let realBurndownURL: string | null = null;
   let hasProjectAccess = false;
-  
-  if (getSlug()) {
+  // A public read-only board grants no project settings surface: no board
+  // tags, charts, project tabs, tag colors, or backup, and no member requests.
+  const publicBoardView = isPublicBoardAccess(getBoardAccess());
+
+  if (publicBoardView) {
+    setSettingsProjectId(null);
+  } else if (getSlug()) {
     // Board view: show tags from this specific board
     tagsURL = `/api/board/${getSlug()}/tags`;
     tagSettingsScope = 'board';
@@ -1421,7 +1428,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   // Show Sprints tab only when in board view and user is Maintainer+ for that project
   let boardMembers = getBoardMembers();
   // If in board view but members not yet loaded (e.g. race on open, or opened before fetch completed), fetch them
-  const slug = getSlug();
+  const slug = publicBoardView ? null : getSlug();
   const projectId = getProjectId();
   if (slug && projectId && currentUser && boardMembers.length === 0 && getBoard() && !isAnonymousBoard(getBoard())) {
     try {
@@ -1468,6 +1475,9 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
   } else if (getSettingsActiveTab() === "voiceflow") {
     setSettingsActiveTab("customization");
+  }
+  if (publicBoardView && (getSettingsActiveTab() === "tag-colors" || getSettingsActiveTab() === "backup")) {
+    setSettingsActiveTab(showProfileTab ? "profile" : "customization");
   }
 
   // Fetch full user profile (including avatar) when Profile tab is shown (skip when re-rendering after avatar change)
@@ -2004,8 +2014,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         ${showProfileTab ? `<button class="settings-tab ${activeSettingsTab === "profile" ? "settings-tab--active" : ""}" data-tab="profile" data-i18n-text="settings.tabs.profile">Profile</button>` : ``}
         ${showUsersTab ? `<button class="settings-tab ${activeSettingsTab === "users" ? "settings-tab--active" : ""}" data-tab="users" data-i18n-text="settings.tabs.users">Users</button>` : ``}
         <button class="settings-tab ${activeSettingsTab === "customization" ? "settings-tab--active" : ""}" data-tab="customization" data-i18n-text="settings.tabs.customization">Customization</button>
-        <button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
-        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>
+        ${publicBoardView ? `` : `<button class="settings-tab ${activeSettingsTab === "tag-colors" ? "settings-tab--active" : ""}" data-tab="tag-colors" data-i18n-text="settings.tabs.tagColors">Tag Colors</button>
+        <button class="settings-tab ${activeSettingsTab === "backup" ? "settings-tab--active" : ""}" data-tab="backup" data-i18n-text="settings.tabs.backup">Backup / Delete</button>`}
       </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
@@ -2437,7 +2447,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
         }
         // Apply immediately on the open board (and on next F5 via preference hydration).
         const slug = getSlug();
-        if (slug) {
+        if (slug && !isPublicBoardAccess(getBoardAccess())) {
           usePreferenceLimitOnNextBoardRequest();
           void invalidateBoard(
             slug,

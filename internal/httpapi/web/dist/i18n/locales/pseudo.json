@@ -1404,5 +1404,17 @@
   "voice.create.modeLabel": "[!! Create v2 (experimental) !!]",
   "voice.create.yesNo": "[!! Is that a yes or no? !!]",
   "voice.create.tagSuggestion": "[!! Did you mean tag `{tag}`? !!]",
-  "settings.profile.apiTokens.toast.createMalformed": "[!! Token creation returned an unexpected response. A token may have been created — check your list and revoke it if unused. !!]"
+  "settings.profile.apiTokens.toast.createMalformed": "[!! Token creation returned an unexpected response. A token may have been created — check your list and revoke it if unused. !!]",
+  "publicBoard.badge": "[!! Public board · View only !!]",
+  "publicBoard.badgeAria": "[!! Public board, view only. You can read this board but not change it. !!]",
+  "publicBoard.loading": "[!! Loading… !!]",
+  "publicBoard.emptyLane": "[!! No stories !!]",
+  "publicBoard.empty": "[!! No stories match these filters. !!]",
+  "publicBoard.loadFailed": "[!! Couldn't load the board. Try again. !!]",
+  "publicBoard.unavailable.title": "[!! This board isn't available !!]",
+  "publicBoard.unavailable.body": "[!! The link may be wrong, or the board is no longer public. !!]",
+  "publicBoard.story.unavailable": "[!! This story isn't available. !!]",
+  "publicBoard.story.loadFailed": "[!! Couldn't load this story. !!]",
+  "publicBoard.story.noNotes": "[!! No notes !!]",
+  "publicBoard.sprintFilterCleared": "[!! That sprint is no longer available. Showing all sprints. !!]"
 }

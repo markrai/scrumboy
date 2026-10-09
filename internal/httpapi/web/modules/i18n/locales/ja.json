@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "トークンの作成で予期しない応答がありました。トークンが作成された可能性があります。一覧を確認し、未使用であれば失効させてください。"
+  "settings.profile.apiTokens.toast.createMalformed": "トークンの作成で予期しない応答がありました。トークンが作成された可能性があります。一覧を確認し、未使用であれば失効させてください。",
+  "publicBoard.badge": "公開ボード · 閲覧のみ",
+  "publicBoard.badgeAria": "公開ボード（閲覧のみ）。このボードは閲覧できますが、変更はできません。",
+  "publicBoard.loading": "読み込み中…",
+  "publicBoard.emptyLane": "ストーリーはありません",
+  "publicBoard.empty": "これらのフィルターに一致するストーリーはありません。",
+  "publicBoard.loadFailed": "ボードを読み込めませんでした。もう一度お試しください。",
+  "publicBoard.unavailable.title": "このボードは利用できません",
+  "publicBoard.unavailable.body": "リンクが間違っているか、ボードが公開されなくなった可能性があります。",
+  "publicBoard.story.unavailable": "このストーリーは利用できません。",
+  "publicBoard.story.loadFailed": "このストーリーを読み込めませんでした。",
+  "publicBoard.story.noNotes": "メモはありません",
+  "publicBoard.sprintFilterCleared": "そのスプリントは利用できなくなりました。すべてのスプリントを表示しています。"
 }

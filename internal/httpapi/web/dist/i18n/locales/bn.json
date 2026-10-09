@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "টোকেন তৈরিতে একটি অপ্রত্যাশিত প্রতিক্রিয়া পাওয়া গেছে। একটি টোকেন তৈরি হয়ে থাকতে পারে — আপনার তালিকা পরীক্ষা করুন এবং অব্যবহৃত হলে তা বাতিল করুন।"
+  "settings.profile.apiTokens.toast.createMalformed": "টোকেন তৈরিতে একটি অপ্রত্যাশিত প্রতিক্রিয়া পাওয়া গেছে। একটি টোকেন তৈরি হয়ে থাকতে পারে — আপনার তালিকা পরীক্ষা করুন এবং অব্যবহৃত হলে তা বাতিল করুন।",
+  "publicBoard.badge": "পাবলিক বোর্ড · শুধু দেখা",
+  "publicBoard.badgeAria": "পাবলিক বোর্ড, শুধু দেখার জন্য। আপনি এই বোর্ড পড়তে পারবেন, কিন্তু পরিবর্তন করতে পারবেন না।",
+  "publicBoard.loading": "লোড হচ্ছে…",
+  "publicBoard.emptyLane": "কোনো স্টোরি নেই",
+  "publicBoard.empty": "এই ফিল্টারগুলোর সঙ্গে কোনো স্টোরি মেলেনি।",
+  "publicBoard.loadFailed": "বোর্ড লোড করা যায়নি। আবার চেষ্টা করুন।",
+  "publicBoard.unavailable.title": "এই বোর্ডটি পাওয়া যাচ্ছে না",
+  "publicBoard.unavailable.body": "লিংকটি ভুল হতে পারে, অথবা বোর্ডটি আর পাবলিক নয়।",
+  "publicBoard.story.unavailable": "এই স্টোরিটি পাওয়া যাচ্ছে না।",
+  "publicBoard.story.loadFailed": "এই স্টোরিটি লোড করা যায়নি।",
+  "publicBoard.story.noNotes": "কোনো নোট নেই",
+  "publicBoard.sprintFilterCleared": "সেই স্প্রিন্টটি আর পাওয়া যাচ্ছে না। সব স্প্রিন্ট দেখানো হচ্ছে।"
 }

@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "Uundaji wa tokeni ulirudisha jibu lisilotarajiwa. Huenda tokeni iliundwa — kagua orodha yako na uifute ikiwa haitumiki."
+  "settings.profile.apiTokens.toast.createMalformed": "Uundaji wa tokeni ulirudisha jibu lisilotarajiwa. Huenda tokeni iliundwa — kagua orodha yako na uifute ikiwa haitumiki.",
+  "publicBoard.badge": "Ubao wa umma · Kutazama tu",
+  "publicBoard.badgeAria": "Ubao wa umma, kutazama tu. Unaweza kusoma ubao huu lakini huwezi kuubadilisha.",
+  "publicBoard.loading": "Inapakia…",
+  "publicBoard.emptyLane": "Hakuna hadithi",
+  "publicBoard.empty": "Hakuna hadithi zinazolingana na vichujio hivi.",
+  "publicBoard.loadFailed": "Imeshindwa kupakia ubao. Jaribu tena.",
+  "publicBoard.unavailable.title": "Ubao huu haupatikani",
+  "publicBoard.unavailable.body": "Huenda kiungo si sahihi, au ubao si wa umma tena.",
+  "publicBoard.story.unavailable": "Hadithi hii haipatikani.",
+  "publicBoard.story.loadFailed": "Imeshindwa kupakia hadithi hii.",
+  "publicBoard.story.noNotes": "Hakuna maelezo",
+  "publicBoard.sprintFilterCleared": "Sprint hiyo haipatikani tena. Inaonyesha sprint zote."
 }

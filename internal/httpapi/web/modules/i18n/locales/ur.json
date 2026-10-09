@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "ٹوکن بنانے پر غیر متوقع جواب موصول ہوا۔ ممکن ہے ٹوکن بن گیا ہو — اپنی فہرست چیک کریں اور اگر استعمال میں نہیں تو اسے منسوخ کریں۔"
+  "settings.profile.apiTokens.toast.createMalformed": "ٹوکن بنانے پر غیر متوقع جواب موصول ہوا۔ ممکن ہے ٹوکن بن گیا ہو — اپنی فہرست چیک کریں اور اگر استعمال میں نہیں تو اسے منسوخ کریں۔",
+  "publicBoard.badge": "عوامی بورڈ · صرف دیکھیں",
+  "publicBoard.badgeAria": "عوامی بورڈ، صرف دیکھنے کے لیے۔ آپ یہ بورڈ پڑھ سکتے ہیں، لیکن اسے تبدیل نہیں کر سکتے۔",
+  "publicBoard.loading": "لوڈ ہو رہا ہے…",
+  "publicBoard.emptyLane": "کوئی اسٹوری نہیں",
+  "publicBoard.empty": "ان فلٹرز سے کوئی اسٹوری میل نہیں کھاتی۔",
+  "publicBoard.loadFailed": "بورڈ لوڈ نہیں ہو سکا۔ دوبارہ کوشش کریں۔",
+  "publicBoard.unavailable.title": "یہ بورڈ دستیاب نہیں ہے",
+  "publicBoard.unavailable.body": "ہو سکتا ہے لنک غلط ہو، یا بورڈ اب عوامی نہ رہا ہو۔",
+  "publicBoard.story.unavailable": "یہ اسٹوری دستیاب نہیں ہے۔",
+  "publicBoard.story.loadFailed": "یہ اسٹوری لوڈ نہیں ہو سکی۔",
+  "publicBoard.story.noNotes": "کوئی نوٹ نہیں",
+  "publicBoard.sprintFilterCleared": "وہ اسپرنٹ اب دستیاب نہیں ہے۔ تمام اسپرنٹس دکھائے جا رہے ہیں۔"
 }

@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "ایجاد توکن پاسخ غیرمنتظره‌ای بازگرداند. ممکن است توکنی ایجاد شده باشد — فهرست خود را بررسی کنید و در صورت عدم استفاده آن را لغو کنید."
+  "settings.profile.apiTokens.toast.createMalformed": "ایجاد توکن پاسخ غیرمنتظره‌ای بازگرداند. ممکن است توکنی ایجاد شده باشد — فهرست خود را بررسی کنید و در صورت عدم استفاده آن را لغو کنید.",
+  "publicBoard.badge": "تختهٔ عمومی · فقط مشاهده",
+  "publicBoard.badgeAria": "تختهٔ عمومی، فقط مشاهده. می‌توانید این تخته را بخوانید اما نمی‌توانید آن را تغییر دهید.",
+  "publicBoard.loading": "در حال بارگیری…",
+  "publicBoard.emptyLane": "داستانی وجود ندارد",
+  "publicBoard.empty": "هیچ داستانی با این فیلترها مطابقت ندارد.",
+  "publicBoard.loadFailed": "بارگیری تخته ممکن نشد. دوباره تلاش کنید.",
+  "publicBoard.unavailable.title": "این تخته در دسترس نیست",
+  "publicBoard.unavailable.body": "ممکن است پیوند اشتباه باشد یا تخته دیگر عمومی نباشد.",
+  "publicBoard.story.unavailable": "این داستان در دسترس نیست.",
+  "publicBoard.story.loadFailed": "بارگیری این داستان ممکن نشد.",
+  "publicBoard.story.noNotes": "یادداشتی وجود ندارد",
+  "publicBoard.sprintFilterCleared": "این اسپرینت دیگر در دسترس نیست. همهٔ اسپرینت‌ها نمایش داده می‌شوند."
 }

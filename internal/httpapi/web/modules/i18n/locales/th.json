@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "การสร้างโทเคนได้รับการตอบกลับที่ไม่คาดคิด อาจมีการสร้างโทเคนแล้ว — โปรดตรวจสอบรายการของคุณและเพิกถอนหากไม่ได้ใช้งาน"
+  "settings.profile.apiTokens.toast.createMalformed": "การสร้างโทเคนได้รับการตอบกลับที่ไม่คาดคิด อาจมีการสร้างโทเคนแล้ว — โปรดตรวจสอบรายการของคุณและเพิกถอนหากไม่ได้ใช้งาน",
+  "publicBoard.badge": "บอร์ดสาธารณะ · ดูอย่างเดียว",
+  "publicBoard.badgeAria": "บอร์ดสาธารณะ ดูได้อย่างเดียว คุณอ่านบอร์ดนี้ได้แต่แก้ไขไม่ได้",
+  "publicBoard.loading": "กำลังโหลด…",
+  "publicBoard.emptyLane": "ไม่มีสตอรี",
+  "publicBoard.empty": "ไม่มีสตอรีที่ตรงกับตัวกรองเหล่านี้",
+  "publicBoard.loadFailed": "โหลดบอร์ดไม่ได้ ลองอีกครั้ง",
+  "publicBoard.unavailable.title": "บอร์ดนี้ไม่พร้อมใช้งาน",
+  "publicBoard.unavailable.body": "ลิงก์อาจไม่ถูกต้อง หรือบอร์ดไม่เป็นสาธารณะแล้ว",
+  "publicBoard.story.unavailable": "สตอรีนี้ไม่พร้อมใช้งาน",
+  "publicBoard.story.loadFailed": "โหลดสตอรีนี้ไม่ได้",
+  "publicBoard.story.noNotes": "ไม่มีบันทึก",
+  "publicBoard.sprintFilterCleared": "สปรินต์นั้นไม่พร้อมใช้งานแล้ว กำลังแสดงสปรินต์ทั้งหมด"
 }

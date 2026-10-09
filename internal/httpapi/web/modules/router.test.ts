@@ -13,6 +13,10 @@ const {
   renderNotFoundMock,
   stopBoardEventsMock,
   stopArchiveEventsMock,
+  resolvePublicBoardMock,
+  applyPublicBoardRouteMock,
+  isPublicBoardSessionForMock,
+  stopPublicBoardMock,
   startGlobalRealtimeMock,
   stopGlobalRealtimeMock,
   initForegroundLifecycleMock,
@@ -38,6 +42,10 @@ const {
   renderNotFoundMock: vi.fn(),
   stopBoardEventsMock: vi.fn(),
   stopArchiveEventsMock: vi.fn(),
+  resolvePublicBoardMock: vi.fn(async () => 'not-public'),
+  applyPublicBoardRouteMock: vi.fn(async () => undefined),
+  isPublicBoardSessionForMock: vi.fn(() => false),
+  stopPublicBoardMock: vi.fn(),
   startGlobalRealtimeMock: vi.fn(),
   stopGlobalRealtimeMock: vi.fn(),
   initForegroundLifecycleMock: vi.fn(),
@@ -68,6 +76,10 @@ vi.mock('./views/index.js', () => ({
   renderNotFound: renderNotFoundMock,
   stopBoardEvents: stopBoardEventsMock,
   stopArchiveEvents: stopArchiveEventsMock,
+  resolvePublicBoard: resolvePublicBoardMock,
+  applyPublicBoardRoute: applyPublicBoardRouteMock,
+  isPublicBoardSessionFor: isPublicBoardSessionForMock,
+  stopPublicBoard: stopPublicBoardMock,
 }));
 
 vi.mock('./core/realtime.js', () => ({
@@ -1252,5 +1264,118 @@ describe('router invalid URL redirect', () => {
     expect(renderNotFoundMock).not.toHaveBeenCalled();
     expect(renderAuthMock).not.toHaveBeenCalled();
     expect(renderProjectsMock).not.toHaveBeenCalled();
+  });
+
+  describe('public board fallback', () => {
+    beforeEach(() => {
+      resolvePublicBoardMock.mockClear();
+      resolvePublicBoardMock.mockImplementation(async () => 'not-public');
+      applyPublicBoardRouteMock.mockClear();
+      isPublicBoardSessionForMock.mockClear();
+      isPublicBoardSessionForMock.mockImplementation(() => false);
+      stopPublicBoardMock.mockClear();
+    });
+
+    it('renders the public board for a signed-out visitor instead of the sign-in wall', async () => {
+      window.history.replaceState({}, '', '/ignite');
+      installSignedOutFullMode();
+      renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('unauthorized'), { status: 401 }));
+      resolvePublicBoardMock.mockResolvedValueOnce('rendered');
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(resolvePublicBoardMock).toHaveBeenCalledWith({ slug: 'ignite', openTodoSegment: null });
+      expect(stopBoardEventsMock).toHaveBeenCalled();
+      expect(window.location.pathname).toBe('/ignite');
+      expect(renderAuthMock).not.toHaveBeenCalled();
+      expect(renderProjectsMock).not.toHaveBeenCalled();
+    });
+
+    it('renders the public board for a signed-in nonmember and keeps story deep links', async () => {
+      window.history.replaceState({}, '', '/ignite/t/5');
+      installSignedInFullMode();
+      renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+      resolvePublicBoardMock.mockResolvedValueOnce('rendered');
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(renderBoardMock).toHaveBeenCalledTimes(1);
+      expect(resolvePublicBoardMock).toHaveBeenCalledWith({ slug: 'ignite', openTodoSegment: '5' });
+      expect(window.location.pathname).toBe('/ignite/t/5');
+      expect(renderProjectsMock).not.toHaveBeenCalled();
+    });
+
+    it('keeps the existing not-found behavior when the board is not public', async () => {
+      window.history.replaceState({}, '', '/private-board');
+      installSignedInFullMode();
+      renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(resolvePublicBoardMock).toHaveBeenCalledTimes(1);
+      expect(window.location.pathname).toBe('/');
+    });
+
+    it('does not fall back on server or network errors', async () => {
+      window.history.replaceState({}, '', '/ignite');
+      installSignedInFullMode();
+      renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const mod = await loadRouterModule();
+
+      await expect(mod.router()).rejects.toThrow('boom');
+      expect(resolvePublicBoardMock).not.toHaveBeenCalled();
+    });
+
+    it('never attempts public access in Anonymous Mode', async () => {
+      window.history.replaceState({}, '', '/ignite');
+      installAnonymousMode();
+      renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+      vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(resolvePublicBoardMock).not.toHaveBeenCalled();
+    });
+
+    it('a member board is used directly; no public request is made', async () => {
+      window.history.replaceState({}, '', '/ignite');
+      installSignedInFullMode();
+      renderBoardMock.mockResolvedValueOnce(undefined);
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(renderBoardMock).toHaveBeenCalledTimes(1);
+      expect(resolvePublicBoardMock).not.toHaveBeenCalled();
+      expect(stopPublicBoardMock).toHaveBeenCalled();
+    });
+
+    it('routes in-board navigation on a resolved public board without retrying the member route', async () => {
+      window.history.replaceState({}, '', '/ignite/t/9');
+      installSignedOutFullMode();
+      isPublicBoardSessionForMock.mockImplementation((slug: string) => slug === 'ignite');
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(applyPublicBoardRouteMock).toHaveBeenCalledWith({ slug: 'ignite', openTodoSegment: '9' });
+      expect(renderBoardMock).not.toHaveBeenCalled();
+      expect(resolvePublicBoardMock).not.toHaveBeenCalled();
+    });
+
+    it('tears down public board state when navigating away from the board', async () => {
+      window.history.replaceState({}, '', '/dashboard');
+      installSignedInFullMode();
+      const mod = await loadRouterModule();
+
+      await mod.router();
+
+      expect(stopPublicBoardMock).toHaveBeenCalled();
+    });
   });
 });

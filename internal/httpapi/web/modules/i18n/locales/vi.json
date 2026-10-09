@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "Việc tạo token trả về phản hồi không mong muốn. Có thể một token đã được tạo — hãy kiểm tra danh sách của bạn và thu hồi nếu không sử dụng."
+  "settings.profile.apiTokens.toast.createMalformed": "Việc tạo token trả về phản hồi không mong muốn. Có thể một token đã được tạo — hãy kiểm tra danh sách của bạn và thu hồi nếu không sử dụng.",
+  "publicBoard.badge": "Bảng công khai · Chỉ xem",
+  "publicBoard.badgeAria": "Bảng công khai, chỉ xem. Bạn có thể đọc bảng này nhưng không thể thay đổi.",
+  "publicBoard.loading": "Đang tải…",
+  "publicBoard.emptyLane": "Không có câu chuyện",
+  "publicBoard.empty": "Không có câu chuyện nào khớp với các bộ lọc này.",
+  "publicBoard.loadFailed": "Không thể tải bảng. Hãy thử lại.",
+  "publicBoard.unavailable.title": "Bảng này không khả dụng",
+  "publicBoard.unavailable.body": "Liên kết có thể sai hoặc bảng không còn công khai.",
+  "publicBoard.story.unavailable": "Câu chuyện này không khả dụng.",
+  "publicBoard.story.loadFailed": "Không thể tải câu chuyện này.",
+  "publicBoard.story.noNotes": "Không có ghi chú",
+  "publicBoard.sprintFilterCleared": "Sprint đó không còn khả dụng. Đang hiển thị tất cả sprint."
 }

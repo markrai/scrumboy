@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "创建令牌时返回了意外响应。可能已创建了一个令牌——请检查您的列表，如未使用请将其吊销。"
+  "settings.profile.apiTokens.toast.createMalformed": "创建令牌时返回了意外响应。可能已创建了一个令牌——请检查您的列表，如未使用请将其吊销。",
+  "publicBoard.badge": "公开看板 · 仅查看",
+  "publicBoard.badgeAria": "公开看板，仅可查看。你可以阅读此看板，但不能修改。",
+  "publicBoard.loading": "加载中…",
+  "publicBoard.emptyLane": "暂无故事",
+  "publicBoard.empty": "没有符合这些筛选条件的故事。",
+  "publicBoard.loadFailed": "无法加载看板。请重试。",
+  "publicBoard.unavailable.title": "此看板不可用",
+  "publicBoard.unavailable.body": "链接可能有误，或此看板已不再公开。",
+  "publicBoard.story.unavailable": "此故事不可用。",
+  "publicBoard.story.loadFailed": "无法加载此故事。",
+  "publicBoard.story.noNotes": "无备注",
+  "publicBoard.sprintFilterCleared": "该冲刺已不可用。正在显示所有冲刺。"
 }

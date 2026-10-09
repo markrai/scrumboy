@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "Створення токена повернуло неочікувану відповідь. Можливо, токен було створено — перевірте список і відкличте його, якщо він не використовується."
+  "settings.profile.apiTokens.toast.createMalformed": "Створення токена повернуло неочікувану відповідь. Можливо, токен було створено — перевірте список і відкличте його, якщо він не використовується.",
+  "publicBoard.badge": "Публічна дошка · Лише перегляд",
+  "publicBoard.badgeAria": "Публічна дошка, лише перегляд. Ви можете переглядати цю дошку, але не змінювати її.",
+  "publicBoard.loading": "Завантаження…",
+  "publicBoard.emptyLane": "Немає історій",
+  "publicBoard.empty": "Жодна історія не відповідає цим фільтрам.",
+  "publicBoard.loadFailed": "Не вдалося завантажити дошку. Спробуйте ще раз.",
+  "publicBoard.unavailable.title": "Ця дошка недоступна",
+  "publicBoard.unavailable.body": "Можливо, посилання неправильне або дошка більше не публічна.",
+  "publicBoard.story.unavailable": "Ця історія недоступна.",
+  "publicBoard.story.loadFailed": "Не вдалося завантажити цю історію.",
+  "publicBoard.story.noNotes": "Немає нотаток",
+  "publicBoard.sprintFilterCleared": "Цей спринт більше недоступний. Показано всі спринти."
 }

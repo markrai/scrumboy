@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "Penciptaan token mengembalikan respons yang tidak dijangka. Token mungkin telah dicipta — semak senarai anda dan batalkan jika tidak digunakan."
+  "settings.profile.apiTokens.toast.createMalformed": "Penciptaan token mengembalikan respons yang tidak dijangka. Token mungkin telah dicipta — semak senarai anda dan batalkan jika tidak digunakan.",
+  "publicBoard.badge": "Papan awam · Lihat sahaja",
+  "publicBoard.badgeAria": "Papan awam, lihat sahaja. Anda boleh membaca papan ini tetapi tidak boleh mengubahnya.",
+  "publicBoard.loading": "Memuatkan…",
+  "publicBoard.emptyLane": "Tiada cerita",
+  "publicBoard.empty": "Tiada cerita yang sepadan dengan penapis ini.",
+  "publicBoard.loadFailed": "Tidak dapat memuatkan papan. Cuba lagi.",
+  "publicBoard.unavailable.title": "Papan ini tidak tersedia",
+  "publicBoard.unavailable.body": "Pautan mungkin salah, atau papan ini tidak lagi awam.",
+  "publicBoard.story.unavailable": "Cerita ini tidak tersedia.",
+  "publicBoard.story.loadFailed": "Tidak dapat memuatkan cerita ini.",
+  "publicBoard.story.noNotes": "Tiada nota",
+  "publicBoard.sprintFilterCleared": "Sprint itu tidak lagi tersedia. Memaparkan semua sprint."
 }

@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "A criação do token retornou uma resposta inesperada. Um token pode ter sido criado — verifique sua lista e revogue-o se não for usado."
+  "settings.profile.apiTokens.toast.createMalformed": "A criação do token retornou uma resposta inesperada. Um token pode ter sido criado — verifique sua lista e revogue-o se não for usado.",
+  "publicBoard.badge": "Quadro público · Somente visualização",
+  "publicBoard.badgeAria": "Quadro público, somente visualização. Você pode ver este quadro, mas não pode alterá-lo.",
+  "publicBoard.loading": "Carregando…",
+  "publicBoard.emptyLane": "Nenhuma história",
+  "publicBoard.empty": "Nenhuma história corresponde a estes filtros.",
+  "publicBoard.loadFailed": "Não foi possível carregar o quadro. Tente novamente.",
+  "publicBoard.unavailable.title": "Este quadro não está disponível",
+  "publicBoard.unavailable.body": "O link pode estar errado ou o quadro não é mais público.",
+  "publicBoard.story.unavailable": "Esta história não está disponível.",
+  "publicBoard.story.loadFailed": "Não foi possível carregar esta história.",
+  "publicBoard.story.noNotes": "Sem notas",
+  "publicBoard.sprintFilterCleared": "Esse sprint não está mais disponível. Mostrando todos os sprints."
 }

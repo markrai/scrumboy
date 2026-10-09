@@ -12,6 +12,9 @@ export function getSlug() {
 export function getBoard() {
     return current.board;
 }
+export function getBoardAccess() {
+    return current.boardAccess;
+}
 export function getSearch() {
     return current.search;
 }

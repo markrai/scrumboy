@@ -1009,3 +1009,60 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
     expect(contentEl.scrollTop).toBe(240);
   });
 });
+
+describe('settings on a public read-only board', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installBaseDOM();
+    window.history.replaceState({}, '', '/ignite');
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValue(null);
+    fetchProjectMembersMock.mockReset();
+    fetchProjectMembersMock.mockResolvedValue([]);
+    invalidateBoardMock.mockReset();
+  });
+
+  afterEach(async () => {
+    const i18n = await import('../i18n/index.js');
+    const settingsGlobal = globalThis as { __scrumboySettingsLocaleListener?: EventListener };
+    if (settingsGlobal.__scrumboySettingsLocaleListener) {
+      document.removeEventListener('scrumboy:i18n-locale-changed', settingsGlobal.__scrumboySettingsLocaleListener);
+      delete settingsGlobal.__scrumboySettingsLocaleListener;
+    }
+    i18n.resetI18nForTests();
+    document.body.innerHTML = '';
+    window.history.replaceState({}, '', '/');
+  });
+
+  it.each([
+    ['signed-out visitor', null],
+    ['signed-in nonmember', USER],
+  ])('a %s gets no board, tag, chart, or backup surface and no member request', async (_label, user) => {
+    await initI18nFor('en');
+    const settings = await import('./settings.js');
+    const mutations = await import('../state/mutations.js');
+    const access = await import('../state/board-access.js');
+    mutations.setAuthStatusAvailable(true);
+    mutations.setPushConfigured(false);
+    mutations.setUser(user as any);
+    mutations.setSlug('ignite');
+    mutations.setBoard(null);
+    mutations.setProjects(null);
+    mutations.setProjectId(null);
+    mutations.setBoardMembers([]);
+    mutations.setBoardAccess(access.PUBLIC_BOARD_ACCESS);
+    mutations.setSettingsActiveTab('tag-colors');
+
+    await settings.renderSettingsModal();
+    await flushPromises();
+
+    const tabs = Array.from(document.querySelectorAll('[data-tab]')).map((el) => el.getAttribute('data-tab'));
+    for (const forbidden of ['tag-colors', 'backup', 'charts', 'sprints', 'workflow', 'priorities', 'calendar']) {
+      expect(tabs).not.toContain(forbidden);
+    }
+    expect(tabs).toContain('customization');
+    const requested = apiFetchMock.mock.calls.map((call) => String(call[0]));
+    expect(requested.some((url) => url.includes('/api/board/') || url.includes('/api/projects/') || url.includes('/api/tags'))).toBe(false);
+    expect(fetchProjectMembersMock).not.toHaveBeenCalled();
+  });
+});

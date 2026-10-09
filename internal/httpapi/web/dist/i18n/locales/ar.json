@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "أعاد إنشاء الرمز استجابة غير متوقعة. ربما تم إنشاء رمز — راجع قائمتك وقم بإلغائه إذا لم يكن مستخدمًا."
+  "settings.profile.apiTokens.toast.createMalformed": "أعاد إنشاء الرمز استجابة غير متوقعة. ربما تم إنشاء رمز — راجع قائمتك وقم بإلغائه إذا لم يكن مستخدمًا.",
+  "publicBoard.badge": "لوحة عامة · للعرض فقط",
+  "publicBoard.badgeAria": "لوحة عامة للعرض فقط. يمكنك قراءة هذه اللوحة لكن لا يمكنك تغييرها.",
+  "publicBoard.loading": "جارٍ التحميل…",
+  "publicBoard.emptyLane": "لا توجد قصص",
+  "publicBoard.empty": "لا توجد قصص تطابق عوامل التصفية هذه.",
+  "publicBoard.loadFailed": "تعذّر تحميل اللوحة. حاول مرة أخرى.",
+  "publicBoard.unavailable.title": "هذه اللوحة غير متاحة",
+  "publicBoard.unavailable.body": "قد يكون الرابط خاطئًا، أو لم تعد اللوحة عامة.",
+  "publicBoard.story.unavailable": "هذه القصة غير متاحة.",
+  "publicBoard.story.loadFailed": "تعذّر تحميل هذه القصة.",
+  "publicBoard.story.noNotes": "لا توجد ملاحظات",
+  "publicBoard.sprintFilterCleared": "لم يعد هذا السبرنت متاحًا. يتم عرض جميع السبرنتات."
 }

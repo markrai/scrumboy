@@ -7,9 +7,10 @@ import { escapeHTML, showToast, processImageFile, showConfirmDialog, showPromptD
 import { FIELD_TOOLTIPS, fieldLabelHTML, titleAttr } from '../field-tooltips.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { getAssigneeFromUrl, getBoard, getMobileTab, getPriorityFromUrl, getSlug, getTagsFromUrl, getSearch, getSortFromUrl, getSprintIdFromUrl, getEditingTodo, getProjectId, getTagColors, getUser, getBoardLaneMeta, getLaneDisplayCount, getBoardMembers, getWallEnabled, } from '../state/selectors.js';
-import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
+import { setProjectId, setBoard, setOpenTodoSegment, setMobileTab, setTagColors, setSettingsActiveTab, setBoardAccess, setBoardMembers, setLaneLoading, appendLaneTodos, } from '../state/mutations.js';
 import { appendTagParams, normalizeBoardTagFilters, sameOrderedTags } from '../state/board-filter-url.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
+import { accessForMemberRouteBoard } from '../state/board-access.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
@@ -936,7 +937,8 @@ function renderBoardFromData(board, projectId, tags, search, sprintId, assignee,
     }
     // Check if we're already on a board page - if so, only update board content
     // We check for the board container, not just the topbar, because projects page also has a topbar
-    const existingBoardContainer = document.querySelector(".board");
+    // A public read-only board is never updated in place by member rendering.
+    const existingBoardContainer = document.querySelector(".board:not([data-public-board])");
     const savedAgendaScroll = captureAgendaListScroll();
     if (existingBoardContainer && !opts.forceFullRender) {
         updateBoardContent(board, tags, search, sprintId, assignee, sort, priority);
@@ -1708,6 +1710,7 @@ export async function loadBoardBySlug(slug, tags, search, sprintId = null, assig
             lastFetchedProjectId = projectId;
         },
         renderLoadedBoard: (renderOpts) => {
+            setBoardAccess(accessForMemberRouteBoard(board));
             renderBoardFromData(board, renderOpts.projectId, requestTags, search || "", effectiveSprintId, requestAssignee, requestSort, requestPriority, renderOpts);
         },
         markLoadSuccess: (loadedSlug) => {
@@ -1858,6 +1861,7 @@ export async function renderBoard(slug, tags, search, sprintId, assignee = null,
                 lastFetchedProjectId = projectId;
             },
             renderLoadedBoard: (renderOpts) => {
+                setBoardAccess(accessForMemberRouteBoard(board));
                 renderBoardFromData(board, renderOpts.projectId, tags, search || "", sprintId, assignee, sort, priority, renderOpts);
             },
             markLoadSuccess: (loadedSlug) => {
@@ -1896,12 +1900,19 @@ export async function renderBoard(slug, tags, search, sprintId, assignee = null,
     }
     else if (!opts.skipLoad) {
         setInitialBoardLoadInFlight(slug);
+        let loadFailed = false;
         try {
             await loadBoardBySlug(slug, tags, search || null, sprintId, assignee, sort, priority);
         }
+        catch (err) {
+            loadFailed = true;
+            throw err;
+        }
         finally {
             setInitialBoardLoadInFlight(null);
-            if (getSlug() === slug)
+            // A denied or failed member read must not open board realtime for that
+            // slug (it may resolve to the public view, which uses only the public stream).
+            if (!loadFailed && getSlug() === slug)
                 connectBoardEvents(slug);
         }
     }

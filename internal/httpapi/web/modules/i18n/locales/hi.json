@@ -1404,5 +1404,17 @@
   "settings.customization.boardFilterLayout.description": "Choose compact search-based tag discovery or the permanent tag and sprint pills.",
   "settings.customization.boardFilterLayout.omni": "Omni / compact filtering",
   "settings.customization.boardFilterLayout.legacy": "Legacy pills",
-  "settings.profile.apiTokens.toast.createMalformed": "टोकन बनाने पर अनपेक्षित प्रतिक्रिया मिली। हो सकता है कि टोकन बन गया हो — अपनी सूची जाँचें और अप्रयुक्त होने पर उसे रद्द करें।"
+  "settings.profile.apiTokens.toast.createMalformed": "टोकन बनाने पर अनपेक्षित प्रतिक्रिया मिली। हो सकता है कि टोकन बन गया हो — अपनी सूची जाँचें और अप्रयुक्त होने पर उसे रद्द करें।",
+  "publicBoard.badge": "सार्वजनिक बोर्ड · केवल देखें",
+  "publicBoard.badgeAria": "सार्वजनिक बोर्ड, केवल देखने के लिए। आप इस बोर्ड को पढ़ सकते हैं, लेकिन बदल नहीं सकते।",
+  "publicBoard.loading": "लोड हो रहा है…",
+  "publicBoard.emptyLane": "कोई स्टोरी नहीं",
+  "publicBoard.empty": "इन फ़िल्टर से कोई स्टोरी मेल नहीं खाती।",
+  "publicBoard.loadFailed": "बोर्ड लोड नहीं हो सका। फिर से कोशिश करें।",
+  "publicBoard.unavailable.title": "यह बोर्ड उपलब्ध नहीं है",
+  "publicBoard.unavailable.body": "लिंक गलत हो सकता है, या बोर्ड अब सार्वजनिक नहीं है।",
+  "publicBoard.story.unavailable": "यह स्टोरी उपलब्ध नहीं है।",
+  "publicBoard.story.loadFailed": "यह स्टोरी लोड नहीं हो सकी।",
+  "publicBoard.story.noNotes": "कोई नोट नहीं",
+  "publicBoard.sprintFilterCleared": "वह स्प्रिंट अब उपलब्ध नहीं है। सभी स्प्रिंट दिखाए जा रहे हैं।"
 }
