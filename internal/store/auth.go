@@ -303,7 +303,7 @@ func (s *Store) ClaimTemporaryBoard(ctx context.Context, projectID, userID int64
 	// durable project, but only for the recorded creator. All other states match zero rows.
 	res, err := tx.ExecContext(ctx, `
 UPDATE projects
-SET owner_user_id = ?, expires_at = NULL, last_activity_at = ?, updated_at = ?
+SET owner_user_id = ?, expires_at = NULL, public_view_enabled = 0, last_activity_at = ?, updated_at = ?
 WHERE id = ?
   AND owner_user_id IS NULL
   AND expires_at IS NOT NULL

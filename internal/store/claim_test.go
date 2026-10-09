@@ -114,4 +114,12 @@ func TestClaimTemporaryBoard_PromotesExistingMembershipToMaintainer(t *testing.T
 	if count != 1 {
 		t.Fatalf("expected exactly 1 membership row, got %d", count)
 	}
+
+	var publicViewingEnabled int
+	if err := sqlDB.QueryRow(`SELECT public_view_enabled FROM projects WHERE id = ?`, p.ID).Scan(&publicViewingEnabled); err != nil {
+		t.Fatalf("read claimed publication state: %v", err)
+	}
+	if publicViewingEnabled != 0 {
+		t.Fatalf("claimed public_view_enabled = %d, want 0", publicViewingEnabled)
+	}
 }

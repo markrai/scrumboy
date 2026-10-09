@@ -48,7 +48,7 @@ func (s *Store) UpdateProjectBoardSettings(ctx context.Context, projectID, userI
 	if err := serializeProjectWriteTx(ctx, tx, projectID); err != nil {
 		return ProjectBoardSettings{}, err
 	}
-	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT id, name, image, slug, dominant_color, estimation_mode, default_sprint_weeks, sprints_enabled, owner_user_id, creator_user_id, last_activity_at, expires_at, created_at, updated_at FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
+	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT `+projectSelectColumns+` FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
 	if err != nil {
 		return ProjectBoardSettings{}, err
 	}

@@ -17,6 +17,7 @@ import (
 	priorityapp "scrumboy/internal/application/priority"
 	projectapp "scrumboy/internal/application/project"
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
+	publicboardapp "scrumboy/internal/application/publicboard"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	tagapp "scrumboy/internal/application/tag"
@@ -48,6 +49,12 @@ type Options struct {
 	MaxRequestBody      int64
 	MaxTrelloImportBody int64
 	ScrumboyMode        string // "full" or "anonymous"
+	// PublicProjectsEnabled gates publication management capabilities. Phase 1
+	// stores the value without adding public read routes.
+	PublicProjectsEnabled bool
+	// LandingPageEnabled is independent of public-project capability. Phase 1
+	// stores the value without changing routing.
+	LandingPageEnabled bool
 	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
 	// Empty disables wallpaper upload/serve (returns 503 for those routes).
 	DataDir             string
@@ -129,6 +136,7 @@ type Server struct {
 	projectUpdates                *projectapp.RESTUpdateService
 	projectDeletions              *projectapp.RESTDeletionService
 	projectClaims                 *projectapp.RESTClaimService
+	publicBoardPublications       *publicboardapp.PublicationService
 	todoCreates                   *todoapp.CreateService
 	todoDeletes                   *todoapp.DeleteService
 	todoMoves                     *todoapp.MoveService
@@ -164,6 +172,8 @@ type Server struct {
 	maxBody                 int64
 	maxTrelloImportBody     int64
 	mode                    string // "full" or "anonymous"
+	publicProjectsEnabled   bool
+	landingPageEnabled      bool
 	hub                     *Hub
 	sink                    EventSink
 	fanout                  *eventbus.Fanout
@@ -290,6 +300,7 @@ type storeAPI interface {
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
 	UpdateProjectBoardSettings(ctx context.Context, projectID, userID int64, patch store.ProjectBoardSettingsPatch) (store.ProjectBoardSettings, error)
+	publicboardapp.PublicationMutationStore
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	calendarapp.SourceStore
@@ -606,10 +617,17 @@ func NewServer(st storeAPI, opts Options) *Server {
 			SlugAccess:   st,
 			SlugSprints:  st,
 		}),
+		publicBoardPublications: publicboardapp.NewPublicationService(publicboardapp.PublicationServiceOptions{
+			Mutations:             st,
+			Mode:                  store.Mode(mode),
+			PublicProjectsEnabled: opts.PublicProjectsEnabled,
+		}),
 		logger:                      logger,
 		maxBody:                     maxBody,
 		maxTrelloImportBody:         maxTrelloImportBody,
 		mode:                        mode,
+		publicProjectsEnabled:       opts.PublicProjectsEnabled,
+		landingPageEnabled:          opts.LandingPageEnabled,
 		dataDir:                     strings.TrimSpace(opts.DataDir),
 		hub:                         hub,
 		sink:                        hub,

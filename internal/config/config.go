@@ -22,6 +22,15 @@ type Config struct {
 
 	ScrumboyMode string // "full" or "anonymous", default "full"
 
+	// PublicProjectsEnabled is the operator-controlled capability gate for
+	// durable-project publication management. It defaults off.
+	PublicProjectsEnabled bool
+
+	// LandingPageEnabled is the independent presentation gate for a future
+	// Full Mode landing page. Phase 1 only propagates the value; routing is
+	// unchanged. It defaults off.
+	LandingPageEnabled bool
+
 	// TwoFactorEncryptionKey is a base64-encoded 32-byte key for AES-256-GCM encryption of TOTP secrets.
 	// Set via SCRUMBOY_ENCRYPTION_KEY. Generate with: openssl rand -base64 32
 	TwoFactorEncryptionKey string
@@ -121,7 +130,9 @@ func FromEnv() Config {
 		SQLiteJournalMode: getenv("SQLITE_JOURNAL_MODE", "WAL"),
 		SQLiteSynchronous: getenv("SQLITE_SYNCHRONOUS", "FULL"),
 
-		ScrumboyMode: mode,
+		ScrumboyMode:          mode,
+		PublicProjectsEnabled: optInFeatureEnabledFromEnv("SCRUMBOY_PUBLIC_PROJECTS_ENABLED"),
+		LandingPageEnabled:    optInFeatureEnabledFromEnv("SCRUMBOY_LANDING_PAGE_ENABLED"),
 		// Trim whitespace so keys from .env / copy-paste decode (base64 is sensitive to newlines).
 		TwoFactorEncryptionKey: strings.TrimSpace(os.Getenv("SCRUMBOY_ENCRYPTION_KEY")),
 
@@ -240,7 +251,14 @@ func wallEnabledFromEnv() bool {
 // preview is enabled. Default is false unless explicitly opted in with
 // 1/true/on/yes (trimmed, case-insensitive).
 func markdownNotesEnabledFromEnv() bool {
-	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_MARKDOWN_NOTES_ENABLED")))
+	return optInFeatureEnabledFromEnv("SCRUMBOY_MARKDOWN_NOTES_ENABLED")
+}
+
+// optInFeatureEnabledFromEnv parses disabled-by-default feature flags. Only
+// the repository's explicit truthy values enable a feature; every other value
+// fails closed.
+func optInFeatureEnabledFromEnv(key string) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
 	switch v {
 	case "1", "true", "on", "yes":
 		return true
@@ -253,13 +271,7 @@ func markdownNotesEnabledFromEnv() bool {
 // X-Forwarded-For. Default false unless explicitly opted in with
 // 1/true/on/yes (trimmed, case-insensitive).
 func trustProxyFromEnv() bool {
-	v := strings.TrimSpace(strings.ToLower(os.Getenv("SCRUMBOY_TRUST_PROXY")))
-	switch v {
-	case "1", "true", "on", "yes":
-		return true
-	default:
-		return false
-	}
+	return optInFeatureEnabledFromEnv("SCRUMBOY_TRUST_PROXY")
 }
 
 // mermaidNotesEnabledFromEnv returns whether Mermaid preview is enabled for todo

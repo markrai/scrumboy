@@ -186,15 +186,16 @@ type ProjectContext struct {
 }
 
 type Project struct {
-	ID                 int64
-	Name               string
-	Image              *string // Base64 encoded image data URL
-	DominantColor      string
-	EstimationMode     string
-	DefaultSprintWeeks int
-	SprintsEnabled     bool
-	Slug               string
-	OwnerUserID        *int64 // NULL for unowned boards (Temporary and Anonymous Boards); set for Durable Projects
+	ID                   int64
+	Name                 string
+	Image                *string // Base64 encoded image data URL
+	DominantColor        string
+	EstimationMode       string
+	DefaultSprintWeeks   int
+	SprintsEnabled       bool
+	Slug                 string
+	PublicViewingEnabled bool
+	OwnerUserID          *int64 // NULL for unowned boards (Temporary and Anonymous Boards); set for Durable Projects
 	// CreatorUserID represents who created the project at creation time.
 	// This is immutable historical metadata, not a general permission source.
 	// - NULL for Anonymous Boards (created without an authenticated user)
