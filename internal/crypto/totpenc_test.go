@@ -2,6 +2,9 @@ package crypto
 
 import (
 	"bytes"
+	"encoding/base64"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -54,12 +57,33 @@ func TestDecryptWrongKey(t *testing.T) {
 }
 
 func TestDecryptTampered(t *testing.T) {
-	key, _ := DecodeKey("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=")
+	key, err := DecodeKey("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=")
+	if err != nil {
+		t.Fatalf("decode key: %v", err)
+	}
 	plaintext := []byte("secret")
-	encrypted, _ := EncryptTOTPSecret(key, plaintext)
-	tampered := encrypted[:len(encrypted)-2] + "xx"
-	_, err := DecryptTOTPSecret(key, tampered)
-	if err == nil {
-		t.Fatal("expected decrypt to fail with tampered ciphertext")
+	encrypted, err := EncryptTOTPSecret(key, plaintext)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if !strings.HasPrefix(encrypted, "v1:") {
+		t.Fatalf("expected v1: prefix, got %q", encrypted)
+	}
+	combined, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(encrypted, "v1:"))
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if len(combined) <= nonceLen {
+		t.Fatalf("payload too short for nonce and ciphertext: %d bytes", len(combined))
+	}
+	original := append([]byte(nil), combined...)
+	combined[nonceLen] ^= 0x01
+	if bytes.Equal(combined, original) {
+		t.Fatal("tampering did not change the encrypted bytes")
+	}
+	tampered := "v1:" + base64.RawURLEncoding.EncodeToString(combined)
+	_, err = DecryptTOTPSecret(key, tampered)
+	if !errors.Is(err, ErrDecrypt) {
+		t.Fatalf("expected ErrDecrypt, got %v", err)
 	}
 }
