@@ -10,6 +10,8 @@ on:
       - go.sum
       - internal/httpapi/web/package.json
       - internal/httpapi/web/package-lock.json
+      - mobile/capacitor/package.json
+      - mobile/capacitor/package-lock.json
       - .github/workflows/osv-scanner.yml
 
   merge_group:
@@ -26,6 +28,8 @@ on:
       - go.sum
       - internal/httpapi/web/package.json
       - internal/httpapi/web/package-lock.json
+      - mobile/capacitor/package.json
+      - mobile/capacitor/package-lock.json
       - .github/workflows/osv-scanner.yml
 
   schedule:

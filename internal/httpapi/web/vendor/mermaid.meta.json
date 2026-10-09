@@ -1,0 +1,598 @@
+{
+  "schemaVersion": 2,
+  "artifact": "vendor/mermaid.min.js",
+  "sha256": "53a70f771dddac6764d04210a8c44270ad3a9c80fdcf83922d2105cf77646fb5",
+  "dependencies": {
+    "mermaid": {
+      "version": "11.17.2",
+      "entry": "node_modules/mermaid/dist/mermaid.core.mjs"
+    },
+    "katex": {
+      "version": "0.18.2",
+      "entry": "node_modules/mermaid/node_modules/katex/dist/katex.mjs"
+    }
+  },
+  "builder": {
+    "esbuild": "0.25.12",
+    "legalComments": "eof"
+  },
+  "notices": [
+    {
+      "name": "@braintree/sanitize-url",
+      "version": "7.1.2",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8378762acdab0e74cf92fdcd29f4f4fab79533d1db87130967ae0519171278c2"
+    },
+    {
+      "name": "@iconify/utils",
+      "version": "3.1.3",
+      "license": "MIT",
+      "files": [
+        "license.txt"
+      ],
+      "textSha256": "3efc215bf26a472860ddbb9286295c6e419b98e45ad85805234097f2ec3fbfb5"
+    },
+    {
+      "name": "@mermaid-js/parser",
+      "version": "1.2.1",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "df8bb8f926452512baacc58cf9941e930a5e852df29699a6ab81b87e2ab81056"
+    },
+    {
+      "name": "@upsetjs/venn.js",
+      "version": "2.0.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "80eb354ca8db0b58d0dee66bbe8cc2f9f478903f01559093c4d405f0cf2ae0ac"
+    },
+    {
+      "name": "cose-base",
+      "version": "1.0.3",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "a3e6d753af04f1d556595e82adc3e7869a9b63eea1ec3f96ca7b18e10fc6a5f1"
+    },
+    {
+      "name": "cose-base",
+      "version": "2.2.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "a3e6d753af04f1d556595e82adc3e7869a9b63eea1ec3f96ca7b18e10fc6a5f1"
+    },
+    {
+      "name": "cytoscape-cose-bilkent",
+      "version": "4.1.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "94e376f94ecac62bed912d22e6b958e57b6ae37ee3a443cbf0c684d771e84bf6"
+    },
+    {
+      "name": "cytoscape-fcose",
+      "version": "2.2.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "0a37bb0f14fb1fb4cf89b69febd4e49b31946fa243b5aa4b704b6a2c80d6a06e"
+    },
+    {
+      "name": "cytoscape",
+      "version": "3.34.3",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "0e9008154d4895652f5fdaa3a32d90f066809f8089f3bd108358715698f0c54f"
+    },
+    {
+      "name": "d3-array",
+      "version": "2.12.1",
+      "license": "BSD-3-Clause",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "2476b3c1423adfccd107613ec23cdcb96349f6e7fa5609e01204e61b7e3272b8"
+    },
+    {
+      "name": "d3-array",
+      "version": "3.2.4",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "fce5f5e93ace01599132337e1348e2577c7917d3d7b82bcf0d9bf074ea893d92"
+    },
+    {
+      "name": "d3-axis",
+      "version": "3.0.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-brush",
+      "version": "3.0.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-chord",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-color",
+      "version": "3.1.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "f3a7107a33f3f9527cd88963486d85b2f6672203c30478b253a0f5f1ddc8f134"
+    },
+    {
+      "name": "d3-contour",
+      "version": "4.0.2",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "f486f460cded045c96e4a52e9d1b4c296c657bb58099ec67a7cb0892fda232f7"
+    },
+    {
+      "name": "d3-delaunay",
+      "version": "6.0.4",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "0cc7f7c7891e493ade3f1bd61624c4e887e57b9654d958ae17e5fd2ccacf3621"
+    },
+    {
+      "name": "d3-dispatch",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-drag",
+      "version": "3.0.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-dsv",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "1abb7d5f1027c2f4b934c6fd7e4aec658c263f4e73c00822535d1928d65b5637"
+    },
+    {
+      "name": "d3-ease",
+      "version": "3.0.1",
+      "license": "BSD-3-Clause",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "6fef9b81ff7906a32e1e443232d1cb45a90cdda940532b5618ac03514c51e097"
+    },
+    {
+      "name": "d3-fetch",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "9a71fba67aa2fc4695b678551f6470501faa21656918258cc298a0618454799b"
+    },
+    {
+      "name": "d3-force",
+      "version": "3.0.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-format",
+      "version": "3.1.2",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "1720e5e5b62e23a1bf1f8a3aa6f316eae8e100b31b6dd7317baff3e9d059a58a"
+    },
+    {
+      "name": "d3-geo",
+      "version": "3.1.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "633b3aec264ecaa8720d42947456801512d430548139563059c6f951797a10a1"
+    },
+    {
+      "name": "d3-hierarchy",
+      "version": "3.1.2",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-interpolate",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-path",
+      "version": "1.0.9",
+      "license": "BSD-3-Clause",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "49a18acb5e01d35ca5509c25a4b631e106cf2aec58dc443ac28d444aa4637f45"
+    },
+    {
+      "name": "d3-path",
+      "version": "3.1.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "5a83a47f626dd874fedd15282631803aa202213317368b84b1682b954aa2b5b2"
+    },
+    {
+      "name": "d3-polygon",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-quadtree",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-random",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-sankey",
+      "version": "0.12.3",
+      "license": "BSD-3-Clause",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "9689298a3e055c1d4cdd1b63a43754ae926559df4433aa7a441a815a3afed9de"
+    },
+    {
+      "name": "d3-scale-chromatic",
+      "version": "3.1.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "5baddcd44bed74aa82b40cd87c974705bac151a86c947dd8a405014c9cedc05d"
+    },
+    {
+      "name": "d3-scale",
+      "version": "4.0.2",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-selection",
+      "version": "3.0.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-shape",
+      "version": "1.3.7",
+      "license": "BSD-3-Clause",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "b1f24c877c253d63baec3d3d10862a028f93fb072d163b703e839b09bb1129bd"
+    },
+    {
+      "name": "d3-shape",
+      "version": "3.2.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "f3a7107a33f3f9527cd88963486d85b2f6672203c30478b253a0f5f1ddc8f134"
+    },
+    {
+      "name": "d3-time-format",
+      "version": "4.1.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-time",
+      "version": "3.1.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "f3a7107a33f3f9527cd88963486d85b2f6672203c30478b253a0f5f1ddc8f134"
+    },
+    {
+      "name": "d3-timer",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-transition",
+      "version": "3.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3-zoom",
+      "version": "3.0.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "8c6e7d032077e45eb2ad8bb36706e84a6680d1aeed01e3b8901b26df0832b03d"
+    },
+    {
+      "name": "d3",
+      "version": "7.9.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "fce5f5e93ace01599132337e1348e2577c7917d3d7b82bcf0d9bf074ea893d92"
+    },
+    {
+      "name": "dagre-d3-es",
+      "version": "7.0.14",
+      "license": "MIT",
+      "files": [
+        "LICENSE.md"
+      ],
+      "textSha256": "e1bd4da0d977d01757659e021992a2cf223d86d077ef33e4188430cec574926d"
+    },
+    {
+      "name": "dayjs",
+      "version": "1.11.21",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "1693e80bffac25079919b1709b41b7ca7d40bde83fdf86007197bf4c77e7cbb7"
+    },
+    {
+      "name": "delaunator",
+      "version": "5.1.0",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "0d445f7cecfc38c9bdec57b84bfd7e33540c12b3b1066f13c2b8279b0663dad1"
+    },
+    {
+      "name": "dompurify",
+      "version": "3.4.16",
+      "license": "(MPL-2.0 OR Apache-2.0)",
+      "files": [
+        "LICENSE",
+        "LICENSE-MPL"
+      ],
+      "textSha256": "49b8a1cb54edf25956f571173bcdec83223b65a74d2936a379c0c08e77931c4e"
+    },
+    {
+      "name": "es-toolkit",
+      "version": "1.47.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "30c67d87946000b8c9795741d4174fa0db4aadd59892208e21cf932ac44fbd41"
+    },
+    {
+      "name": "fastdom",
+      "version": "1.0.12",
+      "license": "MIT",
+      "files": [
+        "README.md (license section)"
+      ],
+      "textSha256": "3a463943533c791a5fd8814beeb1a9c9c620e92311f2169cdab027e0622268bf"
+    },
+    {
+      "name": "internmap",
+      "version": "1.0.1",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "488ba86b0695525c1f37b91906ac5c06221066a2f9a82704174f928ccd5da1ff"
+    },
+    {
+      "name": "internmap",
+      "version": "2.0.3",
+      "license": "ISC",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "488ba86b0695525c1f37b91906ac5c06221066a2f9a82704174f928ccd5da1ff"
+    },
+    {
+      "name": "katex",
+      "version": "0.18.2",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "3bf18a954913900f3e76481e345905e1c28a81999af3ee903c4b1f642778749d"
+    },
+    {
+      "name": "khroma",
+      "version": "2.1.0",
+      "license": "UNSPECIFIED",
+      "files": [
+        "license"
+      ],
+      "textSha256": "75e3e6e1be2db37db6779ab336da93c82bcfc6017b7711e4b54f867ec82848ec"
+    },
+    {
+      "name": "layout-base",
+      "version": "1.0.2",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "9bac04369a3801a0ef9b23de1700a1cb9136fcfab0729ac569f968f980fc91dc"
+    },
+    {
+      "name": "layout-base",
+      "version": "2.0.1",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "9bac04369a3801a0ef9b23de1700a1cb9136fcfab0729ac569f968f980fc91dc"
+    },
+    {
+      "name": "lodash-es",
+      "version": "4.18.1",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "0f70b32c85e7c9d0e0388a3957aedf8a75290c8720196d00dc1849ba3c8b6db2"
+    },
+    {
+      "name": "marked",
+      "version": "16.4.2",
+      "license": "MIT",
+      "files": [
+        "LICENSE.md"
+      ],
+      "textSha256": "86a39490e198caa3c3fc7a6f8023886e5825f8d1652e4f979e600dbfaf5b2f36"
+    },
+    {
+      "name": "mermaid",
+      "version": "11.17.2",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "93f1fbd0d311d0518ad0d60e221144b8840100aeab87eeb9eb099818a7626f18"
+    },
+    {
+      "name": "robust-predicates",
+      "version": "3.0.3",
+      "license": "Unlicense",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "33a9fc2400af82ce2d6848696b5ac2253f23d4f39f51c913df96f5cd956ac49f"
+    },
+    {
+      "name": "roughjs",
+      "version": "4.6.6",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "08f2bacf6a84cc79390ef2aa29811a702ba557f02519b692f63efb6522a43fa4"
+    },
+    {
+      "name": "stylis",
+      "version": "4.4.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "fc042fcda8fe57ef95649b7aefb97717200e06b7e9ca6519bae5ac4f7c4499e7"
+    },
+    {
+      "name": "ts-dedent",
+      "version": "2.2.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "fcdeb290344feba80338f564981b0555073a8b633e33a9522b65ec127c7dfd51"
+    },
+    {
+      "name": "uuid",
+      "version": "14.0.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE.md"
+      ],
+      "textSha256": "9cc2eb4a85c313850e1a5577a4c5a6581894b4d6478a73843712be1bb598c2c8"
+    }
+  ]
+}

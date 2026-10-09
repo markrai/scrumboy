@@ -60,6 +60,14 @@ jobs:
         working-directory: internal/httpapi/web
         run: npm test
 
+      - name: Install Chromium for Mermaid browser test
+        working-directory: internal/httpapi/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Test Mermaid browser vendor
+        working-directory: internal/httpapi/web
+        run: npm run test:mermaid-browser
+
       - name: Rebuild frontend from sources
         working-directory: internal/httpapi/web
         run: rm -rf dist && npm run build
