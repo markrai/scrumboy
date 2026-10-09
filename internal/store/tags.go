@@ -1233,8 +1233,18 @@ func normalizeTagColor(color *string) (string, error) {
 //
 // Temporary boards must keep using UpdateTagColorForTemporaryBoard.
 func (s *Store) UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error {
+	_, err := s.UpdateTagColorForDurableProjectByIDWithScope(ctx, projectID, viewerUserID, tagID, color)
+	return err
+}
+
+// UpdateTagColorForDurableProjectByIDWithScope performs exactly the
+// UpdateTagColorForDurableProjectByID mutation and additionally reports
+// whether the shared board-scoped tags.color was written (true) rather than
+// only the viewer's personal user_tag_colors preference (false). The result
+// lets callers distinguish board-wide changes without an extra read.
+func (s *Store) UpdateTagColorForDurableProjectByIDWithScope(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) (bool, error) {
 	if err := s.requireGroupedTagAccess(ctx, projectID, viewerUserID); err != nil {
-		return err
+		return false, err
 	}
 
 	var tagUserID sql.NullInt64
@@ -1242,24 +1252,24 @@ func (s *Store) UpdateTagColorForDurableProjectByID(ctx context.Context, project
 	err := s.db.QueryRowContext(ctx, `
 SELECT user_id, project_id FROM tags WHERE id = ?`, tagID).Scan(&tagUserID, &tagProjectID)
 	if err == sql.ErrNoRows {
-		return fmt.Errorf("%w: tag not found", ErrNotFound)
+		return false, fmt.Errorf("%w: tag not found", ErrNotFound)
 	}
 	if err != nil {
-		return fmt.Errorf("get tag: %w", err)
+		return false, fmt.Errorf("get tag: %w", err)
 	}
 
 	if tagProjectID.Valid && !tagUserID.Valid {
 		if tagProjectID.Int64 != projectID {
-			return fmt.Errorf("%w: tag not found", ErrNotFound)
+			return false, fmt.Errorf("%w: tag not found", ErrNotFound)
 		}
 		role, err := s.GetProjectRole(ctx, projectID, viewerUserID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !role.HasMinimumRole(RoleMaintainer) {
-			return fmt.Errorf("%w: project maintainer required", ErrUnauthorized)
+			return false, fmt.Errorf("%w: project maintainer required", ErrUnauthorized)
 		}
-		return s.UpdateTagColor(ctx, &viewerUserID, tagID, color)
+		return true, s.UpdateTagColor(ctx, &viewerUserID, tagID, color)
 	}
 
 	if tagUserID.Valid {
@@ -1269,17 +1279,17 @@ SELECT COUNT(*) FROM todo_tags tt
 INNER JOIN todos t ON t.id = tt.todo_id
 WHERE tt.tag_id = ? AND t.project_id = ?`, tagID, projectID).Scan(&n)
 		if err != nil {
-			return fmt.Errorf("check tag on project: %w", err)
+			return false, fmt.Errorf("check tag on project: %w", err)
 		}
 		if n == 0 {
-			return fmt.Errorf("%w: tag not found", ErrNotFound)
+			return false, fmt.Errorf("%w: tag not found", ErrNotFound)
 		}
 		// Preference write for this viewer only; UpdateTagColor never mutates another
 		// user's user_tag_colors and does not touch tags.color for user-owned rows.
-		return s.UpdateTagColor(ctx, &viewerUserID, tagID, color)
+		return false, s.UpdateTagColor(ctx, &viewerUserID, tagID, color)
 	}
 
-	return fmt.Errorf("%w: tag has neither user_id nor project_id", ErrConflict)
+	return false, fmt.Errorf("%w: tag has neither user_id nor project_id", ErrConflict)
 }
 
 // DeleteTagForDurableProjectByID deletes a tag addressed by tag_id on a durable project.

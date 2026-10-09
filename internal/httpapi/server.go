@@ -349,6 +349,7 @@ type storeAPI interface {
 	UpdateTagColor(ctx context.Context, viewerUserID *int64, tagID int64, color *string) error
 	UpdateMyTagColor(ctx context.Context, userID, tagID int64, color *string) error
 	UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error
+	UpdateTagColorForDurableProjectByIDWithScope(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) (bool, error)
 	UpdateTagColorForTemporaryBoard(ctx context.Context, projectID int64, viewerUserID *int64, tagID int64, color *string) error
 	UpdateTagColorForProject(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, color *string, linkTemporaryBoard bool) error
 	SetViewerTagColorByName(ctx context.Context, projectID int64, viewerUserID int64, name string, color *string) error
@@ -758,6 +759,9 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Claims:    st,
 		Publisher: projectClaimPublisher{server: server},
 	})
+	// Every todo-service refresh reason (create, non-assignment update, move,
+	// archive, restore, delete) changes the allowlisted public projection.
+	// Assignment-driven updates skip this publisher and use todo.assigned.
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 		server.emitPublicRefreshNeeded(ctx, projectID, reason, entity)
 	})
@@ -1005,6 +1009,16 @@ func (s *Server) storeMode() store.Mode {
 	return mode
 }
 
+// ShutdownPublicStreams closes every public SSE stream and rejects new public
+// stream admission. It is idempotent. Register it with
+// http.Server.RegisterOnShutdown so open public streams do not hold graceful
+// HTTP shutdown until its deadline; Close also calls it.
+func (s *Server) ShutdownPublicStreams() {
+	if s.publicHub != nil {
+		s.publicHub.Shutdown()
+	}
+}
+
 // Close stops accepting new delivery-queue entries, links each worker's
 // retry context to ctx (so observing ctx cancellation stops further
 // drain/retry work—including an already-running flush), cancels each
@@ -1013,9 +1027,7 @@ func (s *Server) storeMode() store.Mode {
 // Once a worker observes close-context cancellation, it starts no further
 // queued item or send attempt. Call from main on shutdown.
 func (s *Server) Close(ctx context.Context) {
-	if s.publicHub != nil {
-		s.publicHub.Shutdown()
-	}
+	s.ShutdownPublicStreams()
 	if s.webhookQueue != nil {
 		s.webhookQueue.Seal()
 	}
@@ -1152,19 +1164,19 @@ func (s *Server) publishAuthorizedCreatorNotification(ctx context.Context, autho
 // Designed to be passed to store.SetTodoAssignedPublisher.
 func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, localID int64, title, projectSlug, activityReason string, from, to *int64, actorUserID int64, facts store.TodoAssignedMutationFacts) {
 	payload, _ := json.Marshal(eventbus.TodoAssignedPayload{
-		ProjectID:               projectID,
-		ProjectSlug:             projectSlug,
-		TodoID:                  todoID,
-		LocalID:                 localID,
-		Title:                   title,
-		Reason:                  "todo_assigned",
-		ActivityReason:          activityReason,
-		FromAssigneeUID:         from,
-		ToAssigneeUID:           to,
-		ActorUserID:             actorUserID,
-		PublicProjectionChanged: facts.PublicProjectionChanged,
+		ProjectID:       projectID,
+		ProjectSlug:     projectSlug,
+		TodoID:          todoID,
+		LocalID:         localID,
+		Title:           title,
+		Reason:          "todo_assigned",
+		ActivityReason:  activityReason,
+		FromAssigneeUID: from,
+		ToAssigneeUID:   to,
+		ActorUserID:     actorUserID,
 	})
-	s.PublishEvent(withTodoAssignedMutationFacts(ctx, facts), eventbus.Event{
+	effectCtx := withPublicProjectionChange(withTodoAssignedMutationFacts(ctx, facts), facts.PublicProjectionChanged)
+	s.PublishEvent(effectCtx, eventbus.Event{
 		Type:      "todo.assigned",
 		ProjectID: projectID,
 		Payload:   payload,

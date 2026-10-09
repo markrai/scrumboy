@@ -77,6 +77,9 @@ func (s *PublicSubscription) Unsubscribe() {
 	s.once.Do(func() { s.hub.remove(s.sub) })
 }
 
+// Active reports whether the registration has not yet been revoked, evicted,
+// unsubscribed, or shut down. Once false it never becomes true again, so a
+// republish can never resurrect an existing stream.
 func (s *PublicSubscription) Active() bool {
 	if s == nil || s.hub == nil || s.sub == nil {
 		return false
@@ -87,6 +90,7 @@ func (s *PublicSubscription) Active() bool {
 // PublicHub is intentionally separate from Hub. All channel sends and closes
 // are serialized under mu, and sends are nonblocking, eliminating the existing
 // Hub's snapshot/send-after-unlock close race without holding a lock for I/O.
+// Network writes happen only in the per-connection SSE handler, never under mu.
 type PublicHub struct {
 	mu        sync.Mutex
 	limits    PublicHubLimits
@@ -152,24 +156,31 @@ func (h *PublicHub) RefreshPublicProject(projectID int64) {
 	}
 }
 
-// RevokePublicProject drops queued invalidations, queues at most one terminal
-// access_revoked signal, then closes every active subscription for this one
-// project. The buffered terminal event remains readable after close.
+// RevokePublicProject is the authoritative project-wide revocation used only
+// after a committed loss of eligibility (unpublish or project deletion). It
+// drops every queued invalidation, queues exactly one terminal access_revoked
+// signal, and closes every active subscription for this one project. The
+// terminal event remains readable after close. Per-connection revalidation
+// failures must not call this; they close only their own stream.
 func (h *PublicHub) RevokePublicProject(projectID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for sub := range h.byProject[projectID] {
-		for {
-			select {
-			case <-sub.events:
-				continue
-			default:
-				sub.events <- PublicEventAccessRevoked
-				h.removeLocked(sub)
-				goto nextSubscriber
-			}
+		drainPublicEvents(sub.events)
+		// The buffer is empty and every send is serialized under mu, so this
+		// cannot block.
+		sub.events <- PublicEventAccessRevoked
+		h.removeLocked(sub)
+	}
+}
+
+func drainPublicEvents(events chan PublicEvent) {
+	for {
+		select {
+		case <-events:
+		default:
+			return
 		}
-	nextSubscriber:
 	}
 }
 
@@ -186,6 +197,30 @@ func (h *PublicHub) Shutdown() {
 			h.removeLocked(sub)
 		}
 	}
+}
+
+// publicHubCounts is a test-visible snapshot of admission counters.
+type publicHubCounts struct {
+	Global    int
+	ByIP      map[string]int
+	ByProject map[int64]int
+}
+
+func (h *PublicHub) counts() publicHubCounts {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := publicHubCounts{
+		Global:    h.activeN,
+		ByIP:      make(map[string]int, len(h.byIP)),
+		ByProject: make(map[int64]int, len(h.byProject)),
+	}
+	for key, count := range h.byIP {
+		out.ByIP[key] = count
+	}
+	for projectID, subscribers := range h.byProject {
+		out.ByProject[projectID] = len(subscribers)
+	}
+	return out
 }
 
 func (h *PublicHub) active(sub *publicSubscriber) bool {

@@ -166,6 +166,7 @@ func main() {
 		Handler:           srv,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	httpServer.RegisterOnShutdown(srv.ShutdownPublicStreams)
 
 	_, port, _ := net.SplitHostPort(cfg.BindAddr)
 	if port == "" {

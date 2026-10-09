@@ -614,13 +614,15 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	} else {
 		effectiveSprint = existing.SprintID
 	}
-	materialChanged := existing.Title != in.Title ||
+	// publicFieldsChanged covers only fields in the public board projection;
+	// assignment is private and never marks the public projection changed.
+	publicFieldsChanged := existing.Title != in.Title ||
 		existing.Body != in.Body ||
-		assignmentChanged ||
 		!sameInt64Ptr(existing.EstimationPoints, in.EstimationPoints) ||
 		!sameInt64Ptr(existing.SprintID, effectiveSprint) ||
 		!sameStringPtr(existing.PriorityKey, effectivePriorityKey) ||
 		!sameStringSet(existing.Tags, tags)
+	materialChanged := publicFieldsChanged || assignmentChanged
 
 	var userIDPtr *int64
 	if !ok && len(tags) > 0 {
@@ -840,7 +842,7 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		s.todoAssignedPublisher(ctx, existing.ProjectID, todoID, existing.LocalID, existing.Title, p.Slug, "todo_updated", oldAssignee, in.AssigneeUserID, actorID, TodoAssignedMutationFacts{
 			CreatedByUserID:         cloneInt64Ptr(existing.CreatedByUserID),
 			DurableProject:          p.ExpiresAt == nil,
-			PublicProjectionChanged: materialChanged,
+			PublicProjectionChanged: publicFieldsChanged,
 		})
 	}
 

@@ -15,7 +15,4 @@ type TodoAssignedPayload struct {
 	FromAssigneeUID *int64 `json:"fromAssigneeUserId,omitempty"`
 	ToAssigneeUID   *int64 `json:"toAssigneeUserId,omitempty"`
 	ActorUserID     int64  `json:"actorUserId"`
-	// PublicProjectionChanged is internal translation metadata. Public realtime
-	// never forwards this payload or any assignment data.
-	PublicProjectionChanged bool `json:"publicProjectionChanged,omitempty"`
 }

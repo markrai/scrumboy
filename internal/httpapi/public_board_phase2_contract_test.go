@@ -273,10 +273,14 @@ func TestPublicBoardPhase2ResponseContractAndPrivacy(t *testing.T) {
 		t.Fatalf("public response changed for signed-in nonmember\nanonymous=%s\nsigned-in=%s", anonymousBody, signedInBody)
 	}
 
-	eventsResp, eventsBody := publicHTTP(t, fixture.ts.Client(), http.MethodGet, base+"/events", nil)
-	if eventsResp.StatusCode != http.StatusNotFound {
-		t.Fatalf("events status=%d body=%s", eventsResp.StatusCode, eventsBody)
+	// Phase 3 supersedes the Phase 2 absent-route contract: an eligible project
+	// now admits the isolated public stream. Only the headers are read here;
+	// stream behavior is covered by the Phase 3 SSE integration tests.
+	eventsStream, eventsBody := openPublicSSE(t, fixture.ts.Client(), base+"/events", nil)
+	if eventsStream.resp.StatusCode != http.StatusOK || eventsStream.resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("events status=%d type=%q body=%s", eventsStream.resp.StatusCode, eventsStream.resp.Header.Get("Content-Type"), eventsBody)
 	}
+	eventsStream.cancel()
 	privateResp, _ := publicHTTP(t, fixture.ts.Client(), http.MethodGet, fixture.ts.URL+"/api/board/"+fixture.project.Slug, cookie)
 	if privateResp.StatusCode == http.StatusOK {
 		t.Fatal("publication authorized signed-in nonmember on private board route")

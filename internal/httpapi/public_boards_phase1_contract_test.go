@@ -85,15 +85,13 @@ func TestPublishedStateAddsOnlyTheIsolatedPublicReadEndpoint(t *testing.T) {
 	if publicResp.StatusCode != http.StatusOK {
 		t.Fatalf("public board status=%d, want 200", publicResp.StatusCode)
 	}
-	eventsResp, err := http.Get(ts.URL + "/api/public/board/" + project.Slug + "/events")
-	if err != nil {
-		t.Fatalf("public events GET: %v", err)
+	// Phase 3 adds the isolated public stream for eligible projects; read only
+	// the response headers and close it.
+	eventsStream, eventsBody := openPublicSSE(t, http.DefaultClient, ts.URL+"/api/public/board/"+project.Slug+"/events", nil)
+	if eventsStream.resp.StatusCode != http.StatusOK || eventsStream.resp.Header.Get("Content-Type") != "text/event-stream" {
+		t.Fatalf("public events status=%d type=%q body=%s, want admitted stream", eventsStream.resp.StatusCode, eventsStream.resp.Header.Get("Content-Type"), eventsBody)
 	}
-	_, _ = io.Copy(io.Discard, eventsResp.Body)
-	_ = eventsResp.Body.Close()
-	if eventsResp.StatusCode != http.StatusNotFound {
-		t.Fatalf("public events status=%d, want 404", eventsResp.StatusCode)
-	}
+	eventsStream.cancel()
 
 	for _, path := range []string{
 		"/api/board/" + project.Slug,

@@ -27,11 +27,12 @@ type tagColorRESTRecorder struct {
 }
 
 var (
-	_ tagapp.MineColorStore               = (*tagColorRESTRecorder)(nil)
-	_ tagapp.DurableProjectIDColorStore   = (*tagColorRESTRecorder)(nil)
-	_ tagapp.TemporaryBoardIDColorStore   = (*tagColorRESTRecorder)(nil)
-	_ tagapp.DurableProjectNameColorStore = (*tagColorRESTRecorder)(nil)
-	_ tagapp.TemporaryBoardNameColorStore = (*tagColorRESTRecorder)(nil)
+	_ tagapp.MineColorStore                  = (*tagColorRESTRecorder)(nil)
+	_ tagapp.DurableProjectIDColorStore      = (*tagColorRESTRecorder)(nil)
+	_ tagapp.DurableProjectIDColorScopeStore = (*tagColorRESTRecorder)(nil)
+	_ tagapp.TemporaryBoardIDColorStore      = (*tagColorRESTRecorder)(nil)
+	_ tagapp.DurableProjectNameColorStore    = (*tagColorRESTRecorder)(nil)
+	_ tagapp.TemporaryBoardNameColorStore    = (*tagColorRESTRecorder)(nil)
 )
 
 func cloneTagColorTestInt64(value *int64) *int64 {
@@ -80,6 +81,16 @@ func (r *tagColorRESTRecorder) UpdateTagColorForDurableProjectByID(
 		tagID:        tagID,
 		color:        color,
 	})
+}
+
+func (r *tagColorRESTRecorder) UpdateTagColorForDurableProjectByIDWithScope(
+	ctx context.Context,
+	projectID int64,
+	viewerUserID int64,
+	tagID int64,
+	color *string,
+) (bool, error) {
+	return false, r.UpdateTagColorForDurableProjectByID(ctx, projectID, viewerUserID, tagID, color)
 }
 
 func (r *tagColorRESTRecorder) UpdateTagColorForTemporaryBoard(

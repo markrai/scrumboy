@@ -220,6 +220,19 @@ type DurableProjectIDColorStore interface {
 	) error
 }
 
+// DurableProjectIDColorScopeStore mutates a durable-project tag color by tag
+// ID and reports whether the shared board-scoped color changed (true) or only
+// the viewer's personal preference (false).
+type DurableProjectIDColorScopeStore interface {
+	UpdateTagColorForDurableProjectByIDWithScope(
+		ctx context.Context,
+		projectID int64,
+		viewerUserID int64,
+		tagID int64,
+		color *string,
+	) (bool, error)
+}
+
 // TemporaryBoardIDColorStore mutates a temporary-board tag color by tag ID.
 type TemporaryBoardIDColorStore interface {
 	UpdateTagColorForTemporaryBoard(

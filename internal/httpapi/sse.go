@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -41,6 +42,19 @@ func mustJSON(v any) []byte {
 	return b
 }
 
+// handlePublicBoardEvents serves one isolated public stream. Admission order is
+// owned by handlePublicBoard (namespace limit, stream-attempt limit, complete
+// eligibility resolution); this handler then reserves hub resources, repeats
+// the authoritative eligibility check bound to the resolved slug and project,
+// and only then commits the 200 response.
+//
+// Revocation policy:
+//   - A committed unpublish or project deletion calls PublicHub.RevokePublicProject,
+//     which queues access_revoked for and closes every local subscriber.
+//   - A failed per-connection revalidation affects only this connection. An
+//     authoritative ineligible result sends access_revoked; uncertainty
+//     (storage error) or cancellation closes silently so the client reconnects
+//     through full admission. Neither path revokes other subscribers.
 func (s *Server) handlePublicBoardEvents(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -48,20 +62,26 @@ func (s *Server) handlePublicBoardEvents(
 ) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "streaming not supported", nil)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "internal error", nil)
 		return
 	}
 
 	subscription, err := s.publicHub.Subscribe(prepared.ProjectID(), "ip:"+s.clientIP(r))
 	if err != nil {
+		if errors.Is(err, ErrPublicHubClosed) {
+			writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE", "service unavailable", nil)
+			return
+		}
+		s.logger.Printf("public board stream concurrency limit reached")
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many requests", nil)
 		return
 	}
 	defer subscription.Unsubscribe()
 
-	// Register first and then revalidate. A committed local revoke either closes
-	// the registration or makes this check fail before the 200 response.
+	// Register first and then revalidate. A committed revoke either closed this
+	// registration or is already visible to this read, so no stream can be
+	// admitted against a pre-revocation eligibility decision.
 	if err := prepared.Revalidate(r.Context()); err != nil {
 		s.writePublicBoardError(w, err)
 		return
@@ -90,9 +110,21 @@ func (s *Server) handlePublicBoardEvents(
 		flusher.Flush()
 		return true
 	}
-	revokeAndClose := func() {
-		s.publicHub.RevokePublicProject(prepared.ProjectID())
-		_ = writeEvent(publicAccessRevokedPayload)
+	// stillEligible repeats the complete predicate for this connection only.
+	stillEligible := func() bool {
+		err := prepared.Revalidate(r.Context())
+		if err == nil {
+			return true
+		}
+		if r.Context().Err() != nil {
+			return false
+		}
+		if errors.Is(err, publicboardapp.ErrPublicNotFound) {
+			_ = writeEvent(publicAccessRevokedPayload)
+			return false
+		}
+		s.logger.Printf("public board stream revalidation failed; closing stream")
+		return false
 	}
 
 	for {
@@ -100,8 +132,7 @@ func (s *Server) handlePublicBoardEvents(
 		case <-r.Context().Done():
 			return
 		case <-revalidate.C:
-			if prepared.Revalidate(r.Context()) != nil {
-				revokeAndClose()
+			if !stillEligible() {
 				return
 			}
 		case <-heartbeat.C:
@@ -118,14 +149,55 @@ func (s *Server) handlePublicBoardEvents(
 				_ = writeEvent(publicAccessRevokedPayload)
 				return
 			case PublicEventRefreshNeeded:
-				if prepared.Revalidate(r.Context()) != nil {
-					revokeAndClose()
+				// refresh_needed is idempotent: collapse queued duplicates so a
+				// burst costs one revalidation and one write, and a healthy
+				// stream is not evicted by its own backlog.
+				switch drainQueuedPublicRefreshes(subscription.Events) {
+				case publicQueueRevoked:
+					_ = writeEvent(publicAccessRevokedPayload)
 					return
+				case publicQueueClosed:
+					return
+				}
+				if !stillEligible() {
+					return
+				}
+				// A revocation recognized while revalidating has already
+				// replaced queued refreshes with access_revoked; let the
+				// channel deliver it instead of this stale invalidation.
+				if !subscription.Active() {
+					continue
 				}
 				if !writeEvent(publicRefreshNeededPayload) {
 					return
 				}
 			}
+		}
+	}
+}
+
+type publicQueueState uint8
+
+const (
+	publicQueueOpen publicQueueState = iota
+	publicQueueRevoked
+	publicQueueClosed
+)
+
+// drainQueuedPublicRefreshes consumes already-queued refresh signals without
+// blocking and reports a terminal state if one was reached.
+func drainQueuedPublicRefreshes(events <-chan PublicEvent) publicQueueState {
+	for {
+		select {
+		case event, open := <-events:
+			if !open {
+				return publicQueueClosed
+			}
+			if event == PublicEventAccessRevoked {
+				return publicQueueRevoked
+			}
+		default:
+			return publicQueueOpen
 		}
 	}
 }

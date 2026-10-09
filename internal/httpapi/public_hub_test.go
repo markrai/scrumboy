@@ -180,3 +180,47 @@ func TestPublicHubConcurrentRefreshRevokeAndUnsubscribe(t *testing.T) {
 	wait.Wait()
 	hub.Shutdown()
 }
+
+func TestDrainQueuedPublicRefreshesCoalescesAndReportsTerminalStates(t *testing.T) {
+	events := make(chan PublicEvent, 4)
+	events <- PublicEventRefreshNeeded
+	events <- PublicEventRefreshNeeded
+	if state := drainQueuedPublicRefreshes(events); state != publicQueueOpen || len(events) != 0 {
+		t.Fatalf("open drain state/len = %v/%d", state, len(events))
+	}
+	events <- PublicEventRefreshNeeded
+	events <- PublicEventAccessRevoked
+	close(events)
+	if state := drainQueuedPublicRefreshes(events); state != publicQueueRevoked {
+		t.Fatalf("revoked drain state = %v", state)
+	}
+	if state := drainQueuedPublicRefreshes(events); state != publicQueueClosed {
+		t.Fatalf("closed drain state = %v", state)
+	}
+}
+
+func TestPublicHubRevokedSubscriptionNeverReactivatesAndCountersRelease(t *testing.T) {
+	hub := NewPublicHub(PublicHubLimits{Global: 10, PerIP: 10, PerProject: 10, Buffer: 8})
+	subscription, _ := hub.Subscribe(7, "ip:one")
+	for range 8 {
+		hub.RefreshPublicProject(7)
+	}
+	hub.RevokePublicProject(7)
+	if subscription.Active() {
+		t.Fatal("revoked subscription still active")
+	}
+	// Queued invalidations were replaced by exactly one terminal signal.
+	if event, open := receivePublicEvent(t, subscription.Events); !open || event != PublicEventAccessRevoked {
+		t.Fatalf("terminal event/open = %v/%v", event, open)
+	}
+	if _, open := receivePublicEvent(t, subscription.Events); open {
+		t.Fatal("revoked channel remained open")
+	}
+	// A later refresh (for example after republish) cannot reach it.
+	hub.RefreshPublicProject(7)
+	hub.RevokePublicProject(7)
+	subscription.Unsubscribe()
+	if counts := hub.counts(); counts.Global != 0 || len(counts.ByIP) != 0 || len(counts.ByProject) != 0 {
+		t.Fatalf("counters not released: %+v", counts)
+	}
+}
