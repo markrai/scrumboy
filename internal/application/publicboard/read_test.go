@@ -18,33 +18,37 @@ type eligibilityFake struct {
 }
 
 type projectionFake struct {
-	laneCalls int
-	columnKey string
-	query     store.PublicBoardQuery
-	lane      store.PublicLaneProjection
-	err       error
+	laneCalls    int
+	projectID    int64
+	expectedSlug string
+	columnKey    string
+	query        store.PublicBoardQuery
+	lane         store.PublicLaneProjection
+	err          error
 }
 
-func (f *projectionFake) GetPublicBoardSnapshot(context.Context, int64, store.PublicBoardQuery) (store.PublicBoardSnapshotProjection, error) {
+func (f *projectionFake) GetPublicBoardSnapshot(context.Context, int64, string, store.PublicBoardQuery) (store.PublicBoardSnapshotProjection, error) {
 	return store.PublicBoardSnapshotProjection{}, f.err
 }
 
-func (f *projectionFake) GetPublicBoardLane(_ context.Context, _ int64, columnKey string, query store.PublicBoardQuery) (store.PublicLaneProjection, error) {
+func (f *projectionFake) GetPublicBoardLane(_ context.Context, projectID int64, expectedSlug, columnKey string, query store.PublicBoardQuery) (store.PublicLaneProjection, error) {
 	f.laneCalls++
+	f.projectID = projectID
+	f.expectedSlug = expectedSlug
 	f.columnKey = columnKey
 	f.query = query
 	return f.lane, f.err
 }
 
-func (f *projectionFake) GetPublicTodoDetail(context.Context, int64, int64) (store.PublicTodoProjection, error) {
+func (f *projectionFake) GetPublicTodoDetail(context.Context, int64, string, int64) (store.PublicTodoProjection, error) {
 	return store.PublicTodoProjection{}, f.err
 }
 
-func (f *projectionFake) ListPublicTodoLinks(context.Context, int64, int64) ([]store.PublicTodoLinkProjection, error) {
+func (f *projectionFake) ListPublicTodoLinks(context.Context, int64, string, int64) ([]store.PublicTodoLinkProjection, error) {
 	return nil, f.err
 }
 
-func (f *projectionFake) ListPublicSprints(context.Context, int64) ([]store.PublicSprintProjection, error) {
+func (f *projectionFake) ListPublicSprints(context.Context, int64, string) ([]store.PublicSprintProjection, error) {
 	return nil, f.err
 }
 
@@ -137,6 +141,9 @@ func TestPublicLaneCursorIsVersionedProjectLocalAndBoundToLaneAndFilters(t *test
 	if first.NextCursor == nil || strings.Contains(*first.NextCursor, "42") {
 		t.Fatalf("next cursor = %v; must be opaque and contain no project ID", first.NextCursor)
 	}
+	if projection.projectID != 42 || projection.expectedSlug != "ignite" {
+		t.Fatalf("projection scope = id:%d slug:%q, want id:42 slug:ignite", projection.projectID, projection.expectedSlug)
+	}
 
 	projection.lane = store.PublicLaneProjection{Items: []store.PublicTodoProjection{}, TotalCount: 2}
 	second, err := prepared.ReadLane(context.Background(), "backlog", QueryInput{
@@ -171,6 +178,16 @@ func TestPublicLaneCursorIsVersionedProjectLocalAndBoundToLaneAndFilters(t *test
 				t.Fatalf("ReadLane error = %v, want ErrInvalidPublicQuery", err)
 			}
 		})
+	}
+	eligibility.id = 84
+	otherPrepared, err := service.Resolve(context.Background(), "other-public")
+	if err != nil {
+		t.Fatalf("Resolve other project: %v", err)
+	}
+	if _, err := otherPrepared.ReadLane(context.Background(), "backlog", QueryInput{
+		Search: "visible", Tags: []string{"bug", "feature"}, PriorityKey: "high", Limit: 1, AfterCursor: *first.NextCursor,
+	}); !errors.Is(err, ErrInvalidPublicQuery) {
+		t.Fatalf("cross-project cursor error = %v, want ErrInvalidPublicQuery", err)
 	}
 	if projection.laneCalls != calls {
 		t.Fatalf("invalid cursors reached store: calls %d -> %d", calls, projection.laneCalls)

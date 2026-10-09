@@ -121,7 +121,7 @@ WHERE slug = ?
 	return projectID, nil
 }
 
-func loadEligiblePublicProjectTx(ctx context.Context, tx *sql.Tx, projectID int64) (PublicProjectProjection, error) {
+func loadEligiblePublicProjectTx(ctx context.Context, tx *sql.Tx, projectID int64, expectedSlug string) (PublicProjectProjection, error) {
 	var (
 		project        PublicProjectProjection
 		sprintsEnabled int
@@ -130,9 +130,10 @@ func loadEligiblePublicProjectTx(ctx context.Context, tx *sql.Tx, projectID int6
 SELECT slug, name, dominant_color, estimation_mode, sprints_enabled
 FROM projects
 WHERE id = ?
+  AND slug = ?
   AND import_batch_id IS NULL
   AND expires_at IS NULL
-  AND public_view_enabled = 1`, projectID).Scan(
+  AND public_view_enabled = 1`, projectID, expectedSlug).Scan(
 		&project.Slug,
 		&project.Name,
 		&project.DominantColor,
@@ -425,13 +426,13 @@ LIMIT ?`, args...)
 	return page, nil
 }
 
-func (s *Store) GetPublicBoardSnapshot(ctx context.Context, projectID int64, query PublicBoardQuery) (PublicBoardSnapshotProjection, error) {
+func (s *Store) GetPublicBoardSnapshot(ctx context.Context, projectID int64, expectedSlug string, query PublicBoardQuery) (PublicBoardSnapshotProjection, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return PublicBoardSnapshotProjection{}, fmt.Errorf("begin public snapshot: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	project, err := loadEligiblePublicProjectTx(ctx, tx, projectID)
+	project, err := loadEligiblePublicProjectTx(ctx, tx, projectID, expectedSlug)
 	if err != nil {
 		return PublicBoardSnapshotProjection{}, err
 	}
@@ -467,13 +468,13 @@ func (s *Store) GetPublicBoardSnapshot(ctx context.Context, projectID int64, que
 	}, nil
 }
 
-func (s *Store) GetPublicBoardLane(ctx context.Context, projectID int64, columnKey string, query PublicBoardQuery) (PublicLaneProjection, error) {
+func (s *Store) GetPublicBoardLane(ctx context.Context, projectID int64, expectedSlug, columnKey string, query PublicBoardQuery) (PublicLaneProjection, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return PublicLaneProjection{}, fmt.Errorf("begin public lane: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID); err != nil {
+	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID, expectedSlug); err != nil {
 		return PublicLaneProjection{}, err
 	}
 	page, err := listPublicLaneTx(ctx, tx, projectID, columnKey, query)
@@ -516,13 +517,13 @@ func scanPublicTodo(row *sql.Row) (PublicTodoProjection, error) {
 	return todo, nil
 }
 
-func (s *Store) GetPublicTodoDetail(ctx context.Context, projectID, localID int64) (PublicTodoProjection, error) {
+func (s *Store) GetPublicTodoDetail(ctx context.Context, projectID int64, expectedSlug string, localID int64) (PublicTodoProjection, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return PublicTodoProjection{}, fmt.Errorf("begin public todo detail: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID); err != nil {
+	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID, expectedSlug); err != nil {
 		return PublicTodoProjection{}, err
 	}
 	todo, err := scanPublicTodo(tx.QueryRowContext(ctx, `
@@ -547,13 +548,13 @@ WHERE t.project_id = ? AND t.local_id = ? AND t.archived_at IS NULL`, projectID,
 	return todo, nil
 }
 
-func (s *Store) ListPublicTodoLinks(ctx context.Context, projectID, localID int64) ([]PublicTodoLinkProjection, error) {
+func (s *Store) ListPublicTodoLinks(ctx context.Context, projectID int64, expectedSlug string, localID int64) ([]PublicTodoLinkProjection, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("begin public todo links: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID); err != nil {
+	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID, expectedSlug); err != nil {
 		return nil, err
 	}
 	var sourceExists bool
@@ -598,13 +599,13 @@ ORDER BY 1, 2`, projectID, localID, projectID, localID)
 	return links, nil
 }
 
-func (s *Store) ListPublicSprints(ctx context.Context, projectID int64) ([]PublicSprintProjection, error) {
+func (s *Store) ListPublicSprints(ctx context.Context, projectID int64, expectedSlug string) ([]PublicSprintProjection, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("begin public sprints: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	project, err := loadEligiblePublicProjectTx(ctx, tx, projectID)
+	project, err := loadEligiblePublicProjectTx(ctx, tx, projectID, expectedSlug)
 	if err != nil {
 		return nil, err
 	}

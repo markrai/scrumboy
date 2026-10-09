@@ -11,7 +11,10 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	isPublicNamespace := r.URL.Path == "/api/public" || strings.HasPrefix(r.URL.Path, "/api/public/")
-	if !isPublicNamespace && (r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete) {
+	if isPublicNamespace {
+		setPublicResponseHeaders(w)
+	}
+	if r.Method == http.MethodPost || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
 		// Minimal CSRF protection for a no-auth, local app:
 		// cross-origin "simple" requests can still POST JSON as text/plain; requiring a custom header forces a preflight.
 		// Exception: /api/auth/logout form POST (Content-Type form) - form submit can't add custom headers;

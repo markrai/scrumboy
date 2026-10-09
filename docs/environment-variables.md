@@ -279,10 +279,12 @@ Boolean parsing differs by flag. Values are trimmed and compared case-insensitiv
 | Variable                          | Default | How to change                                                                                                                                                  |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SCRUMBOY_WALL_ENABLED`           | **on**  | Disable with `0`, `false`, `off`, or `no`. Unset/empty/other → enabled. Durable projects only; anonymous/temp boards never expose the wall. [wall.md](wall.md) |
-| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. In Full Mode this gates publication management and the isolated read-only `/api/public/board/{slug}` API. It never publishes a project automatically. Disabling it makes all public-board reads return the generic not-found response while retaining stored per-project preferences. Public reads are limited to 120 requests/minute/IP. |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. In Full Mode this gates publication management and the isolated read-only `/api/public/board/{slug}` API. It never publishes a project automatically. Within the public-read rate budget, disabling it makes public-board reads return the generic not-found response while retaining stored per-project preferences. Public reads are limited to 120 requests/minute/IP. |
 | `SCRUMBOY_LANDING_PAGE_ENABLED`    | **off** | Enable with the same truthy values. It is independent of public-project capability and `SCRUMBOY_MODE`; it currently has no observable routing effect. |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. [markdown-and-mermaid.md](markdown-and-mermaid.md)                                                                    |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | **off** | Same truthy set as Markdown; **ignored unless** Markdown notes are already enabled.                                                                            |
+
+The public-read limiter runs before mode and per-project eligibility checks. Once an IP exhausts that namespace-level budget, every `/api/public/*` path returns the same generic `429` response before project lookup, including paths naming private or missing projects. This preserves resource protection without making rate-limit status an existence oracle.
 
 
 ---

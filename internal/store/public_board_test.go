@@ -137,7 +137,7 @@ VALUES (?, 1, 2, 'relates_to', ?), (?, 1, 3, 'blocks', ?), (?, 1, 99, 'blocks', 
 		t.Fatalf("read audits before: %v", err)
 	}
 
-	snapshot, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, PublicBoardQuery{Limit: 20})
+	snapshot, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, publicProject.Slug, PublicBoardQuery{Limit: 20})
 	if err != nil {
 		t.Fatalf("GetPublicBoardSnapshot: %v", err)
 	}
@@ -158,25 +158,25 @@ VALUES (?, 1, 2, 'relates_to', ?), (?, 1, 3, 'blocks', ?), (?, 1, 99, 'blocks', 
 		t.Fatalf("public tag summary = %+v", snapshot.Tags)
 	}
 
-	detail, err := st.GetPublicTodoDetail(ctx, publicProject.ID, 1)
+	detail, err := st.GetPublicTodoDetail(ctx, publicProject.ID, publicProject.Slug, 1)
 	if err != nil || detail.Title != "Visible One" || len(detail.Tags) != 1 {
 		t.Fatalf("GetPublicTodoDetail = %+v, %v", detail, err)
 	}
-	if _, err := st.GetPublicTodoDetail(ctx, publicProject.ID, 3); !errors.Is(err, ErrNotFound) {
+	if _, err := st.GetPublicTodoDetail(ctx, publicProject.ID, publicProject.Slug, 3); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("archived detail error = %v, want ErrNotFound", err)
 	}
-	if _, err := st.GetPublicTodoDetail(ctx, publicProject.ID, 99); !errors.Is(err, ErrNotFound) {
+	if _, err := st.GetPublicTodoDetail(ctx, publicProject.ID, publicProject.Slug, 99); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-project detail error = %v, want ErrNotFound", err)
 	}
 
-	links, err := st.ListPublicTodoLinks(ctx, publicProject.ID, 1)
+	links, err := st.ListPublicTodoLinks(ctx, publicProject.ID, publicProject.Slug, 1)
 	if err != nil {
 		t.Fatalf("ListPublicTodoLinks: %v", err)
 	}
 	if len(links) != 1 || links[0].Direction != "outbound" || links[0].LocalID != 2 || links[0].Title != "Visible Two" {
 		t.Fatalf("public links = %+v", links)
 	}
-	sprints, err := st.ListPublicSprints(ctx, publicProject.ID)
+	sprints, err := st.ListPublicSprints(ctx, publicProject.ID, publicProject.Slug)
 	if err != nil || len(sprints) != 1 || sprints[0].Number != sprint.Number || sprints[0].Name != "Public Sprint" {
 		t.Fatalf("public sprints = %+v, %v", sprints, err)
 	}
@@ -193,16 +193,26 @@ VALUES (?, 1, 2, 'relates_to', ?), (?, 1, 3, 'blocks', ?), (?, 1, 99, 'blocks', 
 		t.Fatalf("public reads mutated state: activity %d->%d audits %d->%d", beforeActivity, afterActivity, beforeAudits, afterAudits)
 	}
 
+	const renamedSlug = "projection-public-renamed"
+	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET slug = ? WHERE id = ?`, renamedSlug, publicProject.ID); err != nil {
+		t.Fatalf("change project to another valid slug: %v", err)
+	}
+	if _, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, publicProject.Slug, PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("snapshot through stale slug error = %v, want ErrNotFound", err)
+	}
+	if _, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, renamedSlug, PublicBoardQuery{Limit: 20}); err != nil {
+		t.Fatalf("snapshot through current slug: %v", err)
+	}
 	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET slug = 'dashboard' WHERE id = ?`, publicProject.ID); err != nil {
 		t.Fatalf("change project to reserved slug: %v", err)
 	}
-	if _, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrNotFound) {
+	if _, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, "dashboard", PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("snapshot after reserved rename error = %v, want ErrNotFound", err)
 	}
-	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET public_view_enabled = 0 WHERE id = ?`, publicProject.ID); err != nil {
+	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET slug = ?, public_view_enabled = 0 WHERE id = ?`, renamedSlug, publicProject.ID); err != nil {
 		t.Fatalf("unpublish: %v", err)
 	}
-	if _, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrNotFound) {
+	if _, err := st.GetPublicBoardSnapshot(ctx, publicProject.ID, renamedSlug, PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("snapshot after unpublish error = %v, want ErrNotFound", err)
 	}
 }
@@ -277,21 +287,21 @@ INSERT INTO todo_tags(todo_id, tag_id) VALUES
 		t.Fatalf("insert todo tags: %v", err)
 	}
 
-	first, err := st.GetPublicBoardLane(ctx, project.ID, "backlog", PublicBoardQuery{Limit: 1})
+	first, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "backlog", PublicBoardQuery{Limit: 1})
 	if err != nil {
 		t.Fatalf("first page: %v", err)
 	}
 	if len(first.Items) != 1 || first.Items[0].LocalID != 1 || !first.HasMore || first.TotalCount != 3 || first.NextOrder == nil {
 		t.Fatalf("first page = %+v", first)
 	}
-	second, err := st.GetPublicBoardLane(ctx, project.ID, "backlog", PublicBoardQuery{Limit: 1, After: first.NextOrder})
+	second, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "backlog", PublicBoardQuery{Limit: 1, After: first.NextOrder})
 	if err != nil {
 		t.Fatalf("second page: %v", err)
 	}
 	if len(second.Items) != 1 || second.Items[0].LocalID != 2 || !second.HasMore || second.NextOrder == nil {
 		t.Fatalf("second page = %+v", second)
 	}
-	third, err := st.GetPublicBoardLane(ctx, project.ID, "backlog", PublicBoardQuery{Limit: 1, After: second.NextOrder})
+	third, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "backlog", PublicBoardQuery{Limit: 1, After: second.NextOrder})
 	if err != nil {
 		t.Fatalf("third page: %v", err)
 	}
@@ -301,7 +311,7 @@ INSERT INTO todo_tags(todo_id, tag_id) VALUES
 
 	assertLocalIDs := func(name string, query PublicBoardQuery, want ...int64) {
 		t.Helper()
-		page, err := st.GetPublicBoardLane(ctx, project.ID, "backlog", query)
+		page, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "backlog", query)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -321,15 +331,15 @@ INSERT INTO todo_tags(todo_id, tag_id) VALUES
 	assertLocalIDs("priority", PublicBoardQuery{PriorityKey: &high, Limit: 20}, 1, 3)
 	assertLocalIDs("combined", PublicBoardQuery{Search: "needle", Tags: []string{"bug", "feature"}, SprintNumber: &sprint.Number, PriorityKey: &high, Limit: 20}, 1)
 	assertLocalIDs("parameterized injection text", PublicBoardQuery{Search: `%' OR 1=1 --`, Limit: 20})
-	emptyLane, err := st.GetPublicBoardLane(ctx, project.ID, "doing", PublicBoardQuery{Limit: 20})
+	emptyLane, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "doing", PublicBoardQuery{Limit: 20})
 	if err != nil || len(emptyLane.Items) != 0 || emptyLane.TotalCount != 0 || emptyLane.HasMore {
 		t.Fatalf("empty lane = %+v, %v", emptyLane, err)
 	}
 
-	if _, err := st.GetPublicBoardLane(ctx, project.ID, "unknown_lane", PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrValidation) {
+	if _, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "unknown_lane", PublicBoardQuery{Limit: 20}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("unknown lane error = %v, want ErrValidation", err)
 	}
-	if _, err := st.GetPublicBoardLane(ctx, project.ID, "backlog", PublicBoardQuery{Limit: 51}); !errors.Is(err, ErrValidation) {
+	if _, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "backlog", PublicBoardQuery{Limit: 51}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("oversized limit error = %v, want ErrValidation", err)
 	}
 }

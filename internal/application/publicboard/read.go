@@ -35,11 +35,11 @@ type EligibilityStore interface {
 }
 
 type ProjectionStore interface {
-	GetPublicBoardSnapshot(ctx context.Context, projectID int64, query store.PublicBoardQuery) (store.PublicBoardSnapshotProjection, error)
-	GetPublicBoardLane(ctx context.Context, projectID int64, columnKey string, query store.PublicBoardQuery) (store.PublicLaneProjection, error)
-	GetPublicTodoDetail(ctx context.Context, projectID, localID int64) (store.PublicTodoProjection, error)
-	ListPublicTodoLinks(ctx context.Context, projectID, localID int64) ([]store.PublicTodoLinkProjection, error)
-	ListPublicSprints(ctx context.Context, projectID int64) ([]store.PublicSprintProjection, error)
+	GetPublicBoardSnapshot(ctx context.Context, projectID int64, expectedSlug string, query store.PublicBoardQuery) (store.PublicBoardSnapshotProjection, error)
+	GetPublicBoardLane(ctx context.Context, projectID int64, expectedSlug, columnKey string, query store.PublicBoardQuery) (store.PublicLaneProjection, error)
+	GetPublicTodoDetail(ctx context.Context, projectID int64, expectedSlug string, localID int64) (store.PublicTodoProjection, error)
+	ListPublicTodoLinks(ctx context.Context, projectID int64, expectedSlug string, localID int64) ([]store.PublicTodoLinkProjection, error)
+	ListPublicSprints(ctx context.Context, projectID int64, expectedSlug string) ([]store.PublicSprintProjection, error)
 }
 
 type ReadServiceOptions struct {
@@ -201,6 +201,12 @@ func normalizeQuery(input QueryInput) (normalizedQuery, error) {
 	}, nil
 }
 
+func bindQueryFingerprintToProject(query normalizedQuery, slug string) normalizedQuery {
+	sum := sha256.Sum256([]byte(slug + "\x00" + query.fingerprint))
+	query.fingerprint = base64.RawURLEncoding.EncodeToString(sum[:12])
+	return query
+}
+
 func encodeCursor(columnKey, fingerprint string, order *store.PublicTodoOrder) (*string, error) {
 	if order == nil {
 		return nil, nil
@@ -261,7 +267,8 @@ func (p PreparedRead) ReadSnapshot(ctx context.Context, input QueryInput) (Snaps
 	if err != nil {
 		return SnapshotResult{}, err
 	}
-	projection, err := p.service.projections.GetPublicBoardSnapshot(ctx, p.projectID, query.storeQuery)
+	query = bindQueryFingerprintToProject(query, p.slug)
+	projection, err := p.service.projections.GetPublicBoardSnapshot(ctx, p.projectID, p.slug, query.storeQuery)
 	if err != nil {
 		return SnapshotResult{}, mapReadError(err)
 	}
@@ -288,11 +295,12 @@ func (p PreparedRead) ReadLane(ctx context.Context, columnKey string, input Quer
 	if err != nil {
 		return LaneResult{}, err
 	}
+	query = bindQueryFingerprintToProject(query, p.slug)
 	query.storeQuery.After, err = decodeCursor(input.AfterCursor, columnKey, query.fingerprint)
 	if err != nil {
 		return LaneResult{}, err
 	}
-	projection, err := p.service.projections.GetPublicBoardLane(ctx, p.projectID, columnKey, query.storeQuery)
+	projection, err := p.service.projections.GetPublicBoardLane(ctx, p.projectID, p.slug, columnKey, query.storeQuery)
 	if err != nil {
 		return LaneResult{}, mapReadError(err)
 	}
@@ -307,7 +315,7 @@ func (p PreparedRead) ReadTodo(ctx context.Context, localID int64) (store.Public
 	if localID < 1 {
 		return store.PublicTodoProjection{}, ErrPublicNotFound
 	}
-	result, err := p.service.projections.GetPublicTodoDetail(ctx, p.projectID, localID)
+	result, err := p.service.projections.GetPublicTodoDetail(ctx, p.projectID, p.slug, localID)
 	return result, mapReadError(err)
 }
 
@@ -315,11 +323,11 @@ func (p PreparedRead) ReadLinks(ctx context.Context, localID int64) ([]store.Pub
 	if localID < 1 {
 		return nil, ErrPublicNotFound
 	}
-	result, err := p.service.projections.ListPublicTodoLinks(ctx, p.projectID, localID)
+	result, err := p.service.projections.ListPublicTodoLinks(ctx, p.projectID, p.slug, localID)
 	return result, mapReadError(err)
 }
 
 func (p PreparedRead) ReadSprints(ctx context.Context) ([]store.PublicSprintProjection, error) {
-	result, err := p.service.projections.ListPublicSprints(ctx, p.projectID)
+	result, err := p.service.projections.ListPublicSprints(ctx, p.projectID, p.slug)
 	return result, mapReadError(err)
 }

@@ -131,6 +131,27 @@ func publicHTTP(t *testing.T, client *http.Client, method, target string, cookie
 	return resp, body
 }
 
+func publicHTTPWithHeaders(t *testing.T, client *http.Client, method, target string, headers map[string]string) (*http.Response, []byte) {
+	t.Helper()
+	req, err := http.NewRequest(method, target, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, target, err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	return resp, body
+}
+
 func decodeJSONObject(t *testing.T, body []byte) map[string]any {
 	t.Helper()
 	var value map[string]any
@@ -338,10 +359,22 @@ func TestPublicBoardPhase2RejectsMutationMethodsWithoutStateChange(t *testing.T)
 	}
 	for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete, http.MethodHead, http.MethodOptions} {
 		resp, body := publicHTTP(t, fixture.ts.Client(), method, base, nil)
-		if resp.StatusCode != http.StatusNotFound {
-			t.Fatalf("%s status=%d body=%s", method, resp.StatusCode, body)
+		wantStatus := http.StatusNotFound
+		csrfProtected := method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete
+		if csrfProtected {
+			wantStatus = http.StatusForbidden
+		}
+		if resp.StatusCode != wantStatus {
+			t.Fatalf("%s without X-Scrumboy status=%d body=%s, want %d", method, resp.StatusCode, body, wantStatus)
 		}
 		assertPublicHeaders(t, resp)
+		if csrfProtected {
+			withHeader, withHeaderBody := publicHTTPWithHeaders(t, fixture.ts.Client(), method, base, map[string]string{"X-Scrumboy": "1"})
+			if withHeader.StatusCode != http.StatusNotFound {
+				t.Fatalf("%s with X-Scrumboy status=%d body=%s", method, withHeader.StatusCode, withHeaderBody)
+			}
+			assertPublicHeaders(t, withHeader)
+		}
 	}
 	var after int
 	if err := fixture.db.QueryRow(`SELECT COUNT(*) FROM todos WHERE project_id = ?`, fixture.project.ID).Scan(&after); err != nil {
@@ -374,11 +407,14 @@ func TestPublicBoardPhase2RateLimitUsesTrustedClientIPBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	for i := 0; i < 3; i++ {
-		path := "/api/public/not-a-route"
-		if i == 2 {
-			path = "/api/public/board/missing"
-		}
+	paths := []string{
+		"/api/public/not-a-route",
+		"/api/public/board/missing-before-limit",
+		"/api/public/board/" + project.Slug,
+		"/api/public/board/missing-after-limit",
+	}
+	var limitedBody []byte
+	for i, path := range paths {
 		req, err := http.NewRequest(http.MethodGet, ts.URL+path, nil)
 		if err != nil {
 			t.Fatalf("NewRequest: %v", err)
@@ -393,9 +429,14 @@ func TestPublicBoardPhase2RateLimitUsesTrustedClientIPBoundary(t *testing.T) {
 		if i < 2 && resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("request %d status=%d body=%s", i+1, resp.StatusCode, body)
 		}
-		if i == 2 {
+		if i >= 2 {
 			if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") != "60" || !bytes.Contains(body, []byte(`"code":"RATE_LIMITED"`)) {
 				t.Fatalf("rate-limited response status=%d retry=%q body=%s", resp.StatusCode, resp.Header.Get("Retry-After"), body)
+			}
+			if limitedBody == nil {
+				limitedBody = body
+			} else if !bytes.Equal(body, limitedBody) {
+				t.Fatalf("private and missing projects returned distinguishable rate-limit bodies: %s vs %s", body, limitedBody)
 			}
 			assertPublicHeaders(t, resp)
 		}
@@ -456,5 +497,14 @@ func TestPublishedProjectNumericAliasStillRequiresMembership(t *testing.T) {
 	ownerResp, _ := publicHTTP(t, client, http.MethodGet, target, &http.Cookie{Name: "scrumboy_session", Value: ownerToken, Expires: ownerExpiry})
 	if ownerResp.StatusCode != http.StatusFound || ownerResp.Header.Get("Location") != "/"+url.PathEscape(fixture.project.Slug) {
 		t.Fatalf("owner status=%d location=%q", ownerResp.StatusCode, ownerResp.Header.Get("Location"))
+	}
+	temporary, err := fixture.st.CreateAnonymousBoard(store.WithUserID(context.Background(), fixture.owner.ID))
+	if err != nil {
+		t.Fatalf("CreateAnonymousBoard: %v", err)
+	}
+	temporaryTarget := fixture.ts.URL + "/p/" + strconv.FormatInt(temporary.ID, 10)
+	temporaryResp, _ := publicHTTP(t, client, http.MethodGet, temporaryTarget, nil)
+	if temporaryResp.StatusCode != http.StatusFound || temporaryResp.Header.Get("Location") != "/"+url.PathEscape(temporary.Slug) {
+		t.Fatalf("temporary status=%d location=%q", temporaryResp.StatusCode, temporaryResp.Header.Get("Location"))
 	}
 }
