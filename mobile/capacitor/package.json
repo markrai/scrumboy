@@ -15,14 +15,14 @@
     "android:run": "cap run android"
   },
   "dependencies": {
-    "@capacitor/android": "8.5.1",
-    "@capacitor/app": "8.1.1",
-    "@capacitor/browser": "8.0.4",
-    "@capacitor/core": "8.5.1",
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.5.2",
     "@capacitor/preferences": "8.0.1"
   },
   "devDependencies": {
-    "@capacitor/cli": "8.5.1",
+    "@capacitor/cli": "8.5.2",
     "esbuild": "0.28.2",
     "typescript": "5.9.3"
   },
