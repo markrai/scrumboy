@@ -364,7 +364,7 @@ func TestPublicBoardPhase2RejectsMutationMethodsWithoutStateChange(t *testing.T)
 	for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodPut, http.MethodDelete, http.MethodHead, http.MethodOptions} {
 		resp, body := publicHTTP(t, fixture.ts.Client(), method, base, nil)
 		wantStatus := http.StatusNotFound
-		csrfProtected := method == http.MethodPost || method == http.MethodPatch || method == http.MethodDelete
+		csrfProtected := method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch || method == http.MethodDelete
 		if csrfProtected {
 			wantStatus = http.StatusForbidden
 		}

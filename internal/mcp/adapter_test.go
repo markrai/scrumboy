@@ -70,6 +70,7 @@ func doMCP(t *testing.T, client *http.Client, url string, body any) (*http.Respo
 		t.Fatalf("new mcp request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Scrumboy", "1")
 
 	resp, err := client.Do(req)
 	if err != nil {

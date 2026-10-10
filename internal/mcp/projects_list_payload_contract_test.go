@@ -27,6 +27,8 @@ func callProjectsListRaw(t *testing.T, client *http.Client, url string, payload 
 	req.Header.Set("Content-Type", "application/json")
 	if jsonRPC {
 		req.Header.Set("MCP-Protocol-Version", "2025-11-25")
+	} else {
+		req.Header.Set("X-Scrumboy", "1")
 	}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -236,6 +236,27 @@ test("a sprint created by a maintainer appears live in the public sprint filter"
   expect(api.filter((p) => !p.startsWith(`/api/public/board/${publicSlug}`) && p !== "/api/auth/status")).toEqual([`/api/board/${publicSlug}`]);
 });
 
+test("a previously visited public route uses the cached app shell and reports live data unavailable", async ({ page, context }) => {
+  await page.goto(`${baseUrl}/${publicSlug}`);
+  await expect(page.locator(".public-board-badge")).toBeVisible({ timeout: 30_000 });
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.reload();
+  await expect(page.locator(".public-board-badge")).toBeVisible({ timeout: 30_000 });
+
+  await context.setOffline(true);
+  try {
+    await page.goto(`${baseUrl}/${publicSlug}/t/1`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("#app")).toHaveCount(1);
+    await expect(page.locator("body")).toContainText("Failed to fetch");
+    await expect(page.locator("[data-public-local-id], .public-board-badge")).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("Readable <img");
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
 test("live refresh arrives over the public stream and out-of-band revocation clears the board", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto(`${baseUrl}/${publicSlug}`);

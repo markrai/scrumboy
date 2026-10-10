@@ -127,7 +127,7 @@ Behavior is implemented at the endpoint boundary in `internal/mcp`.
 | `/mcp` | Yes | Yes | No |
 | `/mcp/rpc` | Yes | Yes | Yes, only when bound to `<origin>/mcp/rpc` |
 
-If `Authorization: Bearer` is present, a failed token never falls back to a valid cookie. On legacy `/mcp`, a rejected Bearer returns the existing **401** `AUTH_REQUIRED` envelope and no OAuth discovery challenge. OAuth tokens are deliberately rejected there. Without a Bearer, `/mcp` preserves its existing cookie and unauthenticated capability/bootstrap behavior.
+If `Authorization: Bearer` is present, a failed token never falls back to a valid cookie. On legacy `/mcp`, a rejected Bearer returns the existing **401** `AUTH_REQUIRED` envelope and no OAuth discovery challenge. OAuth tokens are deliberately rejected there. Without a Bearer, `/mcp` preserves its existing cookie and unauthenticated capability/bootstrap behavior. Cookie-authenticated legacy `POST /mcp` calls must also send `X-Scrumboy: 1`; this deliberate-request header prevents a browser session from being used for a cross-origin tool mutation. Legacy `GET /mcp` is read-only and does not require it. Static API-token calls remain header-exempt.
 
 In full mode, authentication protects the entire `/mcp/rpc` transport, including `initialize`, `tools/list`, and `GET`. Missing credentials return an empty **401** with:
 
@@ -652,6 +652,7 @@ With a valid session cookie (replace host and cookie value):
 ```bash
 curl -sS -X POST 'https://YOUR_HOST/mcp' \
   -H 'Content-Type: application/json' \
+  -H 'X-Scrumboy: 1' \
   -H 'Cookie: scrumboy_session=YOUR_SESSION_TOKEN' \
   -d '{"tool":"projects_list","input":{}}'
 ```
@@ -685,6 +686,7 @@ curl -sS -X POST 'https://YOUR_HOST/mcp' \
 ```bash
 curl -sS -X POST 'https://YOUR_HOST/mcp' \
   -H 'Content-Type: application/json' \
+  -H 'X-Scrumboy: 1' \
   -H 'Cookie: scrumboy_session=YOUR_SESSION_TOKEN' \
   -d '{
     "tool": "todos_create",

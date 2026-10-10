@@ -398,17 +398,11 @@ func TestWallMutationCharacterizationAuthorizationAndGateOrdering(t *testing.T) 
 		assertWallError(t, body, "FORBIDDEN", "missing X-Scrumboy header", nil)
 	})
 
-	t.Run("PUT has no global header gate", func(t *testing.T) {
+	t.Run("PUT requires the global header gate", func(t *testing.T) {
 		fx := newWallCharacterizationFixture(t, true)
 		resp, body := doWallRawJSON(t, fx.client, http.MethodPut, wallMutationURL(fx, ""), "{", false, nil)
-		assertWallStatus(t, resp, body, http.StatusBadRequest)
-		var got apiErrorEnvelope
-		if err := json.Unmarshal(body, &got); err != nil {
-			t.Fatal(err)
-		}
-		if got.Error.Code != "VALIDATION_ERROR" || got.Error.Message != "invalid json" || got.Error.Details["reason"] != "invalid_json" {
-			t.Fatalf("PUT malformed error=%+v", got.Error)
-		}
+		assertWallStatus(t, resp, body, http.StatusForbidden)
+		assertWallError(t, body, "FORBIDDEN", "missing X-Scrumboy header", nil)
 	})
 
 	t.Run("router conceals unauthenticated durable project before body parsing", func(t *testing.T) {
@@ -729,11 +723,11 @@ func TestWallMutationCharacterizationDeletePathAndTargetPrecedence(t *testing.T)
 }
 
 func TestWallMutationCharacterizationEmptyReplacementAndLimitOrdering(t *testing.T) {
-	t.Run("empty replacement is a successful durable write without PUT header", func(t *testing.T) {
+	t.Run("empty replacement is a successful durable write with PUT header", func(t *testing.T) {
 		fx := newWallCharacterizationFixture(t, true)
 		fx.collector.reset()
 		var replaced map[string]any
-		resp, body := doWallRawJSON(t, fx.client, http.MethodPut, wallMutationURL(fx, ""), `{"notes":[]}`, false, &replaced)
+		resp, body := doWallRawJSON(t, fx.client, http.MethodPut, wallMutationURL(fx, ""), `{"notes":[]}`, true, &replaced)
 		assertWallStatus(t, resp, body, http.StatusOK)
 		assertExactJSONKeys(t, replaced, "notes", "edges", "stories", "version", "updatedAt")
 		notes, notesOK := replaced["notes"].([]any)

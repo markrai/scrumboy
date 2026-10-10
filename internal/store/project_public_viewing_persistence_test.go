@@ -148,6 +148,61 @@ func TestPortableExportOmitsPublicationAndCopyImportsPrivate(t *testing.T) {
 	}
 }
 
+func TestPortableImportIgnoresExplicitPublicationFields(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	user, err := st.BootstrapUser(ctx, "publication-explicit@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	userCtx := WithUserID(ctx, user.ID)
+	project, err := st.CreateProject(userCtx, "Explicit Publication Input")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	exported, err := st.ExportAllProjects(userCtx, ModeFull)
+	if err != nil {
+		t.Fatalf("ExportAllProjects: %v", err)
+	}
+	encoded, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatalf("Marshal export: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		t.Fatalf("Unmarshal raw export: %v", err)
+	}
+	projects, ok := raw["projects"].([]any)
+	if !ok || len(projects) != 1 {
+		t.Fatalf("raw projects = %#v", raw["projects"])
+	}
+	rawProject, ok := projects[0].(map[string]any)
+	if !ok {
+		t.Fatalf("raw project = %#v", projects[0])
+	}
+	rawProject["publicViewingEnabled"] = true
+	rawProject["public_view_enabled"] = true
+	encoded, err = json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("Marshal populated export: %v", err)
+	}
+	var populated ExportData
+	if err := json.Unmarshal(encoded, &populated); err != nil {
+		t.Fatalf("Unmarshal populated export: %v", err)
+	}
+	if _, err := st.ImportProjects(userCtx, &populated, ModeFull, "copy"); err != nil {
+		t.Fatalf("ImportProjects copy: %v", err)
+	}
+	var copiedPublic, copiedCount int
+	if err := st.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(public_view_enabled), 0), COUNT(*) FROM projects WHERE id <> ?`, project.ID).Scan(&copiedPublic, &copiedCount); err != nil {
+		t.Fatalf("read copied publication state: %v", err)
+	}
+	if copiedCount == 0 || copiedPublic != 0 {
+		t.Fatalf("copied projects count=%d public max=%d, want count>0 and public=0", copiedCount, copiedPublic)
+	}
+}
+
 func TestPortableImportDoesNotTransferPublicationState(t *testing.T) {
 	for _, importMode := range []string{"merge", "replace"} {
 		t.Run(importMode, func(t *testing.T) {

@@ -500,8 +500,8 @@ func TestWallReplacementMigrationPreparationPrecedesBody(t *testing.T) {
 	}
 }
 
-func TestWallReplacementMigrationPUTStillBypassesGlobalHeaderGate(t *testing.T) {
-	t.Run("headerless malformed PUT reaches body decoder", func(t *testing.T) {
+func TestWallReplacementMigrationPUTUsesGlobalHeaderGate(t *testing.T) {
+	t.Run("headerless malformed PUT stops before authorization and body decode", func(t *testing.T) {
 		fx := newWallCharacterizationFixture(t, true)
 		recorder := &wallReplacementMigrationRecorder{role: store.RoleContributor}
 		installWallReplacementMigrationService(fx.server, recorder)
@@ -511,20 +511,18 @@ func TestWallReplacementMigrationPUTStillBypassesGlobalHeaderGate(t *testing.T) 
 		response := httptest.NewRecorder()
 
 		fx.server.ServeHTTP(response, req)
-		if response.Code != http.StatusBadRequest {
-			t.Fatalf("status=%d want=%d body=%s", response.Code, http.StatusBadRequest, response.Body.Bytes())
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("status=%d want=%d body=%s", response.Code, http.StatusForbidden, response.Body.Bytes())
 		}
-		assertWallError(t, response.Body.Bytes(), "VALIDATION_ERROR", "invalid json", map[string]any{
-			"reason": "invalid_json", "detail": "unexpected EOF",
-		})
-		if recorder.roleCalls != 1 {
-			t.Fatalf("role calls=%d want=1", recorder.roleCalls)
+		assertWallError(t, response.Body.Bytes(), "FORBIDDEN", "missing X-Scrumboy header", nil)
+		if recorder.roleCalls != 0 {
+			t.Fatalf("role calls=%d want=0", recorder.roleCalls)
 		}
-		assertWallReplacementMigrationTrace(t, recorder.trace, "role", "body")
+		assertWallReplacementMigrationTrace(t, recorder.trace)
 		assertWallReplacementMigrationNoEffects(t, recorder, fx)
 	})
 
-	t.Run("headerless valid PUT reaches replacement", func(t *testing.T) {
+	t.Run("valid PUT with header reaches replacement", func(t *testing.T) {
 		fx := newWallCharacterizationFixture(t, true)
 		wantWall := store.Wall{
 			Notes: []store.WallNote{}, Edges: []store.WallEdge{},
@@ -537,6 +535,7 @@ func TestWallReplacementMigrationPUTStillBypassesGlobalHeaderGate(t *testing.T) 
 		fx.collector.reset()
 		body := newWallReplacementMigrationBody(recorder, `{"notes":[]}`)
 		req := newWallReplacementMigrationRouteRequest(t, fx, body)
+		req.Header.Set("X-Scrumboy", "1")
 		response := httptest.NewRecorder()
 
 		fx.server.ServeHTTP(response, req)

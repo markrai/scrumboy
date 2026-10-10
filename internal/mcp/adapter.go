@@ -315,6 +315,7 @@ func parseBearerAuthorization(headerValue string) (ok bool, credential string) {
 type requestAuthResult struct {
 	Ctx              context.Context
 	Authenticated    bool
+	SessionCookie    bool
 	BearerAuthFailed bool
 	Err              error // non-nil store failure (caller should map to 500)
 }
@@ -377,7 +378,7 @@ func (a *Adapter) resolveRequestAuth(r *http.Request, allowOAuth bool) requestAu
 	ctx = store.WithUserID(ctx, u.ID)
 	ctx = store.WithUserEmail(ctx, u.Email)
 	ctx = store.WithUserName(ctx, u.Name)
-	return requestAuthResult{Ctx: ctx, Authenticated: true}
+	return requestAuthResult{Ctx: ctx, Authenticated: true, SessionCookie: true}
 }
 
 // authState reports whether authenticated MCP tools are usable for this
