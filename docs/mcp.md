@@ -191,6 +191,7 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
   },
   "implementedTools": [
     "system_getCapabilities",
+    "me_get",
     "projects_list",
     "projects_create",
     "projects_update",
@@ -252,7 +253,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (52 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (53 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -271,6 +272,7 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (52 tools).
 **System**
 
 - `system_getCapabilities`
+- `me_get` — the user the credential authenticates as (`userId`, `stableUserId`, `email`, `name`); key external account links on `stableUserId`, since `userId` can be reused after a user is deleted
 
 **Projects**
 
@@ -506,6 +508,7 @@ One tool name per line (same order as `implementedTools()` in code):
 
 ```
 system_getCapabilities
+me_get
 projects_list
 projects_create
 projects_update

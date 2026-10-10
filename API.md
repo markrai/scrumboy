@@ -433,6 +433,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **system**
 
 - `system_getCapabilities` - Server mode, auth snapshot, identity/pagination hints, full tool list.
+- `me_get` - The user the current credential (session, API token, or OAuth access token) authenticates as, including a permanent `stableUserId`.
 
 **projects**
 
@@ -501,6 +502,14 @@ Conventions:
 - **Example (GET or POST):**  
   `POST /mcp` `{"tool":"system_getCapabilities","input":{}}`  
   → `ok: true`, `data.implementedTools` = full tool array.
+
+### `me_get`
+
+- **Purpose:** Tell an external client which user a credential belongs to (for example, to link a bot or integration to a Scrumboy account).
+- **Input:** `{}`
+- **Output:** `data` with `userId`, `stableUserId`, `email`, `name`.
+- **Linking external accounts:** store `stableUserId`, not `userId`. `userId` is the internal integer key, and SQLite may reuse it for a different user after the original is deleted. `stableUserId` is a random UUID assigned once when the user is created (existing users were backfilled by migration 076) and never changed or reused.
+- **Errors:** anonymous mode or pre-bootstrap → `CAPABILITY_UNAVAILABLE`; no authenticated principal → `AUTH_REQUIRED`.
 
 ### `projects_list`
 

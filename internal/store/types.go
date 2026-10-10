@@ -275,7 +275,11 @@ func ParseSystemRole(v string) (SystemRole, bool) {
 }
 
 type User struct {
-	ID               int64
+	ID int64
+	// PublicID is the user's permanent UUID (users.public_id, migration 076). Unlike ID, which
+	// SQLite may reuse after a delete, it is never reassigned, so external integrations key on it.
+	// Only GetUser loads it; other loaders leave it empty.
+	PublicID         string
 	Email            string
 	Name             string
 	Image            *string // Base64 data URL, same as project image

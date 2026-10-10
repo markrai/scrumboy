@@ -42,6 +42,11 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 			Description: "Return adapter capabilities, auth mode, and the list of implemented MCP tools.",
 			InputSchema: jsonSchema("object", map[string]any{}, nil),
 		},
+		"me_get": {
+			Name:        "me_get",
+			Description: "Return the user the current credential authenticates as (userId, email, name). Requires sign-in.",
+			InputSchema: jsonSchema("object", map[string]any{}, nil),
+		},
 		"projects_list": {
 			Name:        "projects_list",
 			Description: "List a page of projects visible to the authenticated user, with their role in each project.",
