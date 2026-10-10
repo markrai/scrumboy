@@ -57,7 +57,7 @@ func (s *Store) GetUser(ctx context.Context, userID int64) (User, error) {
 		twoFactorEnabled bool
 		image            sql.NullString
 	)
-	if err := s.db.QueryRowContext(ctx, `SELECT id, email, name, image, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE id = ?`, userID).Scan(&u.ID, &u.Email, &u.Name, &image, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT id, COALESCE(public_id, ''), email, name, image, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE id = ?`, userID).Scan(&u.ID, &u.PublicID, &u.Email, &u.Name, &image, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled); err != nil {
 		if err == sql.ErrNoRows {
 			return User{}, ErrNotFound
 		}

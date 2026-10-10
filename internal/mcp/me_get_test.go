@@ -2,8 +2,11 @@ package mcp_test
 
 import (
 	"net/http"
+	"regexp"
 	"testing"
 )
+
+var stableUserIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func TestMCPMeGet_BearerReturnsTokenOwner(t *testing.T) {
 	ts, _, cleanup := newTestServer(t, "full")
@@ -29,6 +32,15 @@ func TestMCPMeGet_BearerReturnsTokenOwner(t *testing.T) {
 	}
 	if id, _ := data["userId"].(float64); id <= 0 {
 		t.Fatalf("me_get userId = %#v, want > 0", data["userId"])
+	}
+	stable, _ := data["stableUserId"].(string)
+	if !stableUserIDPattern.MatchString(stable) {
+		t.Fatalf("me_get stableUserId = %#v, want a UUIDv4", data["stableUserId"])
+	}
+	// It must be stable across calls: that is the whole point of keying an integration on it.
+	_, again := postMCPWithBearer(t, newStatelessClient(ts), ts.URL, token, map[string]any{"tool": "me_get", "input": map[string]any{}})
+	if got, _ := again["data"].(map[string]any)["stableUserId"].(string); got != stable {
+		t.Fatalf("stableUserId changed between calls: %q then %q", stable, got)
 	}
 }
 

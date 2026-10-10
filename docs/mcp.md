@@ -272,7 +272,7 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (53 tools).
 **System**
 
 - `system_getCapabilities`
-- `me_get` — the user the credential authenticates as (`userId`, `email`, `name`)
+- `me_get` — the user the credential authenticates as (`userId`, `stableUserId`, `email`, `name`); key external account links on `stableUserId`, since `userId` can be reused after a user is deleted
 
 **Projects**
 
