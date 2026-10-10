@@ -55,7 +55,7 @@ func TestPhase5RootRoutingMatrix(t *testing.T) {
 						}
 					case landing:
 						body := root.Body.String()
-						if root.Code != http.StatusOK || !strings.Contains(body, `href="/_app" data-workspace-entry>`) || strings.Contains(body, "data-workspace-entry hidden") {
+						if root.Code != http.StatusOK || !strings.Contains(body, `<a class="brand" href="/_app" aria-label="Open app" data-workspace-entry>`) || strings.Contains(body, "nav-workspace-link") || strings.Count(body, "data-workspace-entry") != 1 {
 							t.Fatalf("landing root status=%d, workspace link enabled=%v", root.Code, strings.Contains(body, `data-workspace-entry>`))
 						}
 						if root.Header().Get("Cache-Control") != "no-cache" || !strings.HasPrefix(root.Header().Get("Content-Type"), "text/html") {
@@ -147,5 +147,28 @@ func TestPhase5LogoutReturnToIsSanitized(t *testing.T) {
 		if strings.Contains(recorder.Body.String(), "<script>") {
 			t.Fatalf("return_to %q injected markup", tc.returnTo)
 		}
+	}
+}
+
+// TestLandingLogoIsWorkspaceEntry: the landing header has no separate "Open
+// app" button. The Full Mode landing makes the logo itself the /_app link;
+// Anonymous Mode keeps the logo linking to / with no workspace entry.
+func TestLandingLogoIsWorkspaceEntry(t *testing.T) {
+	st := newTestStore(t)
+	anon := NewServer(st, Options{ScrumboyMode: "anonymous"})
+	defer anon.Close(context.Background())
+	anonBody := serveFor(t, anon, http.MethodGet, "/").Body.String()
+	if !strings.Contains(anonBody, `<a class="brand" href="/" aria-label="Scrumboy home"`) || strings.Contains(anonBody, "data-workspace-entry") {
+		t.Fatalf("anonymous landing logo changed")
+	}
+
+	full := NewServer(st, Options{ScrumboyMode: "full", LandingPageEnabled: true})
+	defer full.Close(context.Background())
+	body := serveFor(t, full, http.MethodGet, "/").Body.String()
+	if strings.Count(body, `href="/_app"`) != 1 || !strings.Contains(body, `<a class="brand" href="/_app" aria-label="Open app" data-workspace-entry>`) {
+		t.Fatalf("full-mode landing logo is not the single /_app workspace entry")
+	}
+	if strings.Contains(body, "nav-workspace-link") || strings.Contains(body, ">Open app</a>") {
+		t.Fatalf("separate Open app button still rendered")
 	}
 }

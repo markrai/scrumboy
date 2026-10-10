@@ -1,10 +1,10 @@
 package httpapi
 
 import (
-	"bytes"
 	"errors"
 	"io/fs"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"scrumboy/internal/store"
@@ -170,12 +170,14 @@ func (s *Server) fullModeLandingEnabled() bool {
 	return s.mode == "full" && s.landingPageEnabled
 }
 
-// landingWorkspaceEntryMarker is the hidden workspace link emitted by
-// landing.template.html. Anonymous Mode serves it hidden (unchanged behavior).
-var landingWorkspaceEntryMarker = []byte(" data-workspace-entry hidden>")
+// landingBrandLinkRe matches the header logo link emitted by
+// landing.template.html. Anonymous Mode serves it unchanged (logo links to /);
+// the Full Mode landing turns the logo itself into the /_app workspace entry,
+// using the localized "Open app" label carried in data-workspace-label.
+var landingBrandLinkRe = regexp.MustCompile(`<a class="brand" href="/" aria-label="[^"]*" data-workspace-label="([^"]*)">`)
 
 func enableLandingWorkspaceEntry(landing []byte) []byte {
-	return bytes.Replace(landing, landingWorkspaceEntryMarker, []byte(" data-workspace-entry>"), 1)
+	return landingBrandLinkRe.ReplaceAll(landing, []byte(`<a class="brand" href="/_app" aria-label="$1" data-workspace-entry>`))
 }
 
 func singleSegmentPath(path string) (string, bool) {

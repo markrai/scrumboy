@@ -7116,8 +7116,23 @@ button.omni-tag-pill:focus-visible {
 }
 
 @media (max-width: 620px) {
-  .public-board-badge {
-    font-size: var(--fs-11);
-    padding: var(--s-2) var(--s-6);
+  /* Public board only: no logo, so the project name may use the row instead
+     of the member board's clamped brand width; Sign in sits after the spacer. */
+  .page--public-board .topbar .public-board__project-name {
+    flex: 0 1 auto;
+    width: auto;
+    max-width: none;
+  }
+
+  .page--public-board .topbar #publicSignInBtn {
+    order: 1;
+  }
+
+  /* Public board only: the view-only badge and sprint/priority selects are
+     desktop-only. display:none keeps them in the DOM (state preserved across
+     resizes) while removing them from layout and the tab order. */
+  .page--public-board .public-board-badge,
+  .page--public-board .public-board-filter {
+    display: none;
   }
 }

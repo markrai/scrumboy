@@ -171,31 +171,17 @@
       gap: 18px;
     }
 
-    .nav-workspace-link {
-      display: inline-flex;
-      align-items: center;
-      min-height: 40px;
-      padding: 0 16px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: var(--ink);
-      font-weight: 600;
-      text-decoration: none;
-    }
-
-    .nav-workspace-link[hidden] {
-      display: none;
-    }
-
-    .nav-workspace-link:focus-visible {
-      outline: 2px solid currentColor;
-      outline-offset: 3px;
-    }
-
     .brand {
       display: inline-flex;
       align-items: center;
       line-height: 0;
+      color: var(--ink);
+    }
+
+    .brand:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 3px;
+      border-radius: 4px;
     }
 
     .brand-logo {
@@ -1508,10 +1494,9 @@
 <body translate="no">
   <header class="nav">
     <div class="shell nav-inner">
-      <a class="brand" href="/" aria-label="Scrumboy home">
+      <a class="brand" href="/" aria-label="Scrumboy home" data-workspace-label="Open app">
         <img class="brand-logo" src="/scrumboytext.png" alt="" decoding="async">
       </a>
-      <a class="nav-workspace-link" href="/_app" data-workspace-entry hidden>Open app</a>
     </div>
   </header>
 
