@@ -52,6 +52,7 @@ Persistence restore matrix (SQLite, wallpapers, encryption key, Mermaid override
 | [voiceflow.md](voiceflow.md) | Users / contributors | VoiceFlow parser / UI | current |
 | [enhanced-voiceflow.md](enhanced-voiceflow.md) | Users / contributors | Android AI VoiceFlow (capability gating, on-device speech/Nano planning, capture, confirmation, speech settings, Keep Listening) | current |
 | [calendar.md](calendar.md) | Users / operators | Agenda ICS feeds (`internal/application/calendar`) | current |
+| [public-boards.md](public-boards.md) | Users / operators | Public read-only boards: publication, sharing, visitor scope, landing flag, export behavior | current |
 | [markdown-and-mermaid.md](markdown-and-mermaid.md) | Users / contributors | `internal/httpapi/web` markdown/mermaid deps | current |
 
 ---

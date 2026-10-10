@@ -76,6 +76,21 @@ In Anonymous mode:
 - **Replace** is not available
 - **Merge** does not match existing durable projects; when Merge would otherwise create or update projects by slug, Anonymous mode treats imported projects as **new** (same outcome as Create copy)
 
+## Publication state is not transferred
+
+Portable JSON exports never carry board publication state: the export
+format has no publication field, so an export cannot leak a public board
+into another instance as public.
+
+- **Create copy** and **Replace** create new projects, which always start
+  private (`public_view_enabled` defaults to off).
+- **Merge** into an existing project leaves that project's publication state
+  untouched. Importing a backup can neither publish nor unpublish the merge
+  target; re-publish explicitly after import if needed.
+
+A full /data backup (the SQLite file) preserves the state like any other
+database column. See [public-boards.md](public-boards.md).
+
 ## Backup format compatibility
 
 New exports are written as format **1.2**, which adds additive story archival state. Imports

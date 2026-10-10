@@ -848,6 +848,53 @@ not grant membership or additional access.
 
 ---
 
+## REST: Public read-only boards
+
+When a durable board is published (see [docs/public-boards.md](docs/public-boards.md)),
+anonymous clients can read an allowlisted projection without signing in. All routes
+below require Full Mode with `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` on; otherwise they
+return the generic `404 NOT_FOUND`, identical to a never-public board. Every route is
+`GET`-only. A non-`GET` request carrying the `X-Scrumboy: 1` header returns `404`; mutating methods (`POST`/`PUT`/`PATCH`/`DELETE`) without that header are rejected earlier by the global CSRF gate with `403`.
+
+| Method | Path | Result |
+|--------|------|--------|
+| `GET` | `/api/public/board/{slug}` | `200` `{access, project, workflow, priorities, tags, columns, columnsMeta}`; snapshot page per lane |
+| `GET` | `/api/public/board/{slug}/lanes/{columnKey}` | `200` `{items, hasMore, nextCursor, totalCount}`; follow-up lane pages |
+| `GET` | `/api/public/board/{slug}/todos/{localId}` | `200` `{todo}` with tags; archived stories read as not-found |
+| `GET` | `/api/public/board/{slug}/todos/{localId}/links` | `200` `{links: [{direction, localId, title}]}` (`direction` is `inbound` or `outbound`) |
+| `GET` | `/api/public/board/{slug}/sprints` | `200` `{sprints: [{number, name, state}]}` (empty unless the project enables sprints) |
+| `GET` | `/api/public/board/{slug}/events` | `text/event-stream`: `refresh_needed` invalidations, one terminal `access_revoked`, `: heartbeat` comments |
+
+Snapshot filters: `search`, repeatable `tag`, `sprintNumber`, `priority`, `sort`
+(`manual` only), `limitPerLane`. Lane pages accept the same filters with `limit`
+plus `afterCursor` instead of `limitPerLane`. Page size defaults to **20** and is
+clamped to **50** by the web client, while direct API callers sending an out-of-range limit receive **400** `INVALID_REQUEST`; lane cursors are opaque and bound to their lane and filter set.
+Anything else (unknown parameter, bad limit, mismatched cursor) returns **400**
+`INVALID_REQUEST`. Reads share a 120/minute/IP budget and stream attempts a
+separate 20/minute/IP budget, both checked before project lookup; over-limit
+responses are **429** `RATE_LIMITED` with `Retry-After: 60`. Responses carry
+`Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow`.
+
+## REST: Publication management (Maintainer-only)
+
+| Method | Path | Body | Result |
+|--------|------|------|--------|
+| `GET` | `/api/board/{slug}/publication` | - | `200` `{enabled, publishable}` |
+| `PATCH` | `/api/board/{slug}/publication` | `{ "enabled": true\|false }` | `200` `{enabled, changed}` |
+
+Both routes resolve the ordinary member project context first, then require an
+authenticated **exact Maintainer** of a **durable** project. Lesser members get
+**403**; nonmembers and temporary boards get **404**. With the operator gate off
+or in Anonymous Mode the routes return **404**. `PATCH` requires the
+`X-Scrumboy: 1` header like other mutations; methods other than `GET`/`PATCH`
+return **405**. A missing `enabled` field returns **400** with reason
+`publication_enabled_required`; publishing a reserved-slug project returns
+**400** with reason `publication_slug_reserved` (`publishable: false` on `GET`
+until renamed). Successful changes are audited (`project_public_viewing_enabled`
+/ `project_public_viewing_disabled`); unpublishing revokes that project's public
+streams. The Settings → Sharing tab is the supported client for these routes.
+
+---
 ## REST: Dashboard assigned todos (`GET /api/dashboard/todos`)
 
 The web app and other REST clients use this endpoint (separate from MCP). In **full** mode it requires a valid **session cookie** or **`Authorization: Bearer`** API token.

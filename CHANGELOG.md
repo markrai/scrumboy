@@ -1,6 +1,68 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.37.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+
+## [3.38.0] - 2026-10-10
+
+### Added
+
+- **Opt-in public read-only durable boards** - A Maintainer can publish a
+  durable board from Settings → Sharing once the operator enables
+  `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` — the only flag required in Full Mode (the landing-page flag is independent and optional). Enabling the publication flag alone publishes
+  nothing; every board stays private until explicitly published.
+- **Shareable URLs and isolated anonymous reading** - A published board is
+  served at its existing `/{slug}` path (stories at `/{slug}/t/{localId}`)
+  through isolated public board/story reads that create no user, membership,
+  or session. See `docs/public-boards.md`.
+- **Read-only filters, pagination, and SSE refresh/revocation** - Public
+  reads support search, tag, sprint, and priority filters with bounded
+  pagination (20 default, 50 max, opaque lane cursors), plus a lightweight
+  event stream carrying refresh invalidations and a terminal
+  `access_revoked` signal on unpublish or deletion.
+- **Independent optional Full Mode marketing landing page** - With
+  `SCRUMBOY_LANDING_PAGE_ENABLED`, `/` serves the English marketing landing
+  and `/_app` serves the workspace. Board and story URLs are unchanged,
+  Anonymous Mode ignores the flag, and the flag never publishes a project.
+
+### Security
+
+- **Explicit public DTO allowlists** - Public responses project only board,
+  story, link, and sprint display fields. Membership, user identities,
+  internal IDs, archives, Wall, Agenda, preferences, and private
+  integrations are never exposed, and public access stays isolated from
+  private API/MCP permissions.
+- **Generic denial behavior, rate limiting, and revocation handling** -
+  Unpublished, private, and missing boards share one not-found response;
+  public reads (120/minute/IP) and stream attempts (20/minute/IP) are
+  limited before project lookup, and unpublish/delete revokes live streams.
+- **Expanded mutating API CSRF protection to include PUT** - The
+  `X-Scrumboy: 1` custom-header gate in `Server.handleAPI` now covers
+  `POST`, `PUT`, `PATCH`, and `DELETE`.
+- **Legacy cookie-authenticated MCP POST CSRF hardening** - Legacy `/mcp`
+  tool calls established from the browser session cookie now require the
+  `X-Scrumboy: 1` header; static Bearer paths are unchanged.
+- **Bounded legacy MCP request bodies** - Legacy `/mcp` POST bodies are
+  capped and oversized payloads are rejected with `413`.
+- **Corrected frontend API header merging** - `apiFetch` now merges
+  caller-supplied headers over its JSON/CSRF defaults instead of spreading
+  them in a way that could drop or duplicate defaults.
+
+### Compatibility / Operations
+
+- **Both features default off** - Fresh and existing installs behave exactly
+  as before until both the mode and the flags opt in.
+- **Migration 075 retains existing boards as private** - The new
+  `public_view_enabled` column defaults to `0`, so upgrading never publishes
+  an existing board.
+- **Portable exports/imports do not unintentionally publish boards** - The
+  export format carries no publication state: Create copy and Replace start
+  private, and Merge leaves the target's publication state untouched.
+- **Documented operational rollback and known limitations** - Disabling both
+  flags and restarting stops all public serving without touching data
+  (`docs/docker.md`); already-downloaded public content cannot be recalled,
+  crawler `noindex` directives are not access control, and cross-process
+  stream revocation is bounded by periodic revalidation rather than
+  instantaneous. See `docs/public-boards.md`.
 
 ## [3.37.2] - 2026-10-09
 

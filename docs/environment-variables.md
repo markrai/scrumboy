@@ -290,6 +290,8 @@ Root routing matrix: Full Mode with the landing flag off keeps `/` as the worksp
 
 Publication is managed by project Maintainers in **Settings → Sharing** (backed by `GET`/`PATCH /api/board/{slug}/publication`, which requires an authenticated exact Maintainer of a durable project and the `X-Scrumboy` header for `PATCH`). Unpublishing immediately disconnects that project's public streams in the serving process. The endpoint returns the generic not-found response when the public-projects flag is off or in Anonymous Mode.
 
+Full operator and user guide: [public-boards.md](public-boards.md). Docker activation: [docker.md](docker.md#public-boards).
+
 `GET /api/public/board/{slug}/events` is the public realtime stream for an eligible published project. It is separate from authenticated realtime and carries only `data: {"type":"refresh_needed"}`, a terminal `data: {"type":"access_revoked"}`, and `: heartbeat` comments every 15 seconds; clients refetch content through the public read routes. Stream admission consumes the shared 120/minute public budget and a separate 20 stream attempts/minute/IP budget, both evaluated before project lookup, then repeats the full eligibility check. Concurrent public streams are capped at 500 per server process, 5 per client IP, and 100 per project, independently of authenticated streams; over-cap admission returns `429` with `Retry-After: 60`. Unpublishing or deleting a project closes its public streams in this process immediately. Each stream also re-checks eligibility before every delivery and every 15 seconds, which bounds how long a stream survives an eligibility change made by another server instance or by direct database edits. The per-IP limits use the same client-IP rule as other rate limits: with `SCRUMBOY_TRUST_PROXY` enabled the first `X-Forwarded-For` address is trusted, so enable it only behind a proxy that overwrites that header.
 
 
@@ -375,4 +377,5 @@ Normative setup: [smtp.md](smtp.md), [notifications.md](notifications.md).
 | Markdown / Mermaid    | [markdown-and-mermaid.md](markdown-and-mermaid.md)                         |
 | Wall                  | [wall.md](wall.md)                                                         |
 | Calendar / Agenda     | [calendar.md](calendar.md)                                                 |
+| Public boards         | [public-boards.md](public-boards.md)                                       |
 | Persistence / backup  | [diagrams/scrumboy_deployment_ops.md](diagrams/scrumboy_deployment_ops.md) |
