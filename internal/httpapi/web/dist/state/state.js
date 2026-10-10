@@ -3,6 +3,7 @@ let _current = {
     projectId: null,
     slug: null,
     board: null,
+    boardAccess: null,
     search: "",
     openTodoSegment: null,
     editingTodo: null,

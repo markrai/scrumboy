@@ -145,7 +145,7 @@ Do not describe stored passwords as “encrypted.”
 
 **Operator note:** cookie `Secure` can follow forwarded HTTPS headers even when `SCRUMBOY_TRUST_PROXY` is off. Rate-limit client IP and OAuth/MCP public-origin resolution use TrustProxy more strictly—configure proxy headers carefully.
 
-Mutating `/api/*` generally requires header `X-Scrumboy: 1` (custom-header CSRF pattern) except specific token-authenticated or form logout paths (`Server.handleAPI`).
+Mutating `/api/*` with `POST`, `PUT`, `PATCH`, or `DELETE` generally requires header `X-Scrumboy: 1` (custom-header CSRF pattern) except specific token-authenticated or form logout paths (`Server.handleAPI`). Cookie-authenticated legacy `POST /mcp` tool calls require the same deliberate-request header; static Bearer integrations do not.
 
 ---
 
@@ -231,12 +231,12 @@ OAuth access tokens are **not** interchangeable with human session cookies or st
 | Surface                | Auth (summary)                                        |
 | ---------------------- | ----------------------------------------------------- |
 | Browser SPA / `/api/*` | Session cookie + `X-Scrumboy` on mutations            |
-| Legacy `/mcp`          | Cookie or `Authorization: Bearer sb_…`                |
+| Legacy `/mcp`          | Cookie + `X-Scrumboy` for POST, or `Authorization: Bearer sb_…` |
 | `/mcp/rpc`             | Cookie, `sb_…`, or OAuth Bearer (resource-bound)      |
 | Agora                  | Cookie or static token paths as implemented—not OAuth |
 
 
-Additional controls include Origin checks for browser MCP JSON-RPC, JSON content-type expectations on relevant OAuth endpoints, duplicate-parameter rejection where implemented, protocol version negotiation for MCP JSON-RPC, and in-process rate limits (auth, password reset, OAuth DCR/token, sensitive method changes).
+Additional controls include Origin checks for browser MCP JSON-RPC and Agora, the deliberate-request header for cookie-authenticated legacy MCP POSTs, JSON content-type expectations on relevant OAuth endpoints, duplicate-parameter rejection where implemented, protocol version negotiation for MCP JSON-RPC, and in-process rate limits (auth, password reset, OAuth DCR/token, sensitive method changes).
 
 `SCRUMBOY_TRUST_PROXY` and `SCRUMBOY_PUBLIC_BASE_URL` affect client IP for limits and public origin / MCP resource URLs (`internal/publicorigin`). Misconfiguration can break OAuth discovery or weaken IP-based limits.
 

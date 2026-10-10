@@ -33,6 +33,8 @@ vi.mock("../utils.js", () => ({
 }));
 
 vi.mock("../state/selectors.js", () => ({
+  getAuthStatusAvailable: () => true,
+  getLandingPageEnabled: () => false,
   getProjectsTab: () => "projects",
   getProjectView: () => "list",
   getProjects: () => [],

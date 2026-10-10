@@ -4,7 +4,7 @@ import { getUser } from './selectors.js';
 const DEFAULT_LANE_META = () => ({});
 /** True after the user changes dashboard sort (not server hydrate). Skips applying stored preference so a fast local change is not overwritten when the GET returns. */
 let dashboardTodoSortUserTouched = false;
-const VALID_ROUTES = new Set(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'notfound']);
+const VALID_ROUTES = new Set(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'login', 'notfound']);
 const VALID_PROJECT_VIEWS = new Set(['list', 'grid']);
 export function setRoute(name) {
     if (!VALID_ROUTES.has(name)) {
@@ -20,6 +20,9 @@ export function setSlug(slug) {
 }
 export function setBoard(board) {
     current.board = board;
+}
+export function setBoardAccess(access) {
+    current.boardAccess = access;
 }
 export function setSearch(search) {
     current.search = search;
@@ -101,6 +104,12 @@ export function setMarkdownNotesEnabled(enabled) {
 }
 export function setMermaidNotesEnabled(enabled) {
     current._mermaidNotesEnabled = enabled;
+}
+export function setPublicProjectsEnabled(enabled) {
+    current._publicProjectsEnabled = enabled;
+}
+export function setLandingPageEnabled(enabled) {
+    current._landingPageEnabled = enabled;
 }
 export function setProjectsTab(tab) {
     current.projectsTab = tab;
@@ -211,6 +220,7 @@ export function resetUserScopedState() {
     // Keep global fields (route, slug, search, mobileTab) and user field (updated by router)
     current.projects = null;
     current.board = null;
+    current.boardAccess = null;
     current.projectId = null;
     current.editingTodo = null;
     current.availableTags = [];

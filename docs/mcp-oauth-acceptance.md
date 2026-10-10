@@ -88,7 +88,7 @@ If this exact Cursor build registers multiple redirect URIs or requires a privat
 1. Invoke a `/mcp/rpc` tool with a valid Scrumboy session cookie.
 2. Invoke a `/mcp/rpc` tool with a valid static `sb_…` API token.
 3. Verify legacy `GET /mcp` capability/bootstrap JSON with a cookie and static token.
-4. Verify legacy `POST /mcp` still accepts `{ "tool": "…", "input": {} }` with a cookie and static token.
+4. Verify legacy `POST /mcp` accepts `{ "tool": "…", "input": {} }` with a cookie plus `X-Scrumboy: 1`, and with a static token without that header. Confirm the cookie request without `X-Scrumboy: 1` returns 403 before tool execution.
 5. Present a valid `/mcp/rpc` OAuth access token to `/mcp`; expect the legacy 401 authentication envelope and no OAuth challenge.
 6. Present the same OAuth access token to `/agora/v1/*`; expect 401 and no OAuth challenge.
 7. Verify revoked, expired, wrong-resource, and unbound OAuth artifacts are rejected identically on `/mcp/rpc`.

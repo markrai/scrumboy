@@ -8,21 +8,25 @@ import (
 	"net/http"
 )
 
+const maxLegacyMCPBodyBytes int64 = maxJSONRPCBodyBytes
+
 // resolveAndValidateAuth runs MCP auth resolution and writes JSON errors when auth cannot proceed.
-// On success, ok is true and ctx is ready for tool handlers. On failure, ok is false (response already sent).
-func (a *Adapter) resolveAndValidateAuth(w http.ResponseWriter, r *http.Request) (ctx context.Context, ok bool) {
+// On success, ok is true and ctx is ready for tool handlers. sessionCookie is
+// true only when the actor was established from the browser session cookie.
+// On failure, ok is false (response already sent).
+func (a *Adapter) resolveAndValidateAuth(w http.ResponseWriter, r *http.Request) (ctx context.Context, sessionCookie bool, ok bool) {
 	authRes := a.resolveRequestAuth(r, false)
 	if authRes.Err != nil {
 		err := newAdapterError(http.StatusInternalServerError, CodeInternal, "internal error", map[string]any{"detail": authRes.Err.Error()})
 		a.logAdapterError("legacy", "authentication", err)
 		writeError(w, err)
-		return nil, false
+		return nil, false, false
 	}
 	if authRes.BearerAuthFailed {
 		writeError(w, newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Authentication required", nil))
-		return nil, false
+		return nil, false, false
 	}
-	return authRes.Ctx, true
+	return authRes.Ctx, authRes.SessionCookie, true
 }
 
 func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +47,7 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet {
-		ctx, ok := a.resolveAndValidateAuth(w, r)
+		ctx, _, ok := a.resolveAndValidateAuth(w, r)
 		if !ok {
 			return
 		}
@@ -62,8 +66,18 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.ContentLength > maxLegacyMCPBodyBytes {
+		writeError(w, newAdapterError(http.StatusRequestEntityTooLarge, CodeValidationError, "request body too large", nil))
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxLegacyMCPBodyBytes)
 	var req requestEnvelope
 	if err := readJSON(r, &req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, newAdapterError(http.StatusRequestEntityTooLarge, CodeValidationError, "request body too large", nil))
+			return
+		}
 		writeError(w, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid json", map[string]any{"detail": err.Error()}))
 		return
 	}
@@ -78,8 +92,12 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, ok := a.resolveAndValidateAuth(w, r)
+	ctx, sessionCookie, ok := a.resolveAndValidateAuth(w, r)
 	if !ok {
+		return
+	}
+	if sessionCookie && r.Header.Get("X-Scrumboy") != "1" {
+		writeError(w, newAdapterError(http.StatusForbidden, CodeForbidden, "missing X-Scrumboy header", nil))
 		return
 	}
 	data, meta, toolErr := handler(ctx, req.Input)

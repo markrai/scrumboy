@@ -10,6 +10,7 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
 import { bindViewTabsFit } from './view-tabs.js';
 import { publishCompleteDashboardWidgetSnapshot } from '../dashboard-widget-publish.js';
+import { appHomePath } from '../app-home.js';
 const BOUND_FLAG = Symbol('bound');
 const DASHBOARD_MOBILE_BREAKPOINT = 767;
 let dashboardI18nBound = false;
@@ -402,7 +403,7 @@ function bindTopNav() {
         projectsBtn.addEventListener('click', () => {
             setProjectsTab("projects");
             localStorage.setItem("projectsTab", "projects");
-            navigate('/');
+            navigate(appHomePath());
         });
         projectsBtn[BOUND_FLAG] = true;
     }
@@ -411,7 +412,7 @@ function bindTopNav() {
         temporaryBtn.addEventListener('click', () => {
             setProjectsTab("temporary");
             localStorage.setItem("projectsTab", "temporary");
-            navigate('/');
+            navigate(appHomePath());
         });
         temporaryBtn[BOUND_FLAG] = true;
     }

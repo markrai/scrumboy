@@ -1,12 +1,14 @@
 import { apiFetch } from './api.js';
-import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderArchive, renderNotFound, stopArchiveEvents, stopBoardEvents } from './views/index.js';
+import { renderAuth, renderResetPassword, renderProjects, renderDashboard, renderBoard, renderArchive, renderNotFound, stopArchiveEvents, stopBoardEvents, resolvePublicBoard, applyPublicBoardRoute, isPublicBoardSessionFor, stopPublicBoard } from './views/index.js';
 import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from './core/realtime.js';
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import { loadUserTheme } from './theme.js';
+import { appHomePath, isWorkspacePath } from './app-home.js';
+import { sanitizePostAuthNext } from './utils.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import { hydrateVoiceFlowEnabledFromServer, hydrateVoiceFlowContinueConversationFromServer, hydrateVoiceFlowHandsFreeConfirmationFromServer, hydrateVoiceFlowModeFromServer, VOICE_FLOW_ENABLED_PREFERENCE_KEY, VOICE_FLOW_CONTINUE_CONVERSATION_PREFERENCE_KEY, VOICE_FLOW_HANDS_FREE_CONFIRMATION_PREFERENCE_KEY, VOICE_FLOW_MODE_PREFERENCE_KEY, } from './core/voiceflow-preferences.js';
 import { loadUserEmailNotifyPref } from './core/email-notify-preferences.js';
@@ -39,7 +41,7 @@ function redirectMissingClientPathToHome(opts) {
     }
     // Preserve a same-origin client path for post-login return (existence-hiding 404s still look identical).
     const preservedNext = opts?.next;
-    history.replaceState({}, "", "/");
+    history.replaceState({}, "", appHomePath());
     if (preservedNext && getUser() == null) {
         renderAuth({
             next: preservedNext,
@@ -79,6 +81,13 @@ function parseRoute() {
     const openTodoId = url.searchParams.get("openTodoId") || undefined;
     if (path === "/")
         return { name: "projects" };
+    // /_app is the Full Mode workspace entry. Anonymous Mode keeps its previous
+    // not-found handling for this path.
+    if (isWorkspacePath(path) && getAuthStatusAvailable())
+        return { name: "projects", workspaceAlias: true };
+    if ((path === "/auth/login" || path === "/auth/login/") && getAuthStatusAvailable()) {
+        return { name: "login", next: url.searchParams.get("next") };
+    }
     if (path === "/dashboard")
         return { name: "dashboard" };
     if (path === "/auth/reset-password")
@@ -152,6 +161,8 @@ async function routeOnceBody() {
             // User changed (logout, login as different user, or initial load)
             resetUserScopedState();
             stopGlobalRealtime();
+            // Access mode depends on the signed-in identity: re-resolve the board.
+            stopPublicBoard();
             widgetIdentity = setDashboardWidgetCurrentUser(newUserId);
         }
         setUser(newUser);
@@ -170,6 +181,8 @@ async function routeOnceBody() {
         setWallEnabled(!!(st && st.wallEnabled));
         setMarkdownNotesEnabled(!!(st && st.markdownNotesEnabled));
         setMermaidNotesEnabled(!!(st && st.mermaidNotesEnabled));
+        setPublicProjectsEnabled(!isAnonymousMode && !!(st && st.publicProjectsEnabled));
+        setLandingPageEnabled(!isAnonymousMode && !!(st && st.landingPageEnabled));
         // Load full profile (including avatar) when logged in; /api/auth/status omits image to keep it lean
         if (newUser) {
             try {
@@ -304,9 +317,37 @@ async function routeOnceBody() {
         }
     }
     let r = parseRoute();
-    // Unmatched client paths rewrite to `/` (main login entry in full mode; marketing root in anonymous mode).
+    // Unmatched client paths rewrite to the workspace home (Full Mode) or `/` (Anonymous Mode).
     if (r.name === "notfound") {
         redirectMissingClientPathToHome();
+        return;
+    }
+    // Canonical workspace entry: with the landing override the workspace lives at
+    // /_app (the server owns / for marketing); without it, /_app aliases to /.
+    if (r.name === "projects") {
+        const wantPath = appHomePath();
+        if (window.location.pathname !== wantPath && (window.location.pathname === "/" || r.workspaceAlias)) {
+            history.replaceState(history.state ?? {}, "", wantPath + window.location.search + window.location.hash);
+        }
+    }
+    if (r.name === "login") {
+        const destination = sanitizePostAuthNext(r.next) === "/" ? appHomePath() : sanitizePostAuthNext(r.next);
+        if (getUser()) {
+            // Already signed in: continue to the destination through ordinary resolution.
+            history.replaceState({}, "", destination);
+            rerouteRequested = true;
+            return;
+        }
+        stopBoardEvents();
+        stopArchiveEvents();
+        stopPublicBoard();
+        setRoute("login");
+        setSlug(null);
+        setProjectId(null);
+        setBoard(null);
+        setBoardAccess(null);
+        lastHandledBoardRoute = null;
+        renderAuth(authOverlayOptions(destination));
         return;
     }
     const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
@@ -332,6 +373,7 @@ async function routeOnceBody() {
     setOpenTodoSegment(r.openTodoSegment || null);
     if (r.name !== "boardBySlug") {
         stopBoardEvents();
+        stopPublicBoard();
     }
     if (r.name !== "archiveBySlug") {
         stopArchiveEvents();
@@ -339,6 +381,7 @@ async function routeOnceBody() {
     if (r.name !== "boardBySlug" && r.name !== "archiveBySlug") {
         setProjectId(null);
         setBoard(null);
+        setBoardAccess(null);
         lastHandledBoardRoute = null;
     }
     // Reset password page: no auth required (token is auth)
@@ -347,7 +390,7 @@ async function routeOnceBody() {
             renderResetPassword(r.token);
         }
         else {
-            renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
+            renderAuth({ next: appHomePath(), bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
         }
         return;
     }
@@ -403,7 +446,19 @@ async function routeOnceBody() {
             prefetchedBoard = undefined;
             history.replaceState({}, "", window.location.pathname + window.location.search + window.location.hash);
         }
+        // In-board navigation on an already resolved public board (filters, story
+        // deep links, back/forward) stays public without re-trying the member route.
+        if (r.slug && isPublicBoardSessionFor(r.slug)) {
+            lastHandledBoardRoute = null;
+            await applyPublicBoardRoute({ slug: r.slug, openTodoSegment: r.openTodoSegment || null });
+            return;
+        }
         const isLightweight = shouldDoLightweightBoardUpdate(r);
+        if (!isLightweight) {
+            // Fresh resolution: no access mode is carried over from a previous board.
+            stopPublicBoard();
+            setBoardAccess(null);
+        }
         try {
             if (isLightweight) {
                 await renderBoard(r.slug || null, r.tags ?? [], r.search || "", r.sprintId ?? null, r.assignee ?? null, r.sort ?? null, r.priority ?? null, r.openTodoId || null, r.openTodoSegment || null, { skipLoad: true });
@@ -431,6 +486,19 @@ async function routeOnceBody() {
         }
         catch (err) {
             const status = err && err.status;
+            // Public fallback: only after the member/temporary route denied access
+            // (401 signed out, 404 nonmember or missing) and only in Full Mode, where
+            // public projects exist. Network, server, and other errors never fall back.
+            if ((status === 401 || status === 404) && r.slug && getAuthStatusAvailable()) {
+                // The member read failed, so its board events and pending reloads are
+                // stopped before any public content (or the existing fallback) renders.
+                stopBoardEvents();
+                const outcome = await resolvePublicBoard({ slug: r.slug, openTodoSegment: r.openTodoSegment || null });
+                if (outcome !== "not-public") {
+                    lastHandledBoardRoute = null;
+                    return;
+                }
+            }
             if (status === 401) {
                 // Only show auth UI for 401s (entry points). Resource endpoints should generally return 404 when unauthenticated.
                 renderAuth(authOverlayOptions(window.location.pathname + window.location.search, { bootstrap: false }));

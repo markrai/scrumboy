@@ -1,6 +1,7 @@
 import { app } from '../dom/elements.js';
 import { hasI18nKey, t } from '../i18n/index.js';
 import { escapeHTML } from '../utils.js';
+import { appHomePath } from '../app-home.js';
 function notFoundText(key, fallback) {
     return hasI18nKey(key) ? t(key) : fallback;
 }
@@ -22,6 +23,6 @@ export function renderNotFound() {
     // Force a full navigation so "/" can be handled server-side (landing in anonymous mode).
     const homeBtn = document.getElementById("homeBtn");
     if (homeBtn) {
-        homeBtn.addEventListener("click", () => (window.location.href = "/"));
+        homeBtn.addEventListener("click", () => (window.location.href = appHomePath()));
     }
 }

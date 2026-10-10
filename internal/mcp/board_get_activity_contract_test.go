@@ -167,6 +167,9 @@ func TestBoardGetContract_ActivityFailureIsBestEffortAcrossTransports(t *testing
 				t.Fatalf("new request: %v", err)
 			}
 			req.Header.Set("Content-Type", "application/json")
+			if tt.name == "legacy" {
+				req.Header.Set("X-Scrumboy", "1")
+			}
 			if tt.name == "json-rpc" {
 				req.Header.Set("MCP-Protocol-Version", "2025-11-25")
 			}

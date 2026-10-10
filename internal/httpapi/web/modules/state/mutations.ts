@@ -1,7 +1,7 @@
 import { apiFetch } from '../api.js';
 import { current } from './state.js';
 import { getUser } from './selectors.js';
-import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
+import { Board, BoardAccess, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
 import type { BoardMember } from './state.js';
 
 const DEFAULT_LANE_META = (): Record<TodoStatus, { hasMore: boolean; nextCursor: string | null; loading: boolean; totalCount?: number }> => ({});
@@ -9,7 +9,7 @@ const DEFAULT_LANE_META = (): Record<TodoStatus, { hasMore: boolean; nextCursor:
 /** True after the user changes dashboard sort (not server hydrate). Skips applying stored preference so a fast local change is not overwritten when the GET returns. */
 let dashboardTodoSortUserTouched = false;
 
-const VALID_ROUTES = new Set<RouteName>(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'notfound']);
+const VALID_ROUTES = new Set<RouteName>(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'login', 'notfound']);
 const VALID_PROJECT_VIEWS = new Set<ProjectView>(['list', 'grid']);
 
 export function setRoute(name: RouteName): void {
@@ -29,6 +29,10 @@ export function setSlug(slug: string | null): void {
 
 export function setBoard(board: Board | null): void {
   current.board = board;
+}
+
+export function setBoardAccess(access: BoardAccess | null): void {
+  current.boardAccess = access;
 }
 
 export function setSearch(search: string): void {
@@ -136,6 +140,14 @@ export function setMarkdownNotesEnabled(enabled: boolean): void {
 
 export function setMermaidNotesEnabled(enabled: boolean): void {
   current._mermaidNotesEnabled = enabled;
+}
+
+export function setPublicProjectsEnabled(enabled: boolean): void {
+  current._publicProjectsEnabled = enabled;
+}
+
+export function setLandingPageEnabled(enabled: boolean): void {
+  current._landingPageEnabled = enabled;
 }
 
 export function setProjectsTab(tab: string | undefined): void {
@@ -269,6 +281,7 @@ export function resetUserScopedState(): void {
   // Keep global fields (route, slug, search, mobileTab) and user field (updated by router)
   current.projects = null;
   current.board = null;
+  current.boardAccess = null;
   current.projectId = null;
   current.editingTodo = null;
   current.availableTags = [];

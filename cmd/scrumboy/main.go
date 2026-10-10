@@ -130,32 +130,34 @@ func main() {
 	publicOrigin := publicorigin.New(cfg.PublicBaseURL, cfg.TrustProxy)
 	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger})
 	srv := httpapi.NewServer(st, httpapi.Options{
-		Logger:               logger,
-		MaxRequestBody:       cfg.MaxRequestBodyBytes,
-		MaxTrelloImportBody:  cfg.MaxTrelloImportBytes,
-		ScrumboyMode:         cfg.ScrumboyMode,
-		DataDir:              cfg.DataDir,
-		MCPHandler:           mcpH,
-		AgoraHandler:         agora.New(mcpH, agora.Options{MaxRequestBytes: maxB}),
-		EncryptionKey:        encKey,
-		OIDCService:          oidcSvc,
-		VAPIDPublicKey:       cfg.VAPIDPublicKey,
-		VAPIDPrivateKey:      cfg.VAPIDPrivateKey,
-		VAPIDSubscriber:      cfg.VAPIDSubscriber,
-		PushDebug:            cfg.PushDebug,
-		WallEnabled:          cfg.WallEnabled,
-		MarkdownNotesEnabled: cfg.MarkdownNotesEnabled,
-		MermaidNotesEnabled:  cfg.MermaidNotesEnabled,
-		SMTPHost:             cfg.SMTPHost,
-		SMTPPort:             cfg.SMTPPort,
-		SMTPUsername:         cfg.SMTPUsername,
-		SMTPPassword:         cfg.SMTPPassword,
-		SMTPFrom:             cfg.SMTPFrom,
-		SMTPTLSMode:          cfg.SMTPTLSMode,
-		SMTPDebug:            cfg.SMTPDebug,
-		PublicBaseURL:        cfg.PublicBaseURL,
-		PublicOrigin:         publicOrigin,
-		TrustProxy:           cfg.TrustProxy,
+		Logger:                logger,
+		MaxRequestBody:        cfg.MaxRequestBodyBytes,
+		MaxTrelloImportBody:   cfg.MaxTrelloImportBytes,
+		ScrumboyMode:          cfg.ScrumboyMode,
+		PublicProjectsEnabled: cfg.PublicProjectsEnabled,
+		LandingPageEnabled:    cfg.LandingPageEnabled,
+		DataDir:               cfg.DataDir,
+		MCPHandler:            mcpH,
+		AgoraHandler:          agora.New(mcpH, agora.Options{MaxRequestBytes: maxB}),
+		EncryptionKey:         encKey,
+		OIDCService:           oidcSvc,
+		VAPIDPublicKey:        cfg.VAPIDPublicKey,
+		VAPIDPrivateKey:       cfg.VAPIDPrivateKey,
+		VAPIDSubscriber:       cfg.VAPIDSubscriber,
+		PushDebug:             cfg.PushDebug,
+		WallEnabled:           cfg.WallEnabled,
+		MarkdownNotesEnabled:  cfg.MarkdownNotesEnabled,
+		MermaidNotesEnabled:   cfg.MermaidNotesEnabled,
+		SMTPHost:              cfg.SMTPHost,
+		SMTPPort:              cfg.SMTPPort,
+		SMTPUsername:          cfg.SMTPUsername,
+		SMTPPassword:          cfg.SMTPPassword,
+		SMTPFrom:              cfg.SMTPFrom,
+		SMTPTLSMode:           cfg.SMTPTLSMode,
+		SMTPDebug:             cfg.SMTPDebug,
+		PublicBaseURL:         cfg.PublicBaseURL,
+		PublicOrigin:          publicOrigin,
+		TrustProxy:            cfg.TrustProxy,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 
@@ -164,6 +166,7 @@ func main() {
 		Handler:           srv,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	httpServer.RegisterOnShutdown(srv.ShutdownPublicStreams)
 
 	_, port, _ := net.SplitHostPort(cfg.BindAddr)
 	if port == "" {

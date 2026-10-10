@@ -34,12 +34,14 @@ import {
   setMobileTab,
   setTagColors,
   setSettingsActiveTab,
+  setBoardAccess,
   setBoardMembers,
   setLaneLoading,
   appendLaneTodos,
 } from '../state/mutations.js';
 import { appendTagParams, normalizeBoardTagFilters, sameOrderedTags } from '../state/board-filter-url.js';
 import { isAnonymousBoard, isTemporaryBoard } from '../utils.js';
+import { accessForMemberRouteBoard } from '../state/board-access.js';
 import { openTodoDialog } from '../dialogs/todo.js';
 import { renderSettingsModal } from '../dialogs/settings.js';
 import { initDnD, columnsSpec, setDnDColumns, dragInProgress, dragJustEnded } from '../features/drag-drop.js';
@@ -110,6 +112,7 @@ import {
   BOARD_FILTER_LAYOUT_CHANGED_EVENT,
   getBoardFilterLayoutPreference,
 } from '../core/board-filter-layout-preferences.js';
+import { appHomePath } from '../app-home.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
@@ -1059,7 +1062,8 @@ function renderBoardFromData(board: Board, projectId: number, tags: readonly str
 
   // Check if we're already on a board page - if so, only update board content
   // We check for the board container, not just the topbar, because projects page also has a topbar
-  const existingBoardContainer = document.querySelector(".board");
+  // A public read-only board is never updated in place by member rendering.
+  const existingBoardContainer = document.querySelector(".board:not([data-public-board])");
   const savedAgendaScroll = captureAgendaListScroll();
   if (existingBoardContainer && !opts.forceFullRender) {
     updateBoardContent(board, tags, search, sprintId, assignee, sort, priority);
@@ -1184,10 +1188,10 @@ function renderBoardFromData(board: Board, projectId: number, tags: readonly str
         const currentUrl = window.location.href;
         await navigator.clipboard.writeText(currentUrl);
         // Navigate immediately, toast will show on landing page
-        window.location.href = "/?copied=1";
+        window.location.href = `${appHomePath()}?copied=1`;
       } catch (err) {
         // Fallback if clipboard API fails (e.g., insecure context)
-        window.location.href = "/?copied=0";
+        window.location.href = `${appHomePath()}?copied=0`;
       }
     });
     (brandLink as any)[BOUND_FLAG] = true;
@@ -1197,7 +1201,7 @@ function renderBoardFromData(board: Board, projectId: number, tags: readonly str
     backBtn.addEventListener("click", () => {
       const isRelativePath = !backHref || (!backHref.startsWith("http://") && !backHref.startsWith("https://"));
       if (isRelativePath) {
-        navigate(backHref || "/");
+        navigate(backHref || appHomePath());
         return;
       }
       window.location.href = backHref;
@@ -1618,7 +1622,7 @@ function renderBoardFromData(board: Board, projectId: number, tags: readonly str
               }
               if (targetUserId === currentUserId) {
                 close();
-                navigate("/");
+                navigate(appHomePath());
                 return;
               }
               // Refetch available users so removed member reappears in Add section (if dropdown exists)
@@ -1855,6 +1859,7 @@ export async function loadBoardBySlug(slug: string | null, tags: readonly string
       lastFetchedProjectId = projectId;
     },
     renderLoadedBoard: (renderOpts) => {
+      setBoardAccess(accessForMemberRouteBoard(board));
       renderBoardFromData(board, renderOpts.projectId, requestTags, search || "", effectiveSprintId, requestAssignee, requestSort, requestPriority, renderOpts);
     },
     markLoadSuccess: (loadedSlug) => {
@@ -2014,6 +2019,7 @@ export async function renderBoard(
         lastFetchedProjectId = projectId;
       },
       renderLoadedBoard: (renderOpts) => {
+        setBoardAccess(accessForMemberRouteBoard(board));
         renderBoardFromData(board, renderOpts.projectId, tags, search || "", sprintId, assignee, sort, priority, renderOpts);
       },
       markLoadSuccess: (loadedSlug) => {
@@ -2047,11 +2053,17 @@ export async function renderBoard(
     }
   } else if (!opts.skipLoad) {
     setInitialBoardLoadInFlight(slug);
+    let loadFailed = false;
     try {
       await loadBoardBySlug(slug, tags, search || null, sprintId, assignee, sort, priority);
+    } catch (err) {
+      loadFailed = true;
+      throw err;
     } finally {
       setInitialBoardLoadInFlight(null);
-      if (getSlug() === slug) connectBoardEvents(slug);
+      // A denied or failed member read must not open board realtime for that
+      // slug (it may resolve to the public view, which uses only the public stream).
+      if (!loadFailed && getSlug() === slug) connectBoardEvents(slug);
     }
   }
   if (openTodoSegment) {

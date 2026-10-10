@@ -40,6 +40,12 @@ func isValidColumnKey(key string) bool {
 	return columnKeyRe.MatchString(key)
 }
 
+// IsValidWorkflowColumnKey exposes the persisted project-local key grammar to
+// the public application validator without exposing workflow mutation policy.
+func IsValidWorkflowColumnKey(key string) bool {
+	return isValidColumnKey(key)
+}
+
 // HumanizeColumnKey converts a snake_case column key to Title Case.
 // Example: "in_progress" → "In Progress", "custom_review" → "Custom Review"
 func HumanizeColumnKey(key string) string {

@@ -1,5 +1,5 @@
 import { current } from './state.js';
-import { Board, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
+import { Board, BoardAccess, Project, Todo, User, ProjectView, MobileTab, RouteName, DashboardSummary, DashboardTodo, TodoStatus, WebPushStatus, EmailNotifyPreferenceState } from '../types.js';
 import type { BoardMember } from './state.js';
 
 export { getTagsFromUrl } from './board-filter-url.js';
@@ -18,6 +18,10 @@ export function getSlug(): string | null {
 
 export function getBoard(): Board | null {
   return current.board;
+}
+
+export function getBoardAccess(): BoardAccess | null {
+  return current.boardAccess;
 }
 
 export function getSearch(): string {
@@ -146,6 +150,14 @@ export function getMarkdownNotesEnabled(): boolean {
 
 export function getMermaidNotesEnabled(): boolean {
   return !!current._mermaidNotesEnabled;
+}
+
+export function getPublicProjectsEnabled(): boolean {
+  return !!current._publicProjectsEnabled;
+}
+
+export function getLandingPageEnabled(): boolean {
+  return !!current._landingPageEnabled;
 }
 
 export function getProjectsTab(): string | undefined {

@@ -2,9 +2,22 @@ import { getAppRuntime } from './platform/runtime.js';
 import type { ArchivePageResponse, TodoArchiveBatchResult } from './types.js';
 
 async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
+  const isMultipart = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers: Record<string, string> = { 'X-Scrumboy': '1' };
+  if (!isMultipart) headers['Content-Type'] = 'application/json';
+  new Headers(options.headers).forEach((value, name) => {
+    if (name.toLowerCase() === 'content-type') {
+      headers['Content-Type'] = value;
+    } else if (name.toLowerCase() === 'x-scrumboy') {
+      headers['X-Scrumboy'] = value;
+    } else {
+      headers[name] = value;
+    }
+  });
+
   const res = await getAppRuntime().transport().request(path, {
-    headers: { "Content-Type": "application/json", "X-Scrumboy": "1", ...(options.headers || {}) },
     ...options,
+    headers,
   });
   if (res.status === 204) return null as T;
   const data = await res.json().catch(() => null);

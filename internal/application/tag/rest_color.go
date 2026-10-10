@@ -11,20 +11,21 @@ var ErrInvalidProjectKind = errors.New("invalid tag color project kind")
 
 // RESTColorPublisher publishes the semantic invalidation required after a
 // successful REST project color mutation. An empty name identifies an
-// ID-addressed mutation.
+// ID-addressed mutation. sharedColor is true when a board-wide color changed
+// and false when only the acting viewer's personal preference changed.
 type RESTColorPublisher interface {
-	PublishTagColorUpdated(ctx context.Context, projectID int64, name string)
+	PublishTagColorUpdated(ctx context.Context, projectID int64, name string, sharedColor bool)
 }
 
 type nopRESTColorPublisher struct{}
 
-func (nopRESTColorPublisher) PublishTagColorUpdated(context.Context, int64, string) {}
+func (nopRESTColorPublisher) PublishTagColorUpdated(context.Context, int64, string, bool) {}
 
 // RESTColorServiceDependencies contains only the persistence and publication
 // capabilities used by REST tag color operations.
 type RESTColorServiceDependencies struct {
 	MineColor          MineColorStore
-	DurableIDColor     DurableProjectIDColorStore
+	DurableIDColor     DurableProjectIDColorScopeStore
 	TemporaryIDColor   TemporaryBoardIDColorStore
 	DurableNameColor   DurableProjectNameColorStore
 	TemporaryNameColor TemporaryBoardNameColorStore
@@ -36,7 +37,7 @@ type RESTColorServiceDependencies struct {
 // mutation sequences.
 type RESTColorService struct {
 	mineColor          MineColorStore
-	durableIDColor     DurableProjectIDColorStore
+	durableIDColor     DurableProjectIDColorScopeStore
 	temporaryIDColor   TemporaryBoardIDColorStore
 	durableNameColor   DurableProjectNameColorStore
 	temporaryNameColor TemporaryBoardNameColorStore
@@ -138,9 +139,10 @@ func (s *RESTColorService) PrepareProjectID(
 // then publishes the project invalidation after success.
 func (p *PreparedRESTProjectIDColor) Update() error {
 	var err error
+	sharedColor := false
 	switch p.project.Kind {
 	case DurableProject:
-		err = p.service.durableIDColor.UpdateTagColorForDurableProjectByID(
+		sharedColor, err = p.service.durableIDColor.UpdateTagColorForDurableProjectByIDWithScope(
 			p.ctx,
 			p.project.ProjectID,
 			*p.viewerID,
@@ -148,6 +150,8 @@ func (p *PreparedRESTProjectIDColor) Update() error {
 			p.color.StoreValue(),
 		)
 	case CreatorOwnedTemporaryBoard, AnonymousTemporaryBoard:
+		// Temporary-board tags are board-scoped shared colors.
+		sharedColor = true
 		err = p.service.temporaryIDColor.UpdateTagColorForTemporaryBoard(
 			p.ctx,
 			p.project.ProjectID,
@@ -160,7 +164,7 @@ func (p *PreparedRESTProjectIDColor) Update() error {
 		return err
 	}
 
-	p.service.publisher.PublishTagColorUpdated(p.ctx, p.project.ProjectID, "")
+	p.service.publisher.PublishTagColorUpdated(p.ctx, p.project.ProjectID, "", sharedColor)
 	return nil
 }
 
@@ -206,6 +210,9 @@ func (s *RESTColorService) PrepareProjectName(
 // then publishes the exact prepared name after success.
 func (p *PreparedRESTProjectNameColor) Update() error {
 	var err error
+	// Durable name colors are always per-viewer user_tag_colors preferences;
+	// temporary-board name colors update the shared board-scoped color.
+	sharedColor := p.project.Kind != DurableProject
 	switch p.project.Kind {
 	case DurableProject:
 		err = p.service.durableNameColor.SetViewerTagColorByName(
@@ -229,6 +236,6 @@ func (p *PreparedRESTProjectNameColor) Update() error {
 		return err
 	}
 
-	p.service.publisher.PublishTagColorUpdated(p.ctx, p.project.ProjectID, p.name)
+	p.service.publisher.PublishTagColorUpdated(p.ctx, p.project.ProjectID, p.name, sharedColor)
 	return nil
 }

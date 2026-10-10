@@ -2,6 +2,10 @@
  * Managed EventSource with explicit recycle, generation guards, debounced restart,
  * stale watchdog (data-line pings), and bounded exponential backoff on errors.
  * Server tick interval must match internal/httpapi/sse.go heartbeatInterval (25s).
+ *
+ * The default policy is the authenticated/temporary-board contract. Streams
+ * with a different heartbeat contract (the public board stream sends
+ * comment-only heartbeats that never reach onmessage) pass an explicit policy.
  */
 
 import { getAppRuntime } from '../platform/runtime.js';
@@ -30,6 +34,29 @@ function dbg(label: string, ...args: unknown[]): void {
   }
 }
 
+export type SseConnectionPolicy = {
+  /** Data-silence watchdog; null disables it (for comment-only heartbeat streams). */
+  staleAfterMs?: number | null;
+  initialBackoffMs?: number;
+  maxBackoffMs?: number;
+  /** Random extra delay as a fraction of the backoff (0..1) to avoid synchronized retries. */
+  jitterRatio?: number;
+  /**
+   * When set, the consecutive-error count resets only after a connection has
+   * stayed open this long, so open-then-close loops keep backing off.
+   * Default (null): reset on every successful open.
+   */
+  stableAfterMs?: number | null;
+};
+
+const DEFAULT_POLICY: Required<SseConnectionPolicy> = {
+  staleAfterMs: SSE_STALE_AFTER_MS,
+  initialBackoffMs: INITIAL_BACKOFF_MS,
+  maxBackoffMs: MAX_BACKOFF_MS,
+  jitterRatio: 0,
+  stableAfterMs: null,
+};
+
 export type SseConnectionHandlers = {
   /** Invoked for non-ping JSON messages (same contract as EventSource message). */
   onMessage: (ev: MessageEvent) => void;
@@ -37,6 +64,8 @@ export type SseConnectionHandlers = {
   label?: string;
   /** After a successful connection open (generation matches). */
   onOpen?: () => void;
+  /** After a transport error, before the backoff reconnect is scheduled. */
+  onTransportError?: () => void;
 };
 
 export class SseConnectionManager {
@@ -48,11 +77,14 @@ export class SseConnectionManager {
   private restartDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private staleTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffTimer: ReturnType<typeof setTimeout> | null = null;
+  private stableTimer: ReturnType<typeof setTimeout> | null = null;
   private consecutiveErrors = 0;
+  private readonly policy: Required<SseConnectionPolicy>;
 
-  constructor(path: string, handlers: SseConnectionHandlers) {
+  constructor(path: string, handlers: SseConnectionHandlers, policy: SseConnectionPolicy = {}) {
     this.path = path;
     this.handlers = handlers;
+    this.policy = { ...DEFAULT_POLICY, ...policy };
   }
 
   private label(): string {
@@ -77,7 +109,11 @@ export class SseConnectionManager {
     es.onopen = () => {
       if (myGen !== this.generation) return;
       dbg(this.label(), "onopen gen=", myGen);
-      this.consecutiveErrors = 0;
+      if (this.policy.stableAfterMs === null) {
+        this.consecutiveErrors = 0;
+      } else {
+        this.armStableTimer(myGen);
+      }
       this.armStaleTimer(myGen);
       this.handlers.onOpen?.();
     };
@@ -105,6 +141,7 @@ export class SseConnectionManager {
       this.consecutiveErrors++;
       dbg(this.label(), "onerror gen=", myGen, "count=", this.consecutiveErrors);
       this.clearStaleTimer();
+      this.clearStableTimer();
       try {
         es.close();
       } catch {
@@ -116,11 +153,16 @@ export class SseConnectionManager {
       // Bump generation so stale callbacks from this socket never match; then backoff reconnect.
       this.generation++;
       const scheduleAt = this.generation;
-      const delay = Math.min(
-        MAX_BACKOFF_MS,
-        INITIAL_BACKOFF_MS * Math.pow(2, Math.min(this.consecutiveErrors - 1, 8))
+      const baseDelay = Math.min(
+        this.policy.maxBackoffMs,
+        this.policy.initialBackoffMs * Math.pow(2, Math.min(this.consecutiveErrors - 1, 8))
       );
+      const delay = this.policy.jitterRatio > 0
+        ? Math.round(baseDelay * (1 + Math.random() * this.policy.jitterRatio))
+        : baseDelay;
       dbg(this.label(), "backoff ms=", delay, "scheduleAt=", scheduleAt);
+      this.handlers.onTransportError?.();
+      if (scheduleAt !== this.generation) return; // stopped by the error handler
       this.clearBackoffTimer();
       this.backoffTimer = setTimeout(() => {
         this.backoffTimer = null;
@@ -151,6 +193,7 @@ export class SseConnectionManager {
       this.restartDebounceTimer = null;
     }
     this.clearStaleTimer();
+    this.clearStableTimer();
     this.clearBackoffTimer();
     if (this.es) {
       this.es.close();
@@ -161,11 +204,31 @@ export class SseConnectionManager {
 
   private armStaleTimer(myGen: number): void {
     this.clearStaleTimer();
+    const staleAfterMs = this.policy.staleAfterMs;
+    if (staleAfterMs === null) return;
     this.staleTimer = setTimeout(() => {
       if (myGen !== this.generation) return;
       dbg(this.label(), "stale watchdog gen=", myGen);
       this.restartRequested("stale");
-    }, SSE_STALE_AFTER_MS);
+    }, staleAfterMs);
+  }
+
+  private armStableTimer(myGen: number): void {
+    this.clearStableTimer();
+    const stableAfterMs = this.policy.stableAfterMs;
+    if (stableAfterMs === null) return;
+    this.stableTimer = setTimeout(() => {
+      this.stableTimer = null;
+      if (myGen !== this.generation) return;
+      this.consecutiveErrors = 0;
+    }, stableAfterMs);
+  }
+
+  private clearStableTimer(): void {
+    if (this.stableTimer !== null) {
+      clearTimeout(this.stableTimer);
+      this.stableTimer = null;
+    }
   }
 
   private resetStaleTimer(myGen: number): void {

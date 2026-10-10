@@ -1957,6 +1957,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 						slug = baseSlug + suffix
 					}
 				}
+				if mode == ModeFull && IsReservedProjectSlug(slug) {
+					continue
+				}
 
 				var exists bool
 				if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM projects WHERE slug = ?)`, slug).Scan(&exists); err != nil {
@@ -2317,6 +2320,9 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		for i := 2; i < 102; i++ {
 			if i > 2 {
 				slug = fmt.Sprintf("%s-%d", baseSlug, i)
+			}
+			if mode == ModeFull && IsReservedProjectSlug(slug) {
+				continue
 			}
 
 			var exists bool

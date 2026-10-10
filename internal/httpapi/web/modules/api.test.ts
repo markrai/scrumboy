@@ -28,14 +28,42 @@ describe('apiFetch', () => {
       body: raw,
     });
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/import/trello/preview', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/import/trello/preview', expect.objectContaining({
       method: 'POST',
       body: raw,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Scrumboy': '1',
-      },
+    }));
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('X-Scrumboy')).toBe('1');
+  });
+
+  it.each([
+    ['plain object', { 'X-Trace': 'object' }],
+    ['Headers', new Headers({ 'X-Trace': 'headers' })],
+    ['tuple array', [['X-Trace', 'tuples']] as [string, string][]],
+  ])('merges defaults with %s custom headers', async (_name, customHeaders) => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    const { apiFetch } = await import('./api.js');
+
+    await apiFetch('/api/header-shapes', { headers: customHeaders });
+
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get('X-Scrumboy')).toBe('1');
+    expect(headers.get('Content-Type')).toBe('application/json');
+    expect(headers.get('X-Trace')).toBe(new Headers(customHeaders).get('X-Trace'));
+  });
+
+  it('preserves intentional caller overrides of default headers', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    const { apiFetch } = await import('./api.js');
+
+    await apiFetch('/api/header-overrides', {
+      headers: new Headers({ 'Content-Type': 'text/plain', 'X-Scrumboy': 'caller-value' }),
     });
+
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get('Content-Type')).toBe('text/plain');
+    expect(headers.get('X-Scrumboy')).toBe('caller-value');
   });
 
   it('preserves status/data errors and 204 responses', async () => {
@@ -71,6 +99,24 @@ describe('apiFetch', () => {
     expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Content-Type');
   });
 
+  it('does not add a JSON content type when apiFetch receives FormData', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true }) });
+    const { apiFetch } = await import('./api.js');
+    const form = new FormData();
+    form.append('file', new Blob(['image']), 'wallpaper.jpg');
+
+    await apiFetch('/api/form-through-generic-helper', {
+      method: 'POST',
+      body: form,
+      headers: [['X-Trace', 'multipart']],
+    });
+
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get('Content-Type')).toBeNull();
+    expect(headers.get('X-Scrumboy')).toBe('1');
+    expect(headers.get('X-Trace')).toBe('multipart');
+  });
+
   it('uses the cursor archive endpoint and atomic batch request shapes', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -83,18 +129,19 @@ describe('apiFetch', () => {
     await archiveTodos('alpha', [12, 14]);
     await restoreTodos('alpha', [19]);
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/board/alpha%20board/archive?limit=50&afterCursor=123%3A9', {
-      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/board/alpha/todos/archive', {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/board/alpha%20board/archive?limit=50&afterCursor=123%3A9', expect.any(Object));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/board/alpha/todos/archive', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ localIds: [12, 14] }),
-      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/board/alpha/todos/restore', {
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/board/alpha/todos/restore', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ localIds: [19] }),
-      headers: { 'Content-Type': 'application/json', 'X-Scrumboy': '1' },
-    });
+    }));
+    for (const call of fetchMock.mock.calls) {
+      const headers = new Headers(call[1].headers);
+      expect(headers.get('Content-Type')).toBe('application/json');
+      expect(headers.get('X-Scrumboy')).toBe('1');
+    }
   });
 });

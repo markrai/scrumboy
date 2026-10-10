@@ -16,12 +16,14 @@ type restColorCall struct {
 	name               string
 	color              *string
 	linkTemporaryBoard bool
+	sharedColor        bool
 }
 
 type restColorFake struct {
 	trace            []string
 	mutationErr      error
 	returnContextErr bool
+	durableShared    bool
 	calls            []restColorCall
 	publications     []restColorCall
 }
@@ -37,15 +39,15 @@ func (f *restColorFake) UpdateMyTagColor(
 	return f.result(ctx)
 }
 
-func (f *restColorFake) UpdateTagColorForDurableProjectByID(
+func (f *restColorFake) UpdateTagColorForDurableProjectByIDWithScope(
 	ctx context.Context,
 	projectID, viewerUserID, tagID int64,
 	color *string,
-) error {
+) (bool, error) {
 	f.recordMutation("durable-id-color", restColorCall{
 		ctx: ctx, projectID: projectID, viewerUserID: cloneInt64(&viewerUserID), tagID: tagID, color: cloneString(color),
 	})
-	return f.result(ctx)
+	return f.durableShared, f.result(ctx)
 }
 
 func (f *restColorFake) UpdateTagColorForTemporaryBoard(
@@ -92,9 +94,9 @@ func (f *restColorFake) UpdateTagColorForProject(
 	return f.result(ctx)
 }
 
-func (f *restColorFake) PublishTagColorUpdated(ctx context.Context, projectID int64, name string) {
+func (f *restColorFake) PublishTagColorUpdated(ctx context.Context, projectID int64, name string, sharedColor bool) {
 	f.trace = append(f.trace, "publish")
-	f.publications = append(f.publications, restColorCall{ctx: ctx, projectID: projectID, name: name})
+	f.publications = append(f.publications, restColorCall{ctx: ctx, projectID: projectID, name: name, sharedColor: sharedColor})
 }
 
 func (f *restColorFake) recordMutation(name string, call restColorCall) {
@@ -172,13 +174,24 @@ func TestRESTColorProjectIDDispatchAndPublication(t *testing.T) {
 		viewerID   *int64
 		wantViewer *int64
 		wantTrace  []string
+		storeScope bool
+		wantShared bool
 	}{
 		{
-			name:       "durable",
+			name:       "durable personal preference",
 			kind:       DurableProject,
 			viewerID:   int64Pointer(41),
 			wantViewer: int64Pointer(41),
 			wantTrace:  []string{"durable-id-color", "publish"},
+		},
+		{
+			name:       "durable board-scoped color",
+			kind:       DurableProject,
+			viewerID:   int64Pointer(41),
+			wantViewer: int64Pointer(41),
+			wantTrace:  []string{"durable-id-color", "publish"},
+			storeScope: true,
+			wantShared: true,
 		},
 		{
 			name:       "creator temporary",
@@ -186,17 +199,19 @@ func TestRESTColorProjectIDDispatchAndPublication(t *testing.T) {
 			viewerID:   int64Pointer(43),
 			wantViewer: int64Pointer(43),
 			wantTrace:  []string{"temporary-id-color", "publish"},
+			wantShared: true,
 		},
 		{
-			name:      "anonymous temporary",
-			kind:      AnonymousTemporaryBoard,
-			wantTrace: []string{"temporary-id-color", "publish"},
+			name:       "anonymous temporary",
+			kind:       AnonymousTemporaryBoard,
+			wantTrace:  []string{"temporary-id-color", "publish"},
+			wantShared: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := &restColorFake{}
+			fake := &restColorFake{durableShared: tt.storeScope}
 			ctx := context.WithValue(context.Background(), restColorContextKey{}, tt.name)
 			viewerSource := tt.viewerID
 			prepared, err := newRESTColorTestService(fake).PrepareProjectID(ctx, ProjectIDColorCommand{
@@ -225,7 +240,7 @@ func TestRESTColorProjectIDDispatchAndPublication(t *testing.T) {
 			}
 			assertRESTColorStringPointer(t, call.color, "#123456")
 			publication := fake.publications[0]
-			if publication.ctx != ctx || publication.projectID != 47 || publication.name != "" {
+			if publication.ctx != ctx || publication.projectID != 47 || publication.name != "" || publication.sharedColor != tt.wantShared {
 				t.Fatalf("publication = %#v", publication)
 			}
 		})
@@ -240,6 +255,7 @@ func TestRESTColorProjectNameDispatchAndPublication(t *testing.T) {
 		wantViewer *int64
 		wantTrace  []string
 		wantLink   bool
+		wantShared bool
 	}{
 		{
 			name:       "durable",
@@ -255,12 +271,14 @@ func TestRESTColorProjectNameDispatchAndPublication(t *testing.T) {
 			wantViewer: int64Pointer(61),
 			wantTrace:  []string{"temporary-name-color", "publish"},
 			wantLink:   true,
+			wantShared: true,
 		},
 		{
-			name:      "anonymous temporary",
-			kind:      AnonymousTemporaryBoard,
-			wantTrace: []string{"temporary-name-color", "publish"},
-			wantLink:  true,
+			name:       "anonymous temporary",
+			kind:       AnonymousTemporaryBoard,
+			wantTrace:  []string{"temporary-name-color", "publish"},
+			wantLink:   true,
+			wantShared: true,
 		},
 	}
 
@@ -296,7 +314,7 @@ func TestRESTColorProjectNameDispatchAndPublication(t *testing.T) {
 			}
 			assertRESTColorStringPointer(t, call.color, "#abcdef")
 			publication := fake.publications[0]
-			if publication.ctx != ctx || publication.projectID != 67 || publication.name != " Name With Spaces " {
+			if publication.ctx != ctx || publication.projectID != 67 || publication.name != " Name With Spaces " || publication.sharedColor != tt.wantShared {
 				t.Fatalf("publication = %#v", publication)
 			}
 		})

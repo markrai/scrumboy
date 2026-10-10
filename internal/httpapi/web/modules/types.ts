@@ -6,8 +6,21 @@ export const NO_PRIORITY_FILTER_VALUE = '**none**';
 
 export type TodoStatus = string;
 export type ProjectView = 'list' | 'grid';
-export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'archiveBySlug' | 'reset-password' | 'notfound';
+export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'archiveBySlug' | 'reset-password' | 'login' | 'notfound';
 export type MobileTab = string;
+
+/**
+ * Access mode of the rendered board. It is derived only from the endpoint that
+ * successfully supplied the board data, never from whether a user is signed in:
+ * - member: the authenticated member board route (role semantics unchanged);
+ * - temporary: an anonymous/temporary board through the existing board route;
+ * - public: the isolated read-only public projection. Public access carries no
+ *   role, project ID, or user identity and grants no mutation capability.
+ */
+export type BoardAccess =
+  | { readonly kind: 'member' }
+  | { readonly kind: 'temporary' }
+  | { readonly kind: 'public'; readonly readOnly: true };
 export type Theme = 'system' | 'dark' | 'light';
 
 // Core domain types
@@ -288,6 +301,10 @@ export interface AuthStatusResponse {
   wallEnabled?: boolean;
   markdownNotesEnabled?: boolean;
   mermaidNotesEnabled?: boolean;
+  /** Effective Full Mode public-projects capability (presentation only). */
+  publicProjectsEnabled?: boolean;
+  /** Effective Full Mode landing override (/ is marketing, /_app is the workspace). */
+  landingPageEnabled?: boolean;
 }
 
 export interface BoardResponse extends Board {

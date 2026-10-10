@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -77,9 +78,9 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 		idStr = strings.TrimSuffix(idStr, "/")
 		projectID, ok := parseInt64(idStr)
 		if ok {
-			project, err := s.store.GetProject(s.requestContext(r), projectID)
+			projectContext, err := s.store.GetProjectContextForRead(s.requestContext(r), projectID, s.storeMode())
 			if err != nil {
-				if errors.Is(err, store.ErrNotFound) {
+				if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrUnauthorized) || errors.Is(err, store.ErrForbidden) {
 					writeError(w, http.StatusNotFound, "NOT_FOUND", "project not found", nil)
 					return
 				}
@@ -87,7 +88,7 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Redirect to canonical slug URL
-			http.Redirect(w, r, "/"+project.Slug, http.StatusFound)
+			http.Redirect(w, r, "/"+projectContext.Project.Slug, http.StatusFound)
 			return
 		}
 		// If not a valid ID, fall through to SPA (might be a static file or other route)
@@ -99,6 +100,15 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// FIFTH: Root routing is idempotent in all modes
+	if path == "" && s.fullModeLandingEnabled() {
+		// Full Mode landing override owns only /. The workspace is /_app and
+		// board URLs are unchanged; localized landing paths stay Anonymous-only.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(s.workspaceLandingHTML)
+		return
+	}
 	if path == "" && s.mode == "anonymous" {
 		setApexLandingNegotiationHeaders(w)
 		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && s.landingHTMLByLocale != nil {
@@ -151,6 +161,21 @@ func (s *Server) handleLocalizedLanding(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(html)
 	return true
+}
+
+// fullModeLandingEnabled is the single effective landing-route decision: the
+// landing flag has no effect outside Full Mode and is independent of the
+// public-projects flag.
+func (s *Server) fullModeLandingEnabled() bool {
+	return s.mode == "full" && s.landingPageEnabled
+}
+
+// landingWorkspaceEntryMarker is the hidden workspace link emitted by
+// landing.template.html. Anonymous Mode serves it hidden (unchanged behavior).
+var landingWorkspaceEntryMarker = []byte(" data-workspace-entry hidden>")
+
+func enableLandingWorkspaceEntry(landing []byte) []byte {
+	return bytes.Replace(landing, landingWorkspaceEntryMarker, []byte(" data-workspace-entry>"), 1)
 }
 
 func singleSegmentPath(path string) (string, bool) {

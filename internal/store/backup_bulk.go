@@ -137,6 +137,10 @@ func insertProjectWithBatchID(ctx context.Context, tx *sql.Tx, pExport ProjectEx
 		return 0, fmt.Errorf("check slug in staging: %w", err)
 	}
 
+	if mode == ModeFull && IsReservedProjectSlug(slug) {
+		exists = true
+	}
+
 	if exists {
 		// Generate unique slug within staging batch
 		// CRITICAL: Keep baseSlug stable, derive candidate each iteration
@@ -148,6 +152,9 @@ func insertProjectWithBatchID(ctx context.Context, tx *sql.Tx, pExport ProjectEx
 				candidate = strings.TrimRight(baseSlug[:maxBaseLen], "-") + suffix
 			} else {
 				candidate = baseSlug + suffix
+			}
+			if mode == ModeFull && IsReservedProjectSlug(candidate) {
+				continue
 			}
 
 			err := tx.QueryRowContext(ctx,

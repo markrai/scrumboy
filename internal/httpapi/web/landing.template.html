@@ -131,6 +131,27 @@
       gap: 18px;
     }
 
+    .nav-workspace-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .nav-workspace-link[hidden] {
+      display: none;
+    }
+
+    .nav-workspace-link:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 3px;
+    }
+
     .brand {
       display: inline-flex;
       align-items: center;
@@ -1399,6 +1420,7 @@
       <a class="brand" href="/" aria-label="{{t:landing.nav.brandAriaLabel}}">
         <img class="brand-logo" src="/scrumboytext.png" alt="" decoding="async">
       </a>
+      <a class="nav-workspace-link" href="/_app" data-workspace-entry hidden>{{t:landing.nav.openApp}}</a>
     </div>
   </header>
 

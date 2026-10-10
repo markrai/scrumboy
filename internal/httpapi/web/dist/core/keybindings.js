@@ -9,6 +9,7 @@ import { hasI18nKey, t } from "../i18n/index.js";
 import { settingsDialog, todoDialog } from "../dom/elements.js";
 import { setProjectsTab } from "../state/mutations.js";
 import { getAuthStatusAvailable, getBoard, getProjectsTab, getRoute, getUser } from "../state/selectors.js";
+import { appHomePath } from '../app-home.js';
 export const KEYBINDINGS_STORAGE_KEY = "scrumboy.keybindings";
 function keybindingText(key, fallback) {
     return hasI18nKey(key) ? t(key) : fallback;
@@ -475,11 +476,11 @@ export function executeAction(actionId) {
             }
             if (next === 1) {
                 persistProjectsTab("projects");
-                navigate("/");
+                navigate(appHomePath());
                 return;
             }
             persistProjectsTab("temporary");
-            navigate("/");
+            navigate(appHomePath());
             return;
         }
         case "createProject": {
@@ -505,7 +506,7 @@ export function executeAction(actionId) {
                 !settingsDialog.open &&
                 !hasMembersDialogOpen &&
                 !isBoardContextMenuOpen()) {
-                navigate("/");
+                navigate(appHomePath());
             }
             return;
         }

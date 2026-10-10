@@ -6,10 +6,14 @@
 // - It intentionally tracks runtime artifacts, not source modules.
 const CACHE_VERSION = '{{VERSION}}';
 const CACHE_NAME = 'scrumboy-' + (CACHE_VERSION || '0');
+// The SPA application shell. /_app always serves index.html (in Full Mode with
+// the landing override / is marketing HTML, and /index.html redirects to /), so
+// it is the only safe offline shell for workspace and board navigations.
+const APP_SHELL_URL = '/_app';
 
 const urlsToCache = [
   '/',
-  '/index.html',
+  APP_SHELL_URL,
   '/styles.css',
   '/app.js',
   '/manifest.json',
@@ -131,7 +135,7 @@ self.addEventListener('notificationclick', (event) => {
       const todoOk =
         (typeof todoId === 'number' && Number.isFinite(todoId)) ||
         (typeof todoId === 'string' && todoId.length > 0);
-      let targetUrl = self.location.origin + '/';
+      let targetUrl = self.location.origin + APP_SHELL_URL;
       if (slugOk && todoOk) {
         const idPart = typeof todoId === 'number' ? String(todoId) : todoId;
         targetUrl =
@@ -192,7 +196,10 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/index.html')))
+        // Offline: the exact document for this URL if cached (so / keeps whichever
+        // document it last served), otherwise the application shell — never
+        // marketing HTML as the shell. API/SSE requests never reach this branch.
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match(APP_SHELL_URL)))
     );
     return;
   }

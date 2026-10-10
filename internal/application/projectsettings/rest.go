@@ -120,7 +120,9 @@ func (p *PreparedREST) Patch(command PatchCommand) (PatchResult, error) {
 	if err != nil {
 		return PatchResult{}, err
 	}
-	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{})
+	p.service.refresh.PublishBoardRefresh(p.ctx, p.projectID, refreshReasonProjectSettingsUpdated, refresh.Entity{
+		PublicProjectionChanged: command.SprintsEnabled != nil,
+	})
 	return PatchResult{
 		DefaultSprintWeeks: updated.DefaultSprintWeeks,
 		SprintsEnabled:     updated.SprintsEnabled,

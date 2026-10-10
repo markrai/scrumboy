@@ -17,6 +17,7 @@ import (
 	priorityapp "scrumboy/internal/application/priority"
 	projectapp "scrumboy/internal/application/project"
 	projectsettingsapp "scrumboy/internal/application/projectsettings"
+	publicboardapp "scrumboy/internal/application/publicboard"
 	"scrumboy/internal/application/refresh"
 	sprintapp "scrumboy/internal/application/sprint"
 	tagapp "scrumboy/internal/application/tag"
@@ -48,14 +49,27 @@ type Options struct {
 	MaxRequestBody      int64
 	MaxTrelloImportBody int64
 	ScrumboyMode        string // "full" or "anonymous"
+	// PublicProjectsEnabled gates publication management and the isolated
+	// read-only public board API. It never publishes a project by itself.
+	PublicProjectsEnabled bool
+	// LandingPageEnabled is independent of public-project capability and is
+	// reserved for the later public presentation phase.
+	LandingPageEnabled bool
 	// DataDir is the instance data directory (SQLite lives here; also used for per-user wallpaper files).
 	// Empty disables wallpaper upload/serve (returns 503 for those routes).
 	DataDir             string
 	AuthRateLimit       *ratelimit.Limiter
 	OAuthDCRRateLimit   *ratelimit.Limiter
 	OAuthTokenRateLimit *ratelimit.Limiter
-	MCPHandler          MCPHandler
-	AgoraHandler        http.Handler
+	PublicReadRateLimit *ratelimit.Limiter
+	// Public stream admission is isolated from both public JSON reads and
+	// authenticated realtime. Tests may inject deterministic limits/timing.
+	PublicStreamAttemptRateLimit   *ratelimit.Limiter
+	PublicStreamLimits             PublicHubLimits
+	PublicStreamHeartbeatInterval  time.Duration
+	PublicStreamRevalidateInterval time.Duration
+	MCPHandler                     MCPHandler
+	AgoraHandler                   http.Handler
 	// EncryptionKey is the HMAC secret for password reset tokens. Required for admin password reset.
 	// Set from SCRUMBOY_ENCRYPTION_KEY (base64). If unset, password reset endpoints return 503.
 	EncryptionKey []byte
@@ -129,6 +143,8 @@ type Server struct {
 	projectUpdates                *projectapp.RESTUpdateService
 	projectDeletions              *projectapp.RESTDeletionService
 	projectClaims                 *projectapp.RESTClaimService
+	publicBoardPublications       *publicboardapp.PublicationService
+	publicBoardReads              *publicboardapp.ReadService
 	todoCreates                   *todoapp.CreateService
 	todoDeletes                   *todoapp.DeleteService
 	todoMoves                     *todoapp.MoveService
@@ -164,7 +180,10 @@ type Server struct {
 	maxBody                 int64
 	maxTrelloImportBody     int64
 	mode                    string // "full" or "anonymous"
+	publicProjectsEnabled   bool
+	landingPageEnabled      bool
 	hub                     *Hub
+	publicHub               *PublicHub
 	sink                    EventSink
 	fanout                  *eventbus.Fanout
 	webhookQueue            *webhookQueue
@@ -181,11 +200,15 @@ type Server struct {
 	notificationMailDone    <-chan struct{}
 	emailNotifier           *emailNotifier
 
-	authRateLimit               *ratelimit.Limiter
-	mobileOIDCStartRateLimit    *ratelimit.Limiter
-	mobileOIDCExchangeRateLimit *ratelimit.Limiter
-	oauthDCRRateLimit           *ratelimit.Limiter
-	oauthTokenRateLimit         *ratelimit.Limiter
+	authRateLimit                  *ratelimit.Limiter
+	mobileOIDCStartRateLimit       *ratelimit.Limiter
+	mobileOIDCExchangeRateLimit    *ratelimit.Limiter
+	oauthDCRRateLimit              *ratelimit.Limiter
+	oauthTokenRateLimit            *ratelimit.Limiter
+	publicReadRateLimit            *ratelimit.Limiter
+	publicStreamAttemptRateLimit   *ratelimit.Limiter
+	publicStreamHeartbeatInterval  time.Duration
+	publicStreamRevalidateInterval time.Duration
 
 	encryptionKey []byte        // for password reset tokens; nil if not configured
 	oidcService   *oidc.Service // nil when OIDC is not configured
@@ -211,9 +234,12 @@ type Server struct {
 	indexHTML           []byte
 	landingHTML         []byte
 	landingHTMLByLocale map[string][]byte
-	swJS                []byte // Service worker with version injected
-	mcpHandler          http.Handler
-	agoraHandler        http.Handler
+	// workspaceLandingHTML is the English landing with its workspace entry
+	// link enabled; it is served at / only in Full Mode with the landing flag.
+	workspaceLandingHTML []byte
+	swJS                 []byte // Service worker with version injected
+	mcpHandler           http.Handler
+	agoraHandler         http.Handler
 
 	vapidPublicKey      string
 	pushVapidConfigured bool // full mode + both VAPID keys present; subscribe and push notify use this
@@ -290,6 +316,10 @@ type storeAPI interface {
 	UpdateProjectDefaultSprintWeeks(ctx context.Context, projectID int64, userID int64, weeks int) error
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
 	UpdateProjectBoardSettings(ctx context.Context, projectID, userID int64, patch store.ProjectBoardSettingsPatch) (store.ProjectBoardSettings, error)
+	publicboardapp.PublicationMutationStore
+	publicboardapp.PublicationStatusStore
+	publicboardapp.EligibilityStore
+	publicboardapp.ProjectionStore
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	calendarapp.SourceStore
@@ -323,6 +353,7 @@ type storeAPI interface {
 	UpdateTagColor(ctx context.Context, viewerUserID *int64, tagID int64, color *string) error
 	UpdateMyTagColor(ctx context.Context, userID, tagID int64, color *string) error
 	UpdateTagColorForDurableProjectByID(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) error
+	UpdateTagColorForDurableProjectByIDWithScope(ctx context.Context, projectID int64, viewerUserID int64, tagID int64, color *string) (bool, error)
 	UpdateTagColorForTemporaryBoard(ctx context.Context, projectID int64, viewerUserID *int64, tagID int64, color *string) error
 	UpdateTagColorForProject(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, color *string, linkTemporaryBoard bool) error
 	SetViewerTagColorByName(ctx context.Context, projectID int64, viewerUserID int64, name string, color *string) error
@@ -519,9 +550,19 @@ func NewServer(st storeAPI, opts Options) *Server {
 	if oauthTokenRateLimit == nil {
 		oauthTokenRateLimit = ratelimit.New(60, time.Minute)
 	}
+	publicReadRateLimit := opts.PublicReadRateLimit
+	if publicReadRateLimit == nil {
+		publicReadRateLimit = ratelimit.New(120, time.Minute)
+	}
+	publicStreamAttemptRateLimit := opts.PublicStreamAttemptRateLimit
+	if publicStreamAttemptRateLimit == nil {
+		publicStreamAttemptRateLimit = ratelimit.New(20, time.Minute)
+	}
 	hub := NewHub(defaultSubscriberBuffer)
+	publicHub := NewPublicHub(opts.PublicStreamLimits)
 	creatorNotificationAuthorizer := todoapp.NewCreatorNotificationAuthorizationService(st)
 	sseBridgeConsumer := newSSEBridge(hub, creatorNotificationAuthorizer)
+	publicSSEBridgeConsumer := newPublicSSEBridge(publicHub)
 	whQueue := newWebhookQueue(logger)
 	whDispatcher := newWebhookDispatcher(st, whQueue, logger)
 	pushDebug := opts.PushDebug
@@ -538,7 +579,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 	publicBaseURL := config.NormalizeBaseURL(opts.PublicBaseURL)
 	emailNotifier := newEmailNotifier(st, notificationMailQueue, publicBaseURL, smtpConfigured, logger)
 
-	fanout := eventbus.NewFanout(sseBridgeConsumer, whDispatcher, pushNotifier, emailNotifier)
+	fanout := eventbus.NewFanout(sseBridgeConsumer, publicSSEBridgeConsumer, whDispatcher, pushNotifier, emailNotifier)
 	whWorker := newWebhookWorker(whQueue, logger)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	webhookDone := whWorker.Done()
@@ -606,62 +647,83 @@ func NewServer(st storeAPI, opts Options) *Server {
 			SlugAccess:   st,
 			SlugSprints:  st,
 		}),
-		logger:                      logger,
-		maxBody:                     maxBody,
-		maxTrelloImportBody:         maxTrelloImportBody,
-		mode:                        mode,
-		dataDir:                     strings.TrimSpace(opts.DataDir),
-		hub:                         hub,
-		sink:                        hub,
-		fanout:                      fanout,
-		webhookQueue:                whQueue,
-		webhookWorker:               whWorker,
-		webhookCancel:               workerCancel,
-		webhookDone:                 webhookDone,
-		transactionalMailQueue:      transactionalMailQueue,
-		transactionalMailWorker:     transactionalMailWorker,
-		transactionalMailCancel:     transactionalMailCancel,
-		transactionalMailDone:       transactionalMailDone,
-		notificationMailQueue:       notificationMailQueue,
-		notificationMailWorker:      notificationMailWorker,
-		notificationMailCancel:      notificationMailCancel,
-		notificationMailDone:        notificationMailDone,
-		emailNotifier:               emailNotifier,
-		authRateLimit:               authRateLimit,
-		mobileOIDCStartRateLimit:    mobileOIDCStartRateLimit,
-		mobileOIDCExchangeRateLimit: mobileOIDCExchangeRateLimit,
-		oauthDCRRateLimit:           oauthDCRRateLimit,
-		oauthTokenRateLimit:         oauthTokenRateLimit,
-		encryptionKey:               encKey,
-		oidcService:                 opts.OIDCService,
-		passwordResetAdminLimiter:   passwordResetAdminLimiter,
-		passwordResetRequestLimiter: passwordResetRequestLimiter,
-		firstPasswordStartLimiter:   firstPasswordStartLimiter,
-		firstPasswordFinishLimiter:  firstPasswordFinishLimiter,
-		oidcLinkStartLimiter:        oidcLinkStartLimiter,
-		currentPasswordLimiter:      currentPasswordLimiter,
-		secondFactorLimiter:         secondFactorLimiter,
-		totpLimiter:                 totpLimiter,
-		recoveryCodeLimiter:         recoveryCodeLimiter,
-		smtpConfigured:              smtpConfigured,
-		publicBaseURL:               publicBaseURL,
-		trustProxy:                  opts.TrustProxy,
-		publicOrigin:                publicOrigin,
-		webFS:                       webFS,
-		fileSrv:                     http.FileServer(http.FS(webFS)),
-		indexHTML:                   indexHTML,
-		landingHTML:                 landingHTML,
-		landingHTMLByLocale:         landingHTMLByLocale,
-		swJS:                        swJS,
-		mcpHandler:                  opts.MCPHandler,
-		agoraHandler:                opts.AgoraHandler,
-		vapidPublicKey:              preparedPush.publicKey,
-		pushVapidConfigured:         pushVapidConfigured,
-		pushStatus:                  preparedPush.status,
-		pushDebug:                   pushDebug,
-		wallEnabled:                 opts.WallEnabled,
-		markdownNotesEnabled:        opts.MarkdownNotesEnabled,
-		mermaidNotesEnabled:         opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
+		publicBoardPublications: publicboardapp.NewPublicationService(publicboardapp.PublicationServiceOptions{
+			Mutations:             st,
+			Status:                st,
+			Revoker:               publicHub,
+			Mode:                  store.Mode(mode),
+			PublicProjectsEnabled: opts.PublicProjectsEnabled,
+		}),
+		publicBoardReads: publicboardapp.NewReadService(publicboardapp.ReadServiceOptions{
+			Eligibility:           st,
+			Projections:           st,
+			Mode:                  store.Mode(mode),
+			PublicProjectsEnabled: opts.PublicProjectsEnabled,
+		}),
+		logger:                         logger,
+		maxBody:                        maxBody,
+		maxTrelloImportBody:            maxTrelloImportBody,
+		mode:                           mode,
+		publicProjectsEnabled:          opts.PublicProjectsEnabled,
+		landingPageEnabled:             opts.LandingPageEnabled,
+		dataDir:                        strings.TrimSpace(opts.DataDir),
+		hub:                            hub,
+		publicHub:                      publicHub,
+		sink:                           hub,
+		fanout:                         fanout,
+		webhookQueue:                   whQueue,
+		webhookWorker:                  whWorker,
+		webhookCancel:                  workerCancel,
+		webhookDone:                    webhookDone,
+		transactionalMailQueue:         transactionalMailQueue,
+		transactionalMailWorker:        transactionalMailWorker,
+		transactionalMailCancel:        transactionalMailCancel,
+		transactionalMailDone:          transactionalMailDone,
+		notificationMailQueue:          notificationMailQueue,
+		notificationMailWorker:         notificationMailWorker,
+		notificationMailCancel:         notificationMailCancel,
+		notificationMailDone:           notificationMailDone,
+		emailNotifier:                  emailNotifier,
+		authRateLimit:                  authRateLimit,
+		mobileOIDCStartRateLimit:       mobileOIDCStartRateLimit,
+		mobileOIDCExchangeRateLimit:    mobileOIDCExchangeRateLimit,
+		oauthDCRRateLimit:              oauthDCRRateLimit,
+		oauthTokenRateLimit:            oauthTokenRateLimit,
+		publicReadRateLimit:            publicReadRateLimit,
+		publicStreamAttemptRateLimit:   publicStreamAttemptRateLimit,
+		publicStreamHeartbeatInterval:  normalizedPublicStreamInterval(opts.PublicStreamHeartbeatInterval, defaultPublicStreamHeartbeatInterval),
+		publicStreamRevalidateInterval: normalizedPublicStreamInterval(opts.PublicStreamRevalidateInterval, defaultPublicStreamRevalidateInterval),
+		encryptionKey:                  encKey,
+		oidcService:                    opts.OIDCService,
+		passwordResetAdminLimiter:      passwordResetAdminLimiter,
+		passwordResetRequestLimiter:    passwordResetRequestLimiter,
+		firstPasswordStartLimiter:      firstPasswordStartLimiter,
+		firstPasswordFinishLimiter:     firstPasswordFinishLimiter,
+		oidcLinkStartLimiter:           oidcLinkStartLimiter,
+		currentPasswordLimiter:         currentPasswordLimiter,
+		secondFactorLimiter:            secondFactorLimiter,
+		totpLimiter:                    totpLimiter,
+		recoveryCodeLimiter:            recoveryCodeLimiter,
+		smtpConfigured:                 smtpConfigured,
+		publicBaseURL:                  publicBaseURL,
+		trustProxy:                     opts.TrustProxy,
+		publicOrigin:                   publicOrigin,
+		webFS:                          webFS,
+		fileSrv:                        http.FileServer(http.FS(webFS)),
+		indexHTML:                      indexHTML,
+		landingHTML:                    landingHTML,
+		workspaceLandingHTML:           enableLandingWorkspaceEntry(landingHTML),
+		landingHTMLByLocale:            landingHTMLByLocale,
+		swJS:                           swJS,
+		mcpHandler:                     opts.MCPHandler,
+		agoraHandler:                   opts.AgoraHandler,
+		vapidPublicKey:                 preparedPush.publicKey,
+		pushVapidConfigured:            pushVapidConfigured,
+		pushStatus:                     preparedPush.status,
+		pushDebug:                      pushDebug,
+		wallEnabled:                    opts.WallEnabled,
+		markdownNotesEnabled:           opts.MarkdownNotesEnabled,
+		mermaidNotesEnabled:            opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
 	}
 	server.wallNoteMutations = wallapp.NewRESTNoteService(wallapp.RESTNoteServiceDependencies{
 		Roles:     st,
@@ -703,8 +765,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Claims:    st,
 		Publisher: projectClaimPublisher{server: server},
 	})
+	// Every todo-service refresh reason (create, non-assignment update, move,
+	// archive, restore, delete) changes the allowlisted public projection.
+	// Assignment-driven updates skip this publisher and use todo.assigned.
 	boardRefreshPublisher := todoapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
-		server.emitRefreshNeeded(ctx, projectID, reason, entity)
+		server.emitPublicRefreshNeeded(ctx, projectID, reason, entity)
 	})
 	creatorRequestPublisher := todoapp.CreatorNotificationRequestPublisher(server)
 	server.todoCreates = todoapp.NewCreateService(todoapp.CreateServiceDependencies{
@@ -774,14 +839,14 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Roles:     st,
 		Mutations: st,
 		Refresh: workflowapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
-			server.emitRefreshNeeded(ctx, projectID, reason, entity)
+			server.emitPublicRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
 	server.priorityMutations = priorityapp.NewRESTMutationService(priorityapp.RESTMutationServiceDependencies{
 		Roles:     st,
 		Mutations: st,
 		Refresh: priorityapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
-			server.emitRefreshNeeded(ctx, projectID, reason, entity)
+			server.emitPublicRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
 	refreshPublisher := calendarapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
@@ -866,8 +931,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/backup/import" {
 		s.logger.Printf("INCOMING: %s %s (Content-Length: %s)", r.Method, r.URL.Path, r.Header.Get("Content-Length"))
 	}
+	logPath := r.URL.Path
+	if logPath == "/api/public" || strings.HasPrefix(logPath, "/api/public/") {
+		logPath = "/api/public/board/:slug"
+	}
 	defer func() {
-		s.logger.Printf("%s %s %dms", r.Method, r.URL.Path, time.Since(start).Milliseconds())
+		s.logger.Printf("%s %s %dms", r.Method, logPath, time.Since(start).Milliseconds())
 	}()
 
 	if r.URL.Path == "/healthz" {
@@ -946,6 +1015,16 @@ func (s *Server) storeMode() store.Mode {
 	return mode
 }
 
+// ShutdownPublicStreams closes every public SSE stream and rejects new public
+// stream admission. It is idempotent. Register it with
+// http.Server.RegisterOnShutdown so open public streams do not hold graceful
+// HTTP shutdown until its deadline; Close also calls it.
+func (s *Server) ShutdownPublicStreams() {
+	if s.publicHub != nil {
+		s.publicHub.Shutdown()
+	}
+}
+
 // Close stops accepting new delivery-queue entries, links each worker's
 // retry context to ctx (so observing ctx cancellation stops further
 // drain/retry work—including an already-running flush), cancels each
@@ -954,6 +1033,7 @@ func (s *Server) storeMode() store.Mode {
 // Once a worker observes close-context cancellation, it starts no further
 // queued item or send attempt. Call from main on shutdown.
 func (s *Server) Close(ctx context.Context) {
+	s.ShutdownPublicStreams()
 	if s.webhookQueue != nil {
 		s.webhookQueue.Seal()
 	}
@@ -1101,7 +1181,8 @@ func (s *Server) PublishTodoAssigned(ctx context.Context, projectID, todoID, loc
 		ToAssigneeUID:   to,
 		ActorUserID:     actorUserID,
 	})
-	s.PublishEvent(withTodoAssignedMutationFacts(ctx, facts), eventbus.Event{
+	effectCtx := withPublicProjectionChange(withTodoAssignedMutationFacts(ctx, facts), facts.PublicProjectionChanged)
+	s.PublishEvent(effectCtx, eventbus.Event{
 		Type:      "todo.assigned",
 		ProjectID: projectID,
 		Payload:   payload,

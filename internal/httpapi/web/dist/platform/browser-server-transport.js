@@ -20,6 +20,13 @@ export class BrowserServerTransport {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = '/api/auth/logout';
+        // Return to the same page after logout (a still-published board resolves
+        // to public again); the server sanitizes this to a same-origin path.
+        const returnTo = document.createElement('input');
+        returnTo.type = 'hidden';
+        returnTo.name = 'return_to';
+        returnTo.value = window.location.pathname + window.location.search;
+        form.appendChild(returnTo);
         document.body.appendChild(form);
         form.submit();
     }

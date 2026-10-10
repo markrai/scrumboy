@@ -5,10 +5,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { state, apiFetchMock, bootstrapLoadedBoardViewMock } = vi.hoisted(() => ({
+const { state, apiFetchMock, bootstrapLoadedBoardViewMock, setBoardAccessMock } = vi.hoisted(() => ({
   state: { board: null as any, slug: null as string | null },
   apiFetchMock: vi.fn(),
   bootstrapLoadedBoardViewMock: vi.fn(),
+  setBoardAccessMock: vi.fn(),
 }));
 
 vi.mock("../state/selectors.js", () => ({
@@ -46,6 +47,7 @@ vi.mock("../state/mutations.js", () => ({
   setBoardMembers: vi.fn(),
   setLaneLoading: vi.fn(),
   appendLaneTodos: vi.fn(),
+  setBoardAccess: setBoardAccessMock,
 }));
 vi.mock("../dom/elements.js", () => ({
   app: document.createElement("div"),
@@ -67,7 +69,7 @@ vi.mock("../utils.js", () => ({
   showConfirmDialog: vi.fn(),
   showPromptDialog: vi.fn(),
   isAnonymousBoard: vi.fn(() => false),
-  isTemporaryBoard: vi.fn(() => false),
+  isTemporaryBoard: vi.fn((board: any) => board?.project?.expiresAt != null),
   sanitizeHexColor: vi.fn((color?: string | null) => (color && /^#[0-9a-f]{6}$/i.test(color) ? color : null)),
 }));
 vi.mock("../field-tooltips.js", () => ({
@@ -200,5 +202,32 @@ describe("board destination API 404 propagation", () => {
       board.renderBoard("nonsense", [], "", null, null, null, null, null, null, { skipLoad: false }),
     ).rejects.toMatchObject({ status: 404 });
     expect(bootstrapLoadedBoardViewMock).not.toHaveBeenCalled();
+    // A failed member read never opens member board realtime for that slug.
+    const realtime = await import("./board-realtime.js");
+    expect(realtime.connectBoardEvents).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["durable member board", { id: 5, slug: "nonsense", expiresAt: null }, { kind: "member" }],
+    ["temporary board", { id: 6, slug: "nonsense", expiresAt: "2030-01-01T00:00:00Z" }, { kind: "temporary" }],
+  ])("records %s access only when the member-route board is rendered", async (_label, project, expected) => {
+    setBoardAccessMock.mockReset();
+    apiFetchMock.mockResolvedValueOnce({ project, columns: {}, tags: [] });
+    let captured: { renderLoadedBoard: (opts: { projectId: number }) => void } | null = null;
+    bootstrapLoadedBoardViewMock.mockImplementation(async (args) => {
+      captured = args;
+      return false;
+    });
+    const board = await import("./board.js");
+
+    await board.loadBoardBySlug("nonsense", [], null);
+    expect(setBoardAccessMock).not.toHaveBeenCalled();
+    try {
+      captured!.renderLoadedBoard({ projectId: project.id });
+    } catch {
+      // Rendering details are mocked out; only the access decision matters here.
+    }
+    expect(setBoardAccessMock).toHaveBeenCalledWith(expected);
+    expect(setBoardAccessMock).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "public" }));
   });
 });

@@ -34,6 +34,8 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `MAX_REQUEST_BODY_BYTES`  | `1048576` (1 MiB)          | Optional  | Max request body size for ordinary API requests                                    |
 | `MAX_TRELLO_IMPORT_BYTES` | `33554432` (32 MiB)        | Optional  | Max Trello JSON import upload size                                                 |
 | `SCRUMBOY_MODE`           | `full`                     | Optional  | `full` (auth-capable) or `anonymous`                                               |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Operator gate for durable-project publication management and isolated public reads; never publishes by itself |
+| `SCRUMBOY_LANDING_PAGE_ENABLED` | off                   | Optional  | Full Mode only: `/` serves the marketing landing and `/_app` is the workspace     |
 | `SCRUMBOY_INTRANET_IP`    | empty                      | Optional  | LAN IP for optional startup intranet URL / certificate hints (does not bind)       |
 
 
@@ -66,6 +68,8 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | Variable                          | Default          | Required? | Purpose                                                        |
 | --------------------------------- | ---------------- | --------- | -------------------------------------------------------------- |
 | `SCRUMBOY_WALL_ENABLED`           | on (unset/empty) | Optional  | Sticky-note wall; opt out with `0`/`false`/`off`/`no`          |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Publication management plus read-only `/api/public/board/{slug}` routes and their content-free event stream in Full Mode |
+| `SCRUMBOY_LANDING_PAGE_ENABLED`    | off              | Optional  | Full Mode marketing landing at `/`; workspace at `/_app`; board URLs unchanged    |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | off              | Optional  | Todo notes Markdown preview; opt in with `1`/`true`/`on`/`yes` |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | off              | Optional  | Mermaid in notes preview; requires Markdown notes enabled      |
 
@@ -275,8 +279,20 @@ Boolean parsing differs by flag. Values are trimmed and compared case-insensitiv
 | Variable                          | Default | How to change                                                                                                                                                  |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `SCRUMBOY_WALL_ENABLED`           | **on**  | Disable with `0`, `false`, `off`, or `no`. Unset/empty/other → enabled. Durable projects only; anonymous/temp boards never expose the wall. [wall.md](wall.md) |
+| `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. In Full Mode this gates publication management and the isolated read-only `/api/public/board/{slug}` API. It never publishes a project automatically. Within the public-read rate budget, disabling it makes public-board reads and streams return the generic not-found response while retaining stored per-project preferences. Public reads are limited to 120 requests/minute/IP. |
+| `SCRUMBOY_LANDING_PAGE_ENABLED`    | **off** | Enable with the same truthy values. Independent of the public-projects flag. In Full Mode, `/` serves the existing English marketing landing (with an "Open app" link) and `/_app` becomes the workspace entry; `/{slug}` and `/{slug}/t/{localId}` are unchanged. Localized landing paths remain Anonymous Mode only. Anonymous Mode ignores this flag. |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. [markdown-and-mermaid.md](markdown-and-mermaid.md)                                                                    |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | **off** | Same truthy set as Markdown; **ignored unless** Markdown notes are already enabled.                                                                            |
+
+The public-read limiter runs before mode and per-project eligibility checks. Once an IP exhausts that namespace-level budget, every `/api/public/*` path returns the same generic `429` response before project lookup, including paths naming private or missing projects. This preserves resource protection without making rate-limit status an existence oracle.
+
+Root routing matrix: Full Mode with the landing flag off keeps `/` as the workspace (regardless of the public-projects flag); Full Mode with the landing flag on serves the marketing landing at `/` and the workspace at `/_app`; Anonymous Mode behaves the same regardless of either flag.
+
+Publication is managed by project Maintainers in **Settings → Sharing** (backed by `GET`/`PATCH /api/board/{slug}/publication`, which requires an authenticated exact Maintainer of a durable project and the `X-Scrumboy` header for `PATCH`). Unpublishing immediately disconnects that project's public streams in the serving process. The endpoint returns the generic not-found response when the public-projects flag is off or in Anonymous Mode.
+
+Full operator and user guide: [public-boards.md](public-boards.md). Docker activation: [docker.md](docker.md#public-boards).
+
+`GET /api/public/board/{slug}/events` is the public realtime stream for an eligible published project. It is separate from authenticated realtime and carries only `data: {"type":"refresh_needed"}`, a terminal `data: {"type":"access_revoked"}`, and `: heartbeat` comments every 15 seconds; clients refetch content through the public read routes. Stream admission consumes the shared 120/minute public budget and a separate 20 stream attempts/minute/IP budget, both evaluated before project lookup, then repeats the full eligibility check. Concurrent public streams are capped at 500 per server process, 5 per client IP, and 100 per project, independently of authenticated streams; over-cap admission returns `429` with `Retry-After: 60`. Unpublishing or deleting a project closes its public streams in this process immediately. Each stream also re-checks eligibility before every delivery and every 15 seconds, which bounds how long a stream survives an eligibility change made by another server instance or by direct database edits. The per-IP limits use the same client-IP rule as other rate limits: with `SCRUMBOY_TRUST_PROXY` enabled the first `X-Forwarded-For` address is trusted, so enable it only behind a proxy that overwrites that header.
 
 
 ---
@@ -361,4 +377,5 @@ Normative setup: [smtp.md](smtp.md), [notifications.md](notifications.md).
 | Markdown / Mermaid    | [markdown-and-mermaid.md](markdown-and-mermaid.md)                         |
 | Wall                  | [wall.md](wall.md)                                                         |
 | Calendar / Agenda     | [calendar.md](calendar.md)                                                 |
+| Public boards         | [public-boards.md](public-boards.md)                                       |
 | Persistence / backup  | [diagrams/scrumboy_deployment_ops.md](diagrams/scrumboy_deployment_ops.md) |

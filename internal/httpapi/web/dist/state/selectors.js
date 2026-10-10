@@ -12,6 +12,9 @@ export function getSlug() {
 export function getBoard() {
     return current.board;
 }
+export function getBoardAccess() {
+    return current.boardAccess;
+}
 export function getSearch() {
     return current.search;
 }
@@ -109,6 +112,12 @@ export function getMarkdownNotesEnabled() {
 }
 export function getMermaidNotesEnabled() {
     return !!current._mermaidNotesEnabled;
+}
+export function getPublicProjectsEnabled() {
+    return !!current._publicProjectsEnabled;
+}
+export function getLandingPageEnabled() {
+    return !!current._landingPageEnabled;
 }
 export function getProjectsTab() {
     return current.projectsTab;

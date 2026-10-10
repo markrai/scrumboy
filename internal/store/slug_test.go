@@ -67,6 +67,25 @@ func TestCreateProject_SlugCollisionAddsSuffix(t *testing.T) {
 	}
 }
 
+func TestCreateProject_ReservedSlugAllocationAddsSuffix(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+
+	for _, name := range []string{"Dashboard", "French locale"} {
+		projectName := name
+		if name == "French locale" {
+			projectName = "fr"
+		}
+		project, err := st.CreateProject(context.Background(), projectName)
+		if err != nil {
+			t.Fatalf("CreateProject(%q): %v", projectName, err)
+		}
+		if IsReservedProjectSlug(project.Slug) {
+			t.Fatalf("CreateProject(%q) allocated reserved slug %q", projectName, project.Slug)
+		}
+	}
+}
+
 func TestRewriteDurableProjectSlugs_RewritesFromLegacyRandom(t *testing.T) {
 	st, cleanup := newTestStore(t)
 	defer cleanup()
