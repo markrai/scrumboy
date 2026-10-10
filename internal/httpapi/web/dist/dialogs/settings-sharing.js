@@ -61,6 +61,33 @@ export function renderSharingView(view, slug) {
     ${reserved}
     <div class="settings-sharing__actions"${pending ? ' aria-busy="true"' : ''}>${action}</div>`;
 }
+/**
+ * Strict GET contract: both fields must be real booleans. Anything else is
+ * not trusted as a publication state.
+ */
+export function parsePublicationStatus(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        return null;
+    const { enabled, publishable } = value;
+    if (typeof enabled !== 'boolean' || typeof publishable !== 'boolean')
+        return null;
+    return { enabled, publishable };
+}
+/**
+ * Strict PATCH contract: both fields must be real booleans and `enabled` must
+ * match the requested transition. A malformed or contradictory 2xx is an
+ * uncertain outcome, never a confirmed success.
+ */
+export function parsePublicationUpdate(value, requested) {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+        return null;
+    const { enabled, changed } = value;
+    if (typeof enabled !== 'boolean' || typeof changed !== 'boolean')
+        return null;
+    if (enabled !== requested)
+        return null;
+    return { enabled, changed };
+}
 function errorStatus(err) {
     return err?.status;
 }
@@ -84,10 +111,12 @@ export function bindSharingTab(options) {
     const load = async () => {
         const myGeneration = ++generation;
         try {
-            const status = await apiFetch(endpoint, { signal });
+            const raw = await apiFetch(endpoint, { signal });
             if (!isLive() || myGeneration !== generation)
                 return;
-            view = { kind: 'ready', status: { enabled: !!status?.enabled, publishable: !!status?.publishable }, pending: false };
+            const status = parsePublicationStatus(raw);
+            // A malformed status is never shown as Public or Private.
+            view = status ? { kind: 'ready', status, pending: false } : { kind: 'load-failed' };
         }
         catch (err) {
             if (!isLive() || myGeneration !== generation)
@@ -103,20 +132,28 @@ export function bindSharingTab(options) {
         const confirmed = await showConfirmDialog(t(enable ? 'settings.sharing.confirmPublishMessage' : 'settings.sharing.confirmUnpublishMessage'), t(enable ? 'settings.sharing.confirmPublishTitle' : 'settings.sharing.confirmUnpublishTitle'), t(enable ? 'settings.sharing.confirmPublishAction' : 'settings.sharing.unpublish'), enable ? 'success' : 'danger');
         if (!confirmed || !isLive() || view.kind !== 'ready' || view.pending)
             return;
+        const previous = view.status;
         view = { ...view, pending: true };
         render();
         const myGeneration = ++generation;
         try {
-            const result = await apiFetch(endpoint, {
+            const raw = await apiFetch(endpoint, {
                 method: 'PATCH',
                 body: JSON.stringify({ enabled: enable }),
                 signal,
             });
             if (!isLive() || myGeneration !== generation)
                 return;
-            view = { kind: 'ready', status: { enabled: !!result?.enabled, publishable: true }, pending: false };
+            const result = parsePublicationUpdate(raw, enable);
+            if (!result) {
+                // 2xx but malformed or contradictory: do not announce success.
+                await reconcile();
+                return;
+            }
+            // Enabling proves the slug is publishable; disabling leaves it as it was.
+            view = { kind: 'ready', status: { enabled: result.enabled, publishable: result.enabled || previous.publishable }, pending: false };
             render();
-            showToast(t(result?.enabled ? 'settings.sharing.published' : 'settings.sharing.unpublished'));
+            showToast(t(result.enabled ? 'settings.sharing.published' : 'settings.sharing.unpublished'));
         }
         catch (err) {
             if (!isLive() || myGeneration !== generation)
@@ -134,11 +171,15 @@ export function bindSharingTab(options) {
                 return;
             }
             // Outcome uncertain (network or server error): reconcile with the server.
-            showToast(t('settings.sharing.failed'));
-            view = { kind: 'loading' };
-            render();
-            await load();
+            await reconcile();
         }
+    };
+    /** Uncertain outcome: report failure and refetch authoritative status via GET. */
+    const reconcile = async () => {
+        showToast(t('settings.sharing.failed'));
+        view = { kind: 'loading' };
+        render();
+        await load();
     };
     const copy = async () => {
         try {

@@ -16,7 +16,7 @@ vi.mock('../utils.js', () => ({
 vi.mock('../i18n/index.js', () => ({ t: (key: string) => key }));
 vi.mock('../platform/runtime.js', () => ({ getAppRuntime: () => ({ publicLinkOrigin: () => 'https://boards.example' }) }));
 
-import { bindSharingTab, renderSharingTabShell } from './settings-sharing.js';
+import { bindSharingTab, parsePublicationStatus, parsePublicationUpdate, renderSharingTabShell } from './settings-sharing.js';
 
 const ENDPOINT = '/api/board/ignite/publication';
 
@@ -186,5 +186,104 @@ describe('Settings Sharing tab', () => {
     release({ enabled: true, publishable: true });
     await settle();
     expect(root().innerHTML).toBe(before);
+  });
+});
+
+describe('Sharing tab strict response validation', () => {
+  beforeEach(() => {
+    apiFetchMock.mockReset();
+    confirmMock.mockReset();
+    toastMock.mockReset();
+  });
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('parsers accept only exact boolean contracts', () => {
+    expect(parsePublicationStatus({ enabled: true, publishable: false })).toEqual({ enabled: true, publishable: false });
+    for (const bad of [null, undefined, [], 'x', {}, { enabled: true }, { enabled: 'true', publishable: true }, { enabled: 1, publishable: true }, { enabled: true, publishable: null }]) {
+      expect(parsePublicationStatus(bad)).toBeNull();
+    }
+    expect(parsePublicationUpdate({ enabled: true, changed: false }, true)).toEqual({ enabled: true, changed: false });
+    for (const bad of [null, {}, { enabled: true }, { changed: true }, { enabled: 'true', changed: true }, { enabled: true, changed: 0 }, [true, true]]) {
+      expect(parsePublicationUpdate(bad, true)).toBeNull();
+    }
+    expect(parsePublicationUpdate({ enabled: false, changed: true }, true)).toBeNull();
+    expect(parsePublicationUpdate({ enabled: true, changed: true }, false)).toBeNull();
+  });
+
+  it.each([
+    ['missing fields', {}],
+    ['missing publishable', { enabled: false }],
+    ['string booleans', { enabled: 'false', publishable: 'true' }],
+    ['numeric booleans', { enabled: 0, publishable: 1 }],
+    ['null body', null],
+  ])('a malformed GET (%s) is never shown as a publication state and offers retry', async (_label, body) => {
+    apiFetchMock.mockResolvedValueOnce(body).mockResolvedValueOnce({ enabled: false, publishable: true });
+    mount();
+    await settle();
+    expect(root().querySelector('[data-sharing-state]')).toBeNull();
+    expect(toggleButton()).toBeNull();
+    expect(root().textContent).toContain('settings.sharing.loadFailed');
+    (root().querySelector('[data-sharing-retry]') as HTMLButtonElement).click();
+    await settle();
+    expect(root().querySelector('[data-sharing-state]')?.getAttribute('data-sharing-state')).toBe('private');
+  });
+
+  it.each([
+    ['missing changed', { enabled: true }, true],
+    ['missing enabled', { changed: true }, true],
+    ['string enabled', { enabled: 'true', changed: true }, true],
+    ['contradictory enabled', { enabled: false, changed: true }, false],
+    ['empty body', null, false],
+  ])('a 2xx PATCH with %s is uncertain: no success toast, status refetched from the server', async (_label, patchBody, serverCommitted) => {
+    let statusCalls = 0;
+    apiFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'PATCH') return Promise.resolve(patchBody);
+      statusCalls += 1;
+      return Promise.resolve({ enabled: statusCalls > 1 ? serverCommitted : false, publishable: true });
+    });
+    confirmMock.mockResolvedValue(true);
+    mount();
+    await settle();
+    toggleButton()!.click();
+    await settle();
+    expect(toastMock).not.toHaveBeenCalledWith('settings.sharing.published');
+    expect(toastMock).not.toHaveBeenCalledWith('settings.sharing.unpublished');
+    expect(toastMock).toHaveBeenCalledWith('settings.sharing.failed');
+    expect(statusCalls).toBe(2);
+    // The displayed state is whatever the server confirms afterwards.
+    expect(root().querySelector('[data-sharing-state]')?.getAttribute('data-sharing-state')).toBe(serverCommitted ? 'public' : 'private');
+    expect(toggleButton()!.disabled).toBe(false);
+  });
+
+  it('a valid idempotent PATCH (changed:false) is confirmed without refetching', async () => {
+    let statusCalls = 0;
+    apiFetchMock.mockImplementation((url: string, init?: { method?: string }) => {
+      if (init?.method === 'PATCH') return Promise.resolve({ enabled: true, changed: false });
+      statusCalls += 1;
+      return Promise.resolve({ enabled: false, publishable: true });
+    });
+    confirmMock.mockResolvedValue(true);
+    mount();
+    await settle();
+    toggleButton()!.click();
+    await settle();
+    expect(statusCalls).toBe(1);
+    expect(root().querySelector('[data-sharing-state]')?.getAttribute('data-sharing-state')).toBe('public');
+    expect(toastMock).toHaveBeenCalledWith('settings.sharing.published');
+  });
+
+  it('unpublishing a legacy reserved-slug board keeps publishing disabled', async () => {
+    apiFetchMock.mockImplementation((url: string, init?: { method?: string }) =>
+      Promise.resolve(init?.method === 'PATCH' ? { enabled: false, changed: true } : { enabled: true, publishable: false }));
+    confirmMock.mockResolvedValue(true);
+    mount();
+    await settle();
+    toggleButton()!.click();
+    await settle();
+    expect(root().querySelector('[data-sharing-state]')?.getAttribute('data-sharing-state')).toBe('private');
+    expect(toggleButton()!.disabled).toBe(true);
+    expect(root().textContent).toContain('settings.sharing.reservedSlug');
   });
 });
