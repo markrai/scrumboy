@@ -32,7 +32,7 @@ const todo: PublicTodo = {
   body: [
     '**bold** <img src=x onerror="alert(1)"> <script>alert(2)</script>',
     '',
-    '[safe](https://example.com) [bad](javascript:alert(3)) [data](data:text/html,<b>x</b>)',
+    '[safe](https://example.com) [bad](javascript:alert(3)) [data](data:text/html,<b>x</b>) [vbscript](vbscript:msgbox(4))',
     '',
     '<a href="https://evil.example" onclick="alert(4)">raw</a>',
   ].join('\n'),
@@ -57,8 +57,7 @@ describe('public story detail content', () => {
     expect(notes.querySelector('strong')?.textContent).toBe('bold');
     expect(container.querySelector('img, script, iframe, [onerror], [onclick]')).toBeNull();
     const hrefs = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
-    expect(hrefs).toContain('https://example.com');
-    expect(hrefs.some((href) => href?.startsWith('javascript:') || href?.startsWith('data:'))).toBe(false);
+    expect(hrefs).toEqual(['https://example.com']);
     const external = container.querySelector('a[href="https://example.com"]')!;
     expect(external.getAttribute('rel')).toBe('noopener noreferrer');
   });
