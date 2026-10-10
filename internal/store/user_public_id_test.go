@@ -44,7 +44,9 @@ func TestUserPublicID_NotReusedWhenIntegerIDIs(t *testing.T) {
 		t.Fatalf("create successor: %v", err)
 	}
 	if successor.ID != victim.ID {
-		t.Skipf("SQLite did not reuse users.id %d here (got %d); the reuse scenario is covered at the migration level", victim.ID, successor.ID)
+		// Deleting the highest rowid makes SQLite reuse it. If that ever stops being true, this
+		// test no longer exercises the scenario and must be rewritten, not silently skipped.
+		t.Fatalf("expected SQLite to reuse users.id %d for the next user, got %d", victim.ID, successor.ID)
 	}
 	succGot, err := st.GetUser(ctx, successor.ID)
 	if err != nil {
