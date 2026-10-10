@@ -422,6 +422,7 @@ func (a *Adapter) authState(ctx context.Context) (authCapabilities, bool, *adapt
 func (a *Adapter) implementedTools() []string {
 	return []string{
 		"system_getCapabilities",
+		"me_get",
 		"projects_list",
 		"projects_create",
 		"projects_update",

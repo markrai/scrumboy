@@ -433,6 +433,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **system**
 
 - `system_getCapabilities` - Server mode, auth snapshot, identity/pagination hints, full tool list.
+- `me_get` - The user the current credential (session, API token, or OAuth access token) authenticates as.
 
 **projects**
 
@@ -501,6 +502,13 @@ Conventions:
 - **Example (GET or POST):**  
   `POST /mcp` `{"tool":"system_getCapabilities","input":{}}`  
   → `ok: true`, `data.implementedTools` = full tool array.
+
+### `me_get`
+
+- **Purpose:** Tell an external client which user a credential belongs to (for example, to link a bot or integration to a Scrumboy account).
+- **Input:** `{}`
+- **Output:** `data` with `userId`, `email`, `name`.
+- **Errors:** anonymous mode or pre-bootstrap → `CAPABILITY_UNAVAILABLE`; no authenticated principal → `AUTH_REQUIRED`.
 
 ### `projects_list`
 

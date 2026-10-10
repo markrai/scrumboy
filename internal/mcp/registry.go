@@ -8,6 +8,7 @@ type toolRegistry map[string]toolHandler
 
 func (a *Adapter) registerTools() {
 	a.tools["system_getCapabilities"] = a.handleSystemGetCapabilities
+	a.tools["me_get"] = a.handleMeGet
 	a.tools["projects_list"] = a.handleProjectsList
 	a.tools["projects_create"] = a.handleProjectsCreate
 	a.tools["projects_update"] = a.handleProjectsUpdate

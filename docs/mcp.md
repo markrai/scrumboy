@@ -191,6 +191,7 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
   },
   "implementedTools": [
     "system_getCapabilities",
+    "me_get",
     "projects_list",
     "projects_create",
     "projects_update",
@@ -271,6 +272,7 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (52 tools).
 **System**
 
 - `system_getCapabilities`
+- `me_get` — the user the credential authenticates as (`userId`, `email`, `name`)
 
 **Projects**
 
@@ -506,6 +508,7 @@ One tool name per line (same order as `implementedTools()` in code):
 
 ```
 system_getCapabilities
+me_get
 projects_list
 projects_create
 projects_update
