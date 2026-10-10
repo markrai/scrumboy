@@ -82,6 +82,25 @@ describe('public board rendering', () => {
     expect(badge.textContent).toContain('publicBoard.badge');
   });
 
+  it('topbar shows the project name first with no Scrumboy logo, keeping search, sign-in, badge, and filters', () => {
+    const root = render(view({ canSignIn: true }));
+    const topbar = root.querySelector('.topbar')!;
+    expect(topbar.querySelector('img, .brand-text, #publicBrandLink')).toBeNull();
+    expect(topbar.innerHTML).not.toContain('scrumboytext.png');
+    const name = topbar.firstElementChild!;
+    expect(name.classList.contains('public-board__project-name')).toBe(true);
+    expect(name.textContent).toBe(hostile);
+    expect(topbar.querySelectorAll('.brand')).toHaveLength(1);
+    expect(topbar.querySelector('.public-board-badge')).not.toBeNull();
+    expect(topbar.querySelector('#publicSearchInput')).not.toBeNull();
+    expect(topbar.querySelector('#publicSignInBtn')).not.toBeNull();
+    // Mobile hides sprint/priority via CSS only; the selects stay in the DOM.
+    const mobile = render(view({ isMobile: true }));
+    expect(mobile.querySelector('.public-board-filter #publicSprintFilter')).not.toBeNull();
+    expect(mobile.querySelector('.public-board-filter #publicPriorityFilter')).not.toBeNull();
+    expect(mobile.querySelector('.public-board-badge')).not.toBeNull();
+  });
+
   it('offers only supported filters: text, tags, sprint number, priority', () => {
     const root = render(view());
     expect(root.querySelector('#publicSearchInput')).not.toBeNull();
@@ -123,6 +142,28 @@ describe('public board rendering', () => {
     root.innerHTML = buildPublicUnavailableHtml();
     expect(root.textContent).toContain('publicBoard.unavailable.title');
     expect(root.querySelector('[data-public-local-id], [data-public-board]')).toBeNull();
+  });
+
+  it('mobile hides badge and sprint/priority filters only on the public board page', () => {
+    const css = readFileSync(resolve(process.cwd(), 'styles.css'), 'utf8');
+    const section = css.slice(css.indexOf('PUBLIC READ-ONLY BOARD'));
+    const media = section.slice(section.indexOf('@media (max-width: 620px)'));
+    expect(media).toMatch(/\.page--public-board \.public-board-badge,\s*\.page--public-board \.public-board-filter\s*\{\s*display: none;/);
+    // Tags, search, and lane tabs are never hidden on the public board.
+    expect(media).not.toMatch(/(chips|search-input|mobile-tab)[^{}]*\{[^}]*display:\s*none/);
+    // Every public mobile rule is scoped to the public page; nothing can reach
+    // the member board's topbar or filters (.filters, .brand, #sprintFilter...).
+    const selectors = Array.from(media.matchAll(/([^{}]+)\{[^{}]*\}/g)).map((m) => m[1].replace(/\/\*[\s\S]*?\*\//g, '').trim());
+    expect(selectors.length).toBeGreaterThan(0);
+    for (const group of selectors) {
+      for (const sel of group.split(',')) expect(sel.trim()).toMatch(/^\.page--public-board /);
+    }
+    // Public-only classes are emitted only by the public renderer.
+    const memberSource = readFileSync(resolve(process.cwd(), 'modules/views/board-rendering.ts'), 'utf8')
+      + readFileSync(resolve(process.cwd(), 'modules/views/board.ts'), 'utf8');
+    for (const cls of ['page--public-board', 'public-board-filter', 'public-board-badge', 'public-board__project-name']) {
+      expect(memberSource).not.toContain(cls);
+    }
   });
 
   it('public styles use theme variables only, so light and dark themes both apply', () => {

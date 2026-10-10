@@ -276,10 +276,6 @@ function bindPageHandlers(s) {
         }
         if (target.closest('#publicSignInBtn')) {
             startSignIn();
-            return;
-        }
-        if (target.closest('#publicBrandLink')) {
-            window.location.assign('/');
         }
     });
     page.addEventListener('change', (event) => {

@@ -183,12 +183,7 @@ export function buildPublicTopbarHtml(view: PublicBoardViewModel): string {
   const badgeAria = escapeHTML(t('publicBoard.badgeAria'));
   return `
     <div class="topbar">
-      <div class="brand">
-        <button class="brand-link" id="publicBrandLink" type="button" aria-label="${escapeHTML(t('notFound.home'))}"${attrI18n('aria-label', 'notFound.home')}>
-          <img src="/scrumboytext.png" alt="Scrumboy" class="brand-text" />
-        </button>
-      </div>
-      <div class="brand">${escapeHTML(view.snapshot.project.name)}</div>
+      <div class="brand public-board__project-name">${escapeHTML(view.snapshot.project.name)}</div>
       <span class="public-board-badge" role="note" aria-label="${badgeAria}"${attrI18n('aria-label', 'publicBoard.badgeAria')}><span aria-hidden="true"${attrI18n('text', 'publicBoard.badge')}>${escapeHTML(t('publicBoard.badge'))}</span></span>
       <div class="spacer"></div>
       <div class="search-input-wrapper">

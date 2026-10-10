@@ -169,7 +169,7 @@ describe('public board view', () => {
     expect(appEl.querySelector('[data-public-board]')).not.toBeNull();
     // User content is escaped, never parsed into elements.
     expect(appEl.querySelector('img[src="x"]')).toBeNull();
-    expect(appEl.querySelector('.brand + .brand, .topbar .brand:nth-of-type(2)')?.textContent).toContain('Ignite <b>Board</b>');
+    expect(appEl.querySelector('.topbar .public-board__project-name')?.textContent).toContain('Ignite <b>Board</b>');
     expect(cards().map((c) => c.getAttribute('data-public-local-id'))).toEqual(['7']);
     // Every request and the stream stay inside the public namespace.
     expect(requests.every((path) => path.startsWith('/api/public/board/ignite'))).toBe(true);
