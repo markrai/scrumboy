@@ -124,6 +124,13 @@ func TestPhase6PublishedBoardDoesNotAuthorizePrivateMCPReads(t *testing.T) {
 	if _, err := st.UpdateProjectPublicViewing(ctx, project.ID, owner.ID, true); err != nil {
 		t.Fatalf("publish project: %v", err)
 	}
+	const privateMarker = "phase6-mcp-private-todo-marker"
+	if _, err := st.CreateTodo(store.WithUserID(ctx, owner.ID), project.ID, store.CreateTodoInput{
+		Title:     privateMarker,
+		ColumnKey: store.DefaultColumnBacklog,
+	}, store.ModeFull); err != nil {
+		t.Fatalf("create private todo: %v", err)
+	}
 	ownerSession, _, err := st.CreateSession(ctx, owner.ID, time.Hour)
 	if err != nil {
 		t.Fatalf("create owner session: %v", err)
@@ -164,12 +171,32 @@ func TestPhase6PublishedBoardDoesNotAuthorizePrivateMCPReads(t *testing.T) {
 	if ownerResponse.Code != http.StatusOK {
 		t.Fatalf("expected owner MCP board read to succeed, got %d: %s", ownerResponse.Code, ownerResponse.Body.String())
 	}
+	if !bytes.Contains(ownerResponse.Body.Bytes(), []byte(privateMarker)) {
+		t.Fatalf("owner MCP response omitted private board content: %s", ownerResponse.Body.String())
+	}
 	for name, response := range map[string]*httptest.ResponseRecorder{
 		"session cookie": call(t, outsiderSession, ""),
 		"API token":      call(t, "", outsiderAPIToken),
 	} {
-		if response.Code == http.StatusOK {
-			t.Fatalf("published state authorized outsider private MCP read via %s: %s", name, response.Body.String())
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("outsider MCP read via %s returned status %d, want 404: %s", name, response.Code, response.Body.String())
+		}
+		var denied struct {
+			OK    bool `json:"ok"`
+			Error struct {
+				Code    string         `json:"code"`
+				Message string         `json:"message"`
+				Details map[string]any `json:"details"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &denied); err != nil {
+			t.Fatalf("decode outsider MCP response via %s: %v", name, err)
+		}
+		if denied.OK || denied.Error.Code != mcp.CodeNotFound || denied.Error.Message != "not found" || len(denied.Error.Details) != 0 {
+			t.Fatalf("outsider MCP error via %s = %#v, want sanitized NOT_FOUND", name, denied)
+		}
+		if bytes.Contains(response.Body.Bytes(), []byte(privateMarker)) || bytes.Contains(response.Body.Bytes(), []byte(project.Name)) {
+			t.Fatalf("outsider MCP response via %s leaked board content: %s", name, response.Body.String())
 		}
 	}
 }

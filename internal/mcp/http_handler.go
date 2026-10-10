@@ -8,6 +8,8 @@ import (
 	"net/http"
 )
 
+const maxLegacyMCPBodyBytes int64 = maxJSONRPCBodyBytes
+
 // resolveAndValidateAuth runs MCP auth resolution and writes JSON errors when auth cannot proceed.
 // On success, ok is true and ctx is ready for tool handlers. sessionCookie is
 // true only when the actor was established from the browser session cookie.
@@ -64,8 +66,18 @@ func (a *Adapter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.ContentLength > maxLegacyMCPBodyBytes {
+		writeError(w, newAdapterError(http.StatusRequestEntityTooLarge, CodeValidationError, "request body too large", nil))
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxLegacyMCPBodyBytes)
 	var req requestEnvelope
 	if err := readJSON(r, &req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, newAdapterError(http.StatusRequestEntityTooLarge, CodeValidationError, "request body too large", nil))
+			return
+		}
 		writeError(w, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid json", map[string]any{"detail": err.Error()}))
 		return
 	}
