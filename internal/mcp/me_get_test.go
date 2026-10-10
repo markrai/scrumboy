@@ -57,3 +57,18 @@ func TestMCPMeGet_UnavailableInAnonymousMode(t *testing.T) {
 		t.Fatalf("anonymous me_get status=%d want 403 (%#v)", resp.StatusCode, out)
 	}
 }
+
+func TestMCPMeGet_SameResultOverBothTransports(t *testing.T) {
+	ts, _, cleanup := newTestServer(t, "full")
+	defer cleanup()
+
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+
+	// callToolOverBothTransports calls legacy POST /mcp and JSON-RPC tools/call and asserts the
+	// structured content equals the legacy data (me_get has no metadata keys).
+	data, _ := callToolOverBothTransports(t, client, ts.URL, "me_get", map[string]any{})
+	if data["email"] != "owner@example.com" || data["name"] != "Owner" {
+		t.Fatalf("me_get data = %#v, want owner@example.com / Owner", data)
+	}
+}
