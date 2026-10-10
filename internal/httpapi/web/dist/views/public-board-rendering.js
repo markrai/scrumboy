@@ -17,6 +17,13 @@ function colorStyle(color, withText = false) {
         return '';
     return ` style="border-color: ${safe}; background: ${safe}20;${withText ? ` color: ${safe};` : ''}"`;
 }
+/** Tag accent on border/tint only; text keeps the theme foreground for contrast. */
+function tagColorStyle(color) {
+    const safe = sanitizeHexColor(color ?? undefined);
+    if (!safe)
+        return '';
+    return ` style="border-color: ${safe}; background: ${safe}20; color: var(--text);"`;
+}
 export function publicPriorityMap(priorities) {
     const out = {};
     for (const priority of priorities)
@@ -28,7 +35,7 @@ export function showPublicPoints(snapshot) {
 }
 export function renderPublicTodoCard(todo, column, priorities, showPoints) {
     const tags = todo.tags
-        .map((tag) => `<span class="tag"${colorStyle(tag.color, true)}>${escapeHTML(tag.name)}</span>`)
+        .map((tag) => `<span class="tag"${tagColorStyle(tag.color)}>${escapeHTML(tag.name)}</span>`)
         .join('');
     const priority = todo.priorityKey ? priorities[todo.priorityKey] : undefined;
     const priorityHTML = priority

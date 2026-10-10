@@ -89,7 +89,7 @@ function field(labelKey, content) {
     wrap.append(label, content);
     return wrap;
 }
-function chip(text, colorValue, className) {
+function chip(text, colorValue, className, accentText = true) {
     const el = document.createElement('span');
     el.className = className;
     el.textContent = text;
@@ -97,7 +97,8 @@ function chip(text, colorValue, className) {
     if (safe) {
         el.style.borderColor = safe;
         el.style.background = `${safe}20`;
-        el.style.color = safe;
+        // Tags keep the theme foreground for contrast; priorities keep accent text.
+        el.style.color = accentText ? safe : 'var(--text)';
     }
     return el;
 }
@@ -152,7 +153,7 @@ export async function renderPublicTodoContent(container, todo, links, ctx) {
         const tags = document.createElement('div');
         tags.className = 'public-todo__chips';
         for (const tag of todo.tags)
-            tags.append(chip(tag.name, tag.color, 'tag'));
+            tags.append(chip(tag.name, tag.color, 'tag', false));
         container.append(field('todo.fields.tags', tags));
     }
     const priority = todo.priorityKey ? ctx.priorities[todo.priorityKey] : undefined;

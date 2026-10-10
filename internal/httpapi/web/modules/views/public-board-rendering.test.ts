@@ -59,6 +59,32 @@ describe('public board rendering', () => {
     expect(root.querySelector('[data-public-local-id="5"]')).not.toBeNull();
   });
 
+  it('keeps tag accents on border and tint but uses the theme foreground for tag text', () => {
+    const root = render(view());
+    const tagStyle = root.querySelector('.card .tag')!.getAttribute('style') ?? '';
+    expect(tagStyle).toContain('border-color: #00ff00');
+    expect(tagStyle).toContain('background: #00ff0020');
+    expect(tagStyle).toContain('color: var(--text)');
+    expect(tagStyle).not.toMatch(/(^|[^-])color: #00ff00/);
+    // Priority badges keep accent-colored text.
+    const priorityStyle = root.querySelector('.card__priority')!.getAttribute('style') ?? '';
+    expect(priorityStyle).toContain('color: #ff0000');
+  });
+
+  it('renders colored, toggleable tag filter chips and drops unsafe chip colors', () => {
+    const base = view();
+    const snapshot = { ...base.snapshot, tags: [...base.snapshot.tags, { name: 'blue', color: '#3b82f6', activeCount: 2 }] };
+    const root = render({ ...base, snapshot, query: { ...EMPTY_PUBLIC_QUERY, tags: ['blue'] } });
+    const blue = root.querySelector<HTMLButtonElement>('.chip[data-public-tag="blue"]')!;
+    expect(blue.classList.contains('chip--active')).toBe(true);
+    expect(blue.getAttribute('aria-pressed')).toBe('true');
+    expect(blue.getAttribute('style')).toContain('border-color: #3b82f6');
+    expect(blue.getAttribute('style')).not.toMatch(/(^|[^-])color:/);
+    const unsafe = root.querySelector<HTMLButtonElement>(`.chip[data-public-tag]:not([data-public-tag="blue"]):not([data-public-tag=""])`)!;
+    expect(unsafe.getAttribute('aria-pressed')).toBe('false');
+    expect(unsafe.hasAttribute('style')).toBe(false);
+  });
+
   it('renders cards as keyboard-focusable read-only buttons with no member or drag hooks', () => {
     const root = render(view());
     const card = root.querySelector<HTMLButtonElement>('[data-public-local-id="5"]')!;

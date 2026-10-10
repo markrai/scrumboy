@@ -71,6 +71,16 @@ describe('public story detail content', () => {
     expect(notes.children).toHaveLength(0);
   });
 
+  it('styles detail tags with accent border and theme text while priorities keep accent text', async () => {
+    const container = document.createElement('div');
+    await renderPublicTodoContent(container, { ...todo, tags: [{ name: 'blue', color: '#3b82f6' }] }, [], context());
+    const tag = container.querySelector<HTMLElement>('.tag')!;
+    expect(tag.style.borderColor).toMatch(/#3b82f6|rgb\(59, 130, 246\)/);
+    expect(tag.style.color).toBe('var(--text)');
+    const priority = container.querySelector<HTMLElement>('.card__priority')!;
+    expect(priority.style.color).toMatch(/#ff0000|rgb\(255, 0, 0\)/);
+  });
+
   it('shows only approved fields, escaped tags, and same-board links', async () => {
     const onNavigateToStory = vi.fn();
     const container = document.createElement('div');

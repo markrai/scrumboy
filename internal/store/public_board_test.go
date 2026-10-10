@@ -115,11 +115,17 @@ VALUES
 		t.Fatalf("insert tag: %v", err)
 	}
 	tagID, _ := res.LastInsertId()
-	if _, err := st.db.ExecContext(ctx, `
-INSERT INTO todo_tags(todo_id, tag_id) VALUES (?, ?);
-INSERT INTO project_tags(project_id, tag_id, created_at) VALUES (?, ?, ?);
-INSERT INTO user_tag_colors(user_id, tag_id, color) VALUES (?, ?, '#a1b2c3')`, visibleOneID, tagID, publicProject.ID, tagID, now, owner.ID, tagID); err != nil {
-		t.Fatalf("insert tag associations: %v", err)
+	for _, stmt := range []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO todo_tags(todo_id, tag_id) VALUES (?, ?)`, []any{visibleOneID, tagID}},
+		{`INSERT INTO project_tags(project_id, tag_id, created_at) VALUES (?, ?, ?)`, []any{publicProject.ID, tagID, now}},
+		{`INSERT INTO user_tag_colors(user_id, tag_id, color) VALUES (?, ?, '#a1b2c3')`, []any{owner.ID, tagID}},
+	} {
+		if _, err := st.db.ExecContext(ctx, stmt.query, stmt.args...); err != nil {
+			t.Fatalf("insert tag associations: %v", err)
+		}
 	}
 	if _, err := st.db.ExecContext(ctx, `
 INSERT INTO todo_links(project_id, from_local_id, to_local_id, link_type, created_at)
@@ -151,15 +157,16 @@ VALUES (?, 1, 2, 'relates_to', ?), (?, 1, 3, 'blocks', ?), (?, 1, 99, 'blocks', 
 	if items[0].EstimationPoints == nil || *items[0].EstimationPoints != 3 || items[0].PriorityKey == nil || *items[0].PriorityKey != "high" || items[0].SprintNumber == nil || *items[0].SprintNumber != sprint.Number {
 		t.Fatalf("public approved fields = %+v", items[0])
 	}
-	if len(items[0].Tags) != 1 || items[0].Tags[0].Name != "public-tag" || items[0].Tags[0].Color != publicTagDefaultColor {
+	wantTagColor := resolvePublicTagColor("public-tag", "")
+	if len(items[0].Tags) != 1 || items[0].Tags[0].Name != "public-tag" || items[0].Tags[0].Color != wantTagColor || items[0].Tags[0].Color == "#a1b2c3" {
 		t.Fatalf("public tags = %+v; personal color must not escape", items[0].Tags)
 	}
-	if len(snapshot.Tags) != 1 || snapshot.Tags[0].Name != "public-tag" || snapshot.Tags[0].ActiveCount != 1 || snapshot.Tags[0].Color != publicTagDefaultColor {
+	if len(snapshot.Tags) != 1 || snapshot.Tags[0].Name != "public-tag" || snapshot.Tags[0].ActiveCount != 1 || snapshot.Tags[0].Color != wantTagColor {
 		t.Fatalf("public tag summary = %+v", snapshot.Tags)
 	}
 
 	detail, err := st.GetPublicTodoDetail(ctx, publicProject.ID, publicProject.Slug, 1)
-	if err != nil || detail.Title != "Visible One" || len(detail.Tags) != 1 {
+	if err != nil || detail.Title != "Visible One" || len(detail.Tags) != 1 || detail.Tags[0].Color != wantTagColor {
 		t.Fatalf("GetPublicTodoDetail = %+v, %v", detail, err)
 	}
 	if _, err := st.GetPublicTodoDetail(ctx, publicProject.ID, publicProject.Slug, 3); !errors.Is(err, ErrNotFound) {
@@ -341,5 +348,185 @@ INSERT INTO todo_tags(todo_id, tag_id) VALUES
 	}
 	if _, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, "backlog", PublicBoardQuery{Limit: 51}); !errors.Is(err, ErrValidation) {
 		t.Fatalf("oversized limit error = %v, want ErrValidation", err)
+	}
+}
+
+func TestResolvePublicTagColorPrefersValidSharedColorThenStablePalette(t *testing.T) {
+	inPalette := func(color string) bool {
+		for _, candidate := range publicTagPalette {
+			if candidate == color {
+				return true
+			}
+		}
+		return false
+	}
+	for _, shared := range []string{"", "   ", "not-a-color", "#12345", "#a1b2c3 "} {
+		got := resolvePublicTagColor("frontend", shared)
+		if !inPalette(got) || got == "#64748b" {
+			t.Fatalf("resolvePublicTagColor(frontend, %q) = %q, want non-gray palette color", shared, got)
+		}
+	}
+	if got := resolvePublicTagColor("frontend", "#AbCdEf"); got != "#AbCdEf" {
+		t.Fatalf("valid shared color = %q, want preserved exactly", got)
+	}
+	first := resolvePublicTagColor("make-space", "")
+	for i := 0; i < 5; i++ {
+		if got := resolvePublicTagColor("make-space", ""); got != first {
+			t.Fatalf("color not deterministic: %q then %q", first, got)
+		}
+	}
+	if a, b := TagGroupKey("make space"), TagGroupKey("make-space"); a != b {
+		t.Fatalf("TagGroupKey(make space) = %q, TagGroupKey(make-space) = %q; want equal", a, b)
+	}
+	if got := resolvePublicTagColor("make space", ""); got != first {
+		t.Fatalf("equivalent legacy name color = %q, want %q", got, first)
+	}
+	// Pin FNV-1a + palette order: changing either silently recolors every public board.
+	for name, want := range map[string]string{"bug": "#f97316", "feature": "#0d9488", "backend": "#3b82f6"} {
+		if got := resolvePublicTagColor(name, ""); got != want {
+			t.Fatalf("resolvePublicTagColor(%q) = %q, want pinned %q", name, got, want)
+		}
+	}
+	seen := map[string]bool{}
+	for _, name := range []string{"bug", "feature", "docs", "frontend", "backend", "infra", "ux", "security"} {
+		seen[resolvePublicTagColor(name, "")] = true
+	}
+	if len(seen) < 3 {
+		t.Fatalf("palette fallback is not distinguishing tags: %v", seen)
+	}
+}
+
+func TestPublicTagColorsAreConsistentAcrossReadsAndExcludePersonalPreferences(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "public-tag-color@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	ownerCtx := WithUserID(ctx, owner.ID)
+	project, err := st.CreateProject(ownerCtx, "Public Tag Colors")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET public_view_enabled = 1 WHERE id = ?`, project.ID); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	now := time.Now().UTC().UnixMilli()
+	if _, err := st.db.ExecContext(ctx, `
+INSERT INTO todos(project_id, local_id, title, body, column_key, rank, created_at, updated_at)
+VALUES (?, 1, 'One', '', 'backlog', 10, ?, ?), (?, 2, 'Two', '', 'backlog', 20, ?, ?)`,
+		project.ID, now, now, project.ID, now, now); err != nil {
+		t.Fatalf("insert todos: %v", err)
+	}
+	var todoOneID, todoTwoID int64
+	if err := st.db.QueryRowContext(ctx, `SELECT id FROM todos WHERE project_id = ? AND local_id = 1`, project.ID).Scan(&todoOneID); err != nil {
+		t.Fatalf("todo one id: %v", err)
+	}
+	if err := st.db.QueryRowContext(ctx, `SELECT id FROM todos WHERE project_id = ? AND local_id = 2`, project.ID).Scan(&todoTwoID); err != nil {
+		t.Fatalf("todo two id: %v", err)
+	}
+	insertTag := func(userID any, projectID any, name string, color any) int64 {
+		t.Helper()
+		res, err := st.db.ExecContext(ctx, `INSERT INTO tags(user_id, name, created_at, project_id, color) VALUES (?, ?, ?, ?, ?)`, userID, name, now, projectID, color)
+		if err != nil {
+			t.Fatalf("insert tag %q: %v", name, err)
+		}
+		id, _ := res.LastInsertId()
+		return id
+	}
+	sharedID := insertTag(nil, project.ID, "shared", "#123abc")
+	plainID := insertTag(nil, project.ID, "plain", nil)
+	personalID := insertTag(owner.ID, nil, "personal", nil)
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO todo_tags(todo_id, tag_id) VALUES (?, ?), (?, ?), (?, ?), (?, ?)`,
+		todoOneID, sharedID, todoOneID, plainID, todoOneID, personalID, todoTwoID, plainID); err != nil {
+		t.Fatalf("insert todo tags: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO project_tags(project_id, tag_id, created_at) VALUES (?, ?, ?)`, project.ID, personalID, now); err != nil {
+		t.Fatalf("insert project tag: %v", err)
+	}
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO user_tag_colors(user_id, tag_id, color) VALUES (?, ?, '#fedcba')`, owner.ID, personalID); err != nil {
+		t.Fatalf("insert personal color: %v", err)
+	}
+
+	var prefCount int
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM user_tag_colors WHERE user_id = ? AND tag_id = ?`, owner.ID, personalID).Scan(&prefCount); err != nil || prefCount != 1 {
+		t.Fatalf("personal preference fixture count = %d, %v", prefCount, err)
+	}
+
+	want := map[string]string{
+		"shared":   "#123abc",
+		"plain":    resolvePublicTagColor("plain", ""),
+		"personal": resolvePublicTagColor("personal", ""),
+	}
+	check := func(source string, name, color string) {
+		t.Helper()
+		if color == "#fedcba" {
+			t.Fatalf("%s: personal color escaped for %q", source, name)
+		}
+		if color != want[name] {
+			t.Fatalf("%s: tag %q color = %q, want %q", source, name, color, want[name])
+		}
+	}
+
+	snapshot, err := st.GetPublicBoardSnapshot(ctx, project.ID, project.Slug, PublicBoardQuery{Limit: 1})
+	if err != nil {
+		t.Fatalf("GetPublicBoardSnapshot: %v", err)
+	}
+	if len(snapshot.Tags) != len(want) {
+		t.Fatalf("snapshot tags = %+v", snapshot.Tags)
+	}
+	for _, tag := range snapshot.Tags {
+		check("snapshot summary", tag.Name, tag.Color)
+	}
+	backlog := snapshot.Columns[DefaultColumnBacklog]
+	if len(backlog) != 1 || len(backlog[0].Tags) != 3 {
+		t.Fatalf("snapshot backlog = %+v", backlog)
+	}
+	for _, tag := range backlog[0].Tags {
+		check("snapshot story", tag.Name, tag.Color)
+	}
+	next := snapshot.ColumnsMeta[DefaultColumnBacklog].NextOrder
+	if next == nil {
+		t.Fatalf("expected next page cursor")
+	}
+	lane, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, DefaultColumnBacklog, PublicBoardQuery{Limit: 1, After: next})
+	if err != nil {
+		t.Fatalf("GetPublicBoardLane: %v", err)
+	}
+	if len(lane.Items) != 1 || lane.Items[0].LocalID != 2 || len(lane.Items[0].Tags) != 1 {
+		t.Fatalf("lane page = %+v", lane.Items)
+	}
+	check("lane story", lane.Items[0].Tags[0].Name, lane.Items[0].Tags[0].Color)
+	detail, err := st.GetPublicTodoDetail(ctx, project.ID, project.Slug, 1)
+	if err != nil || len(detail.Tags) != 3 {
+		t.Fatalf("GetPublicTodoDetail = %+v, %v", detail, err)
+	}
+	for _, tag := range detail.Tags {
+		check("detail", tag.Name, tag.Color)
+	}
+
+	// Authenticated reads keep their existing precedence, including the viewer's
+	// personal preference and the absence of a color for uncolored shared tags.
+	pc, err := st.GetProjectContextForRead(ownerCtx, project.ID, ModeFull)
+	if err != nil {
+		t.Fatalf("GetProjectContextForRead: %v", err)
+	}
+	counts, err := st.ListTagCounts(ownerCtx, &pc)
+	if err != nil {
+		t.Fatalf("ListTagCounts: %v", err)
+	}
+	authColors := map[string]*string{}
+	for _, tag := range counts {
+		authColors[tag.Name] = tag.Color
+	}
+	if c := authColors["personal"]; c == nil || *c != "#fedcba" {
+		t.Fatalf("authenticated personal color = %v, want #fedcba", c)
+	}
+	if c := authColors["shared"]; c == nil || *c != "#123abc" {
+		t.Fatalf("authenticated shared color = %v, want #123abc", c)
+	}
+	if c := authColors["plain"]; c != nil {
+		t.Fatalf("authenticated uncolored tag = %q, want nil (no public fallback)", *c)
 	}
 }

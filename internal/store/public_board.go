@@ -5,10 +5,41 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"strings"
 )
 
-const publicTagDefaultColor = "#64748b"
+// publicTagPalette supplies colors for public tags that have no valid shared
+// color. Mid-tone hues read on both light and dark themes when rendered as a
+// tinted chip. Order is part of the public contract: reordering or resizing it
+// changes every fallback color.
+var publicTagPalette = [...]string{
+	"#ef4444", // red
+	"#f97316", // orange
+	"#d97706", // amber
+	"#65a30d", // lime
+	"#16a34a", // green
+	"#0d9488", // teal
+	"#0891b2", // cyan
+	"#3b82f6", // blue
+	"#6366f1", // indigo
+	"#8b5cf6", // violet
+	"#d946ef", // fuchsia
+	"#ec4899", // pink
+}
+
+// resolvePublicTagColor returns the shared tag color when it is valid hex, and
+// otherwise a deterministic palette color derived from the tag's canonical name
+// (FNV-1a over TagGroupKey) so equivalent legacy spellings share a color. It only
+// sees tags.color; personal user_tag_colors are never consulted.
+func resolvePublicTagColor(name, sharedColor string) string {
+	if colorHexRe.MatchString(sharedColor) {
+		return sharedColor
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(TagGroupKey(name)))
+	return publicTagPalette[h.Sum32()%uint32(len(publicTagPalette))]
+}
 
 type PublicProjectProjection struct {
 	Slug           string
@@ -205,13 +236,13 @@ ORDER BY position, key`, projectID)
 
 func listPublicTagsTx(ctx context.Context, tx *sql.Tx, projectID int64) ([]PublicTagProjection, error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT g.name, COALESCE(NULLIF(g.color, ''), ?), COUNT(DISTINCT t.local_id)
+SELECT g.name, COALESCE(g.color, ''), COUNT(DISTINCT t.local_id)
 FROM todos t
 JOIN todo_tags tt ON tt.todo_id = t.id
 JOIN tags g ON g.id = tt.tag_id
 WHERE t.project_id = ? AND t.archived_at IS NULL
-GROUP BY g.name, COALESCE(NULLIF(g.color, ''), ?)
-ORDER BY g.name`, publicTagDefaultColor, projectID, publicTagDefaultColor)
+GROUP BY g.name, COALESCE(g.color, '')
+ORDER BY g.name`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list public tags: %w", err)
 	}
@@ -222,6 +253,7 @@ ORDER BY g.name`, publicTagDefaultColor, projectID, publicTagDefaultColor)
 		if err := rows.Scan(&tag.Name, &tag.Color, &tag.ActiveCount); err != nil {
 			return nil, fmt.Errorf("scan public tag: %w", err)
 		}
+		tag.Color = resolvePublicTagColor(tag.Name, tag.Color)
 		tags = append(tags, tag)
 	}
 	if err := rows.Err(); err != nil {
@@ -304,14 +336,14 @@ func listPublicTodoTagsTx(ctx context.Context, tx *sql.Tx, projectID int64, loca
 		return out, nil
 	}
 	placeholders := make([]string, len(localIDs))
-	args := make([]any, 0, len(localIDs)+2)
-	args = append(args, publicTagDefaultColor, projectID)
+	args := make([]any, 0, len(localIDs)+1)
+	args = append(args, projectID)
 	for i, localID := range localIDs {
 		placeholders[i] = "?"
 		args = append(args, localID)
 	}
 	rows, err := tx.QueryContext(ctx, `
-SELECT t.local_id, g.name, COALESCE(NULLIF(g.color, ''), ?)
+SELECT t.local_id, g.name, COALESCE(g.color, '')
 FROM todos t
 JOIN todo_tags tt ON tt.todo_id = t.id
 JOIN tags g ON g.id = tt.tag_id
@@ -328,6 +360,7 @@ ORDER BY t.local_id, g.name`, args...)
 		if err := rows.Scan(&localID, &tag.Name, &tag.Color); err != nil {
 			return nil, fmt.Errorf("scan public todo tag: %w", err)
 		}
+		tag.Color = resolvePublicTagColor(tag.Name, tag.Color)
 		out[localID] = append(out[localID], tag)
 	}
 	if err := rows.Err(); err != nil {

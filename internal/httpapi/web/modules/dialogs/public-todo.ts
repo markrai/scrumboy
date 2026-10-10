@@ -120,7 +120,7 @@ function field(labelKey: string, content: Node): HTMLElement {
   return wrap;
 }
 
-function chip(text: string, colorValue: string | null, className: string): HTMLElement {
+function chip(text: string, colorValue: string | null, className: string, accentText = true): HTMLElement {
   const el = document.createElement('span');
   el.className = className;
   el.textContent = text;
@@ -128,7 +128,8 @@ function chip(text: string, colorValue: string | null, className: string): HTMLE
   if (safe) {
     el.style.borderColor = safe;
     el.style.background = `${safe}20`;
-    el.style.color = safe;
+    // Tags keep the theme foreground for contrast; priorities keep accent text.
+    el.style.color = accentText ? safe : 'var(--text)';
   }
   return el;
 }
@@ -189,7 +190,7 @@ export async function renderPublicTodoContent(
   if (todo.tags.length > 0) {
     const tags = document.createElement('div');
     tags.className = 'public-todo__chips';
-    for (const tag of todo.tags) tags.append(chip(tag.name, tag.color, 'tag'));
+    for (const tag of todo.tags) tags.append(chip(tag.name, tag.color, 'tag', false));
     container.append(field('todo.fields.tags', tags));
   }
 
