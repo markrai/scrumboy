@@ -22,6 +22,7 @@ vi.mock("../state/mutations.js", () => ({
 
 vi.mock("../state/selectors.js", () => ({
   getAuthStatusAvailable: () => true,
+  getLandingPageEnabled: () => false,
   getBoard: () => ({ id: 1 }),
   getProjectsTab: () => "projects",
   getRoute: () => routeState.route,

@@ -32,6 +32,7 @@ import { canShowVoiceCommands } from './board-command-capabilities.js';
 import { getVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import { applyWrapLanesClass } from '../core/wrap-lanes-preferences.js';
 import { BOARD_FILTER_LAYOUT_CHANGED_EVENT, getBoardFilterLayoutPreference, } from '../core/board-filter-layout-preferences.js';
+import { appHomePath } from '../app-home.js';
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
 const HIGHLIGHT_CLASS = "card--highlight";
@@ -1058,11 +1059,11 @@ function renderBoardFromData(board, projectId, tags, search, sprintId, assignee,
                 const currentUrl = window.location.href;
                 await navigator.clipboard.writeText(currentUrl);
                 // Navigate immediately, toast will show on landing page
-                window.location.href = "/?copied=1";
+                window.location.href = `${appHomePath()}?copied=1`;
             }
             catch (err) {
                 // Fallback if clipboard API fails (e.g., insecure context)
-                window.location.href = "/?copied=0";
+                window.location.href = `${appHomePath()}?copied=0`;
             }
         });
         brandLink[BOUND_FLAG] = true;
@@ -1072,7 +1073,7 @@ function renderBoardFromData(board, projectId, tags, search, sprintId, assignee,
         backBtn.addEventListener("click", () => {
             const isRelativePath = !backHref || (!backHref.startsWith("http://") && !backHref.startsWith("https://"));
             if (isRelativePath) {
-                navigate(backHref || "/");
+                navigate(backHref || appHomePath());
                 return;
             }
             window.location.href = backHref;
@@ -1480,7 +1481,7 @@ function renderBoardFromData(board, projectId, tags, search, sprintId, assignee,
                                 }
                                 if (targetUserId === currentUserId) {
                                     close();
-                                    navigate("/");
+                                    navigate(appHomePath());
                                     return;
                                 }
                                 // Refetch available users so removed member reappears in Add section (if dropdown exists)

@@ -12,7 +12,8 @@
 import { app } from '../dom/elements.js';
 import { t } from '../i18n/index.js';
 import { showToast } from '../utils.js';
-import { getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
+import { getAuthStatusAvailable, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
+import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
 import {
@@ -170,6 +171,7 @@ function viewModel(s: PublicSession): PublicBoardViewModel {
     activeMobileTab: s.activeMobileTab,
     isMobile: typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT_PX,
     user: getUser(),
+    canSignIn: !getUser() && getAuthStatusAvailable(),
   };
 }
 
@@ -339,6 +341,10 @@ function bindPageHandlers(s: PublicSession): void {
       input?.focus();
       return;
     }
+    if (target.closest('#publicSignInBtn')) {
+      startSignIn();
+      return;
+    }
     if (target.closest('#publicBrandLink')) {
       window.location.assign('/');
     }
@@ -365,6 +371,14 @@ function bindPageHandlers(s: PublicSession): void {
       setQuery(s, { ...s.query, search: target.value });
     }, SEARCH_DEBOUNCE_MS);
   });
+}
+
+/**
+ * Existing sign-in flow; afterwards ordinary member-first resolution runs again
+ * for the same path, filters, and story deep link.
+ */
+function startSignIn(): void {
+  window.location.assign(signInPath(window.location.pathname + window.location.search));
 }
 
 // ---- Filters, refresh, pagination ----
@@ -581,6 +595,7 @@ function dialogContext(s: PublicSession): PublicTodoDialogContext {
     markdownEnabled: getMarkdownNotesEnabled(),
     mermaidEnabled: getMermaidNotesEnabled(),
     onNavigateToStory: (localId) => openStoryFromBoard(s, localId),
+    onSignIn: !getUser() && getAuthStatusAvailable() ? startSignIn : undefined,
     onClosedByUser: () => {
       if (!isCurrent(s)) return;
       if (/^\/[^/]+\/t\/\d+\/?$/.test(window.location.pathname)) {

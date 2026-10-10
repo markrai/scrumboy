@@ -6,7 +6,7 @@ export const NO_PRIORITY_FILTER_VALUE = '**none**';
 
 export type TodoStatus = string;
 export type ProjectView = 'list' | 'grid';
-export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'archiveBySlug' | 'reset-password' | 'notfound';
+export type RouteName = 'projects' | 'dashboard' | 'boardBySlug' | 'archiveBySlug' | 'reset-password' | 'login' | 'notfound';
 export type MobileTab = string;
 
 /**
@@ -301,6 +301,10 @@ export interface AuthStatusResponse {
   wallEnabled?: boolean;
   markdownNotesEnabled?: boolean;
   mermaidNotesEnabled?: boolean;
+  /** Effective Full Mode public-projects capability (presentation only). */
+  publicProjectsEnabled?: boolean;
+  /** Effective Full Mode landing override (/ is marketing, /_app is the workspace). */
+  landingPageEnabled?: boolean;
 }
 
 export interface BoardResponse extends Board {

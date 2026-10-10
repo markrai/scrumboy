@@ -109,3 +109,68 @@ WHERE id = ? AND import_batch_id IS NULL`, projectID).Scan(&slug, &expiresAt, &c
 	result.Changed = true
 	return result, nil
 }
+
+// ProjectPublicationStatus is the Maintainer-only view of a project's
+// publication setting. Publishable is false for legacy reserved slugs, which
+// cannot be enabled until the project is renamed.
+type ProjectPublicationStatus struct {
+	ProjectID   int64
+	Slug        string
+	Enabled     bool
+	Publishable bool
+}
+
+// GetProjectPublicationStatus applies the same eligibility and exact
+// Maintainer rule as UpdateProjectPublicViewing, in one read transaction.
+// Lesser members get ErrForbidden; nonmembers, temporary, and staging rows
+// get ErrNotFound.
+func (s *Store) GetProjectPublicationStatus(ctx context.Context, projectID, actorUserID int64) (ProjectPublicationStatus, error) {
+	if projectID <= 0 {
+		return ProjectPublicationStatus{}, fmt.Errorf("%w: invalid project id", ErrValidation)
+	}
+	if actorUserID <= 0 {
+		return ProjectPublicationStatus{}, ErrUnauthorized
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return ProjectPublicationStatus{}, fmt.Errorf("begin get project publication status: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var (
+		slug       string
+		expiresAt  sql.NullInt64
+		currentInt int
+	)
+	err = tx.QueryRowContext(ctx, `
+SELECT slug, expires_at, public_view_enabled
+FROM projects
+WHERE id = ? AND import_batch_id IS NULL`, projectID).Scan(&slug, &expiresAt, &currentInt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ProjectPublicationStatus{}, ErrNotFound
+	}
+	if err != nil {
+		return ProjectPublicationStatus{}, fmt.Errorf("get project publication status: %w", err)
+	}
+	if expiresAt.Valid {
+		return ProjectPublicationStatus{}, ErrNotFound
+	}
+
+	role, err := s.getProjectRoleTx(ctx, tx, projectID, actorUserID)
+	if err != nil {
+		return ProjectPublicationStatus{}, err
+	}
+	if role != RoleMaintainer {
+		if role.HasMinimumRole(RoleViewer) {
+			return ProjectPublicationStatus{}, ErrForbidden
+		}
+		return ProjectPublicationStatus{}, ErrNotFound
+	}
+	return ProjectPublicationStatus{
+		ProjectID:   projectID,
+		Slug:        slug,
+		Enabled:     currentInt == 1,
+		Publishable: !isReservedPublicProjectSlug(slug),
+	}, nil
+}

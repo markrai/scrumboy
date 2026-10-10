@@ -9,7 +9,7 @@ const DEFAULT_LANE_META = (): Record<TodoStatus, { hasMore: boolean; nextCursor:
 /** True after the user changes dashboard sort (not server hydrate). Skips applying stored preference so a fast local change is not overwritten when the GET returns. */
 let dashboardTodoSortUserTouched = false;
 
-const VALID_ROUTES = new Set<RouteName>(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'notfound']);
+const VALID_ROUTES = new Set<RouteName>(['projects', 'dashboard', 'boardBySlug', 'archiveBySlug', 'reset-password', 'login', 'notfound']);
 const VALID_PROJECT_VIEWS = new Set<ProjectView>(['list', 'grid']);
 
 export function setRoute(name: RouteName): void {
@@ -140,6 +140,14 @@ export function setMarkdownNotesEnabled(enabled: boolean): void {
 
 export function setMermaidNotesEnabled(enabled: boolean): void {
   current._mermaidNotesEnabled = enabled;
+}
+
+export function setPublicProjectsEnabled(enabled: boolean): void {
+  current._publicProjectsEnabled = enabled;
+}
+
+export function setLandingPageEnabled(enabled: boolean): void {
+  current._landingPageEnabled = enabled;
 }
 
 export function setProjectsTab(tab: string | undefined): void {

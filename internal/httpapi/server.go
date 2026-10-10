@@ -234,9 +234,12 @@ type Server struct {
 	indexHTML           []byte
 	landingHTML         []byte
 	landingHTMLByLocale map[string][]byte
-	swJS                []byte // Service worker with version injected
-	mcpHandler          http.Handler
-	agoraHandler        http.Handler
+	// workspaceLandingHTML is the English landing with its workspace entry
+	// link enabled; it is served at / only in Full Mode with the landing flag.
+	workspaceLandingHTML []byte
+	swJS                 []byte // Service worker with version injected
+	mcpHandler           http.Handler
+	agoraHandler         http.Handler
 
 	vapidPublicKey      string
 	pushVapidConfigured bool // full mode + both VAPID keys present; subscribe and push notify use this
@@ -314,6 +317,7 @@ type storeAPI interface {
 	UpdateProjectSprintsEnabled(ctx context.Context, projectID int64, userID int64, enabled bool) error
 	UpdateProjectBoardSettings(ctx context.Context, projectID, userID int64, patch store.ProjectBoardSettingsPatch) (store.ProjectBoardSettings, error)
 	publicboardapp.PublicationMutationStore
+	publicboardapp.PublicationStatusStore
 	publicboardapp.EligibilityStore
 	publicboardapp.ProjectionStore
 	workflowapp.MutationStore
@@ -645,6 +649,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		}),
 		publicBoardPublications: publicboardapp.NewPublicationService(publicboardapp.PublicationServiceOptions{
 			Mutations:             st,
+			Status:                st,
 			Revoker:               publicHub,
 			Mode:                  store.Mode(mode),
 			PublicProjectsEnabled: opts.PublicProjectsEnabled,
@@ -707,6 +712,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 		fileSrv:                        http.FileServer(http.FS(webFS)),
 		indexHTML:                      indexHTML,
 		landingHTML:                    landingHTML,
+		workspaceLandingHTML:           enableLandingWorkspaceEntry(landingHTML),
 		landingHTMLByLocale:            landingHTMLByLocale,
 		swJS:                           swJS,
 		mcpHandler:                     opts.MCPHandler,

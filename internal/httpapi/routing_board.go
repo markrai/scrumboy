@@ -155,6 +155,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 	if s.handleBoardMetricsRoutes(w, r, rest, &pc) {
 		return
 	}
+	if s.handleBoardPublicationRoutes(w, r, rest, &pc) {
+		return
+	}
 	if s.handleBoardWallRoutes(w, r, rest, &pc) {
 		return
 	}

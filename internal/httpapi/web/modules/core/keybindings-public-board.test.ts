@@ -43,6 +43,7 @@ function renderPublicBoardDom(): void {
     activeMobileTab: 'backlog',
     isMobile: false,
     user: null,
+    canSignIn: false,
   });
   document.body.replaceChildren(app);
   const settings = document.createElement('dialog');

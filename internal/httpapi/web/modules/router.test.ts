@@ -1378,4 +1378,128 @@ describe('router invalid URL redirect', () => {
       expect(stopPublicBoardMock).toHaveBeenCalled();
     });
   });
+
+  describe('workspace entry and sign-in routing', () => {
+    function withLanding(enabled: boolean): void {
+      const inner = apiFetchMock.getMockImplementation()!;
+      apiFetchMock.mockImplementation(async (url: string, ...rest: unknown[]) => {
+        const result = await (inner as (...args: unknown[]) => Promise<any>)(url, ...rest);
+        return url === '/api/auth/status' ? { ...result, landingPageEnabled: enabled } : result;
+      });
+    }
+
+    beforeEach(() => {
+      resolvePublicBoardMock.mockClear();
+      resolvePublicBoardMock.mockImplementation(async () => 'not-public');
+      isPublicBoardSessionForMock.mockImplementation(() => false);
+      stopPublicBoardMock.mockClear();
+    });
+
+    it('with the landing override, the SPA root canonicalizes to /_app and renders the workspace', async () => {
+      window.history.replaceState({}, '', '/?copied=1');
+      installSignedInFullMode();
+      withLanding(true);
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(window.location.pathname).toBe('/_app');
+      expect(window.location.search).toBe('?copied=1');
+      expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('with the landing override, /_app is the workspace and stays put', async () => {
+      window.history.replaceState({}, '', '/_app');
+      installSignedInFullMode();
+      withLanding(true);
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(window.location.pathname).toBe('/_app');
+      expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+      expect(renderBoardMock).not.toHaveBeenCalled();
+    });
+
+    it('signed out at /_app shows the existing sign-in UI returning to /_app', async () => {
+      window.history.replaceState({}, '', '/_app');
+      installSignedOutFullMode();
+      withLanding(true);
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/_app' }));
+    });
+
+    it('without the landing override, /_app aliases to the existing root workspace', async () => {
+      window.history.replaceState({}, '', '/_app');
+      installSignedInFullMode();
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(window.location.pathname).toBe('/');
+      expect(renderProjectsMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('Anonymous Mode keeps its previous handling of /_app', async () => {
+      window.history.replaceState({}, '', '/_app');
+      installAnonymousMode();
+      const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(assignSpy).toHaveBeenCalledWith('/');
+      expect(renderProjectsMock).not.toHaveBeenCalled();
+    });
+
+    it('a missing board redirects to /_app when the landing override is active', async () => {
+      window.history.replaceState({}, '', '/missing-board');
+      installSignedInFullMode();
+      withLanding(true);
+      renderBoardMock.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }));
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(window.location.pathname).toBe('/_app');
+      expect(renderProjectsMock).toHaveBeenCalled();
+    });
+
+    it('/auth/login renders the existing sign-in UI with the exact board deep link and filters', async () => {
+      window.history.replaceState({}, '', '/auth/login?next=' + encodeURIComponent('/ignite/t/3?tag=api&priority=high'));
+      installSignedOutFullMode();
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(renderAuthMock).toHaveBeenCalledWith(expect.objectContaining({ next: '/ignite/t/3?tag=api&priority=high' }));
+      expect(stopPublicBoardMock).toHaveBeenCalled();
+      expect(renderBoardMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['protocol-relative', '//evil.example/x'],
+      ['absolute', 'https://evil.example/'],
+      ['backslash', '/' + String.fromCharCode(92) + 'evil.example'],
+      ['javascript', 'javascript:alert(1)'],
+      ['double-encoded', '/%252F%252Fevil.example'],
+      ['encoded slash', '%2F%2Fevil.example'],
+    ])('/auth/login rejects an unsafe %s destination', async (_label, next) => {
+      window.history.replaceState({}, '', '/auth/login?next=' + encodeURIComponent(next));
+      installSignedOutFullMode();
+      withLanding(true);
+      const mod = await loadRouterModule();
+      await mod.router();
+      const options = renderAuthMock.mock.calls.at(-1)?.[0] as { next: string };
+      // The security property: the destination always resolves same-origin.
+      expect(options.next.startsWith('/')).toBe(true);
+      expect(options.next.startsWith('//')).toBe(false);
+      expect(options.next).not.toContain(String.fromCharCode(92));
+      expect(new URL(options.next, 'https://app.test').origin).toBe('https://app.test');
+      expect(options.next).not.toMatch(/^\/?(?:javascript|https?):/i);
+    });
+
+    it('/auth/login for an already signed-in user continues through ordinary board resolution', async () => {
+      window.history.replaceState({}, '', '/auth/login?next=' + encodeURIComponent('/ignite/t/3'));
+      installSignedInFullMode();
+      renderBoardMock.mockResolvedValueOnce(undefined);
+      const mod = await loadRouterModule();
+      await mod.router();
+      expect(window.location.pathname).toBe('/ignite/t/3');
+      expect(renderAuthMock).not.toHaveBeenCalled();
+      expect(renderBoardMock).toHaveBeenCalledTimes(1);
+      const call = renderBoardMock.mock.calls[0];
+      expect(call[0]).toBe('ignite');
+      expect(call[8]).toBe('3');
+    });
+  });
 });

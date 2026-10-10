@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"fmt"
+	"html"
 	"mime"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 
 	"scrumboy/internal/auth/tokens"
 	"scrumboy/internal/httpapi/ratelimit"
+	"scrumboy/internal/oidc"
 	"scrumboy/internal/store"
 )
 
@@ -123,6 +125,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 				"emailNotifyAvailable":            false,
 				"markdownNotesEnabled":            s.markdownNotesEnabled,
 				"mermaidNotesEnabled":             s.mermaidNotesEnabled,
+				"publicProjectsEnabled":           false,
+				"landingPageEnabled":              false,
 			})
 			return
 		}
@@ -166,6 +170,10 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 		resp["mobileOidcEnabled"] = s.oidcService != nil
 		resp["localAuthEnabled"] = localAuthEnabled
 		resp["wallEnabled"] = s.wallEnabled
+		// Effective presentation capabilities for client routing and UI only;
+		// they are never authorization evidence.
+		resp["publicProjectsEnabled"] = s.publicProjectsEnabled
+		resp["landingPageEnabled"] = s.fullModeLandingEnabled()
 		resp["emailNotifyAvailable"] = s.smtpConfigured && s.publicBaseURL != ""
 		if includePushStatus {
 			resp["push"] = s.pushStatus
@@ -303,11 +311,14 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 			_ = s.store.DeleteSession(s.requestContext(r), c.Value)
 		}
 		clearSessionCookie(w, r)
+		// Optional same-origin return (for example a public board); anything
+		// unsafe collapses to / through the shared OIDC return sanitizer.
+		returnTo := oidc.SanitizeReturnTo(r.PostFormValue("return_to"))
 		// Return 200 + HTML with meta refresh instead of 302. Some proxies (e.g. Cloudflare Tunnel)
 		// handle Set-Cookie on 302 redirects unreliably; 200 + Set-Cookie works better.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=/"></head><body>Logging out...</body></html>`))
+		w.Write([]byte(`<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0;url=` + html.EscapeString(returnTo) + `"></head><body>Logging out...</body></html>`))
 		return
 
 	default:

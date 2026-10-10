@@ -9,6 +9,7 @@ export default defineConfig({
     "scripts/cards-per-lane.playwright.ts",
     "scripts/mermaid-vendor.playwright.ts",
     "scripts/public-board.playwright.ts",
+    "scripts/public-board-phase5.playwright.ts",
   ],
   outputDir: path.join(os.tmpdir(), "scrumboy-web-playwright-results"),
   reporter: "line",

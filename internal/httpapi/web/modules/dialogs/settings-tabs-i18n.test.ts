@@ -1066,3 +1066,68 @@ describe('settings on a public read-only board', () => {
     expect(fetchProjectMembersMock).not.toHaveBeenCalled();
   });
 });
+
+describe('settings Sharing tab visibility', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installBaseDOM();
+    window.history.replaceState({}, '', '/ignite');
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValue(null);
+    fetchProjectMembersMock.mockReset();
+    fetchProjectMembersMock.mockResolvedValue([]);
+  });
+
+  afterEach(async () => {
+    const i18n = await import('../i18n/index.js');
+    const settingsGlobal = globalThis as { __scrumboySettingsLocaleListener?: EventListener };
+    if (settingsGlobal.__scrumboySettingsLocaleListener) {
+      document.removeEventListener('scrumboy:i18n-locale-changed', settingsGlobal.__scrumboySettingsLocaleListener);
+      delete settingsGlobal.__scrumboySettingsLocaleListener;
+    }
+    i18n.resetI18nForTests();
+    document.body.innerHTML = '';
+    window.history.replaceState({}, '', '/');
+  });
+
+  async function tabsFor(options: { role: string; capability: boolean; temporary?: boolean; publicAccess?: boolean }): Promise<string[]> {
+    await initI18nFor('en');
+    const settings = await import('./settings.js');
+    const mutations = await import('../state/mutations.js');
+    const access = await import('../state/board-access.js');
+    mutations.setAuthStatusAvailable(true);
+    mutations.setPushConfigured(false);
+    mutations.setPublicProjectsEnabled(options.capability);
+    mutations.setUser(USER as any);
+    mutations.setSlug('ignite');
+    mutations.setBoard({ project: { id: 5, slug: 'ignite', name: 'Ignite', expiresAt: options.temporary ? '2030-01-01T00:00:00Z' : null }, columns: {}, tags: [] } as any);
+    mutations.setProjects(null);
+    mutations.setProjectId(5);
+    mutations.setBoardMembers([{ userId: 1, role: options.role, name: 'Alex' }] as any);
+    mutations.setBoardAccess(options.publicAccess ? access.PUBLIC_BOARD_ACCESS : { kind: options.temporary ? 'temporary' : 'member' });
+    mutations.setSettingsActiveTab('sharing');
+    await settings.renderSettingsModal();
+    await flushPromises();
+    return Array.from(document.querySelectorAll('[data-tab]')).map((el) => el.getAttribute('data-tab') ?? '');
+  }
+
+  it('shows Sharing to a durable-project Maintainer when the capability is on', async () => {
+    const tabs = await tabsFor({ role: 'maintainer', capability: true });
+    expect(tabs).toContain('sharing');
+    expect(document.querySelector('[data-sharing-root]')).not.toBeNull();
+    expect(apiFetchMock.mock.calls.some((call) => call[0] === '/api/board/ignite/publication')).toBe(true);
+  });
+
+  it.each([
+    ['contributor', { role: 'contributor', capability: true }],
+    ['viewer', { role: 'viewer', capability: true }],
+    ['capability off', { role: 'maintainer', capability: false }],
+    ['temporary board', { role: 'maintainer', capability: true, temporary: true }],
+    ['public read-only visitor', { role: 'maintainer', capability: true, publicAccess: true }],
+  ])('hides Sharing for %s and never requests publication status', async (_label, options) => {
+    const tabs = await tabsFor(options);
+    expect(tabs).not.toContain('sharing');
+    expect(document.querySelector('[data-sharing-root]')).toBeNull();
+    expect(apiFetchMock.mock.calls.some((call) => String(call[0]).includes('/publication'))).toBe(false);
+  });
+});

@@ -36,7 +36,19 @@ function ensureDialog() {
     close.setAttribute('data-i18n-aria-label', 'common.close');
     close.textContent = '✕';
     close.addEventListener('click', () => dialog.close());
-    header.append(title, close);
+    // The story view is modal, so the topbar Sign In is unreachable while it is
+    // open; offer the same action here so a deep link survives sign-in.
+    const signIn = document.createElement('button');
+    signIn.className = 'btn btn--ghost public-todo__sign-in';
+    signIn.type = 'button';
+    signIn.hidden = true;
+    signIn.setAttribute('data-public-todo-sign-in', '');
+    signIn.setAttribute('data-i18n-text', 'auth.signIn.title');
+    signIn.addEventListener('click', () => activeContext?.onSignIn?.());
+    const actions = document.createElement('div');
+    actions.className = 'dialog__header-right';
+    actions.append(signIn, close);
+    header.append(title, actions);
     const body = document.createElement('div');
     body.className = 'todo-dialog__body public-todo__body';
     body.setAttribute('data-public-todo-body', '');
@@ -193,6 +205,11 @@ export async function openPublicTodo(ctx, localId) {
     setLoading(dialog, localId);
     const { close } = parts(dialog);
     close.setAttribute('aria-label', t('common.close'));
+    const signInBtn = dialog.querySelector('[data-public-todo-sign-in]');
+    if (signInBtn) {
+        signInBtn.hidden = !ctx.onSignIn;
+        signInBtn.textContent = t('auth.signIn.title');
+    }
     if (!dialog.open)
         dialog.showModal();
     close.focus();

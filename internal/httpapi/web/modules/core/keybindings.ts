@@ -11,6 +11,7 @@ import { settingsDialog, todoDialog } from "../dom/elements.js";
 import { setProjectsTab } from "../state/mutations.js";
 import { getAuthStatusAvailable, getBoard, getProjectsTab, getRoute, getUser } from "../state/selectors.js";
 import type { RouteName } from "../types.js";
+import { appHomePath } from '../app-home.js';
 
 export const KEYBINDINGS_STORAGE_KEY = "scrumboy.keybindings";
 
@@ -486,11 +487,11 @@ export function executeAction(actionId: KeyActionId): void {
       }
       if (next === 1) {
         persistProjectsTab("projects");
-        navigate("/");
+        navigate(appHomePath());
         return;
       }
       persistProjectsTab("temporary");
-      navigate("/");
+      navigate(appHomePath());
       return;
     }
     case "createProject": {
@@ -516,7 +517,7 @@ export function executeAction(actionId: KeyActionId): void {
         !hasMembersDialogOpen &&
         !isBoardContextMenuOpen()
       ) {
-        navigate("/");
+        navigate(appHomePath());
       }
       return;
     }

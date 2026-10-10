@@ -29,6 +29,7 @@ import { DashboardProject, DashboardSummary, DashboardTodo, DashboardTodosRespon
 import { temporaryBoardsNavLabelKey } from '../nav-labels.js';
 import { bindViewTabsFit } from './view-tabs.js';
 import { publishCompleteDashboardWidgetSnapshot } from '../dashboard-widget-publish.js';
+import { appHomePath } from '../app-home.js';
 
 const BOUND_FLAG = Symbol('bound');
 const DASHBOARD_MOBILE_BREAKPOINT = 767;
@@ -460,7 +461,7 @@ function bindTopNav(): void {
     projectsBtn.addEventListener('click', () => {
       setProjectsTab("projects");
       localStorage.setItem("projectsTab", "projects");
-      navigate('/');
+      navigate(appHomePath());
     });
     (projectsBtn as any)[BOUND_FLAG] = true;
   }
@@ -469,7 +470,7 @@ function bindTopNav(): void {
     temporaryBtn.addEventListener('click', () => {
       setProjectsTab("temporary");
       localStorage.setItem("projectsTab", "temporary");
-      navigate('/');
+      navigate(appHomePath());
     });
     (temporaryBtn as any)[BOUND_FLAG] = true;
   }

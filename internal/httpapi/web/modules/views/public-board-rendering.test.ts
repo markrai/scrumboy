@@ -38,6 +38,7 @@ function view(overrides: Partial<PublicBoardViewModel> = {}): PublicBoardViewMod
     activeMobileTab: 'backlog',
     isMobile: false,
     user: null,
+    canSignIn: false,
     ...overrides,
   };
 }

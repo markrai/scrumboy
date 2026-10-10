@@ -31,6 +31,8 @@ export type PublicBoardViewModel = {
   readonly activeMobileTab: string;
   readonly isMobile: boolean;
   readonly user: User | null;
+  /** Logged-out visitor in Full Mode: offer the existing sign-in flow. */
+  readonly canSignIn: boolean;
 };
 
 function attrI18n(kind: 'text' | 'aria-label' | 'placeholder' | 'title', key: string): string {
@@ -193,6 +195,7 @@ export function buildPublicTopbarHtml(view: PublicBoardViewModel): string {
         <input type="search" id="publicSearchInput" class="search-input" autocomplete="off" value="${escapeHTML(view.query.search)}" placeholder="${escapeHTML(t(placeholderKey))}" aria-label="${escapeHTML(t(placeholderKey))}"${attrI18n('placeholder', placeholderKey)}${attrI18n('aria-label', placeholderKey)} />
         <button class="search-clear" id="publicSearchClear" type="button" aria-label="${clearLabel}" title="${clearLabel}"${attrI18n('aria-label', 'board.actions.clearSearch')}${view.query.search ? '' : ' hidden'}>✕</button>
       </div>
+      ${view.canSignIn ? `<button class="btn btn--ghost public-board__sign-in" type="button" id="publicSignInBtn"${attrI18n('text', 'auth.signIn.title')}>${escapeHTML(t('auth.signIn.title'))}</button>` : ''}
       ${view.user ? renderUserAvatar(view.user) : ''}
     </div>`;
 }

@@ -152,6 +152,14 @@ export function getMermaidNotesEnabled(): boolean {
   return !!current._mermaidNotesEnabled;
 }
 
+export function getPublicProjectsEnabled(): boolean {
+  return !!current._publicProjectsEnabled;
+}
+
+export function getLandingPageEnabled(): boolean {
+  return !!current._landingPageEnabled;
+}
+
 export function getProjectsTab(): string | undefined {
   return current.projectsTab;
 }

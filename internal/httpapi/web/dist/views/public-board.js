@@ -11,7 +11,8 @@
 import { app } from '../dom/elements.js';
 import { t } from '../i18n/index.js';
 import { showToast } from '../utils.js';
-import { getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
+import { getAuthStatusAvailable, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
+import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
 import { fetchPublicBoardSnapshot, fetchPublicLanePage, fetchPublicSprints, isPublicAbort, isPublicNotFound, normalizePublicQuery, publicBoardEventsPath, PublicBoardApiError, PUBLIC_DEFAULT_PAGE_SIZE, PUBLIC_MAX_PAGE_SIZE, samePublicQuery, EMPTY_PUBLIC_QUERY, } from '../public-board-api.js';
@@ -102,6 +103,7 @@ function viewModel(s) {
         activeMobileTab: s.activeMobileTab,
         isMobile: typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT_PX,
         user: getUser(),
+        canSignIn: !getUser() && getAuthStatusAvailable(),
     };
 }
 function isCurrent(s) {
@@ -272,6 +274,10 @@ function bindPageHandlers(s) {
             input?.focus();
             return;
         }
+        if (target.closest('#publicSignInBtn')) {
+            startSignIn();
+            return;
+        }
         if (target.closest('#publicBrandLink')) {
             window.location.assign('/');
         }
@@ -304,6 +310,13 @@ function bindPageHandlers(s) {
             setQuery(s, { ...s.query, search: target.value });
         }, SEARCH_DEBOUNCE_MS);
     });
+}
+/**
+ * Existing sign-in flow; afterwards ordinary member-first resolution runs again
+ * for the same path, filters, and story deep link.
+ */
+function startSignIn() {
+    window.location.assign(signInPath(window.location.pathname + window.location.search));
 }
 // ---- Filters, refresh, pagination ----
 function toggleTag(s, tag) {
@@ -536,6 +549,7 @@ function dialogContext(s) {
         markdownEnabled: getMarkdownNotesEnabled(),
         mermaidEnabled: getMermaidNotesEnabled(),
         onNavigateToStory: (localId) => openStoryFromBoard(s, localId),
+        onSignIn: !getUser() && getAuthStatusAvailable() ? startSignIn : undefined,
         onClosedByUser: () => {
             if (!isCurrent(s))
                 return;

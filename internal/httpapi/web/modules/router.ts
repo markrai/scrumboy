@@ -4,11 +4,13 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
 import { loadUserTheme } from './theme.js';
+import { appHomePath, isWorkspacePath } from './app-home.js';
+import { sanitizePostAuthNext } from './utils.js';
 import { applyWallpaperForAuthContext, loadUserWallpaper } from './wallpaper.js';
 import {
   hydrateVoiceFlowEnabledFromServer,
@@ -64,6 +66,10 @@ type ParsedRoute = {
   openTodoId?: string;
   openTodoSegment?: string;
   token?: string;
+  /** Sign-in route: the requested post-authentication destination. */
+  next?: string | null;
+  /** The request path was the Full Mode workspace alias /_app. */
+  workspaceAlias?: boolean;
 };
 
 let isRouting = false;
@@ -88,7 +94,7 @@ function redirectMissingClientPathToHome(opts?: { next?: string }): void {
   }
   // Preserve a same-origin client path for post-login return (existence-hiding 404s still look identical).
   const preservedNext = opts?.next;
-  history.replaceState({}, "", "/");
+  history.replaceState({}, "", appHomePath());
   if (preservedNext && getUser() == null) {
     renderAuth({
       next: preservedNext,
@@ -137,6 +143,12 @@ function parseRoute(): ParsedRoute {
   const openTodoId = url.searchParams.get("openTodoId") || undefined;
 
   if (path === "/") return { name: "projects" };
+  // /_app is the Full Mode workspace entry. Anonymous Mode keeps its previous
+  // not-found handling for this path.
+  if (isWorkspacePath(path) && getAuthStatusAvailable()) return { name: "projects", workspaceAlias: true };
+  if ((path === "/auth/login" || path === "/auth/login/") && getAuthStatusAvailable()) {
+    return { name: "login", next: url.searchParams.get("next") };
+  }
   if (path === "/dashboard") return { name: "dashboard" };
   if (path === "/auth/reset-password") return { name: "reset-password", token: url.searchParams.get("token") || undefined };
   const tm = path.match(/^\/([a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)\/t\/(\d+)\/?$/);
@@ -232,6 +244,8 @@ async function routeOnceBody(): Promise<void> {
     setWallEnabled(!!(st && st.wallEnabled));
     setMarkdownNotesEnabled(!!(st && st.markdownNotesEnabled));
     setMermaidNotesEnabled(!!(st && st.mermaidNotesEnabled));
+    setPublicProjectsEnabled(!isAnonymousMode && !!(st && st.publicProjectsEnabled));
+    setLandingPageEnabled(!isAnonymousMode && !!(st && st.landingPageEnabled));
     
     // Load full profile (including avatar) when logged in; /api/auth/status omits image to keep it lean
     if (newUser) {
@@ -378,9 +392,37 @@ async function routeOnceBody(): Promise<void> {
   }
 
   let r = parseRoute();
-  // Unmatched client paths rewrite to `/` (main login entry in full mode; marketing root in anonymous mode).
+  // Unmatched client paths rewrite to the workspace home (Full Mode) or `/` (Anonymous Mode).
   if (r.name === "notfound") {
     redirectMissingClientPathToHome();
+    return;
+  }
+  // Canonical workspace entry: with the landing override the workspace lives at
+  // /_app (the server owns / for marketing); without it, /_app aliases to /.
+  if (r.name === "projects") {
+    const wantPath = appHomePath();
+    if (window.location.pathname !== wantPath && (window.location.pathname === "/" || r.workspaceAlias)) {
+      history.replaceState(history.state ?? {}, "", wantPath + window.location.search + window.location.hash);
+    }
+  }
+  if (r.name === "login") {
+    const destination = sanitizePostAuthNext(r.next) === "/" ? appHomePath() : sanitizePostAuthNext(r.next);
+    if (getUser()) {
+      // Already signed in: continue to the destination through ordinary resolution.
+      history.replaceState({}, "", destination);
+      rerouteRequested = true;
+      return;
+    }
+    stopBoardEvents();
+    stopArchiveEvents();
+    stopPublicBoard();
+    setRoute("login");
+    setSlug(null);
+    setProjectId(null);
+    setBoard(null);
+    setBoardAccess(null);
+    lastHandledBoardRoute = null;
+    renderAuth(authOverlayOptions(destination));
     return;
   }
 	const authMethodReturn = new URL(window.location.href).searchParams.get("auth_method");
@@ -423,7 +465,7 @@ async function routeOnceBody(): Promise<void> {
 		if (getLocalAuthEnabled()) {
 			renderResetPassword(r.token);
 		} else {
-			renderAuth({ next: "/", bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
+			renderAuth({ next: appHomePath(), bootstrap: false, oidcEnabled: getOidcEnabled(), mobileOidcEnabled: getMobileOidcEnabled(), localAuthEnabled: false, selfServicePasswordResetEnabled: false });
 		}
     return;
   }

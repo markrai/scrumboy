@@ -27,6 +27,7 @@ import { renderSettingsModal } from '../dialogs/settings.js';
 import { getBoardLimitPerLaneFloor } from '../orchestration/board-refresh.js';
 import { beginBoardPrefetch, takeResolvedPrefetchedBoard } from './board-prefetch-cache.js';
 import { CreateProjectPayload, Project, WorkflowLaneDraft } from '../types.js';
+import { appHomePath } from '../app-home.js';
 
 // Symbol for idempotent listener attachment
 const BOUND_FLAG = Symbol('bound');
@@ -688,7 +689,7 @@ export async function renderProjects(): Promise<void> {
     if (err && err.status === 401) {
       const renderAuth = await getRenderAuth();
       renderAuth({
-        next: "/",
+        next: appHomePath(),
         oidcEnabled: getOidcEnabled(),
         localAuthEnabled: getLocalAuthEnabled(),
         selfServicePasswordResetEnabled: getSelfServicePasswordResetEnabled(),

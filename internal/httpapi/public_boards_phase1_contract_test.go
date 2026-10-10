@@ -19,10 +19,13 @@ func TestPhase1FlagsDoNotChangeRootRouting(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			baseline := NewServer(st, Options{ScrumboyMode: mode})
 			defer baseline.Close(context.Background())
+			// Phase 5 intentionally gives the landing flag a Full Mode root effect
+			// (TestPhase5RootRoutingMatrix). The public-projects flag never changes
+			// root routing, and Anonymous Mode ignores both flags.
 			flagged := NewServer(st, Options{
 				ScrumboyMode:          mode,
 				PublicProjectsEnabled: true,
-				LandingPageEnabled:    true,
+				LandingPageEnabled:    mode == "anonymous",
 			})
 			defer flagged.Close(context.Background())
 

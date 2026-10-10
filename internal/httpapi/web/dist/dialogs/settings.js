@@ -7,7 +7,8 @@ import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWall
 import { CARDS_PER_LANE_ALLOWED, CARDS_PER_LANE_PREFERENCE_KEY, getDefaultCardsPerLane, setDefaultCardsPerLane, invalidateBoard, usePreferenceLimitOnNextBoardRequest, } from '../orchestration/board-refresh.js';
 import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
-import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers, getBoardAccess } from '../state/selectors.js';
+import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers, getBoardAccess, getPublicProjectsEnabled } from '../state/selectors.js';
+import { bindSharingTab, renderSharingTabShell } from './settings-sharing.js';
 import { isPublicBoardAccess } from '../state/board-access.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
 import { renderRealBurndownChart, destroyBurndownChart, mountBurndownChart } from '../charts/burndown.js';
@@ -33,6 +34,7 @@ import { apiErrorMessageOrRaw, getLocale, hydrateI18n, I18N_LOCALE_CHANGED, t } 
 import { bindApiTokensInteractions, invalidateApiTokensCache, renderApiTokensSectionHTML } from './settings-api-tokens.js';
 import { bindSettingsTabsFit, fitSettingsTabsNav } from './settings-tabs-fit.js';
 import { bindPublicLocaleSelect, renderPublicLocaleSelectHTML, syncPublicLocaleSelect } from '../i18n/locale-select.js';
+import { appHomePath } from '../app-home.js';
 export { invalidateTagsCache } from './settings-tags.js';
 /** Active keybinding capture listener (settings customization); removed when starting a new capture or on abort. */
 let keybindingCaptureKeydown = null;
@@ -504,7 +506,7 @@ async function handleDeleteCurrentProject(btn) {
     try {
         settingsDialog?.close();
         const { navigate } = await import("../router.js");
-        navigate("/");
+        navigate(appHomePath());
     }
     catch (err) {
         console.warn("post-delete navigation failed", err);
@@ -1258,6 +1260,13 @@ export async function renderSettingsModal(options) {
         hasProjectAccess &&
         getAuthStatusAvailable() &&
         !isTemporaryBoard;
+    // Publication management: durable-project Maintainers only, and only when the
+    // effective public-projects capability is on. The server re-authorizes every call.
+    const showSharingTab = !!slug &&
+        hasProjectAccess &&
+        myMember?.role === "maintainer" &&
+        !isTemporaryBoard &&
+        getPublicProjectsEnabled();
     // Initialize active tab (default to Profile or Customization if no projects)
     if (!getSettingsActiveTab()) {
         if (showProfileTab) {
@@ -1283,6 +1292,9 @@ export async function renderSettingsModal(options) {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (!showCalendarTab && getSettingsActiveTab() === "calendar") {
+        setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
+    }
+    else if (!showSharingTab && getSettingsActiveTab() === "sharing") {
         setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
     }
     else if (getSettingsActiveTab() === "voiceflow") {
@@ -1793,7 +1805,7 @@ export async function renderSettingsModal(options) {
     if (showPrioritiesTab && getSettingsActiveTab() === "priorities" && slug) {
         prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
     }
-    const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCalendarTab || showChartsTab;
+    const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCalendarTab || showChartsTab || showSharingTab;
     const boardTabsHTML = showBoardTabRow
         ? `<div class="settings-tabs settings-tabs--board">
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
@@ -1801,6 +1813,7 @@ export async function renderSettingsModal(options) {
       ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
       ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
+      ${showSharingTab ? `<button class="settings-tab ${activeSettingsTab === "sharing" ? "settings-tab--active" : ""}" data-tab="sharing" data-i18n-text="settings.tabs.sharing">${escapeHTML(t("settings.tabs.sharing"))}</button>` : ``}
     </div>`
         : "";
     destroyBurndownChart();
@@ -1816,7 +1829,7 @@ export async function renderSettingsModal(options) {
       </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : ""}
     </div>
   `;
     if (!dialogWasOpen) {
@@ -1901,6 +1914,9 @@ export async function renderSettingsModal(options) {
         }, 0);
     }
     const settingsDlg = settingsDialog;
+    if (getSettingsActiveTab() === "sharing" && showSharingTab && slug) {
+        bindSharingTab({ slug, signal });
+    }
     if (getSettingsActiveTab() === "workflow") {
         bindWorkflowTabInteractions({
             signal,

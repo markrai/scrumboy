@@ -125,3 +125,44 @@ func TestPublicationServiceRevokesSynchronouslyOnlyAfterChangedDisable(t *testin
 		})
 	}
 }
+
+type publicationStatusFake struct {
+	calls  int
+	actor  int64
+	result store.ProjectPublicationStatus
+}
+
+func (f *publicationStatusFake) GetProjectPublicationStatus(ctx context.Context, projectID, actorUserID int64) (store.ProjectPublicationStatus, error) {
+	f.calls++
+	f.actor = actorUserID
+	return f.result, nil
+}
+
+func TestPublicationServiceGetPublicationGatesAndDelegates(t *testing.T) {
+	ctx := store.WithUserID(context.Background(), 7)
+	for _, tc := range []struct {
+		name    string
+		mode    store.Mode
+		enabled bool
+		ctx     context.Context
+		want    error
+	}{
+		{name: "anonymous mode", mode: store.ModeAnonymous, enabled: true, ctx: ctx, want: ErrPublicationCapabilityDisabled},
+		{name: "operator gate off", mode: store.ModeFull, enabled: false, ctx: ctx, want: ErrPublicationCapabilityDisabled},
+		{name: "no actor", mode: store.ModeFull, enabled: true, ctx: context.Background(), want: ErrActorRequired},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &publicationStatusFake{}
+			service := NewPublicationService(PublicationServiceOptions{Status: fake, Mode: tc.mode, PublicProjectsEnabled: tc.enabled})
+			if _, err := service.GetPublication(tc.ctx, 9); !errors.Is(err, tc.want) || fake.calls != 0 {
+				t.Fatalf("err=%v calls=%d", err, fake.calls)
+			}
+		})
+	}
+	fake := &publicationStatusFake{result: store.ProjectPublicationStatus{ProjectID: 9, Slug: "ignite", Enabled: true, Publishable: true}}
+	service := NewPublicationService(PublicationServiceOptions{Status: fake, Mode: store.ModeFull, PublicProjectsEnabled: true})
+	got, err := service.GetPublication(ctx, 9)
+	if err != nil || fake.calls != 1 || fake.actor != 7 || !got.Enabled || !got.Publishable || got.Slug != "ignite" {
+		t.Fatalf("got=%+v err=%v calls=%d actor=%d", got, err, fake.calls, fake.actor)
+	}
+}

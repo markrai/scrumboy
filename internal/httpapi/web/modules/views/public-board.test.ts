@@ -14,7 +14,7 @@ vi.mock('../i18n/index.js', async (importOriginal) => ({
 
 import { installAppRuntime, resetAppRuntimeForTests, type AppRuntime } from '../platform/runtime.js';
 import type { ServerEventStream, ServerTransport } from '../platform/server-transport.js';
-import { setBoard, setBoardAccess, setProjectId, setSlug, setUser } from '../state/mutations.js';
+import { setAuthStatusAvailable, setBoard, setBoardAccess, setProjectId, setSlug, setUser } from '../state/mutations.js';
 import { getBoard, getBoardAccess, getProjectId } from '../state/selectors.js';
 import {
   applyPublicBoardRoute,
@@ -633,5 +633,75 @@ describe('public board sprint vocabulary and filter failures', () => {
     await refreshViaStream();
     expect(cards()).toHaveLength(1);
     expect(appEl.querySelector('[data-public-filter-error]')).toBeNull();
+  });
+});
+
+describe('public board sign-in affordance', () => {
+  beforeEach(() => {
+    resetAppRuntimeForTests();
+    handler = defaultHandler;
+    installTransport();
+    appEl.innerHTML = '';
+    document.body.replaceChildren(appEl, toastEl);
+    setBoard(null);
+    setProjectId(null);
+    setBoardAccess(null);
+    setSlug('ignite');
+  });
+
+  afterEach(() => {
+    stopPublicBoard();
+    setAuthStatusAvailable(false);
+    setUser(null);
+    vi.restoreAllMocks();
+    resetAppRuntimeForTests();
+  });
+
+  it('offers Sign In to a logged-out Full Mode visitor and returns to the exact deep link and filters', async () => {
+    setAuthStatusAvailable(true);
+    setUser(null);
+    history.replaceState({}, '', '/ignite/t/7?tag=api&priority=high');
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
+    await settle();
+    const button = appEl.querySelector<HTMLButtonElement>('#publicSignInBtn');
+    expect(button?.type).toBe('button');
+    button!.click();
+    expect(assign).toHaveBeenCalledWith('/auth/login?next=' + encodeURIComponent('/ignite/t/7?tag=api&priority=high'));
+    expect(requests.every((p) => p.startsWith('/api/public/board/ignite'))).toBe(true);
+  });
+
+  it('offers Sign In inside an open story so the deep link survives sign-in', async () => {
+    setAuthStatusAvailable(true);
+    setUser(null);
+    history.replaceState({}, '', '/ignite/t/7?tag=api');
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    await resolvePublicBoard({ slug: 'ignite', openTodoSegment: '7' });
+    await settle();
+    const dialog = document.getElementById('publicTodoDialog') as HTMLDialogElement;
+    expect(dialog.open).toBe(true);
+    const signIn = dialog.querySelector<HTMLButtonElement>('[data-public-todo-sign-in]')!;
+    expect(signIn.hidden).toBe(false);
+    signIn.click();
+    expect(assign).toHaveBeenCalledWith('/auth/login?next=' + encodeURIComponent('/ignite/t/7?tag=api'));
+  });
+
+  it('does not offer Sign In to a signed-in nonmember or in Anonymous Mode', async () => {
+    setAuthStatusAvailable(true);
+    setUser({ id: 9, name: 'Nonmember', email: 'n@example.test' } as any);
+    await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
+    await settle();
+    expect(appEl.querySelector('#publicSignInBtn')).toBeNull();
+    stopPublicBoard();
+    await resolvePublicBoard({ slug: 'ignite', openTodoSegment: '7' });
+    await settle();
+    expect((document.querySelector('[data-public-todo-sign-in]') as HTMLButtonElement).hidden).toBe(true);
+    stopPublicBoard();
+
+    setAuthStatusAvailable(false);
+    setUser(null);
+    await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
+    await settle();
+    expect(appEl.querySelector('#publicSignInBtn')).toBeNull();
   });
 });
