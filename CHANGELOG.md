@@ -2,6 +2,30 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.38.2] - 2026-10-10
+
+### Changed
+
+- **Public board tag colors** - Tags on published boards that have no shared
+  color now get a deterministic color from a curated 12-color palette, keyed
+  by the tag's canonical name (FNV-1a over `TagGroupKey`), instead of a single
+  gray. Equivalent legacy spellings (e.g. `make space` / `make-space`) share a
+  color. Valid shared tag colors are preserved exactly, and personal
+  `user_tag_colors` preferences are still never read or exposed. Snapshot,
+  lane pagination, and story detail resolve colors identically. No API field,
+  schema, authenticated-board, or anonymous-board change.
+- **Public board tag contrast** - Public story-card and story-detail tags keep
+  their palette border and tint but render text in the theme foreground
+  (`--text`) for readable contrast in light and dark themes. Filter chips and
+  priority badges are unchanged; member boards are unaffected.
+
+### Fixed
+
+- **Public projection privacy test** - Personal-color fixtures are now
+  inserted with separate statements; the previous multi-statement insert
+  silently skipped the `user_tag_colors` row, so the leak check was not
+  exercised.
+
 ## [3.38.1] - 2026-10-10
 
 ### Changed
