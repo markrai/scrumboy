@@ -27,33 +27,13 @@ function host(html: string): HTMLElement {
 }
 
 describe('shared filter panel markup', () => {
-  it('builds member sprint options with Scheduled/Unscheduled, duplicate-name labels, and ID de-duplication', () => {
-    const options = buildSprintFilterOptions([
-      { id: 10, number: 1, name: 'Alpha', state: 'CLOSED' },
-      { id: 11, number: 2, name: 'Alpha', state: 'ACTIVE' },
-      { id: 11, number: 2, name: 'Alpha', state: 'ACTIVE' },
-      { id: 12, number: 3, name: 'Beta', state: 'PLANNED' },
-    ], { includeScheduled: true, identity: (s) => s.id });
-    expect(options.map((o) => [o.value, o.label])).toEqual([
-      ['', 'board.filters.allSprints'],
-      ['scheduled', 'board.filters.scheduled'],
-      ['unscheduled', 'board.filters.unscheduled'],
-      ['1', 'Alpha (1)'],
-      ['2', 'Alpha (2)'],
-      ['3', 'Beta'],
+  it('builds only Scheduled and Unscheduled sprint options', () => {
+    const options = buildSprintFilterOptions();
+    expect(options.map((o) => [o.value, o.label, o.i18nKey])).toEqual([
+      ['scheduled', 'board.filters.scheduled', 'board.filters.scheduled'],
+      ['unscheduled', 'board.filters.unscheduled', 'board.filters.unscheduled'],
     ]);
-    expect(options.slice(3).map((o) => o.sprintState)).toEqual(['CLOSED', 'ACTIVE', 'PLANNED']);
-  });
-
-  it('builds public sprint options keyed by number, without inventing IDs or Scheduled/Unscheduled', () => {
-    const options = buildSprintFilterOptions([
-      { number: 4, name: 'Four', state: 'ACTIVE' },
-      { number: 4, name: 'Four', state: 'ACTIVE' },
-      { number: 5, name: 'Five', state: 'PLANNED' },
-    ], { includeScheduled: false, identity: (s) => s.number });
-    // Duplicate entries for one number count toward the name collision, as on the member board.
-    expect(options.map((o) => o.value)).toEqual(['', '4', '5']);
-    expect(options.map((o) => o.label)).toEqual(['board.filters.allSprints', 'Four (4)', 'Five']);
+    expect(options.some((o) => o.value === '' || o.i18nKey === 'board.filters.allSprints')).toBe(false);
   });
 
   it('builds priority options with and without No Priority', () => {
@@ -130,7 +110,7 @@ describe('shared filter panel module boundaries', () => {
 });
 
 describe('member filter panel through the shared markup', () => {
-  it('keeps the member sprint section, ids, and option attributes', () => {
+  it('keeps the member sprint section, ids, and option attributes with only Scheduled/Unscheduled', () => {
     const root = host(buildSprintFilterSectionHtml('assigned', {
       sprints: [
         { id: 1, number: 1, name: 'Dup', state: 'CLOSED' },
@@ -140,16 +120,35 @@ describe('member filter panel through the shared markup', () => {
     }));
     const section = root.querySelector('[data-sprint-filter-section]')!;
     expect(Array.from(section.querySelectorAll('[data-sprint-option]')).map((o) => [o.getAttribute('data-sprint-option'), o.textContent])).toEqual([
-      ['', 'board.filters.allSprints'],
       ['scheduled', 'board.filters.scheduled'],
       ['unscheduled', 'board.filters.unscheduled'],
-      ['1', 'Dup (1)'],
-      ['2', 'Dup (2)'],
     ]);
     // Legacy "assigned" still selects Scheduled.
     expect(section.querySelector('.is-active')?.getAttribute('data-sprint-option')).toBe('scheduled');
-    expect(section.querySelector('[data-sprint-option="1"]')?.classList.contains('search-filter-option--closed-sprint')).toBe(true);
     expect(section.querySelector('[aria-pressed], [data-public-sprint-option]')).toBeNull();
+  });
+
+  it('omits the member sprint section without sprints unless a sprint filter is active', () => {
+    expect(buildSprintFilterSectionHtml(null, null)).toBe('');
+    expect(buildSprintFilterSectionHtml(null, { sprints: [] })).toBe('');
+    const root = host(buildSprintFilterSectionHtml('unscheduled', { sprints: [] }));
+    expect(root.querySelector('[data-sprint-option="unscheduled"]')?.classList.contains('is-active')).toBe(true);
+  });
+
+  it('shows a numeric sprint deep link as one selected, state-styled option', () => {
+    const sprints = Array.from({ length: 3 }, (_, i) => ({ id: 100 + i, number: i + 1, name: `S${i + 1}`, state: i === 1 ? 'CLOSED' : 'PLANNED' }));
+    const known = host(buildSprintFilterSectionHtml('2', { sprints }));
+    expect(Array.from(known.querySelectorAll('[data-sprint-option]')).map((o) => [o.getAttribute('data-sprint-option'), o.textContent])).toEqual([
+      ['scheduled', 'board.filters.scheduled'],
+      ['unscheduled', 'board.filters.unscheduled'],
+      ['2', 'S2'],
+    ]);
+    const option = known.querySelector('[data-sprint-option="2"]')!;
+    expect(option.classList.contains('is-active')).toBe(true);
+    expect(option.classList.contains('search-filter-option--closed-sprint')).toBe(true);
+    // Not yet loaded (or unknown): still visible and clearable by number.
+    const pending = host(buildSprintFilterSectionHtml('9', null));
+    expect(pending.querySelector('[data-sprint-option="9"]')?.textContent).toBe('#9');
   });
 
   it('keeps assignee, sort, and priority (with No Priority) under the member ids', () => {

@@ -21,6 +21,7 @@ import {
   buildChipsHTML,
   getCombinedChipData,
   isBoardFilterActive,
+  normalizeSprintFilterValue,
   type ChipData,
   type SprintChipData,
 } from './board-rendering.js';
@@ -424,7 +425,9 @@ function handleFilterPanelDocumentClick(e: MouseEvent): void {
         : kind === "priority"
           ? "data-priority-option"
           : "data-sprint-option";
-    const value = optionEl.getAttribute(attr) || null;
+    let value = optionEl.getAttribute(attr) || null;
+    // Picking the already selected sprint option clears the sprint filter.
+    if (kind === "sprint" && value === normalizeSprintFilterValue(getSprintIdFromUrl())) value = null;
     const label = optionEl.textContent?.trim() || "";
 
     if (kind === "assignee") {
@@ -441,9 +444,8 @@ function handleFilterPanelDocumentClick(e: MouseEvent): void {
       panel.querySelectorAll("[data-priority-option]").forEach((el) => el.classList.remove("is-active"));
     } else {
       setSprintParam(value);
-      panel.querySelectorAll("[data-sprint-option]").forEach((el) => el.classList.remove("is-active"));
     }
-    optionEl.classList.add("is-active");
+    if (kind !== "sprint") optionEl.classList.add("is-active");
 
     if (value) {
       showToast(t(kind === "sort" ? "board.filters.sortedBy" : "board.filters.filteringOn", { value: label }));
@@ -451,6 +453,7 @@ function handleFilterPanelDocumentClick(e: MouseEvent): void {
 
     updateFilterToggleActiveState(toggle);
     closeFilterPopover(panel, toggle);
+    if (kind === "sprint") syncSprintFilterSection(getBoard(), value);
 
     reloadBoardFn?.(
       getSlug(),
@@ -684,14 +687,41 @@ export function clearSprintChipData(): void {
   lastSprintsDataSlug = null;
 }
 
+/**
+ * Inserts, replaces, or removes the Omni Sprint section so it follows the
+ * loaded sprint collection and the active sprint filter, leaving the rest of
+ * the popover (other sections, toggle, search input) untouched. A focused
+ * sprint option keeps focus when it still exists after the update.
+ */
+function syncSprintFilterSection(board: Board | null, sprintId: string | null): void {
+  const panel = document.getElementById("searchFilterPanel");
+  if (!panel) return;
+  const html = boardSprintsEnabled(board) ? buildSprintFilterSectionHtml(sprintId, getSprintChipDataForSlug(getSlug())) : "";
+  const existing = panel.querySelector("[data-sprint-filter-section]");
+  const active = document.activeElement;
+  const focusedValue = existing && active instanceof HTMLElement && existing.contains(active)
+    ? active.getAttribute("data-sprint-option")
+    : null;
+  if (existing && html) existing.outerHTML = html;
+  else if (existing) existing.remove();
+  else if (html) panel.insertAdjacentHTML("afterbegin", html);
+  else return;
+  const toggle = document.getElementById("searchFilterToggle");
+  if (focusedValue !== null) {
+    const same = panel.hidden
+      ? null
+      : Array.from(panel.querySelectorAll<HTMLElement>("[data-sprint-option]"))
+        .find((el) => el.getAttribute("data-sprint-option") === focusedValue);
+    (same ?? toggle)?.focus();
+  }
+  if (!panel.hidden && toggle) positionFilterPopover(panel, toggle);
+}
+
 export function updateChipsOnly(sprintId: string | null): void {
   const board = getBoard();
   if (!board) return;
   if (getBoardFilterLayoutPreference() === 'omni') {
-    const section = document.querySelector('[data-sprint-filter-section]');
-    if (section && boardSprintsEnabled(board)) {
-      section.outerHTML = buildSprintFilterSectionHtml(sprintId, lastSprintsData);
-    }
+    syncSprintFilterSection(board, sprintId);
     const toggle = document.getElementById('searchFilterToggle');
     if (toggle) updateFilterToggleActiveState(toggle);
     return;

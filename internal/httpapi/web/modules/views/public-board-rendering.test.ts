@@ -185,7 +185,7 @@ describe('public board rendering', () => {
     expect(topbar.querySelector('.public-board-badge')).not.toBeNull();
     expect(topbar.querySelector('#publicSearchInput')).not.toBeNull();
     expect(topbar.querySelector('#publicSignInBtn')).not.toBeNull();
-    // Mobile keeps the sprint/priority popover inside the search control.
+    // Mobile keeps the priority popover inside the search control.
     const mobile = render(view({ isMobile: true }));
     const wrapper = mobile.querySelector('.topbar .search-input-wrapper')!;
     expect(wrapper.querySelector('#publicSearchInput')).not.toBeNull();
@@ -194,58 +194,93 @@ describe('public board rendering', () => {
     expect(mobile.querySelector('.public-board-badge')).not.toBeNull();
   });
 
-  it('offers only supported filters: text, tags, numbered sprints, named priorities', () => {
+  it('offers only supported filters: text, tags, named priorities; never a Sprint section', () => {
     const root = render(view());
     expect(root.querySelector('#publicSearchInput')).not.toBeNull();
     expect(root.querySelector('[data-public-omni]')).not.toBeNull();
-    const sprintOptions = Array.from(root.querySelectorAll('[data-public-sprint-option]'));
-    expect(sprintOptions.map((o) => o.getAttribute('data-public-sprint-option'))).toEqual(['', '2']);
-    expect(sprintOptions[1].textContent).toBe(hostile);
     const priorityOptions = Array.from(root.querySelectorAll('[data-public-priority-option]'));
     expect(priorityOptions.map((o) => o.getAttribute('data-public-priority-option'))).toEqual(['', 'p"x']);
     expect(priorityOptions[1].textContent).toBe(hostile);
     expect(priorityOptions[1].getAttribute('style')).toContain('border-color: #ff0000');
+    const panel = root.querySelector('#publicFilterPanel')!;
+    expect(panel.querySelectorAll('.search-filter-panel__section')).toHaveLength(1);
+    expect(panel.textContent).not.toContain('board.filters.sprint');
     // No member-only values, controls, or the member panel's hooks.
     expect(root.innerHTML).not.toContain('scheduled');
     expect(root.innerHTML).not.toContain('**none**');
     expect(root.querySelector([
       '[data-sort-option]', '[data-assignee-option]', '[data-sprint-option]', '[data-priority-option]',
+      '[data-public-sprint-option]', '[data-public-sprint-section]',
       '#assigneeFilter', '#searchFilterToggle', '#searchFilterPanel', '#searchInput', 'select',
       '#publicSprintFilter', '#publicPriorityFilter', '.public-board-filter',
     ].join(', '))).toBeNull();
   });
 
-  it('marks the selected sprint and priority as active and pulses the toggle', () => {
+  it('never renders a Sprint section for zero, one, or many sprints, signed in or not', () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ number: i + 1, name: `Sprint ${i + 1}`, state: 'PLANNED' }));
+    const user = { id: 7, name: 'Visitor', email: 'v@example.com' } as PublicBoardViewModel['user'];
+    const panels = [[], many.slice(0, 1), many].flatMap((sprints) => [
+      render(view({ sprints, user: null, canSignIn: true })),
+      render(view({ sprints, user, canSignIn: false })),
+    ]).map((root) => root.querySelector('#publicFilterPanel')!.innerHTML);
+    for (const html of panels) {
+      expect(html).not.toContain('board.filters.sprint');
+      expect(html).not.toContain('sprint-option');
+      expect(html).toBe(panels[0]);
+    }
+  });
+
+  it('marks the selected priority as active and pulses the toggle only for priority', () => {
     const idle = render(view());
     expect(idle.querySelector('#publicFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(false);
-    expect(idle.querySelector('[data-public-sprint-option=""]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(idle.querySelector('[data-public-priority-option=""]')?.getAttribute('aria-pressed')).toBe('true');
+
+    // A sprint deep link is shown as a pinned pill, not as a popover filter.
+    const sprintOnly = render(view({ query: { ...EMPTY_PUBLIC_QUERY, sprintNumber: 2 } }));
+    expect(sprintOnly.querySelector('#publicFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(false);
 
     const root = render(view({ query: { ...EMPTY_PUBLIC_QUERY, sprintNumber: 2, priority: 'p"x' } }));
     const toggle = root.querySelector('#publicFilterToggle')!;
     expect(toggle.classList.contains('search-filter-toggle--active')).toBe(true);
     expect(toggle.getAttribute('aria-controls')).toBe('publicFilterPanel');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    const sprint = root.querySelector('[data-public-sprint-option="2"]')!;
-    expect(sprint.classList.contains('is-active')).toBe(true);
-    expect(sprint.classList.contains('search-filter-option--active-sprint')).toBe(true);
-    expect(sprint.getAttribute('aria-pressed')).toBe('true');
-    expect(root.querySelector('[data-public-sprint-option=""]')?.getAttribute('aria-pressed')).toBe('false');
     const priority = Array.from(root.querySelectorAll('[data-public-priority-option]')).find((o) => o.getAttribute('data-public-priority-option') === 'p"x')!;
     expect(priority.classList.contains('is-active')).toBe(true);
     expect(priority.getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelector('[data-public-priority-option=""]')?.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('omits empty sections and hides the toggle when no sprint or priority filter applies', () => {
+  it('hides the toggle when the board has no priority tiers, whatever the sprints', () => {
     const base = view();
-    const noSprints = render({ ...base, sprints: [] });
-    expect(noSprints.querySelector('[data-public-sprint-section]')).toBeNull();
-    expect(noSprints.querySelector('[data-public-priority-section]')).not.toBeNull();
+    const noTiers = { ...base.snapshot, priorities: [] };
+    for (const sprintsEnabled of [true, false]) {
+      const none = render({ ...base, snapshot: { ...noTiers, project: { ...noTiers.project, sprintsEnabled } } });
+      expect(none.querySelector('[data-public-priority-option], .search-filter-panel__section')).toBeNull();
+      expect(none.querySelector<HTMLButtonElement>('#publicFilterToggle')?.hidden).toBe(true);
+      expect(none.querySelector('#publicSearchInput')).not.toBeNull();
+    }
+  });
 
-    const disabled = { ...base.snapshot, project: { ...base.snapshot.project, sprintsEnabled: false }, priorities: [] };
-    const none = render({ ...base, snapshot: disabled });
-    expect(none.querySelector('[data-public-sprint-option], [data-public-priority-option]')).toBeNull();
-    expect(none.querySelector<HTMLButtonElement>('#publicFilterToggle')?.hidden).toBe(true);
-    expect(none.querySelector('#publicSearchInput')).not.toBeNull();
+  it('pins a removable, escaped pill for a sprint-number deep link ahead of tag pills', () => {
+    const tags = [{ name: 'blue', color: '#3b82f6', activeCount: 1 }];
+    const without = buildPublicOmniContent({ tags, selected: [], input: '' });
+    expect(without.pinnedHtml).not.toContain('data-public-clear-sprint');
+    expect(without.hasPins).toBe(false);
+
+    const content = buildPublicOmniContent({ tags, selected: ['blue'], input: '', sprintLabel: hostile });
+    expect(content.hasPins).toBe(true);
+    const root = document.createElement('div');
+    root.innerHTML = content.pinnedHtml;
+    expect(root.querySelector('img, script')).toBeNull();
+    const pills = root.querySelectorAll('.omni-tag-pill--applied');
+    expect(pills).toHaveLength(2);
+    expect(pills[0].textContent).toContain(`board.filters.sprint: ${hostile}`);
+    const clear = pills[0].querySelector('[data-public-clear-sprint]')!;
+    expect(clear.getAttribute('aria-label')).toBe('board.filters.allSprints');
+    expect(clear.hasAttribute('data-public-omni-clear-tag')).toBe(false);
+    expect(pills[1].querySelector('[data-public-omni-clear-tag="blue"]')).not.toBeNull();
+    // Mobile shows the same pinned sprint pill.
+    expect(content.mobileHtml.startsWith(content.pinnedHtml)).toBe(true);
   });
 
   it('renders loading, error, exhausted, and empty states', () => {

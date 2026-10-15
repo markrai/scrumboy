@@ -22,6 +22,8 @@ export type PublicOmniState = {
   readonly selected: readonly string[];
   /** The live search input value, which may run ahead of the debounced query. */
   readonly input: string;
+  /** Label of an active sprint-number deep link, pinned so it can be cleared. */
+  readonly sprintLabel?: string | null;
 };
 
 export type PublicOmniController = {

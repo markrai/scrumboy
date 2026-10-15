@@ -8,8 +8,8 @@
  */
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
-import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, buildSprintFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
-import { buildOmniBarHtml, buildOmniRowContent, compareOmniTagNames, matchOmniTagCandidates, rankOmniBrowseCandidates, } from './omni-tags.js';
+import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
+import { buildOmniAppliedPillHtml, buildOmniBarHtml, buildOmniRowContent, compareOmniTagNames, matchOmniTagCandidates, rankOmniBrowseCandidates, } from './omni-tags.js';
 import { renderStoryCardContentHtml } from './story-card-content.js';
 import { PUBLIC_MAX_TAG_FILTERS } from '../public-board-api.js';
 function attrI18n(kind, key) {
@@ -105,6 +105,8 @@ export const PUBLIC_OMNI_IDS = Object.freeze({
 });
 export const PUBLIC_OMNI_TAG_ATTR = 'data-public-omni-tag';
 export const PUBLIC_OMNI_CLEAR_ATTR = 'data-public-omni-clear-tag';
+/** Clear button of the pinned pill shown for a sprint-number deep link. */
+export const PUBLIC_CLEAR_SPRINT_ATTR = 'data-public-clear-sprint';
 /**
  * Stable Omni shell for the public tag filter. Rendered once per page; only its
  * pinned, candidate, and mobile regions are updated afterwards.
@@ -134,7 +136,7 @@ export function buildPublicOmniContent(args) {
     const candidates = browse
         ? rankOmniBrowseCandidates(selectable, args.selected, PUBLIC_MAX_TAG_FILTERS, comparePublicBrowseTags)
         : matchOmniTagCandidates(args.input, selectable, args.selected, PUBLIC_MAX_TAG_FILTERS);
-    return buildOmniRowContent({
+    const content = buildOmniRowContent({
         applied: args.selected.map((name) => ({ name, color: byName.get(name.toLocaleLowerCase())?.color ?? null })),
         candidates,
         browse,
@@ -142,46 +144,40 @@ export function buildPublicOmniContent(args) {
         tone: 'theme',
         clearLabel: (name) => t('board.filters.clearTag', { name }),
     });
+    if (!args.sprintLabel)
+        return content;
+    // Clearing returns the board to all sprints; the attribute value is not read.
+    const sprintPill = buildOmniAppliedPillHtml({ name: `${t('board.filters.sprint')}: ${args.sprintLabel}`, color: null }, { clearAttr: PUBLIC_CLEAR_SPRINT_ATTR, clearLabel: t('board.filters.allSprints'), tone: 'theme' });
+    return {
+        ...content,
+        pinnedHtml: sprintPill + content.pinnedHtml,
+        mobileHtml: sprintPill + content.mobileHtml,
+        hasPins: true,
+    };
 }
 /** Public filter popover ids and option attributes, distinct from the member panel's. */
 export const PUBLIC_FILTER_TOGGLE_ID = 'publicFilterToggle';
 export const PUBLIC_FILTER_PANEL_ID = 'publicFilterPanel';
-export const PUBLIC_SPRINT_OPTION_ATTR = 'data-public-sprint-option';
 export const PUBLIC_PRIORITY_OPTION_ATTR = 'data-public-priority-option';
 /**
- * Sprint and priority sections of the public filter popover. Only what the
- * public API supports: All plus numbered sprints, All plus named priority
- * tiers. Never Scheduled/Unscheduled, No Priority, assignee, or sort.
- * Returns '' when the board offers neither filter.
+ * The public filter popover offers only Priority: All plus named priority
+ * tiers. Never Sprint, Scheduled/Unscheduled, No Priority, assignee, or sort.
+ * A sprint-number deep link is shown as a pinned Omni pill instead.
+ * Returns '' when the board has no priority tiers.
  */
 export function buildPublicFilterSectionsHtml(view) {
-    let html = '';
-    if (view.snapshot.project.sprintsEnabled && view.sprints.length > 0) {
-        const options = buildSprintFilterOptions(view.sprints, {
-            includeScheduled: false,
-            // Public sprints carry no internal ID; the number is their project-local identity.
-            identity: (sprint) => sprint.number,
-        });
-        const current = view.query.sprintNumber == null ? '' : String(view.query.sprintNumber);
-        html += buildFilterPanelSectionHtml({
-            labelKey: 'board.filters.sprint',
-            optionsHtml: renderFilterOptionsHtml(options, current, { attr: PUBLIC_SPRINT_OPTION_ATTR, ariaPressed: true }),
-            sectionAttr: 'data-public-sprint-section',
-        });
-    }
-    if (view.snapshot.priorities.length > 0) {
-        const options = buildPriorityFilterOptions(view.snapshot.priorities, { includeNoPriority: false });
-        html += buildFilterPanelSectionHtml({
-            labelKey: 'board.filters.priority',
-            optionsHtml: renderFilterOptionsHtml(options, view.query.priority ?? '', { attr: PUBLIC_PRIORITY_OPTION_ATTR, ariaPressed: true }),
-            sectionAttr: 'data-public-priority-section',
-        });
-    }
-    return html;
+    if (view.snapshot.priorities.length === 0)
+        return '';
+    const options = buildPriorityFilterOptions(view.snapshot.priorities, { includeNoPriority: false });
+    return buildFilterPanelSectionHtml({
+        labelKey: 'board.filters.priority',
+        optionsHtml: renderFilterOptionsHtml(options, view.query.priority ?? '', { attr: PUBLIC_PRIORITY_OPTION_ATTR, ariaPressed: true }),
+        sectionAttr: 'data-public-priority-section',
+    });
 }
-/** Drives the toggle's active pulse: a sprint or priority filter narrows the board. */
+/** Drives the toggle's active pulse: a priority filter narrows the board. */
 export function isPublicPanelFilterActive(query) {
-    return query.sprintNumber != null || !!query.priority;
+    return !!query.priority;
 }
 export function buildPublicTopbarHtml(view) {
     const placeholderKey = view.isMobile ? 'board.search.placeholder.mobile' : 'board.search.placeholder.desktop';

@@ -24,41 +24,18 @@ export type FilterOption = {
   readonly sprintState?: string;
 };
 
-export type SprintOptionSource = { readonly number: number; readonly name: string; readonly state?: string };
-
 export type PriorityOptionSource = { readonly key: string; readonly name: string; readonly color?: string | null };
 
 /**
- * Sprint options: All, optionally Scheduled/Unscheduled, then one option per
- * sprint keyed by sprint number. Sprints whose names collide get a
- * "Name (number)" label. `identity` names the sprint's unique key for
- * de-duplication explicitly: member sprints use their internal ID, public
- * sprints (which carry no internal ID) use their project-local number.
+ * The standard sprint options of the member Omni popover: Scheduled and
+ * Unscheduled only. Named sprints are not listed; a numeric sprint deep link
+ * is surfaced contextually by the caller.
  */
-export function buildSprintFilterOptions<S extends SprintOptionSource>(
-  sprints: readonly S[],
-  opts: { includeScheduled: boolean; identity: (sprint: S) => number | string },
-): FilterOption[] {
-  const out: FilterOption[] = [
-    { value: '', label: t('board.filters.allSprints'), i18nKey: 'board.filters.allSprints' },
+export function buildSprintFilterOptions(): FilterOption[] {
+  return [
+    { value: 'scheduled', label: t('board.filters.scheduled'), i18nKey: 'board.filters.scheduled' },
+    { value: 'unscheduled', label: t('board.filters.unscheduled'), i18nKey: 'board.filters.unscheduled' },
   ];
-  if (opts.includeScheduled) {
-    out.push(
-      { value: 'scheduled', label: t('board.filters.scheduled'), i18nKey: 'board.filters.scheduled' },
-      { value: 'unscheduled', label: t('board.filters.unscheduled'), i18nKey: 'board.filters.unscheduled' },
-    );
-  }
-  const nameCount = new Map<string, number>();
-  for (const sprint of sprints) nameCount.set(sprint.name, (nameCount.get(sprint.name) ?? 0) + 1);
-  const seen = new Set<number | string>();
-  for (const sprint of sprints) {
-    const key = opts.identity(sprint);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const label = (nameCount.get(sprint.name) ?? 0) > 1 ? `${sprint.name} (${sprint.number})` : sprint.name;
-    out.push({ value: String(sprint.number), label, sprintState: sprint.state ?? '' });
-  }
-  return out;
 }
 
 /** Priority options: All, optionally No Priority, then each named tier. */

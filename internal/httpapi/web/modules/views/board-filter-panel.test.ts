@@ -132,6 +132,7 @@ describe('board filter panel (assignee + sort)', () => {
     selectorState.tag = '';
     selectorState.search = '';
     selectorState.user = { id: 1, name: 'Me', email: 'me@example.com' };
+    (await import('./board-filters.js')).clearSprintChipData();
   });
 
   describe('buildFilterPanelHtml', () => {
@@ -154,24 +155,46 @@ describe('board filter panel (assignee + sort)', () => {
       expect(html).toContain('data-sort-option="due"');
     });
 
-    it('renders Sprint controls only for Omni boards with sprints enabled', () => {
+    it('renders the Omni Sprint section only when the project has sprints', () => {
+      const sprint = { id: 12, number: 3, name: 'Sprint 3', state: 'ACTIVE' };
+      const panel = (options: Parameters<typeof buildFilterPanelHtml>[6]) =>
+        buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), options);
+
+      // Sprints disabled.
+      expect(panel({ layout: 'omni', sprintsEnabled: false, sprintData: { sprints: [sprint] } })).not.toContain('data-sprint-filter-section');
+      // Enabled, but none created (or not loaded yet).
+      expect(panel({ layout: 'omni', sprintsEnabled: true, sprintData: null })).not.toContain('data-sprint-filter-section');
+      expect(panel({ layout: 'omni', sprintsEnabled: true, sprintData: { sprints: [] } })).not.toContain('data-sprint-filter-section');
+      // Legacy layout never renders the Sprint section.
+      expect(panel({ layout: 'legacy', sprintsEnabled: true, sprintId: '3', sprintData: { sprints: [sprint] } })).not.toContain('data-sprint-option');
+    });
+
+    it('offers exactly Scheduled and Unscheduled for one or many sprints', () => {
+      const many = Array.from({ length: 25 }, (_, i) => ({ id: 100 + i, number: i + 1, name: `Sprint ${i + 1}`, state: 'PLANNED' }));
+      for (const sprints of [[many[0]], many]) {
+        const host = document.createElement('div');
+        host.innerHTML = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
+          layout: 'omni',
+          sprintsEnabled: true,
+          sprintData: { sprints },
+        });
+        const values = Array.from(host.querySelectorAll('[data-sprint-option]')).map((el) => el.getAttribute('data-sprint-option'));
+        expect(values).toEqual(['scheduled', 'unscheduled']);
+        expect(host.querySelector('[data-sprint-filter-section] .is-active')).toBeNull();
+      }
+    });
+
+    it('keeps a numeric sprint deep link visible as the selected option', () => {
       const omni = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
         layout: 'omni',
         sprintsEnabled: true,
         sprintId: '3',
         sprintData: { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'ACTIVE' }] },
       });
-      expect(omni).toContain('data-sprint-option=""');
+      expect(omni).not.toContain('data-sprint-option=""');
       expect(omni).toContain('data-sprint-option="scheduled"');
       expect(omni).toContain('data-sprint-option="unscheduled"');
       expect(omni).toContain('class="search-filter-option is-active search-filter-option--active-sprint" data-sprint-option="3"');
-
-      const legacy = buildFilterPanelHtml(null, null, makeMembers(), null, null, makeTiers(), {
-        layout: 'legacy',
-        sprintsEnabled: true,
-        sprintId: '3',
-      });
-      expect(legacy).not.toContain('data-sprint-option');
     });
 
     it('marks the chevron active for Sprint only in Omni', () => {
@@ -342,55 +365,172 @@ describe('board filter panel (assignee + sort)', () => {
   });
 
   describe('URL param round-trip and reload wiring', () => {
-    it('refreshes the Omni Sprint section when sprint data arrives asynchronously', async () => {
+    const omniBoard = () => ({ project: { slug: 'alpha', sprintsEnabled: true }, tags: [], columns: {} }) as unknown as Board;
+    const sprintValues = () => Array.from(document.querySelectorAll('[data-sprint-option]')).map((el) => el.getAttribute('data-sprint-option'));
+
+    it('inserts the missing Omni Sprint section when sprint data arrives asynchronously', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const { boardFilters } = await setupState('/alpha', {
+        panelOptions: { layout: 'omni', sprintsEnabled: true, sprintData: null },
+      });
+      selectorState.board = omniBoard();
+      expect(document.querySelector('[data-sprint-filter-section]')).toBeNull();
+      const priorityOption = document.querySelector('[data-priority-option="high"]');
+
+      // Loaded but empty: still no section.
+      boardFilters.setSprintChipDataForSlug('alpha', null);
+      boardFilters.updateChipsOnly(null);
+      expect(document.querySelector('[data-sprint-filter-section]')).toBeNull();
+
+      boardFilters.setSprintChipDataForSlug('alpha', { sprints: [{ id: 41, number: 4, name: 'First', state: 'PLANNED' }] });
+      boardFilters.updateChipsOnly(null);
+
+      const panel = document.getElementById('searchFilterPanel')!;
+      expect(panel.firstElementChild?.hasAttribute('data-sprint-filter-section')).toBe(true);
+      expect(panel.querySelectorAll('[data-sprint-filter-section]').length).toBe(1);
+      expect(sprintValues()).toEqual(['scheduled', 'unscheduled']);
+      // The rest of the panel is untouched.
+      expect(document.querySelector('[data-priority-option="high"]')).toBe(priorityOption);
+    });
+
+    it('labels a numeric deep link asynchronously and removes the section after the last sprint is deleted', async () => {
       localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
       const { boardFilters } = await setupState('/alpha?sprintId=4', {
-        panelOptions: {
-          layout: 'omni',
-          sprintsEnabled: true,
-          sprintId: '4',
-          sprintData: null,
-        },
+        panelOptions: { layout: 'omni', sprintsEnabled: true, sprintId: '4', sprintData: null },
       });
-      selectorState.board = {
-        project: { slug: 'alpha', sprintsEnabled: true },
-        tags: [],
-        columns: {},
-      } as Board;
+      selectorState.board = omniBoard();
+      // Before sprint data loads, the active deep link is already visible and clearable.
+      expect(document.querySelector('[data-sprint-option="4"]')?.textContent).toBe('#4');
 
-      boardFilters.setSprintChipDataForSlug('alpha', {
-        sprints: [{ id: 41, number: 4, name: 'Async Sprint', state: 'ACTIVE' }],
-      });
+      boardFilters.setSprintChipDataForSlug('alpha', { sprints: [{ id: 41, number: 4, name: 'Async Sprint', state: 'ACTIVE' }] });
       boardFilters.updateChipsOnly('4');
-
       const option = document.querySelector('[data-sprint-option="4"]');
       expect(option?.textContent).toContain('Async Sprint');
       expect(option?.classList.contains('is-active')).toBe(true);
       expect(option?.classList.contains('search-filter-option--active-sprint')).toBe(true);
       expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
+
+      window.history.replaceState({}, '', '/alpha');
+      boardFilters.updateChipsOnly(null);
+      expect(sprintValues()).toEqual(['scheduled', 'unscheduled']);
+      // Final sprint deleted: the sprints refresher stores null and the section goes away.
+      boardFilters.setSprintChipDataForSlug('alpha', null);
+      boardFilters.updateChipsOnly(null);
+      expect(document.querySelector('[data-sprint-filter-section]')).toBeNull();
+      expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(false);
     });
 
-    it('picking an Omni Sprint preserves the selected tag and composes every filter', async () => {
+    it('removes the section when sprints become disabled', async () => {
       localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const sprintData = { sprints: [{ id: 41, number: 4, name: 'S', state: 'PLANNED' }] };
+      const { boardFilters } = await setupState('/alpha', { panelOptions: { layout: 'omni', sprintsEnabled: true, sprintData } });
+      boardFilters.setSprintChipDataForSlug('alpha', sprintData);
+      selectorState.board = { ...omniBoard(), project: { slug: 'alpha', sprintsEnabled: false } } as unknown as Board;
+      boardFilters.updateChipsOnly(null);
+      expect(document.querySelector('[data-sprint-filter-section]')).toBeNull();
+    });
+
+    it('keeps a focused sprint option focused across an asynchronous refresh', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const sprintData = { sprints: [{ id: 41, number: 4, name: 'S', state: 'PLANNED' }] };
+      const { boardFilters } = await setupState('/alpha', { panelOptions: { layout: 'omni', sprintsEnabled: true, sprintData } });
+      selectorState.board = omniBoard();
+      const panel = document.getElementById('searchFilterPanel')!;
+      panel.hidden = false;
+      (panel.querySelector('[data-sprint-option="unscheduled"]') as HTMLButtonElement).focus();
+      boardFilters.setSprintChipDataForSlug('alpha', { sprints: [...sprintData.sprints, { id: 42, number: 5, name: 'T', state: 'PLANNED' }] });
+      boardFilters.updateChipsOnly(null);
+      expect(document.activeElement?.getAttribute('data-sprint-option')).toBe('unscheduled');
+    });
+
+    it('picking Scheduled preserves every other filter; picking it again clears only sprintId', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const sprintData = { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'PLANNED' }] };
       const { boardFilters } = await setupState('/alpha?tag=bug&tag=feature&search=query&assignee=me&sort=newest&priority=high', {
         tag: 'bug',
         search: 'query',
-        panelOptions: {
-          layout: 'omni',
-          sprintsEnabled: true,
-          sprintData: { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'PLANNED' }] },
-        },
+        panelOptions: { layout: 'omni', sprintsEnabled: true, sprintData },
       });
+      selectorState.board = omniBoard();
+      boardFilters.setSprintChipDataForSlug('alpha', sprintData);
       const reloadBoard = vi.fn().mockResolvedValue(undefined);
       boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+      const isActive = (value: string) => document.querySelector(`[data-sprint-option="${value}"]`)?.classList.contains('is-active');
 
-      (document.querySelector('[data-sprint-option="3"]') as HTMLButtonElement).click();
-
-      const params = new URL(window.location.href).searchParams;
+      (document.querySelector('[data-sprint-option="scheduled"]') as HTMLButtonElement).click();
+      let params = new URL(window.location.href).searchParams;
       expect(params.getAll('tag')).toEqual(['bug', 'feature']);
-      expect(params.get('sprintId')).toBe('3');
-      expect(reloadBoard).toHaveBeenCalledWith('alpha', ['bug', 'feature'], 'query', '3', 'me', 'newest', 'high');
+      expect(params.get('sprintId')).toBe('scheduled');
+      expect(reloadBoard).toHaveBeenCalledTimes(1);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug', 'feature'], 'query', 'scheduled', 'me', 'newest', 'high');
+      expect([isActive('scheduled'), isActive('unscheduled')]).toEqual([true, false]);
       expect(document.getElementById('searchFilterToggle')?.classList.contains('search-filter-toggle--active')).toBe(true);
+
+      // Switching goes straight to the other option.
+      (document.querySelector('[data-sprint-option="unscheduled"]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sprintId')).toBe('unscheduled');
+      expect([isActive('scheduled'), isActive('unscheduled')]).toEqual([false, true]);
+
+      // Clicking the selected option clears only the sprint filter.
+      toastMock.mockClear();
+      (document.querySelector('[data-sprint-option="unscheduled"]') as HTMLButtonElement).click();
+      params = new URL(window.location.href).searchParams;
+      expect(params.get('sprintId')).toBeNull();
+      expect(params.getAll('tag')).toEqual(['bug', 'feature']);
+      expect(params.get('search')).toBe('query');
+      expect(params.get('assignee')).toBe('me');
+      expect(params.get('sort')).toBe('newest');
+      expect(params.get('priority')).toBe('high');
+      expect(reloadBoard).toHaveBeenCalledTimes(3);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug', 'feature'], 'query', null, 'me', 'newest', 'high');
+      expect([isActive('scheduled'), isActive('unscheduled')]).toEqual([false, false]);
+      expect(toastMock).not.toHaveBeenCalled();
+    });
+
+    it('treats legacy sprintId=assigned as Scheduled, so clicking Scheduled clears it', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const sprintData = { sprints: [{ id: 1, number: 1, name: 'S', state: 'ACTIVE' }] };
+      const { boardFilters } = await setupState('/alpha?sprintId=assigned', {
+        panelOptions: { layout: 'omni', sprintsEnabled: true, sprintId: 'assigned', sprintData },
+      });
+      selectorState.board = omniBoard();
+      boardFilters.setSprintChipDataForSlug('alpha', sprintData);
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+      expect(document.querySelector('[data-sprint-option="scheduled"]')?.classList.contains('is-active')).toBe(true);
+      (document.querySelector('[data-sprint-option="scheduled"]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sprintId')).toBeNull();
+      expect(reloadBoard).toHaveBeenCalledTimes(1);
+    });
+
+    it('a numeric deep link can be cleared or changed without listing named sprints', async () => {
+      localStorage.setItem('scrumboy.boardFilterLayout', 'omni');
+      const sprintData = { sprints: [{ id: 12, number: 3, name: 'Sprint 3', state: 'ACTIVE' }, { id: 13, number: 4, name: 'Sprint 4', state: 'PLANNED' }] };
+      const { boardFilters } = await setupState('/alpha?sprintId=3&tag=bug', {
+        tag: 'bug',
+        panelOptions: { layout: 'omni', sprintsEnabled: true, sprintId: '3', sprintData },
+      });
+      selectorState.board = omniBoard();
+      boardFilters.setSprintChipDataForSlug('alpha', sprintData);
+      const reloadBoard = vi.fn().mockResolvedValue(undefined);
+      boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+      expect(sprintValues()).toEqual(['scheduled', 'unscheduled', '3']);
+
+      // Clicking the selected numeric option clears it; the contextual option disappears.
+      (document.querySelector('[data-sprint-option="3"]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sprintId')).toBeNull();
+      expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['bug']);
+      expect(reloadBoard).toHaveBeenCalledTimes(1);
+      expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['bug'], null, null, null, null, null);
+      expect(sprintValues()).toEqual(['scheduled', 'unscheduled']);
+
+      // A deep link can also be changed directly to Scheduled.
+      window.history.replaceState({}, '', '/alpha?sprintId=4');
+      boardFilters.updateChipsOnly('4');
+      expect(sprintValues()).toEqual(['scheduled', 'unscheduled', '4']);
+      (document.querySelector('[data-sprint-option="scheduled"]') as HTMLButtonElement).click();
+      expect(new URL(window.location.href).searchParams.get('sprintId')).toBe('scheduled');
+      expect(sprintValues()).toEqual(['scheduled', 'unscheduled']);
     });
 
     it('picking an assignee option sets the URL param and reloads with all 6 positional args', async () => {

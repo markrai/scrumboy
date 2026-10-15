@@ -276,7 +276,7 @@ test("mobile touch navigation and both themes work", async ({ browser }) => {
   await context.close();
 });
 
-test("a sprint created by a maintainer appears live in the public sprint filter", async ({ page }) => {
+test("a sprint created by a maintainer reloads the public vocabulary but never adds a Sprint filter section", async ({ page }) => {
   const api = trackApi(page);
   await page.goto(`${baseUrl}/${publicSlug}`);
   await expect(page.locator(".public-board-badge")).toBeVisible({ timeout: 30_000 });
@@ -284,14 +284,40 @@ test("a sprint created by a maintainer appears live in the public sprint filter"
 
   const owner = apiClient(baseUrl);
   await owner.json("POST", "/api/auth/login", { email: OWNER.email, password: OWNER.password });
+  const vocabulary = waitForPublicSprints(page, publicSlug, "Live Sprint");
   const start = Date.now();
   await owner.json("POST", `/api/board/${publicSlug}/sprints`, {
     name: "Live Sprint",
     plannedStartAt: start,
     plannedEndAt: start + 7 * 24 * 60 * 60 * 1000,
   });
-  await expect(page.locator("#publicFilterPanel [data-public-sprint-option]", { hasText: "Live Sprint" })).toHaveCount(1, { timeout: 20_000 });
+  await vocabulary;
+  await page.locator("#publicFilterToggle").click();
+  await expect(page.locator("#publicFilterPanel [data-public-priority-option]").first()).toBeVisible();
+  await expect(page.locator("#publicFilterPanel [data-public-sprint-section], #publicFilterPanel [data-public-sprint-option]")).toHaveCount(0);
+  await expect(page.locator("#publicFilterPanel")).not.toContainText("Live Sprint");
   expect(api.filter((p) => !p.startsWith(`/api/public/board/${publicSlug}`) && p !== "/api/auth/status")).toEqual([`/api/board/${publicSlug}`]);
+});
+
+test("a public sprint-number deep link stays applied and is removable outside the popover", async ({ page }) => {
+  const sprints = await apiClient(baseUrl).json<{ sprints: { number: number; name: string }[] }>("GET", `/api/public/board/${publicSlug}/sprints`);
+  const live = sprints.sprints.find((sprint) => sprint.name === "Live Sprint")!;
+  const urls = trackApiUrls(page);
+  await page.goto(`${baseUrl}/${publicSlug}?sprintNumber=${live.number}&priority=high`);
+  const pill = page.locator("#publicOmniPinnedTags .omni-tag-pill--applied", { hasText: "Live Sprint" });
+  await expect(pill).toBeVisible({ timeout: 30_000 });
+  const snapshotUrls = () => urls.filter((u) => u.startsWith(`/api/public/board/${publicSlug}?`)).map((u) => new URL(u, baseUrl));
+  expect(snapshotUrls().at(-1)!.searchParams.get("sprintNumber")).toBe(String(live.number));
+  await page.locator("#publicFilterToggle").click();
+  await expect(page.locator("#publicFilterPanel [data-public-sprint-option], #publicFilterPanel [data-public-clear-sprint]")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await pill.locator("[data-public-clear-sprint]").click();
+  await expect(pill).toHaveCount(0);
+  await expect(page).not.toHaveURL(/sprintNumber=/);
+  await expect(page).toHaveURL(/[?&]priority=high/);
+  await expect.poll(() => snapshotUrls().at(-1)!.searchParams.has("sprintNumber")).toBe(false);
+  expect(snapshotUrls().at(-1)!.searchParams.get("priority")).toBe("high");
 });
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -322,10 +348,25 @@ function trackApiUrls(page: Page): string[] {
   return seen;
 }
 
-async function ownerClient() {
-  const owner = apiClient(baseUrl);
-  await owner.json("POST", "/api/auth/login", { email: OWNER.email, password: OWNER.password });
-  return owner;
+let ownerSession: Promise<ReturnType<typeof apiClient>> | null = null;
+
+/** One shared owner login, so the suite stays under the server's login rate limit. */
+function ownerClient(): Promise<ReturnType<typeof apiClient>> {
+  ownerSession ??= (async () => {
+    const owner = apiClient(baseUrl);
+    await owner.json("POST", "/api/auth/login", { email: OWNER.email, password: OWNER.password });
+    return owner;
+  })();
+  return ownerSession;
+}
+
+/** Resolves once the public sprint vocabulary for `slug` has been fetched and includes `name`. */
+function waitForPublicSprints(page: Page, slug: string, name: string): Promise<unknown> {
+  return page.waitForResponse(async (res) => {
+    if (new URL(res.url()).pathname !== `/api/public/board/${slug}/sprints` || !res.ok()) return false;
+    const body = (await res.json()) as { sprints?: { name: string }[] };
+    return !!body.sprints?.some((sprint) => sprint.name === name);
+  }, { timeout: 20_000 });
 }
 
 async function createSprint(client: ReturnType<typeof apiClient>, slug: string, name: string): Promise<void> {
@@ -372,17 +413,15 @@ test("hidden public filter toggle and clear button are invisible, unclickable, a
   await expect(clear).toBeHidden();
   expect(await focusedId(page)).toBe("publicSearchInput");
 
-  // Toggle: hidden -> visible when a sprint becomes available -> hidden when sprints are disabled.
+  // Toggle: sprints alone never reveal it, since the popover offers only Priority.
   const owner = await ownerClient();
   await owner.json("PATCH", `/api/board/${bareSlug}/settings`, { sprintsEnabled: true });
+  const vocabulary = waitForPublicSprints(page, bareSlug, "Bare Sprint");
   await createSprint(owner, bareSlug, "Bare Sprint");
-  await expect(toggle).toBeVisible({ timeout: 20_000 });
-  await input.focus();
-  await page.keyboard.press("Tab");
-  expect(await focusedId(page)).toBe("publicFilterToggle");
+  await vocabulary;
+  await expectGone();
 
   await owner.json("PATCH", `/api/board/${bareSlug}/settings`, { sprintsEnabled: false });
-  await expect(toggle).toBeHidden({ timeout: 20_000 });
   await expectGone();
 });
 
@@ -436,9 +475,10 @@ for (const width of [320, 390, 1280]) {
     expect(contains({ x: 0, y: 0, width, height }, panelBox)).toBe(true);
     expect(panelBox.y).toBeGreaterThanOrEqual(openToggleBox.y + openToggleBox.height);
     expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
-    await expect(panel.locator("[data-public-sprint-option]", { hasText: "Live Sprint" })).toBeVisible();
     await expect(panel.locator("[data-public-priority-option]")).toHaveCount(5);
-    await expect(panel.locator('[data-public-sprint-option="scheduled"], [data-public-priority-option="**none**"], [data-assignee-option], [data-sort-option]')).toHaveCount(0);
+    await expect(panel.locator(".search-filter-panel__section")).toHaveCount(1);
+    await expect(panel.locator('[data-public-sprint-section], [data-public-sprint-option], [data-public-priority-option="**none**"], [data-assignee-option], [data-sort-option]')).toHaveCount(0);
+    await expect(panel).not.toContainText("Live Sprint");
 
     // Outside click closes.
     await page.locator(".public-board__project-name").click();
@@ -469,15 +509,7 @@ for (const width of [320, 390, 1280]) {
     await expect(high).toHaveClass(/is-active/);
     await expect(high).toHaveAttribute("aria-pressed", "true");
 
-    // Sprint selection by pointer.
-    await panel.locator("[data-public-sprint-option]", { hasText: "Live Sprint" }).click();
-    await expect(panel).toBeHidden();
-    await expect(page).toHaveURL(/[?&]sprintNumber=\d+/);
-
-    // Clearing both restores the unfiltered board and the idle chevron.
-    await toggle.click();
-    await panel.locator('[data-public-sprint-option=""]').click();
-    await toggle.click();
+    // Clearing restores the unfiltered board and the idle chevron.
     await panel.locator('[data-public-priority-option=""]').click();
     await expect(cards).toHaveCount(2);
     await expect(page).not.toHaveURL(/priority=|sprintNumber=/);
@@ -506,8 +538,9 @@ test("public search keeps focus and text across filtering and a live refresh", a
 
   // A sprint change arrives over the stream: refresh + vocabulary reload, input untouched.
   const inputHandle = await input.elementHandle();
+  const vocabulary = waitForPublicSprints(page, publicSlug, "Refresh Sprint");
   await createSprint(await ownerClient(), publicSlug, "Refresh Sprint");
-  await expect(page.locator("#publicFilterPanel [data-public-sprint-option]", { hasText: "Refresh Sprint" })).toHaveCount(1, { timeout: 20_000 });
+  await vocabulary;
   expect(await focusedId(page)).toBe("publicSearchInput");
   expect(await inputHandle!.evaluate((el) => el.isConnected)).toBe(true);
   await expect(input).toHaveValue("Second");
@@ -574,6 +607,92 @@ test("member board filtering is unchanged and its handlers ignore public control
   for (const memberParam of ["sprintId", "assignee", "sort"]) expect(url.searchParams.has(memberParam)).toBe(false);
   // No member reload or member board request was triggered by public controls.
   expect(urls.slice(afterNav).filter((u) => !u.startsWith("/api/public/") && u !== "/api/auth/status")).toEqual([]);
+  await context.close();
+});
+
+test("member Omni Sprint section follows the sprint collection and offers only Scheduled/Unscheduled", async ({ browser }) => {
+  const owner = await ownerClient();
+  const project = await owner.json<{ slug: string }>("POST", "/api/projects", { name: "Member Sprint Filter" });
+  const slug = project.slug;
+  await owner.json("POST", `/api/board/${slug}/todos`, { title: "Unscheduled story" });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addCookies(toBrowserCookies(owner.cookies()));
+  const page = await context.newPage();
+  const urls = trackApiUrls(page);
+  const toggle = page.locator("#searchFilterToggle");
+  const panel = page.locator("#searchFilterPanel");
+  const section = panel.locator("[data-sprint-filter-section]");
+  const sprintsLoaded = () => page.waitForResponse((res) => new URL(res.url()).pathname === `/api/board/${slug}/sprints`, { timeout: 30_000 });
+
+  // Sprints enabled, none created: no section.
+  let loaded = sprintsLoaded();
+  await page.goto(`${baseUrl}/${slug}?tag=none-such&priority=high`);
+  await loaded;
+  await expect(toggle).toBeVisible({ timeout: 30_000 });
+  await toggle.click();
+  await expect(panel.locator("[data-sort-option]")).toHaveCount(4);
+  await expect(section).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // Many sprints: still exactly Scheduled and Unscheduled, inserted after the async load.
+  const sprintIds: number[] = [];
+  for (let i = 1; i <= 21; i++) {
+    const start = Date.now();
+    const sprint = await owner.json<{ id: number }>("POST", `/api/board/${slug}/sprints`, { name: `Sprint ${i}`, plannedStartAt: start, plannedEndAt: start + 86_400_000 });
+    sprintIds.push(sprint.id);
+  }
+  loaded = sprintsLoaded();
+  await page.reload();
+  await loaded;
+  await toggle.click();
+  await expect(section.locator("[data-sprint-option]")).toHaveCount(2);
+  expect(await section.locator("[data-sprint-option]").evaluateAll((els) => els.map((el) => el.getAttribute("data-sprint-option")))).toEqual(["scheduled", "unscheduled"]);
+
+  // Select, then deselect by clicking the active option; other params survive.
+  await section.locator('[data-sprint-option="unscheduled"]').click();
+  await expect(page).toHaveURL(/[?&]sprintId=unscheduled/);
+  await expect.poll(() => urls.some((u) => u.startsWith(`/api/board/${slug}?`) && u.includes("sprintId=unscheduled"))).toBe(true);
+  loaded = sprintsLoaded();
+  await page.reload();
+  await loaded;
+  await toggle.click();
+  await expect(section.locator('[data-sprint-option="unscheduled"]')).toHaveClass(/is-active/);
+  const before = urls.filter((u) => u.startsWith(`/api/board/${slug}?`)).length;
+  await section.locator('[data-sprint-option="unscheduled"]').click();
+  await expect(page).not.toHaveURL(/sprintId=/);
+  const url = new URL(page.url());
+  expect(url.searchParams.getAll("tag")).toEqual(["none-such"]);
+  expect(url.searchParams.get("priority")).toBe("high");
+  await expect.poll(() => urls.filter((u) => u.startsWith(`/api/board/${slug}?`)).length).toBe(before + 1);
+  await toggle.click();
+  await expect(section.locator(".is-active")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // A numeric deep link stays visible as the selected option and can be cleared.
+  const sprints = await owner.json<{ sprints: { id: number; number: number; name: string }[] }>("GET", `/api/board/${slug}/sprints`);
+  const third = sprints.sprints.find((s) => s.name === "Sprint 3")!;
+  loaded = sprintsLoaded();
+  await page.goto(`${baseUrl}/${slug}?sprintId=${third.number}`);
+  await loaded;
+  await toggle.click();
+  const numeric = section.locator(`[data-sprint-option="${third.number}"]`);
+  await expect(numeric).toHaveText("Sprint 3");
+  await expect(numeric).toHaveClass(/is-active/);
+  await expect(section.locator("[data-sprint-option]")).toHaveCount(3);
+  await numeric.click();
+  await expect(page).not.toHaveURL(/sprintId=/);
+  await toggle.click();
+  await expect(section.locator("[data-sprint-option]")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+
+  // Last sprint deleted: the section disappears.
+  for (const id of sprintIds) await owner.json("DELETE", `/api/board/${slug}/sprints/${id}`);
+  loaded = sprintsLoaded();
+  await page.reload();
+  await loaded;
+  await toggle.click();
+  await expect(panel.locator("[data-sort-option]")).toHaveCount(4);
+  await expect(section).toHaveCount(0);
   await context.close();
 });
 

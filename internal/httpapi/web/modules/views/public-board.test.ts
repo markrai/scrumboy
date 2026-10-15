@@ -275,6 +275,8 @@ describe('public board view', () => {
     expect(dialog.querySelector('script, img')).toBeNull();
     expect(dialog.querySelector('.public-todo__notes')?.textContent).toContain('<img src=x onerror="alert(1)">');
     expect(dialog.querySelector('input, textarea, select, form, [data-link-remove]')).toBeNull();
+    // Sprint metadata still comes from the public sprint vocabulary.
+    expect(dialog.textContent).toContain('Sprint Two (2)');
 
     (dialog.querySelector('[data-public-link-open="3"]') as HTMLButtonElement).click();
     await settle();
@@ -300,8 +302,9 @@ describe('public board view', () => {
     expect(toastEl.textContent).toContain('publicBoard.story.unavailable');
   });
 
-  it('applies tag, sprint, priority, and search filters through the public query', async () => {
+  it('applies tag, sprint deep link, priority, and search filters through the public query', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    history.replaceState({}, '', '/ignite?sprintNumber=2');
     await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
     await vi.advanceTimersByTimeAsync(10);
 
@@ -309,10 +312,9 @@ describe('public board view', () => {
     await vi.advanceTimersByTimeAsync(10);
     let last = new URL(requests.filter((p) => p.startsWith('/api/public/board/ignite?')).at(-1)!, 'https://example.test');
     expect(last.searchParams.getAll('tag')).toEqual(['api']);
+    expect(last.searchParams.get('sprintNumber')).toBe('2');
     expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['api']);
 
-    pickPanelOption('data-public-sprint-option', '2');
-    await vi.advanceTimersByTimeAsync(10);
     pickPanelOption('data-public-priority-option', 'high');
     await vi.advanceTimersByTimeAsync(10);
 
@@ -460,8 +462,9 @@ describe('public board sprint vocabulary and filter failures', () => {
     return new URL(requests.filter((p) => p.startsWith('/api/public/board/ignite?')).at(-1)!, 'https://example.test');
   }
 
+  /** The public sprint vocabulary (used by story details and the deep-link pill), never a popover section. */
   function sprintOptions(): string[] {
-    return Array.from(appEl.querySelectorAll<HTMLElement>('[data-public-sprint-option]')).map((o) => o.getAttribute('data-public-sprint-option') + ':' + o.textContent);
+    return (__getPublicBoardSessionForTest()?.sprints ?? []).map((sprint) => `${sprint.number}:${sprint.name}`);
   }
 
   async function refreshViaStream(): Promise<void> {
@@ -557,8 +560,8 @@ describe('public board sprint vocabulary and filter failures', () => {
     expect(url.searchParams.getAll('tag')).toEqual(['api']);
     expect(lastSnapshotUrl().searchParams.has('sprintNumber')).toBe(false);
     expect(lastSnapshotUrl().searchParams.getAll('tag')).toEqual(['api']);
-    expect(appEl.querySelector('[data-public-sprint-option=""]')?.getAttribute('aria-pressed')).toBe('true');
-    expect(appEl.querySelector('[data-public-sprint-option].is-active')?.getAttribute('data-public-sprint-option')).toBe('');
+    expect(appEl.querySelector('[data-public-clear-sprint]')).toBeNull();
+    expect(appEl.querySelector('[data-public-sprint-option], [data-public-sprint-section]')).toBeNull();
   });
 
   it('clears an initial URL sprint filter that does not exist', async () => {
@@ -573,11 +576,13 @@ describe('public board sprint vocabulary and filter failures', () => {
     history.replaceState({}, '', '/ignite?sprintNumber=2');
     await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
     await vi.advanceTimersByTimeAsync(10);
-    expect(appEl.querySelector('[data-public-sprint-section]')).not.toBeNull();
+    expect(appEl.querySelector('#publicOmniPinnedTags [data-public-clear-sprint]')).not.toBeNull();
+    expect(sprintOptions()).toEqual(['2:Sprint Two']);
 
     snapshotOverride = () => ({ status: 200, body: snapshot({ project: { slug: 'ignite', name: 'Ignite', dominantColor: '', estimationMode: 'MODIFIED_FIBONACCI', sprintsEnabled: false } }) });
     await refreshViaStream();
-    expect(appEl.querySelector('[data-public-sprint-section]')).toBeNull();
+    expect(appEl.querySelector('[data-public-clear-sprint]')).toBeNull();
+    expect(sprintOptions()).toEqual([]);
     expect(sprintRequests()).toBe(1);
     expect(new URL(window.location.href).searchParams.has('sprintNumber')).toBe(false);
     expect(lastSnapshotUrl().searchParams.has('sprintNumber')).toBe(false);
@@ -585,7 +590,8 @@ describe('public board sprint vocabulary and filter failures', () => {
     snapshotOverride = null;
     await refreshViaStream();
     expect(sprintRequests()).toBe(2);
-    expect(appEl.querySelector('[data-public-sprint-section]')).not.toBeNull();
+    expect(sprintOptions()).toEqual(['2:Sprint Two']);
+    expect(appEl.querySelector('[data-public-sprint-section], [data-public-sprint-option]')).toBeNull();
   });
 
   it('ignores a late sprint response from a superseded refresh', async () => {
@@ -613,7 +619,7 @@ describe('public board sprint vocabulary and filter failures', () => {
     release({ status: 200, body: { sprints: [{ number: 9, name: 'Late', state: 'ACTIVE' }] } });
     await vi.advanceTimersByTimeAsync(10);
     expect(appEl.querySelector('[data-public-board-state="unavailable"]')).not.toBeNull();
-    expect(appEl.querySelector('[data-public-sprint-section]')).toBeNull();
+    expect(appEl.querySelector('[data-public-clear-sprint]')).toBeNull();
     expect(appEl.textContent).not.toContain('Late');
   });
 
@@ -790,39 +796,28 @@ describe('public board filter panel', () => {
     expect(panel().hidden).toBe(true);
   });
 
-  it('selects, marks active, updates the URL, and clears sprint and priority', async () => {
+  it('selects, marks active, updates the URL, and clears priority', async () => {
     await render('/ignite?tag=api');
-    pickPanelOption('data-public-sprint-option', '2');
+    pickPanelOption('data-public-priority-option', 'high');
     // Selection state updates immediately; the popover closes and returns focus to the toggle.
-    expect(activeValue('data-public-sprint-option')).toBe('2');
-    expect(panelOption('data-public-sprint-option', '2')?.getAttribute('aria-pressed')).toBe('true');
+    expect(activeValue('data-public-priority-option')).toBe('high');
+    expect(panelOption('data-public-priority-option', 'high')?.getAttribute('aria-pressed')).toBe('true');
     expect(panel().hidden).toBe(true);
     expect(toggle().getAttribute('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(toggle());
     expect(toggle().classList.contains('search-filter-toggle--active')).toBe(true);
     await vi.advanceTimersByTimeAsync(10);
-    expect(new URL(window.location.href).searchParams.get('sprintNumber')).toBe('2');
-    expect(lastSnapshotUrl().searchParams.get('sprintNumber')).toBe('2');
-
-    pickPanelOption('data-public-priority-option', 'high');
-    await vi.advanceTimersByTimeAsync(10);
-    expect(activeValue('data-public-priority-option')).toBe('high');
     let url = new URL(window.location.href);
     expect(url.searchParams.get('priority')).toBe('high');
-    expect(url.searchParams.get('sprintNumber')).toBe('2');
     expect(url.searchParams.getAll('tag')).toEqual(['api']);
+    expect(lastSnapshotUrl().searchParams.get('priority')).toBe('high');
 
-    pickPanelOption('data-public-sprint-option', '');
-    await vi.advanceTimersByTimeAsync(10);
     pickPanelOption('data-public-priority-option', '');
     await vi.advanceTimersByTimeAsync(10);
     url = new URL(window.location.href);
-    expect(url.searchParams.has('sprintNumber')).toBe(false);
     expect(url.searchParams.has('priority')).toBe(false);
     expect(url.searchParams.getAll('tag')).toEqual(['api']);
-    expect(lastSnapshotUrl().searchParams.has('sprintNumber')).toBe(false);
     expect(lastSnapshotUrl().searchParams.has('priority')).toBe(false);
-    expect(activeValue('data-public-sprint-option')).toBe('');
     expect(activeValue('data-public-priority-option')).toBe('');
     expect(toggle().classList.contains('search-filter-toggle--active')).toBe(false);
 
@@ -831,6 +826,56 @@ describe('public board filter panel', () => {
     pickPanelOption('data-public-priority-option', '');
     await vi.advanceTimersByTimeAsync(10);
     expect(snapshotRequests()).toBe(before);
+  });
+
+  it('never offers a Sprint section, for zero, one, or many sprints', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ number: i + 1, name: `Sprint ${i + 1}`, state: 'PLANNED' }));
+    for (const sprints of [[], many.slice(0, 1), many]) {
+      sprintsReply = () => ({ status: 200, body: { sprints } });
+      await render();
+      toggle().click();
+      expect(panel().querySelectorAll('.search-filter-panel__section')).toHaveLength(1);
+      expect(panel().querySelector('[data-public-priority-section]')).not.toBeNull();
+      expect(panel().querySelector('[data-public-sprint-section], [data-public-sprint-option], [data-sprint-option]')).toBeNull();
+      expect(panel().textContent).not.toContain('board.filters.sprint');
+      stopPublicBoard();
+    }
+  });
+
+  it('shows a sprint-number deep link as a removable pill and clears only that filter', async () => {
+    await render('/ignite?sprintNumber=2&tag=api&priority=high&search=needle');
+    expect(lastSnapshotUrl().searchParams.get('sprintNumber')).toBe('2');
+    const pill = appEl.querySelector('#publicOmniPinnedTags .omni-tag-pill--applied')!;
+    expect(pill.textContent).toContain('board.filters.sprint: Sprint Two');
+    expect(appEl.querySelector('#publicFilterPanel [data-public-clear-sprint]')).toBeNull();
+    // The popover glows only for its own (priority) filter.
+    expect(toggle().classList.contains('search-filter-toggle--active')).toBe(true);
+
+    const before = snapshotRequests();
+    (pill.querySelector('[data-public-clear-sprint]') as HTMLButtonElement).click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshotRequests()).toBe(before + 1);
+    const url = new URL(window.location.href);
+    expect(url.searchParams.has('sprintNumber')).toBe(false);
+    expect(url.searchParams.getAll('tag')).toEqual(['api']);
+    expect(url.searchParams.get('priority')).toBe('high');
+    expect(url.searchParams.get('search')).toBe('needle');
+    expect(lastSnapshotUrl().searchParams.has('sprintNumber')).toBe(false);
+    expect(lastSnapshotUrl().searchParams.getAll('tag')).toEqual(['api']);
+    expect(appEl.querySelector('[data-public-clear-sprint]')).toBeNull();
+    expect(appEl.querySelector('#publicOmniPinnedTags [data-public-omni-clear-tag="api"]')).not.toBeNull();
+    expect(document.activeElement).toBe(searchInput());
+  });
+
+  it('labels a sprint deep link by number until the vocabulary arrives', async () => {
+    let release: (value: { status: number; body?: unknown }) => void = () => {};
+    sprintsReply = () => new Promise((resolve) => { release = resolve; });
+    await render('/ignite?sprintNumber=2');
+    expect(appEl.querySelector('#publicOmniPinnedTags .omni-tag-pill--applied')?.textContent).toContain('board.filters.sprint: #2');
+    expect(toggle().classList.contains('search-filter-toggle--active')).toBe(false);
+    release({ status: 200, body: { sprints: [{ number: 2, name: 'Sprint Two', state: 'ACTIVE' }] } });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(appEl.querySelector('#publicOmniPinnedTags .omni-tag-pill--applied')?.textContent).toContain('board.filters.sprint: Sprint Two');
   });
 
   it('opens and closes with the toggle, Escape, and outside clicks', async () => {
@@ -898,20 +943,20 @@ describe('public board filter panel', () => {
     }
   });
 
-  it('adds asynchronously loaded sprints and drops removed ones without rebuilding the search input', async () => {
+  it('loads the sprint vocabulary asynchronously without changing the popover or rebuilding the search input', async () => {
     let release: (value: { status: number; body?: unknown }) => void = () => {};
     sprintsReply = () => new Promise((resolve) => { release = resolve; });
     await render();
     const input = searchInput();
     const toggleEl = toggle();
+    const panelHtml = panel().innerHTML;
     input.focus();
-    expect(appEl.querySelector('[data-public-sprint-section]')).toBeNull();
     expect(appEl.querySelector('[data-public-priority-section]')).not.toBeNull();
 
     release({ status: 200, body: { sprints: [{ number: 2, name: 'Sprint Two', state: 'ACTIVE' }, { number: 5, name: 'Later', state: 'PLANNED' }] } });
     await vi.advanceTimersByTimeAsync(10);
-    expect(Array.from(appEl.querySelectorAll('[data-public-sprint-option]')).map((o) => o.getAttribute('data-public-sprint-option'))).toEqual(['', '2', '5']);
-    expect(panelOption('data-public-sprint-option', '5')?.classList.contains('search-filter-option--planned-sprint')).toBe(true);
+    expect(__getPublicBoardSessionForTest()?.sprints.map((s) => s.number)).toEqual([2, 5]);
+    expect(panel().innerHTML).toBe(panelHtml);
     expect(searchInput()).toBe(input);
     expect(toggle()).toBe(toggleEl);
     expect(document.activeElement).toBe(input);
@@ -921,8 +966,8 @@ describe('public board filter panel', () => {
     sprintsReply = () => ({ status: 200, body: { sprints: [{ number: 2, name: 'Sprint Two', state: 'ACTIVE' }] } });
     streams[0].send('{"type":"refresh_needed"}');
     await vi.advanceTimersByTimeAsync(1000);
-    expect(panelOption('data-public-sprint-option', '5')).toBeUndefined();
-    expect(panelOption('data-public-sprint-option', '2')).toBeDefined();
+    expect(__getPublicBoardSessionForTest()?.sprints.map((s) => s.number)).toEqual([2]);
+    expect(panel().innerHTML).toBe(panelHtml);
     expect(panel().hidden).toBe(false);
     expect(searchInput()).toBe(input);
   });
@@ -934,18 +979,15 @@ describe('public board filter panel', () => {
     sprintsReply = () => ({ status: 200, body: { sprints: [{ number: 2, name: 'Renamed', state: 'ACTIVE' }] } });
     streams[0].send('{"type":"refresh_needed"}');
     await vi.advanceTimersByTimeAsync(1000);
-    expect(panelOption('data-public-sprint-option', '2')?.textContent).toBe('Renamed');
+    expect(__getPublicBoardSessionForTest()?.sprints.map((s) => s.name)).toEqual(['Renamed']);
     expect(document.activeElement).toBe(panelOption('data-public-priority-option', 'high'));
   });
 
-  it('hides the toggle when sprints are disabled and no priorities exist, moving focus to search', async () => {
+  it('hides the toggle when priorities disappear, moving focus to search', async () => {
     await render();
     toggle().click();
-    panelOption('data-public-sprint-option', '')!.focus();
-    snapshotOverride = () => ({ status: 200, body: snapshot({
-      project: { slug: 'ignite', name: 'Ignite', dominantColor: '', estimationMode: 'MODIFIED_FIBONACCI', sprintsEnabled: false },
-      priorities: [],
-    }) });
+    panelOption('data-public-priority-option', '')!.focus();
+    snapshotOverride = () => ({ status: 200, body: snapshot({ priorities: [] }) });
     streams[0].send('{"type":"refresh_needed"}');
     await vi.advanceTimersByTimeAsync(1000);
     expect(toggle().hidden).toBe(true);
@@ -990,7 +1032,7 @@ describe('public board filter panel', () => {
     expect(lastSnapshotUrl().searchParams.get('search')).toBe('nee');
   });
 
-  it('URL navigation updates search and panel state in place', async () => {
+  it('URL navigation updates search, panel, and sprint pill state in place', async () => {
     await render('/ignite?search=old');
     const input = searchInput();
     const toggleEl = toggle();
@@ -1006,10 +1048,11 @@ describe('public board filter panel', () => {
     expect(input.value).toBe('');
     expect(appEl.querySelector('#publicSearchClear')?.hasAttribute('hidden')).toBe(true);
     expect(activeValue('data-public-priority-option')).toBe('high');
-    expect(activeValue('data-public-sprint-option')).toBe('2');
+    expect(appEl.querySelector('#publicOmniPinnedTags [data-public-clear-sprint]')).not.toBeNull();
     expect(toggle().classList.contains('search-filter-toggle--active')).toBe(true);
     await vi.advanceTimersByTimeAsync(1000);
     expect(lastSnapshotUrl().searchParams.get('priority')).toBe('high');
+    expect(lastSnapshotUrl().searchParams.get('sprintNumber')).toBe('2');
     expect(lastSnapshotUrl().searchParams.has('search')).toBe(false);
     expect(new URL(window.location.href).searchParams.has('search')).toBe(false);
   });
@@ -1017,17 +1060,17 @@ describe('public board filter panel', () => {
   it('ignores unsupported values even if an option is tampered with', async () => {
     await render();
     toggle().click();
-    const sprint = panelOption('data-public-sprint-option', '2')!;
     const priority = panelOption('data-public-priority-option', 'high')!;
     const before = requests.length;
-    for (const value of ['scheduled', 'unscheduled', '99', '-1', '2x']) {
-      sprint.setAttribute('data-public-sprint-option', value);
-      sprint.click();
-    }
-    for (const value of ['**none**', 'urgent']) {
+    for (const value of ['**none**', 'urgent', 'scheduled', '2']) {
       priority.setAttribute('data-public-priority-option', value);
       priority.click();
     }
+    // A forged sprint option inside the popover has no handler.
+    const forged = document.createElement('button');
+    forged.setAttribute('data-public-sprint-option', '2');
+    panel().appendChild(forged);
+    forged.click();
     await vi.advanceTimersByTimeAsync(10);
     expect(requests.length).toBe(before);
     const url = new URL(window.location.href);
@@ -1036,16 +1079,21 @@ describe('public board filter panel', () => {
   });
 
   it('offers no unsupported options, mutation controls, or authenticated requests', async () => {
+    await render();
+    toggle().click();
+    const anonymousPanel = panel().innerHTML;
+    stopPublicBoard();
+
     setUser({ id: 42, name: 'Nonmember', email: 'n@example.test' } as any);
     await render();
     toggle().click();
-    const sprintValues = Array.from(appEl.querySelectorAll('[data-public-sprint-option]')).map((o) => o.getAttribute('data-public-sprint-option'));
+    // Anonymous and authenticated visitors get the same filter structure.
+    expect(panel().innerHTML).toBe(anonymousPanel);
     const priorityValues = Array.from(appEl.querySelectorAll('[data-public-priority-option]')).map((o) => o.getAttribute('data-public-priority-option'));
-    expect(sprintValues).toEqual(['', '2']);
     expect(priorityValues).toEqual(['', 'high']);
-    expect(panel().querySelector('[data-assignee-option], [data-sort-option], [data-sprint-option], [data-priority-option], input, select, form')).toBeNull();
-    expect(panel().textContent).not.toMatch(/scheduled|noPriority|assignee|sort/i);
-    pickPanelOption('data-public-sprint-option', '2');
+    expect(panel().querySelector('[data-public-sprint-option], [data-assignee-option], [data-sort-option], [data-sprint-option], [data-priority-option], input, select, form')).toBeNull();
+    expect(panel().textContent).not.toMatch(/sprint|scheduled|noPriority|assignee|sort/i);
+    pickPanelOption('data-public-priority-option', 'high');
     await vi.advanceTimersByTimeAsync(10);
     expect(requests.every((p) => p.startsWith('/api/public/board/ignite'))).toBe(true);
   });
@@ -1060,8 +1108,8 @@ describe('public board filter panel', () => {
     expect((document.getElementById('searchFilterPanel') as HTMLElement).hidden).toBe(false);
     resetBoardFilterUiState();
 
-    // Navigate to the public board.
-    await render('/ignite');
+    // Navigate to the public board with a sprint deep link.
+    await render('/ignite?sprintNumber=2');
     expect(document.getElementById('searchFilterToggle')).toBeNull();
     toggle().click();
     expect(panel().hidden).toBe(false);
@@ -1070,7 +1118,7 @@ describe('public board filter panel', () => {
     toggle().click();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(panel().hidden).toBe(true);
-    pickPanelOption('data-public-sprint-option', '2');
+    (appEl.querySelector('[data-public-clear-sprint]') as HTMLButtonElement).click();
     await vi.advanceTimersByTimeAsync(10);
 
     expect(memberReload).not.toHaveBeenCalled();
@@ -1078,7 +1126,7 @@ describe('public board filter panel', () => {
     const url = new URL(window.location.href);
     for (const memberParam of ['sprintId', 'assignee', 'sort']) expect(url.searchParams.has(memberParam)).toBe(false);
     expect(url.searchParams.get('priority')).toBe('high');
-    expect(url.searchParams.get('sprintNumber')).toBe('2');
+    expect(url.searchParams.has('sprintNumber')).toBe(false);
     expect(requests.every((p) => p.startsWith('/api/public/board/ignite'))).toBe(true);
   });
 

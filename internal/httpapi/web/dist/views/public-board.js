@@ -16,7 +16,7 @@ import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
 import { fetchPublicBoardSnapshot, fetchPublicLanePage, fetchPublicSprints, isPublicAbort, isPublicNotFound, normalizePublicQuery, publicBoardEventsPath, PublicBoardApiError, PUBLIC_DEFAULT_PAGE_SIZE, PUBLIC_MAX_PAGE_SIZE, PUBLIC_MAX_TAG_FILTERS, samePublicQuery, EMPTY_PUBLIC_QUERY, } from '../public-board-api.js';
-import { buildPublicBoardHtml, buildPublicColumnsHtml, buildPublicFilterErrorHtml, buildPublicFilterSectionsHtml, buildPublicMobileTabsHtml, buildPublicUnavailableHtml, isPublicPanelFilterActive, isPublicQueryActive, publicPriorityMap, PUBLIC_FILTER_PANEL_ID, PUBLIC_FILTER_TOGGLE_ID, PUBLIC_PRIORITY_OPTION_ATTR, PUBLIC_SPRINT_OPTION_ATTR, showPublicPoints, } from './public-board-rendering.js';
+import { buildPublicBoardHtml, buildPublicColumnsHtml, buildPublicFilterErrorHtml, buildPublicFilterSectionsHtml, buildPublicMobileTabsHtml, buildPublicUnavailableHtml, isPublicPanelFilterActive, isPublicQueryActive, publicPriorityMap, PUBLIC_FILTER_PANEL_ID, PUBLIC_FILTER_TOGGLE_ID, PUBLIC_CLEAR_SPRINT_ATTR, PUBLIC_PRIORITY_OPTION_ATTR, showPublicPoints, } from './public-board-rendering.js';
 import { closePublicTodo, getOpenPublicTodoLocalId, openPublicTodo } from '../dialogs/public-todo.js';
 import { SseConnectionManager } from '../core/sse-client.js';
 import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
@@ -195,8 +195,20 @@ function renderBoardRegions(s) {
 function searchInputEl() {
     return app.querySelector('#publicSearchInput');
 }
+/** Label for an active sprint-number deep link: the sprint name once known, else its number. */
+function sprintFilterLabel(s) {
+    const n = s.query.sprintNumber;
+    if (n == null)
+        return null;
+    return s.sprints.find((sprint) => sprint.number === n)?.name ?? `#${n}`;
+}
 function omniState(s) {
-    return { tags: s.snapshot.tags, selected: s.query.tags, input: searchInputEl()?.value ?? s.query.search };
+    return {
+        tags: s.snapshot.tags,
+        selected: s.query.tags,
+        input: searchInputEl()?.value ?? s.query.search,
+        sprintLabel: sprintFilterLabel(s),
+    };
 }
 function cancelPendingSearch(s) {
     if (s.searchTimer !== null)
@@ -251,20 +263,16 @@ function filterPanelElements() {
     const panel = app.querySelector(`#${PUBLIC_FILTER_PANEL_ID}`);
     return toggle && panel ? { toggle, panel } : null;
 }
-const PANEL_OPTION_ATTRS = [PUBLIC_SPRINT_OPTION_ATTR, PUBLIC_PRIORITY_OPTION_ATTR];
 function focusedPanelOption(panel) {
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || !panel.contains(active))
         return null;
-    for (const attr of PANEL_OPTION_ATTRS) {
-        if (active.hasAttribute(attr))
-            return { attr, value: active.getAttribute(attr) ?? '' };
-    }
-    return null;
+    const attr = PUBLIC_PRIORITY_OPTION_ATTR;
+    return active.hasAttribute(attr) ? { attr, value: active.getAttribute(attr) ?? '' } : null;
 }
 /**
  * Brings the popover's sections, selection state, and toggle in line with the
- * session (query, sprint vocabulary, priorities) without touching the search
+ * session (query, priorities) without touching the search
  * input or the rest of the topbar. An open popover stays open; a focused
  * option keeps focus while it still exists.
  */
@@ -306,15 +314,6 @@ function syncSearchInput(s) {
         input.value = s.query.search;
     app.querySelector('#publicSearchClear')?.toggleAttribute('hidden', input.value.trim() === '');
 }
-/** Only values the panel offers are accepted: All or a known sprint number. */
-function parsePanelSprint(s, raw) {
-    if (raw === '')
-        return null;
-    if (!/^\d{1,9}$/.test(raw))
-        return undefined;
-    const n = Number(raw);
-    return s.sprints.some((sprint) => sprint.number === n) ? n : undefined;
-}
 /** Only values the panel offers are accepted: All or a published priority key. */
 function parsePanelPriority(s, raw) {
     if (raw === '')
@@ -336,24 +335,13 @@ function handleFilterPanelClick(s, target) {
     }
     if (!panel.contains(target))
         return false;
-    const sprintEl = target.closest(`[${PUBLIC_SPRINT_OPTION_ATTR}]`);
     const priorityEl = target.closest(`[${PUBLIC_PRIORITY_OPTION_ATTR}]`);
-    let next = null;
-    if (sprintEl) {
-        const sprintNumber = parsePanelSprint(s, sprintEl.getAttribute(PUBLIC_SPRINT_OPTION_ATTR) ?? '');
-        if (sprintNumber !== undefined)
-            next = { sprintNumber };
-    }
-    else if (priorityEl) {
-        const priority = parsePanelPriority(s, priorityEl.getAttribute(PUBLIC_PRIORITY_OPTION_ATTR) ?? '');
-        if (priority !== undefined)
-            next = { priority };
-    }
-    if (!next)
+    const priority = priorityEl ? parsePanelPriority(s, priorityEl.getAttribute(PUBLIC_PRIORITY_OPTION_ATTR) ?? '') : undefined;
+    if (priority === undefined)
         return true;
     closeFilterPopover(panel, toggle);
     toggle.focus();
-    setQuery(s, next);
+    setQuery(s, { priority });
     return true;
 }
 /** Outside click, Escape, and resize for the popover, scoped to this session. */
@@ -456,6 +444,11 @@ function bindPageHandlers(s) {
         const target = event.target;
         if (handleFilterPanelClick(s, target))
             return;
+        if (target.closest(`[${PUBLIC_CLEAR_SPRINT_ATTR}]`)) {
+            setQuery(s, { sprintNumber: null });
+            searchInputEl()?.focus();
+            return;
+        }
         const card = target.closest('[data-public-local-id]');
         if (card) {
             const localId = Number(card.getAttribute('data-public-local-id'));

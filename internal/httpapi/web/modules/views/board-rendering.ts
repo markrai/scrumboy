@@ -571,15 +571,30 @@ function priorityFilterOptionsHtml(priority: string | null, tiers: PriorityTier[
   );
 }
 
+/** `assigned` is the legacy alias of `scheduled`. */
+export function normalizeSprintFilterValue(sprintId: string | null): string {
+  return sprintId === 'assigned' ? 'scheduled' : (sprintId || '');
+}
+
+/**
+ * Omni Sprint section: only Scheduled and Unscheduled. It is shown when the
+ * loaded sprint collection is non-empty, or while a sprint filter is active so
+ * that filter stays visible and clearable. A numeric sprint deep link appears
+ * as one extra, already-selected option (clicking it clears the filter).
+ * Returns '' when the section should not exist.
+ */
 export function buildSprintFilterSectionHtml(
   sprintId: string | null,
   sprintData: SprintChipData | null,
 ): string {
-  const current = sprintId === 'assigned' ? 'scheduled' : (sprintId || '');
-  const options = buildSprintFilterOptions(sprintData?.sprints ?? [], {
-    includeScheduled: true,
-    identity: (sprint) => sprint.id,
-  });
+  const current = normalizeSprintFilterValue(sprintId);
+  const sprints = sprintData?.sprints ?? [];
+  if (sprints.length === 0 && !current) return '';
+  const options = buildSprintFilterOptions();
+  if (current && !options.some((option) => option.value === current)) {
+    const sprint = sprints.find((s) => String(s.number) === current);
+    options.push({ value: current, label: sprint?.name ?? `#${current}`, sprintState: sprint?.state ?? '' });
+  }
   return buildFilterPanelSectionHtml({
     labelKey: 'board.filters.sprint',
     optionsHtml: renderFilterOptionsHtml(options, current, { attr: 'data-sprint-option' }),
