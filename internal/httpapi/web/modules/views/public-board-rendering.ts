@@ -25,6 +25,7 @@ import {
   type OmniRowContent,
   type OmniRowIds,
 } from './omni-tags.js';
+import { renderStoryCardContentHtml, type StoryCardContentInput } from './story-card-content.js';
 import type { User } from '../types.js';
 import { PUBLIC_MAX_TAG_FILTERS } from '../public-board-api.js';
 import type {
@@ -57,19 +58,6 @@ function attrI18n(kind: 'text' | 'aria-label' | 'placeholder' | 'title', key: st
   return ` data-i18n-${kind}="${escapeHTML(key)}"`;
 }
 
-function colorStyle(color: string | null, withText = false): string {
-  const safe = sanitizeHexColor(color ?? undefined);
-  if (!safe) return '';
-  return ` style="border-color: ${safe}; background: ${safe}20;${withText ? ` color: ${safe};` : ''}"`;
-}
-
-/** Tag accent on border/tint only; text keeps the theme foreground for contrast. */
-function tagColorStyle(color: string | null): string {
-  const safe = sanitizeHexColor(color ?? undefined);
-  if (!safe) return '';
-  return ` style="border-color: ${safe}; background: ${safe}20; color: var(--text);"`;
-}
-
 export function publicPriorityMap(priorities: readonly PublicPriority[]): Record<string, PublicPriority> {
   const out: Record<string, PublicPriority> = {};
   for (const priority of priorities) out[priority.key] = priority;
@@ -80,34 +68,37 @@ export function showPublicPoints(snapshot: PublicBoardSnapshot): boolean {
   return snapshot.project.estimationMode === 'MODIFIED_FIBONACCI';
 }
 
+/**
+ * Maps only fields of the public DTO onto the shared story-card model. The
+ * public projection has no due date or assignee, so neither is rendered.
+ */
+export function toPublicStoryCardInput(
+  todo: PublicTodo,
+  priorities: Record<string, PublicPriority>,
+  showPoints: boolean,
+): StoryCardContentInput {
+  const priority = todo.priorityKey ? priorities[todo.priorityKey] : undefined;
+  return {
+    localId: todo.localId,
+    title: todo.title,
+    tags: todo.tags.map((tag) => ({ name: tag.name, color: tag.color })),
+    priority: priority ? { name: priority.name, color: priority.color } : null,
+    points: showPoints && todo.estimationPoints != null ? todo.estimationPoints : null,
+    due: null,
+  };
+}
+
 export function renderPublicTodoCard(
   todo: PublicTodo,
   column: PublicWorkflowColumn,
   priorities: Record<string, PublicPriority>,
   showPoints: boolean,
 ): string {
-  const tags = todo.tags
-    .map((tag) => `<span class="tag"${tagColorStyle(tag.color)}>${escapeHTML(tag.name)}</span>`)
-    .join('');
-  const priority = todo.priorityKey ? priorities[todo.priorityKey] : undefined;
-  const priorityHTML = priority
-    ? `<span class="card__priority"${colorStyle(priority.color, true)} aria-label="${escapeHTML(t('todo.fields.priority'))}: ${escapeHTML(priority.name)}">${escapeHTML(priority.name)}</span>`
-    : '';
-  const pointsHTML = showPoints && todo.estimationPoints != null
-    ? `<span class="card__points" aria-label="${escapeHTML(t('todo.fields.estimationPoints'))}"${attrI18n('aria-label', 'todo.fields.estimationPoints')}>${todo.estimationPoints}</span>`
-    : '';
-  const footer = priorityHTML + pointsHTML;
+  // Tag accents stay on border/tint; text keeps the theme foreground for contrast.
+  const content = renderStoryCardContentHtml(toPublicStoryCardInput(todo, priorities, showPoints), { tagTone: 'theme', tooltips: false });
   const border = sanitizeHexColor(column.color ?? undefined);
   return `
-    <button class="card card--public" type="button" data-public-local-id="${todo.localId}"${border ? ` style="border-color:${border}"` : ''}>
-      <div class="card__content">
-        <div class="card__title-row">
-          <span class="card__id-inline">#${todo.localId}</span>
-          <span class="card__title">${escapeHTML(todo.title)}</span>
-        </div>
-        ${tags || footer ? `<div class="card__tags"><span class="card__tags-list">${tags}</span><span class="card__badges">${footer}</span></div>` : ''}
-      </div>
-    </button>`;
+    <button class="card card--public" type="button" data-public-local-id="${escapeHTML(String(todo.localId))}"${border ? ` style="border-color:${border}"` : ''}>${content}</button>`;
 }
 
 function laneLoadMoreHtml(key: string, lane: PublicLaneState): string {

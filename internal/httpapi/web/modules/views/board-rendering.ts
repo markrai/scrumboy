@@ -1,5 +1,5 @@
 import { columnsSpec } from '../features/drag-drop.js';
-import { formatDueBadge, formatDueDateTooltip, isOverdue } from '../dialogs/todo-due.js';
+import { formatDueDateTooltip, isOverdue } from '../dialogs/todo-due.js';
 import type { BoardMember } from '../state/state.js';
 import { Board, PriorityTier, Todo } from '../types.js';
 import {
@@ -20,6 +20,7 @@ import {
   renderFilterOptionsHtml,
 } from './filter-panel-markup.js';
 import { buildOmniBarHtml } from './omni-tags.js';
+import { renderMemberStoryCardContentHtml, type StoryCardContentInput } from './story-card-content.js';
 
 export type BoardColumn = { key: string; title: string; color?: string; isDone: boolean };
 export type ChipType = "tag" | "sprint";
@@ -249,66 +250,32 @@ export function renderTodoCard(
   `;
 }
 
+/** Maps a member todo onto the shared story-card presentation model. */
+export function toMemberStoryCardInput(todo: Todo, opts?: RenderTodoCardOpts): StoryCardContentInput {
+  const tagColors = opts?.tagColors ?? null;
+  const priorityTier = todo.priorityKey ? opts?.priorityTiers?.[todo.priorityKey] : null;
+  const doneKey = (todo.columnKey || todo.status || "").toLowerCase();
+  return {
+    localId: todo.localId,
+    title: todo.title,
+    tags: (todo.tags || []).map((name) => ({ name, color: tagColors ? (tagColors[name] ?? null) : null })),
+    priority: priorityTier ? { name: priorityTier.name, color: priorityTier.color ?? null } : null,
+    points: opts?.showPointsMode && todo.estimationPoints != null ? todo.estimationPoints : null,
+    due: todo.dueAt ? { dueAt: todo.dueAt, inDoneColumn: opts?.doneColumnKeys?.has(doneKey) ?? false } : null,
+  };
+}
+
 /** Shared canonical story content used by both board cards and Wall pins. */
 export function renderStoryCardContent(
   todo: Todo,
   membersByUserId?: Record<number, BoardMember>,
   opts?: RenderTodoCardOpts,
 ): string {
-  const showPoints = !!opts?.showPointsMode && todo.estimationPoints != null;
-  const tagColors = opts?.tagColors ?? null;
-  const tags = (todo.tags || [])
-    .map((tagName) => {
-      const tagColor = tagColors ? (tagColors[tagName] ?? null) : null;
-      const safe = sanitizeHexColor(tagColor);
-      const colorStyle = safe ? `style="border-color: ${safe}; background: ${safe}20; color: ${safe};"` : "";
-      return `<span class="tag" ${colorStyle}>${escapeHTML(tagName)}</span>`;
-    })
-    .join("");
   const assignee = membersByUserId != null && todo.assigneeUserId != null ? membersByUserId[todo.assigneeUserId] : null;
   const avatarHTML = assignee
     ? `<div class="todo-avatar" title="${escapeHTML(assignee.name || assignee.email || '')}">${renderAvatarContent({ name: assignee.name, email: assignee.email, image: assignee.image })}</div>`
     : '';
-  const pointsHTML = showPoints
-    ? `<span class="card__points"${titleAttr(FIELD_TOOLTIPS.estimationPoints)} aria-label="${escapeHTML(t("todo.fields.estimationPoints"))}" data-i18n-aria-label="todo.fields.estimationPoints">${todo.estimationPoints}</span>`
-    : "";
-  const priorityTier = todo.priorityKey ? opts?.priorityTiers?.[todo.priorityKey] : null;
-  const priorityColor = sanitizeHexColor(priorityTier?.color ?? null);
-  const priorityStyle = priorityColor
-    ? ` style="border-color:${priorityColor}; background:${priorityColor}20; color:${priorityColor};"`
-    : "";
-  const priorityHTML = priorityTier
-    ? `<span class="card__priority"${priorityStyle}${titleAttr(FIELD_TOOLTIPS.priority)} aria-label="${escapeHTML(t("todo.fields.priority"))}: ${escapeHTML(priorityTier.name)}">${escapeHTML(priorityTier.name)}</span>`
-    : "";
-  let dueHTML = "";
-  if (todo.dueAt) {
-    const label = formatDueBadge(todo.dueAt);
-    if (label) {
-      const doneKey = (todo.columnKey || todo.status || "").toLowerCase();
-      const overdue = isOverdue(todo.dueAt, opts?.doneColumnKeys?.has(doneKey) ?? false);
-      const aria = escapeHTML(t("todo.due.cardLabel", { date: label }));
-      dueHTML = `<span class="card__due${overdue ? " card__due--overdue" : ""}" title="${aria}" aria-label="${aria}">${escapeHTML(label)}</span>`;
-    }
-  }
-  const footerContent = dueHTML + priorityHTML + pointsHTML + avatarHTML;
-  return `
-      <div class="card__content">
-        <div class="card__title-row">
-          <span class="card__id-inline">#${todo.localId}</span>
-          <span class="card__title">${escapeHTML(todo.title)}</span>
-        </div>
-        ${tags || footerContent ? `
-  <div class="card__tags">
-    <span class="card__tags-list">
-      ${tags}
-    </span>
-    <span class="card__badges">
-      ${footerContent}
-    </span>
-  </div>
-` : ""}
-      </div>
-  `;
+  return renderMemberStoryCardContentHtml(toMemberStoryCardInput(todo, opts), { tagTone: 'accent', tooltips: true }, avatarHTML);
 }
 
 export function buildBoardColumnsHtml(args: BuildBoardColumnsHtmlArgs): string {

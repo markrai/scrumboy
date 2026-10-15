@@ -68,9 +68,10 @@ describe('public board rendering', () => {
     expect(tagStyle).toContain('background: #00ff0020');
     expect(tagStyle).toContain('color: var(--text)');
     expect(tagStyle).not.toMatch(/(^|[^-])color: #00ff00/);
-    // Priority badges keep accent-colored text.
-    const priorityStyle = root.querySelector('.card__priority')!.getAttribute('style') ?? '';
-    expect(priorityStyle).toContain('color: #ff0000');
+    // Priority badges keep accent-colored text (shared member style string).
+    const priority = root.querySelector<HTMLElement>('.card__priority')!;
+    expect(priority.getAttribute('style')).toBe('border-color:#ff0000; background:#ff000020; color:#ff0000;');
+    expect(priority.style.color).toBe('#ff0000');
   });
 
   it('renders a stable Omni shell with public-only ids and no static chips or All chip', () => {

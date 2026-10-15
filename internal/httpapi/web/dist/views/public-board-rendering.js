@@ -10,22 +10,10 @@ import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, buildSprintFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
 import { buildOmniBarHtml, buildOmniRowContent, compareOmniTagNames, matchOmniTagCandidates, rankOmniBrowseCandidates, } from './omni-tags.js';
+import { renderStoryCardContentHtml } from './story-card-content.js';
 import { PUBLIC_MAX_TAG_FILTERS } from '../public-board-api.js';
 function attrI18n(kind, key) {
     return ` data-i18n-${kind}="${escapeHTML(key)}"`;
-}
-function colorStyle(color, withText = false) {
-    const safe = sanitizeHexColor(color ?? undefined);
-    if (!safe)
-        return '';
-    return ` style="border-color: ${safe}; background: ${safe}20;${withText ? ` color: ${safe};` : ''}"`;
-}
-/** Tag accent on border/tint only; text keeps the theme foreground for contrast. */
-function tagColorStyle(color) {
-    const safe = sanitizeHexColor(color ?? undefined);
-    if (!safe)
-        return '';
-    return ` style="border-color: ${safe}; background: ${safe}20; color: var(--text);"`;
 }
 export function publicPriorityMap(priorities) {
     const out = {};
@@ -36,29 +24,27 @@ export function publicPriorityMap(priorities) {
 export function showPublicPoints(snapshot) {
     return snapshot.project.estimationMode === 'MODIFIED_FIBONACCI';
 }
-export function renderPublicTodoCard(todo, column, priorities, showPoints) {
-    const tags = todo.tags
-        .map((tag) => `<span class="tag"${tagColorStyle(tag.color)}>${escapeHTML(tag.name)}</span>`)
-        .join('');
+/**
+ * Maps only fields of the public DTO onto the shared story-card model. The
+ * public projection has no due date or assignee, so neither is rendered.
+ */
+export function toPublicStoryCardInput(todo, priorities, showPoints) {
     const priority = todo.priorityKey ? priorities[todo.priorityKey] : undefined;
-    const priorityHTML = priority
-        ? `<span class="card__priority"${colorStyle(priority.color, true)} aria-label="${escapeHTML(t('todo.fields.priority'))}: ${escapeHTML(priority.name)}">${escapeHTML(priority.name)}</span>`
-        : '';
-    const pointsHTML = showPoints && todo.estimationPoints != null
-        ? `<span class="card__points" aria-label="${escapeHTML(t('todo.fields.estimationPoints'))}"${attrI18n('aria-label', 'todo.fields.estimationPoints')}>${todo.estimationPoints}</span>`
-        : '';
-    const footer = priorityHTML + pointsHTML;
+    return {
+        localId: todo.localId,
+        title: todo.title,
+        tags: todo.tags.map((tag) => ({ name: tag.name, color: tag.color })),
+        priority: priority ? { name: priority.name, color: priority.color } : null,
+        points: showPoints && todo.estimationPoints != null ? todo.estimationPoints : null,
+        due: null,
+    };
+}
+export function renderPublicTodoCard(todo, column, priorities, showPoints) {
+    // Tag accents stay on border/tint; text keeps the theme foreground for contrast.
+    const content = renderStoryCardContentHtml(toPublicStoryCardInput(todo, priorities, showPoints), { tagTone: 'theme', tooltips: false });
     const border = sanitizeHexColor(column.color ?? undefined);
     return `
-    <button class="card card--public" type="button" data-public-local-id="${todo.localId}"${border ? ` style="border-color:${border}"` : ''}>
-      <div class="card__content">
-        <div class="card__title-row">
-          <span class="card__id-inline">#${todo.localId}</span>
-          <span class="card__title">${escapeHTML(todo.title)}</span>
-        </div>
-        ${tags || footer ? `<div class="card__tags"><span class="card__tags-list">${tags}</span><span class="card__badges">${footer}</span></div>` : ''}
-      </div>
-    </button>`;
+    <button class="card card--public" type="button" data-public-local-id="${escapeHTML(String(todo.localId))}"${border ? ` style="border-color:${border}"` : ''}>${content}</button>`;
 }
 function laneLoadMoreHtml(key, lane) {
     const dk = escapeHTML(key);

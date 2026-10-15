@@ -4609,6 +4609,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
     overscroll-behavior-y: contain;
   }
 
+  /* The list is a height-constrained flex column; without this, cards shrink to
+     their 96px mobile min-height and tags spill over the next card. */
+  .board .col--mobile-active .col__list > .card {
+    flex-shrink: 0;
+  }
+
   /* Load more: no border/background on mobile — only the button itself is visible */
   .board .col--mobile-active .col__load-more {
     max-height: 0;
@@ -5314,6 +5320,12 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   flex-wrap: wrap;
   gap: 6px;
   grid-column: 1;
+}
+
+/* Long unbroken tag names wrap inside the pill instead of overflowing the card. */
+.card__tags-list .tag {
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .card__badges {

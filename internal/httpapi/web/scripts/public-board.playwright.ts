@@ -34,6 +34,16 @@ const TAG_NAMES = [
   "iota-release-process", "kappa-customer-support", "lambda-data-pipeline", "mu-security-review",
   "nu-onboarding-flow", "xi-final-tag",
 ];
+/** Published board for card layout: many tag-heavy cards, one maximum-length unbroken tag, and more than one lane page. */
+let cardSlug = "";
+const CARD_LAYOUT_STORIES = 24;
+const CARD_LAYOUT_TAGS = [
+  "frontend-platform", "design-review", "performance-budget", "accessibility-audit", "localization-sweep",
+  "observability-gap", "infrastructure-cost", "documentation-debt", "release-train", "customer-escalation",
+  "data-pipeline-fix", "security-review",
+];
+/** Server tag rule: ^[a-z0-9][a-z0-9-]{0,31}$, so 32 characters with no break opportunity is the worst case. */
+const LONGEST_TAG = "abcdefghijklmnopqrstuvwxyz012345";
 // Tag names are canonicalized server-side (lowercase, restricted charset), so hostile
 // names cannot reach a public board end to end; their escaping is unit-tested.
 
@@ -125,6 +135,17 @@ test.beforeAll(async () => {
     await owner.json("POST", `/api/board/${tagSlug}/todos`, { title: `Tagged story ${j}`, tags: TAG_NAMES.slice(0, TAG_NAMES.length - j) });
   }
   setPublication(tagSlug, true);
+  const cards = await owner.json<{ slug: string }>("POST", "/api/projects", { name: "Card Layout Public" });
+  cardSlug = cards.slug;
+  for (let j = 0; j < CARD_LAYOUT_STORIES; j++) {
+    const body: Record<string, unknown> = j === 2
+      ? { title: "Longest tag story", tags: [LONGEST_TAG] }
+      : j < 10
+        ? { title: `Many tags story ${j}`, tags: CARD_LAYOUT_TAGS.slice(0, CARD_LAYOUT_TAGS.length - (j % 6)), priorityKey: "high", estimationPoints: 8 }
+        : { title: `Filler story ${j}`, tags: ["ui"] };
+    await owner.json("POST", `/api/board/${cardSlug}/todos`, body);
+  }
+  setPublication(cardSlug, true);
 });
 
 test.afterAll(async () => {
@@ -768,6 +789,98 @@ test("after a member Omni board, public Omni controls never reach member handler
   expect(urls.slice(afterNav).filter((u) => !u.startsWith("/api/public/") && u !== "/api/auth/status")).toEqual([]);
   await context.close();
 });
+
+type CardLayoutReport = {
+  cards: number;
+  problems: string[];
+  longestTagShown: boolean;
+  dragHandles: number;
+};
+
+/** Geometry of every loaded card in one lane: tags inside, no content overflow, no neighbor overlap, handle placement. */
+async function measureCardLayout(page: Page, listSelector: string): Promise<CardLayoutReport> {
+  return page.locator(listSelector).evaluate((list, longest) => {
+    const problems: string[] = [];
+    const cards = Array.from(list.querySelectorAll<HTMLElement>(":scope > .card"));
+    const eps = 0.5;
+    let dragHandles = 0;
+    cards.forEach((card, i) => {
+      const name = card.querySelector(".card__title")?.textContent ?? `card ${i}`;
+      const box = card.getBoundingClientRect();
+      if (card.scrollHeight > card.clientHeight + 1) problems.push(`${name}: content ${card.scrollHeight}px > card ${card.clientHeight}px`);
+      if (card.scrollWidth > card.clientWidth + 1) problems.push(`${name}: content wider than card`);
+      for (const part of Array.from(card.querySelectorAll<HTMLElement>(".card__title-row, .card__tags .tag, .card__badges > *"))) {
+        const r = part.getBoundingClientRect();
+        if (r.left < box.left - eps || r.right > box.right + eps || r.top < box.top - eps || r.bottom > box.bottom + eps) {
+          problems.push(`${name}: ${part.className || part.tagName} "${part.textContent}" outside card`);
+        }
+      }
+      const next = cards[i + 1]?.getBoundingClientRect();
+      if (next && next.top < box.bottom - eps) problems.push(`${name}: overlaps the next card by ${Math.round(box.bottom - next.top)}px`);
+      const handle = card.querySelector<HTMLElement>(".card__drag-handle");
+      if (handle) {
+        dragHandles += 1;
+        const h = handle.getBoundingClientRect();
+        const inTopRight = h.right <= box.right + eps && h.top >= box.top - eps && h.left >= box.left + box.width / 2 && h.bottom <= box.top + 48;
+        if (!inTopRight || h.width === 0) problems.push(`${name}: drag handle not in the card's top-right corner`);
+      }
+    });
+    const longestTagShown = Array.from(list.querySelectorAll(".card__tags .tag")).some((tag) => tag.textContent === longest);
+    return { cards: cards.length, problems, longestTagShown, dragHandles };
+  }, LONGEST_TAG);
+}
+
+let cardOwnerCookies: Cookie[] | null = null;
+
+for (const width of [320, 390, 620, 621, 767, 1280]) {
+  for (const audience of ["public", "member"] as const) {
+    test(`${audience} story cards at ${width}px keep tags inside non-overlapping cards and still load more`, async ({ browser }) => {
+      const mobileLane = width <= 620;
+      const context = await isolatedContext(browser, { viewport: { width, height: 740 }, isMobile: mobileLane, hasTouch: width < 768 });
+      if (audience === "member") {
+        cardOwnerCookies ??= (await ownerClient()).cookies();
+        await context.addCookies(toBrowserCookies(cardOwnerCookies));
+      }
+      const page = await context.newPage();
+      await page.goto(`${baseUrl}/${cardSlug}`);
+      const listSelector = audience === "public" ? '[data-public-list="backlog"]' : "#list_backlog";
+      const cardSelector = audience === "public" ? "[data-public-local-id]" : "[data-todo-id]";
+      const list = page.locator(listSelector);
+      await expect(list.locator(cardSelector)).toHaveCount(20, { timeout: 30_000 });
+      if (mobileLane) await expect(page.locator(`.col--mobile-active ${listSelector}`)).toHaveCount(1);
+
+      const first = await measureCardLayout(page, listSelector);
+      expect(first.problems).toEqual([]);
+      expect(first.longestTagShown).toBe(true);
+      expect(first.dragHandles).toBe(audience === "member" ? 20 : 0);
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+      // Scroll the lane to its end, then load the next page with the control this width shows.
+      await list.evaluate((el) => { el.scrollTop = el.scrollHeight; el.dispatchEvent(new Event("scroll")); });
+      if (mobileLane) {
+        expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight && el.scrollTop > 0)).toBe(true);
+        const loadMore = audience === "public"
+          ? page.locator('.col--mobile-active .col__load-more--mobile[data-public-load-more="backlog"]')
+          : page.locator('.col--mobile-active [data-load-more="backlog"].visible .col__load-more--mobile');
+        await expect(loadMore).toBeVisible();
+        await loadMore.click();
+      } else {
+        const loadMore = audience === "public"
+          ? page.locator('.col__load-more--desktop[data-public-load-more="backlog"]')
+          : page.locator('[data-load-more="backlog"] .col__load-more--desktop');
+        await loadMore.scrollIntoViewIfNeeded();
+        await loadMore.click();
+      }
+      await expect(list.locator(cardSelector)).toHaveCount(CARD_LAYOUT_STORIES, { timeout: 20_000 });
+
+      const all = await measureCardLayout(page, listSelector);
+      expect(all.problems).toEqual([]);
+      expect(all.dragHandles).toBe(audience === "member" ? CARD_LAYOUT_STORIES : 0);
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+      await context.close();
+    });
+  }
+}
 
 test("a previously visited public route uses the cached app shell and reports live data unavailable", async ({ page, context }) => {
   await page.goto(`${baseUrl}/${publicSlug}`);
