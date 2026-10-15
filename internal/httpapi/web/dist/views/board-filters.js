@@ -7,6 +7,7 @@ import { getTagsFromUrl, MAX_BOARD_TAG_FILTERS, setTagParams } from '../state/bo
 import { boardSprintsEnabled } from '../sprints.js';
 import { escapeHTML, sanitizeHexColor, showToast } from '../utils.js';
 import { buildSprintFilterSectionHtml, buildChipsHTML, getCombinedChipData, isBoardFilterActive, } from './board-rendering.js';
+import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
 let lastDisplayChipData = [];
 let lastSprintsData = null;
 let lastSprintsDataSlug = null;
@@ -405,29 +406,6 @@ function bindSearchInput() {
     updateClearButton();
     searchInput[FILTER_BOUND_FLAG] = true;
 }
-function closeFilterPanel(panel, toggle) {
-    panel.hidden = true;
-    toggle.setAttribute("aria-expanded", "false");
-}
-// The panel is `position: fixed` and positioned here (rather than via CSS
-// `top/right` relative to `.search-input-wrapper`) because `.topbar` sets
-// `overflow-y: hidden` for its mobile chip-wrapping layout; an absolutely
-// positioned descendant would be clipped to the topbar's own box.
-function positionFilterPanel(panel, toggle) {
-    const toggleRect = toggle.getBoundingClientRect();
-    const margin = 8;
-    panel.style.top = `${toggleRect.bottom + 6}px`;
-    // Measure after making it visible (but off-thread of layout) so panel.offsetWidth is accurate.
-    const panelWidth = panel.offsetWidth || 200;
-    let left = toggleRect.right - panelWidth;
-    left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
-    panel.style.left = `${left}px`;
-}
-function openFilterPanel(panel, toggle) {
-    panel.hidden = false;
-    toggle.setAttribute("aria-expanded", "true");
-    positionFilterPanel(panel, toggle);
-}
 // updateFilterToggleActiveState toggles the CSS class that drives the slow
 // pulse/glow @keyframes animation on the chevron whenever a non-default
 // assignee filter or sort order is currently applied (from the URL).
@@ -448,10 +426,10 @@ function handleFilterPanelDocumentClick(e) {
     const { toggle, panel } = elements;
     if (toggle.contains(target)) {
         if (panel.hidden) {
-            openFilterPanel(panel, toggle);
+            openFilterPopover(panel, toggle);
         }
         else {
-            closeFilterPanel(panel, toggle);
+            closeFilterPopover(panel, toggle);
         }
         return;
     }
@@ -499,14 +477,14 @@ function handleFilterPanelDocumentClick(e) {
             showToast(t(kind === "sort" ? "board.filters.sortedBy" : "board.filters.filteringOn", { value: label }));
         }
         updateFilterToggleActiveState(toggle);
-        closeFilterPanel(panel, toggle);
+        closeFilterPopover(panel, toggle);
         reloadBoardFn?.(getSlug(), getTagsFromUrl(), urlFilter('search'), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl()).catch((err) => {
             showErrorFn?.(apiErrorMessage(err, { fallbackKey: "board.refreshFailed" }));
         });
         return;
     }
     if (!panel.hidden && !panel.contains(target)) {
-        closeFilterPanel(panel, toggle);
+        closeFilterPopover(panel, toggle);
     }
 }
 function handleFilterPanelDocumentKeydown(e) {
@@ -515,7 +493,7 @@ function handleFilterPanelDocumentKeydown(e) {
         return;
     const { toggle, panel } = elements;
     if (e.key === "Escape" && !panel.hidden) {
-        closeFilterPanel(panel, toggle);
+        closeFilterPopover(panel, toggle);
         toggle.focus();
     }
 }
@@ -525,7 +503,7 @@ function handleFilterPanelWindowResize() {
         return;
     const { toggle, panel } = elements;
     if (!panel.hidden)
-        positionFilterPanel(panel, toggle);
+        positionFilterPopover(panel, toggle);
 }
 function ensureFilterPanelDelegation() {
     if (filterPanelDelegationBound)

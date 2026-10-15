@@ -6165,7 +6165,11 @@ button.omni-tag-pill:focus-visible {
   gap: var(--s-8);
 }
 
-.search-filter-panel[hidden] {
+.search-filter-panel[hidden],
+/* The toggle and clear button set display:flex, which would otherwise beat
+   the user-agent [hidden] rule (the public board hides them via `hidden`). */
+.search-filter-toggle[hidden],
+.search-clear[hidden] {
   display: none;
 }
 
@@ -7122,26 +7126,17 @@ button.omni-tag-pill:focus-visible {
   white-space: nowrap;
 }
 
-.public-board-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
+/* The public search is type="search"; drop the browser's native cancel
+   button so only the app's clear button shows beside the filter chevron. */
+.page--public-board #publicSearchInput::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
 }
 
 .public-board-filters {
   flex-wrap: wrap;
   gap: var(--s-8);
-}
-
-.public-board-filter__select {
-  min-height: var(--s-36);
-  max-width: 14rem;
 }
 
 .public-board__filter-error {
@@ -7202,11 +7197,9 @@ button.omni-tag-pill:focus-visible {
     order: 1;
   }
 
-  /* Public board only: the view-only badge and sprint/priority selects are
-     desktop-only. display:none keeps them in the DOM (state preserved across
-     resizes) while removing them from layout and the tab order. */
-  .page--public-board .public-board-badge,
-  .page--public-board .public-board-filter {
+  /* Public board only: the view-only badge is desktop-only. Sprint/priority
+     filters live in the search input's popover, which stays available. */
+  .page--public-board .public-board-badge {
     display: none;
   }
 }

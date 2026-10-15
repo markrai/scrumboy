@@ -9,6 +9,13 @@
 
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
+import {
+  buildFilterPanelSectionHtml,
+  buildFilterPanelShellHtml,
+  buildPriorityFilterOptions,
+  buildSprintFilterOptions,
+  renderFilterOptionsHtml,
+} from './filter-panel-markup.js';
 import type { User } from '../types.js';
 import type {
   PublicBoardQuery,
@@ -142,10 +149,6 @@ export function buildPublicMobileTabsHtml(view: PublicBoardViewModel): string {
     .join('');
 }
 
-function sprintLabel(sprint: PublicSprint, duplicateName: boolean): string {
-  return duplicateName ? `${sprint.name} (${sprint.number})` : sprint.name;
-}
-
 export function buildPublicFiltersHtml(view: PublicBoardViewModel): string {
   const activeTags = new Set(view.query.tags.map((tag) => tag.toLocaleLowerCase()));
   const allLabel = escapeHTML(t('board.filters.all'));
@@ -157,37 +160,61 @@ export function buildPublicFiltersHtml(view: PublicBoardViewModel): string {
     }),
   ].join('');
 
-  let sprintSelect = '';
-  if (view.snapshot.project.sprintsEnabled && view.sprints.length > 0) {
-    const nameCount = new Map<string, number>();
-    for (const sprint of view.sprints) nameCount.set(sprint.name, (nameCount.get(sprint.name) ?? 0) + 1);
-    const options = view.sprints
-      .map((sprint) => `<option value="${sprint.number}"${view.query.sprintNumber === sprint.number ? ' selected' : ''}>${escapeHTML(sprintLabel(sprint, (nameCount.get(sprint.name) ?? 0) > 1))}</option>`)
-      .join('');
-    sprintSelect = `<label class="public-board-filter"><span class="public-board-sr-only"${attrI18n('text', 'board.filters.sprint')}>${escapeHTML(t('board.filters.sprint'))}</span><select class="search-input public-board-filter__select" id="publicSprintFilter"><option value=""${attrI18n('text', 'board.filters.allSprints')}>${escapeHTML(t('board.filters.allSprints'))}</option>${options}</select></label>`;
-  }
-
-  let prioritySelect = '';
-  if (view.snapshot.priorities.length > 0) {
-    const options = view.snapshot.priorities
-      .map((priority) => `<option value="${escapeHTML(priority.key)}"${view.query.priority === priority.key ? ' selected' : ''}>${escapeHTML(priority.name)}</option>`)
-      .join('');
-    prioritySelect = `<label class="public-board-filter"><span class="public-board-sr-only"${attrI18n('text', 'board.filters.priority')}>${escapeHTML(t('board.filters.priority'))}</span><select class="search-input public-board-filter__select" id="publicPriorityFilter"><option value=""${attrI18n('text', 'board.filters.allPriorities')}>${escapeHTML(t('board.filters.allPriorities'))}</option>${options}</select></label>`;
-  }
-
   return `
     <div class="filters public-board-filters">
       <div class="filters__label"${attrI18n('text', 'board.filters.label')}>${escapeHTML(t('board.filters.label'))}</div>
       <div class="chips-wrapper"><div class="chips-viewport"><div class="chips" id="publicTagChips">${chips}</div></div></div>
-      ${sprintSelect}
-      ${prioritySelect}
     </div>`;
+}
+
+/** Public filter popover ids and option attributes, distinct from the member panel's. */
+export const PUBLIC_FILTER_TOGGLE_ID = 'publicFilterToggle';
+export const PUBLIC_FILTER_PANEL_ID = 'publicFilterPanel';
+export const PUBLIC_SPRINT_OPTION_ATTR = 'data-public-sprint-option';
+export const PUBLIC_PRIORITY_OPTION_ATTR = 'data-public-priority-option';
+
+/**
+ * Sprint and priority sections of the public filter popover. Only what the
+ * public API supports: All plus numbered sprints, All plus named priority
+ * tiers. Never Scheduled/Unscheduled, No Priority, assignee, or sort.
+ * Returns '' when the board offers neither filter.
+ */
+export function buildPublicFilterSectionsHtml(view: Pick<PublicBoardViewModel, 'snapshot' | 'query' | 'sprints'>): string {
+  let html = '';
+  if (view.snapshot.project.sprintsEnabled && view.sprints.length > 0) {
+    const options = buildSprintFilterOptions(view.sprints, {
+      includeScheduled: false,
+      // Public sprints carry no internal ID; the number is their project-local identity.
+      identity: (sprint) => sprint.number,
+    });
+    const current = view.query.sprintNumber == null ? '' : String(view.query.sprintNumber);
+    html += buildFilterPanelSectionHtml({
+      labelKey: 'board.filters.sprint',
+      optionsHtml: renderFilterOptionsHtml(options, current, { attr: PUBLIC_SPRINT_OPTION_ATTR, ariaPressed: true }),
+      sectionAttr: 'data-public-sprint-section',
+    });
+  }
+  if (view.snapshot.priorities.length > 0) {
+    const options = buildPriorityFilterOptions(view.snapshot.priorities, { includeNoPriority: false });
+    html += buildFilterPanelSectionHtml({
+      labelKey: 'board.filters.priority',
+      optionsHtml: renderFilterOptionsHtml(options, view.query.priority ?? '', { attr: PUBLIC_PRIORITY_OPTION_ATTR, ariaPressed: true }),
+      sectionAttr: 'data-public-priority-section',
+    });
+  }
+  return html;
+}
+
+/** Drives the toggle's active pulse: a sprint or priority filter narrows the board. */
+export function isPublicPanelFilterActive(query: PublicBoardQuery): boolean {
+  return query.sprintNumber != null || !!query.priority;
 }
 
 export function buildPublicTopbarHtml(view: PublicBoardViewModel): string {
   const placeholderKey = view.isMobile ? 'board.search.placeholder.mobile' : 'board.search.placeholder.desktop';
   const clearLabel = escapeHTML(t('board.actions.clearSearch'));
   const badgeAria = escapeHTML(t('publicBoard.badgeAria'));
+  const sectionsHtml = buildPublicFilterSectionsHtml(view);
   return `
     <div class="topbar">
       <div class="brand public-board__project-name">${escapeHTML(view.snapshot.project.name)}</div>
@@ -196,6 +223,13 @@ export function buildPublicTopbarHtml(view: PublicBoardViewModel): string {
       <div class="search-input-wrapper">
         <input type="search" id="publicSearchInput" class="search-input" autocomplete="off" value="${escapeHTML(view.query.search)}" placeholder="${escapeHTML(t(placeholderKey))}" aria-label="${escapeHTML(t(placeholderKey))}"${attrI18n('placeholder', placeholderKey)}${attrI18n('aria-label', placeholderKey)} />
         <button class="search-clear" id="publicSearchClear" type="button" aria-label="${clearLabel}" title="${clearLabel}"${attrI18n('aria-label', 'board.actions.clearSearch')}${view.query.search ? '' : ' hidden'}>✕</button>
+        ${buildFilterPanelShellHtml({
+          toggleId: PUBLIC_FILTER_TOGGLE_ID,
+          panelId: PUBLIC_FILTER_PANEL_ID,
+          active: isPublicPanelFilterActive(view.query),
+          sectionsHtml,
+          toggleHidden: sectionsHtml === '',
+        })}
       </div>
       ${view.canSignIn ? `<button class="btn btn--ghost public-board__sign-in" type="button" id="publicSignInBtn"${attrI18n('text', 'auth.signIn.title')}>${escapeHTML(t('auth.signIn.title'))}</button>` : ''}
       ${view.user ? renderUserAvatar(view.user) : ''}

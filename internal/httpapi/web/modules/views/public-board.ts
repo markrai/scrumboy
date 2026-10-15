@@ -38,17 +38,24 @@ import {
   buildPublicBoardHtml,
   buildPublicColumnsHtml,
   buildPublicFilterErrorHtml,
+  buildPublicFilterSectionsHtml,
   buildPublicFiltersHtml,
   buildPublicMobileTabsHtml,
   buildPublicUnavailableHtml,
+  isPublicPanelFilterActive,
   isPublicQueryActive,
   publicPriorityMap,
+  PUBLIC_FILTER_PANEL_ID,
+  PUBLIC_FILTER_TOGGLE_ID,
+  PUBLIC_PRIORITY_OPTION_ATTR,
+  PUBLIC_SPRINT_OPTION_ATTR,
   showPublicPoints,
   type PublicBoardViewModel,
   type PublicLaneState,
 } from './public-board-rendering.js';
 import { closePublicTodo, getOpenPublicTodoLocalId, openPublicTodo, type PublicTodoDialogContext } from '../dialogs/public-todo.js';
 import { SseConnectionManager, type SseConnectionPolicy } from '../core/sse-client.js';
+import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
 
 /**
  * Public stream policy. The server sends comment-only heartbeats (~15s) that
@@ -96,7 +103,9 @@ type PublicSession = {
   sprintsController: AbortController | null;
   /** A filter change failed to load: the board region shows an error, not stale cards. */
   filterError: boolean;
-  rendered: { filters: string; columns: string; tabs: string };
+  /** Scopes the session's document/window listeners (filter popover); aborted on teardown. */
+  listeners: AbortController;
+  rendered: { filters: string; columns: string; tabs: string; panel: string };
 };
 
 let session: PublicSession | null = null;
@@ -194,6 +203,7 @@ function teardown(s: PublicSession): void {
   s.sprintsController?.abort();
   s.sprintsController = null;
   s.refreshQueued = false;
+  s.listeners.abort();
 }
 
 /** Ends any public board view and its stream. Safe to call repeatedly. */
@@ -259,7 +269,134 @@ function renderBoardRegions(s: PublicSession): void {
     filtersEl.outerHTML = filters;
     s.rendered.filters = filters;
   }
+  syncFilterPanel(s);
   syncNoResults(s);
+}
+
+// ---- Filter popover (sprint / priority) ----
+
+function filterPanelElements(): { toggle: HTMLButtonElement; panel: HTMLElement } | null {
+  const toggle = app.querySelector<HTMLButtonElement>(`#${PUBLIC_FILTER_TOGGLE_ID}`);
+  const panel = app.querySelector<HTMLElement>(`#${PUBLIC_FILTER_PANEL_ID}`);
+  return toggle && panel ? { toggle, panel } : null;
+}
+
+const PANEL_OPTION_ATTRS = [PUBLIC_SPRINT_OPTION_ATTR, PUBLIC_PRIORITY_OPTION_ATTR] as const;
+
+function focusedPanelOption(panel: HTMLElement): { attr: string; value: string } | null {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !panel.contains(active)) return null;
+  for (const attr of PANEL_OPTION_ATTRS) {
+    if (active.hasAttribute(attr)) return { attr, value: active.getAttribute(attr) ?? '' };
+  }
+  return null;
+}
+
+/**
+ * Brings the popover's sections, selection state, and toggle in line with the
+ * session (query, sprint vocabulary, priorities) without touching the search
+ * input or the rest of the topbar. An open popover stays open; a focused
+ * option keeps focus while it still exists.
+ */
+function syncFilterPanel(s: PublicSession): void {
+  if (!isCurrent(s)) return;
+  const elements = filterPanelElements();
+  if (!elements) return;
+  const { toggle, panel } = elements;
+  const sections = buildPublicFilterSectionsHtml(s);
+  const hadFocus = panel.contains(document.activeElement) || toggle === document.activeElement;
+  if (sections !== s.rendered.panel) {
+    const focused = focusedPanelOption(panel);
+    panel.innerHTML = sections;
+    s.rendered.panel = sections;
+    if (focused) {
+      const same = Array.from(panel.querySelectorAll<HTMLElement>(`[${focused.attr}]`))
+        .find((el) => el.getAttribute(focused.attr) === focused.value);
+      (same ?? toggle).focus();
+    }
+  }
+  const empty = sections === '';
+  if (empty && !panel.hidden) closeFilterPopover(panel, toggle);
+  toggle.hidden = empty;
+  toggle.classList.toggle('search-filter-toggle--active', isPublicPanelFilterActive(s.query));
+  if (empty && hadFocus) app.querySelector<HTMLInputElement>('#publicSearchInput')?.focus();
+  if (!panel.hidden) positionFilterPopover(panel, toggle);
+}
+
+/** Keeps the search input and its clear button in line with s.query after URL navigation. */
+function syncSearchInput(s: PublicSession): void {
+  const input = app.querySelector<HTMLInputElement>('#publicSearchInput');
+  if (!input) return;
+  if (normalizePublicQuery({ search: input.value }).search !== s.query.search) input.value = s.query.search;
+  app.querySelector('#publicSearchClear')?.toggleAttribute('hidden', input.value.trim() === '');
+}
+
+/** Only values the panel offers are accepted: All or a known sprint number. */
+function parsePanelSprint(s: PublicSession, raw: string): number | null | undefined {
+  if (raw === '') return null;
+  if (!/^\d{1,9}$/.test(raw)) return undefined;
+  const n = Number(raw);
+  return s.sprints.some((sprint) => sprint.number === n) ? n : undefined;
+}
+
+/** Only values the panel offers are accepted: All or a published priority key. */
+function parsePanelPriority(s: PublicSession, raw: string): string | null | undefined {
+  if (raw === '') return null;
+  return s.snapshot.priorities.some((priority) => priority.key === raw) ? raw : undefined;
+}
+
+/** Handles clicks on the toggle and on public options; returns true when consumed. */
+function handleFilterPanelClick(s: PublicSession, target: HTMLElement): boolean {
+  const elements = filterPanelElements();
+  if (!elements) return false;
+  const { toggle, panel } = elements;
+  if (toggle.contains(target)) {
+    if (panel.hidden) openFilterPopover(panel, toggle);
+    else closeFilterPopover(panel, toggle);
+    return true;
+  }
+  if (!panel.contains(target)) return false;
+  const sprintEl = target.closest<HTMLElement>(`[${PUBLIC_SPRINT_OPTION_ATTR}]`);
+  const priorityEl = target.closest<HTMLElement>(`[${PUBLIC_PRIORITY_OPTION_ATTR}]`);
+  let next: Partial<PublicBoardQuery> | null = null;
+  if (sprintEl) {
+    const sprintNumber = parsePanelSprint(s, sprintEl.getAttribute(PUBLIC_SPRINT_OPTION_ATTR) ?? '');
+    if (sprintNumber !== undefined) next = { sprintNumber };
+  } else if (priorityEl) {
+    const priority = parsePanelPriority(s, priorityEl.getAttribute(PUBLIC_PRIORITY_OPTION_ATTR) ?? '');
+    if (priority !== undefined) next = { priority };
+  }
+  if (!next) return true;
+  closeFilterPopover(panel, toggle);
+  toggle.focus();
+  setQuery(s, next);
+  return true;
+}
+
+/** Outside click, Escape, and resize for the popover, scoped to this session. */
+function bindSessionListeners(s: PublicSession): void {
+  const { signal } = s.listeners;
+  document.addEventListener('click', (event) => {
+    if (!isCurrent(s)) return;
+    const elements = filterPanelElements();
+    if (!elements || elements.panel.hidden) return;
+    const target = event.target;
+    if (target instanceof Node && (elements.panel.contains(target) || elements.toggle.contains(target))) return;
+    closeFilterPopover(elements.panel, elements.toggle);
+  }, { signal });
+  document.addEventListener('keydown', (event) => {
+    if (!isCurrent(s) || event.key !== 'Escape') return;
+    const elements = filterPanelElements();
+    if (!elements || elements.panel.hidden) return;
+    event.preventDefault();
+    closeFilterPopover(elements.panel, elements.toggle);
+    elements.toggle.focus();
+  }, { signal });
+  window.addEventListener('resize', () => {
+    if (!isCurrent(s)) return;
+    const elements = filterPanelElements();
+    if (elements && !elements.panel.hidden) positionFilterPopover(elements.panel, elements.toggle);
+  }, { signal });
 }
 
 function syncNoResults(s: PublicSession): void {
@@ -297,7 +434,12 @@ function renderFull(s: PublicSession): void {
     if (boardEl) boardEl.innerHTML = columns;
     syncNoResults(s);
   }
-  s.rendered = { filters: buildPublicFiltersHtml(view), columns, tabs: buildPublicMobileTabsHtml(view) };
+  s.rendered = {
+    filters: buildPublicFiltersHtml(view),
+    columns,
+    tabs: buildPublicMobileTabsHtml(view),
+    panel: buildPublicFilterSectionsHtml(view),
+  };
   bindPageHandlers(s);
 }
 
@@ -308,6 +450,7 @@ function bindPageHandlers(s: PublicSession): void {
   page.addEventListener('click', (event) => {
     if (!isCurrent(s)) return;
     const target = event.target as HTMLElement;
+    if (handleFilterPanelClick(s, target)) return;
     const card = target.closest<HTMLElement>('[data-public-local-id]');
     if (card) {
       const localId = Number(card.getAttribute('data-public-local-id'));
@@ -337,22 +480,13 @@ function bindPageHandlers(s: PublicSession): void {
     if (target.closest('#publicSearchClear')) {
       const input = page.querySelector<HTMLInputElement>('#publicSearchInput');
       if (input) input.value = '';
+      page.querySelector('#publicSearchClear')?.setAttribute('hidden', '');
       setQuery(s, { ...s.query, search: '' });
       input?.focus();
       return;
     }
     if (target.closest('#publicSignInBtn')) {
       startSignIn();
-    }
-  });
-  page.addEventListener('change', (event) => {
-    if (!isCurrent(s)) return;
-    const target = event.target as HTMLSelectElement;
-    if (target.id === 'publicSprintFilter') {
-      const n = Number(target.value);
-      setQuery(s, { ...s.query, sprintNumber: Number.isSafeInteger(n) && n > 0 ? n : null });
-    } else if (target.id === 'publicPriorityFilter') {
-      setQuery(s, { ...s.query, priority: target.value || null });
     }
   });
   page.addEventListener('input', (event) => {
@@ -395,6 +529,7 @@ function setQuery(s: PublicSession, next: Partial<PublicBoardQuery>): void {
   if (samePublicQuery(query, s.query)) return;
   s.query = query;
   writePublicQueryToUrl(query);
+  syncFilterPanel(s);
   void reloadSnapshot(s, 'filter');
 }
 
@@ -438,7 +573,8 @@ async function reloadSnapshot(s: PublicSession, kind: 'filter' | 'refresh'): Pro
       // A filter the board no longer supports: fall back to the unfiltered view.
       s.query = EMPTY_PUBLIC_QUERY;
       writePublicQueryToUrl(s.query);
-      renderFull(s);
+      syncSearchInput(s);
+      renderBoardRegions(s);
       void reloadSnapshot(s, 'filter');
       return;
     }
@@ -740,11 +876,13 @@ export async function resolvePublicBoard(input: PublicRouteInput): Promise<Publi
     sprintsSeq: 0,
     sprintsController: null,
     filterError: false,
-    rendered: { filters: '', columns: '', tabs: '' },
+    listeners: new AbortController(),
+    rendered: { filters: '', columns: '', tabs: '', panel: '' },
   };
   applySnapshot(s, snapshot);
   session = s;
   renderFull(s);
+  bindSessionListeners(s);
   connectStream(s);
   syncSprintVocabulary(s, 'initial');
   const localId = parseLocalIdSegment(input.openTodoSegment);
@@ -758,8 +896,12 @@ export async function applyPublicBoardRoute(input: PublicRouteInput): Promise<vo
   if (!s || s.slug !== input.slug) return;
   const query = readPublicQueryFromUrl();
   if (!samePublicQuery(query, s.query)) {
+    // The URL wins over a pending keystroke; the topbar and input are kept.
+    if (s.searchTimer !== null) clearTimeout(s.searchTimer);
+    s.searchTimer = null;
     s.query = query;
-    renderFull(s);
+    syncSearchInput(s);
+    renderBoardRegions(s);
     void reloadSnapshot(s, 'filter');
   }
   const localId = parseLocalIdSegment(input.openTodoSegment);

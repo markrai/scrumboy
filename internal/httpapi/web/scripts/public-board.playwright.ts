@@ -24,12 +24,25 @@ let dataDir = "";
 let baseUrl = "";
 let publicSlug = "";
 let privateSlug = "";
+/** Published board with sprints disabled and no priority tiers: the public filter toggle starts hidden. */
+let bareSlug = "";
 
 function setPublication(slug: string, enabled: boolean): void {
   const db = new DatabaseSync(path.join(dataDir, "app.db"));
   try {
     db.exec("PRAGMA busy_timeout = 5000");
     db.prepare("UPDATE projects SET public_view_enabled = ? WHERE slug = ?").run(enabled ? 1 : 0, slug);
+  } finally {
+    db.close();
+  }
+}
+
+function stripSprintsAndPriorities(slug: string): void {
+  const db = new DatabaseSync(path.join(dataDir, "app.db"));
+  try {
+    db.exec("PRAGMA busy_timeout = 5000");
+    db.prepare("UPDATE projects SET sprints_enabled = 0 WHERE slug = ?").run(slug);
+    db.prepare("DELETE FROM project_priorities WHERE project_id = (SELECT id FROM projects WHERE slug = ?)").run(slug);
   } finally {
     db.close();
   }
@@ -88,6 +101,11 @@ test.beforeAll(async () => {
   await owner.json("POST", `/api/board/${publicSlug}/todos`, { title: "Second story", columnKey: "done" });
   await owner.json("POST", `/api/board/${privateSlug}/todos`, { title: "Private secret story" });
   setPublication(publicSlug, true);
+  const bare = await owner.json<{ slug: string }>("POST", "/api/projects", { name: "Bare Public" });
+  bareSlug = bare.slug;
+  await owner.json("POST", `/api/board/${bareSlug}/todos`, { title: "Bare story" });
+  stripSprintsAndPriorities(bareSlug);
+  setPublication(bareSlug, true);
 });
 
 test.afterAll(async () => {
@@ -222,7 +240,7 @@ test("a sprint created by a maintainer appears live in the public sprint filter"
   const api = trackApi(page);
   await page.goto(`${baseUrl}/${publicSlug}`);
   await expect(page.locator(".public-board-badge")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#publicSprintFilter")).toHaveCount(0);
+  await expect(page.locator("#publicFilterPanel [data-public-sprint-section]")).toHaveCount(0);
 
   const owner = apiClient(baseUrl);
   await owner.json("POST", "/api/auth/login", { email: OWNER.email, password: OWNER.password });
@@ -232,8 +250,291 @@ test("a sprint created by a maintainer appears live in the public sprint filter"
     plannedStartAt: start,
     plannedEndAt: start + 7 * 24 * 60 * 60 * 1000,
   });
-  await expect(page.locator("#publicSprintFilter option", { hasText: "Live Sprint" })).toHaveCount(1, { timeout: 20_000 });
+  await expect(page.locator("#publicFilterPanel [data-public-sprint-option]", { hasText: "Live Sprint" })).toHaveCount(1, { timeout: 20_000 });
   expect(api.filter((p) => !p.startsWith(`/api/public/board/${publicSlug}`) && p !== "/api/auth/status")).toEqual([`/api/board/${publicSlug}`]);
+});
+
+type Box = { x: number; y: number; width: number; height: number };
+
+function overlaps(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+function contains(outer: Box, inner: Box): boolean {
+  return inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.width <= outer.x + outer.width && inner.y + inner.height <= outer.y + outer.height;
+}
+
+async function focusedId(page: Page): Promise<string> {
+  return page.evaluate(() => (document.activeElement as HTMLElement | null)?.id ?? "");
+}
+
+async function horizontalOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+}
+
+/** Full API URLs (path + query) so filter parameters can be inspected. */
+function trackApiUrls(page: Page): string[] {
+  const seen: string[] = [];
+  page.on("request", (req: Request) => {
+    const u = new URL(req.url());
+    if (u.pathname.startsWith("/api/")) seen.push(u.pathname + u.search);
+  });
+  return seen;
+}
+
+async function ownerClient() {
+  const owner = apiClient(baseUrl);
+  await owner.json("POST", "/api/auth/login", { email: OWNER.email, password: OWNER.password });
+  return owner;
+}
+
+async function createSprint(client: ReturnType<typeof apiClient>, slug: string, name: string): Promise<void> {
+  const start = Date.now();
+  await client.json("POST", `/api/board/${slug}/sprints`, { name, plannedStartAt: start, plannedEndAt: start + 7 * 24 * 60 * 60 * 1000 });
+}
+
+test("hidden public filter toggle and clear button are invisible, unclickable, and skipped by Tab", async ({ page }) => {
+  await page.goto(`${baseUrl}/${bareSlug}`);
+  const input = page.locator("#publicSearchInput");
+  const toggle = page.locator("#publicFilterToggle");
+  const clear = page.locator("#publicSearchClear");
+  await expect(input).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[data-public-local-id]")).toHaveCount(1);
+
+  const expectGone = async () => {
+    for (const hidden of [toggle, clear]) {
+      await expect(hidden).toHaveAttribute("hidden", "");
+      await expect(hidden).toBeHidden();
+      expect(await hidden.evaluate((el) => getComputedStyle(el).display)).toBe("none");
+      expect(await hidden.boundingBox()).toBeNull();
+    }
+    // Where the clear button and chevron would sit, the input receives the click.
+    const box = (await input.boundingBox())!;
+    for (const offset of [10, 30]) {
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id ?? "", [box.x + box.width - offset, box.y + box.height / 2]);
+      expect(hit).toBe("publicSearchInput");
+    }
+    await input.focus();
+    await page.keyboard.press("Tab");
+    expect(["publicFilterToggle", "publicSearchClear"]).not.toContain(await focusedId(page));
+  };
+
+  // Initially hidden: no sprints, no priorities, no search text.
+  await expectGone();
+
+  // Clear button: hidden -> visible (reachable by Tab) -> hidden.
+  await input.fill("Bare");
+  await expect(clear).toBeVisible();
+  await input.focus();
+  await page.keyboard.press("Tab");
+  expect(await focusedId(page)).toBe("publicSearchClear");
+  await clear.click();
+  await expect(clear).toBeHidden();
+  expect(await focusedId(page)).toBe("publicSearchInput");
+
+  // Toggle: hidden -> visible when a sprint becomes available -> hidden when sprints are disabled.
+  const owner = await ownerClient();
+  await owner.json("PATCH", `/api/board/${bareSlug}/settings`, { sprintsEnabled: true });
+  await createSprint(owner, bareSlug, "Bare Sprint");
+  await expect(toggle).toBeVisible({ timeout: 20_000 });
+  await input.focus();
+  await page.keyboard.press("Tab");
+  expect(await focusedId(page)).toBe("publicFilterToggle");
+
+  await owner.json("PATCH", `/api/board/${bareSlug}/settings`, { sprintsEnabled: false });
+  await expect(toggle).toBeHidden({ timeout: 20_000 });
+  await expectGone();
+});
+
+for (const width of [320, 390, 1280]) {
+  test(`public filter popover at ${width}px: layout, selection, keyboard, and dismissal`, async ({ browser }) => {
+    const mobile = width < 768;
+    const height = mobile ? 700 : 800;
+    const context = await browser.newContext({ viewport: { width, height }, isMobile: mobile, hasTouch: mobile });
+    const page = await context.newPage();
+    const urls = trackApiUrls(page);
+    await page.goto(`${baseUrl}/${publicSlug}`);
+    const input = page.locator("#publicSearchInput");
+    const toggle = page.locator("#publicFilterToggle");
+    const clear = page.locator("#publicSearchClear");
+    const panel = page.locator("#publicFilterPanel");
+    const cards = page.locator("[data-public-local-id]");
+    await expect(cards).toHaveCount(2, { timeout: 30_000 });
+    await expect(input).toBeVisible();
+    await expect(toggle).toBeVisible();
+    await expect(clear).toBeHidden();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+
+    // Typing filters while the input keeps focus; clear and chevron sit inside the input without overlapping.
+    await input.click();
+    await input.pressSequentially("Readable");
+    await expect(cards).toHaveCount(1);
+    await expect(clear).toBeVisible();
+    expect(await focusedId(page)).toBe("publicSearchInput");
+    await expect(input).toHaveValue("Readable");
+    const [inputBox, clearBox, toggleBox] = [(await input.boundingBox())!, (await clear.boundingBox())!, (await toggle.boundingBox())!];
+    expect(contains(inputBox, clearBox)).toBe(true);
+    expect(contains(inputBox, toggleBox)).toBe(true);
+    expect(overlaps(clearBox, toggleBox)).toBe(false);
+    expect(inputBox.x).toBeGreaterThanOrEqual(0);
+    expect(inputBox.x + inputBox.width).toBeLessThanOrEqual(width);
+    for (const other of await page.locator(".topbar > :visible").all()) {
+      const box = await other.boundingBox();
+      if (!box || (await other.evaluate((el) => el.classList.contains("search-input-wrapper") || el.classList.contains("spacer")))) continue;
+      expect(overlaps(box, inputBox), await other.evaluate((el) => el.outerHTML.slice(0, 80))).toBe(false);
+    }
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    await clear.click();
+    await expect(cards).toHaveCount(2);
+
+    // The popover opens fully inside the viewport, below the chevron.
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const panelBox = (await panel.boundingBox())!;
+    const openToggleBox = (await toggle.boundingBox())!;
+    expect(contains({ x: 0, y: 0, width, height }, panelBox)).toBe(true);
+    expect(panelBox.y).toBeGreaterThanOrEqual(openToggleBox.y + openToggleBox.height);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    await expect(panel.locator("[data-public-sprint-option]", { hasText: "Live Sprint" })).toBeVisible();
+    await expect(panel.locator("[data-public-priority-option]")).toHaveCount(5);
+    await expect(panel.locator('[data-public-sprint-option="scheduled"], [data-public-priority-option="**none**"], [data-assignee-option], [data-sort-option]')).toHaveCount(0);
+
+    // Outside click closes.
+    await page.locator(".public-board__project-name").click();
+    await expect(panel).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    // Keyboard: Enter opens, Tab moves into the options, Escape closes and restores focus.
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toBeVisible();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => !!document.activeElement?.closest("#publicFilterPanel"))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    expect(await focusedId(page)).toBe("publicFilterToggle");
+
+    // Select a priority by keyboard: closes, focuses the chevron, marks it active.
+    await page.keyboard.press("Enter");
+    const high = panel.locator('[data-public-priority-option="high"]');
+    await high.focus();
+    await page.keyboard.press("Enter");
+    await expect(panel).toBeHidden();
+    expect(await focusedId(page)).toBe("publicFilterToggle");
+    await expect(page).toHaveURL(/[?&]priority=high/);
+    await expect(toggle).toHaveClass(/search-filter-toggle--active/);
+    await expect(cards).toHaveCount(0);
+    await toggle.click();
+    await expect(high).toHaveClass(/is-active/);
+    await expect(high).toHaveAttribute("aria-pressed", "true");
+
+    // Sprint selection by pointer.
+    await panel.locator("[data-public-sprint-option]", { hasText: "Live Sprint" }).click();
+    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(/[?&]sprintNumber=\d+/);
+
+    // Clearing both restores the unfiltered board and the idle chevron.
+    await toggle.click();
+    await panel.locator('[data-public-sprint-option=""]').click();
+    await toggle.click();
+    await panel.locator('[data-public-priority-option=""]').click();
+    await expect(cards).toHaveCount(2);
+    await expect(page).not.toHaveURL(/priority=|sprintNumber=/);
+    await expect(toggle).not.toHaveClass(/search-filter-toggle--active/);
+    await toggle.click();
+    await expect(panel.locator('[data-public-priority-option=""]')).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+
+    const nonPublic = urls.filter((u) => !u.startsWith(`/api/public/board/${publicSlug}`) && u !== "/api/auth/status");
+    expect(nonPublic.map((u) => new URL(u, baseUrl).pathname)).toEqual([`/api/board/${publicSlug}`]);
+    await context.close();
+  });
+}
+
+test("public search keeps focus and text across filtering and a live refresh", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  await page.goto(`${baseUrl}/${publicSlug}`);
+  const input = page.locator("#publicSearchInput");
+  const cards = page.locator("[data-public-local-id]");
+  await expect(cards).toHaveCount(2, { timeout: 30_000 });
+  await input.click();
+  await input.pressSequentially("Second");
+  await expect(cards).toHaveCount(1);
+  expect(await focusedId(page)).toBe("publicSearchInput");
+
+  // A sprint change arrives over the stream: refresh + vocabulary reload, input untouched.
+  const inputHandle = await input.elementHandle();
+  await createSprint(await ownerClient(), publicSlug, "Refresh Sprint");
+  await expect(page.locator("#publicFilterPanel [data-public-sprint-option]", { hasText: "Refresh Sprint" })).toHaveCount(1, { timeout: 20_000 });
+  expect(await focusedId(page)).toBe("publicSearchInput");
+  expect(await inputHandle!.evaluate((el) => el.isConnected)).toBe(true);
+  await expect(input).toHaveValue("Second");
+  await expect(cards).toHaveCount(1);
+  await context.close();
+});
+
+test("member board filtering is unchanged and its handlers ignore public controls after navigation", async ({ browser }) => {
+  const outsider = apiClient(baseUrl);
+  await outsider.json("POST", "/api/auth/login", { email: OUTSIDER.email, password: OUTSIDER.password });
+  const own = await outsider.json<{ slug: string }>("POST", "/api/projects", { name: "Outsider Own Board" });
+  await outsider.json("POST", `/api/board/${own.slug}/todos`, { title: "Own story" });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await context.addCookies(toBrowserCookies(outsider.cookies()));
+  const page = await context.newPage();
+  const urls = trackApiUrls(page);
+
+  // Member board: the regular panel with assignee, sort, No Priority, and its toast.
+  await page.goto(`${baseUrl}/${own.slug}`);
+  const memberToggle = page.locator("#searchFilterToggle");
+  const memberPanel = page.locator("#searchFilterPanel");
+  await expect(memberToggle).toBeVisible({ timeout: 30_000 });
+  await memberToggle.click();
+  await expect(memberPanel).toBeVisible();
+  await expect(memberPanel.locator("[data-assignee-option]").first()).toBeVisible();
+  await expect(memberPanel.locator("[data-sort-option]")).toHaveCount(4);
+  await expect(memberPanel.locator('[data-priority-option="**none**"]')).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(memberPanel).toBeHidden();
+  await memberToggle.click();
+  await memberPanel.locator('[data-priority-option="high"]').click();
+  await expect(memberPanel).toBeHidden();
+  await expect(page).toHaveURL(/[?&]priority=high/);
+  await expect(page.locator("#toast")).toContainText("High");
+  await expect.poll(() => urls.some((u) => u.startsWith(`/api/board/${own.slug}?`) && u.includes("priority=high"))).toBe(true);
+  await expect(memberToggle).toHaveClass(/search-filter-toggle--active/);
+  await expect(page.locator("#searchClear")).toHaveCount(0);
+
+  // Client-side navigation to the public board (member listeners stay installed).
+  await page.evaluate((slug) => {
+    history.pushState({}, "", `/${slug}`);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, publicSlug);
+  await expect(page.locator(".public-board-badge")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#searchFilterToggle, #searchFilterPanel, #searchInput")).toHaveCount(0);
+  const afterNav = urls.length;
+
+  const toggle = page.locator("#publicFilterToggle");
+  const panel = page.locator("#publicFilterPanel");
+  await toggle.click();
+  await expect(panel).toBeVisible();
+  await panel.locator('[data-public-priority-option="high"]').click();
+  await expect(panel).toBeHidden();
+  await toggle.click();
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await toggle.click();
+  await page.locator(".public-board__project-name").click();
+  await expect(panel).toBeHidden();
+  await expect.poll(() => urls.slice(afterNav).some((u) => u.startsWith(`/api/public/board/${publicSlug}?`) && u.includes("priority=high"))).toBe(true);
+
+  const url = new URL(page.url());
+  expect(url.searchParams.get("priority")).toBe("high");
+  for (const memberParam of ["sprintId", "assignee", "sort"]) expect(url.searchParams.has(memberParam)).toBe(false);
+  // No member reload or member board request was triggered by public controls.
+  expect(urls.slice(afterNav).filter((u) => !u.startsWith("/api/public/") && u !== "/api/auth/status")).toEqual([]);
+  await context.close();
 });
 
 test("a previously visited public route uses the cached app shell and reports live data unavailable", async ({ page, context }) => {
