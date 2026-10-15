@@ -8,7 +8,7 @@ import { boardSprintsEnabled } from '../sprints.js';
 import { showToast } from '../utils.js';
 import { buildSprintFilterSectionHtml, buildChipsHTML, getCombinedChipData, isBoardFilterActive, } from './board-rendering.js';
 import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
-import { buildOmniRowContent, compareOmniTagNames, findOmniRowElements, matchOmniTagCandidates, pageOmniCandidates, rankOmniBrowseCandidates, renderOmniRow, revealFocusedPinnedOmniPill, revealLastPinnedOmniPill, updateOmniChevrons, } from './omni-tags.js';
+import { buildOmniRowContent, compareOmniTagNames, findOmniRowElements, matchOmniTagCandidates, OMNI_MOBILE_MAX_WIDTH_PX, pageOmniCandidates, rankOmniBrowseCandidates, renderOmniRow, revealFocusedPinnedOmniPill, revealLastPinnedOmniPill, updateOmniChevrons, } from './omni-tags.js';
 let lastDisplayChipData = [];
 let lastSprintsData = null;
 let lastSprintsDataSlug = null;
@@ -21,7 +21,6 @@ let filterPanelDelegationBound = false;
 let searchTimeout = null;
 let omniCandidateResizeObserver = null;
 let omniCandidateWindowResizeBound = false;
-const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
 let reloadBoardFn = null;
@@ -169,9 +168,9 @@ export function updateOmniTagPills(board = getBoard()) {
 function bindOmniTagPills() {
     // Anchored on a member-only ID: the shared .omni-bar class also appears on the public board.
     const bar = document.getElementById(MEMBER_OMNI_IDS.pinned)?.closest('.filters--omni .omni-bar') ?? null;
-    const viewport = document.getElementById('omniCandidateViewport');
-    const previous = document.getElementById('omniCandidatePrev');
-    const next = document.getElementById('omniCandidateNext');
+    const viewport = document.getElementById(MEMBER_OMNI_IDS.viewport);
+    const previous = document.getElementById(MEMBER_OMNI_IDS.previous);
+    const next = document.getElementById(MEMBER_OMNI_IDS.next);
     if (!bar || !viewport)
         return;
     bar.onkeydown = (event) => {
@@ -212,7 +211,7 @@ function bindOmniTagPills() {
     if (next)
         next.onclick = () => pageOmniCandidates(viewport, 1);
     viewport.onscroll = updateOmniCandidateChevronState;
-    const pinned = document.getElementById('omniPinnedTags');
+    const pinned = document.getElementById(MEMBER_OMNI_IDS.pinned);
     if (pinned) {
         pinned.removeEventListener('focusin', handleOmniPinnedFocusIn);
         pinned.addEventListener('focusin', handleOmniPinnedFocusIn);
@@ -461,7 +460,7 @@ function initMobileTagPagination() {
     const chipsNav = document.getElementById("chipsNav");
     if (!tagChipsEl || !chipsNav)
         return;
-    const isMobile = window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
+    const isMobile = window.matchMedia(`(max-width: ${OMNI_MOBILE_MAX_WIDTH_PX}px)`).matches;
     if (!mobileTagPaginationResizeBound) {
         mobileTagPaginationResizeBound = true;
         let resizeTimeout = null;

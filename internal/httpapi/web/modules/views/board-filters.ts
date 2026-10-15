@@ -30,6 +30,7 @@ import {
   compareOmniTagNames,
   findOmniRowElements,
   matchOmniTagCandidates,
+  OMNI_MOBILE_MAX_WIDTH_PX,
   pageOmniCandidates,
   rankOmniBrowseCandidates,
   renderOmniRow,
@@ -52,7 +53,6 @@ let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 let omniCandidateResizeObserver: ResizeObserver | null = null;
 let omniCandidateWindowResizeBound = false;
 
-const MOBILE_TAG_BREAKPOINT = 767;
 const MOBILE_TAG_ROWS_PER_PAGE = 2;
 const FILTER_BOUND_FLAG = Symbol('boardFiltersBound');
 
@@ -216,9 +216,9 @@ export function updateOmniTagPills(board: Board | null = getBoard()): void {
 function bindOmniTagPills(): void {
   // Anchored on a member-only ID: the shared .omni-bar class also appears on the public board.
   const bar = document.getElementById(MEMBER_OMNI_IDS.pinned)?.closest<HTMLElement>('.filters--omni .omni-bar') ?? null;
-  const viewport = document.getElementById('omniCandidateViewport');
-  const previous = document.getElementById('omniCandidatePrev') as HTMLButtonElement | null;
-  const next = document.getElementById('omniCandidateNext') as HTMLButtonElement | null;
+  const viewport = document.getElementById(MEMBER_OMNI_IDS.viewport);
+  const previous = document.getElementById(MEMBER_OMNI_IDS.previous) as HTMLButtonElement | null;
+  const next = document.getElementById(MEMBER_OMNI_IDS.next) as HTMLButtonElement | null;
   if (!bar || !viewport) return;
   bar.onkeydown = (event: KeyboardEvent) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -252,7 +252,7 @@ function bindOmniTagPills(): void {
   if (previous) previous.onclick = () => pageOmniCandidates(viewport, -1);
   if (next) next.onclick = () => pageOmniCandidates(viewport, 1);
   viewport.onscroll = updateOmniCandidateChevronState;
-  const pinned = document.getElementById('omniPinnedTags');
+  const pinned = document.getElementById(MEMBER_OMNI_IDS.pinned);
   if (pinned) {
     pinned.removeEventListener('focusin', handleOmniPinnedFocusIn);
     pinned.addEventListener('focusin', handleOmniPinnedFocusIn);
@@ -514,7 +514,7 @@ function initMobileTagPagination(): void {
   const chipsNav = document.getElementById("chipsNav");
   if (!tagChipsEl || !chipsNav) return;
 
-  const isMobile = window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
+  const isMobile = window.matchMedia(`(max-width: ${OMNI_MOBILE_MAX_WIDTH_PX}px)`).matches;
 
   if (!mobileTagPaginationResizeBound) {
     mobileTagPaginationResizeBound = true;
