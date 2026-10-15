@@ -1,6 +1,6 @@
 /**
  * Pure HTML builders for the public read-only board. They reuse the member
- * board's layout classes (topbar, filters, chips, columns, cards, mobile tabs)
+ * board's layout classes (topbar, Omni tag row, columns, cards, mobile tabs)
  * so the page looks like Scrumboy, but emit no mutation controls, drag
  * handles, selection state, member/assignee data, or global identifiers.
  * Cards are keyed only by project-local IDs (data-public-local-id) so no member
@@ -9,6 +9,8 @@
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
 import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, buildSprintFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
+import { buildOmniBarHtml, buildOmniRowContent, compareOmniTagNames, matchOmniTagCandidates, rankOmniBrowseCandidates, } from './omni-tags.js';
+import { PUBLIC_MAX_TAG_FILTERS } from '../public-board-api.js';
 function attrI18n(kind, key) {
     return ` data-i18n-${kind}="${escapeHTML(key)}"`;
 }
@@ -106,21 +108,54 @@ export function buildPublicMobileTabsHtml(view) {
     })
         .join('');
 }
-export function buildPublicFiltersHtml(view) {
-    const activeTags = new Set(view.query.tags.map((tag) => tag.toLocaleLowerCase()));
-    const allLabel = escapeHTML(t('board.filters.all'));
-    const chips = [
-        `<button class="chip${view.query.tags.length === 0 ? ' chip--active' : ''}" type="button" data-public-tag="" aria-pressed="${view.query.tags.length === 0 ? 'true' : 'false'}"${attrI18n('text', 'board.filters.all')}>${allLabel}</button>`,
-        ...view.snapshot.tags.map((tag) => {
-            const active = activeTags.has(tag.name.toLocaleLowerCase());
-            return `<button class="chip${active ? ' chip--active' : ''}" type="button" data-public-tag="${escapeHTML(tag.name)}" aria-pressed="${active ? 'true' : 'false'}"${colorStyle(tag.color)}>${escapeHTML(tag.name)}</button>`;
-        }),
-    ].join('');
+/** Public Omni row IDs and attributes, distinct from the member board's omni* IDs and data-omni-* hooks. */
+export const PUBLIC_OMNI_IDS = Object.freeze({
+    pinned: 'publicOmniPinnedTags',
+    region: 'publicOmniCandidateRegion',
+    previous: 'publicOmniCandidatePrev',
+    viewport: 'publicOmniCandidateViewport',
+    next: 'publicOmniCandidateNext',
+    mobile: 'publicOmniMobileTagPills',
+});
+export const PUBLIC_OMNI_TAG_ATTR = 'data-public-omni-tag';
+export const PUBLIC_OMNI_CLEAR_ATTR = 'data-public-omni-clear-tag';
+/**
+ * Stable Omni shell for the public tag filter. Rendered once per page; only its
+ * pinned, candidate, and mobile regions are updated afterwards.
+ */
+export function buildPublicOmniRowHtml() {
     return `
-    <div class="filters public-board-filters">
-      <div class="filters__label"${attrI18n('text', 'board.filters.label')}>${escapeHTML(t('board.filters.label'))}</div>
-      <div class="chips-wrapper"><div class="chips-viewport"><div class="chips" id="publicTagChips">${chips}</div></div></div>
+    <div class="filters filters--omni public-board-omni" data-public-omni>
+      ${buildOmniBarHtml({ ids: PUBLIC_OMNI_IDS, previousLabel: t('board.filters.previous'), nextLabel: t('board.filters.next') })}
     </div>`;
+}
+/** Public Browse order: most active first, then name. The public API exposes no recency. */
+export function comparePublicBrowseTags(left, right) {
+    if (left.activeCount !== right.activeCount)
+        return right.activeCount - left.activeCount;
+    return compareOmniTagNames(left.name, right.name);
+}
+/**
+ * Pinned pills for every selected tag (including tags no longer in the
+ * vocabulary, so they stay removable), plus Browse candidates for an empty
+ * input or matches for the typed input. Only tags with active stories are
+ * offered. Text keeps the theme color; tag colors tint border and background.
+ */
+export function buildPublicOmniContent(args) {
+    const byName = new Map(args.tags.map((tag) => [tag.name.toLocaleLowerCase(), tag]));
+    const selectable = args.tags.filter((tag) => tag.activeCount > 0);
+    const browse = args.input.trim() === '';
+    const candidates = browse
+        ? rankOmniBrowseCandidates(selectable, args.selected, PUBLIC_MAX_TAG_FILTERS, comparePublicBrowseTags)
+        : matchOmniTagCandidates(args.input, selectable, args.selected, PUBLIC_MAX_TAG_FILTERS);
+    return buildOmniRowContent({
+        applied: args.selected.map((name) => ({ name, color: byName.get(name.toLocaleLowerCase())?.color ?? null })),
+        candidates,
+        browse,
+        attrs: { tag: PUBLIC_OMNI_TAG_ATTR, clear: PUBLIC_OMNI_CLEAR_ATTR },
+        tone: 'theme',
+        clearLabel: (name) => t('board.filters.clearTag', { name }),
+    });
 }
 /** Public filter popover ids and option attributes, distinct from the member panel's. */
 export const PUBLIC_FILTER_TOGGLE_ID = 'publicFilterToggle';
@@ -199,7 +234,7 @@ export function buildPublicBoardHtml(view) {
     <div class="page page--public-board" data-public-board-page>
       ${buildPublicTopbarHtml(view)}
       <div class="container">
-        ${buildPublicFiltersHtml(view)}
+        ${buildPublicOmniRowHtml()}
         ${noResults}
         <div class="mobile-board-wrapper">
           <div class="mobile-tabs" id="publicMobileTabs" role="tablist">${buildPublicMobileTabsHtml(view)}</div>

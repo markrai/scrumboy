@@ -11,7 +11,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext, type BrowserContextOptions, type Page, type Request } from "@playwright/test";
 
 const webDir = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(webDir, "..", "..", "..");
@@ -26,6 +26,16 @@ let publicSlug = "";
 let privateSlug = "";
 /** Published board with sprints disabled and no priority tiers: the public filter toggle starts hidden. */
 let bareSlug = "";
+/** Published board whose tags overflow the desktop Omni rail; tag k is on (TAG_NAMES.length - k) stories. */
+let tagSlug = "";
+const TAG_NAMES = [
+  "alpha-component-library", "beta-design-system", "gamma-performance", "delta-accessibility",
+  "epsilon-localization", "zeta-observability", "eta-infrastructure", "theta-documentation",
+  "iota-release-process", "kappa-customer-support", "lambda-data-pipeline", "mu-security-review",
+  "nu-onboarding-flow", "xi-final-tag",
+];
+// Tag names are canonicalized server-side (lowercase, restricted charset), so hostile
+// names cannot reach a public board end to end; their escaping is unit-tested.
 
 function setPublication(slug: string, enabled: boolean): void {
   const db = new DatabaseSync(path.join(dataDir, "app.db"));
@@ -69,6 +79,9 @@ test.beforeAll(async () => {
       ...process.env,
       SCRUMBOY_MODE: "full",
       SCRUMBOY_PUBLIC_PROJECTS_ENABLED: "1",
+      // Lets the Omni tests below present distinct client addresses (X-Forwarded-For) so their
+      // traffic does not exhaust the per-IP public read limit (120/min) shared by the other tests.
+      SCRUMBOY_TRUST_PROXY: "1",
       DATA_DIR: dataDir,
       BIND_ADDR: `127.0.0.1:${port}`,
       SCRUMBOY_TLS_CERT: path.join(dataDir, "no-cert"),
@@ -106,6 +119,12 @@ test.beforeAll(async () => {
   await owner.json("POST", `/api/board/${bareSlug}/todos`, { title: "Bare story" });
   stripSprintsAndPriorities(bareSlug);
   setPublication(bareSlug, true);
+  const tagged = await owner.json<{ slug: string }>("POST", "/api/projects", { name: "Tagged Public" });
+  tagSlug = tagged.slug;
+  for (let j = 0; j < TAG_NAMES.length; j++) {
+    await owner.json("POST", `/api/board/${tagSlug}/todos`, { title: `Tagged story ${j}`, tags: TAG_NAMES.slice(0, TAG_NAMES.length - j) });
+  }
+  setPublication(tagSlug, true);
 });
 
 test.afterAll(async () => {
@@ -533,6 +552,219 @@ test("member board filtering is unchanged and its handlers ignore public control
   expect(url.searchParams.get("priority")).toBe("high");
   for (const memberParam of ["sprintId", "assignee", "sort"]) expect(url.searchParams.has(memberParam)).toBe(false);
   // No member reload or member board request was triggered by public controls.
+  expect(urls.slice(afterNav).filter((u) => !u.startsWith("/api/public/") && u !== "/api/auth/status")).toEqual([]);
+  await context.close();
+});
+
+let isolatedClient = 0;
+
+/** A browser context with its own client address for the public per-IP rate limits. */
+async function isolatedContext(browser: Browser, options: BrowserContextOptions = {}): Promise<BrowserContext> {
+  isolatedClient += 1;
+  return browser.newContext({ ...options, extraHTTPHeaders: { "X-Forwarded-For": `198.51.100.${isolatedClient}` } });
+}
+
+function publicSnapshotUrls(urls: string[], slug: string): URL[] {
+  return urls.filter((u) => u.startsWith(`/api/public/board/${slug}?`)).map((u) => new URL(u, baseUrl));
+}
+
+for (const width of [320, 390, 767, 768, 1280]) {
+  test(`public Omni tags at ${width}px: browse, suggestions, pins, rails, and keyboard`, async ({ browser }) => {
+    const desktop = width >= 768;
+    const context = await isolatedContext(browser, { viewport: { width, height: 800 }, isMobile: width <= 620, hasTouch: !desktop });
+    const page = await context.newPage();
+    const urls = trackApiUrls(page);
+    await page.goto(`${baseUrl}/${tagSlug}`);
+    const input = page.locator("#publicSearchInput");
+    const viewport = page.locator("#publicOmniCandidateViewport");
+    const pinnedRail = page.locator("#publicOmniPinnedTags");
+    const mobileRail = page.locator("#publicOmniMobileTagPills");
+    const next = page.locator("#publicOmniCandidateNext");
+    const previous = page.locator("#publicOmniCandidatePrev");
+    await expect(input).toBeVisible({ timeout: 30_000 });
+    // Like the member board, the mobile row collapses while it has nothing to show.
+    await expect(page.locator("[data-public-omni]")).toHaveCount(1);
+    await expect(page.locator(".chip, [data-public-tag], #publicTagChips, [id^='omni'], [data-omni-tag]")).toHaveCount(0);
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    const expectRowBelowTopbar = async () => {
+      const rowBox = (await page.locator("[data-public-omni]").boundingBox())!;
+      const topbarBox = (await page.locator(".topbar").boundingBox())!;
+      expect(rowBox.height).toBeGreaterThan(0);
+      expect(rowBox.y).toBeGreaterThanOrEqual(topbarBox.y + topbarBox.height - 1);
+    };
+    if (desktop) await expectRowBelowTopbar();
+
+    if (desktop) {
+      // Browse: count order, subdued, overflowing with working chevrons; no mobile rail.
+      await expect(viewport.locator("[data-public-omni-tag]").first()).toHaveAttribute("data-public-omni-tag", TAG_NAMES[0]);
+      const browseNames = await viewport.locator("[data-public-omni-tag]").evaluateAll((els) => els.map((el) => el.getAttribute("data-public-omni-tag")));
+      expect(browseNames).toEqual(TAG_NAMES);
+      await expect(viewport.locator(".omni-tag-pill--browse")).toHaveCount(TAG_NAMES.length);
+      await expect(mobileRail).toBeHidden();
+      await expect(previous).toBeDisabled();
+      await expect(next).toBeEnabled();
+      await next.click();
+      await expect.poll(() => viewport.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+      await expect(previous).toBeEnabled();
+      await previous.click();
+      await expect.poll(() => viewport.evaluate((el) => el.scrollLeft)).toBe(0);
+      await expect(previous).toBeDisabled();
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    } else {
+      // Mobile: no desktop rails and no empty-search Browse pills.
+      await expect(page.locator("#publicOmniCandidateRegion")).toBeHidden();
+      await expect(pinnedRail).toBeHidden();
+      await expect(mobileRail).toBeHidden();
+    }
+
+    // Typing shows suggestions immediately; picking one consumes the search with a single reload.
+    await input.click();
+    await input.pressSequentially("gam");
+    const suggestion = (desktop ? viewport : mobileRail).locator('[data-public-omni-tag="gamma-performance"]');
+    await expect(suggestion).toBeVisible();
+    await expect(suggestion).toHaveClass(/omni-tag-pill--suggestion/);
+    const beforePick = urls.length;
+    await suggestion.click();
+    await expect(input).toHaveValue("");
+    await expect(page.locator("#publicSearchClear")).toBeHidden();
+    expect(await focusedId(page)).toBe("publicSearchInput");
+    const pinRail = desktop ? pinnedRail : mobileRail;
+    await expect(pinRail.locator('[data-public-omni-clear-tag="gamma-performance"]')).toBeVisible();
+    await expect(page).toHaveURL(/[?&]tag=gamma-performance/);
+    await expectRowBelowTopbar();
+    await page.waitForTimeout(800);
+    const picked = publicSnapshotUrls(urls.slice(beforePick), tagSlug);
+    expect(picked).toHaveLength(1);
+    expect(picked[0].searchParams.getAll("tag")).toEqual(["gamma-performance"]);
+    expect(picked[0].searchParams.has("search")).toBe(false);
+    expect(publicSnapshotUrls(urls, tagSlug).some((u) => u.searchParams.get("search") === "gam")).toBe(false);
+    if (!desktop) {
+      // Mobile rail: pinned pill plus typed suggestions.
+      await input.pressSequentially("eps");
+      await expect(mobileRail.locator('[data-public-omni-tag="epsilon-localization"]')).toBeVisible();
+      await expect(mobileRail.locator('[data-public-omni-clear-tag="gamma-performance"]')).toBeVisible();
+      expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+      await page.locator("#publicSearchClear").click();
+      await expect(mobileRail.locator("[data-public-omni-tag]")).toHaveCount(0);
+    }
+
+    // Keyboard: Enter on a pill pins it (desktop Browse); Enter on × removes it and returns focus to search.
+    if (desktop) {
+      const browsePill = viewport.locator('[data-public-omni-tag="beta-design-system"]');
+      await browsePill.focus();
+      await page.keyboard.press("Enter");
+      await expect(pinnedRail.locator('[data-public-omni-clear-tag="beta-design-system"]')).toBeVisible();
+      expect(await focusedId(page)).toBe("publicSearchInput");
+      await expect(viewport.locator('[data-public-omni-tag="beta-design-system"]')).toHaveCount(0);
+    }
+    const clear = pinRail.locator('[data-public-omni-clear-tag="gamma-performance"]');
+    await clear.focus();
+    await page.keyboard.press("Enter");
+    await expect(pinRail.locator('[data-public-omni-clear-tag="gamma-performance"]')).toHaveCount(0);
+    expect(await focusedId(page)).toBe("publicSearchInput");
+    await expect(page).not.toHaveURL(/tag=gamma-performance/);
+
+    // Slice 1 filter panel still coexists with the Omni row.
+    await page.locator("#publicFilterToggle").click();
+    const panelBox = (await page.locator("#publicFilterPanel").boundingBox())!;
+    expect(contains({ x: 0, y: 0, width, height: 800 }, panelBox)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#publicFilterPanel")).toBeHidden();
+    expect(await horizontalOverflow(page)).toBeLessThanOrEqual(0);
+    expect(urls.filter((u) => !u.startsWith(`/api/public/board/${tagSlug}`) && u !== "/api/auth/status").map((u) => new URL(u, baseUrl).pathname)).toEqual([`/api/board/${tagSlug}`]);
+    await context.close();
+  });
+}
+
+test("removing one public Omni tag keeps the other tags and filters", async ({ browser }) => {
+  const context = await isolatedContext(browser);
+  const page = await context.newPage();
+  const urls = trackApiUrls(page);
+  await page.goto(`${baseUrl}/${tagSlug}?tag=alpha-component-library&tag=beta-design-system&priority=high&search=story`);
+  const pinned = page.locator("#publicOmniPinnedTags");
+  await expect(pinned.locator("[data-public-omni-clear-tag]")).toHaveCount(2, { timeout: 30_000 });
+  await expect(page.locator("#publicSearchInput")).toHaveValue("story");
+  const before = urls.length;
+  await pinned.locator('[data-public-omni-clear-tag="alpha-component-library"]').click();
+  await expect(pinned.locator("[data-public-omni-clear-tag]")).toHaveCount(1);
+  const url = new URL(page.url());
+  expect(url.searchParams.getAll("tag")).toEqual(["beta-design-system"]);
+  expect(url.searchParams.get("priority")).toBe("high");
+  expect(url.searchParams.get("search")).toBe("story");
+  await expect.poll(() => publicSnapshotUrls(urls.slice(before), tagSlug).length).toBe(1);
+  const req = publicSnapshotUrls(urls.slice(before), tagSlug)[0];
+  expect(req.searchParams.getAll("tag")).toEqual(["beta-design-system"]);
+  expect(req.searchParams.get("priority")).toBe("high");
+  expect(req.searchParams.get("search")).toBe("story");
+  await context.close();
+});
+
+test("public Omni keeps focus and unchanged rail scroll across live refreshes", async ({ browser }) => {
+  const context = await isolatedContext(browser, { viewport: { width: 1280, height: 800 } });
+  const page = await context.newPage();
+  await page.goto(`${baseUrl}/${tagSlug}`);
+  const viewport = page.locator("#publicOmniCandidateViewport");
+  await expect(viewport.locator("[data-public-omni-tag]")).toHaveCount(TAG_NAMES.length, { timeout: 30_000 });
+  const owner = await ownerClient();
+
+  // Counts change but the candidate order (and markup) does not: scroll and the focused pill survive.
+  await viewport.evaluate((el) => { el.scrollLeft = 120; });
+  const pill = viewport.locator('[data-public-omni-tag="delta-accessibility"]');
+  await pill.focus();
+  const marker = await pill.evaluate((el) => { (el as HTMLElement & { __mark?: number }).__mark = 1; return true; });
+  expect(marker).toBe(true);
+  await owner.json("POST", `/api/board/${tagSlug}/todos`, { title: "Refresh alpha", tags: ["alpha-component-library"] });
+  await expect(page.locator(".card__title", { hasText: "Refresh alpha" })).toHaveCount(1, { timeout: 20_000 });
+  expect(await pill.evaluate((el) => (el as HTMLElement & { __mark?: number }).__mark)).toBe(1);
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("data-public-omni-tag"))).toBe("delta-accessibility");
+  expect(await viewport.evaluate((el) => el.scrollLeft)).toBe(120);
+
+  // A vocabulary change re-renders candidates but keeps focus on the same tag.
+  await owner.json("POST", `/api/board/${tagSlug}/todos`, { title: "Refresh omega", tags: ["omega-new"] });
+  await expect(viewport.locator('[data-public-omni-tag="omega-new"]')).toHaveCount(1, { timeout: 20_000 });
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("data-public-omni-tag"))).toBe("delta-accessibility");
+  await context.close();
+});
+
+test("after a member Omni board, public Omni controls never reach member handlers", async ({ browser }) => {
+  const outsider = apiClient(baseUrl);
+  await outsider.json("POST", "/api/auth/login", { email: OUTSIDER.email, password: OUTSIDER.password });
+  const own = await outsider.json<{ slug: string }>("POST", "/api/projects", { name: "Outsider Omni Board" });
+  await outsider.json("POST", `/api/board/${own.slug}/todos`, { title: "Own tagged", tags: ["member-only-tag"] });
+  const context = await isolatedContext(browser, { viewport: { width: 1280, height: 800 } });
+  await context.addCookies(toBrowserCookies(outsider.cookies()));
+  const page = await context.newPage();
+  const urls = trackApiUrls(page);
+
+  // Member Omni works as before (member IDs, data-omni-* hooks, member reload).
+  await page.goto(`${baseUrl}/${own.slug}`);
+  const memberPill = page.locator('#omniCandidateViewport [data-omni-tag="member-only-tag"]');
+  await expect(memberPill).toBeVisible({ timeout: 30_000 });
+  await memberPill.click();
+  await expect(page.locator('#omniPinnedTags [data-omni-clear-tag="member-only-tag"]')).toBeVisible();
+  await expect.poll(() => urls.some((u) => u.startsWith(`/api/board/${own.slug}?`) && u.includes("tag=member-only-tag"))).toBe(true);
+
+  await page.evaluate((slug) => {
+    history.pushState({}, "", `/${slug}`);
+    dispatchEvent(new PopStateEvent("popstate"));
+  }, tagSlug);
+  await expect(page.locator(".public-board-badge")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("[id^='omni'], [data-omni-tag], [data-omni-clear-tag]")).toHaveCount(0);
+  const afterNav = urls.length;
+
+  const viewport = page.locator("#publicOmniCandidateViewport");
+  await viewport.locator('[data-public-omni-tag="alpha-component-library"]').click();
+  await expect(page.locator('#publicOmniPinnedTags [data-public-omni-clear-tag="alpha-component-library"]')).toBeVisible();
+  await page.locator("#publicSearchInput").pressSequentially("bet");
+  await viewport.locator('[data-public-omni-tag="beta-design-system"]').click();
+  await page.locator("#publicOmniCandidateNext").click();
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.locator('#publicOmniPinnedTags [data-public-omni-clear-tag="alpha-component-library"]').click();
+  await expect.poll(() => publicSnapshotUrls(urls.slice(afterNav), tagSlug).some((u) => u.searchParams.getAll("tag").join() === "beta-design-system")).toBe(true);
+
+  const url = new URL(page.url());
+  expect(url.searchParams.getAll("tag")).toEqual(["beta-design-system"]);
+  for (const memberParam of ["sprintId", "assignee", "sort"]) expect(url.searchParams.has(memberParam)).toBe(false);
   expect(urls.slice(afterNav).filter((u) => !u.startsWith("/api/public/") && u !== "/api/auth/status")).toEqual([]);
   await context.close();
 });

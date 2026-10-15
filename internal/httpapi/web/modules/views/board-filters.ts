@@ -15,7 +15,7 @@ import {
 import { getTagsFromUrl, MAX_BOARD_TAG_FILTERS, setTagParams } from '../state/board-filter-url.js';
 import { Board, Tag } from '../types.js';
 import { boardSprintsEnabled } from '../sprints.js';
-import { escapeHTML, sanitizeHexColor, showToast } from '../utils.js';
+import { showToast } from '../utils.js';
 import {
   buildSprintFilterSectionHtml,
   buildChipsHTML,
@@ -25,6 +25,19 @@ import {
   type SprintChipData,
 } from './board-rendering.js';
 import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
+import {
+  buildOmniRowContent,
+  compareOmniTagNames,
+  findOmniRowElements,
+  matchOmniTagCandidates,
+  pageOmniCandidates,
+  rankOmniBrowseCandidates,
+  renderOmniRow,
+  revealFocusedPinnedOmniPill,
+  revealLastPinnedOmniPill,
+  updateOmniChevrons,
+  type OmniRowIds,
+} from './omni-tags.js';
 
 let lastDisplayChipData: ChipData[] = [];
 let lastSprintsData: SprintChipData | null = null;
@@ -110,24 +123,7 @@ export function cancelPendingSearchReload(): void {
 }
 
 export function matchOmniTags(query: string, tags: readonly Tag[], appliedTags: readonly string[] = []): Tag[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle || appliedTags.length >= MAX_BOARD_TAG_FILTERS) return [];
-  const applied = new Set(appliedTags.map((tag) => tag.toLocaleLowerCase()));
-  return tags
-    .filter((tag) => tag.count > 0 && !applied.has(tag.name.toLocaleLowerCase()))
-    .map((tag) => {
-      const name = tag.name.toLowerCase();
-      const rank = name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 : 3;
-      return { tag, rank };
-    })
-    .filter((entry) => entry.rank < 3)
-    .sort((a, b) => {
-      if (a.rank !== b.rank) return a.rank - b.rank;
-      const left = a.tag.name.toLowerCase();
-      const right = b.tag.name.toLowerCase();
-      return left < right ? -1 : left > right ? 1 : a.tag.name < b.tag.name ? -1 : a.tag.name > b.tag.name ? 1 : 0;
-    })
-    .map((entry) => entry.tag);
+  return matchOmniTagCandidates(query, tags.filter((tag) => tag.count > 0), appliedTags, MAX_BOARD_TAG_FILTERS);
 }
 
 function browseTimestamp(tag: Tag): number {
@@ -136,71 +132,52 @@ function browseTimestamp(tag: Tag): number {
   return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }
 
-export function rankBrowseOmniTags(tags: readonly Tag[], pinnedTags: readonly string[] = []): Tag[] {
-  if (pinnedTags.length >= MAX_BOARD_TAG_FILTERS) return [];
-  const pinned = new Set(pinnedTags.map((tag) => tag.toLocaleLowerCase()));
-  return tags
-    .filter((tag) => tag.count > 0 && !pinned.has(tag.name.toLocaleLowerCase()))
-    .sort((left, right) => {
-      const leftTime = browseTimestamp(left);
-      const rightTime = browseTimestamp(right);
-      if (leftTime !== rightTime) return leftTime > rightTime ? -1 : 1;
-      if (left.count !== right.count) return right.count - left.count;
-      const leftName = left.name.toLowerCase();
-      const rightName = right.name.toLowerCase();
-      return leftName < rightName ? -1 : leftName > rightName ? 1 : left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
-    });
+/** Member Browse order: most recently active first, then count, then name. */
+function compareMemberBrowseTags(left: Tag, right: Tag): number {
+  const leftTime = browseTimestamp(left);
+  const rightTime = browseTimestamp(right);
+  if (leftTime !== rightTime) return leftTime > rightTime ? -1 : 1;
+  if (left.count !== right.count) return right.count - left.count;
+  return compareOmniTagNames(left.name, right.name);
 }
 
-function setOmniChevronInert(button: HTMLButtonElement | null, inert: boolean): void {
-  if (!button) return;
-  button.disabled = inert;
-  button.setAttribute('aria-hidden', inert ? 'true' : 'false');
+export function rankBrowseOmniTags(tags: readonly Tag[], pinnedTags: readonly string[] = []): Tag[] {
+  return rankOmniBrowseCandidates(tags.filter((tag) => tag.count > 0), pinnedTags, MAX_BOARD_TAG_FILTERS, compareMemberBrowseTags);
 }
+
+const MEMBER_OMNI_IDS: OmniRowIds = {
+  pinned: 'omniPinnedTags',
+  region: 'omniCandidateRegion',
+  previous: 'omniCandidatePrev',
+  viewport: 'omniCandidateViewport',
+  next: 'omniCandidateNext',
+  mobile: 'omniMobileTagPills',
+};
 
 export function updateOmniCandidateChevronState(): void {
-  const viewport = document.getElementById('omniCandidateViewport');
-  const previous = document.getElementById('omniCandidatePrev') as HTMLButtonElement | null;
-  const next = document.getElementById('omniCandidateNext') as HTMLButtonElement | null;
+  const viewport = document.getElementById(MEMBER_OMNI_IDS.viewport);
   if (!viewport) return;
-  const overflows = viewport.scrollWidth > viewport.clientWidth + 1;
-  const atStart = !overflows || viewport.scrollLeft <= 1;
-  const atEnd = !overflows || viewport.scrollLeft + viewport.clientWidth >= viewport.scrollWidth - 1;
-  setOmniChevronInert(previous, atStart);
-  setOmniChevronInert(next, atEnd);
-  viewport.classList.toggle('omni-candidate-viewport--fade-start', !atStart);
-  viewport.classList.toggle('omni-candidate-viewport--fade-end', !atEnd);
+  updateOmniChevrons(
+    viewport,
+    document.getElementById(MEMBER_OMNI_IDS.previous) as HTMLButtonElement | null,
+    document.getElementById(MEMBER_OMNI_IDS.next) as HTMLButtonElement | null,
+  );
 }
 
 function resetOmniCandidateScroll(): void {
-  const viewport = document.getElementById('omniCandidateViewport');
+  const viewport = document.getElementById(MEMBER_OMNI_IDS.viewport);
   if (viewport) viewport.scrollLeft = 0;
   updateOmniCandidateChevronState();
 }
 
-function isOmniDesktopPinnedRail(): boolean {
-  return !window.matchMedia(`(max-width: ${MOBILE_TAG_BREAKPOINT}px)`).matches;
-}
-
 export function revealLastPinnedOmniTag(): void {
-  const pinned = document.getElementById('omniPinnedTags');
-  if (!pinned || !isOmniDesktopPinnedRail()) return;
-  const overflow = pinned.scrollWidth - pinned.clientWidth;
-  if (overflow <= 1) return;
-  pinned.scrollLeft = overflow;
-}
-
-function revealFocusedPinnedOmniTag(target: EventTarget | null): void {
-  if (!(target instanceof Element) || !isOmniDesktopPinnedRail()) return;
-  const pinned = document.getElementById('omniPinnedTags');
-  if (!pinned || !pinned.contains(target)) return;
-  const pill = target.closest('.omni-tag-pill--applied');
-  if (!(pill instanceof HTMLElement)) return;
-  pill.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  const pinned = document.getElementById(MEMBER_OMNI_IDS.pinned);
+  if (pinned) revealLastPinnedOmniPill(pinned);
 }
 
 function handleOmniPinnedFocusIn(event: FocusEvent): void {
-  revealFocusedPinnedOmniTag(event.target);
+  const pinned = document.getElementById(MEMBER_OMNI_IDS.pinned);
+  if (pinned) revealFocusedPinnedOmniPill(pinned, event.target);
 }
 
 function syncOmniDesktopRailLayout(): void {
@@ -209,48 +186,26 @@ function syncOmniDesktopRailLayout(): void {
 }
 
 function renderOmniTagPills(board: Board | null = getBoard()): void {
-  const pinnedTags = document.getElementById('omniPinnedTags');
-  const candidateViewport = document.getElementById('omniCandidateViewport');
-  const candidateRegion = document.getElementById('omniCandidateRegion');
-  const mobilePills = document.getElementById('omniMobileTagPills');
+  const elements = findOmniRowElements(document, MEMBER_OMNI_IDS);
   const input = document.getElementById('searchInput') as HTMLInputElement | null;
-  if (!pinnedTags || !candidateViewport || !candidateRegion || !mobilePills || !input || !board) return;
+  if (!elements || !input || !board) return;
   const selectedTags = getTagsFromUrl();
-  const selectedHTML = selectedTags.map((selectedTag) => {
+  const applied = selectedTags.map((selectedTag) => {
     const selectedFromBoard = board.tags.find((tag) => tag.name.toLocaleLowerCase() === selectedTag.toLocaleLowerCase());
-    const selectedColor = selectedFromBoard?.color || getTagColors()[selectedTag];
-    const selectedSafeColor = sanitizeHexColor(selectedColor);
-    const selectedStyle = selectedSafeColor
-      ? ` style="border-color:${escapeHTML(selectedSafeColor)};background:${escapeHTML(selectedSafeColor)}20;color:${escapeHTML(selectedSafeColor)}"`
-      : '';
-    return `<span class="omni-tag-pill omni-tag-pill--applied"${selectedStyle}>
-        <span>${escapeHTML(selectedTag)}</span>
-        <button type="button" class="omni-tag-pill__clear" data-omni-clear-tag="${escapeHTML(selectedTag)}" aria-label="${escapeHTML(t('board.filters.clearTag', { name: selectedTag }))}">×</button>
-      </span>`;
-  }).join('');
+    return { name: selectedTag, color: selectedFromBoard?.color || getTagColors()[selectedTag] };
+  });
   const browseMode = input.value.trim() === '';
   const candidates = browseMode
     ? rankBrowseOmniTags(board.tags, selectedTags)
     : matchOmniTags(input.value, board.tags, selectedTags);
-  const candidateHTML = (items: readonly Tag[], isBrowse: boolean) => items.map((tag) => {
-      const color = sanitizeHexColor(tag.color || getTagColors()[tag.name]);
-      const style = color
-        ? isBrowse
-          ? ` style="border-color:${escapeHTML(color)}66;background:${escapeHTML(color)}0d;color:${escapeHTML(color)}"`
-          : ` style="border-color:${escapeHTML(color)};background:${escapeHTML(color)}20;color:${escapeHTML(color)}"`
-        : '';
-      const candidateClass = isBrowse ? 'omni-tag-pill--browse' : 'omni-tag-pill--suggestion';
-      return `<button type="button" class="omni-tag-pill ${candidateClass}" data-omni-tag="${escapeHTML(tag.name)}"${style}>${escapeHTML(tag.name)}</button>`;
-    }).join('');
-  const suggestionsHTML = candidateHTML(candidates, browseMode);
-  const mobileSuggestionsHTML = browseMode ? '' : candidateHTML(matchOmniTags(input.value, board.tags, selectedTags), false);
-  pinnedTags.innerHTML = selectedHTML;
-  candidateViewport.innerHTML = suggestionsHTML;
-  mobilePills.innerHTML = selectedHTML + mobileSuggestionsHTML;
-  mobilePills.scrollLeft = 0;
-  candidateRegion.classList.toggle('omni-candidate-region--after-pins', selectedTags.length > 0);
-  resetOmniCandidateScroll();
-  revealLastPinnedOmniTag();
+  renderOmniRow(elements, buildOmniRowContent({
+    applied,
+    candidates: candidates.map((tag) => ({ name: tag.name, color: tag.color || getTagColors()[tag.name] })),
+    browse: browseMode,
+    attrs: { tag: 'data-omni-tag', clear: 'data-omni-clear-tag' },
+    tone: 'accent',
+    clearLabel: (name) => t('board.filters.clearTag', { name }),
+  }));
 }
 
 export function updateOmniTagPills(board: Board | null = getBoard()): void {
@@ -259,7 +214,8 @@ export function updateOmniTagPills(board: Board | null = getBoard()): void {
 }
 
 function bindOmniTagPills(): void {
-  const bar = document.querySelector<HTMLElement>('.filters--omni .omni-bar');
+  // Anchored on a member-only ID: the shared .omni-bar class also appears on the public board.
+  const bar = document.getElementById(MEMBER_OMNI_IDS.pinned)?.closest<HTMLElement>('.filters--omni .omni-bar') ?? null;
   const viewport = document.getElementById('omniCandidateViewport');
   const previous = document.getElementById('omniCandidatePrev') as HTMLButtonElement | null;
   const next = document.getElementById('omniCandidateNext') as HTMLButtonElement | null;
@@ -293,12 +249,8 @@ function bindOmniTagPills(): void {
     reloadBoardWithCurrentFilters();
   };
 
-  const pageCandidates = (direction: -1 | 1) => {
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    viewport.scrollBy({ left: direction * viewport.clientWidth, behavior: reduceMotion ? 'auto' : 'smooth' });
-  };
-  if (previous) previous.onclick = () => pageCandidates(-1);
-  if (next) next.onclick = () => pageCandidates(1);
+  if (previous) previous.onclick = () => pageOmniCandidates(viewport, -1);
+  if (next) next.onclick = () => pageOmniCandidates(viewport, 1);
   viewport.onscroll = updateOmniCandidateChevronState;
   const pinned = document.getElementById('omniPinnedTags');
   if (pinned) {

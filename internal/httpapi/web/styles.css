@@ -7134,11 +7134,6 @@ button.omni-tag-pill:focus-visible {
   display: none;
 }
 
-.public-board-filters {
-  flex-wrap: wrap;
-  gap: var(--s-8);
-}
-
 .public-board__filter-error {
   grid-column: 1 / -1;
   width: 100%;

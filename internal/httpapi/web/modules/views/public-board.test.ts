@@ -24,7 +24,7 @@ import {
   __getPublicBoardSessionForTest,
 } from './public-board.js';
 import { bindBoardFilterUi, resetBoardFilterUiState } from './board-filters.js';
-import { buildFilterPanelHtml } from './board-rendering.js';
+import { buildFilterPanelHtml, buildOmniFilterRowHtml } from './board-rendering.js';
 
 class FakeStream implements ServerEventStream {
   onopen: ((event: Event) => void) | null = null;
@@ -305,7 +305,7 @@ describe('public board view', () => {
     await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
     await vi.advanceTimersByTimeAsync(10);
 
-    (appEl.querySelector('[data-public-tag="api"]') as HTMLButtonElement).click();
+    (appEl.querySelector('#publicOmniCandidateViewport [data-public-omni-tag="api"]') as HTMLButtonElement).click();
     await vi.advanceTimersByTimeAsync(10);
     let last = new URL(requests.filter((p) => p.startsWith('/api/public/board/ignite?')).at(-1)!, 'https://example.test');
     expect(last.searchParams.getAll('tag')).toEqual(['api']);
@@ -355,7 +355,7 @@ describe('public board view', () => {
     await settle();
     (appEl.querySelector('[data-public-load-more="backlog"]') as HTMLButtonElement).click();
     await settle();
-    (appEl.querySelector('[data-public-tag="api"]') as HTMLButtonElement).click();
+    (appEl.querySelector('#publicOmniCandidateViewport [data-public-omni-tag="api"]') as HTMLButtonElement).click();
     await settle();
     releaseLane({ status: 200, body: { items: [{ localId: 55, title: 'Stale', body: '', columnKey: 'backlog', tags: [] }], hasMore: false, nextCursor: null, totalCount: 9 } });
     await settle();
@@ -537,7 +537,7 @@ describe('public board sprint vocabulary and filter failures', () => {
   it('filter reloads do not refetch the sprint vocabulary', async () => {
     await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
     await vi.advanceTimersByTimeAsync(10);
-    (appEl.querySelector('[data-public-tag="api"]') as HTMLButtonElement).click();
+    (appEl.querySelector('#publicOmniCandidateViewport [data-public-omni-tag="api"]') as HTMLButtonElement).click();
     await vi.advanceTimersByTimeAsync(10);
     expect(sprintRequests()).toBe(1);
   });
@@ -623,13 +623,13 @@ describe('public board sprint vocabulary and filter failures', () => {
     expect(cards()).toHaveLength(1);
 
     snapshotOverride = (url) => (url.searchParams.getAll('tag').includes('api') ? { status: 503, body: {} } : null);
-    (appEl.querySelector('[data-public-tag="api"]') as HTMLButtonElement).click();
+    (appEl.querySelector('#publicOmniCandidateViewport [data-public-omni-tag="api"]') as HTMLButtonElement).click();
     await vi.advanceTimersByTimeAsync(10);
     expect(cards()).toHaveLength(0);
     expect(appEl.querySelector('[data-public-filter-error]')?.getAttribute('role')).toBe('alert');
     expect(appEl.querySelector('.public-board__no-results')).toBeNull();
     // The selected filter stays visible with the error, never with old cards.
-    expect(appEl.querySelector('[data-public-tag="api"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(appEl.querySelector('#publicOmniPinnedTags [data-public-omni-clear-tag="api"]')).not.toBeNull();
 
     snapshotOverride = null;
     (appEl.querySelector('[data-public-retry]') as HTMLButtonElement).click();
@@ -1104,5 +1104,293 @@ describe('public board filter panel', () => {
     document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(panel().hidden).toBe(false);
+  });
+});
+
+describe('public board Omni tags', () => {
+  const TAGS = [
+    { name: 'api', color: '#00ff00', activeCount: 3 },
+    { name: 'apex', color: 'javascript:alert(1)', activeCount: 1 },
+    { name: 'backend', color: '#0000ff', activeCount: 2 },
+    { name: 'idle', color: '#ff00ff', activeCount: 0 },
+  ];
+  let tags: typeof TAGS;
+  let snapshotFail: ((url: URL) => boolean) | null;
+
+  function snapshotRequests(): URL[] {
+    return requests.filter((p) => p.startsWith('/api/public/board/ignite?')).map((p) => new URL(p, 'https://example.test'));
+  }
+  function names(selector: string, attr: string): string[] {
+    return Array.from(appEl.querySelectorAll(selector)).map((el) => el.getAttribute(attr) ?? '');
+  }
+  const candidates = () => names('#publicOmniCandidateViewport [data-public-omni-tag]', 'data-public-omni-tag');
+  const pinned = () => names('#publicOmniPinnedTags [data-public-omni-clear-tag]', 'data-public-omni-clear-tag');
+  const mobile = () => Array.from(appEl.querySelectorAll('#publicOmniMobileTagPills .omni-tag-pill')).map((el) => el.querySelector('span')?.textContent ?? el.textContent);
+  const input = () => appEl.querySelector('#publicSearchInput') as HTMLInputElement;
+  function type(value: string): void {
+    input().focus();
+    input().value = value;
+    input().dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  function candidate(name: string): HTMLButtonElement {
+    return Array.from(appEl.querySelectorAll<HTMLButtonElement>('#publicOmniCandidateViewport [data-public-omni-tag]'))
+      .find((el) => el.getAttribute('data-public-omni-tag') === name)!;
+  }
+  function clearButton(name: string): HTMLButtonElement {
+    return Array.from(appEl.querySelectorAll<HTMLButtonElement>('#publicOmniPinnedTags [data-public-omni-clear-tag]'))
+      .find((el) => el.getAttribute('data-public-omni-clear-tag') === name)!;
+  }
+  async function render(url = '/ignite'): Promise<void> {
+    history.replaceState({}, '', url);
+    await resolvePublicBoard({ slug: 'ignite', openTodoSegment: null });
+    await vi.advanceTimersByTimeAsync(10);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    resetAppRuntimeForTests();
+    tags = TAGS;
+    snapshotFail = null;
+    handler = (path) => {
+      const url = new URL(path, 'https://example.test');
+      if (url.pathname === '/api/public/board/ignite') {
+        if (snapshotFail?.(url)) return { status: 503, body: {} };
+        return { status: 200, body: snapshot({ tags }) };
+      }
+      return defaultHandler(path);
+    };
+    installTransport();
+    appEl.innerHTML = '';
+    toastEl.textContent = '';
+    document.body.replaceChildren(appEl, toastEl);
+    setUser(null);
+    setSlug('ignite');
+    setBoard(null);
+    setProjectId(null);
+    setBoardAccess(null);
+  });
+
+  afterEach(() => {
+    stopPublicBoard();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    resetAppRuntimeForTests();
+  });
+
+  it('replaces the static chips with Browse candidates ordered by active count; no All chip', async () => {
+    await render();
+    expect(appEl.querySelector('.chip, [data-public-tag], #publicTagChips')).toBeNull();
+    expect(candidates()).toEqual(['api', 'backend', 'apex']);
+    expect(appEl.querySelectorAll('#publicOmniCandidateViewport .omni-tag-pill--browse')).toHaveLength(3);
+    // Empty search: no Browse candidates on the mobile rail.
+    expect(mobile()).toEqual([]);
+    // Unsafe color dropped; safe colors tint only, text keeps the theme color.
+    expect(candidate('apex').hasAttribute('style')).toBe(false);
+    expect(candidate('api').getAttribute('style')).toContain('color:var(--text)');
+  });
+
+  it('shows matching suggestions immediately while typing, before the debounce', async () => {
+    await render();
+    const before = snapshotRequests().length;
+    type('AP');
+    expect(candidates()).toEqual(['apex', 'api']);
+    expect(appEl.querySelectorAll('#publicOmniCandidateViewport .omni-tag-pill--suggestion')).toHaveLength(2);
+    expect(mobile()).toEqual(['apex', 'api']);
+    expect(snapshotRequests().length).toBe(before);
+    type('');
+    expect(candidates()).toEqual(['api', 'backend', 'apex']);
+  });
+
+  it('selecting a suggestion before the debounce consumes the search and issues exactly one reload', async () => {
+    await render('/ignite?priority=high&sprintNumber=2');
+    const before = snapshotRequests().length;
+    type('ape');
+    expect(appEl.querySelector<HTMLButtonElement>('#publicSearchClear')!.hidden).toBe(false);
+    candidate('apex').click();
+    expect(input().value).toBe('');
+    expect(appEl.querySelector<HTMLButtonElement>('#publicSearchClear')!.hidden).toBe(true);
+    expect(document.activeElement).toBe(input());
+    expect(pinned()).toEqual(['apex']);
+    expect(candidates()).toEqual(['api', 'backend']);
+    await vi.advanceTimersByTimeAsync(1000);
+    const after = snapshotRequests().slice(before);
+    expect(after).toHaveLength(1);
+    expect(after[0].searchParams.getAll('tag')).toEqual(['apex']);
+    expect(after[0].searchParams.has('search')).toBe(false);
+    expect(after[0].searchParams.get('priority')).toBe('high');
+    expect(after[0].searchParams.get('sprintNumber')).toBe('2');
+    const url = new URL(window.location.href);
+    expect(url.searchParams.getAll('tag')).toEqual(['apex']);
+    expect(url.searchParams.has('search')).toBe(false);
+  });
+
+  it('adds the canonical published name even if the typed case differs', async () => {
+    tags = [{ name: 'Backend', color: null as unknown as string, activeCount: 1 }];
+    await render();
+    const btn = candidate('Backend');
+    btn.setAttribute('data-public-omni-tag', 'BACKEND');
+    btn.click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(snapshotRequests().at(-1)!.searchParams.getAll('tag')).toEqual(['Backend']);
+  });
+
+  it('removing one tag keeps every other filter, including a pending search, in one reload', async () => {
+    await render('/ignite?tag=api&tag=backend&priority=high&sprintNumber=2');
+    expect(pinned()).toEqual(['api', 'backend']);
+    const before = snapshotRequests().length;
+    type('needle');
+    clearButton('api').click();
+    expect(pinned()).toEqual(['backend']);
+    expect(document.activeElement).toBe(input());
+    await vi.advanceTimersByTimeAsync(1000);
+    const after = snapshotRequests().slice(before);
+    expect(after).toHaveLength(1);
+    expect(after[0].searchParams.getAll('tag')).toEqual(['backend']);
+    expect(after[0].searchParams.get('search')).toBe('needle');
+    expect(after[0].searchParams.get('priority')).toBe('high');
+    expect(after[0].searchParams.get('sprintNumber')).toBe('2');
+  });
+
+  it('rejects unknown or tampered values and stops at ten tags', async () => {
+    tags = Array.from({ length: 12 }, (_, i) => ({ name: `t${i}`, color: '#00ff00', activeCount: 12 - i }));
+    await render();
+    const before = requests.length;
+    const btn = candidate('t0');
+    for (const value of ['nope', '', 't0 ']) {
+      btn.setAttribute('data-public-omni-tag', value);
+      btn.click();
+    }
+    const clear = document.createElement('button');
+    clear.setAttribute('data-public-omni-clear-tag', 'not-selected');
+    appEl.querySelector('#publicOmniPinnedTags')!.append(clear);
+    clear.click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(requests.length).toBe(before);
+
+    stopPublicBoard();
+    await render(`/ignite?${tags.slice(0, 10).map((tag) => `tag=${tag.name}`).join('&')}`);
+    expect(pinned()).toHaveLength(10);
+    expect(candidates()).toEqual([]);
+    type('t1');
+    expect(candidates()).toEqual([]);
+    // Even a forged add of a published tag is refused at the limit.
+    const forged = document.createElement('button');
+    forged.setAttribute('data-public-omni-tag', 't11');
+    appEl.querySelector('#publicOmniCandidateViewport')!.append(forged);
+    const count = snapshotRequests().length;
+    forged.click();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toHaveLength(10);
+    expect(snapshotRequests().every((u) => u.searchParams.getAll('tag').length <= 10)).toBe(true);
+    expect(snapshotRequests().slice(count).every((u) => !u.searchParams.getAll('tag').includes('t11'))).toBe(true);
+  });
+
+  it('clearing a still-debouncing search restores Browse and sends nothing', async () => {
+    await render();
+    const before = snapshotRequests().length;
+    type('ap');
+    expect(candidates()).toEqual(['apex', 'api']);
+    (appEl.querySelector('#publicSearchClear') as HTMLButtonElement).click();
+    expect(candidates()).toEqual(['api', 'backend', 'apex']);
+    expect(mobile()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(snapshotRequests().length).toBe(before);
+  });
+
+  it('keeps a URL tag that left the vocabulary as a removable pinned pill', async () => {
+    await render('/ignite?tag=Vanished&tag=api');
+    expect(pinned()).toEqual(['Vanished', 'api']);
+    clearButton('Vanished').click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['api']);
+    expect(pinned()).toEqual(['api']);
+  });
+
+  it('a failed tag filter shows the error with the pinned tag still visible', async () => {
+    await render();
+    snapshotFail = (url) => url.searchParams.getAll('tag').includes('api');
+    candidate('api').click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(appEl.querySelector('[data-public-filter-error]')).not.toBeNull();
+    expect(pinned()).toEqual(['api']);
+  });
+
+  it('SSE refreshes keep the Omni shell, unchanged pills, scroll, and focus', async () => {
+    await render('/ignite?tag=api');
+    const shell = appEl.querySelector('[data-public-omni]');
+    const viewport = appEl.querySelector<HTMLElement>('#publicOmniCandidateViewport')!;
+    const pill = candidate('backend');
+    pill.focus();
+    Object.defineProperty(viewport, 'scrollWidth', { configurable: true, value: 500 });
+    Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 100 });
+    viewport.scrollLeft = 60;
+    streams[0].send('{"type":"refresh_needed"}');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(appEl.querySelector('[data-public-omni]')).toBe(shell);
+    expect(candidate('backend')).toBe(pill);
+    expect(document.activeElement).toBe(pill);
+    expect(viewport.scrollLeft).toBe(60);
+
+    // A vocabulary change re-renders the candidates and keeps focus on the same tag.
+    tags = [...TAGS, { name: 'zed', color: '#00ff00', activeCount: 9 }];
+    streams[0].send('{"type":"refresh_needed"}');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(candidates()).toEqual(['zed', 'backend', 'apex']);
+    expect(document.activeElement).toBe(candidate('backend'));
+    expect(appEl.querySelector('[data-public-omni]')).toBe(shell);
+  });
+
+  it('URL navigation updates pinned tags in place', async () => {
+    await render('/ignite?tag=api');
+    const shell = appEl.querySelector('[data-public-omni]');
+    history.pushState({}, '', '/ignite?tag=backend&tag=apex');
+    await applyPublicBoardRoute({ slug: 'ignite', openTodoSegment: null });
+    expect(pinned()).toEqual(['backend', 'apex']);
+    expect(candidates()).toEqual(['api']);
+    expect(appEl.querySelector('[data-public-omni]')).toBe(shell);
+  });
+
+  it('teardown disconnects the resize observer and drops Omni listeners', async () => {
+    const observers: { disconnect: ReturnType<typeof vi.fn>; observe: ReturnType<typeof vi.fn> }[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      disconnect = vi.fn();
+      observe = vi.fn();
+      constructor() { observers.push(this); }
+    });
+    await render();
+    expect(observers).toHaveLength(1);
+    expect(observers[0].observe).toHaveBeenCalledTimes(2);
+    const btn = candidate('api');
+    stopPublicBoard();
+    expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+    const before = requests.length;
+    btn.click();
+    window.dispatchEvent(new Event('resize'));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(requests.length).toBe(before);
+  });
+
+  it('after a member Omni board, member handlers never act on public Omni controls', async () => {
+    history.replaceState({}, '', '/ignite');
+    appEl.innerHTML = `<div class="topbar"><div class="search-input-wrapper"><input id="searchInput" />${buildFilterPanelHtml(null, null, [], null)}</div></div>${buildOmniFilterRowHtml({} as never, { searchInTopbar: true })}`;
+    const memberReload = vi.fn(async () => {});
+    bindBoardFilterUi({ reloadBoard: memberReload, showError: () => {} });
+    const memberBar = appEl.querySelector<HTMLElement>('#omniPinnedTags')!.closest<HTMLElement>('.omni-bar')!;
+    expect(memberBar.onclick).not.toBeNull();
+    resetBoardFilterUiState();
+
+    await render('/ignite');
+    expect(appEl.querySelector('[id^="omni"]')).toBeNull();
+    expect(appEl.querySelector<HTMLElement>('[data-public-omni] .omni-bar')!.onclick).toBeNull();
+    candidate('api').click();
+    await vi.advanceTimersByTimeAsync(10);
+    clearButton('api').click();
+    window.dispatchEvent(new Event('resize'));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(memberReload).not.toHaveBeenCalled();
+    const url = new URL(window.location.href);
+    for (const memberParam of ['sprintId', 'assignee', 'sort']) expect(url.searchParams.has(memberParam)).toBe(false);
+    expect(requests.every((p) => p.startsWith('/api/public/board/ignite'))).toBe(true);
+    expect(snapshotRequests().some((u) => u.searchParams.getAll('tag').includes('api'))).toBe(true);
   });
 });

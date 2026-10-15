@@ -15,11 +15,12 @@ import { getAuthStatusAvailable, getMarkdownNotesEnabled, getMermaidNotesEnabled
 import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
-import { fetchPublicBoardSnapshot, fetchPublicLanePage, fetchPublicSprints, isPublicAbort, isPublicNotFound, normalizePublicQuery, publicBoardEventsPath, PublicBoardApiError, PUBLIC_DEFAULT_PAGE_SIZE, PUBLIC_MAX_PAGE_SIZE, samePublicQuery, EMPTY_PUBLIC_QUERY, } from '../public-board-api.js';
-import { buildPublicBoardHtml, buildPublicColumnsHtml, buildPublicFilterErrorHtml, buildPublicFilterSectionsHtml, buildPublicFiltersHtml, buildPublicMobileTabsHtml, buildPublicUnavailableHtml, isPublicPanelFilterActive, isPublicQueryActive, publicPriorityMap, PUBLIC_FILTER_PANEL_ID, PUBLIC_FILTER_TOGGLE_ID, PUBLIC_PRIORITY_OPTION_ATTR, PUBLIC_SPRINT_OPTION_ATTR, showPublicPoints, } from './public-board-rendering.js';
+import { fetchPublicBoardSnapshot, fetchPublicLanePage, fetchPublicSprints, isPublicAbort, isPublicNotFound, normalizePublicQuery, publicBoardEventsPath, PublicBoardApiError, PUBLIC_DEFAULT_PAGE_SIZE, PUBLIC_MAX_PAGE_SIZE, PUBLIC_MAX_TAG_FILTERS, samePublicQuery, EMPTY_PUBLIC_QUERY, } from '../public-board-api.js';
+import { buildPublicBoardHtml, buildPublicColumnsHtml, buildPublicFilterErrorHtml, buildPublicFilterSectionsHtml, buildPublicMobileTabsHtml, buildPublicUnavailableHtml, isPublicPanelFilterActive, isPublicQueryActive, publicPriorityMap, PUBLIC_FILTER_PANEL_ID, PUBLIC_FILTER_TOGGLE_ID, PUBLIC_PRIORITY_OPTION_ATTR, PUBLIC_SPRINT_OPTION_ATTR, showPublicPoints, } from './public-board-rendering.js';
 import { closePublicTodo, getOpenPublicTodoLocalId, openPublicTodo } from '../dialogs/public-todo.js';
 import { SseConnectionManager } from '../core/sse-client.js';
 import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
+import { bindPublicOmni } from './public-omni.js';
 /**
  * Public stream policy. The server sends comment-only heartbeats (~15s) that
  * never reach onmessage, so the data-ping watchdog is disabled. Reconnects use
@@ -129,6 +130,8 @@ function teardown(s) {
     s.sprintsController = null;
     s.refreshQueued = false;
     s.listeners.abort();
+    s.pageScope.abort();
+    s.omni = null;
 }
 /** Ends any public board view and its stream. Safe to call repeatedly. */
 export function stopPublicBoard() {
@@ -168,8 +171,7 @@ function renderBoardRegions(s) {
     const view = viewModel(s);
     const boardEl = app.querySelector('[data-public-board]');
     const tabsEl = app.querySelector('#publicMobileTabs');
-    const filtersEl = app.querySelector('.public-board-filters');
-    if (!boardEl || !tabsEl || !filtersEl) {
+    if (!boardEl || !tabsEl || !s.omni) {
         renderFull(s);
         return;
     }
@@ -185,13 +187,63 @@ function renderBoardRegions(s) {
         tabsEl.innerHTML = tabs;
         s.rendered.tabs = tabs;
     }
-    const filters = buildPublicFiltersHtml(view);
-    if (filters !== s.rendered.filters) {
-        filtersEl.outerHTML = filters;
-        s.rendered.filters = filters;
-    }
+    s.omni.render();
     syncFilterPanel(s);
     syncNoResults(s);
+}
+// ---- Omni tags ----
+function searchInputEl() {
+    return app.querySelector('#publicSearchInput');
+}
+function omniState(s) {
+    return { tags: s.snapshot.tags, selected: s.query.tags, input: searchInputEl()?.value ?? s.query.search };
+}
+function cancelPendingSearch(s) {
+    if (s.searchTimer !== null)
+        clearTimeout(s.searchTimer);
+    s.searchTimer = null;
+}
+/**
+ * Pins a suggested tag: only a published tag (canonical name), not already
+ * selected, within the public tag limit. Consumes the search term and commits
+ * search and tags together, so exactly one snapshot reload runs even when a
+ * debounced search was still pending.
+ */
+function addTag(s, raw) {
+    if (!isCurrent(s))
+        return;
+    const key = raw.toLocaleLowerCase();
+    const tag = s.snapshot.tags.find((candidate) => candidate.name.toLocaleLowerCase() === key);
+    if (!tag || s.query.tags.length >= PUBLIC_MAX_TAG_FILTERS)
+        return;
+    if (s.query.tags.some((existing) => existing.toLocaleLowerCase() === key))
+        return;
+    cancelPendingSearch(s);
+    const input = searchInputEl();
+    if (input)
+        input.value = '';
+    app.querySelector('#publicSearchClear')?.setAttribute('hidden', '');
+    setQuery(s, { search: '', tags: [...s.query.tags, tag.name] });
+    input?.focus();
+}
+/**
+ * Unpins one selected tag, keeping every other filter. Any typed-but-pending
+ * search is committed in the same query change (one reload, not two).
+ */
+function removeTag(s, raw) {
+    if (!isCurrent(s))
+        return;
+    const key = raw.toLocaleLowerCase();
+    if (!s.query.tags.some((existing) => existing.toLocaleLowerCase() === key))
+        return;
+    const input = searchInputEl();
+    const pending = s.searchTimer !== null;
+    cancelPendingSearch(s);
+    setQuery(s, {
+        ...(pending && input ? { search: input.value } : {}),
+        tags: s.query.tags.filter((existing) => existing.toLocaleLowerCase() !== key),
+    });
+    input?.focus();
 }
 // ---- Filter popover (sprint / priority) ----
 function filterPanelElements() {
@@ -374,12 +426,24 @@ function renderFull(s) {
         syncNoResults(s);
     }
     s.rendered = {
-        filters: buildPublicFiltersHtml(view),
         columns,
         tabs: buildPublicMobileTabsHtml(view),
         panel: buildPublicFilterSectionsHtml(view),
     };
     bindPageHandlers(s);
+    // Page-scoped Omni controller: its listeners and observer end with this page.
+    s.pageScope.abort();
+    s.pageScope = new AbortController();
+    const omniRoot = app.querySelector('[data-public-omni]');
+    s.omni = omniRoot
+        ? bindPublicOmni({
+            root: omniRoot,
+            signal: s.pageScope.signal,
+            getState: () => omniState(s),
+            onAdd: (tag) => addTag(s, tag),
+            onRemove: (tag) => removeTag(s, tag),
+        })
+        : null;
 }
 function bindPageHandlers(s) {
     const page = app.querySelector('[data-public-board-page]');
@@ -408,11 +472,6 @@ function bindPageHandlers(s) {
             void loadMore(s, more.getAttribute('data-public-load-more') ?? '');
             return;
         }
-        const tag = target.closest('[data-public-tag]');
-        if (tag) {
-            toggleTag(s, tag.getAttribute('data-public-tag') ?? '');
-            return;
-        }
         const tab = target.closest('[data-public-tab]');
         if (tab) {
             s.activeMobileTab = tab.getAttribute('data-public-tab') ?? s.activeMobileTab;
@@ -424,7 +483,10 @@ function bindPageHandlers(s) {
             if (input)
                 input.value = '';
             page.querySelector('#publicSearchClear')?.setAttribute('hidden', '');
+            cancelPendingSearch(s);
             setQuery(s, { ...s.query, search: '' });
+            // The committed query may be unchanged (search still debouncing), so refresh suggestions directly.
+            s.omni?.render();
             input?.focus();
             return;
         }
@@ -439,6 +501,8 @@ function bindPageHandlers(s) {
         if (target.id !== 'publicSearchInput')
             return;
         page.querySelector('#publicSearchClear')?.toggleAttribute('hidden', target.value.trim() === '');
+        // Suggestions follow the live input immediately; the query commits after the debounce.
+        s.omni?.render();
         if (s.searchTimer !== null)
             clearTimeout(s.searchTimer);
         s.searchTimer = setTimeout(() => {
@@ -457,15 +521,6 @@ function startSignIn() {
     window.location.assign(signInPath(window.location.pathname + window.location.search));
 }
 // ---- Filters, refresh, pagination ----
-function toggleTag(s, tag) {
-    if (!tag) {
-        setQuery(s, { ...s.query, tags: [] });
-        return;
-    }
-    const key = tag.toLocaleLowerCase();
-    const has = s.query.tags.some((existing) => existing.toLocaleLowerCase() === key);
-    setQuery(s, { ...s.query, tags: has ? s.query.tags.filter((existing) => existing.toLocaleLowerCase() !== key) : [...s.query.tags, tag] });
-}
 function setQuery(s, next) {
     if (!isCurrent(s))
         return;
@@ -474,6 +529,7 @@ function setQuery(s, next) {
         return;
     s.query = query;
     writePublicQueryToUrl(query);
+    s.omni?.render();
     syncFilterPanel(s);
     void reloadSnapshot(s, 'filter');
 }
@@ -844,7 +900,9 @@ export async function resolvePublicBoard(input) {
         sprintsController: null,
         filterError: false,
         listeners: new AbortController(),
-        rendered: { filters: '', columns: '', tabs: '', panel: '' },
+        pageScope: new AbortController(),
+        omni: null,
+        rendered: { columns: '', tabs: '', panel: '' },
     };
     applySnapshot(s, snapshot);
     session = s;

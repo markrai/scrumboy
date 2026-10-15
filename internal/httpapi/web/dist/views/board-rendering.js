@@ -4,6 +4,7 @@ import { escapeHTML, isTemporaryBoard, renderAvatarContent, renderUserAvatar, sa
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { hasI18nKey, t } from '../i18n/index.js';
 import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, buildSprintFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
+import { buildOmniBarHtml } from './omni-tags.js';
 export function buildDoneColumnKeys(board) {
     const keys = new Set();
     for (const col of board.columnOrder ?? []) {
@@ -279,19 +280,20 @@ function buildSearchFilterControlHtml(args) {
           ${filterPanelHTML}`;
 }
 export function buildOmniFilterRowHtml(args, opts) {
-    const previousLabel = escapeHTML(t('board.filters.previous'));
-    const nextLabel = escapeHTML(t('board.filters.next'));
     return `<div class="filters filters--omni" data-board-filter-layout="omni">
-    <div class="omni-bar">
-      ${opts?.searchInTopbar ? '' : `<div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>`}
-      <div class="omni-pinned-tags" id="omniPinnedTags"></div>
-      <div class="omni-candidate-region" id="omniCandidateRegion">
-        <button type="button" class="omni-candidate-chevron omni-candidate-chevron--prev" id="omniCandidatePrev" aria-label="${previousLabel}" disabled aria-hidden="true">‹</button>
-        <div class="omni-candidate-viewport" id="omniCandidateViewport"></div>
-        <button type="button" class="omni-candidate-chevron omni-candidate-chevron--next" id="omniCandidateNext" aria-label="${nextLabel}" disabled aria-hidden="true">›</button>
-      </div>
-      <div class="omni-mobile-tag-pills" id="omniMobileTagPills"></div>
-    </div>
+    ${buildOmniBarHtml({
+        ids: {
+            pinned: 'omniPinnedTags',
+            region: 'omniCandidateRegion',
+            previous: 'omniCandidatePrev',
+            viewport: 'omniCandidateViewport',
+            next: 'omniCandidateNext',
+            mobile: 'omniMobileTagPills',
+        },
+        previousLabel: t('board.filters.previous'),
+        nextLabel: t('board.filters.next'),
+        leadingHtml: opts?.searchInTopbar ? '' : `<div class="search-input-wrapper">${buildSearchFilterControlHtml({ ...args, layout: 'omni' })}</div>`,
+    })}
   </div>`;
 }
 export function buildTopbarHtml(args) {
