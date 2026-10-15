@@ -2,6 +2,30 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.38.7] - 2026-10-15
+
+### Added
+
+- **Public board parity with the member board** - Public read-only boards now
+  share the member board's presentation building blocks instead of maintaining
+  parallel implementations. Sprint and priority filtering moved from separate
+  dropdowns into the shared search filter panel (numbered sprints and published
+  priorities only, matching the public API contract). Tag filtering uses the
+  Omni interaction model: type-ahead suggestions, pinned pills with per-tag
+  removal, a scrollable candidate rail with chevrons on desktop, and
+  suggestion pills on mobile. Cards, columns, and mobile lane tabs render
+  through the same shared content builders as member cards, with public-only
+  contrast styling for tag text. No public API, authentication, or data
+  projection changes; no private data reaches public pages.
+
+### Fixed
+
+- **Public board mobile card overflow** - Tag-heavy cards and long unbroken
+  tag names no longer overflow their card or overlap the next card in the
+  mobile lane. Cards keep their content height inside the scrolling list, and
+  long tags wrap inside the pill. The tag-wrap rule is scoped to board cards
+  so Wall story pins are unaffected.
+
 ## [3.38.6] - 2026-10-15
 
 ### Added
