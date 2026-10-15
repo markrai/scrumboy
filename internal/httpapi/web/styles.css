@@ -5323,7 +5323,7 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
 }
 
 /* Long unbroken tag names wrap inside the pill instead of overflowing the card. */
-.card__tags-list .tag {
+.board .card__tags-list .tag {
   max-width: 100%;
   overflow-wrap: anywhere;
 }

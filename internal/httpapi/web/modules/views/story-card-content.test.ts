@@ -170,7 +170,7 @@ describe('story card responsive styles', () => {
   });
 
   it('wraps long tag names inside the pill rather than clipping or truncating them', () => {
-    const rule = css.match(/\n\.card__tags-list \.tag \{([^}]*)\}/)?.[1] ?? '';
+    const rule = css.match(/\n\.board \.card__tags-list \.tag \{([^}]*)\}/)?.[1] ?? '';
     expect(rule).toContain('max-width: 100%');
     expect(rule).toContain('overflow-wrap: anywhere');
     expect(rule).not.toMatch(/text-overflow|white-space:\s*nowrap|overflow:\s*hidden/);
