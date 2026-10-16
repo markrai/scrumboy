@@ -87,6 +87,36 @@ describe('shared Omni markup', () => {
     expect(theme.hasPins).toBe(false);
   });
 
+  it('supports mixed pill types with safe values, labels, and compact prefixes', () => {
+    const mixed = buildOmniRowContent({
+      applied: [{
+        name: 'October Sprint',
+        value: '12',
+        prefix: 'Sprint',
+        clearAttr: 'data-clear-sprint',
+        clearLabel: 'All sprints',
+      }],
+      candidates: [{
+        name: hostile,
+        value: '13',
+        prefix: 'Sprint',
+        attr: 'data-sprint',
+      }],
+      browse: false,
+      attrs: { tag: 'data-tag', clear: 'data-clear-tag' },
+      tone: 'accent',
+      clearLabel: () => 'Clear tag',
+    });
+    const root = document.createElement('div');
+    root.innerHTML = mixed.pinnedHtml + mixed.candidatesHtml;
+
+    expect(root.querySelector('[data-clear-sprint]')?.getAttribute('data-clear-sprint')).toBe('12');
+    expect(root.querySelector('[data-clear-sprint]')?.getAttribute('aria-label')).toBe('All sprints');
+    expect(root.querySelector('[data-sprint]')?.getAttribute('data-sprint')).toBe('13');
+    expect(root.querySelectorAll('.omni-tag-pill__prefix')).toHaveLength(2);
+    expect(root.querySelector('img')).toBeNull();
+  });
+
   it('builds the bar with the caller ids and inert chevrons', () => {
     const els = mountRow();
     expect(els.previous?.disabled).toBe(true);

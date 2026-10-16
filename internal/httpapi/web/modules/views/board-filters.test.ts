@@ -367,6 +367,22 @@ describe('board-filters', () => {
     expect(boardFilters.matchOmniTags('', tags, [])).toEqual([]);
   });
 
+  it('ranks sprint discovery exact, prefix, then substring case-insensitively and excludes the selected number', async () => {
+    const { boardFilters } = await setupBoardFiltersState('/alpha?sprintId=4', { layout: 'omni' });
+    const sprintData = {
+      sprints: [
+        { id: 101, number: 7, name: 'xOctober' },
+        { id: 102, number: 4, name: 'October' },
+        { id: 103, number: 5, name: 'October Release' },
+        { id: 104, number: 6, name: 'mid-october-work' },
+      ],
+    };
+
+    expect(boardFilters.matchOmniSprints('OCTOBER', sprintData, '4').map((sprint: { number: number }) => sprint.number))
+      .toEqual([5, 6, 7]);
+    expect(boardFilters.matchOmniSprints('', sprintData, null)).toEqual([]);
+  });
+
   it('ranks Browse candidates by recency, count, and name without mutating board tags', async () => {
     const { boardFilters } = await setupBoardFiltersState('/alpha', { layout: 'omni' });
     const tags = [
@@ -462,6 +478,126 @@ describe('board-filters', () => {
     expect(viewport.innerHTML).toBe(originalHTML);
     expect(Array.from(viewport.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent))
       .toEqual(['bug', 'mobile', 'testing']);
+  });
+
+  it('adds typed sprint suggestions when async vocabulary arrives and refreshes rename, removal, and project scope', async () => {
+    const board = makeBoard();
+    board.project.sprintsEnabled = true;
+    board.tags = [{ name: 'October', count: 2, color: '#ff0000' }];
+    const { boardFilters } = await setupBoardFiltersState('/alpha?search=oct', { board, search: 'oct', layout: 'omni' });
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+    input.value = 'oct';
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+
+    expect(document.querySelector('[data-omni-sprint]')).toBeNull();
+    boardFilters.setSprintChipDataForSlug('alpha', {
+      sprints: [
+        { id: 901, number: 4, name: 'October Sprint', state: 'ACTIVE' },
+        { id: 902, number: 5, name: 'October Sprint', state: 'PLANNED' },
+        { id: 903, number: 6, name: 'October Release', state: 'PLANNED' },
+      ],
+    });
+    boardFilters.updateChipsOnly(null);
+
+    const viewport = document.getElementById('omniCandidateViewport') as HTMLElement;
+    expect(Array.from(viewport.querySelectorAll('[data-omni-tag]')).map((el) => el.textContent)).toEqual(['October']);
+    expect(Array.from(viewport.querySelectorAll('[data-omni-sprint]')).map((el) => ({
+      value: el.getAttribute('data-omni-sprint'),
+      text: el.textContent,
+    }))).toEqual([
+      { value: '6', text: 'Sprint:October Release' },
+      { value: '4', text: 'Sprint:October Sprint (4)' },
+      { value: '5', text: 'Sprint:October Sprint (5)' },
+    ]);
+    expect(viewport.innerHTML).not.toContain('901');
+    expect(document.querySelector('#omniMobileTagPills [data-omni-sprint="6"]')).not.toBeNull();
+
+    boardFilters.setSprintChipDataForSlug('alpha', {
+      sprints: [{ id: 903, number: 6, name: 'Renamed October Release', state: 'PLANNED' }],
+    });
+    boardFilters.updateChipsOnly(null);
+    expect(viewport.querySelector('[data-omni-sprint="6"]')?.textContent).toBe('Sprint:Renamed October Release');
+    expect(viewport.querySelector('[data-omni-sprint="4"]')).toBeNull();
+
+    selectorState.slug = 'beta';
+    boardFilters.updateOmniTagPills(board);
+    expect(viewport.querySelector('[data-omni-sprint]')).toBeNull();
+  });
+
+  it('selects, replaces, and removes sprint pills while preserving other filters and cancelling text debounce', async () => {
+    const board = makeBoard();
+    board.project.sprintsEnabled = true;
+    board.tags = [{ name: 'October', count: 2 }];
+    const { boardFilters } = await setupBoardFiltersState(
+      '/alpha?tag=October&search=oct&sprintId=2&assignee=me&sort=newest&priority=high',
+      { board, search: 'oct', layout: 'omni' },
+    );
+    boardFilters.setSprintChipDataForSlug('alpha', {
+      sprints: [
+        { id: 701, number: 4, name: 'October Sprint', state: 'ACTIVE' },
+        { id: 702, number: 5, name: 'October Release', state: 'PLANNED' },
+      ],
+    });
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+    input.value = 'oct';
+    const reloadBoard = vi.fn().mockResolvedValue(undefined);
+    boardFilters.bindBoardFilterUi({ reloadBoard, showError: vi.fn() });
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    (document.querySelector('[data-omni-sprint="4"]') as HTMLButtonElement).click();
+    let params = new URL(window.location.href).searchParams;
+    expect(params.get('sprintId')).toBe('4');
+    expect(params.get('search')).toBeNull();
+    expect(params.getAll('tag')).toEqual(['October']);
+    expect(params.get('assignee')).toBe('me');
+    expect(params.get('sort')).toBe('newest');
+    expect(params.get('priority')).toBe('high');
+    expect(input.value).toBe('');
+    expect(document.querySelector('[data-omni-clear-sprint="4"]')?.parentElement?.textContent).toContain('October Sprint');
+    expect(reloadBoard).toHaveBeenCalledTimes(1);
+    expect(reloadBoard).toHaveBeenLastCalledWith('alpha', ['October'], null, '4', 'me', 'newest', 'high');
+    vi.advanceTimersByTime(300);
+    expect(reloadBoard).toHaveBeenCalledTimes(1);
+
+    input.value = 'oct';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const replacement = document.querySelector('[data-omni-sprint="5"]') as HTMLButtonElement;
+    replacement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(new URL(window.location.href).searchParams.get('sprintId')).toBe('5');
+    expect(document.querySelector('[data-omni-clear-sprint="4"]')).toBeNull();
+    expect(document.querySelector('[data-omni-clear-sprint="5"]')).not.toBeNull();
+    vi.advanceTimersByTime(300);
+    expect(reloadBoard).toHaveBeenCalledTimes(2);
+
+    const clear = document.querySelector('[data-omni-clear-sprint="5"]') as HTMLButtonElement;
+    clear.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+    params = new URL(window.location.href).searchParams;
+    expect(params.get('sprintId')).toBeNull();
+    expect(params.getAll('tag')).toEqual(['October']);
+    expect(params.get('assignee')).toBe('me');
+    expect(params.get('sort')).toBe('newest');
+    expect(params.get('priority')).toBe('high');
+    expect(reloadBoard).toHaveBeenCalledTimes(3);
+  });
+
+  it('renders a numeric deep-link pill before metadata, upgrades its label, and keeps disabled boards free of suggestions', async () => {
+    const board = makeBoard();
+    board.project.sprintsEnabled = true;
+    const { boardFilters } = await setupBoardFiltersState('/alpha?sprintId=12', { board, layout: 'omni' });
+    boardFilters.bindBoardFilterUi({ reloadBoard: vi.fn().mockResolvedValue(undefined), showError: vi.fn() });
+    expect(document.querySelector('[data-omni-clear-sprint="12"]')?.parentElement?.textContent).toContain('#12');
+
+    boardFilters.setSprintChipDataForSlug('alpha', {
+      sprints: [{ id: 999, number: 12, name: 'Known Sprint', state: 'CLOSED' }],
+    });
+    boardFilters.updateChipsOnly('12');
+    expect(document.querySelector('[data-omni-clear-sprint="12"]')?.parentElement?.textContent).toContain('Known Sprint');
+
+    board.project.sprintsEnabled = false;
+    const input = document.getElementById('searchInput') as HTMLInputElement;
+    input.value = 'known';
+    boardFilters.updateOmniTagPills(board);
+    expect(document.querySelector('[data-omni-sprint]')).toBeNull();
   });
 
   it('keeps mobile on the pre-existing pins-and-typed-matches rail without empty-search Browse candidates', async () => {

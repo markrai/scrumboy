@@ -2,12 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NO_PRIORITY_FILTER_VALUE } from "../types.js";
 
-const { state, apiFetchMock, floorBySlug, defaultCardsPerLane, bootstrapLoadedBoardViewMock } = vi.hoisted(() => ({
+const { state, apiFetchMock, floorBySlug, defaultCardsPerLane, bootstrapLoadedBoardViewMock, sprintsRefresher } = vi.hoisted(() => ({
   state: { board: null as any, slug: null as string | null },
   apiFetchMock: vi.fn(),
   floorBySlug: { value: {} as Record<string, number> },
   defaultCardsPerLane: { value: 20 },
   bootstrapLoadedBoardViewMock: vi.fn(),
+  sprintsRefresher: { value: null as null | ((slug: string) => Promise<void>) },
 }));
 
 vi.mock("../state/selectors.js", () => ({
@@ -95,14 +96,19 @@ vi.mock("../features/context-menu-button.js", () => ({
 }));
 vi.mock("../orchestration/board-refresh.js", () => ({
   registerBoardRefresher: vi.fn(),
-  registerSprintsRefresher: vi.fn(),
+  registerSprintsRefresher: vi.fn((refresher: (slug: string) => Promise<void>) => {
+    sprintsRefresher.value = refresher;
+  }),
   invalidateBoard: vi.fn(),
   getDefaultCardsPerLane: () => defaultCardsPerLane.value,
   getBoardLimitPerLaneFloor: vi.fn((forSlug: string) => floorBySlug.value[forSlug] ?? defaultCardsPerLane.value),
   resetBoardLimitPerLaneFloor: vi.fn(),
   consumeForcePreferenceLimit: () => false,
 }));
-vi.mock("../sprints.js", () => ({ normalizeSprints: vi.fn((r: any) => r) }));
+vi.mock("../sprints.js", () => ({
+  normalizeSprints: vi.fn((r: any) => r?.sprints ?? []),
+  boardSprintsEnabled: vi.fn((board: any) => board?.project?.sprintsEnabled !== false),
+}));
 vi.mock("../events.js", () => ({ on: vi.fn(), off: vi.fn() }));
 vi.mock("../realtime/guard.js", () => ({ recordLocalMutation: vi.fn() }));
 vi.mock("./board-rendering.js", () => ({
@@ -182,6 +188,7 @@ describe("getRequestedBoardLimitPerLane", () => {
     apiFetchMock.mockReset();
     bootstrapLoadedBoardViewMock.mockReset();
     bootstrapLoadedBoardViewMock.mockResolvedValue(false);
+    sprintsRefresher.value = null;
   });
 
   afterEach(() => {
@@ -211,6 +218,35 @@ describe("getRequestedBoardLimitPerLane", () => {
     await searchLoad;
     expect(bootstrapLoadedBoardViewMock).toHaveBeenCalledTimes(1);
     expect(window.location.search).toBe("?tag=android");
+  });
+
+  it("keeps the newest sprint vocabulary when refreshes resolve out of order or after a project switch", async () => {
+    await import("./board.js");
+    const boardFilters = await import("./board-filters.js");
+    state.slug = "alpha";
+    state.board = { project: { id: 1, slug: "alpha", sprintsEnabled: true }, tags: [], columns: {} };
+    const refresher = sprintsRefresher.value;
+    if (!refresher) throw new Error("sprints refresher was not registered");
+    const resolvers: Array<(value: unknown) => void> = [];
+    apiFetchMock.mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+
+    const first = refresher("alpha");
+    const second = refresher("alpha");
+    const latest = { sprints: [{ id: 22, number: 2, name: "Latest" }] };
+    resolvers[1](latest);
+    await second;
+    expect(boardFilters.setSprintChipDataForSlug).toHaveBeenCalledTimes(1);
+    expect(boardFilters.setSprintChipDataForSlug).toHaveBeenLastCalledWith("alpha", latest);
+
+    resolvers[0]({ sprints: [{ id: 11, number: 1, name: "Stale" }] });
+    await first;
+    expect(boardFilters.setSprintChipDataForSlug).toHaveBeenCalledTimes(1);
+
+    const switched = refresher("alpha");
+    state.slug = "beta";
+    resolvers[2]({ sprints: [{ id: 33, number: 3, name: "Wrong project" }] });
+    await switched;
+    expect(boardFilters.setSprintChipDataForSlug).toHaveBeenCalledTimes(1);
   });
 
   it("drops a response when the ordered tag list was shortened while it was in flight", async () => {

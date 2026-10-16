@@ -15,7 +15,18 @@ import { escapeHTML, sanitizeHexColor } from '../utils.js';
 export const OMNI_MOBILE_MAX_WIDTH_PX = 767;
 
 export type OmniTagLike = { readonly name: string };
-export type OmniPillTag = { readonly name: string; readonly color?: string | null };
+export type OmniPillTag = {
+  readonly name: string;
+  readonly color?: string | null;
+  /** URL-facing value when it differs from the displayed name. */
+  readonly value?: string;
+  /** Optional localized type label used to distinguish mixed suggestions. */
+  readonly prefix?: string;
+  /** Per-pill attributes let one Omni row carry more than one suggestion type. */
+  readonly attr?: string;
+  readonly clearAttr?: string;
+  readonly clearLabel?: string;
+};
 
 /** Case-insensitive name order with a case-sensitive tie-break, so ordering is deterministic. */
 export function compareOmniTagNames(left: string, right: string): number {
@@ -88,9 +99,15 @@ export function buildOmniAppliedPillHtml(
   tag: OmniPillTag,
   opts: { clearAttr: string; clearLabel: string; tone: OmniPillTone },
 ): string {
+  const clearAttr = tag.clearAttr ?? opts.clearAttr;
+  const clearLabel = tag.clearLabel ?? opts.clearLabel;
+  const value = tag.value ?? tag.name;
+  const prefix = tag.prefix
+    ? `<span class="omni-tag-pill__prefix">${escapeHTML(tag.prefix)}:</span>`
+    : '';
   return `<span class="omni-tag-pill omni-tag-pill--applied"${pillStyle(tag.color, false, opts.tone)}>
-        <span>${escapeHTML(tag.name)}</span>
-        <button type="button" class="omni-tag-pill__clear" ${escapeHTML(opts.clearAttr)}="${escapeHTML(tag.name)}" aria-label="${escapeHTML(opts.clearLabel)}">×</button>
+        <span>${prefix}${escapeHTML(tag.name)}</span>
+        <button type="button" class="omni-tag-pill__clear" ${escapeHTML(clearAttr)}="${escapeHTML(value)}" aria-label="${escapeHTML(clearLabel)}">×</button>
       </span>`;
 }
 
@@ -99,7 +116,12 @@ export function buildOmniCandidatePillHtml(
   opts: { attr: string; browse: boolean; tone: OmniPillTone },
 ): string {
   const kind = opts.browse ? 'omni-tag-pill--browse' : 'omni-tag-pill--suggestion';
-  return `<button type="button" class="omni-tag-pill ${kind}" ${escapeHTML(opts.attr)}="${escapeHTML(tag.name)}"${pillStyle(tag.color, opts.browse, opts.tone)}>${escapeHTML(tag.name)}</button>`;
+  const attr = tag.attr ?? opts.attr;
+  const value = tag.value ?? tag.name;
+  const prefix = tag.prefix
+    ? `<span class="omni-tag-pill__prefix">${escapeHTML(tag.prefix)}:</span>`
+    : '';
+  return `<button type="button" class="omni-tag-pill ${kind}" ${escapeHTML(attr)}="${escapeHTML(value)}"${pillStyle(tag.color, opts.browse, opts.tone)}>${prefix}${escapeHTML(tag.name)}</button>`;
 }
 
 export type OmniRowContent = {

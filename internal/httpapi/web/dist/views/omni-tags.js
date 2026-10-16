@@ -62,14 +62,25 @@ function pillStyle(color, subtle, tone) {
         : ` style="border-color:${c};background:${c}20;color:${text}"`;
 }
 export function buildOmniAppliedPillHtml(tag, opts) {
+    const clearAttr = tag.clearAttr ?? opts.clearAttr;
+    const clearLabel = tag.clearLabel ?? opts.clearLabel;
+    const value = tag.value ?? tag.name;
+    const prefix = tag.prefix
+        ? `<span class="omni-tag-pill__prefix">${escapeHTML(tag.prefix)}:</span>`
+        : '';
     return `<span class="omni-tag-pill omni-tag-pill--applied"${pillStyle(tag.color, false, opts.tone)}>
-        <span>${escapeHTML(tag.name)}</span>
-        <button type="button" class="omni-tag-pill__clear" ${escapeHTML(opts.clearAttr)}="${escapeHTML(tag.name)}" aria-label="${escapeHTML(opts.clearLabel)}">×</button>
+        <span>${prefix}${escapeHTML(tag.name)}</span>
+        <button type="button" class="omni-tag-pill__clear" ${escapeHTML(clearAttr)}="${escapeHTML(value)}" aria-label="${escapeHTML(clearLabel)}">×</button>
       </span>`;
 }
 export function buildOmniCandidatePillHtml(tag, opts) {
     const kind = opts.browse ? 'omni-tag-pill--browse' : 'omni-tag-pill--suggestion';
-    return `<button type="button" class="omni-tag-pill ${kind}" ${escapeHTML(opts.attr)}="${escapeHTML(tag.name)}"${pillStyle(tag.color, opts.browse, opts.tone)}>${escapeHTML(tag.name)}</button>`;
+    const attr = tag.attr ?? opts.attr;
+    const value = tag.value ?? tag.name;
+    const prefix = tag.prefix
+        ? `<span class="omni-tag-pill__prefix">${escapeHTML(tag.prefix)}:</span>`
+        : '';
+    return `<button type="button" class="omni-tag-pill ${kind}" ${escapeHTML(attr)}="${escapeHTML(value)}"${pillStyle(tag.color, opts.browse, opts.tone)}>${prefix}${escapeHTML(tag.name)}</button>`;
 }
 /**
  * Composes the three Omni regions. Desktop: pinned pills plus Browse (empty

@@ -5780,6 +5780,15 @@ button.omni-tag-pill:focus-visible {
   padding-inline-end: var(--s-10);
 }
 
+.omni-tag-pill__prefix {
+  margin-inline-end: var(--s-4);
+  color: var(--muted);
+  font-size: 0.85em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
 .omni-tag-pill__clear {
   display: inline-flex;
   align-items: center;

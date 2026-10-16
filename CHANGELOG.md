@@ -2,6 +2,32 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.38.8] - 2026-10-15
+
+### Changed
+
+- **Member board sprint filter** - The Omni sprint section now offers only
+  **Scheduled** and **Unscheduled** instead of one option per named sprint.
+  A numeric sprint deep link still works: it appears as an extra
+  already-selected option, and picking the already-selected sprint clears
+  the filter. The section stays hidden while the board has no sprints and
+  no sprint filter is active, and the legacy `assigned` value is treated
+  as `scheduled`. No board API or filter-URL change.
+- **Omni sprint discovery** - Typing in authenticated board Omni search now
+  offers matching named sprints alongside tags using exact, prefix, and
+  substring matching. Sprint suggestions use the loaded project vocabulary,
+  distinguish duplicate names with their project-local number, and remain
+  available on empty or filtered boards. Selecting one replaces `sprintId`,
+  clears pending text search without disturbing tags, priority, assignee, or
+  sort, and shows a removable Sprint pill on desktop and mobile. Numeric deep
+  links get a safe fallback pill before sprint metadata loads, while guarded
+  async refreshes update names without restoring stale cross-project data.
+- **Public board sprint deep links** - The public filter popover now offers
+  priority tiers only; an active sprint-number deep link is shown as a
+  pinned, clearable pill in the Omni row (labeled with the sprint name once
+  loaded) instead of a popover section. Clearing the pill returns the board
+  to all sprints. No public API or data-projection change.
+
 ## [3.38.7] - 2026-10-15
 
 ### Added

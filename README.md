@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.38.7-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.38.8-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -106,14 +106,16 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 
 # Features
 
-- Custom Workflows: You can create any combination of workflow you want, per project, with user-defined "Done" lane.
+- **Custom Workflows:** Shape each project's workflow with customizable columns, colors, and a dedicated Done lane.
 - Custom Priority Tiers: each project has ordered, color-coded priority definitions with stable keys; maintainers configure tiers and assign them to todos.
-- Realtime SSE enabled boards for instant multi-user actions.
-- **Webhooks (API-only, full mode):** Register URLs per project so Scrumboy can POST JSON when subscribed domain events fire (e.g. `todo.assigned`). For your own automations, not in-app or browser notifications. See [Integrations](#integrations--api-access).
+- **Realtime Collaboration:** Keep project boards synchronized as teammates create, update, and move stories.
+- **Outbound Webhooks & Integrations:** In Full Mode, project webhook URLs registered through the API receive JSON events for story lifecycle changes, assignment, and due-soon reminders, for use in external automation. Delivery is asynchronous and best-effort. See [Integrations](#integrations--api-access).
+- **AI Agent Integration:** Connect Claude, Cursor, and other MCP-compatible clients to manage projects and stories through Scrumboy's tools.
 - Customizable Tags: Users can inherit and customize tag colors.
-- Advanced filtering: on desktop, the default compact Omni control shows recently active project tags when search is empty, narrows immediately to matching tag suggestions while typing, and provides arrows for paging the candidate shelf. Mobile retains its compact single rail for pinned tags and typed matches. Multiple pinned tags use logical AND and compose with ordinary text search, sprint, and other URL filters. The previous permanent tag/sprint pills remain available as **Legacy pills** under Settings → Customization.
+- **Advanced Filtering:** Find stories with instant search, tag suggestions, and searchable sprint filters. Combine filters and keep selections visible as removable pills.
 - Sprints: create, activate, close; sprint filter on board; default sprint weeks (1 or 2) per project. Maintainers can disable sprints per project without deleting sprint history or todo assignments, then re-enable them later.
-- **Story archival:** Archive and restore one story or a selection without touching workflow state or history - lane, rank, `doneAt`, tags, links, sprint, priority and assignment are preserved, so metrics and sprint history are unaffected. Every board reader can browse the cursor-paginated Archive and inspect archived stories in a clearly marked read-only detail view; maintainers (and temporary-board capability holders) can restore or hard-delete them. Archived stories drop out of board, search and dashboard reads while still counting for integrity checks. The same single and atomic batch (1-500) operations are available over REST and MCP. Nothing is archived automatically. See [API.md](API.md) and [docs/mcp.md](docs/mcp.md).
+- **Due Dates & Deadline Notifications:** Give stories optional due dates, spot overdue work on board cards, and sort columns by upcoming due dates. Rule-based reminders email the assignee (requires SMTP configuration and per-user opt-in) and can emit webhook events. See [docs/notifications.md](docs/notifications.md).
+- **Story archival:** Archive and restore stories without changing workflow state or history. Archived stories leave board, search, and dashboard reads but stay browseable; restoring requires Maintainer access. Nothing is archived automatically. See [API.md](API.md).
 - Authentication & 2FA: TOTP supported when `SCRUMBOY_ENCRYPTION_KEY` is set.
 - Self-service password reset email (optional, requires SMTP + `SCRUMBOY_ENCRYPTION_KEY` + `SCRUMBOY_PUBLIC_BASE_URL`): see [docs/smtp.md](docs/smtp.md).
 - Audit trail: append-only `audit_events` table; todo/member/project/link actions logged (see [docs/audit-trail.md](docs/audit-trail.md)).
@@ -121,11 +123,13 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 - Trello import: migrate an existing Trello board from its JSON export, with a preview before anything is imported (see [docs/backup-and-import.md](docs/backup-and-import.md)).
 - Mobile: Native Android app (Capacitor client; build from source — [docs/android.md](docs/android.md)) with native VoiceFlow on supported devices, or install the [PWA](docs/pwa.md) from the browser.
 - Multi-language Support: English, 简体中文, हिन्दी, Español (Latinoamérica), العربية, Français, বাংলা, Português (Brasil), Bahasa Indonesia, اردو, Русский, Deutsch, 日本語, Kiswahili, Tiếng Việt, Türkçe, 한국어, فارسی, ไทย, Italiano, Bahasa Melayu, Polski, and Українська.
-- Anonymous shareable boards can be created in both Full & Anonymous deployments.
+- **Anonymous shareable boards:** In Full Mode, `/anon` creates a throwaway editable board; Anonymous Mode serves a single no-auth board. These are separate from published read-only boards below.
+- **Public Read-Only Boards:** Once the operator enables public projects, Maintainers can publish durable boards through Settings → Sharing; visitors then browse, search, and filter without an account. Unpublishing revokes access. See [docs/public-boards.md](docs/public-boards.md).
+- **Optional Public Landing Page:** Full Mode deployments can enable a separate English marketing landing page; the workspace moves to `/_app` while project URLs stay unchanged. Anonymous Mode ignores the flag.
 - VoiceFlow - deterministic voice commands in the browser; on supported Android devices, **AI VoiceFlow** adds on-device speech and Gemini Nano planning with confirmation before mutations (see [docs/voiceflow.md](docs/voiceflow.md), [docs/enhanced-voiceflow.md](docs/enhanced-voiceflow.md)).
-- Sticky-Note Wall - per-project scratchpad of draggable sticky notes on the board (see [docs/wall.md](docs/wall.md)).
+- **Visual Story Wall:** Organize sticky notes and stories on a freeform canvas, and connect them visually to map relationships and ideas. Available on desktop.
 - Agenda - today's events from subscribed ICS feeds on durable boards (see [docs/calendar.md](docs/calendar.md)). Requires `SCRUMBOY_ENCRYPTION_KEY`.
-- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced ````mermaid`blocks in preview only (see [FAQ.md](FAQ.md), [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)).
+- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced mermaid blocks in preview only (see [FAQ.md](FAQ.md), [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)).
 
 # Modes
 

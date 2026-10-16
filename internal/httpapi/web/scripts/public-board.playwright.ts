@@ -668,6 +668,44 @@ test("member Omni Sprint section follows the sprint collection and offers only S
   await expect(section.locator(".is-active")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
+  // Typed discovery uses the loaded vocabulary even on an empty filtered board.
+  loaded = sprintsLoaded();
+  await page.goto(`${baseUrl}/${slug}?tag=none-such&priority=high&assignee=me&sort=newest&search=Sprint%203`);
+  await loaded;
+  const input = page.locator("#searchInput");
+  await expect(input).toHaveValue("Sprint 3");
+  const thirdSuggestion = page.locator('#omniCandidateViewport [data-omni-sprint]').filter({ hasText: "Sprint 3" }).first();
+  await expect(thirdSuggestion).toBeVisible();
+  const thirdNumber = await thirdSuggestion.getAttribute("data-omni-sprint");
+  expect(thirdNumber).toBeTruthy();
+  const beforeDiscoveryPick = urls.filter((u) => u.startsWith(`/api/board/${slug}?`)).length;
+  await thirdSuggestion.press("Enter");
+  await expect(input).toHaveValue("");
+  await expect(page).toHaveURL(new RegExp(`[?&]sprintId=${thirdNumber}(?:&|$)`));
+  await expect(page.locator(`#omniPinnedTags [data-omni-clear-sprint="${thirdNumber}"]`)).toBeVisible();
+  await page.waitForTimeout(500);
+  expect(urls.filter((u) => u.startsWith(`/api/board/${slug}?`)).length).toBe(beforeDiscoveryPick + 1);
+  let discoveredUrl = new URL(page.url());
+  expect(discoveredUrl.searchParams.has("search")).toBe(false);
+  expect(discoveredUrl.searchParams.getAll("tag")).toEqual(["none-such"]);
+  expect(discoveredUrl.searchParams.get("priority")).toBe("high");
+  expect(discoveredUrl.searchParams.get("assignee")).toBe("me");
+  expect(discoveredUrl.searchParams.get("sort")).toBe("newest");
+
+  await input.fill("Sprint 4");
+  const fourthSuggestion = page.locator('#omniCandidateViewport [data-omni-sprint]').filter({ hasText: "Sprint 4" }).first();
+  await expect(fourthSuggestion).toBeVisible();
+  const fourthNumber = await fourthSuggestion.getAttribute("data-omni-sprint");
+  await fourthSuggestion.click();
+  await expect(page).toHaveURL(new RegExp(`[?&]sprintId=${fourthNumber}(?:&|$)`));
+  await expect(page.locator(`#omniPinnedTags [data-omni-clear-sprint="${thirdNumber}"]`)).toHaveCount(0);
+  const clearSprint = page.locator(`#omniPinnedTags [data-omni-clear-sprint="${fourthNumber}"]`);
+  await clearSprint.press(" ");
+  await expect(page).not.toHaveURL(/sprintId=/);
+  discoveredUrl = new URL(page.url());
+  expect(discoveredUrl.searchParams.getAll("tag")).toEqual(["none-such"]);
+  expect(discoveredUrl.searchParams.get("priority")).toBe("high");
+
   // A numeric deep link stays visible as the selected option and can be cleared.
   const sprints = await owner.json<{ sprints: { id: number; number: number; name: string }[] }>("GET", `/api/board/${slug}/sprints`);
   const third = sprints.sprints.find((s) => s.name === "Sprint 3")!;
