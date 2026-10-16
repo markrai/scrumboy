@@ -3,9 +3,11 @@ import { archiveTodos } from '../api.js';
 import { apiErrorMessage, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { invalidateBoard } from '../orchestration/board-refresh.js';
 import { recordLocalMutation, setBulkUpdating } from '../realtime/guard.js';
-import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTagsFromUrl } from '../state/selectors.js';
+import { getAssigneeFromUrl, getBoard, getBoardLaneMeta, getPriorityFromUrl, getSearch, getSlug, getSortFromUrl, getSprintIdFromUrl, getTagsFromUrl } from '../state/selectors.js';
 import { isTemporaryBoard, showToast } from '../utils.js';
 let selectedTodoIds = new Set();
+let selectMode = false;
+let anchorTodoId = null;
 let bulkEditUiInitialized = false;
 let getCurrentRole = null;
 const ARCHIVE_BATCH_MAX = 500;
@@ -20,18 +22,101 @@ export function __selectionLabelForTest(count) {
 export function getSelectedTodoIds() {
     return selectedTodoIds;
 }
-export function clearTodoMultiSelection() {
+export function clearTodoMultiSelection(opts) {
     selectedTodoIds.clear();
-    const bar = document.getElementById("bulkEditBar");
-    const btn = document.getElementById("bulkEditBarBtn");
-    if (bar)
-        bar.style.display = "none";
-    if (btn)
-        btn.textContent = "";
-    const archiveBtn = document.getElementById("bulkArchiveBarBtn");
-    if (archiveBtn)
-        archiveBtn.hidden = true;
+    anchorTodoId = null;
+    if (opts?.keepSelectMode && selectMode)
+        updateBulkEditBar();
+    else
+        setSelectMode(false);
     document.querySelectorAll(".board .card--selected").forEach((el) => el.classList.remove("card--selected"));
+}
+export function isSelectMode() {
+    return selectMode;
+}
+export function setSelectMode(on) {
+    selectMode = on;
+    document.querySelector(".board")?.classList.toggle("board--select-mode", on);
+    const toggle = document.getElementById("boardSelectToggle");
+    if (toggle) {
+        toggle.textContent = on ? t("board.select.done") : t("board.select.toggle");
+        toggle.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    updateBulkEditBar();
+}
+/** Todo ids of the cards currently shown on the board, in DOM order (lane by lane). The board payload is already
+ *  scoped by the active filters/search/sprint, and cards in lanes hidden by the mobile tab strip are skipped, so
+ *  "select all" never reaches past what the user can see. */
+export function visibleTodoIdsInDomOrder(root = document, includeHiddenLanes = false) {
+    const seen = new Set();
+    const out = [];
+    root.querySelectorAll(".board [data-todo-id]").forEach((el) => {
+        const id = Number(el.getAttribute("data-todo-id"));
+        if (!Number.isFinite(id) || seen.has(id))
+            return;
+        const lane = el.closest(".col");
+        if (!includeHiddenLanes && lane && getComputedStyle(lane).display === "none")
+            return;
+        seen.add(id);
+        out.push(id);
+    });
+    return out;
+}
+/** How many matching todos exist beyond the cards loaded so far (lanes still have "load more"). */
+export function notLoadedTodoCount() {
+    let missing = 0;
+    const meta = getBoardLaneMeta();
+    for (const [key, m] of Object.entries(meta || {})) {
+        if (!m?.hasMore)
+            continue;
+        const lane = Array.from(document.querySelectorAll(".board .col[data-column]")).find((el) => el.getAttribute("data-column") === key);
+        if (lane && getComputedStyle(lane).display === "none")
+            continue;
+        const loaded = getBoard()?.columns?.[key]?.length ?? 0;
+        missing += typeof m.totalCount === "number" ? Math.max(m.totalCount - loaded, 1) : 1;
+    }
+    return missing;
+}
+function syncCardClasses() {
+    document.querySelectorAll(".board [data-todo-id]").forEach((el) => {
+        el.classList.toggle("card--selected", selectedTodoIds.has(Number(el.getAttribute("data-todo-id"))));
+    });
+}
+/** Shift+click: select every card between the anchor and `toId` (inclusive) in `orderedIds`, additively. */
+export function selectRangeTo(toId, orderedIds = visibleTodoIdsInDomOrder()) {
+    const a = anchorTodoId == null ? -1 : orderedIds.indexOf(anchorTodoId);
+    const b = orderedIds.indexOf(toId);
+    if (a < 0 || b < 0) {
+        toggleTodoSelection(toId);
+        return;
+    }
+    const [lo, hi] = a <= b ? [a, b] : [b, a];
+    for (let i = lo; i <= hi; i++)
+        selectedTodoIds.add(orderedIds[i]);
+    syncCardClasses();
+    updateBulkEditBar();
+}
+/** Select every card currently shown (respects the active filters; see visibleTodoIdsInDomOrder). Additive, so
+ *  selections made in another (hidden) mobile lane survive. */
+export function selectAllVisible(orderedIds = visibleTodoIdsInDomOrder()) {
+    for (const id of orderedIds)
+        selectedTodoIds.add(id);
+    anchorTodoId = orderedIds.length ? orderedIds[orderedIds.length - 1] : null;
+    syncCardClasses();
+    updateBulkEditBar();
+}
+/** After a (re)render or filter change: drop selected ids whose cards are no longer on the board. */
+export function pruneSelectionToRenderedBoard() {
+    // Presence in the DOM, not visibility: a lane hidden by the mobile tab strip is not "filtered out".
+    const present = new Set(visibleTodoIdsInDomOrder(document, true));
+    for (const id of Array.from(selectedTodoIds)) {
+        if (!present.has(id))
+            selectedTodoIds.delete(id);
+    }
+    if (anchorTodoId != null && !present.has(anchorTodoId))
+        anchorTodoId = null;
+    // Always refresh: a re-render can add cards (load more, realtime) without dropping any selection.
+    updateBulkEditBar();
 }
 export function updateBulkEditBar() {
     const bar = document.getElementById("bulkEditBar");
@@ -39,18 +124,39 @@ export function updateBulkEditBar() {
     if (!bar || !btn)
         return;
     const n = selectedTodoIds.size;
-    if (n >= 2) {
+    if (n >= 1 || selectMode) {
         bar.style.display = "";
-        btn.textContent = selectionLabel(n);
+        btn.textContent = n >= 1 ? selectionLabel(n) : "";
+        btn.hidden = n < 1;
     }
     else {
         bar.style.display = "none";
         btn.textContent = "";
+        btn.hidden = true;
+    }
+    const barShown = n >= 1 || selectMode;
+    const allBtn = document.getElementById("bulkSelectAllBtn");
+    if (allBtn) {
+        allBtn.hidden = !barShown;
+        if (barShown) {
+            const shown = visibleTodoIdsInDomOrder();
+            allBtn.textContent = t("board.select.all", { count: shown.length });
+            allBtn.disabled = shown.length === 0 || shown.every((id) => selectedTodoIds.has(id));
+        }
+    }
+    const clearBtn = document.getElementById("bulkClearBtn");
+    if (clearBtn)
+        clearBtn.hidden = n < 1;
+    const hint = document.getElementById("bulkSelectHint");
+    if (hint) {
+        const missing = n >= 1 && barShown ? notLoadedTodoCount() : 0;
+        hint.hidden = missing === 0;
+        hint.textContent = missing ? t("board.select.notLoaded", { count: missing }) : "";
     }
     const archiveBtn = document.getElementById("bulkArchiveBarBtn");
     if (archiveBtn) {
         const canArchive = getCurrentRole?.() === "maintainer" || isTemporaryBoard(getBoard());
-        archiveBtn.hidden = n < 2 || !canArchive;
+        archiveBtn.hidden = n < 1 || !canArchive;
         archiveBtn.disabled = n > ARCHIVE_BATCH_MAX;
         archiveBtn.title = n > ARCHIVE_BATCH_MAX ? t("board.bulkArchive.limit") : "";
     }
@@ -97,6 +203,7 @@ export function toggleTodoSelection(id) {
         selectedTodoIds.delete(id);
     else
         selectedTodoIds.add(id);
+    anchorTodoId = id;
     updateBulkEditBar();
     const card = document.querySelector(`[data-todo-id="${id}"]`);
     if (card)
@@ -127,5 +234,36 @@ export function ensureBulkEditUi(opts) {
     });
     document.getElementById("bulkArchiveBarBtn")?.addEventListener("click", () => {
         void archiveSelection();
+    });
+    document.getElementById("bulkSelectAllBtn")?.addEventListener("click", () => {
+        selectAllVisible();
+    });
+    document.getElementById("bulkClearBtn")?.addEventListener("click", () => {
+        clearTodoMultiSelection({ keepSelectMode: true });
+    });
+    document.addEventListener("click", (e) => {
+        if (!e.target?.closest("#boardSelectToggle"))
+            return;
+        if (selectMode)
+            clearTodoMultiSelection();
+        else
+            setSelectMode(true);
+    });
+    document.addEventListener("keydown", (e) => {
+        if (!document.querySelector(".board") || getCurrentRole?.() === "viewer")
+            return;
+        if (document.querySelector("dialog[open]"))
+            return;
+        const target = e.target;
+        if (target?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']"))
+            return;
+        if (e.key === "Escape" && (selectMode || selectedTodoIds.size > 0)) {
+            clearTodoMultiSelection({ keepSelectMode: selectMode && selectedTodoIds.size > 0 });
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "a") {
+            e.preventDefault();
+            selectAllVisible();
+        }
     });
 }

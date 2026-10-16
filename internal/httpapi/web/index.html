@@ -33,6 +33,9 @@
     <div id="app"></div>
 
     <div id="bulkEditBar" class="bulk-edit-bar" style="display: none" aria-live="polite">
+      <button type="button" class="btn btn--ghost bulk-edit-bar__btn" id="bulkSelectAllBtn"></button>
+      <button type="button" class="btn btn--ghost bulk-edit-bar__btn" id="bulkClearBtn" data-i18n-text="board.select.clear">Clear</button>
+      <span class="bulk-edit-bar__hint" id="bulkSelectHint" hidden></span>
       <button type="button" class="btn bulk-edit-bar__btn" id="bulkEditBarBtn"></button>
       <button type="button" class="btn btn--ghost bulk-edit-bar__btn" id="bulkArchiveBarBtn" data-i18n-text="board.bulkArchive.archiveSelected">Archive selected</button>
     </div>

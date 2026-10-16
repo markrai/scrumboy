@@ -5005,6 +5005,51 @@ label:has(input[type="radio"][name="importMode"]:disabled) {
   white-space: nowrap;
 }
 
+.bulk-edit-bar {
+  align-items: center;
+}
+
+.bulk-edit-bar__hint {
+  color: var(--muted);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+}
+
+.board-select-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--s-8);
+}
+
+.board-select-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.board--select-mode .card {
+  cursor: pointer;
+  position: relative;
+  padding-left: 32px;
+}
+
+.board--select-mode .card::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 10px;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+}
+
+.board--select-mode .card.card--selected::before {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--panel);
+}
+
 .todo-archive-banner {
   display: flex;
   flex-wrap: wrap;

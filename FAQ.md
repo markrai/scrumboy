@@ -82,11 +82,15 @@ For full architecture and security details, see [`docs/markdown-and-mermaid.md`]
 
 ## How do I edit several todos at once?
 
-On the board, hold **Ctrl** (Windows/Linux) or **⌘ Command** (Mac) and click todo cards to select them. Selected cards are highlighted. When at least two are selected, a bar appears with **Edit N selected** - click it to open the bulk edit dialog.
+On the board, hold **Ctrl** (Windows/Linux) or **⌘ Command** (Mac) and click todo cards to select them. **Shift+click** selects the range between the last card you clicked and the one you shift-clicked (lane by lane, in on-screen order). Press **Ctrl/⌘+A** to select every card currently shown, or click **Select all (N)** in the bar. Selected cards are highlighted, and a bar appears with **Edit N selected** - click it to open the bulk edit dialog. **Esc** or **Clear** drops the selection.
+
+Select all respects the board's filters (tags, search, sprint, assignee, priority): it only selects cards that are on screen, and changing a filter drops selected cards that are no longer shown. Lanes load in pages, so if a lane still has a "load more", the bar shows how many matching todos are not loaded and are therefore not selected; load them first to include them.
+
+On touch screens (no Ctrl/Shift), use the **Select** button above the board: cards get checkboxes and a plain tap toggles them. Tap **Done** to leave select mode.
 
 In that dialog, turn on only the changes you want (each field has its own checkbox), then click **Apply**. Updates apply to the selected todos only - not the whole board. Tags you add are merged onto each card; they do not remove existing tags.
 
-A normal click on a card (without Ctrl/⌘) opens the usual single-todo editor and clears the selection. Viewers cannot use multi-select; Ctrl/⌘+click still opens one todo for them.
+A normal click on a card (outside select mode, without Ctrl/⌘/Shift) opens the usual single-todo editor and clears the selection. Viewers cannot use multi-select; Ctrl/⌘/Shift+click still opens one todo for them.
 
 ## What is a Temporary Board?
 
