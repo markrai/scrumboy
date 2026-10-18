@@ -222,6 +222,9 @@ test("top button and genuine swimlane context-menu clicks create Unicode-tagged 
   await page.locator("#todoTitle").fill("Unicode from swimlane menu");
   await page.locator("#todoTags").fill("つながるひろが");
   await page.locator("#todoTags").press("Enter");
+  await expect(
+    page.locator('#tagsChips [data-tag="つながるひろが"]')
+  ).toBeVisible();
   const contextCreate = page.waitForResponse((response) =>
     response.request().method() === "POST"
       && new URL(response.url()).pathname === `/api/board/${project.slug}/todos`,
