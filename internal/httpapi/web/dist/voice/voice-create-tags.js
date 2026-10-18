@@ -1,4 +1,3 @@
-import { canonicalizeTagName } from './tag-canonicalization.js';
 import { VoiceCreatePlanError } from './voice-create-plan.js';
 import { getBoard, getSlug } from '../state/selectors.js';
 function isTagWire(value) {
@@ -6,14 +5,14 @@ function isTagWire(value) {
         && typeof value === 'object'
         && !Array.isArray(value)
         && typeof value.name === 'string'
-        && value.name.trim().length > 0;
-}
-function tagGroupKey(name) {
-    return canonicalizeTagName(name) ?? name;
+        && value.name.trim().length > 0
+        && (!('canonicalName' in value)
+            || typeof value.canonicalName === 'string');
 }
 /**
- * Mirrors the store's TagGroupKey union semantics. Project labels win only as
- * the representation for a duplicate logical label; identity remains its name.
+ * canonicalName is computed by the Go server and is the name accepted by name-based
+ * writes. This collapses temporary-board legacy rows without asking JavaScript to
+ * reproduce Unicode casing. Older projections fall back to their stored name.
  */
 export function combineVoiceCreateTags(projectTags) {
     if (!projectTags.every(isTagWire)) {
@@ -21,9 +20,12 @@ export function combineVoiceCreateTags(projectTags) {
     }
     const byKey = new Map();
     for (const tag of projectTags) {
-        const entry = Object.freeze({ name: tag.name });
-        if (!byKey.has(tagGroupKey(entry.name)))
-            byKey.set(tagGroupKey(entry.name), entry);
+        const writeName = tag.canonicalName === undefined ? tag.name : tag.canonicalName;
+        if (!writeName)
+            continue;
+        const entry = Object.freeze({ name: writeName });
+        if (!byKey.has(entry.name))
+            byKey.set(entry.name, entry);
     }
     return Object.freeze([...byKey.values()].sort((a, b) => a.name === b.name ? 0 : a.name < b.name ? -1 : 1));
 }

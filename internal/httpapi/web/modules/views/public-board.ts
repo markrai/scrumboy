@@ -16,6 +16,7 @@ import { getAuthStatusAvailable, getMarkdownNotesEnabled, getMermaidNotesEnabled
 import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
+import { tagIdentityKey } from '../tag-names.js';
 import {
   fetchPublicBoardSnapshot,
   fetchPublicLanePage,
@@ -309,10 +310,10 @@ function cancelPendingSearch(s: PublicSession): void {
  */
 function addTag(s: PublicSession, raw: string): void {
   if (!isCurrent(s)) return;
-  const key = raw.toLocaleLowerCase();
-  const tag = s.snapshot.tags.find((candidate) => candidate.name.toLocaleLowerCase() === key);
+    const key = tagIdentityKey(raw);
+    const tag = s.snapshot.tags.find((candidate) => tagIdentityKey(candidate.name) === key);
   if (!tag || s.query.tags.length >= PUBLIC_MAX_TAG_FILTERS) return;
-  if (s.query.tags.some((existing) => existing.toLocaleLowerCase() === key)) return;
+    if (s.query.tags.some((existing) => tagIdentityKey(existing) === key)) return;
   cancelPendingSearch(s);
   const input = searchInputEl();
   if (input) input.value = '';
@@ -327,14 +328,14 @@ function addTag(s: PublicSession, raw: string): void {
  */
 function removeTag(s: PublicSession, raw: string): void {
   if (!isCurrent(s)) return;
-  const key = raw.toLocaleLowerCase();
-  if (!s.query.tags.some((existing) => existing.toLocaleLowerCase() === key)) return;
+    const key = tagIdentityKey(raw);
+    if (!s.query.tags.some((existing) => tagIdentityKey(existing) === key)) return;
   const input = searchInputEl();
   const pending = s.searchTimer !== null;
   cancelPendingSearch(s);
   setQuery(s, {
     ...(pending && input ? { search: input.value } : {}),
-    tags: s.query.tags.filter((existing) => existing.toLocaleLowerCase() !== key),
+      tags: s.query.tags.filter((existing) => tagIdentityKey(existing) !== key),
   });
   input?.focus();
 }

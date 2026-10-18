@@ -422,6 +422,41 @@ Tools use these **public** identifiers as primary keys in inputs and outputs:
 
 `system_getCapabilities` includes an `identity` object echoing some of these patterns.
 
+### Tag-name contract
+
+The server owns tag identity. Inputs must be valid UTF-8. Scrumboy trims surrounding
+Unicode whitespace, normalizes to NFC, applies Go's deterministic Unicode lowercase
+mapping, normalizes to NFC again, converts whitespace runs to one ASCII hyphen,
+collapses repeated ASCII hyphens, and trims edge hyphens. The canonical result must
+contain 1–32 Unicode code points (not bytes).
+
+Canonical names may contain Unicode letters and numbers, combining marks that follow
+a letter or number in the same segment, and ASCII hyphens as separators. Other
+punctuation, symbols, emoji, non-whitespace controls, bidi formatting characters, and
+other Unicode format characters are rejected. U+200C ZERO WIDTH NON-JOINER and U+200D
+ZERO WIDTH JOINER are deliberately rejected; Scrumboy does not admit all `Cf`
+characters as script helpers. Whitespace control characters retain the historical
+separator behavior. Scrumboy does not transliterate, strip accents, use locale-specific
+casing, or apply NFKC compatibility folding. Overlong names fail validation and are
+never truncated.
+
+For example, `Café` and `Café` (decomposed) identify the same `café` tag;
+`개발 작업` becomes `개발-작업`; and `erp系统流程` and `つながるひろが` remain valid.
+Browser-side matching is only a convenience preview because JavaScript and Go differ
+for a few Unicode lowercase mappings; create/update responses are authoritative.
+
+New rows store canonical keys. Equivalent historical spellings are reused
+deterministically within the same ownership scope without rewriting stored data.
+Durable projects continue to group equivalent personal rows logically; temporary
+boards continue to expose independent physical rows by `tagId`.
+
+REST tag objects also include `canonicalName`, the server-owned value accepted by
+name-based writes. It normally equals `name`; a preserved temporary-board legacy
+row may display its stored `name` while `canonicalName` identifies the deterministic
+write target. It is empty for a retained invalid legacy row that remains ID-addressable
+but cannot be used in a name-based write. Clients must not reconstruct this field with
+JavaScript lowercasing.
+
 **Note:** `projects_list` returns **`projectId`** on each item in addition to `projectSlug`. MCP mutations still key off **`projectSlug`**. `projectId` is returned for informational purposes only and is not used as an input identifier in MCP tools.
 
 ---

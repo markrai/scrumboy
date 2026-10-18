@@ -1,4 +1,3 @@
-import { canonicalizeTagName } from './tag-canonicalization.js';
 import { VoiceCreatePlanError } from './voice-create-plan.js';
 import { getBoard, getSlug } from '../state/selectors.js';
 
@@ -10,21 +9,20 @@ export type VoiceCreateTagsReader = (
   signal: AbortSignal,
 ) => Promise<readonly VoiceCreateTag[]>;
 
-function isTagWire(value: unknown): value is Readonly<{ name: string }> {
+function isTagWire(value: unknown): value is Readonly<{ name: string; canonicalName?: string }> {
   return !!value
     && typeof value === 'object'
     && !Array.isArray(value)
     && typeof (value as { name?: unknown }).name === 'string'
-    && (value as { name: string }).name.trim().length > 0;
-}
-
-function tagGroupKey(name: string): string {
-  return canonicalizeTagName(name) ?? name;
+    && (value as { name: string }).name.trim().length > 0
+    && (!('canonicalName' in value)
+      || typeof (value as { canonicalName?: unknown }).canonicalName === 'string');
 }
 
 /**
- * Mirrors the store's TagGroupKey union semantics. Project labels win only as
- * the representation for a duplicate logical label; identity remains its name.
+ * canonicalName is computed by the Go server and is the name accepted by name-based
+ * writes. This collapses temporary-board legacy rows without asking JavaScript to
+ * reproduce Unicode casing. Older projections fall back to their stored name.
  */
 export function combineVoiceCreateTags(
   projectTags: readonly unknown[],
@@ -34,8 +32,10 @@ export function combineVoiceCreateTags(
   }
   const byKey = new Map<string, VoiceCreateTag>();
   for (const tag of projectTags) {
-    const entry = Object.freeze({ name: tag.name });
-    if (!byKey.has(tagGroupKey(entry.name))) byKey.set(tagGroupKey(entry.name), entry);
+    const writeName = tag.canonicalName === undefined ? tag.name : tag.canonicalName;
+    if (!writeName) continue;
+    const entry = Object.freeze({ name: writeName });
+    if (!byKey.has(entry.name)) byKey.set(entry.name, entry);
   }
   return Object.freeze([...byKey.values()].sort((a, b) => a.name === b.name ? 0 : a.name < b.name ? -1 : 1));
 }

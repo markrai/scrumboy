@@ -10,6 +10,7 @@
  */
 
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { compareTagNames, tagIdentityKey, tagLookupKey } from '../tag-names.js';
 
 /** At or below this width the Omni row shows mobile pills instead of the desktop rails. */
 export const OMNI_MOBILE_MAX_WIDTH_PX = 767;
@@ -30,10 +31,7 @@ export type OmniPillTag = {
 
 /** Case-insensitive name order with a case-sensitive tie-break, so ordering is deterministic. */
 export function compareOmniTagNames(left: string, right: string): number {
-  const a = left.toLowerCase();
-  const b = right.toLowerCase();
-  if (a !== b) return a < b ? -1 : 1;
-  return left < right ? -1 : left > right ? 1 : 0;
+  return compareTagNames(left, right);
 }
 
 /**
@@ -47,13 +45,13 @@ export function matchOmniTagCandidates<T extends OmniTagLike>(
   appliedTags: readonly string[],
   limit: number,
 ): T[] {
-  const needle = query.trim().toLowerCase();
+  const needle = tagLookupKey(query.trim());
   if (!needle || appliedTags.length >= limit) return [];
-  const applied = new Set(appliedTags.map((tag) => tag.toLocaleLowerCase()));
+  const applied = new Set(appliedTags.map(tagIdentityKey));
   return tags
-    .filter((tag) => !applied.has(tag.name.toLocaleLowerCase()))
+    .filter((tag) => !applied.has(tagIdentityKey(tag.name)))
     .map((tag) => {
-      const name = tag.name.toLowerCase();
+      const name = tagLookupKey(tag.name);
       const rank = name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 : 3;
       return { tag, rank };
     })
@@ -74,8 +72,8 @@ export function rankOmniBrowseCandidates<T extends OmniTagLike>(
   compare: (left: T, right: T) => number,
 ): T[] {
   if (pinnedTags.length >= limit) return [];
-  const pinned = new Set(pinnedTags.map((tag) => tag.toLocaleLowerCase()));
-  return tags.filter((tag) => !pinned.has(tag.name.toLocaleLowerCase())).sort(compare);
+  const pinned = new Set(pinnedTags.map(tagIdentityKey));
+  return tags.filter((tag) => !pinned.has(tagIdentityKey(tag.name))).sort(compare);
 }
 
 /**

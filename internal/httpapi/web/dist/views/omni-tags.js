@@ -9,15 +9,12 @@
  * member controllers, or anything that performs requests.
  */
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { compareTagNames, tagIdentityKey, tagLookupKey } from '../tag-names.js';
 /** At or below this width the Omni row shows mobile pills instead of the desktop rails. */
 export const OMNI_MOBILE_MAX_WIDTH_PX = 767;
 /** Case-insensitive name order with a case-sensitive tie-break, so ordering is deterministic. */
 export function compareOmniTagNames(left, right) {
-    const a = left.toLowerCase();
-    const b = right.toLowerCase();
-    if (a !== b)
-        return a < b ? -1 : 1;
-    return left < right ? -1 : left > right ? 1 : 0;
+    return compareTagNames(left, right);
 }
 /**
  * Suggestions for a typed query: exact match, then prefix, then substring,
@@ -25,14 +22,14 @@ export function compareOmniTagNames(left, right) {
  * offered once `limit` tags are applied. Callers pass only selectable tags.
  */
 export function matchOmniTagCandidates(query, tags, appliedTags, limit) {
-    const needle = query.trim().toLowerCase();
+    const needle = tagLookupKey(query.trim());
     if (!needle || appliedTags.length >= limit)
         return [];
-    const applied = new Set(appliedTags.map((tag) => tag.toLocaleLowerCase()));
+    const applied = new Set(appliedTags.map(tagIdentityKey));
     return tags
-        .filter((tag) => !applied.has(tag.name.toLocaleLowerCase()))
+        .filter((tag) => !applied.has(tagIdentityKey(tag.name)))
         .map((tag) => {
-        const name = tag.name.toLowerCase();
+        const name = tagLookupKey(tag.name);
         const rank = name === needle ? 0 : name.startsWith(needle) ? 1 : name.includes(needle) ? 2 : 3;
         return { tag, rank };
     })
@@ -48,8 +45,8 @@ export function matchOmniTagCandidates(query, tags, appliedTags, limit) {
 export function rankOmniBrowseCandidates(tags, pinnedTags, limit, compare) {
     if (pinnedTags.length >= limit)
         return [];
-    const pinned = new Set(pinnedTags.map((tag) => tag.toLocaleLowerCase()));
-    return tags.filter((tag) => !pinned.has(tag.name.toLocaleLowerCase())).sort(compare);
+    const pinned = new Set(pinnedTags.map(tagIdentityKey));
+    return tags.filter((tag) => !pinned.has(tagIdentityKey(tag.name))).sort(compare);
 }
 function pillStyle(color, subtle, tone) {
     const safe = sanitizeHexColor(color ?? undefined);

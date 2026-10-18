@@ -200,6 +200,27 @@ describe('todo-tags', () => {
     expect(document.querySelector('.tag-chip-remove')).toBeNull();
   });
 
+  it('renders, matches, and deduplicates Unicode tag names by NFC display key', async () => {
+    selectorState.availableTags = ['Café', 'erp系统流程', 'つながるひろが'];
+    selectorState.availableTagsMap = {
+      café: 'Café',
+      erp系统流程: 'erp系统流程',
+      つながるひろが: 'つながるひろが',
+    };
+    const mod = await loadTodoTagsModule();
+    mod.setupTagAutocomplete();
+
+    const input = document.getElementById('todoTags') as HTMLInputElement;
+    input.value = 'Cafe\u0301, erp系统流程, つながるひろが';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(mod.getTagsFromChips()).toEqual(['Café', 'erp系统流程', 'つながるひろが']);
+
+    input.value = 'CAFÉ';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(mod.getTagsFromChips()).toEqual(['Café', 'erp系统流程', 'つながるひろが']);
+    expect(document.querySelector('[data-tag="erp系统流程"]')?.textContent).toContain('erp系统流程');
+  });
+
   it('renders an attached historical tag with a catalog-populated color', async () => {
     selectorState.tagColors = { historical: '#123456' };
     const mod = await loadTodoTagsModule();
@@ -236,6 +257,22 @@ describe('todo-tags', () => {
     mod.renderTagsChips(['Feature'], { canRemove: true });
     expect(mod.normalizeTagName('feature')).toBe('Feature');
     expect(mod.normalizeTagName('unknown')).toBe('unknown');
+  });
+
+  it('never substitutes JavaScript lowercase for a different server tag identity', async () => {
+    selectorState.availableTags = ['i', 'i\u0307'];
+    selectorState.availableTagsMap = {
+      i: 'i',
+      'i\u0307': 'i\u0307',
+    };
+    const mod = await loadTodoTagsModule();
+    mod.setupTagAutocomplete();
+
+    expect(mod.normalizeTagName('İ')).toBe('İ');
+    const input = document.getElementById('todoTags') as HTMLInputElement;
+    input.value = 'İ';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(mod.getTagsFromChips()).toEqual(['İ']);
   });
 
   it('defaults suggestions to active project tags plus the story own historical tags', async () => {

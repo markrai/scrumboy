@@ -49,6 +49,8 @@ test.beforeAll(async () => {
 
   try {
     await waitForServer(baseUrl, 90_000);
+    const api = await apiClient(baseUrl);
+    await api.json("POST", "/api/auth/bootstrap", { name: NAME, email: EMAIL, password: PASSWORD });
   } catch (err) {
     throw new Error(`server failed to start: ${err}\nstderr:\n${stderr}`);
   }
@@ -77,11 +79,11 @@ test.afterAll(async () => {
   }
 });
 
-test("cards-per-lane preference changes default page size; Load more still works", async ({ page, context }) => {
-  test.setTimeout(120_000);
+test("cards-per-lane preference drives initial page size and load more", async ({ page, context }) => {
+  test.setTimeout(180_000);
 
   const api = await apiClient(baseUrl);
-  await api.json("POST", "/api/auth/bootstrap", { name: NAME, email: EMAIL, password: PASSWORD });
+  await api.json("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD });
   const project = await api.json<{ slug: string }>("POST", "/api/projects", { name: "Lane Size Board" });
   for (let i = 1; i <= 35; i++) {
     await api.json("POST", `/api/board/${project.slug}/todos`, { title: `Card ${i}` });
@@ -160,6 +162,90 @@ test("cards-per-lane preference changes default page size; Load more still works
 
   await page.locator('.col[data-column="backlog"] [data-load-more="backlog"] .col__load-more--desktop').click();
   await expect.poll(async () => backlogList.locator("[data-todo-local-id]").count()).toBeGreaterThan(20);
+
+});
+
+test("top button and genuine swimlane context-menu clicks create Unicode-tagged todos", async ({ page, context }) => {
+  test.setTimeout(180_000);
+
+  const api = await apiClient(baseUrl);
+  await api.json("POST", "/api/auth/login", { email: EMAIL, password: PASSWORD });
+  const project = await api.json<{ slug: string }>("POST", "/api/projects", { name: "Unicode Creation Board" });
+  const cookies = api.cookies();
+  await context.addCookies(
+    cookies.map((c) => ({
+      name: c.name,
+      value: c.value,
+      domain: "127.0.0.1",
+      path: c.path || "/",
+      httpOnly: c.httpOnly,
+      secure: false,
+      sameSite: "Lax" as const,
+    })),
+  );
+
+  await page.goto(`${baseUrl}/${project.slug}`);
+  await expect(page.locator(".col__list").first()).toBeVisible({ timeout: 30_000 });
+
+  // The top-right button and swimlane context menu both call openTodoDialog;
+  // exercise the reporter's two entry paths with the exact failing tag names.
+  await page.locator("#newTodoBtn").click();
+  await expect(page.locator("#todoDialog")).toBeVisible();
+  await expect(page.locator("#todoStatus")).toHaveValue("backlog");
+  await page.locator("#todoTitle").fill("Unicode from top button");
+  await page.locator("#todoTags").fill("erp系统流程");
+  await page.locator("#todoTags").press("Enter");
+  await expect(page.locator('#tagsChips [data-tag="erp系统流程"]')).toBeVisible();
+  const topCreate = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/board/${project.slug}/todos`,
+  );
+  await page.locator("#saveTodoBtn").click();
+  expect((await topCreate).status()).toBe(201);
+  await expect(page.locator("#todoDialog")).toBeHidden();
+
+  await page.goto(`${baseUrl}/${project.slug}?tag=${encodeURIComponent("erp系统流程")}`);
+  await expect(page.locator('.col[data-column="backlog"] .card', { hasText: "Unicode from top button" })).toBeVisible();
+  await expect(page.locator('.card[data-todo-local-id] .tag', { hasText: "erp系统流程" })).toBeVisible();
+
+  await page.goto(`${baseUrl}/${project.slug}`);
+  const doingList = page.locator('.col[data-column="doing"] .col__list');
+  await doingList.scrollIntoViewIfNeeded();
+  const doingBox = await doingList.boundingBox();
+  if (!doingBox) throw new Error("doing swimlane has no pointer geometry");
+  await page.mouse.click(doingBox.x + 20, doingBox.y + 20, { button: "right" });
+  const contextMenuNewTodo = page.locator("#contextMenuNewTodo");
+  await expect(contextMenuNewTodo).toBeVisible();
+  await contextMenuNewTodo.click();
+  await expect(page.locator("#todoDialog")).toBeVisible();
+  await expect(page.locator("#todoStatus")).toHaveValue("doing");
+  await page.locator("#todoTitle").fill("Unicode from swimlane menu");
+  await page.locator("#todoTags").fill("つながるひろが");
+  await page.locator("#todoTags").press("Enter");
+  const contextCreate = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/board/${project.slug}/todos`,
+  );
+  await page.locator("#saveTodoBtn").click();
+  expect((await contextCreate).status()).toBe(201);
+  await expect(doingList.locator('.card', { hasText: "Unicode from swimlane menu" })).toBeVisible();
+  await expect(doingList.locator('.tag', { hasText: "つながるひろが" })).toBeVisible();
+
+  // A genuine validation error keeps the dialog values and creates no partial todo.
+  await page.locator("#newTodoBtn").click();
+  await page.locator("#todoTitle").fill("Rejected invalid tag");
+  await page.locator("#todoTags").fill("bad!");
+  await page.locator("#todoTags").press("Enter");
+  await expect(page.locator('#tagsChips [data-tag="bad!"]')).toBeVisible();
+  const rejectedCreate = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/board/${project.slug}/todos`,
+  );
+  await page.locator("#saveTodoBtn").click();
+  expect((await rejectedCreate).status()).toBe(400);
+  await expect(page.locator("#todoDialog")).toBeVisible();
+  await expect(page.locator("#todoTitle")).toHaveValue("Rejected invalid tag");
+  await expect(page.locator('#tagsChips [data-tag="bad!"]')).toBeVisible();
 });
 
 async function freePort(): Promise<number> {

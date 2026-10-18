@@ -170,6 +170,34 @@ func TestTodoCreateMCPTransportAliasMatrix(t *testing.T) {
 	})
 }
 
+func TestTodoCreateMCPAcceptsAndReturnsUnicodeTags(t *testing.T) {
+	ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
+	defer cleanup()
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	ownerID := firstUserID(t, db)
+	project, ownerCtx := createTodoCreateMCPProject(t, st, ownerID, "MCP Unicode tags")
+
+	args := todoCreateMCPArgs(project.Slug, "Unicode MCP")
+	args["tags"] = []string{"erp系统流程", "つながるひろが", "Café", "cafe\u0301"}
+	resp, out := callTodoCreateMCP(t, client, ts.URL, "legacy", "todos_create", args)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d response=%+v", resp.StatusCode, out)
+	}
+	returned := assertTodoCreateMCPSuccess(t, "legacy", out, project.Slug, 1)
+	want := []string{"café", "erp系统流程", "つながるひろが"}
+	if got := returned["tags"]; !reflect.DeepEqual(got, []any{"café", "erp系统流程", "つながるひろが"}) {
+		t.Fatalf("MCP response tags = %#v", got)
+	}
+	persisted, err := st.GetTodoByLocalID(ownerCtx, project.ID, 1, store.ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(persisted.Tags, want) {
+		t.Fatalf("MCP persisted tags = %#v, want %#v", persisted.Tags, want)
+	}
+}
+
 func TestTodoCreateMCPRealtimeContracts(t *testing.T) {
 	ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
 	defer cleanup()

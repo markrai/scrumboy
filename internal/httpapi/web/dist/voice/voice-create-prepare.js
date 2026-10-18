@@ -1,10 +1,10 @@
 import { canRunVoiceMutationInContext } from './command-context.js';
-import { normalizeLookup } from './normalize.js';
 import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR } from './schema.js';
 import { executableCreatePlan, VoiceCreatePlanError } from './voice-create-plan.js';
 import { reconcileVoiceCreateTagReferences } from './voice-create-tag-reconciliation.js';
 import { findVoiceCreateTagSuggestions } from './voice-create-tag-suggestions.js';
+import { tagIdentityKey } from '../tag-names.js';
 export function formatVoiceCreateMember(member) {
     const name = member.name?.trim() ?? '';
     const email = member.email?.trim() ?? '';
@@ -59,7 +59,7 @@ export function prepareVoiceCreate(planInput, context, members, authoritativeTag
         const storedExact = authoritativeNames.filter(name => name === binding.tag);
         const rebound = storedExact.length
             ? storedExact
-            : authoritativeNames.filter(name => normalizeLookup(name) === normalizeLookup(binding.tag));
+            : authoritativeNames.filter(name => tagIdentityKey(name) === tagIdentityKey(binding.tag));
         if (!Number.isInteger(binding.referenceIndex)
             || binding.referenceIndex < 0
             || binding.referenceIndex >= plannedTagReferences.length

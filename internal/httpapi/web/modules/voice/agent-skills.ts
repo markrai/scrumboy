@@ -12,6 +12,7 @@ import { isCommandFailure, validateCommandIR, type CommandIR, type ResolvedComma
 import { voiceText } from './i18n.js';
 import { AGENT_LIMITS, AgentProtocolError, SKILL_NAMES, type SkillCall, type VoiceAgentSkillName } from './agent-protocol.js';
 import { VoiceAgentResourceHandles, type AgentResource } from './agent-resources.js';
+import { tagIdentityKey } from '../tag-names.js';
 
 export type AgentChoice = Readonly<{ handle: string; label: string; number?: number; lane?: string }>;
 export type AgentSkillResult =
@@ -218,8 +219,8 @@ export class VoiceAgentSkillRegistry {
         case 'todos.rename': return todo.title === call.arguments.title.trim();
         case 'todos.assign': return todo.assigneeUserId === member!.userId;
         case 'todos.unassign': return todo.assigneeUserId == null || (!!member && todo.assigneeUserId !== member.userId);
-        case 'todos.add_tag': return (todo.tags ?? []).some(name => normalizeLookup(name) === normalizeLookup(tag!));
-        case 'todos.remove_tag': return !(todo.tags ?? []).some(name => normalizeLookup(name) === normalizeLookup(tag!));
+      case 'todos.add_tag': return (todo.tags ?? []).some(name => tagIdentityKey(name) === tagIdentityKey(tag!));
+      case 'todos.remove_tag': return !(todo.tags ?? []).some(name => tagIdentityKey(name) === tagIdentityKey(tag!));
         case 'todos.replace_notes': return (todo.body ?? '') === call.arguments.text;
         default: return false;
       }
@@ -269,7 +270,7 @@ export class VoiceAgentSkillRegistry {
         const body = call.skill === 'todos.replace_notes' || !old ? notes : `${old}${old.endsWith('\n') ? '' : '\n'}${notes}`;
         ir = { ...base, intent: call.skill, entities: { localId: todo.localId, notes, body } }; break;
       }
-      case 'todos.add_tag': case 'todos.remove_tag': ir = { ...base, intent: call.skill, entities: { localId: todo.localId, tag: tag!, tags: call.skill === 'todos.add_tag' ? [...(todo.tags ?? []), tag!] : (todo.tags ?? []).filter(name => normalizeLookup(name) !== normalizeLookup(tag!)) } }; break;
+      case 'todos.add_tag': case 'todos.remove_tag': ir = { ...base, intent: call.skill, entities: { localId: todo.localId, tag: tag!, tags: call.skill === 'todos.add_tag' ? [...(todo.tags ?? []), tag!] : (todo.tags ?? []).filter(name => tagIdentityKey(name) !== tagIdentityKey(tag!)) } }; break;
       default: throw new AgentProtocolError('Invalid mutation');
     }
     const validated = validateCommandIR(ir, context);

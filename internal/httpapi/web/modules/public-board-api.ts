@@ -10,6 +10,7 @@
 
 import { getAppRuntime } from './platform/runtime.js';
 import { sanitizeHexColor } from './utils.js';
+import { tagIdentityKey } from './tag-names.js';
 
 // ---- Wire DTOs (server contract) ----
 
@@ -320,7 +321,7 @@ export function normalizePublicQuery(input: Partial<PublicBoardQuery>): PublicBo
   const tags: string[] = [];
   for (const raw of input.tags ?? []) {
     const tag = raw.trim();
-    const key = tag.toLocaleLowerCase();
+    const key = tagIdentityKey(tag);
     if (!tag || seen.has(key)) continue;
     seen.add(key);
     tags.push(tag);

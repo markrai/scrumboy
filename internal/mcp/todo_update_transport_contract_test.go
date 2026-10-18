@@ -369,6 +369,46 @@ func TestTodoUpdateMCPTransportAliasMatrix(t *testing.T) {
 	})
 }
 
+func TestTodoUpdateMCPAcceptsUnicodeTagsAndRejectsInvalidAtomically(t *testing.T) {
+	ts, db, st, cleanup := newTodoUpdateMCPServer(t, "full")
+	defer cleanup()
+	client := newCookieClient(t, ts)
+	bootstrapUser(t, client, ts.URL)
+	ownerID := firstUserID(t, db)
+	project, ctx := createTodoUpdateMCPProject(t, st, ownerID, "MCP Unicode update")
+	todo := createTodoUpdateMCPTodo(t, st, ctx, project.ID, "Unicode update", nil, nil)
+
+	args := map[string]any{
+		"projectSlug": project.Slug,
+		"localId":     todo.LocalID,
+		"patch": map[string]any{
+			"tags": []string{"개발 작업", "إصلاح-خطأ", "नमस्ते दुनिया"},
+		},
+	}
+	resp, out := callTodoUpdateMCP(t, client, ts.URL, "jsonrpc", "todos.update", args)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d response=%+v", resp.StatusCode, out)
+	}
+	got := assertTodoUpdateMCPSuccess(t, "jsonrpc", out, project.Slug, todo.LocalID)
+	want := []string{"إصلاح-خطأ", "नमस्ते-दुनिया", "개발-작업"}
+	if !reflect.DeepEqual(got["tags"], []any{"إصلاح-خطأ", "नमस्ते-दुनिया", "개발-작업"}) {
+		t.Fatalf("MCP update response tags = %#v", got["tags"])
+	}
+
+	args["patch"] = map[string]any{"title": "must not persist", "tags": []string{"개발 작업", "bad!"}}
+	resp, out = callTodoUpdateMCP(t, client, ts.URL, "legacy", "todos_update", args)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid update status=%d response=%+v", resp.StatusCode, out)
+	}
+	persisted, err := st.GetTodoByLocalID(ctx, project.ID, todo.LocalID, store.ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Title != todo.Title || !reflect.DeepEqual(persisted.Tags, want) {
+		t.Fatalf("invalid MCP update partially persisted: %+v", persisted)
+	}
+}
+
 func TestTodoUpdateMCPPriorityPresenceContract(t *testing.T) {
 	for _, transport := range []string{"legacy", "jsonrpc"} {
 		t.Run(transport, func(t *testing.T) {

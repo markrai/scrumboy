@@ -190,7 +190,7 @@ describe('Omni module boundaries', () => {
   }
 
   it('the shared module stays dependency-light', () => {
-    expect(importsOf('omni-tags.ts')).toEqual(['../utils.js']);
+    expect(importsOf('omni-tags.ts')).toEqual(['../utils.js', '../tag-names.js']);
   });
 
   it('public modules import no member board controllers, URL state, or authenticated API plumbing', () => {

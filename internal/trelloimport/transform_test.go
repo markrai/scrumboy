@@ -17,6 +17,35 @@ func fixedNow() time.Time {
 	return time.Date(2026, 5, 4, 12, 0, 0, 0, time.UTC)
 }
 
+func TestBuildImportBundlePreservesUnicodeLabelNames(t *testing.T) {
+	raw := []byte(`{
+		"id":"unicode-board","name":"Unicode Board",
+		"lists":[{"id":"todo","name":"Todo","pos":10,"closed":false}],
+		"labels":[
+			{"id":"cn","name":"erp系统流程","color":"green"},
+			{"id":"jp","name":"つながるひろが","color":"blue"},
+			{"id":"accent","name":"Café","color":"red"}
+		],
+		"cards":[{"id":"card","name":"Unicode labels","idList":"todo","pos":10,"closed":false,"idLabels":["cn","jp","accent"],"idMembers":[]}]
+	}`)
+	bundle, err := BuildImportBundle(raw, fixedNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Preview.HardErrors) != 0 || bundle.ExportData == nil {
+		t.Fatalf("Unicode Trello preview = %+v", bundle.Preview)
+	}
+	project := bundle.ExportData.Projects[0]
+	for _, name := range []string{"erp系统流程", "つながるひろが", "Café"} {
+		if !containsTagName(project.Tags, name) {
+			t.Fatalf("missing Unicode label %q in %+v", name, project.Tags)
+		}
+	}
+	if len(project.Todos) != 1 || len(project.Todos[0].Tags) != 3 {
+		t.Fatalf("Unicode card tags = %+v", project.Todos)
+	}
+}
+
 func TestBuildImportBundle_MinimalBoard(t *testing.T) {
 	raw := []byte(`{
 		"id":"board-1",

@@ -8,6 +8,7 @@ import { BUILTIN_STATUS_ALIASES } from './vocabulary.js';
 import { resolveTodoTarget } from './target-resolver.js';
 import { voiceText } from './i18n.js';
 import type { VoiceCreateTag } from './voice-create-tags.js';
+import { tagIdentityKey, tagLookupKey } from '../tag-names.js';
 
 export type ResolveContext = {
   projectId: number;
@@ -128,6 +129,14 @@ export function matchVoiceTagsDetailed(reference: string, tags: readonly VoiceCr
   const storedExact = names.filter(name => name === raw);
   if (storedExact.length) return { matches: storedExact, kind: 'stored_exact' };
 
+  const identity = tagIdentityKey(raw);
+  const identityExact = names.filter(name => tagIdentityKey(name) === identity);
+  if (identityExact.length) return { matches: identityExact, kind: 'normalized_exact' };
+
+  // Do not let JavaScript's Unicode full/contextual casing choose a different
+  // server-owned identity. ASCII casing and NFC-equivalent spellings remain safe.
+  if (tagLookupKey(raw) !== identity) return { matches: [], kind: 'none' };
+
   const wanted = spokenReferenceIdentity(reference);
   const normalizedExact = names.filter(name => normalizeLookup(name) === wanted.lookup);
   if (normalizedExact.length) return { matches: normalizedExact, kind: 'normalized_exact' };
@@ -144,7 +153,8 @@ export function matchVoiceTagsDetailed(reference: string, tags: readonly VoiceCr
 }
 
 export function matchVoiceTags(reference: string, board: Board): string[] {
-  return matchVoiceTagsDetailed(reference, board.tags ?? []).matches;
+  const addressable = (board.tags ?? []).map((tag) => ({ name: tag.canonicalName ?? tag.name }));
+  return matchVoiceTagsDetailed(reference, addressable).matches;
 }
 
 async function resolveMember(rawUser: string, context: ResolveContext): Promise<CommandResult<BoardMember>> {

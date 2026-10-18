@@ -9,6 +9,7 @@ import { setBulkUpdating } from "../realtime/guard.js";
 import { boardSprintsEnabled, normalizeSprints } from "../sprints.js";
 import { invalidateTagsCache } from "./settings.js";
 import { normalizeTagName, resolveColumnKey } from "./todo.js";
+import { tagIdentityKey } from "../tag-names.js";
 const EST_POINTS = new Set([1, 2, 3, 5, 8, 13, 20, 40]);
 let bulkTagsList = [];
 let bound = false;
@@ -51,7 +52,7 @@ function mergeTagsAdditive(existing, toAdd) {
         const canon = normalizeTagName(t);
         if (!canon)
             continue;
-        map.set(canon.toLowerCase(), canon);
+        map.set(tagIdentityKey(canon), canon);
     }
     for (const raw of toAdd) {
         const t = raw.trim();
@@ -60,7 +61,7 @@ function mergeTagsAdditive(existing, toAdd) {
         const canon = normalizeTagName(t);
         if (!canon)
             continue;
-        map.set(canon.toLowerCase(), canon);
+        map.set(tagIdentityKey(canon), canon);
     }
     return Array.from(map.values());
 }
@@ -407,8 +408,8 @@ export function initBulkEditDialog(onSuccess) {
         const name = normalizeTagName(raw);
         if (!name)
             return;
-        const lower = name.toLowerCase();
-        if (!bulkTagsList.some((t) => t.toLowerCase() === lower)) {
+        const identity = tagIdentityKey(name);
+        if (!bulkTagsList.some((t) => tagIdentityKey(t) === identity)) {
             bulkTagsList.push(name);
         }
         input.value = "";

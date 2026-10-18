@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 )
@@ -101,6 +102,108 @@ func TestBulkUpsertTags_DedupesLegacyDuplicateNames(t *testing.T) {
 	}
 	if rowCount != 1 {
 		t.Errorf("expected exactly one 'bug' tag row, got %d", rowCount)
+	}
+}
+
+func TestBulkUpsertTags_DedupesUnicodeNFCAndKeepsFirstValidColor(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, _ := st.BootstrapUser(ctx, "unicode-import@example.com", "password", "U")
+	ctxU := WithUserID(ctx, u.ID)
+	p, _ := st.CreateProject(ctxU, "Unicode import")
+
+	first, second := "#123456", "#abcdef"
+	tx, err := st.db.BeginTx(ctxU, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagMap, err := bulkUpsertTags(ctxU, tx, p.ID, []TagExport{
+		{Name: "Café", Color: &first},
+		{Name: "cafe\u0301", Color: &second},
+		{Name: "CAFÉ"},
+	}, ModeFull)
+	if err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if len(tagMap) != 1 || tagMap["café"] == 0 {
+		t.Fatalf("Unicode tag map = %#v", tagMap)
+	}
+	var name, color string
+	if err := st.db.QueryRowContext(ctx, `
+SELECT g.name, utc.color FROM tags g
+JOIN user_tag_colors utc ON utc.tag_id = g.id AND utc.user_id = ?
+WHERE g.id = ?`, u.ID, tagMap["café"]).Scan(&name, &color); err != nil {
+		t.Fatal(err)
+	}
+	if name != "café" || color != first {
+		t.Fatalf("restored Unicode tag = %q/%q, want café/%q", name, color, first)
+	}
+}
+
+func TestBackupUnicodeTagsRoundTripAcrossImportModes(t *testing.T) {
+	source, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, _ := source.BootstrapUser(ctx, "unicode-source@example.com", "password", "Source")
+	ownerCtx := WithUserID(ctx, owner.ID)
+	project, _ := source.CreateProject(ownerCtx, "Unicode round trip")
+	if _, err := source.CreateTodo(ownerCtx, project.ID, CreateTodoInput{
+		Title: "Unicode", Tags: []string{"erp系统流程", "つながるひろが", "Café", "cafe\u0301"},
+	}, ModeFull); err != nil {
+		t.Fatal(err)
+	}
+	exported, err := source.ExportAllProjects(ownerCtx, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, importMode := range []string{"replace", "merge", "copy"} {
+		t.Run(importMode, func(t *testing.T) {
+			target, targetCleanup := newTestStore(t)
+			defer targetCleanup()
+			user, _ := target.BootstrapUser(ctx, "unicode-target-"+importMode+"@example.com", "password", "Target")
+			userCtx := WithUserID(ctx, user.ID)
+			var data ExportData
+			if err := json.Unmarshal(payload, &data); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := target.ImportProjects(userCtx, &data, ModeFull, importMode); err != nil {
+				t.Fatalf("ImportProjects(%s): %v", importMode, err)
+			}
+			restored, err := target.ExportAllProjects(userCtx, ModeFull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var matchingTodos []TodoExport
+			for _, restoredProject := range restored.Projects {
+				for _, todo := range restoredProject.Todos {
+					if todo.Title == "Unicode" {
+						matchingTodos = append(matchingTodos, todo)
+					}
+				}
+			}
+			if len(matchingTodos) != 1 {
+				t.Fatalf("restored Unicode todos = %#v", matchingTodos)
+			}
+			want := []string{"café", "erp系统流程", "つながるひろが"}
+			if len(matchingTodos[0].Tags) != len(want) {
+				t.Fatalf("restored tags = %#v, want %#v", matchingTodos[0].Tags, want)
+			}
+			for i := range want {
+				if matchingTodos[0].Tags[i] != want[i] {
+					t.Fatalf("restored tags = %#v, want %#v", matchingTodos[0].Tags, want)
+				}
+			}
+		})
 	}
 }
 

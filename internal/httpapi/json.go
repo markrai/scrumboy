@@ -20,6 +20,7 @@ func tagsToJSON(tags []store.TagWithColor) []tagWithColorJSON {
 		out = append(out, tagWithColorJSON{
 			TagID:          t.TagID,
 			Name:           t.Name,
+			CanonicalName:  store.CanonicalizeTag(t.Name),
 			Color:          t.Color,
 			DeleteScope:    scope,
 			CanDelete:      t.CanDelete,
@@ -38,6 +39,7 @@ func tagCountsToJSON(tags []store.TagCount) []tagWithColorJSON {
 		out = append(out, tagWithColorJSON{
 			TagID:          tc.TagID,
 			Name:           tc.Name,
+			CanonicalName:  store.CanonicalizeTag(tc.Name),
 			Color:          tc.Color,
 			DeleteScope:    scope,
 			CanDelete:      scope != "none",
@@ -586,10 +588,14 @@ func dashboardTodosToJSON(items []store.DashboardTodo, nextCursor *string) dashb
 
 type tagCountJSON struct {
 	// TagID is omitted for grouped personal labels (no representative row).
-	TagID int64   `json:"tagId,omitempty"`
-	Name  string  `json:"name"`
-	Count int     `json:"count"`
-	Color *string `json:"color,omitempty"`
+	TagID int64  `json:"tagId,omitempty"`
+	Name  string `json:"name"`
+	// CanonicalName is the server-owned name accepted by name-based write APIs.
+	// It can differ from Name for preserved temporary-board legacy rows and is
+	// empty when a retained invalid legacy row has no name-based write identity.
+	CanonicalName string  `json:"canonicalName"`
+	Count         int     `json:"count"`
+	Color         *string `json:"color,omitempty"`
 	// LastActiveAt is recent board activity, not tag-association history.
 	LastActiveAt *time.Time `json:"lastActiveAt,omitempty"`
 	// DeleteScope is one of "mine", "project", "none". canDelete is a
@@ -604,9 +610,10 @@ type tagCountJSON struct {
 
 type tagWithColorJSON struct {
 	// TagID is omitted for grouped personal labels (no representative row).
-	TagID int64   `json:"tagId,omitempty"`
-	Name  string  `json:"name"`
-	Color *string `json:"color,omitempty"`
+	TagID         int64   `json:"tagId,omitempty"`
+	Name          string  `json:"name"`
+	CanonicalName string  `json:"canonicalName"`
+	Color         *string `json:"color,omitempty"`
 	// DeleteScope is one of "mine", "project", "none". canDelete is a
 	// compatibility alias equal to deleteScope != "none".
 	DeleteScope string `json:"deleteScope"`
@@ -729,6 +736,7 @@ func boardToJSONWithMeta(p store.Project, workflow []store.WorkflowColumn, prior
 		out.Tags = append(out.Tags, tagCountJSON{
 			TagID:          tc.TagID,
 			Name:           tc.Name,
+			CanonicalName:  store.CanonicalizeTag(tc.Name),
 			Count:          tc.Count,
 			Color:          tc.Color,
 			LastActiveAt:   tc.LastActiveAt,

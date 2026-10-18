@@ -29,15 +29,34 @@ describe('Voice Create authoritative tag adapter', () => {
     expect(tags.every(Object.isFrozen)).toBe(true);
   });
 
-  it('deduplicates one logical tag with project representation precedence', () => {
+  it('deduplicates by the server-owned canonical write name', () => {
     expect(combineVoiceCreateTags(
-      [{ name: 'make-space' }, { name: 'make space' }, { name: 'mobile' }],
+      [
+        { name: 'make-space', canonicalName: 'make-space' },
+        { name: 'make space', canonicalName: 'make-space' },
+        { name: 'mobile', canonicalName: 'mobile' },
+      ],
     )).toEqual([{ name: 'make-space' }, { name: 'mobile' }]);
+  });
+
+  it('does not use JavaScript case folding to invent Unicode tag identity', () => {
+    expect(combineVoiceCreateTags([
+      { name: 'i', canonicalName: 'i' },
+      { name: 'i\u0307', canonicalName: 'i\u0307' },
+      { name: 'İ', canonicalName: 'i' },
+    ])).toEqual([{ name: 'i' }, { name: 'i\u0307' }]);
   });
 
   it('retains genuinely distinct labels that collide only under spoken acronym matching', () => {
     expect(combineVoiceCreateTags([{ name: 'RD' }, { name: 'R&D' }]))
       .toEqual([{ name: 'R&D' }, { name: 'RD' }]);
+  });
+
+  it('omits retained legacy rows that have no name-based write identity', () => {
+    expect(combineVoiceCreateTags([
+      { name: 'bad!', canonicalName: '' },
+      { name: 'backend', canonicalName: 'backend' },
+    ])).toEqual([{ name: 'backend' }]);
   });
 
   it('fails closed on a malformed authority response', async () => {

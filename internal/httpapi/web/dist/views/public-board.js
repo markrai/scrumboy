@@ -15,6 +15,7 @@ import { getAuthStatusAvailable, getMarkdownNotesEnabled, getMermaidNotesEnabled
 import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
+import { tagIdentityKey } from '../tag-names.js';
 import { fetchPublicBoardSnapshot, fetchPublicLanePage, fetchPublicSprints, isPublicAbort, isPublicNotFound, normalizePublicQuery, publicBoardEventsPath, PublicBoardApiError, PUBLIC_DEFAULT_PAGE_SIZE, PUBLIC_MAX_PAGE_SIZE, PUBLIC_MAX_TAG_FILTERS, samePublicQuery, EMPTY_PUBLIC_QUERY, } from '../public-board-api.js';
 import { buildPublicBoardHtml, buildPublicColumnsHtml, buildPublicFilterErrorHtml, buildPublicFilterSectionsHtml, buildPublicMobileTabsHtml, buildPublicUnavailableHtml, isPublicPanelFilterActive, isPublicQueryActive, publicPriorityMap, PUBLIC_FILTER_PANEL_ID, PUBLIC_FILTER_TOGGLE_ID, PUBLIC_CLEAR_SPRINT_ATTR, PUBLIC_PRIORITY_OPTION_ATTR, showPublicPoints, } from './public-board-rendering.js';
 import { closePublicTodo, getOpenPublicTodoLocalId, openPublicTodo } from '../dialogs/public-todo.js';
@@ -224,11 +225,11 @@ function cancelPendingSearch(s) {
 function addTag(s, raw) {
     if (!isCurrent(s))
         return;
-    const key = raw.toLocaleLowerCase();
-    const tag = s.snapshot.tags.find((candidate) => candidate.name.toLocaleLowerCase() === key);
+    const key = tagIdentityKey(raw);
+    const tag = s.snapshot.tags.find((candidate) => tagIdentityKey(candidate.name) === key);
     if (!tag || s.query.tags.length >= PUBLIC_MAX_TAG_FILTERS)
         return;
-    if (s.query.tags.some((existing) => existing.toLocaleLowerCase() === key))
+    if (s.query.tags.some((existing) => tagIdentityKey(existing) === key))
         return;
     cancelPendingSearch(s);
     const input = searchInputEl();
@@ -245,15 +246,15 @@ function addTag(s, raw) {
 function removeTag(s, raw) {
     if (!isCurrent(s))
         return;
-    const key = raw.toLocaleLowerCase();
-    if (!s.query.tags.some((existing) => existing.toLocaleLowerCase() === key))
+    const key = tagIdentityKey(raw);
+    if (!s.query.tags.some((existing) => tagIdentityKey(existing) === key))
         return;
     const input = searchInputEl();
     const pending = s.searchTimer !== null;
     cancelPendingSearch(s);
     setQuery(s, {
         ...(pending && input ? { search: input.value } : {}),
-        tags: s.query.tags.filter((existing) => existing.toLocaleLowerCase() !== key),
+        tags: s.query.tags.filter((existing) => tagIdentityKey(existing) !== key),
     });
     input?.focus();
 }

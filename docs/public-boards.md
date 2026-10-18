@@ -98,6 +98,12 @@ Settings → Sharing and send it to anyone.
   imports currently do not trigger public refresh events, so
   visitors may need to reload the page after such changes.
 
+Tag names and tag filters use the same Unicode canonicalization as member
+boards. Unicode query parameters are decoded normally; NFC-equivalent spellings
+select the same durable-project logical tag and generate the same pagination
+filter fingerprint. The public projection groups equivalent historical rows
+without exposing their owners or private per-user color preferences.
+
 Visitors cannot sign in from the public view to gain more access to that
 board; signing in takes them through the normal member route instead.
 

@@ -6,6 +6,7 @@ import { getAssigneeFromUrl, getBoard, getPriorityFromUrl, getSlug, getSortFromU
 import { getTagsFromUrl, MAX_BOARD_TAG_FILTERS, setTagParams } from '../state/board-filter-url.js';
 import { boardSprintsEnabled } from '../sprints.js';
 import { showToast } from '../utils.js';
+import { tagIdentityKey } from '../tag-names.js';
 import { buildSprintFilterSectionHtml, buildChipsHTML, getCombinedChipData, isBoardFilterActive, normalizeSprintFilterValue, } from './board-rendering.js';
 import { closeFilterPopover, openFilterPopover, positionFilterPopover } from './filter-popover.js';
 import { buildOmniRowContent, compareOmniTagNames, findOmniRowElements, matchOmniTagCandidates, OMNI_MOBILE_MAX_WIDTH_PX, pageOmniCandidates, rankOmniBrowseCandidates, renderOmniRow, revealFocusedPinnedOmniPill, revealLastPinnedOmniPill, updateOmniChevrons, } from './omni-tags.js';
@@ -173,7 +174,7 @@ function renderOmniTagPills(board = getBoard(), opts = {}) {
         return;
     const selectedTags = getTagsFromUrl();
     const applied = selectedTags.map((selectedTag) => {
-        const selectedFromBoard = board.tags.find((tag) => tag.name.toLocaleLowerCase() === selectedTag.toLocaleLowerCase());
+        const selectedFromBoard = board.tags.find((tag) => tagIdentityKey(tag.name) === tagIdentityKey(selectedTag));
         return { name: selectedTag, color: selectedFromBoard?.color || getTagColors()[selectedTag] };
     });
     const sprintData = boardSprintsEnabled(board) ? getSprintChipDataForSlug(getSlug()) : null;
@@ -635,10 +636,10 @@ function initMobileTagPagination() {
     attachChipsDelegatedHandler();
 }
 export function computeBoardChipsRender(board, tags, sprintId) {
-    const selected = new Set(tags.map((tag) => tag.toLocaleLowerCase()));
-    const displayTags = board.tags.filter((candidate) => candidate.count > 0 || selected.has(candidate.name.toLocaleLowerCase()));
+    const selected = new Set(tags.map(tagIdentityKey));
+    const displayTags = board.tags.filter((candidate) => candidate.count > 0 || selected.has(tagIdentityKey(candidate.name)));
     for (const tag of tags) {
-        if (!displayTags.some((candidate) => candidate.name.toLocaleLowerCase() === tag.toLocaleLowerCase())) {
+        if (!displayTags.some((candidate) => tagIdentityKey(candidate.name) === tagIdentityKey(tag))) {
             displayTags.push({ name: tag, count: 0 });
         }
     }

@@ -16,6 +16,7 @@ import {
 import { setTagColors } from '../state/mutations.js';
 import { escapeHTML, sanitizeHexColor, showConfirmDialog, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { compareTagNames } from '../tag-names.js';
 
 /** Which Settings → Tag Colors list is showing; do not infer from settingsProjectId. */
 export type TagSettingsScope = 'mine' | 'project' | 'board';
@@ -212,7 +213,7 @@ export async function loadTagSettingsContent(
 
   try {
     const tags = await apiFetch<any[]>(tagsURL);
-    tags.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    tags.sort((a: any, b: any) => compareTagNames(a.name, b.name));
 
     const tagColors: Record<string, string> = {};
     tags.forEach((tag: any) => {

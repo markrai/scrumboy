@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -528,5 +531,203 @@ VALUES (?, 1, 'One', '', 'backlog', 10, ?, ?), (?, 2, 'Two', '', 'backlog', 20, 
 	}
 	if c := authColors["plain"]; c != nil {
 		t.Fatalf("authenticated uncolored tag = %q, want nil (no public fallback)", *c)
+	}
+}
+
+func TestPublicBoardUnicodeTagGroupingFilteringAndPagination(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "public-unicode@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, owner.ID)
+	project, err := st.CreateProject(ownerCtx, "Public Unicode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET public_view_enabled = 1 WHERE id = ?`, project.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	firstTodo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Precomposed", Tags: []string{"Café"}}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondTodo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Decomposed", Tags: []string{"つながるひろが"}}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyName := "cafe\u0301"
+	res, err := st.db.ExecContext(ctx, `INSERT INTO tags(user_id, name, created_at) VALUES (?, ?, 1)`, owner.ID, legacyName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID, _ := res.LastInsertId()
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO project_tags(project_id, tag_id, created_at) VALUES (?, ?, 1)`, project.ID, legacyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `INSERT INTO todo_tags(todo_id, tag_id) VALUES (?, ?)`, secondTodo.ID, legacyID); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := st.GetPublicBoardSnapshot(ctx, project.ID, project.Slug, PublicBoardQuery{Limit: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cafe *PublicTagProjection
+	for i := range snapshot.Tags {
+		if snapshot.Tags[i].Name == "café" {
+			cafe = &snapshot.Tags[i]
+		}
+	}
+	if cafe == nil || cafe.ActiveCount != 2 {
+		t.Fatalf("public café projection = %+v, tags = %+v", cafe, snapshot.Tags)
+	}
+
+	query := PublicBoardQuery{Tags: []string{"café"}, Limit: 1}
+	firstPage, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, DefaultColumnBacklog, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(firstPage.Items) != 1 || !firstPage.HasMore || firstPage.NextOrder == nil || firstPage.TotalCount != 2 {
+		t.Fatalf("first Unicode filter page = %+v", firstPage)
+	}
+	query.After = firstPage.NextOrder
+	secondPage, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, DefaultColumnBacklog, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secondPage.Items) != 1 || secondPage.HasMore || secondPage.TotalCount != 2 {
+		t.Fatalf("second Unicode filter page = %+v", secondPage)
+	}
+	seen := map[int64]bool{firstPage.Items[0].LocalID: true, secondPage.Items[0].LocalID: true}
+	if !seen[firstTodo.LocalID] || !seen[secondTodo.LocalID] {
+		t.Fatalf("Unicode pages returned local IDs %+v", seen)
+	}
+
+	combined, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, DefaultColumnBacklog, PublicBoardQuery{
+		Tags: []string{"café", "つながるひろが"}, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(combined.Items) != 1 || combined.Items[0].LocalID != secondTodo.LocalID {
+		t.Fatalf("combined Unicode filter = %+v", combined.Items)
+	}
+	if len(combined.Items[0].Tags) != 2 || combined.Items[0].Tags[0].Name != "café" {
+		t.Fatalf("deduplicated public todo tags = %+v", combined.Items[0].Tags)
+	}
+}
+
+func TestPublicTodoWhereBoundsParametersForLargeEquivalentTagGroups(t *testing.T) {
+	ids := make([]int64, 5000)
+	for i := range ids {
+		ids[i] = int64(i + 1)
+	}
+	encoded, err := json.Marshal(ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	where, args := publicTodoWhere(1, DefaultColumnBacklog, PublicBoardQuery{
+		tagIDGroupJSON: []string{string(encoded)},
+	}, false)
+	if got := strings.Count(where, "?"); got != 3 {
+		t.Fatalf("placeholder count = %d, want project + lane + one JSON tag group; SQL=%s", got, where)
+	}
+	if len(args) != 3 || args[2] != string(encoded) {
+		t.Fatalf("bounded public tag args = %#v", args)
+	}
+}
+
+func TestPublicBoardTagFilterScalesAcrossEquivalentCollaboratorRows(t *testing.T) {
+	st, cleanup := newTestStore(t)
+	defer cleanup()
+	ctx := context.Background()
+	owner, err := st.BootstrapUser(ctx, "public-scale@example.com", "password123", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerCtx := WithUserID(ctx, owner.ID)
+	project, err := st.CreateProject(ownerCtx, "Public tag scale")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.ExecContext(ctx, `UPDATE projects SET public_view_enabled = 1 WHERE id = ?`, project.ID); err != nil {
+		t.Fatal(err)
+	}
+	todo, err := st.CreateTodo(ownerCtx, project.ID, CreateTodoInput{Title: "Many collaborators", Tags: []string{"scale-tag"}}, ModeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := st.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	userStmt, err := tx.PrepareContext(ctx, `INSERT INTO users(email, created_at, name) VALUES (?, 1, 'Collaborator')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer userStmt.Close()
+	memberStmt, err := tx.PrepareContext(ctx, `INSERT INTO project_members(project_id, user_id, role, created_at) VALUES (?, ?, 'contributor', 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer memberStmt.Close()
+	tagStmt, err := tx.PrepareContext(ctx, `INSERT INTO tags(user_id, name, created_at) VALUES (?, 'scale tag', 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tagStmt.Close()
+	projectTagStmt, err := tx.PrepareContext(ctx, `INSERT INTO project_tags(project_id, tag_id, created_at) VALUES (?, ?, 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer projectTagStmt.Close()
+	todoTagStmt, err := tx.PrepareContext(ctx, `INSERT INTO todo_tags(todo_id, tag_id) VALUES (?, ?)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer todoTagStmt.Close()
+	const collaboratorRows = 1200
+	for i := 0; i < collaboratorRows; i++ {
+		res, err := userStmt.ExecContext(ctx, fmt.Sprintf("public-scale-%04d@example.com", i))
+		if err != nil {
+			t.Fatalf("insert collaborator %d: %v", i, err)
+		}
+		userID, _ := res.LastInsertId()
+		if _, err := memberStmt.ExecContext(ctx, project.ID, userID); err != nil {
+			t.Fatalf("insert collaborator membership %d: %v", i, err)
+		}
+		res, err = tagStmt.ExecContext(ctx, userID)
+		if err != nil {
+			t.Fatalf("insert collaborator tag %d: %v", i, err)
+		}
+		tagID, _ := res.LastInsertId()
+		if _, err := projectTagStmt.ExecContext(ctx, project.ID, tagID); err != nil {
+			t.Fatalf("insert project tag %d: %v", i, err)
+		}
+		if _, err := todoTagStmt.ExecContext(ctx, todo.ID, tagID); err != nil {
+			t.Fatalf("insert todo tag %d: %v", i, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := st.GetPublicBoardLane(ctx, project.ID, project.Slug, DefaultColumnBacklog, PublicBoardQuery{
+		Tags: []string{"scale-tag"}, Limit: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].LocalID != todo.LocalID || page.TotalCount != 1 {
+		t.Fatalf("large equivalent-row public filter = %+v", page)
+	}
+	if len(page.Items[0].Tags) != 1 || page.Items[0].Tags[0].Name != "scale-tag" {
+		t.Fatalf("large equivalent-row public tag projection = %+v", page.Items[0].Tags)
 	}
 }

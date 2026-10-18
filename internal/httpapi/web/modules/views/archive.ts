@@ -19,6 +19,7 @@ import { setBoard, setBoardMembers, setOpenTodoSegment, setTagColors } from '../
 import type { Board, Tag, Todo } from '../types.js';
 import { escapeHTML, isTemporaryBoard, renderAvatarContent, renderUserAvatar, sanitizeHexColor, showToast } from '../utils.js';
 import { navigate } from '../router.js';
+import { tagIdentityKey } from '../tag-names.js';
 import { bootstrapLoadedBoardView } from './board-load-bootstrap.js';
 
 const ARCHIVE_PAGE_SIZE = 50;
@@ -72,9 +73,9 @@ function installArchiveTagCatalog(catalog: readonly Tag[]): void {
   const catalogColors = new Map<string, string>();
   for (const tag of catalog) {
     if (!tag || typeof tag.name !== 'string' || !tag.name.trim()) continue;
-    const key = tag.name.toLocaleLowerCase();
+      const key = tagIdentityKey(tag.name);
     for (const existingName of Object.keys(colors)) {
-      if (existingName.toLocaleLowerCase() === key) delete colors[existingName];
+        if (tagIdentityKey(existingName) === key) delete colors[existingName];
     }
     if (typeof tag.color === 'string' && tag.color) {
       catalogColors.set(key, tag.color);
@@ -87,7 +88,7 @@ function installArchiveTagCatalog(catalog: readonly Tag[]): void {
 
 function archiveTagHtml(todo: Todo): string {
   return (todo.tags || []).map((name) => {
-    const color = sanitizeHexColor(archiveTagColors.get(name.toLocaleLowerCase()));
+  const color = sanitizeHexColor(archiveTagColors.get(tagIdentityKey(name)));
     const style = color ? ` style="border-color:${color};background:${color}20;color:${color}"` : '';
     return `<span class="tag"${style}>${escapeHTML(name)}</span>`;
   }).join('');

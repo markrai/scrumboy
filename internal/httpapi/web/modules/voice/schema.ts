@@ -1,6 +1,6 @@
 import type { Board } from '../types.js';
 import { renderVoiceMessage, type VoiceMessageDescriptor, type VoiceMessageValues } from './i18n.js';
-import { canonicalizeTagName } from './tag-canonicalization.js';
+import { isTagNameCandidate } from './tag-canonicalization.js';
 
 export type CommandIntent =
   | "todos.create"
@@ -234,7 +234,7 @@ export function validateCommandIR(value: unknown, context: ValidationContext): C
       if (enriched && (new TextEncoder().encode(title).length > 200
         || typeof ir.entities.body !== 'string' || new TextEncoder().encode(ir.entities.body).length > 20000
         || !Array.isArray(ir.entities.tags) || ir.entities.tags.length > 20
-        || ir.entities.tags.some(tag => typeof tag !== 'string' || canonicalizeTagName(tag) === null)
+        || ir.entities.tags.some(tag => typeof tag !== 'string' || !isTagNameCandidate(tag))
         || !(ir.entities.assigneeUserId === null || isPositiveInteger(ir.entities.assigneeUserId)))) {
         return localizedFail('invalid_schema', 'voice.errors.schema.createFieldsInvalid', 'Create command fields are invalid.');
       }

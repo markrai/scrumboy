@@ -1,8 +1,9 @@
+import { tagIdentityKey } from '../tag-names.js';
 export const MAX_BOARD_TAG_FILTERS = 20;
 /**
  * Normalize the URL-facing tag list without importing durable tag identity.
  * The store remains authoritative for canonical aliases such as spaces versus
- * hyphens; the browser only trims and deduplicates case-insensitively.
+ * hyphens; the browser only trims and applies the identity-safe display key.
  */
 export function normalizeBoardTagFilters(tags) {
     const out = [];
@@ -11,7 +12,7 @@ export function normalizeBoardTagFilters(tags) {
         const tag = raw.trim();
         if (!tag)
             continue;
-        const key = tag.toLocaleLowerCase();
+        const key = tagIdentityKey(tag);
         if (seen.has(key))
             continue;
         seen.add(key);

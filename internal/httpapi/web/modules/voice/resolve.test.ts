@@ -657,4 +657,20 @@ describe('spoken tag reference resolution', () => {
     expect(matchVoiceTagsDetailed('R D', collision.tags)).toEqual({ matches: ['RD', 'R&D'], kind: 'spoken_identity' });
     expect(matchVoiceTags('RD', collision)).toEqual(['RD']);
   });
+
+  it('does not map U+0130 onto JavaScript lowercase when both server identities exist', () => {
+    const collision = board({ tags: [{ name: 'i', count: 1 }, { name: 'i\u0307', count: 1 }] });
+    expect(matchVoiceTagsDetailed('İ', collision.tags)).toEqual({ matches: [], kind: 'none' });
+    expect(matchVoiceTagsDetailed('i', collision.tags)).toEqual({ matches: ['i'], kind: 'stored_exact' });
+    expect(matchVoiceTagsDetailed('i\u0307', collision.tags)).toEqual({ matches: ['i\u0307'], kind: 'stored_exact' });
+  });
+
+  it('uses server canonical write names for temporary-board legacy choices', () => {
+    const temporary = board({ tags: [
+      { name: 'make space', canonicalName: 'make-space', count: 1 },
+      { name: 'make-space', canonicalName: 'make-space', count: 1 },
+    ] });
+    expect(matchVoiceTags('make-space', temporary)).toEqual(['make-space']);
+    expect(matchVoiceTags('make space', temporary)).toEqual(['make-space']);
+  });
 });

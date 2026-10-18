@@ -224,4 +224,16 @@ describe('public board API client', () => {
     expect(normalizePublicQuery({ search: '  x ', tags: [' a ', 'A', ''], sprintNumber: -2, priority: ' ' }))
       .toEqual({ search: 'x', tags: ['a'], sprintNumber: null, priority: null });
   });
+
+  it('preserves Unicode URL encoding and deduplicates NFC-equivalent tag filters', async () => {
+    const calls = installTransport(() => ({ status: 200, body: publicSnapshotFixture() }));
+    const query = normalizePublicQuery({
+      tags: ['Café', 'Cafe\u0301', 'erp系统流程', 'つながるひろが'],
+    });
+    expect(query.tags).toEqual(['Café', 'erp系统流程', 'つながるひろが']);
+
+    await fetchPublicBoardSnapshot('ignite', query);
+    const url = new URL(calls[0].path, 'https://example.test');
+    expect(url.searchParams.getAll('tag')).toEqual(['Café', 'erp系统流程', 'つながるひろが']);
+  });
 });

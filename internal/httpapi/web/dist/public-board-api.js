@@ -9,6 +9,7 @@
  */
 import { getAppRuntime } from './platform/runtime.js';
 import { sanitizeHexColor } from './utils.js';
+import { tagIdentityKey } from './tag-names.js';
 export const EMPTY_PUBLIC_QUERY = Object.freeze({ search: '', tags: [], sprintNumber: null, priority: null });
 /** Server defaults and ceilings (Phase 2 contract). */
 export const PUBLIC_DEFAULT_PAGE_SIZE = 20;
@@ -220,7 +221,7 @@ export function normalizePublicQuery(input) {
     const tags = [];
     for (const raw of input.tags ?? []) {
         const tag = raw.trim();
-        const key = tag.toLocaleLowerCase();
+        const key = tagIdentityKey(tag);
         if (!tag || seen.has(key))
             continue;
         seen.add(key);

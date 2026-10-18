@@ -16,6 +16,7 @@ import { getTagsFromUrl, MAX_BOARD_TAG_FILTERS, setTagParams } from '../state/bo
 import { Board, Tag } from '../types.js';
 import { boardSprintsEnabled } from '../sprints.js';
 import { showToast } from '../utils.js';
+import { tagIdentityKey } from '../tag-names.js';
 import {
   buildSprintFilterSectionHtml,
   buildChipsHTML,
@@ -233,7 +234,7 @@ function renderOmniTagPills(
   if (!elements || !input || !board) return;
   const selectedTags = getTagsFromUrl();
   const applied: OmniPillTag[] = selectedTags.map((selectedTag) => {
-    const selectedFromBoard = board.tags.find((tag) => tag.name.toLocaleLowerCase() === selectedTag.toLocaleLowerCase());
+  const selectedFromBoard = board.tags.find((tag) => tagIdentityKey(tag.name) === tagIdentityKey(selectedTag));
     return { name: selectedTag, color: selectedFromBoard?.color || getTagColors()[selectedTag] };
   });
   const sprintData = boardSprintsEnabled(board) ? getSprintChipDataForSlug(getSlug()) : null;
@@ -700,10 +701,10 @@ function initMobileTagPagination(): void {
 }
 
 export function computeBoardChipsRender(board: Board, tags: readonly string[], sprintId: string | null): { chipsHTML: string; chipsUnchanged: boolean } {
-  const selected = new Set(tags.map((tag) => tag.toLocaleLowerCase()));
-  const displayTags = board.tags.filter((candidate) => candidate.count > 0 || selected.has(candidate.name.toLocaleLowerCase()));
+  const selected = new Set(tags.map(tagIdentityKey));
+  const displayTags = board.tags.filter((candidate) => candidate.count > 0 || selected.has(tagIdentityKey(candidate.name)));
   for (const tag of tags) {
-    if (!displayTags.some((candidate) => candidate.name.toLocaleLowerCase() === tag.toLocaleLowerCase())) {
+    if (!displayTags.some((candidate) => tagIdentityKey(candidate.name) === tagIdentityKey(tag))) {
       displayTags.push({ name: tag, count: 0 });
     }
   }

@@ -1,5 +1,6 @@
 import type { Board } from '../types.js';
 import { apiFetch } from '../api.js';
+import { tagIdentityKey } from '../tag-names.js';
 
 export type TodoTagSuggestion = { name: string; color?: string };
 
@@ -16,11 +17,11 @@ export function mergeTodoTagSuggestions(
     if (activeOnly && !(typeof tag.count === 'number' && tag.count > 0)) continue;
     const entry: TodoTagSuggestion = { name: tag.name };
     if (typeof tag.color === 'string' && tag.color) entry.color = tag.color;
-    byName.set(tag.name.toLocaleLowerCase(), entry);
+    byName.set(tagIdentityKey(tag.name), entry);
   }
   for (const name of attachedTags) {
     if (!name?.trim()) continue;
-    const key = name.toLocaleLowerCase();
+    const key = tagIdentityKey(name);
     if (!byName.has(key)) byName.set(key, { name });
   }
   return [...byName.values()];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeLookup, normalizeTitleReference, normalizeVoiceReviewUtterance, parseSpokenNumber, spokenReferenceIdentity } from './normalize.js';
-import { canonicalizeTagName } from './tag-canonicalization.js';
+import { canonicalizeTagName, isTagNameCandidate } from './tag-canonicalization.js';
 import { classifyVoiceBinaryDecision, classifyVoiceReviewDecision, normalizeConfirmationResponse, normalizeDisambiguationChoice, normalizeEntityAlias } from './vocabulary.js';
 
 describe('voice command normalization', () => {
@@ -72,6 +72,35 @@ describe('voice command normalization', () => {
     for (const value of ['', '   ', 'R&D', 'C++', 'bad!', 'x'.repeat(33)]) {
       expect(canonicalizeTagName(value)).toBeNull();
     }
+  });
+
+  it('accepts Unicode tag candidates without inventing client-side identity', () => {
+	for (const value of [
+	  'erp系统流程',
+	  'つながるひろが',
+	  '개발 작업',
+	  'إصلاح-خطأ',
+	  'नमस्ते दुनिया',
+	  'Café',
+	  'ΕΛΛΗΝΙΚΆ',
+	  'ТЕСТ',
+	  'API 系统',
+	]) {
+	  expect(isTagNameCandidate(value), value).toBe(true);
+	  expect(canonicalizeTagName(value), value).not.toBeNull();
+	}
+	expect(canonicalizeTagName('Cafe\u0301')).toBe('café');
+	expect(canonicalizeTagName('界'.repeat(32))).toBe('界'.repeat(32));
+	expect(canonicalizeTagName('界'.repeat(33))).toBeNull();
+	for (const value of ['\u0301bad', 'bad\u200djoiner', 'bad\u202eoverride', 'release🚀', 'bad!']) {
+	  expect(isTagNameCandidate(value), value).toBe(false);
+	}
+
+	// JavaScript full lowercasing expands U+0130, while Go simple lowercasing
+	// stores "i". Voice accepts the candidate but never uses this preview key to
+	// deduplicate or associate tags; the server response remains authoritative.
+	expect(isTagNameCandidate('İ')).toBe(true);
+	expect(canonicalizeTagName('İ')).toBe('i\u0307');
   });
 
   it('normalizes title suffix number markers deterministically', () => {

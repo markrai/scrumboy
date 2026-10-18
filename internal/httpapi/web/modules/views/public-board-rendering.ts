@@ -9,6 +9,7 @@
 
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
+import { tagIdentityKey } from '../tag-names.js';
 import {
   buildFilterPanelSectionHtml,
   buildFilterPanelShellHtml,
@@ -195,14 +196,14 @@ export function buildPublicOmniContent(args: {
   /** Label of an active sprint-number deep link; pinned first so it stays removable. */
   readonly sprintLabel?: string | null;
 }): OmniRowContent {
-  const byName = new Map(args.tags.map((tag) => [tag.name.toLocaleLowerCase(), tag]));
+  const byName = new Map(args.tags.map((tag) => [tagIdentityKey(tag.name), tag]));
   const selectable = args.tags.filter((tag) => tag.activeCount > 0);
   const browse = args.input.trim() === '';
   const candidates = browse
     ? rankOmniBrowseCandidates(selectable, args.selected, PUBLIC_MAX_TAG_FILTERS, comparePublicBrowseTags)
     : matchOmniTagCandidates(args.input, selectable, args.selected, PUBLIC_MAX_TAG_FILTERS);
   const content = buildOmniRowContent({
-    applied: args.selected.map((name) => ({ name, color: byName.get(name.toLocaleLowerCase())?.color ?? null })),
+    applied: args.selected.map((name) => ({ name, color: byName.get(tagIdentityKey(name))?.color ?? null })),
     candidates,
     browse,
     attrs: { tag: PUBLIC_OMNI_TAG_ATTR, clear: PUBLIC_OMNI_CLEAR_ATTR },

@@ -32,7 +32,7 @@ const TAG_NAMES = [
   "alpha-component-library", "beta-design-system", "gamma-performance", "delta-accessibility",
   "epsilon-localization", "zeta-observability", "eta-infrastructure", "theta-documentation",
   "iota-release-process", "kappa-customer-support", "lambda-data-pipeline", "mu-security-review",
-  "nu-onboarding-flow", "xi-final-tag",
+  "nu-onboarding-flow", "xi-final-tag", "erp系统流程", "つながるひろが",
 ];
 /** Published board for card layout: many tag-heavy cards, one maximum-length unbroken tag, and more than one lane page. */
 let cardSlug = "";
@@ -42,10 +42,11 @@ const CARD_LAYOUT_TAGS = [
   "observability-gap", "infrastructure-cost", "documentation-debt", "release-train", "customer-escalation",
   "data-pipeline-fix", "security-review",
 ];
-/** Server tag rule: ^[a-z0-9][a-z0-9-]{0,31}$, so 32 characters with no break opportunity is the worst case. */
+/** Tags allow up to 32 Unicode code points; 32 narrow ASCII characters remain a useful unbroken layout case. */
 const LONGEST_TAG = "abcdefghijklmnopqrstuvwxyz012345";
-// Tag names are canonicalized server-side (lowercase, restricted charset), so hostile
-// names cannot reach a public board end to end; their escaping is unit-tested.
+// Tag names are canonicalized server-side (Unicode letters/numbers/marks plus ASCII
+// hyphens), so hostile punctuation cannot reach a public board end to end; escaping
+// remains unit-tested.
 
 function setPublication(slug: string, enabled: boolean): void {
   const db = new DatabaseSync(path.join(dataDir, "app.db"));

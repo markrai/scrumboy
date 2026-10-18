@@ -10,6 +10,7 @@ import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../u
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
 import { apiErrorMessage, formatDate as formatLocalizedDate, hasI18nKey, I18N_LOCALE_CHANGED, t } from '../i18n/index.js';
 import { boardSprintsEnabled, normalizeSprints } from '../sprints.js';
+import { tagIdentityKey } from '../tag-names.js';
 import { bindShareTodoButton, bindTodoDialogLinkLifecycle, initializeTodoDialogLinks, resetTodoDialogLinks, } from './todo-links.js';
 import { computeTodoDialogPermissions, setTodoFormPermissions, } from './todo-permissions.js';
 import { getTagsFromChips, renderTagsChips, resetTodoTagAutocompleteBindings, setupTagAutocomplete, } from './todo-tags.js';
@@ -349,7 +350,7 @@ export async function openTodoDialog(opts) {
         const tagsMap = {};
         const tagColors = { ...getTagColors() };
         for (const tag of suggestions) {
-            tagsMap[tag.name.toLocaleLowerCase()] = tag.name;
+            tagsMap[tagIdentityKey(tag.name)] = tag.name;
             if (tag.color)
                 tagColors[tag.name] = tag.color;
         }

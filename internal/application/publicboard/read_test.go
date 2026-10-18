@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -242,6 +243,23 @@ func TestPublicQueryValidationBounds(t *testing.T) {
 	query, err := normalizeQuery(QueryInput{})
 	if err != nil || query.storeQuery.Limit != DefaultPageSize {
 		t.Fatalf("default query = %+v, %v", query, err)
+	}
+}
+
+func TestPublicQueryUnicodeTagNormalizationIsDeterministic(t *testing.T) {
+	precomposed, err := normalizeQuery(QueryInput{Tags: []string{"Café", "erp系统流程", "つながるひろが"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decomposed, err := normalizeQuery(QueryInput{Tags: []string{"つながるひろが", "cafe\u0301", "ERP系统流程", "CAFÉ"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(precomposed.storeQuery.Tags, decomposed.storeQuery.Tags) {
+		t.Fatalf("normalized tags differ: %#v != %#v", precomposed.storeQuery.Tags, decomposed.storeQuery.Tags)
+	}
+	if precomposed.fingerprint != decomposed.fingerprint {
+		t.Fatalf("equivalent Unicode filters produced different cursor fingerprints")
 	}
 }
 

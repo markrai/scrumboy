@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"sort"
 	"strings"
 )
 
@@ -98,6 +100,10 @@ type PublicBoardQuery struct {
 	PriorityKey  *string
 	Limit        int
 	After        *PublicTodoOrder
+	// tagIDGroupJSON contains one JSON array per logical tag filter. Keeping each
+	// group in one bound parameter avoids SQLite's placeholder limit even when a
+	// durable project has many collaborator-owned or historical equivalent rows.
+	tagIDGroupJSON []string
 }
 
 type PublicLaneProjection struct {
@@ -236,30 +242,103 @@ ORDER BY position, key`, projectID)
 
 func listPublicTagsTx(ctx context.Context, tx *sql.Tx, projectID int64) ([]PublicTagProjection, error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT g.name, COALESCE(g.color, ''), COUNT(DISTINCT t.local_id)
+SELECT g.id, g.name, COALESCE(g.color, ''), t.local_id
 FROM todos t
 JOIN todo_tags tt ON tt.todo_id = t.id
 JOIN tags g ON g.id = tt.tag_id
 WHERE t.project_id = ? AND t.archived_at IS NULL
-GROUP BY g.name, COALESCE(g.color, '')
-ORDER BY g.name`, projectID)
+ORDER BY g.id, t.local_id`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list public tags: %w", err)
 	}
 	defer rows.Close()
-	tags := make([]PublicTagProjection, 0, 8)
+	type aggregate struct {
+		color string
+		todos map[int64]struct{}
+	}
+	byName := make(map[string]*aggregate)
 	for rows.Next() {
-		var tag PublicTagProjection
-		if err := rows.Scan(&tag.Name, &tag.Color, &tag.ActiveCount); err != nil {
+		var tagID, localID int64
+		var name, color string
+		if err := rows.Scan(&tagID, &name, &color, &localID); err != nil {
 			return nil, fmt.Errorf("scan public tag: %w", err)
 		}
-		tag.Color = resolvePublicTagColor(tag.Name, tag.Color)
-		tags = append(tags, tag)
+		key := TagGroupKey(name)
+		agg := byName[key]
+		if agg == nil {
+			agg = &aggregate{todos: make(map[int64]struct{})}
+			byName[key] = agg
+		}
+		if agg.color == "" && colorHexRe.MatchString(color) {
+			agg.color = color
+		}
+		agg.todos[localID] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows public tags: %w", err)
 	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	tags := make([]PublicTagProjection, 0, len(names))
+	for _, name := range names {
+		agg := byName[name]
+		tags = append(tags, PublicTagProjection{
+			Name: name, Color: resolvePublicTagColor(name, agg.color), ActiveCount: len(agg.todos),
+		})
+	}
 	return tags, nil
+}
+
+// resolvePublicTagFiltersTx expands each canonical public filter into the same
+// physical-row union used by durable authenticated boards. The comparison stays in
+// Go because SQLite LOWER() is ASCII-only and cannot implement CanonicalizeTag.
+func resolvePublicTagFiltersTx(ctx context.Context, tx *sql.Tx, projectID int64, query PublicBoardQuery) (PublicBoardQuery, error) {
+	if len(query.Tags) == 0 {
+		return query, nil
+	}
+	if query.tagIDGroupJSON != nil {
+		return query, nil
+	}
+	groupByKey := make(map[string]int, len(query.Tags))
+	tagIDGroups := make([][]int64, len(query.Tags))
+	for i, key := range query.Tags {
+		groupByKey[key] = i
+	}
+	rows, err := tx.QueryContext(ctx, `
+SELECT DISTINCT g.id, g.name
+FROM tags g
+JOIN todo_tags tt ON tt.tag_id = g.id
+JOIN todos t ON t.id = tt.todo_id AND t.project_id = ?
+ORDER BY g.id`, projectID)
+	if err != nil {
+		return PublicBoardQuery{}, fmt.Errorf("resolve public tag filters: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return PublicBoardQuery{}, fmt.Errorf("scan public tag filter: %w", err)
+		}
+		if group, ok := groupByKey[TagGroupKey(name)]; ok {
+			tagIDGroups[group] = append(tagIDGroups[group], id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return PublicBoardQuery{}, fmt.Errorf("rows public tag filters: %w", err)
+	}
+	query.tagIDGroupJSON = make([]string, len(tagIDGroups))
+	for i, tagIDs := range tagIDGroups {
+		encoded, err := json.Marshal(tagIDs)
+		if err != nil {
+			return PublicBoardQuery{}, fmt.Errorf("encode public tag filter ids: %w", err)
+		}
+		query.tagIDGroupJSON[i] = string(encoded)
+	}
+	return query, nil
 }
 
 func publicLikePattern(value string) string {
@@ -276,12 +355,16 @@ func publicTodoWhere(projectID int64, columnKey string, query PublicBoardQuery, 
 		pattern := publicLikePattern(query.Search)
 		args = append(args, pattern, pattern)
 	}
-	for _, tag := range query.Tags {
+	for _, tagIDsJSON := range query.tagIDGroupJSON {
+		if tagIDsJSON == "[]" {
+			where.WriteString(" AND 0")
+			continue
+		}
+		args = append(args, tagIDsJSON)
 		where.WriteString(` AND EXISTS (
 SELECT 1 FROM todo_tags filter_tt
-JOIN tags filter_g ON filter_g.id = filter_tt.tag_id
-WHERE filter_tt.todo_id = t.id AND LOWER(TRIM(filter_g.name)) = ?)`)
-		args = append(args, tag)
+	WHERE filter_tt.todo_id = t.id
+	  AND filter_tt.tag_id IN (SELECT value FROM json_each(?)))`)
 	}
 	if query.SprintNumber != nil {
 		where.WriteString(` AND EXISTS (
@@ -343,28 +426,47 @@ func listPublicTodoTagsTx(ctx context.Context, tx *sql.Tx, projectID int64, loca
 		args = append(args, localID)
 	}
 	rows, err := tx.QueryContext(ctx, `
-SELECT t.local_id, g.name, COALESCE(g.color, '')
+SELECT t.local_id, g.id, g.name, COALESCE(g.color, '')
 FROM todos t
 JOIN todo_tags tt ON tt.todo_id = t.id
 JOIN tags g ON g.id = tt.tag_id
 WHERE t.project_id = ? AND t.archived_at IS NULL
   AND t.local_id IN (`+strings.Join(placeholders, ",")+`)
-ORDER BY t.local_id, g.name`, args...)
+ORDER BY t.local_id, g.id`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list public todo tags: %w", err)
 	}
 	defer rows.Close()
+	byTodo := make(map[int64]map[string]string, len(localIDs))
 	for rows.Next() {
-		var localID int64
-		var tag PublicTodoTagProjection
-		if err := rows.Scan(&localID, &tag.Name, &tag.Color); err != nil {
+		var localID, tagID int64
+		var name, color string
+		if err := rows.Scan(&localID, &tagID, &name, &color); err != nil {
 			return nil, fmt.Errorf("scan public todo tag: %w", err)
 		}
-		tag.Color = resolvePublicTagColor(tag.Name, tag.Color)
-		out[localID] = append(out[localID], tag)
+		key := TagGroupKey(name)
+		if byTodo[localID] == nil {
+			byTodo[localID] = make(map[string]string)
+		}
+		existing, exists := byTodo[localID][key]
+		if !exists || (!colorHexRe.MatchString(existing) && colorHexRe.MatchString(color)) {
+			byTodo[localID][key] = color
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows public todo tags: %w", err)
+	}
+	for localID, colors := range byTodo {
+		names := make([]string, 0, len(colors))
+		for name := range colors {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			out[localID] = append(out[localID], PublicTodoTagProjection{
+				Name: name, Color: resolvePublicTagColor(name, colors[name]),
+			})
+		}
 	}
 	return out, nil
 }
@@ -469,6 +571,10 @@ func (s *Store) GetPublicBoardSnapshot(ctx context.Context, projectID int64, exp
 	if err != nil {
 		return PublicBoardSnapshotProjection{}, err
 	}
+	query, err = resolvePublicTagFiltersTx(ctx, tx, projectID, query)
+	if err != nil {
+		return PublicBoardSnapshotProjection{}, err
+	}
 	workflow, err := listPublicWorkflowTx(ctx, tx, projectID)
 	if err != nil {
 		return PublicBoardSnapshotProjection{}, err
@@ -508,6 +614,10 @@ func (s *Store) GetPublicBoardLane(ctx context.Context, projectID int64, expecte
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := loadEligiblePublicProjectTx(ctx, tx, projectID, expectedSlug); err != nil {
+		return PublicLaneProjection{}, err
+	}
+	query, err = resolvePublicTagFiltersTx(ctx, tx, projectID, query)
+	if err != nil {
 		return PublicLaneProjection{}, err
 	}
 	page, err := listPublicLaneTx(ctx, tx, projectID, columnKey, query)

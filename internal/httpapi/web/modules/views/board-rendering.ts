@@ -11,6 +11,7 @@ import {
 } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { hasI18nKey, t } from '../i18n/index.js';
+import { tagIdentityKey } from '../tag-names.js';
 import type { BoardFilterLayout } from '../core/board-filter-layout-preferences.js';
 import {
   buildFilterPanelSectionHtml,
@@ -132,7 +133,7 @@ export function getCombinedChipData(
 ): ChipData[] {
   let nextSprintId = activeSprintId;
   if (nextSprintId === "assigned") nextSprintId = "scheduled";
-  const activeTagNames = new Set(activeTags.map((tag) => tag.toLocaleLowerCase()));
+  const activeTagNames = new Set(activeTags.map(tagIdentityKey));
   const out: ChipData[] = [];
   out.push({ type: "tag", id: "", name: t("board.filters.all"), active: activeTags.length === 0, color: null });
   for (const t of displayTags) {
@@ -140,7 +141,7 @@ export function getCombinedChipData(
       type: "tag",
       id: t.name,
       name: t.name,
-      active: activeTagNames.has(t.name.toLocaleLowerCase()),
+      active: activeTagNames.has(tagIdentityKey(t.name)),
       color: (t.color || tagColors[t.name] || null),
     });
   }

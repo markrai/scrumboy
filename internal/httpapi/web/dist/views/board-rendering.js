@@ -3,6 +3,7 @@ import { formatDueDateTooltip, isOverdue } from '../dialogs/todo-due.js';
 import { escapeHTML, isTemporaryBoard, renderAvatarContent, renderUserAvatar, sanitizeHexColor, } from '../utils.js';
 import { FIELD_TOOLTIPS, titleAttr } from '../field-tooltips.js';
 import { hasI18nKey, t } from '../i18n/index.js';
+import { tagIdentityKey } from '../tag-names.js';
 import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, buildSprintFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
 import { buildOmniBarHtml } from './omni-tags.js';
 import { renderMemberStoryCardContentHtml } from './story-card-content.js';
@@ -46,7 +47,7 @@ export function getCombinedChipData(displayTags, activeTags, lastSprintsData, ac
     let nextSprintId = activeSprintId;
     if (nextSprintId === "assigned")
         nextSprintId = "scheduled";
-    const activeTagNames = new Set(activeTags.map((tag) => tag.toLocaleLowerCase()));
+    const activeTagNames = new Set(activeTags.map(tagIdentityKey));
     const out = [];
     out.push({ type: "tag", id: "", name: t("board.filters.all"), active: activeTags.length === 0, color: null });
     for (const t of displayTags) {
@@ -54,7 +55,7 @@ export function getCombinedChipData(displayTags, activeTags, lastSprintsData, ac
             type: "tag",
             id: t.name,
             name: t.name,
-            active: activeTagNames.has(t.name.toLocaleLowerCase()),
+            active: activeTagNames.has(tagIdentityKey(t.name)),
             color: (t.color || tagColors[t.name] || null),
         });
     }

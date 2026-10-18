@@ -5,6 +5,7 @@ import { voiceSemanticOperation } from './dialogue-intent.js';
 import { formatResolvedCommand, resolveVoiceLane, voiceBoardLanes, } from './resolve.js';
 import { isCommandFailure, localizedCommandFailure, normalizeTodoTitle, validateCommandIR, } from './schema.js';
 import { resolveTodoTarget } from './target-resolver.js';
+import { tagIdentityKey, tagLookupKey } from '../tag-names.js';
 function todoReference(context, todo) {
     return Object.freeze({
         kind: 'todo',
@@ -139,21 +140,25 @@ async function refreshTodoCandidates(candidates, context) {
 function projectTagNames(board) {
     const names = new Map();
     for (const tag of board.tags ?? []) {
-        const name = tag.name?.trim();
-        const normalized = normalizeLookup(name ?? '');
-        if (name && normalized && !names.has(normalized))
-            names.set(normalized, name);
+        const name = (tag.canonicalName ?? tag.name)?.trim();
+        const identity = tagIdentityKey(name ?? '');
+        if (name && identity && !names.has(identity))
+            names.set(identity, name);
     }
     return [...names.values()];
 }
 function matchingTagNames(reference, board) {
-    const wanted = normalizeLookup(reference.text);
-    if (!wanted)
+    const raw = reference.text.trim();
+    const identity = tagIdentityKey(raw);
+    if (!identity)
         return [];
     const available = projectTagNames(board);
-    const exact = available.filter((name) => normalizeLookup(name) === wanted);
+    const exact = available.filter((name) => tagIdentityKey(name) === identity);
     if (exact.length > 0)
         return exact;
+    if (tagLookupKey(raw) !== identity)
+        return [];
+    const wanted = normalizeLookup(raw);
     return available.filter((name) => {
         const normalized = normalizeLookup(name);
         const components = normalized.split(' ').filter(Boolean);
@@ -165,7 +170,7 @@ function selectedTagName(selection, context) {
     if (!selection.allowedNames.includes(selection.selectedName)) {
         return localizedCommandFailure('invalid_schema', 'voice.errors.selectedTagNotOffered', 'Selected tag was not one of the offered choices.');
     }
-    const selected = projectTagNames(context.board).find((name) => normalizeLookup(name) === normalizeLookup(selection.selectedName));
+    const selected = projectTagNames(context.board).find((name) => name === selection.selectedName);
     return selected
         ? { ok: true, value: selected }
         : localizedCommandFailure('stale_context', 'voice.errors.staleContext', 'The board changed before the command could run.');
@@ -177,15 +182,15 @@ function tagClarification(intent, names, selection) {
     })), selection);
 }
 function todoHasTag(todo, tagName) {
-    const wanted = normalizeLookup(tagName);
-    return (todo.tags ?? []).some((tag) => normalizeLookup(tag) === wanted);
+    const wanted = tagIdentityKey(tagName);
+    return (todo.tags ?? []).some((tag) => tagIdentityKey(tag) === wanted);
 }
 function tagsAfterAdd(todo, tagName) {
     return todoHasTag(todo, tagName) ? [...(todo.tags ?? [])] : [...(todo.tags ?? []), tagName];
 }
 function tagsAfterRemove(todo, tagName) {
-    const wanted = normalizeLookup(tagName);
-    return (todo.tags ?? []).filter((tag) => normalizeLookup(tag) !== wanted);
+    const wanted = tagIdentityKey(tagName);
+    return (todo.tags ?? []).filter((tag) => tagIdentityKey(tag) !== wanted);
 }
 function appendedNotes(body, notes) {
     const existing = body ?? '';

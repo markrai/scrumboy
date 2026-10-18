@@ -37,6 +37,7 @@ import {
   type ResolvedCommand,
 } from './schema.js';
 import { resolveTodoTarget } from './target-resolver.js';
+import { tagIdentityKey, tagLookupKey } from '../tag-names.js';
 
 export type VoiceSemanticSelection = VoiceConversationSelection;
 
@@ -287,19 +288,22 @@ async function refreshTodoCandidates(
 function projectTagNames(board: Board): string[] {
   const names = new Map<string, string>();
   for (const tag of board.tags ?? []) {
-    const name = tag.name?.trim();
-    const normalized = normalizeLookup(name ?? '');
-    if (name && normalized && !names.has(normalized)) names.set(normalized, name);
+    const name = (tag.canonicalName ?? tag.name)?.trim();
+    const identity = tagIdentityKey(name ?? '');
+    if (name && identity && !names.has(identity)) names.set(identity, name);
   }
   return [...names.values()];
 }
 
 function matchingTagNames(reference: VoiceSemanticTagReference, board: Board): string[] {
-  const wanted = normalizeLookup(reference.text);
-  if (!wanted) return [];
+  const raw = reference.text.trim();
+  const identity = tagIdentityKey(raw);
+  if (!identity) return [];
   const available = projectTagNames(board);
-  const exact = available.filter((name) => normalizeLookup(name) === wanted);
+  const exact = available.filter((name) => tagIdentityKey(name) === identity);
   if (exact.length > 0) return exact;
+  if (tagLookupKey(raw) !== identity) return [];
+  const wanted = normalizeLookup(raw);
   return available.filter((name) => {
     const normalized = normalizeLookup(name);
     const components = normalized.split(' ').filter(Boolean);
@@ -319,9 +323,7 @@ function selectedTagName(
       'Selected tag was not one of the offered choices.',
     );
   }
-  const selected = projectTagNames(context.board).find(
-    (name) => normalizeLookup(name) === normalizeLookup(selection.selectedName),
-  );
+  const selected = projectTagNames(context.board).find((name) => name === selection.selectedName);
   return selected
     ? { ok: true, value: selected }
     : localizedCommandFailure(
@@ -343,8 +345,8 @@ function tagClarification(
 }
 
 function todoHasTag(todo: Todo, tagName: string): boolean {
-  const wanted = normalizeLookup(tagName);
-  return (todo.tags ?? []).some((tag) => normalizeLookup(tag) === wanted);
+  const wanted = tagIdentityKey(tagName);
+  return (todo.tags ?? []).some((tag) => tagIdentityKey(tag) === wanted);
 }
 
 function tagsAfterAdd(todo: Todo, tagName: string): string[] {
@@ -352,8 +354,8 @@ function tagsAfterAdd(todo: Todo, tagName: string): string[] {
 }
 
 function tagsAfterRemove(todo: Todo, tagName: string): string[] {
-  const wanted = normalizeLookup(tagName);
-  return (todo.tags ?? []).filter((tag) => normalizeLookup(tag) !== wanted);
+  const wanted = tagIdentityKey(tagName);
+  return (todo.tags ?? []).filter((tag) => tagIdentityKey(tag) !== wanted);
 }
 
 function appendedNotes(body: string | undefined, notes: string): string {

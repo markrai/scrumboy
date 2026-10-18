@@ -1,4 +1,5 @@
 import { apiFetch } from '../api.js';
+import { tagIdentityKey } from '../tag-names.js';
 export function mergeTodoTagSuggestions(projectTags, attachedTags = [], activeOnly = false) {
     const byName = new Map();
     for (const value of projectTags) {
@@ -12,12 +13,12 @@ export function mergeTodoTagSuggestions(projectTags, attachedTags = [], activeOn
         const entry = { name: tag.name };
         if (typeof tag.color === 'string' && tag.color)
             entry.color = tag.color;
-        byName.set(tag.name.toLocaleLowerCase(), entry);
+        byName.set(tagIdentityKey(tag.name), entry);
     }
     for (const name of attachedTags) {
         if (!name?.trim())
             continue;
-        const key = name.toLocaleLowerCase();
+        const key = tagIdentityKey(name);
         if (!byName.has(key))
             byName.set(key, { name });
     }

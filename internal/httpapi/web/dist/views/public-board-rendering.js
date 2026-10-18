@@ -8,6 +8,7 @@
  */
 import { escapeHTML, renderUserAvatar, sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
+import { tagIdentityKey } from '../tag-names.js';
 import { buildFilterPanelSectionHtml, buildFilterPanelShellHtml, buildPriorityFilterOptions, renderFilterOptionsHtml, } from './filter-panel-markup.js';
 import { buildOmniAppliedPillHtml, buildOmniBarHtml, buildOmniRowContent, compareOmniTagNames, matchOmniTagCandidates, rankOmniBrowseCandidates, } from './omni-tags.js';
 import { renderStoryCardContentHtml } from './story-card-content.js';
@@ -130,14 +131,14 @@ export function comparePublicBrowseTags(left, right) {
  * offered. Text keeps the theme color; tag colors tint border and background.
  */
 export function buildPublicOmniContent(args) {
-    const byName = new Map(args.tags.map((tag) => [tag.name.toLocaleLowerCase(), tag]));
+    const byName = new Map(args.tags.map((tag) => [tagIdentityKey(tag.name), tag]));
     const selectable = args.tags.filter((tag) => tag.activeCount > 0);
     const browse = args.input.trim() === '';
     const candidates = browse
         ? rankOmniBrowseCandidates(selectable, args.selected, PUBLIC_MAX_TAG_FILTERS, comparePublicBrowseTags)
         : matchOmniTagCandidates(args.input, selectable, args.selected, PUBLIC_MAX_TAG_FILTERS);
     const content = buildOmniRowContent({
-        applied: args.selected.map((name) => ({ name, color: byName.get(name.toLocaleLowerCase())?.color ?? null })),
+        applied: args.selected.map((name) => ({ name, color: byName.get(tagIdentityKey(name))?.color ?? null })),
         candidates,
         browse,
         attrs: { tag: PUBLIC_OMNI_TAG_ATTR, clear: PUBLIC_OMNI_CLEAR_ATTR },

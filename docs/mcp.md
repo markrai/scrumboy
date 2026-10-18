@@ -318,6 +318,17 @@ edge. See [API.md](../API.md#todos) for the full semantics.
 - `tags_updateProjectColor`
 - `tags_deleteProject`
 
+> **Unicode tag names.** Todo create/update and tag-name filters accept the same
+> server-owned tag contract as REST: valid UTF-8 is trimmed, NFC-normalized,
+> Unicode-lowercased, NFC-normalized again, and whitespace/hyphen runs become one
+> ASCII hyphen. The 32-character limit counts Unicode code points, not UTF-8 bytes.
+> Letters, numbers, and marks following a base are accepted. Other punctuation,
+> symbols, emoji, bidi controls, invisible formatting characters, and the U+200C/U+200D
+> script joiners are rejected. There is no transliteration, accent folding, locale
+> casing, compatibility normalization, or silent truncation. MCP returns the stored
+> canonical name; clients must not substitute their own JavaScript casing result as
+> persistent identity.
+>
 > **Durable-project tags are grouped by canonical name.** On durable projects,
 > `tags_listProject` returns one logical entry per canonical name — names are compared
 > after canonicalization, so legacy rows such as `make space` and `make-space` collapse

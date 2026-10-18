@@ -16,6 +16,14 @@ describe('board tag URL state', () => {
     expect(getTagsFromUrl()).toEqual(['Bug', 'feature', 'Needs QA']);
   });
 
+  it('round-trips Unicode tags and deduplicates NFC-equivalent spellings', () => {
+    window.history.replaceState({}, '', '/alpha?tag=Caf%C3%A9&tag=Cafe%CC%81&tag=erp%E7%B3%BB%E7%BB%9F%E6%B5%81%E7%A8%8B&tag=%E3%81%A4%E3%81%AA%E3%81%8C%E3%82%8B%E3%81%B2%E3%82%8D%E3%81%8C');
+
+    expect(getTagsFromUrl()).toEqual(['Café', 'erp系统流程', 'つながるひろが']);
+    expect(setTagParams(['开发 工作', '開発'])).toEqual(['开发 工作', '開発']);
+    expect(new URL(window.location.href).searchParams.getAll('tag')).toEqual(['开发 工作', '開発']);
+  });
+
   it('rewrites only tag parameters while preserving unrelated query state and hash', () => {
     window.history.replaceState({}, '', '/alpha?search=needle&tag=old&sprintId=7#card');
 

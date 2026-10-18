@@ -1,5 +1,4 @@
 import { canRunVoiceMutationInContext, type VoiceCommandContext } from './command-context.js';
-import { normalizeLookup } from './normalize.js';
 import { matchVoiceMembers, matchVoiceTagsDetailed, resolveVoiceLane, voiceBoardLanes, formatResolvedCommand } from './resolve.js';
 import { isCommandFailure, validateCommandIR, type ResolvedCommand } from './schema.js';
 import type { VoiceCreateMember } from './voice-create-members.js';
@@ -7,6 +6,7 @@ import { executableCreatePlan, VoiceCreatePlanError, type VoiceCreatePlanV1 } fr
 import type { VoiceCreateTag } from './voice-create-tags.js';
 import { reconcileVoiceCreateTagReferences } from './voice-create-tag-reconciliation.js';
 import { findVoiceCreateTagSuggestions, type VoiceCreateTagSuggestionMatch } from './voice-create-tag-suggestions.js';
+import { tagIdentityKey } from '../tag-names.js';
 
 export type CreateMemberChoice = Readonly<Pick<VoiceCreateMember, 'userId' | 'name' | 'email'>>;
 export type VoiceCreateTagBinding = Readonly<{ referenceIndex: number; tag: string }>;
@@ -81,7 +81,7 @@ export function prepareVoiceCreate(
     const storedExact = authoritativeNames.filter(name => name === binding.tag);
     const rebound = storedExact.length
       ? storedExact
-      : authoritativeNames.filter(name => normalizeLookup(name) === normalizeLookup(binding.tag));
+      : authoritativeNames.filter(name => tagIdentityKey(name) === tagIdentityKey(binding.tag));
     if (!Number.isInteger(binding.referenceIndex)
       || binding.referenceIndex < 0
       || binding.referenceIndex >= plannedTagReferences.length

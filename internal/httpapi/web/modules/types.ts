@@ -54,6 +54,8 @@ export interface PriorityTier {
 
 export interface Tag {
   name: string;
+  /** Server-owned name to send through name-based write APIs; empty means ID-only. */
+  canonicalName?: string;
   color?: string;
   count: number;
   // Latest updatedAt among active stories currently carrying this tag.

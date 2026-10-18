@@ -2,6 +2,19 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## Unreleased
+
+### Fixed
+
+- **Unicode tag names** - Tags now use one NFC Unicode contract across REST,
+  MCP, authenticated and temporary boards, public filters, VoiceFlow, Trello,
+  and backup/import. Unicode letters, numbers, and combining marks are accepted
+  with a 32-code-point limit; unsafe controls, format characters, punctuation,
+  symbols, and emoji remain rejected. NFC-equivalent spellings share one durable
+  logical identity without destructively rewriting historical tag rows. Browser
+  matching no longer substitutes JavaScript full-case mappings for a different
+  server identity, and temporary-board VoiceFlow choices use server canonical names.
+
 ## [3.38.8] - 2026-10-15
 
 ### Changed

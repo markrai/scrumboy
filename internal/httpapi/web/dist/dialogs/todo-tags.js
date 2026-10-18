@@ -3,6 +3,7 @@ import { getAutocompleteSuggestion, getAvailableTags, getAvailableTagsMap, getTa
 import { setAutocompleteSuggestion } from '../state/mutations.js';
 import { hasI18nKey, t } from '../i18n/index.js';
 import { escapeHTML, sanitizeHexColor } from '../utils.js';
+import { tagIdentityKey, tagLookupKey } from '../tag-names.js';
 import { getTodoFormPermissions } from './todo-permissions.js';
 const BOUND_FLAG = Symbol('bound');
 let tagInputHandlersSetup = false;
@@ -25,12 +26,12 @@ export function getTagsFromChips() {
     return Array.from(chipsContainer.querySelectorAll(".tag-chip")).map((chip) => chip.getAttribute("data-tag") || "");
 }
 export function normalizeTagName(tagName) {
-    const lowerTag = tagName.toLowerCase();
-    if (getAvailableTagsMap()[lowerTag]) {
-        return getAvailableTagsMap()[lowerTag];
+    const identityKey = tagIdentityKey(tagName);
+    if (getAvailableTagsMap()[identityKey]) {
+        return getAvailableTagsMap()[identityKey];
     }
     const currentTags = getTagsFromChips();
-    const existingTag = currentTags.find((t) => t.toLowerCase() === lowerTag);
+    const existingTag = currentTags.find((t) => tagIdentityKey(t) === identityKey);
     if (existingTag) {
         return existingTag;
     }
@@ -93,14 +94,14 @@ function updateTagAutocomplete() {
     const fullValue = input.value;
     const existingTags = fullValue
         .split(",")
-        .map((t) => t.trim().toLowerCase())
-        .filter((t) => t.length > 0 && t !== currentTag.toLowerCase());
+        .map((t) => tagIdentityKey(t.trim()))
+        .filter((t) => t.length > 0 && t !== tagIdentityKey(currentTag));
     const matchingTag = getAvailableTags().find((tag) => {
-        const tagLower = tag.toLowerCase();
-        const currentTagLower = currentTag.toLowerCase();
+        const tagLower = tagLookupKey(tag);
+        const currentTagLower = tagLookupKey(currentTag);
         return (tagLower.startsWith(currentTagLower) &&
             tagLower !== currentTagLower &&
-            !existingTags.includes(tagLower));
+            !existingTags.includes(tagIdentityKey(tag)));
     });
     if (matchingTag) {
         setAutocompleteSuggestion(normalizeTagName(matchingTag));
@@ -254,7 +255,7 @@ function addTag(tagName) {
         return;
     const normalized = normalizeTagName(trimmed);
     const currentTags = getTagsFromChips();
-    if (currentTags.some((t) => t.toLowerCase() === normalized.toLowerCase())) {
+    if (currentTags.some((t) => tagIdentityKey(t) === tagIdentityKey(normalized))) {
         return;
     }
     currentTags.push(normalized);

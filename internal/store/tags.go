@@ -5,29 +5,74 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 )
 
-var tagRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+const maxTagRunes = 32
 
-var hyphenRe = regexp.MustCompile(`-+`)
-
-// CanonicalizeTag applies the canonical tag name rule: lowercase, collapse spaces to hyphens,
-// collapse repeated hyphens, trim. Returns "" if the result is invalid (empty or does not match tagRe).
-// All tag names used in DB lookups/inserts should go through this for consistency.
+// CanonicalizeTag returns the storage and identity form of a tag name.
+//
+// The contract is: valid UTF-8; surrounding Unicode whitespace removed; NFC;
+// deterministic Unicode lowercase; NFC again; Unicode whitespace runs changed to
+// one ASCII hyphen; repeated ASCII hyphens collapsed; and edge hyphens removed.
+// The result may contain at most maxTagRunes Unicode code points. Letters and
+// numbers are accepted, and combining marks are accepted only after a letter or
+// number (possibly after another combining mark in that same segment).
+//
+// Non-whitespace controls, symbols, punctuation other than ASCII hyphen, and
+// Unicode format characters are rejected. Unicode control whitespace follows the
+// whitespace rule above for compatibility with existing ASCII inputs. In
+// particular U+200C ZERO WIDTH NON-JOINER and U+200D
+// ZERO WIDTH JOINER are not tag characters. This deliberately avoids admitting
+// every Cf character under the guise of script support; scripts that conventionally
+// use explicit joiners must omit them from tag names.
+//
+// Returns "" for invalid input. All tag names used in DB lookups/inserts should go
+// through this function for consistency.
 func CanonicalizeTag(name string) string {
+	if !utf8.ValidString(name) {
+		return ""
+	}
 	s := strings.TrimSpace(name)
 	if s == "" {
 		return ""
 	}
-	s = strings.ToLower(s)
-	s = strings.Join(strings.Fields(s), "-")
-	s = hyphenRe.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if s == "" || !tagRe.MatchString(s) {
+	s = norm.NFC.String(s)
+	s = norm.NFC.String(strings.ToLower(s))
+
+	var b strings.Builder
+	b.Grow(len(s))
+	pendingHyphen := false
+	hasBaseInSegment := false
+	for _, r := range s {
+		switch {
+		case unicode.IsSpace(r) || r == '-':
+			if b.Len() > 0 {
+				pendingHyphen = true
+			}
+			hasBaseInSegment = false
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
+			if pendingHyphen {
+				b.WriteByte('-')
+				pendingHyphen = false
+			}
+			b.WriteRune(r)
+			hasBaseInSegment = true
+		case unicode.IsMark(r) && hasBaseInSegment:
+			b.WriteRune(r)
+		default:
+			return ""
+		}
+	}
+
+	s = b.String()
+	if s == "" || utf8.RuneCountInString(s) > maxTagRunes {
 		return ""
 	}
 	return s
@@ -178,36 +223,50 @@ func normalizeTags(in []string) ([]string, error) {
 	return out, nil
 }
 
-// listTodoTagsTx returns ALL tags on a todo, regardless of owner (collaboration-friendly)
+// listTodoTagsTx returns all tags on a todo, regardless of owner. Durable projects
+// expose canonical logical names; temporary boards preserve physical row identity.
 func listTodoTagsTx(ctx context.Context, tx *sql.Tx, todoID int64) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT g.name
+SELECT g.name, p.expires_at
 FROM todo_tags tt
 JOIN tags g ON g.id = tt.tag_id
+JOIN todos t ON t.id = tt.todo_id
+JOIN projects p ON p.id = t.project_id
 WHERE tt.todo_id = ?
-ORDER BY g.name`, todoID)
+ORDER BY g.id`, todoID)
 	if err != nil {
 		return nil, fmt.Errorf("list todo tags: %w", err)
 	}
 	defer rows.Close()
 
-	var tags []string
+	seen := make(map[string]struct{})
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
+		var expiresAt sql.NullInt64
+		if err := rows.Scan(&name, &expiresAt); err != nil {
 			return nil, fmt.Errorf("scan todo tag: %w", err)
 		}
-		tags = append(tags, name)
+		if !expiresAt.Valid {
+			name = TagGroupKey(name)
+		}
+		seen[name] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows todo tags: %w", err)
 	}
 
+	var tags []string
+	for name := range seen {
+		tags = append(tags, name)
+	}
+	sort.Strings(tags)
 	return tags, nil
 }
 
 // listTagsForTodos returns tag names for the given todo IDs. Used by board queries to avoid
-// tag joins in the main todo query. Returns map[todoID][]tagNames (sorted, deduped).
+// tag joins in the main todo query. Returns map[todoID][]tagNames (sorted and
+// logically deduped for durable projects; row-level names are preserved for
+// temporary boards).
 // Empty todoIDs returns empty map. Batches at 500 IDs to stay under SQLite placeholder limit.
 func (s *Store) listTagsForTodos(ctx context.Context, todoIDs []int64) (map[int64][]string, error) {
 	return listTagsForTodosQueryer(ctx, s.db, todoIDs)
@@ -234,11 +293,13 @@ func listTagsForTodosQueryer(ctx context.Context, q sqlRowsQueryer, todoIDs []in
 			args[j] = id
 		}
 		rows, err := q.QueryContext(ctx, `
-SELECT tt.todo_id, g.name
+SELECT tt.todo_id, g.name, p.expires_at
 FROM todo_tags tt
 JOIN tags g ON g.id = tt.tag_id
+JOIN todos t ON t.id = tt.todo_id
+JOIN projects p ON p.id = t.project_id
 WHERE tt.todo_id IN (`+strings.Join(ph, ",")+`)
-ORDER BY tt.todo_id, g.name`, args...)
+ORDER BY tt.todo_id, g.id`, args...)
 		if err != nil {
 			return nil, fmt.Errorf("list tags for todos: %w", err)
 		}
@@ -247,9 +308,13 @@ ORDER BY tt.todo_id, g.name`, args...)
 		for rows.Next() {
 			var todoID int64
 			var name string
-			if err := rows.Scan(&todoID, &name); err != nil {
+			var expiresAt sql.NullInt64
+			if err := rows.Scan(&todoID, &name, &expiresAt); err != nil {
 				rows.Close()
 				return nil, fmt.Errorf("scan todo tag: %w", err)
+			}
+			if !expiresAt.Valid {
+				name = TagGroupKey(name)
 			}
 			if seen[todoID] == nil {
 				seen[todoID] = make(map[string]struct{})
@@ -1163,13 +1228,15 @@ func (s *Store) ListTags(ctx context.Context, projectID int64, mode Mode) ([]Tag
 // Durable projects require maintainer/admin for project-scoped tags when linkTemporaryBoard is false.
 func (s *Store) ResolveTagForColorUpdate(ctx context.Context, projectID int64, viewerUserID *int64, tagName string, linkTemporaryBoard bool) (int64, error) {
 	normalizedName := CanonicalizeTag(tagName)
+	if normalizedName == "" {
+		return 0, fmt.Errorf("%w: invalid tag name", ErrValidation)
+	}
 
-	var boardTagID int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM tags 
-		WHERE project_id = ? AND name = ? AND user_id IS NULL`,
-		projectID, normalizedName).Scan(&boardTagID)
-	if err == nil {
+	boardTagID, found, err := findBoardScopedTagIDByGroupKey(ctx, s.db, projectID, normalizedName)
+	if err != nil {
+		return 0, err
+	}
+	if found {
 		if !linkTemporaryBoard {
 			if viewerUserID == nil {
 				return 0, fmt.Errorf("%w: project maintainer required for project-scoped tag", ErrUnauthorized)
@@ -1181,24 +1248,17 @@ func (s *Store) ResolveTagForColorUpdate(ctx context.Context, projectID int64, v
 		}
 		return boardTagID, nil
 	}
-	if err != sql.ErrNoRows {
-		return 0, fmt.Errorf("check board-scoped tag: %w", err)
-	}
 
 	if viewerUserID == nil {
 		return 0, fmt.Errorf("%w: user-owned tag requires authentication", ErrUnauthorized)
 	}
 
-	var userTagID int64
-	err = s.db.QueryRowContext(ctx, `
-		SELECT id FROM tags 
-		WHERE name = ? AND user_id = ?`,
-		normalizedName, *viewerUserID).Scan(&userTagID)
-	if err == sql.ErrNoRows {
-		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
-	}
+	userTagID, found, err := findUserTagIDByGroupKey(ctx, s.db, *viewerUserID, normalizedName)
 	if err != nil {
-		return 0, fmt.Errorf("get user-owned tag: %w", err)
+		return 0, err
+	}
+	if !found {
+		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
 	}
 
 	return userTagID, nil
@@ -2011,14 +2071,23 @@ func setTodoTags(ctx context.Context, tx *sql.Tx, projectID, todoID int64, userI
 			continue // skip invalid tags (callers should have validated via normalizeTags)
 		}
 
-		var tagID int64
+		var (
+			tagID int64
+			err   error
+		)
 
 		if isAnonymousBoard {
 			// Board-scoped tags: project_id IS NOT NULL, user_id IS NULL
-			// UNIQUE constraint: (project_id, name) WHERE user_id IS NULL
-			err := tx.QueryRowContext(ctx, `
-SELECT id FROM tags WHERE project_id = ? AND name = ? AND user_id IS NULL`, projectID, normalizedName).Scan(&tagID)
-			if err == sql.ErrNoRows {
+			// New rows use the exact canonical key. If historical data already has an
+			// NFC-equivalent spelling, reuse its lowest-id row instead of creating a
+			// second logical identity. Other preexisting equivalent rows remain
+			// independent physical rows and continue to be addressed by tag_id.
+			var found bool
+			tagID, found, err = findBoardScopedTagIDByGroupKey(ctx, tx, projectID, normalizedName)
+			if err != nil {
+				return err
+			}
+			if !found {
 				// Create new board-scoped tag
 				res, err := tx.ExecContext(ctx, `
 INSERT INTO tags(user_id, project_id, name, created_at, color)
@@ -2030,36 +2099,20 @@ VALUES (NULL, ?, ?, ?, NULL)`, projectID, normalizedName, nowMs)
 				if err != nil {
 					return fmt.Errorf("last insert id tag: %w", err)
 				}
-			} else if err != nil {
-				return fmt.Errorf("get board-scoped tag %q: %w", name, err)
 			}
 		} else {
 			// User-owned tags: user_id IS NOT NULL, project_id IS NULL
-			// UNIQUE constraint: (user_id, name) WHERE user_id IS NOT NULL
 			if userID == nil {
 				return fmt.Errorf("userID required for user-owned tags")
 			}
-			err := tx.QueryRowContext(ctx, `
-SELECT id FROM tags WHERE user_id = ? AND name = ?`, *userID, normalizedName).Scan(&tagID)
-			if err == sql.ErrNoRows {
-				// Create new tag for this user
-				res, err := tx.ExecContext(ctx, `
-INSERT INTO tags(user_id, name, created_at, project_id, color)
-VALUES (?, ?, ?, NULL, NULL)`, *userID, normalizedName, nowMs)
-				if err != nil {
-					return fmt.Errorf("create user-owned tag %q: %w", name, err)
-				}
-				tagID, err = res.LastInsertId()
-				if err != nil {
-					return fmt.Errorf("last insert id tag: %w", err)
-				}
-			} else if err != nil {
-				return fmt.Errorf("get user-owned tag %q: %w", name, err)
+			tagID, err = GetOrCreateTag(ctx, tx, *userID, normalizedName)
+			if err != nil {
+				return err
 			}
 		}
 
 		// Link tag to project via project_tags if not already linked (project-wide tag set)
-		_, err := tx.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 INSERT OR IGNORE INTO project_tags(project_id, tag_id, created_at)
 VALUES (?, ?, ?)`, projectID, tagID, nowMs)
 		if err != nil {
@@ -2084,12 +2137,118 @@ func GetOrCreateTag(ctx context.Context, tx *sql.Tx, userID int64, name string) 
 	return getOrCreateTagExact(ctx, tx, userID, normalizedName)
 }
 
-// getOrCreateTagExact gets or creates a user-owned tag under the exact given name.
+// findUserTagIDByGroupKey returns the deterministic row for one user-owned logical
+// tag. An exact canonical stored key wins; otherwise the lowest-id historical row
+// with the same TagGroupKey wins. This prevents NFC-equivalent input from creating
+// a second logical tag without destructively rewriting historical rows.
+func findUserTagIDByGroupKey(ctx context.Context, q sqlRowsQueryer, userID int64, groupKey string) (int64, bool, error) {
+	rows, err := q.QueryContext(ctx, `
+SELECT id FROM tags WHERE user_id = ? AND name = ? LIMIT 1`, userID, groupKey)
+	if err != nil {
+		return 0, false, fmt.Errorf("find exact user tag identity: %w", err)
+	}
+	if rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, false, fmt.Errorf("scan exact user tag identity: %w", err)
+		}
+		_ = rows.Close()
+		return id, true, nil
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, false, fmt.Errorf("rows exact user tag identity: %w", err)
+	}
+	_ = rows.Close()
+
+	rows, err = q.QueryContext(ctx, `
+SELECT id, name FROM tags WHERE user_id = ? ORDER BY id`, userID)
+	if err != nil {
+		return 0, false, fmt.Errorf("list user tag identities: %w", err)
+	}
+	defer rows.Close()
+
+	var equivalentID int64
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return 0, false, fmt.Errorf("scan user tag identity: %w", err)
+		}
+		if equivalentID == 0 && TagGroupKey(name) == groupKey {
+			equivalentID = id
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, false, fmt.Errorf("rows user tag identities: %w", err)
+	}
+	return equivalentID, equivalentID != 0, nil
+}
+
+// findBoardScopedTagIDByGroupKey is the board-scoped counterpart of
+// findUserTagIDByGroupKey. Duplicate historical rows are retained because temporary
+// boards expose row-level identity; only selection for a new attachment is unified.
+func findBoardScopedTagIDByGroupKey(ctx context.Context, q sqlRowsQueryer, projectID int64, groupKey string) (int64, bool, error) {
+	rows, err := q.QueryContext(ctx, `
+SELECT id
+FROM tags
+WHERE project_id = ? AND user_id IS NULL AND name = ?
+LIMIT 1`, projectID, groupKey)
+	if err != nil {
+		return 0, false, fmt.Errorf("find exact board tag identity: %w", err)
+	}
+	if rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, false, fmt.Errorf("scan exact board tag identity: %w", err)
+		}
+		_ = rows.Close()
+		return id, true, nil
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, false, fmt.Errorf("rows exact board tag identity: %w", err)
+	}
+	_ = rows.Close()
+
+	rows, err = q.QueryContext(ctx, `
+SELECT id, name
+FROM tags
+WHERE project_id = ? AND user_id IS NULL
+ORDER BY id`, projectID)
+	if err != nil {
+		return 0, false, fmt.Errorf("list board tag identities: %w", err)
+	}
+	defer rows.Close()
+
+	var equivalentID int64
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return 0, false, fmt.Errorf("scan board tag identity: %w", err)
+		}
+		if equivalentID == 0 && TagGroupKey(name) == groupKey {
+			equivalentID = id
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, false, fmt.Errorf("rows board tag identities: %w", err)
+	}
+	return equivalentID, equivalentID != 0, nil
+}
+
+// getOrCreateTagExact gets or creates a user-owned tag using an exact canonical
+// storage key, while reusing a deterministic equivalent historical row when needed.
 // Callers must pass a name that has already been validated (e.g. via CanonicalizeTag).
 func getOrCreateTagExact(ctx context.Context, tx *sql.Tx, userID int64, name string) (int64, error) {
-	var tagID int64
-	err := tx.QueryRowContext(ctx, `SELECT id FROM tags WHERE user_id = ? AND name = ?`, userID, name).Scan(&tagID)
-	if err == sql.ErrNoRows {
+	tagID, found, err := findUserTagIDByGroupKey(ctx, tx, userID, name)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
 		nowMs := time.Now().UTC().UnixMilli()
 		res, err := tx.ExecContext(ctx, `
 INSERT INTO tags(user_id, name, created_at)
@@ -2101,8 +2260,6 @@ VALUES (?, ?, ?)`, userID, name, nowMs)
 		if err != nil {
 			return 0, fmt.Errorf("last insert id tag: %w", err)
 		}
-	} else if err != nil {
-		return 0, fmt.Errorf("get tag: %w", err)
 	}
 
 	return tagID, nil
@@ -2163,13 +2320,15 @@ func (s *Store) createDefaultBoardScopedTags(ctx context.Context, projectID int6
 // GetTagIDByName gets a tag ID by name for a specific user
 func (s *Store) GetTagIDByName(ctx context.Context, userID int64, tagName string) (int64, error) {
 	normalizedName := CanonicalizeTag(tagName)
-	var tagID int64
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM tags WHERE user_id = ? AND name = ?`, userID, normalizedName).Scan(&tagID)
-	if err == sql.ErrNoRows {
-		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
+	if normalizedName == "" {
+		return 0, fmt.Errorf("%w: invalid tag name", ErrValidation)
 	}
+	tagID, found, err := findUserTagIDByGroupKey(ctx, s.db, userID, normalizedName)
 	if err != nil {
-		return 0, fmt.Errorf("get tag id: %w", err)
+		return 0, err
+	}
+	if !found {
+		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
 	}
 	return tagID, nil
 }
@@ -2182,30 +2341,43 @@ func (s *Store) GetTagIDByName(ctx context.Context, userID int64, tagName string
 // proper ownership rules and project scoping.
 func (s *Store) GetAnyTagIDByName(ctx context.Context, tagName string) (int64, error) {
 	normalizedName := CanonicalizeTag(tagName)
-	var tagID int64
-	err := s.db.QueryRowContext(ctx, `SELECT MIN(id) FROM tags WHERE name = ?`, normalizedName).Scan(&tagID)
-	if err == sql.ErrNoRows {
-		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
+	if normalizedName == "" {
+		return 0, fmt.Errorf("%w: invalid tag name", ErrValidation)
 	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name FROM tags ORDER BY id`)
 	if err != nil {
-		return 0, fmt.Errorf("get tag id: %w", err)
+		return 0, fmt.Errorf("list tag ids: %w", err)
 	}
-	return tagID, nil
+	defer rows.Close()
+	for rows.Next() {
+		var tagID int64
+		var name string
+		if err := rows.Scan(&tagID, &name); err != nil {
+			return 0, fmt.Errorf("scan tag id: %w", err)
+		}
+		if TagGroupKey(name) == normalizedName {
+			return tagID, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("rows tag ids: %w", err)
+	}
+	return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
 }
 
 // GetBoardScopedTagIDByName gets a board-scoped tag ID by project and name.
 // Used for deleting board-scoped tags on anonymous boards (no auth required).
 func (s *Store) GetBoardScopedTagIDByName(ctx context.Context, projectID int64, tagName string) (int64, error) {
 	normalizedName := CanonicalizeTag(tagName)
-	var tagID int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM tags 
-		WHERE project_id = ? AND name = ? AND user_id IS NULL`, projectID, normalizedName).Scan(&tagID)
-	if err == sql.ErrNoRows {
-		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
+	if normalizedName == "" {
+		return 0, fmt.Errorf("%w: invalid tag name", ErrValidation)
 	}
+	tagID, found, err := findBoardScopedTagIDByGroupKey(ctx, s.db, projectID, normalizedName)
 	if err != nil {
-		return 0, fmt.Errorf("get board-scoped tag id: %w", err)
+		return 0, err
+	}
+	if !found {
+		return 0, fmt.Errorf("%w: tag not found", ErrNotFound)
 	}
 	return tagID, nil
 }

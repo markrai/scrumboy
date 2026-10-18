@@ -5,6 +5,7 @@ import { getAssigneeFromUrl, getPriorityFromUrl, getSortFromUrl, getSearch, getS
 import { setTagColors } from '../state/mutations.js';
 import { escapeHTML, sanitizeHexColor, showConfirmDialog, showToast } from '../utils.js';
 import { apiErrorMessageOrRaw, t } from '../i18n/index.js';
+import { compareTagNames } from '../tag-names.js';
 let cachedTags = null;
 let cachedTagsHTML = null;
 let cachedTagsURL = null;
@@ -163,7 +164,7 @@ export async function loadTagSettingsContent(tagsURL, scope) {
     }
     try {
         const tags = await apiFetch(tagsURL);
-        tags.sort((a, b) => a.name.localeCompare(b.name));
+        tags.sort((a, b) => compareTagNames(a.name, b.name));
         const tagColors = {};
         tags.forEach((tag) => {
             if (tag.color) {
