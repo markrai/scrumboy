@@ -133,6 +133,23 @@ describe("markdown preview inline images", () => {
     expect(fake.acquired).toEqual([`/api/assets/${U1}`]);
   });
 
+  it("applies a stored display width and keeps it out of the alt text", async () => {
+    installFakeTransport();
+    const { renderMarkdownPreviewInto } = await load();
+    const container = document.createElement("div");
+    await renderMarkdownPreviewInto(container, `${img(U1, "wide|480")}\n\n${img(U2, "plain")}\n\n${img(U2, "year|2024")}`, { inlineImagesEnabled: true });
+    const [wide, plain, year] = Array.from(container.querySelectorAll("img"));
+    expect(wide.alt).toBe("wide");
+    expect(wide.style.width).toBe("480px");
+    expect(wide.parentElement?.classList.contains("todo-notes-image--sized")).toBe(true);
+    expect(plain.alt).toBe("plain");
+    expect(plain.style.width).toBe("");
+    expect(plain.parentElement?.classList.contains("todo-notes-image--sized")).toBe(false);
+    // Out of range: ordinary alt text, default size.
+    expect(year.alt).toBe("year|2024");
+    expect(year.style.width).toBe("");
+  });
+
   it("keeps non-canonical image destinations as escaped text", async () => {
     const fake = installFakeTransport();
     const { renderMarkdownPreviewInto } = await load();

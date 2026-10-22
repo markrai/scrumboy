@@ -17,10 +17,18 @@ const copiedAssets = [
 export const mermaidBundlePath = "vendor/mermaid.min.js";
 export const mermaidMetadataPath = "vendor/mermaid.meta.json";
 const mermaidLegalComments = "eof";
-export const requiredVendorFiles = Object.freeze([
-  ...copiedAssets.map(([, destination]) => destination),
+export const codemirrorBundlePath = "vendor/codemirror.min.js";
+export const codemirrorMetadataPath = "vendor/codemirror.meta.json";
+const codemirrorPackages = ["@codemirror/commands", "@codemirror/state", "@codemirror/view"];
+export const generatedVendorFiles = Object.freeze([
   mermaidBundlePath,
   mermaidMetadataPath,
+  codemirrorBundlePath,
+  codemirrorMetadataPath,
+]);
+export const requiredVendorFiles = Object.freeze([
+  ...copiedAssets.map(([, destination]) => destination),
+  ...generatedVendorFiles,
 ]);
 
 function normalizePath(value) {
@@ -132,9 +140,9 @@ async function collectBundledPackageNotices(inputPaths, webDir) {
   );
 }
 
-function renderBundledPackageNotices(packages) {
+function renderBundledPackageNotices(packages, artifact) {
   const lines = [
-    "Third-party software notices for vendor/mermaid.min.js",
+    `Third-party software notices for ${artifact}`,
     "Generated from the package versions in esbuild's actual input graph.",
   ];
   for (const bundledPackage of packages) {
@@ -156,7 +164,7 @@ function findSinglePackageEntry(inputPaths, packageName, packageEntry) {
   const matches = inputPaths.filter((input) => normalizePath(input).endsWith(suffix));
   assert(
     matches.length === 1,
-    `Generated Mermaid bundle must incorporate exactly one ${packageName}/${packageEntry} input; found ${matches.length}`,
+    `Generated vendor bundle must incorporate exactly one ${packageName}/${packageEntry} input; found ${matches.length}`,
   );
   return matches[0];
 }
@@ -203,7 +211,7 @@ export async function buildMermaidVendorAsset(webDir = resolveWebDir()) {
   assertExactVersion(versions.esbuild, rootManifest.devDependencies?.esbuild, "esbuild");
 
   const bundledPackages = await collectBundledPackageNotices(inputPaths, webDir);
-  const generatedNotices = renderBundledPackageNotices(bundledPackages);
+  const generatedNotices = renderBundledPackageNotices(bundledPackages, mermaidBundlePath);
   const contents = Buffer.concat([
     Buffer.from(result.outputFiles[0].contents),
     Buffer.from(`/*!\n${generatedNotices} */\n`, "utf8"),
@@ -238,6 +246,62 @@ export async function buildMermaidVendorAsset(webDir = resolveWebDir()) {
   return { contents, metadata };
 }
 
+// buildCodeMirrorVendorAsset bundles the notes editor's CodeMirror subset
+// (codemirror-vendor-entry.mjs) as an IIFE that sets window.ScrumboyCodeMirror.
+export async function buildCodeMirrorVendorAsset(webDir = resolveWebDir()) {
+  const rootManifest = await readJson(path.join(webDir, "package.json"));
+  const result = await build({
+    absWorkingDir: webDir,
+    entryPoints: [path.join(scriptDir, "codemirror-vendor-entry.mjs")],
+    bundle: true,
+    charset: "utf8",
+    format: "iife",
+    legalComments: "eof",
+    logLevel: "silent",
+    metafile: true,
+    minify: true,
+    platform: "browser",
+    sourcemap: false,
+    target: ["es2020"],
+    treeShaking: true,
+    write: false,
+  });
+
+  assert(result.outputFiles.length === 1, "CodeMirror vendor generation must produce exactly one browser asset");
+  const inputPaths = Object.keys(result.metafile.inputs).map((input) => path.resolve(webDir, input));
+  const dependencies = {};
+  for (const packageName of codemirrorPackages) {
+    const entry = findSinglePackageEntry(inputPaths, packageName, "dist/index.js");
+    const version = (await readJson(path.join(path.dirname(path.dirname(entry)), "package.json"))).version;
+    assertExactVersion(version, rootManifest.dependencies?.[packageName], packageName);
+    dependencies[packageName] = { version, entry: normalizePath(path.relative(webDir, entry)) };
+  }
+  const esbuildVersion = await readInstalledVersion(webDir, "esbuild");
+  assertExactVersion(esbuildVersion, rootManifest.devDependencies?.esbuild, "esbuild");
+
+  const bundledPackages = await collectBundledPackageNotices(inputPaths, webDir);
+  const contents = Buffer.concat([
+    Buffer.from(result.outputFiles[0].contents),
+    Buffer.from(`/*!\n${renderBundledPackageNotices(bundledPackages, codemirrorBundlePath)} */\n`, "utf8"),
+  ]);
+  const metadata = `${JSON.stringify({
+    schemaVersion: 2,
+    artifact: codemirrorBundlePath,
+    sha256: sha256(contents),
+    dependencies,
+    builder: { esbuild: esbuildVersion, legalComments: "eof" },
+    notices: bundledPackages.map(({ name, version, license, files, textSha256 }) => ({
+      name,
+      version,
+      license,
+      files,
+      textSha256,
+    })),
+  }, null, 2)}\n`;
+
+  return { contents, metadata };
+}
+
 export async function buildExpectedVendorAssets(webDir = resolveWebDir()) {
   const assets = [];
   for (const [source, relativePath] of copiedAssets) {
@@ -250,6 +314,9 @@ export async function buildExpectedVendorAssets(webDir = resolveWebDir()) {
   const mermaid = await buildMermaidVendorAsset(webDir);
   assets.push({ relativePath: mermaidBundlePath, contents: mermaid.contents });
   assets.push({ relativePath: mermaidMetadataPath, contents: Buffer.from(mermaid.metadata, "utf8") });
+  const codemirror = await buildCodeMirrorVendorAsset(webDir);
+  assets.push({ relativePath: codemirrorBundlePath, contents: codemirror.contents });
+  assets.push({ relativePath: codemirrorMetadataPath, contents: Buffer.from(codemirror.metadata, "utf8") });
   return assets;
 }
 

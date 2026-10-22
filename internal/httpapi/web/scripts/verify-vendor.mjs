@@ -3,8 +3,7 @@ import path from "node:path";
 import {
   buildExpectedVendorAssets,
   findMismatchedVendorAssets,
-  mermaidBundlePath,
-  mermaidMetadataPath,
+  generatedVendorFiles,
   requiredVendorFiles,
   resolveWebDir,
 } from "./vendor-assets.mjs";
@@ -38,8 +37,8 @@ async function main() {
     process.exit(1);
   }
 
-  const expectedAssets = (await buildExpectedVendorAssets(webDir)).filter(
-    (asset) => asset.relativePath === mermaidBundlePath || asset.relativePath === mermaidMetadataPath,
+  const expectedAssets = (await buildExpectedVendorAssets(webDir)).filter((asset) =>
+    generatedVendorFiles.includes(asset.relativePath),
   );
   const mismatched = await findMismatchedVendorAssets(expectedAssets, webDir);
   if (mismatched.length > 0) {

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 2,
+  "artifact": "vendor/codemirror.min.js",
+  "sha256": "c687871f197584ebaba224817dd3cf643da750b64589da9e32b1a7882a1a312f",
+  "dependencies": {
+    "@codemirror/commands": {
+      "version": "6.11.1",
+      "entry": "node_modules/@codemirror/commands/dist/index.js"
+    },
+    "@codemirror/state": {
+      "version": "6.7.6",
+      "entry": "node_modules/@codemirror/state/dist/index.js"
+    },
+    "@codemirror/view": {
+      "version": "6.43.14",
+      "entry": "node_modules/@codemirror/view/dist/index.js"
+    }
+  },
+  "builder": {
+    "esbuild": "0.25.12",
+    "legalComments": "eof"
+  },
+  "notices": [
+    {
+      "name": "@codemirror/commands",
+      "version": "6.11.1",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "829c7227ff3062faffc6c1193cf0f55a4c188e524e11a9b874b939a822e81776"
+    },
+    {
+      "name": "@codemirror/language",
+      "version": "6.13.1",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "829c7227ff3062faffc6c1193cf0f55a4c188e524e11a9b874b939a822e81776"
+    },
+    {
+      "name": "@codemirror/state",
+      "version": "6.7.6",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "829c7227ff3062faffc6c1193cf0f55a4c188e524e11a9b874b939a822e81776"
+    },
+    {
+      "name": "@codemirror/streamparser",
+      "version": "6.0.0",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "829c7227ff3062faffc6c1193cf0f55a4c188e524e11a9b874b939a822e81776"
+    },
+    {
+      "name": "@codemirror/view",
+      "version": "6.43.14",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "829c7227ff3062faffc6c1193cf0f55a4c188e524e11a9b874b939a822e81776"
+    },
+    {
+      "name": "@lezer/common",
+      "version": "1.5.4",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "9d429661e9d9873ca971cb1e890feb4f1cae6aea785fcab58c61f02fb320c12e"
+    },
+    {
+      "name": "@lezer/highlight",
+      "version": "1.2.5",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "9d429661e9d9873ca971cb1e890feb4f1cae6aea785fcab58c61f02fb320c12e"
+    },
+    {
+      "name": "@marijn/find-cluster-break",
+      "version": "1.0.4",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "7fb5196f87532bf3412845fec77c5238651d2e48f2215ae46882dcdc7f3e309a"
+    },
+    {
+      "name": "crelt",
+      "version": "1.0.7",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "a6218c5a1e660f7c1552cb1516dd68f36b551b926f51a50868bfe585bc37388e"
+    },
+    {
+      "name": "style-mod",
+      "version": "4.1.4",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "3ed5bb3d2a3ed91a47b80b0bc6fc109632014245639e1eb647444d0f59fc67d7"
+    },
+    {
+      "name": "w3c-keyname",
+      "version": "2.2.8",
+      "license": "MIT",
+      "files": [
+        "LICENSE"
+      ],
+      "textSha256": "dc0681f9f8a69ea35cae85458e41c9c97c2a26d9643878e8443a327ba7574568"
+    }
+  ]
+}

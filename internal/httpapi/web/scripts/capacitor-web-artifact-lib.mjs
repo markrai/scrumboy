@@ -72,6 +72,7 @@ const explicitRuntimeFiles = [
   'assets/flags/ua.svg',
   'assets/flags/us.svg',
   'assets/flags/vn.svg',
+  'vendor/codemirror.min.js',
   'vendor/markdown-it.min.js',
   'vendor/mermaid.min.js',
   'vendor/purify.min.js',

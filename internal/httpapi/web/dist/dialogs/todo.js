@@ -4,6 +4,7 @@ import { isoToLocalInputValue, resolveDueAtForOverdueCheck, setTodoOverdueIndica
 import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
 import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
 import { createTodoImageUploader } from './todo-image-upload.js';
+import { createNotesEditor, notesEditorAvailable } from './todo-notes-editor.js';
 import { THEME_CHANGE_EVENT } from '../theme.js';
 import { getBoard, getBoardMembers, getInlineImagesEnabled, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getTagColors, getUser } from '../state/selectors.js';
 import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } from '../state/mutations.js';
@@ -22,6 +23,11 @@ let todoNotesMode = "markdown";
 let todoNotesPreviewBound = false;
 let todoImageUploader = null;
 let todoImageContext = null;
+// Visual notes editor (CodeMirror with images shown inline), used instead of the textarea when
+// inline images are enabled and the editor bundle loaded. Created once, reloaded per open.
+let todoNotesEditor = null;
+let todoEditorImageUploader = null;
+let todoNotesVisual = false;
 let todoSaveBlockedByPermissions = false;
 let todoOverdueStateAbort = null;
 let todoDialogCloseGuardsBound = false;
@@ -120,12 +126,63 @@ function markdownNotesPreviewEnabled() {
         todoBodyWriteTab &&
         todoBodyPreviewTab);
 }
+function todoNotesEditorHost() {
+    return document.getElementById("todoBodyEditor");
+}
+function useVisualNotesEditor() {
+    return !!todoNotesEditorHost() && getMarkdownNotesEnabled() && getInlineImagesEnabled() && notesEditorAvailable();
+}
+function ensureTodoNotesEditor() {
+    const host = todoNotesEditorHost();
+    if (todoNotesEditor || !host) {
+        return todoNotesEditor;
+    }
+    const status = document.getElementById("todoBodyEditorStatus");
+    todoNotesEditor = createNotesEditor({
+        parent: host,
+        maxLength: todoBody?.maxLength || 20000,
+        labelledBy: "todoBodyLabel",
+        announce: (message) => {
+            if (status)
+                status.textContent = message;
+        },
+    });
+    document.getElementById("todoBodyLabel")?.addEventListener("click", (event) => {
+        if (todoNotesVisual) {
+            event.preventDefault();
+            todoNotesEditor?.focus();
+        }
+    });
+    return todoNotesEditor;
+}
+/** The notes text to save: from the visual editor when it is in use, else the textarea. */
+export function getTodoNotesValue() {
+    if (todoNotesVisual && todoNotesEditor) {
+        return todoNotesEditor.getValue();
+    }
+    return todoBody?.value ?? "";
+}
+// loadTodoNotes puts a note into whichever editor this dialog uses.
+function loadTodoNotes(body, readOnly) {
+    const textarea = todoBody;
+    todoNotesVisual = useVisualNotesEditor() && !!ensureTodoNotesEditor();
+    if (todoNotesVisual && todoNotesEditor) {
+        textarea.value = "";
+        todoNotesEditor.setReadOnly(readOnly);
+        todoNotesEditor.setValue(body);
+    }
+    else {
+        textarea.value = body;
+        todoNotesEditor?.clear();
+    }
+    textarea.readOnly = readOnly;
+}
 async function renderTodoNotesPreview() {
     if (!todoBodyPreview || !todoBody) {
         return;
     }
     try {
-        await renderMarkdownPreviewInto(todoBodyPreview, todoBody.value || "", { mermaidEnabled: getMermaidNotesEnabled(), inlineImagesEnabled: getInlineImagesEnabled() });
+        await renderMarkdownPreviewInto(todoBodyPreview, getTodoNotesValue(), { mermaidEnabled: getMermaidNotesEnabled(), inlineImagesEnabled: getInlineImagesEnabled() });
     }
     catch (err) {
         showToast(apiErrorMessage(err, { fallbackKey: "todo.notes.previewUnavailable" }));
@@ -143,7 +200,11 @@ function syncTodoNotesModeUI() {
     }
     const isPreview = previewEnabled && todoNotesMode === "preview";
     if (todoBody) {
-        todoBody.hidden = isPreview;
+        todoBody.hidden = isPreview || todoNotesVisual;
+    }
+    const editorHost = todoNotesEditorHost();
+    if (editorHost) {
+        editorHost.hidden = isPreview || !todoNotesVisual;
     }
     if (todoBodyPreview) {
         todoBodyPreview.hidden = !isPreview;
@@ -171,7 +232,7 @@ function setTodoNotesMode(mode) {
 }
 /** True while note images are uploading; the dialog must not be submitted until they finish. */
 export function isTodoImageUploadPending() {
-    return (todoImageUploader?.pending() ?? 0) > 0;
+    return (todoImageUploader?.pending() ?? 0) + (todoEditorImageUploader?.pending() ?? 0) > 0;
 }
 function updateTodoSaveLock(pending, total) {
     const saveTodoBtn = document.getElementById("saveTodoBtn");
@@ -189,36 +250,35 @@ function updateTodoSaveLock(pending, total) {
     saveTodoBtn.disabled = todoSaveBlockedByPermissions;
     saveTodoBtn.textContent = hasI18nKey("common.save") ? t("common.save") : "Save";
 }
-// ensureTodoImageUploader binds paste/drop/picker image uploads to the notes textarea once.
-// Whether uploads are allowed is decided per open via todoImageContext.
+// ensureTodoImageUploader binds paste and drop image uploads to the notes textarea and, when it
+// exists, the visual editor, once each. Whether uploads are allowed is decided per open via
+// todoImageContext, and only the editor in use accepts them.
 function ensureTodoImageUploader() {
-    if (todoImageUploader || !todoBody) {
-        return;
+    if (!todoImageUploader && todoBody) {
+        todoImageUploader = createTodoImageUploader({
+            textarea: todoBody,
+            getContext: () => (todoNotesVisual ? null : todoImageContext),
+            onPendingChange: updateTodoSaveLock,
+        });
+        todoImageUploader.attach();
     }
-    todoImageUploader = createTodoImageUploader({
-        textarea: todoBody,
-        getContext: () => todoImageContext,
-        onPendingChange: updateTodoSaveLock,
-    });
-    todoImageUploader.attach();
-    const button = document.getElementById("todoBodyInsertImage");
-    const input = document.getElementById("todoBodyImageInput");
-    button?.addEventListener("click", () => input?.click());
-    input?.addEventListener("change", () => {
-        if (input.files && input.files.length > 0) {
-            todoImageUploader?.pickFiles(input.files);
-        }
-        input.value = "";
-    });
+    if (!todoEditorImageUploader && todoNotesEditor) {
+        todoEditorImageUploader = createTodoImageUploader({
+            target: todoNotesEditor.uploadTarget,
+            getContext: () => (todoNotesVisual ? todoImageContext : null),
+            onPendingChange: updateTodoSaveLock,
+        });
+        todoNotesEditor.setUploadHandlers(todoEditorImageUploader);
+    }
+}
+function abortTodoImageUploads() {
+    todoImageUploader?.abortAll();
+    todoEditorImageUploader?.abortAll();
 }
 function configureTodoImageUploads(context) {
     ensureTodoImageUploader();
-    todoImageUploader?.abortAll();
+    abortTodoImageUploads();
     todoImageContext = context;
-    const button = document.getElementById("todoBodyInsertImage");
-    if (button) {
-        button.hidden = context === null;
-    }
 }
 // releaseTodoNotesPreview drops the hidden preview DOM and releases any server resources (for
 // example native image files) it holds.
@@ -265,7 +325,7 @@ function readTodoDialogSnapshot() {
     const sprint = document.getElementById("todoSprint");
     return {
         title: todoTitle?.value ?? "",
-        body: todoBody?.value ?? "",
+        body: getTodoNotesValue(),
         tags: getTagsFromChips(),
         status: todoStatus?.value ?? "",
         estimation: todoEstimationPoints?.value ?? "",
@@ -362,9 +422,11 @@ function bindTodoDialogCloseGuards() {
         void closeTodoDialogInternal({ reason: detail?.reason === "outside" ? "outside" : "button" });
     });
     todoDialog.addEventListener("close", () => {
-        todoImageUploader?.abortAll();
+        abortTodoImageUploads();
         todoImageContext = null;
         releaseTodoNotesPreview();
+        // Releases the editor's image files (native handles on Android) right away.
+        todoNotesEditor?.clear();
         resetTodoDialogCloseState();
     });
 }
@@ -611,7 +673,7 @@ export async function openTodoDialog(opts) {
     if (mode === "create") {
         setTodoDialogTitleKey("todo.dialog.title.new");
         todoTitle.value = normalizeSeedTitle(opts.initialTitle);
-        todoBody.value = "";
+        loadTodoNotes("", !permissions.canEditNotes);
         todoTags.value = "";
         const initialKey = resolveColumnKey(status);
         const selected = populateTodoStatusOptions(initialKey);
@@ -634,7 +696,7 @@ export async function openTodoDialog(opts) {
     else {
         setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
         todoTitle.value = todo.title || "";
-        todoBody.value = todo.body || "";
+        loadTodoNotes(todo.body || "", !permissions.canEditNotes);
         todoTags.value = "";
         const initialKey = resolveColumnKey(todo.columnKey || todo.status);
         const selected = populateTodoStatusOptions(initialKey);
@@ -699,7 +761,6 @@ export async function openTodoDialog(opts) {
         tagInput.disabled = !permissions.canEditTags;
     if (addTagBtn)
         addTagBtn.disabled = !permissions.canEditTags;
-    todoBody.readOnly = !permissions.canEditNotes;
     todoTitle.readOnly = !permissions.canEditTitle;
     todoStatus.disabled = !permissions.canEditStatus;
     const saveTodoBtn = document.getElementById("saveTodoBtn");

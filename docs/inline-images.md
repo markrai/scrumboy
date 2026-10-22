@@ -1,12 +1,39 @@
 # Inline images in story notes
 
-Story notes can contain images: paste a screenshot, drag an image file onto the notes box, or use the **image** button next to the Markdown/Preview tabs. Scrumboy stores the image and inserts Markdown such as:
+Story notes can contain images: paste a screenshot into the notes, or drag an image file onto them. The image appears right where you pasted or dropped it, and you can select, resize and remove it in place. Scrumboy stores the image and keeps the note as Markdown such as:
 
 ```markdown
 ![screenshot](/api/assets/550e8400-e29b-41d4-a716-446655440000)
 ```
 
-The image renders in the note **Preview** and in the read-only story dialog of a [public board](public-boards.md).
+Images show in the notes editor, in the note **Preview**, in read-only story dialogs, and in the story dialog of a [public board](public-boards.md).
+
+## Editing images
+
+The notes editor shows every Scrumboy image in place of its Markdown; everything else in the note is edited as plain Markdown text, exactly as before.
+
+- **Size.** A new image is shown at most 320 px wide and 240 px tall, keeping its proportions. Smaller images are never enlarged, and no image is wider than the notes field.
+- **Select.** Click or tap an image to select it (an outline around the image and square resize handles on its two bottom corners appear). From the keyboard, move the caret next to an image and press Shift+Arrow to select it. Screen readers announce the selected image and the keys below.
+- **Resize.** Drag a corner handle (mouse or touch). The image keeps its proportions, so width and height change together, and stays between 48 px and the image's own width and the width of the notes field. With an image selected, **+** and **-** resize it, and **0** returns it to the default size.
+- **Remove.** Press Delete or Backspace with the image selected, or Backspace right after it. Only the reference is removed from the note; the stored file is cleaned up later if no note uses it (see [Storage](#storage-budgets-and-cleanup)). **Undo** (Ctrl+Z / Cmd+Z) brings it back, and **Redo** (Ctrl+Y or Ctrl+Shift+Z) removes it again.
+- **Escape** deselects the image without closing the story.
+- **Pasting over text.** An image pasted or dropped over selected text replaces that text once the image has uploaded, as a single undo step. If the upload fails or is cancelled, the text stays; if you edit the selected text while the image uploads, your edit stays and the image is added next to it.
+
+Images inside code (`` `...` `` or fenced blocks) are text, and stay text in the editor.
+
+### Image width in Markdown
+
+A resized image stores its display width, in CSS pixels, at the end of its alt text after `|`:
+
+```markdown
+![screenshot|480](/api/assets/550e8400-e29b-41d4-a716-446655440000)
+```
+
+- The width is a whole number from 48 to 1600, without leading zeros. Any other text after `|` (for example `![Q3|2024](...)`) is ordinary alt text, and the image is shown at the default size.
+- The width includes the image's 1 px border, is always capped by the available width (so phones show the image smaller), and is the only metadata stored: notes never contain HTML, heights, or image data.
+- The destination is unchanged, so the server recognizes the image exactly as before, and backups, `.sbz` exports and imports, public-board visibility and cleanup all treat sized and unsized images alike.
+- Older Scrumboy versions and other Markdown tools show the image at its natural size; the alt text then includes the `|480` suffix.
+- Resizing changes only those characters of the note. The rest of the note, including line endings (CRLF, LF, lone CR, or a mix), is saved exactly as it was. New line breaks you type take the form of the line break ending that line.
 
 ## Enabling
 

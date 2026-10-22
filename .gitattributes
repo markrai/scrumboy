@@ -2,3 +2,5 @@
 internal/httpapi/web/vendor/purify.min.js -text
 internal/httpapi/web/vendor/mermaid.min.js -text -whitespace
 internal/httpapi/web/vendor/mermaid.meta.json text eol=lf
+internal/httpapi/web/vendor/codemirror.min.js -text -whitespace
+internal/httpapi/web/vendor/codemirror.meta.json text eol=lf

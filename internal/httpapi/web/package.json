@@ -35,6 +35,9 @@
     "vitest": "4.1.11"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
     "dompurify": "3.4.16",
     "markdown-it": "14.3.2",
     "mermaid": "11.17.2",

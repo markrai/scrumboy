@@ -11,6 +11,7 @@ declare global {
 
   type MarkdownItInstance = {
     render(markdown: string): string;
+    parse(markdown: string, env: Record<string, unknown>): any[];
     renderer: {
       rules: Record<string, MarkdownItRendererRule | undefined>;
     };

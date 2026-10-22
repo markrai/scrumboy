@@ -117,14 +117,18 @@ describe("todo image uploader", () => {
   });
 
   it("limits files per action and rejects unsupported or oversized files", () => {
-    const u = uploader();
-    u.pickFiles(Array.from({ length: MAX_FILES_PER_ACTION + 2 }, (_, i) => png(`${i}.png`)));
+    uploader();
+    textarea.dispatchEvent(dropEvent(Array.from({ length: MAX_FILES_PER_ACTION + 2 }, (_, i) => png(`${i}.png`))));
     expect(calls).toHaveLength(MAX_FILES_PER_ACTION);
     expect(showToast).toHaveBeenCalledWith(expect.stringContaining("up to"));
     showToast.mockReset();
-    u.pickFiles([png("vector.svg", 10, "image/svg+xml"), png("huge.png", 11 * 1024 * 1024)]);
-    expect(calls).toHaveLength(MAX_FILES_PER_ACTION);
-    expect(showToast).toHaveBeenCalledTimes(2);
+    textarea.dispatchEvent(dropEvent([png("ok.png"), png("huge.png", 11 * 1024 * 1024)]));
+    expect(calls).toHaveLength(MAX_FILES_PER_ACTION + 1);
+    expect(showToast).toHaveBeenCalledTimes(1);
+  });
+
+  it("has no file picker: uploads come only from paste and drop", () => {
+    expect("pickFiles" in uploader()).toBe(false);
   });
 
   it("does not insert when the user deleted the placeholder", async () => {
@@ -157,6 +161,29 @@ describe("todo image uploader", () => {
       expect(textarea.value).toBe("");
       expect(showToast.mock.calls[0][0].toLowerCase()).toContain(text.toLowerCase());
     }
+  });
+
+  it("puts back the text an image was pasted over when the upload fails or is cancelled", async () => {
+    const u = uploader();
+    textarea.value = "keep SELECTED keep";
+    textarea.setSelectionRange(5, 13);
+    textarea.dispatchEvent(pasteEvent([png()]));
+    expect(textarea.value).toMatch(/^keep !\[Uploading image…\]\(scrumboy-upload:[^)]+\)\n keep$/);
+    calls[0].reject(Object.assign(new Error("x"), { status: 500 }));
+    await settle();
+    expect(textarea.value).toBe("keep SELECTED keep");
+
+    textarea.setSelectionRange(5, 13);
+    textarea.dispatchEvent(pasteEvent([png()]));
+    u.abortAll();
+    await settle();
+    expect(textarea.value).toBe("keep SELECTED keep");
+
+    textarea.setSelectionRange(5, 13);
+    textarea.dispatchEvent(pasteEvent([png()]));
+    calls.at(-1)!.resolve({ assetId: "a", url: "/api/assets/11111111-1111-4111-8111-111111111111" });
+    await settle();
+    expect(textarea.value).toBe("keep ![shot](/api/assets/11111111-1111-4111-8111-111111111111)\n keep");
   });
 
   it("aborts in-flight uploads without a toast", async () => {
@@ -195,13 +222,17 @@ describe("todo image uploader", () => {
 
   it("uploads new-story images without a todo parameter", () => {
     context = { slug: "my board", todoLocalId: null };
-    uploader().pickFiles([png()]);
+    uploader();
+    textarea.dispatchEvent(pasteEvent([png()]));
     expect(calls[0].path).toBe("/api/board/my%20board/assets");
   });
 
   it("derives safe alt text from file names", () => {
     expect(altTextForFile("Screenshot 2026-10-22 at 10.00.png")).toBe("Screenshot 2026-10-22 at 10.00");
     expect(altTextForFile("a](javascript:x)[b.png")).toBe("a javascript:x b");
+    // "|" would read as a display width (![alt|480](...)); backticks could open code spans.
+    expect(altTextForFile("diagram|480.png")).toBe("diagram 480");
+    expect(altTextForFile("a`b`.png")).toBe("a b");
     expect(altTextForFile("image.png")).toBe("image");
     expect(altTextForFile("")).toBe("image");
     expect(altTextForFile("x".repeat(300) + ".png")).toHaveLength(100);

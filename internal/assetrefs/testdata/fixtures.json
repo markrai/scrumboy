@@ -41,5 +41,9 @@
   {"name": "percent encoded char in uuid", "markdown": "![a](/api/assets/%311111111-1111-4111-8111-111111111111)", "expected": []},
   {"name": "space before path", "markdown": "![a]( /api/assets/11111111-1111-4111-8111-111111111111 )", "expected": ["11111111-1111-4111-8111-111111111111"]},
   {"name": "mixed code and real image", "markdown": "`/api/assets/22222222-2222-4222-9222-222222222222`\n\n![a](/api/assets/11111111-1111-4111-8111-111111111111)", "expected": ["11111111-1111-4111-8111-111111111111"]},
-  {"name": "crlf line endings", "markdown": "Line one\r\n\r\n![a](/api/assets/11111111-1111-4111-8111-111111111111)\r\n", "expected": ["11111111-1111-4111-8111-111111111111"]}
+  {"name": "crlf line endings", "markdown": "Line one\r\n\r\n![a](/api/assets/11111111-1111-4111-8111-111111111111)\r\n", "expected": ["11111111-1111-4111-8111-111111111111"]},
+  {"name": "display width suffix in alt", "markdown": "![shot|480](/api/assets/11111111-1111-4111-8111-111111111111)", "expected": ["11111111-1111-4111-8111-111111111111"]},
+  {"name": "sized and unsized images", "markdown": "![a|320](/api/assets/11111111-1111-4111-8111-111111111111)\n\n![b](/api/assets/22222222-2222-4222-9222-222222222222)", "expected": ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-9222-222222222222"]},
+  {"name": "width suffix inside code span", "markdown": "`![a|480](/api/assets/11111111-1111-4111-8111-111111111111)`", "expected": []},
+  {"name": "width suffix inside fence", "markdown": "```\n![a|480](/api/assets/11111111-1111-4111-8111-111111111111)\n```", "expected": []}
 ]

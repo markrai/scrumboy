@@ -25,6 +25,7 @@ const urlsToCache = [
   '/vendor/uplot.min.css',
   '/vendor/markdown-it.min.js',
   '/vendor/purify.min.js',
+  '/vendor/codemirror.min.js',
   '/dist/api.js',
   '/dist/markdown-preview.js',
   '/dist/dom/elements.js',

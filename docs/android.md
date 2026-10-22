@@ -139,7 +139,7 @@ Taps open the existing app routes `/dashboard` or `/{slug}/t/{localId}` through 
 
 ## Note images and backups
 
-When the server enables [inline images](inline-images.md), note images render in the app through the native transport, which downloads each image and releases the cached file when the preview closes. Images can be added with the **image** button, which opens the system file chooser.
+When the server enables [inline images](inline-images.md), note images render in the app through the native transport, which downloads each image and releases the cached file when the preview or the story closes. Images are added by pasting them into the notes (for example from the keyboard's clipboard); there is no separate image button or file chooser.
 
 The native bridge buffers whole requests and responses in memory, so the app refuses transfers it cannot hold safely:
 

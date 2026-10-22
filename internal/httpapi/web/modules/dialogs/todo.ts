@@ -25,6 +25,7 @@ import { isoToLocalInputValue, resolveDueAtForOverdueCheck, setTodoOverdueIndica
 import { DIALOG_CLOSE_REQUEST_EVENT, type DialogCloseRequestDetail } from '../core/modal-outside-click.js';
 import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
 import { createTodoImageUploader, type ImageUploadContext, type TodoImageUploader } from './todo-image-upload.js';
+import { createNotesEditor, notesEditorAvailable, type NotesEditor } from './todo-notes-editor.js';
 import { THEME_CHANGE_EVENT } from '../theme.js';
 import { getBoard, getBoardMembers, getInlineImagesEnabled, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getTagColors, getUser } from '../state/selectors.js';
 import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } from '../state/mutations.js';
@@ -87,6 +88,11 @@ let todoNotesMode: TodoNotesMode = "markdown";
 let todoNotesPreviewBound = false;
 let todoImageUploader: TodoImageUploader | null = null;
 let todoImageContext: ImageUploadContext | null = null;
+// Visual notes editor (CodeMirror with images shown inline), used instead of the textarea when
+// inline images are enabled and the editor bundle loaded. Created once, reloaded per open.
+let todoNotesEditor: NotesEditor | null = null;
+let todoEditorImageUploader: TodoImageUploader | null = null;
+let todoNotesVisual = false;
 let todoSaveBlockedByPermissions = false;
 let todoOverdueStateAbort: AbortController | null = null;
 let todoDialogCloseGuardsBound = false;
@@ -196,6 +202,60 @@ function markdownNotesPreviewEnabled(): boolean {
   );
 }
 
+function todoNotesEditorHost(): HTMLElement | null {
+  return document.getElementById("todoBodyEditor");
+}
+
+function useVisualNotesEditor(): boolean {
+  return !!todoNotesEditorHost() && getMarkdownNotesEnabled() && getInlineImagesEnabled() && notesEditorAvailable();
+}
+
+function ensureTodoNotesEditor(): NotesEditor | null {
+  const host = todoNotesEditorHost();
+  if (todoNotesEditor || !host) {
+    return todoNotesEditor;
+  }
+  const status = document.getElementById("todoBodyEditorStatus");
+  todoNotesEditor = createNotesEditor({
+    parent: host,
+    maxLength: (todoBody as HTMLTextAreaElement | null)?.maxLength || 20000,
+    labelledBy: "todoBodyLabel",
+    announce: (message) => {
+      if (status) status.textContent = message;
+    },
+  });
+  document.getElementById("todoBodyLabel")?.addEventListener("click", (event) => {
+    if (todoNotesVisual) {
+      event.preventDefault();
+      todoNotesEditor?.focus();
+    }
+  });
+  return todoNotesEditor;
+}
+
+/** The notes text to save: from the visual editor when it is in use, else the textarea. */
+export function getTodoNotesValue(): string {
+  if (todoNotesVisual && todoNotesEditor) {
+    return todoNotesEditor.getValue();
+  }
+  return (todoBody as HTMLTextAreaElement | null)?.value ?? "";
+}
+
+// loadTodoNotes puts a note into whichever editor this dialog uses.
+function loadTodoNotes(body: string, readOnly: boolean): void {
+  const textarea = todoBody as HTMLTextAreaElement;
+  todoNotesVisual = useVisualNotesEditor() && !!ensureTodoNotesEditor();
+  if (todoNotesVisual && todoNotesEditor) {
+    textarea.value = "";
+    todoNotesEditor.setReadOnly(readOnly);
+    todoNotesEditor.setValue(body);
+  } else {
+    textarea.value = body;
+    todoNotesEditor?.clear();
+  }
+  textarea.readOnly = readOnly;
+}
+
 async function renderTodoNotesPreview(): Promise<void> {
   if (!todoBodyPreview || !todoBody) {
     return;
@@ -203,7 +263,7 @@ async function renderTodoNotesPreview(): Promise<void> {
   try {
     await renderMarkdownPreviewInto(
       todoBodyPreview as HTMLElement,
-      (todoBody as HTMLTextAreaElement).value || "",
+      getTodoNotesValue(),
       { mermaidEnabled: getMermaidNotesEnabled(), inlineImagesEnabled: getInlineImagesEnabled() },
     );
   } catch (err: any) {
@@ -224,7 +284,11 @@ function syncTodoNotesModeUI(): void {
 
   const isPreview = previewEnabled && todoNotesMode === "preview";
   if (todoBody) {
-    (todoBody as HTMLTextAreaElement).hidden = isPreview;
+    (todoBody as HTMLTextAreaElement).hidden = isPreview || todoNotesVisual;
+  }
+  const editorHost = todoNotesEditorHost();
+  if (editorHost) {
+    editorHost.hidden = isPreview || !todoNotesVisual;
   }
   if (todoBodyPreview) {
     (todoBodyPreview as HTMLElement).hidden = !isPreview;
@@ -253,7 +317,7 @@ function setTodoNotesMode(mode: TodoNotesMode): void {
 
 /** True while note images are uploading; the dialog must not be submitted until they finish. */
 export function isTodoImageUploadPending(): boolean {
-  return (todoImageUploader?.pending() ?? 0) > 0;
+  return (todoImageUploader?.pending() ?? 0) + (todoEditorImageUploader?.pending() ?? 0) > 0;
 }
 
 function updateTodoSaveLock(pending: number, total: number): void {
@@ -273,37 +337,37 @@ function updateTodoSaveLock(pending: number, total: number): void {
   saveTodoBtn.textContent = hasI18nKey("common.save") ? t("common.save") : "Save";
 }
 
-// ensureTodoImageUploader binds paste/drop/picker image uploads to the notes textarea once.
-// Whether uploads are allowed is decided per open via todoImageContext.
+// ensureTodoImageUploader binds paste and drop image uploads to the notes textarea and, when it
+// exists, the visual editor, once each. Whether uploads are allowed is decided per open via
+// todoImageContext, and only the editor in use accepts them.
 function ensureTodoImageUploader(): void {
-  if (todoImageUploader || !todoBody) {
-    return;
+  if (!todoImageUploader && todoBody) {
+    todoImageUploader = createTodoImageUploader({
+      textarea: todoBody as HTMLTextAreaElement,
+      getContext: () => (todoNotesVisual ? null : todoImageContext),
+      onPendingChange: updateTodoSaveLock,
+    });
+    todoImageUploader.attach();
   }
-  todoImageUploader = createTodoImageUploader({
-    textarea: todoBody as HTMLTextAreaElement,
-    getContext: () => todoImageContext,
-    onPendingChange: updateTodoSaveLock,
-  });
-  todoImageUploader.attach();
-  const button = document.getElementById("todoBodyInsertImage") as HTMLButtonElement | null;
-  const input = document.getElementById("todoBodyImageInput") as HTMLInputElement | null;
-  button?.addEventListener("click", () => input?.click());
-  input?.addEventListener("change", () => {
-    if (input.files && input.files.length > 0) {
-      todoImageUploader?.pickFiles(input.files);
-    }
-    input.value = "";
-  });
+  if (!todoEditorImageUploader && todoNotesEditor) {
+    todoEditorImageUploader = createTodoImageUploader({
+      target: todoNotesEditor.uploadTarget,
+      getContext: () => (todoNotesVisual ? todoImageContext : null),
+      onPendingChange: updateTodoSaveLock,
+    });
+    todoNotesEditor.setUploadHandlers(todoEditorImageUploader);
+  }
+}
+
+function abortTodoImageUploads(): void {
+  todoImageUploader?.abortAll();
+  todoEditorImageUploader?.abortAll();
 }
 
 function configureTodoImageUploads(context: ImageUploadContext | null): void {
   ensureTodoImageUploader();
-  todoImageUploader?.abortAll();
+  abortTodoImageUploads();
   todoImageContext = context;
-  const button = document.getElementById("todoBodyInsertImage") as HTMLButtonElement | null;
-  if (button) {
-    button.hidden = context === null;
-  }
 }
 
 // releaseTodoNotesPreview drops the hidden preview DOM and releases any server resources (for
@@ -355,7 +419,7 @@ function readTodoDialogSnapshot(): TodoDialogSnapshot {
   const sprint = document.getElementById("todoSprint") as HTMLSelectElement | null;
   return {
     title: (todoTitle as HTMLInputElement | null)?.value ?? "",
-    body: (todoBody as HTMLTextAreaElement | null)?.value ?? "",
+    body: getTodoNotesValue(),
     tags: getTagsFromChips(),
     status: (todoStatus as HTMLSelectElement | null)?.value ?? "",
     estimation: (todoEstimationPoints as HTMLSelectElement | null)?.value ?? "",
@@ -468,9 +532,11 @@ function bindTodoDialogCloseGuards(): void {
   });
 
   (todoDialog as HTMLDialogElement).addEventListener("close", () => {
-    todoImageUploader?.abortAll();
+    abortTodoImageUploads();
     todoImageContext = null;
     releaseTodoNotesPreview();
+    // Releases the editor's image files (native handles on Android) right away.
+    todoNotesEditor?.clear();
     resetTodoDialogCloseState();
   });
 }
@@ -733,7 +799,7 @@ export async function openTodoDialog(opts: {
   if (mode === "create") {
     setTodoDialogTitleKey("todo.dialog.title.new");
     (todoTitle as HTMLInputElement).value = normalizeSeedTitle(opts.initialTitle);
-    (todoBody as HTMLTextAreaElement).value = "";
+    loadTodoNotes("", !permissions.canEditNotes);
     (todoTags as HTMLInputElement).value = "";
     const initialKey = resolveColumnKey(status);
     const selected = populateTodoStatusOptions(initialKey);
@@ -750,7 +816,7 @@ export async function openTodoDialog(opts: {
   } else {
     setTodoDialogTitleKey(isArchived ? "todo.dialog.title.archived" : permissions.canSubmitTodo ? "todo.dialog.title.edit" : "todo.dialog.title.view");
     (todoTitle as HTMLInputElement).value = todo.title || "";
-    (todoBody as HTMLTextAreaElement).value = todo.body || "";
+    loadTodoNotes(todo.body || "", !permissions.canEditNotes);
     (todoTags as HTMLInputElement).value = "";
     const initialKey = resolveColumnKey(todo.columnKey || todo.status);
     const selected = populateTodoStatusOptions(initialKey);
@@ -811,7 +877,6 @@ export async function openTodoDialog(opts: {
   const tagInput = document.getElementById("todoTags") as HTMLInputElement | null;
   if (tagInput) tagInput.disabled = !permissions.canEditTags;
   if (addTagBtn) (addTagBtn as HTMLButtonElement).disabled = !permissions.canEditTags;
-  (todoBody as HTMLTextAreaElement).readOnly = !permissions.canEditNotes;
   (todoTitle as HTMLInputElement).readOnly = !permissions.canEditTitle;
   (todoStatus as HTMLSelectElement).disabled = !permissions.canEditStatus;
   const saveTodoBtn = document.getElementById("saveTodoBtn") as HTMLButtonElement | null;

@@ -5,6 +5,7 @@ import {
 } from "./mermaid-semantic-edges.js";
 import { hasI18nKey, t } from "./i18n/index.js";
 import { getAppRuntime } from "./platform/runtime.js";
+import { CANONICAL_ASSET_PATH_RE, MAX_NOTE_IMAGES, parseImageAlt, type MarkdownBlockToken } from "./note-images.js";
 import type { AcquiredServerResource } from "./platform/server-transport.js";
 import { escapeHTML } from "./utils.js";
 
@@ -39,10 +40,9 @@ const MERMAID_MAX_CHARS_PER_BLOCK = 4_000;
 const MERMAID_MAX_TOTAL_CHARS_PER_PREVIEW = 8_000;
 const MERMAID_DIRECTIVE_BLOCK_RE = /%%\{[\s\S]*?\}%%/g;
 const IMAGE_PLACEHOLDER_PREFIX = "__SCRUMBOY_IMAGE__";
-// The only image destination that renders: a Scrumboy-managed asset. Must match the server rule
-// in internal/assetrefs (lowercase canonical UUIDv4, no query, fragment or host).
-const CANONICAL_ASSET_SRC_RE = /^\/api\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const MAX_IMAGES_PER_PREVIEW = 50;
+// The only image destination that renders: a Scrumboy-managed asset (see note-images.ts).
+const CANONICAL_ASSET_SRC_RE = CANONICAL_ASSET_PATH_RE;
+const MAX_IMAGES_PER_PREVIEW = MAX_NOTE_IMAGES;
 const IMAGE_ACQUIRE_CONCURRENCY = 4;
 
 function previewText(key: string, fallback: string, values: Record<string, string | number> = {}): string {
@@ -59,6 +59,7 @@ type PreviewImage = {
   path: string;
   alt: string;
   title: string;
+  width: number | null;
 };
 
 type PreviewResources = {
@@ -228,11 +229,13 @@ function renderMarkdownHtml(
         return renderImageTokenAsText(token);
       }
       const placeholder = `${IMAGE_PLACEHOLDER_PREFIX}${placeholderNonce}_${images.length}__`;
+      const { alt, width } = parseImageAlt(String(token?.content ?? ""));
       images.push({
         placeholder,
         path: src,
-        alt: String(token?.content ?? ""),
+        alt,
         title: String(token?.attrGet?.("title") ?? ""),
+        width,
       });
       return `<code>${escapeHTML(placeholder)}</code>`;
     };
@@ -534,6 +537,11 @@ function loadMermaid(): Promise<MermaidInstance> {
   return mermaidLoadPromise;
 }
 
+/** Block tokens for note text, parsed exactly as the preview parses it. */
+export function parseNoteMarkdownTokens(markdown: string): MarkdownBlockToken[] {
+  return getMarkdownRenderer().parse(markdown, {});
+}
+
 export function renderMarkdownToSafeHtml(markdown: string): string {
   const { html } = renderMarkdownHtml(markdown, false);
   return sanitizeMarkdownHtml(html);
@@ -606,6 +614,11 @@ function materializeImagePlaceholders(container: HTMLElement, images: PreviewIma
     const img = document.createElement("img");
     img.className = "todo-notes-image__img";
     img.alt = image.alt;
+    if (image.width != null) {
+      // Stored widths are bounded by parseImageAlt; CSS still caps them at the container width.
+      wrapper.classList.add("todo-notes-image--sized");
+      img.style.width = `${image.width}px`;
+    }
     if (image.title) {
       img.title = image.title;
     }

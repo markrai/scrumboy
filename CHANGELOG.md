@@ -2,6 +2,35 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.39.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [Unreleased]
+
+### Changed
+
+- **Edit note images in place** - Pasted or dropped images now appear right
+  where they were inserted in the notes editor, instead of as Markdown text
+  that only renders in Preview. New images show at most 320x240 px (never
+  enlarged). Click or tap an image to select it: the outline and the two
+  corner handles fit the image itself. Drag a corner handle (diagonal resize
+  cursor) to resize it proportionally (or press **+**/**-**, and **0** for the
+  default size); press
+  Delete or Backspace to remove it; Escape deselects; undo and redo work as
+  usual. The notes stay Markdown: a resized image stores its width in the alt
+  text, as in `![screenshot|480](/api/assets/{uuid})`, and nothing else in the
+  note changes, including its line endings (CRLF, LF or mixed). Pasting an
+  image over selected text replaces the text only once the image has
+  uploaded, so a failed or cancelled upload leaves the note as it was. Widths
+  carry over to Preview, read-only and public story
+  dialogs, and `.sbz` exports and imports; older versions show such images at
+  their natural size. Removing an image from a note does not delete the stored
+  file immediately (unused files are still cleaned up after about 7 days).
+  See `docs/inline-images.md`.
+- **Image button removed** - Images are added by pasting or dropping them
+  into the notes. The separate **image** button and its file chooser are gone,
+  including in the Android app, where images can only be pasted.
+- The notes editor is CodeMirror 6 (bundled as `vendor/codemirror.min.js`,
+  about 85 KB gzipped) whenever inline images are enabled. With inline images
+  or Markdown notes off, the notes field is the plain textarea as before.
+
 ## [3.39.0] - 2026-10-22
 
 ### Added

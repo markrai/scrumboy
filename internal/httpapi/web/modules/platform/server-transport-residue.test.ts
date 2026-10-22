@@ -45,6 +45,7 @@ describe('server transport residue', () => {
   it('uses only asynchronous acquired resources for authenticated display URLs', () => {
     expect(locationsFor(/\bresourceUrl\b/g)).toEqual([]);
     expect(locationsFor(/\bacquireResource\s*\(/g).map((location) => location.split(':')[0])).toEqual([
+      'dialogs/todo-notes-editor.ts',
       'markdown-preview.ts',
       'platform/browser-server-transport.ts',
       'platform/runtime.ts',

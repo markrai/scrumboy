@@ -140,16 +140,16 @@
 
         <div class="field todo-notes-field">
           <div class="field__label-row">
-            <label class="field__label" for="todoBody" data-i18n-text="todo.fields.notes">Notes</label>
+            <label class="field__label" for="todoBody" id="todoBodyLabel" data-i18n-text="todo.fields.notes">Notes</label>
             <div class="todo-notes-tabs" id="todoBodyToggle" hidden role="tablist" aria-label="Notes editor mode" data-i18n-aria-label="todo.notes.modeLabel">
               <button class="todo-notes-tab is-active" type="button" id="todoBodyWriteTab" role="tab" aria-pressed="true" data-i18n-text="todo.notes.markdown">markdown</button>
               <button class="todo-notes-tab" type="button" id="todoBodyPreviewTab" role="tab" aria-pressed="false" data-i18n-text="todo.notes.preview">preview</button>
             </div>
-            <button class="todo-notes-tab todo-notes-insert-image" type="button" id="todoBodyInsertImage" hidden data-i18n-text="todo.images.insert" data-i18n-aria-label="todo.images.insertLabel" aria-label="Insert image">image</button>
-            <input type="file" id="todoBodyImageInput" accept="image/png,image/jpeg,image/gif" multiple hidden />
           </div>
           <div class="todo-notes-editor">
             <textarea class="textarea todo-notes-input" id="todoBody" name="body" rows="6" maxlength="20000"></textarea>
+            <div class="todo-notes-input todo-notes-visual" id="todoBodyEditor" hidden></div>
+            <div class="todo-notes-status" id="todoBodyEditorStatus" role="status" aria-live="polite"></div>
             <div class="todo-markdown-preview todo-notes-input" id="todoBodyPreview" hidden aria-live="polite"></div>
           </div>
         </div>
@@ -311,6 +311,7 @@
     <script src="/vendor/uplot.min.js"></script>
     <script src="/vendor/markdown-it.min.js"></script>
     <script src="/vendor/purify.min.js"></script>
+    <script src="/vendor/codemirror.min.js"></script>
     <link rel="stylesheet" href="/vendor/uplot.min.css">
     <script type="module" src="/app.js?v={{VERSION}}"></script>
   </body>

@@ -16,12 +16,37 @@ type UploadResponse = { assetId: string; url: string };
 
 type PendingUpload = { id: string; controller: AbortController };
 
-export type TodoImageUploader = {
+/** What an upload reserves: its batch (one paste or drop), its index there, and its text size. */
+export type UploadReservation = { batch: string; index: number; length: number };
+
+/**
+ * Where uploaded images are written: the notes textarea, or the visual notes editor. begin
+ * reserves the insertion point (false when the notes cannot fit another image); finish replaces
+ * the reservation with the image's Markdown, or drops it when markdown is null. finish returns
+ * false only when the notes became too long for the Markdown (the reservation is then dropped).
+ */
+export type ImageUploadTarget = {
+  readonly element: HTMLElement;
+  isReadOnly(): boolean;
+  begin(id: string, reservation: UploadReservation): boolean;
+  finish(id: string, markdown: string | null): boolean;
+  setDropTarget(active: boolean): void;
+};
+
+/** Event handlers, for a target that routes paste and drop events itself (the visual editor). */
+export type ImageUploadHandlers = {
+  handlePaste(event: ClipboardEvent): boolean;
+  handleDragOver(event: DragEvent): boolean;
+  handleDragLeave(): void;
+  handleDrop(event: DragEvent): boolean;
+};
+
+export type TodoImageUploader = ImageUploadHandlers & {
+  /** Listens for paste and drop on the target element (used by the textarea target). */
   attach(): void;
   detach(): void;
   abortAll(): void;
   pending(): number;
-  pickFiles(files: FileList | File[]): void;
 };
 
 function message(key: string, fallback: string, values: Record<string, string | number> = {}): string {
@@ -39,11 +64,14 @@ function uploadId(): string {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 }
 
-/** Alt text from the filename: no extension, no Markdown-breaking characters, bounded length. */
+/**
+ * Alt text from the filename: no extension, no Markdown-breaking characters, bounded length.
+ * "|" is removed too, so a filename can never look like a stored display width.
+ */
 export function altTextForFile(name: string): string {
   const base = name.replace(/\.[^.]*$/, "");
   const cleaned = base
-    .replace(/[\u0000-\u001f\u007f[\]()\\]/g, " ")
+    .replace(/[\u0000-\u001f\u007f[\]()\\|`]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, MAX_ALT_LENGTH)
@@ -74,16 +102,75 @@ function isAbort(err: any): boolean {
   return err?.name === "AbortError";
 }
 
+function placeholderFor(id: string): string {
+  return `![${message("todo.images.uploadPlaceholder", "Uploading image…")}](${PLACEHOLDER_SCHEME}${id})`;
+}
+
 /**
- * Handles image paste, drop and picker uploads for the notes textarea. Each upload inserts a
- * unique placeholder that is replaced with canonical Markdown on success or removed on failure.
+ * The textarea target: each upload inserts a unique placeholder line at the caret (in place of
+ * any selected text), replaced with the image's Markdown on success. On failure the placeholder
+ * is removed and the text it replaced is put back, keeping the caret stable.
+ */
+export function createTextareaUploadTarget(textarea: HTMLTextAreaElement): ImageUploadTarget {
+  const dispatchInput = () => textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  const replacedText = new Map<string, string>();
+  return {
+    element: textarea,
+    isReadOnly: () => textarea.readOnly,
+    begin(id) {
+      const placeholder = placeholderFor(id);
+      const max = textarea.maxLength > 0 ? textarea.maxLength : Infinity;
+      if (textarea.value.length + placeholder.length + 2 > max) {
+        return false;
+      }
+      const start = textarea.selectionStart ?? textarea.value.length;
+      const end = textarea.selectionEnd ?? start;
+      if (end > start) replacedText.set(id, textarea.value.slice(start, end));
+      textarea.setRangeText(placeholder + "\n", start, end, "end");
+      dispatchInput();
+      return true;
+    },
+    finish(id, markdown) {
+      const restored = replacedText.get(id) ?? "";
+      replacedText.delete(id);
+      const replacement = markdown ?? restored;
+      const placeholder = placeholderFor(id);
+      const value = textarea.value;
+      const start = value.indexOf(placeholder);
+      if (start < 0) {
+        // The user removed the placeholder: nothing to insert, and nothing went wrong.
+        return true;
+      }
+      let end = start + placeholder.length;
+      if (markdown === null && value[end] === "\n") {
+        end += 1;
+      }
+      const selStart = textarea.selectionStart;
+      const selEnd = textarea.selectionEnd;
+      const delta = replacement.length - (end - start);
+      textarea.value = value.slice(0, start) + replacement + value.slice(end);
+      const shift = (pos: number) => (pos >= end ? pos + delta : Math.min(pos, start + replacement.length));
+      textarea.setSelectionRange(shift(selStart), shift(selEnd));
+      dispatchInput();
+      return true;
+    },
+    setDropTarget(active) {
+      textarea.classList.toggle("todo-notes-input--drop-target", active);
+    },
+  };
+}
+
+/**
+ * Handles image paste and drop uploads for the notes. Each upload reserves its place in the
+ * target, which receives the image's canonical Markdown on success; failures remove it.
  */
 export function createTodoImageUploader(opts: {
-  textarea: HTMLTextAreaElement;
+  target?: ImageUploadTarget;
+  textarea?: HTMLTextAreaElement;
   getContext: () => ImageUploadContext | null;
   onPendingChange: (pending: number, total: number) => void;
 }): TodoImageUploader {
-  const { textarea } = opts;
+  const target = opts.target ?? createTextareaUploadTarget(opts.textarea as HTMLTextAreaElement);
   const inflight = new Map<string, PendingUpload>();
   let batchTotal = 0;
   let attached = false;
@@ -95,46 +182,17 @@ export function createTodoImageUploader(opts: {
     opts.onPendingChange(inflight.size, batchTotal);
   };
 
-  const placeholderFor = (id: string) =>
-    `![${message("todo.images.uploadPlaceholder", "Uploading image…")}](${PLACEHOLDER_SCHEME}${id})`;
+  const notesFull = () => showToast(message("todo.images.notesFull", "The notes are too long to add another image."));
 
-  const dispatchInput = () => textarea.dispatchEvent(new Event("input", { bubbles: true }));
-
-  // replacePlaceholder swaps the placeholder line (found by its unique id) for replacement,
-  // keeping the caret stable. Returns false if the user removed the placeholder.
-  const replacePlaceholder = (id: string, replacement: string): boolean => {
-    const placeholder = placeholderFor(id);
-    const value = textarea.value;
-    const start = value.indexOf(placeholder);
-    if (start < 0) {
-      return false;
-    }
-    let end = start + placeholder.length;
-    if (replacement === "" && value[end] === "\n") {
-      end += 1;
-    }
-    const selStart = textarea.selectionStart;
-    const selEnd = textarea.selectionEnd;
-    const delta = replacement.length - (end - start);
-    textarea.value = value.slice(0, start) + replacement + value.slice(end);
-    const shift = (pos: number) => (pos >= end ? pos + delta : Math.min(pos, start + replacement.length));
-    textarea.setSelectionRange(shift(selStart), shift(selEnd));
-    dispatchInput();
-    return true;
-  };
-
-  const startUpload = (file: File, ctx: ImageUploadContext) => {
+  const startUpload = (file: File, ctx: ImageUploadContext, batch: string, index: number) => {
     const id = uploadId();
-    const placeholder = placeholderFor(id);
-    const max = textarea.maxLength > 0 ? textarea.maxLength : Infinity;
-    if (textarea.value.length + placeholder.length + 2 > max) {
-      showToast(message("todo.images.notesFull", "The notes are too long to add another image."));
+    const alt = altTextForFile(file.name || "");
+    // The final Markdown, ![alt](/api/assets/<36-character id>), plus line breaks around it.
+    const length = alt.length + "![]()".length + "/api/assets/".length + 36 + 2;
+    if (!target.begin(id, { batch, index, length })) {
+      notesFull();
       return;
     }
-    const start = textarea.selectionStart ?? textarea.value.length;
-    const end = textarea.selectionEnd ?? start;
-    textarea.setRangeText(placeholder + "\n", start, end, "end");
-    dispatchInput();
 
     const controller = new AbortController();
     inflight.set(id, { id, controller });
@@ -144,20 +202,20 @@ export function createTodoImageUploader(opts: {
     const form = new FormData();
     form.append("file", file, file.name || "image");
     const query = ctx.todoLocalId != null ? `?todo=${encodeURIComponent(String(ctx.todoLocalId))}` : "";
-    const alt = altTextForFile(file.name || "");
     apiFetchForm<UploadResponse>(`/api/board/${encodeURIComponent(ctx.slug)}/assets${query}`, form, { signal: controller.signal })
       .then((res) => {
         if (!inflight.has(id)) {
           return;
         }
-        replacePlaceholder(id, `![${alt}](${res.url})`);
+        if (!target.finish(id, `![${alt}](${res.url})`)) {
+          notesFull();
+        }
       })
       .catch((err) => {
+        target.finish(id, null);
         if (isAbort(err) || controller.signal.aborted) {
-          replacePlaceholder(id, "");
           return;
         }
-        replacePlaceholder(id, "");
         showToast(uploadErrorMessage(err));
       })
       .finally(() => {
@@ -168,12 +226,14 @@ export function createTodoImageUploader(opts: {
 
   const uploadFiles = (files: File[]) => {
     const ctx = opts.getContext();
-    if (!ctx || textarea.readOnly) {
+    if (!ctx || target.isReadOnly()) {
       return;
     }
     if (files.length > MAX_FILES_PER_ACTION) {
       showToast(message("todo.images.tooMany", `You can add up to ${MAX_FILES_PER_ACTION} images at a time.`, { count: MAX_FILES_PER_ACTION }));
     }
+    const batch = uploadId();
+    let index = 0;
     for (const file of files.slice(0, MAX_FILES_PER_ACTION)) {
       if (!isAcceptedImage(file)) {
         showToast(message("todo.images.unsupported", "Only PNG, JPEG and GIF images are supported."));
@@ -183,60 +243,72 @@ export function createTodoImageUploader(opts: {
         showToast(message("todo.images.tooLarge", "Image is too large (max 10 MB)."));
         continue;
       }
-      startUpload(file, ctx);
+      startUpload(file, ctx, batch, index);
+      index += 1;
     }
   };
 
-  const onPaste = (event: ClipboardEvent) => {
-    if (textarea.readOnly || !opts.getContext()) return;
+  const handlePaste = (event: ClipboardEvent): boolean => {
+    if (target.isReadOnly() || !opts.getContext()) return false;
     const data = event.clipboardData;
-    if (!data) return;
+    if (!data) return false;
     const images = Array.from(data.files ?? []).filter(isAcceptedImage);
     // Text plus an image (for example a spreadsheet copy) pastes as text, as the user expects.
-    if (images.length === 0 || (data.getData("text/plain") || "").trim() !== "") return;
+    if (images.length === 0 || (data.getData("text/plain") || "").trim() !== "") return false;
     event.preventDefault();
     uploadFiles(images);
+    return true;
   };
 
-  const hasImageFiles = (dt: DataTransfer | null): File[] => {
+  const imageFiles = (dt: DataTransfer | null): File[] => {
     if (!dt || !Array.from(dt.types ?? []).includes("Files")) return [];
     return Array.from(dt.files ?? []).filter(isAcceptedImage);
   };
 
-  const onDragOver = (event: DragEvent) => {
-    if (textarea.readOnly || !opts.getContext()) return;
-    if (!Array.from(event.dataTransfer?.types ?? []).includes("Files")) return;
+  const handleDragOver = (event: DragEvent): boolean => {
+    if (target.isReadOnly() || !opts.getContext()) return false;
+    if (!Array.from(event.dataTransfer?.types ?? []).includes("Files")) return false;
     event.preventDefault();
-    textarea.classList.add("todo-notes-input--drop-target");
+    target.setDropTarget(true);
+    return true;
   };
 
-  const onDragLeave = () => textarea.classList.remove("todo-notes-input--drop-target");
+  const handleDragLeave = () => target.setDropTarget(false);
 
-  const onDrop = (event: DragEvent) => {
-    textarea.classList.remove("todo-notes-input--drop-target");
-    if (textarea.readOnly || !opts.getContext()) return;
-    const images = hasImageFiles(event.dataTransfer);
-    if (images.length === 0) return;
+  const handleDrop = (event: DragEvent): boolean => {
+    target.setDropTarget(false);
+    if (target.isReadOnly() || !opts.getContext()) return false;
+    const images = imageFiles(event.dataTransfer);
+    if (images.length === 0) return false;
     event.preventDefault();
     uploadFiles(images);
+    return true;
   };
 
+  const onPaste = (event: ClipboardEvent) => void handlePaste(event);
+  const onDragOver = (event: DragEvent) => void handleDragOver(event);
+  const onDrop = (event: DragEvent) => void handleDrop(event);
+
   return {
+    handlePaste,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
     attach() {
       if (attached) return;
       attached = true;
-      textarea.addEventListener("paste", onPaste);
-      textarea.addEventListener("dragover", onDragOver);
-      textarea.addEventListener("dragleave", onDragLeave);
-      textarea.addEventListener("drop", onDrop);
+      target.element.addEventListener("paste", onPaste);
+      target.element.addEventListener("dragover", onDragOver);
+      target.element.addEventListener("dragleave", handleDragLeave);
+      target.element.addEventListener("drop", onDrop);
     },
     detach() {
       if (!attached) return;
       attached = false;
-      textarea.removeEventListener("paste", onPaste);
-      textarea.removeEventListener("dragover", onDragOver);
-      textarea.removeEventListener("dragleave", onDragLeave);
-      textarea.removeEventListener("drop", onDrop);
+      target.element.removeEventListener("paste", onPaste);
+      target.element.removeEventListener("dragover", onDragOver);
+      target.element.removeEventListener("dragleave", handleDragLeave);
+      target.element.removeEventListener("drop", onDrop);
     },
     abortAll() {
       for (const upload of Array.from(inflight.values())) {
@@ -245,9 +317,6 @@ export function createTodoImageUploader(opts: {
     },
     pending() {
       return inflight.size;
-    },
-    pickFiles(files: FileList | File[]) {
-      uploadFiles(Array.from(files));
     },
   };
 }

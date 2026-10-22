@@ -124,6 +124,7 @@ vi.mock("../dist/dialogs/todo.js", () => ({
   getTodoFormPermissions: vi.fn(() => ({ canSubmitTodo: true })),
   requestTodoDialogClose: vi.fn().mockResolvedValue(true),
   isTodoImageUploadPending: vi.fn(() => false),
+  getTodoNotesValue: vi.fn(() => (document.getElementById("todoBody") as HTMLTextAreaElement | null)?.value ?? ""),
 }));
 
 vi.mock("../dist/dialogs/todo-submit.js", () => ({

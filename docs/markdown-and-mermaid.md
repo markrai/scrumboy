@@ -12,7 +12,7 @@ For operator setup, see [`FAQ.md`](../FAQ.md). This document describes architect
 |----------|----------------|
 | **markdown** / **preview** tabs in the Edit/New Todo dialog (`#todoBody`, `#todoBodyPreview`) | Rendering Markdown on the board, dashboard, or notifications |
 | Preview of `todos.body` when the user opens the **preview** tab | Server-side Markdown → HTML conversion |
-| Sanitized HTML in the preview pane only | WYSIWYG editing (Notes stay a `<textarea>`) |
+| Sanitized HTML in the preview pane only | WYSIWYG editing: notes are edited as Markdown text; only Scrumboy images are shown in place ([inline-images.md](inline-images.md)) |
 | Optional Mermaid rendering for fenced ` ```mermaid ` blocks in the preview pane only | Rendering Mermaid on cards, notifications, exports, or any server path |
 | Raw Markdown persisted on create/patch | Raw HTML, external images, or non-http(s) links in preview |
 | Scrumboy-managed images (`/api/assets/{uuid}`) when inline images are enabled ([inline-images.md](inline-images.md)) | Any other image source |
@@ -41,7 +41,7 @@ There is **no per-project** or per-user toggle; it is instance-wide.
 ## Data flow
 
 ```
-User edits textarea (#todoBody)
+User edits #todoBody (textarea), or the visual notes editor (#todoBodyEditor) when inline images are on
         │
         ▼
 Create/Patch API ──► todos.body (raw Markdown string, unchanged)
@@ -69,13 +69,15 @@ renderMarkdownPreviewInto()
 ### DOM (`internal/httpapi/web/index.html`)
 
 - **Label row:** `Notes` label and `#todoBodyToggle` (tab list: `#todoBodyWriteTab`, `#todoBodyPreviewTab`).
-- **Editor:** `#todoBody` (textarea) and `#todoBodyPreview` (preview `div`) inside `.todo-notes-editor`.
+- **Editor:** `#todoBody` (textarea), `#todoBodyEditor` (visual notes editor) and `#todoBodyPreview` (preview `div`) inside `.todo-notes-editor`.
+- **Visual notes editor** (`modules/dialogs/todo-notes-editor.ts`, used when inline images are enabled and `/vendor/codemirror.min.js` loaded): a CodeMirror 6 Markdown source editor. Image references found by `modules/note-images.ts` (only where markdown-it, with the preview's configuration, also sees an image) are replaced by atomic image widgets built in code; their files come from `ServerTransport.acquireResource()` and are released when no widget shows them (after 30 s) and immediately when the dialog closes. The note text is the editor document, so the saved body is exactly the loaded text until it is edited. Otherwise the textarea is used, unchanged.
 - Tabs are hidden when `markdownNotesEnabled` is false (`hidden` on `#todoBodyToggle`).
 
 ### Todo dialog (`modules/dialogs/todo.ts`)
 
 - **`todoNotesMode`:** `"markdown"` | `"preview"`.
-- **`syncTodoNotesModeUI()`:** toggles `hidden` on textarea vs preview, `is-active` / `aria-pressed` on tabs.
+- **`syncTodoNotesModeUI()`:** toggles `hidden` on the editor in use (textarea or visual editor) vs preview, `is-active` / `aria-pressed` on tabs.
+- **`getTodoNotesValue()`:** the body to save, from whichever editor is in use (`app.js` submit and the close guard use it).
 - **`renderTodoNotesPreview()`:** calls `renderMarkdownPreviewInto`; on vendor/render failure, shows a toast and falls back to markdown mode.
 - **`input` listener:** re-renders preview live while the preview tab is active; stale async Mermaid renders are cancelled by container-scoped render epochs.
 
@@ -219,7 +221,9 @@ npm run verify:vendor
 | `internal/httpapi/routing_auth_markdown_test.go` | `markdownNotesEnabled` and `mermaidNotesEnabled` on auth status |
 | `modules/markdown-preview.test.ts` | Supported subset, links, HTML/images neutralization, Mermaid fences, placeholder spoofing regression, full directive stripping, preview-size limits, async rerender cancellation |
 | `modules/dialogs/todo-markdown-preview.test.ts` | Dialog gating, preview vs textarea, raw body on save, preview resource release |
-| `modules/markdown-preview-images.test.ts` | Inline images: canonical-only rendering, placeholder spoofing, sanitizer unchanged, acquire/release lifecycle, stale renders, Go/markdown-it parity fixtures |
+| `modules/markdown-preview-images.test.ts` | Inline images: canonical-only rendering, placeholder spoofing, sanitizer unchanged, acquire/release lifecycle, stale renders, stored display widths, Go/markdown-it parity fixtures |
+| `modules/note-images.test.ts` | Width suffix grammar; which references the visual editor shows (code, escapes, containers, tables); parity with the Go extractor fixtures |
+| `modules/dialogs/todo-notes-editor.test.ts` | Visual editor with real CodeMirror: exact text round trip (CRLF, LF, lone CR and mixed line endings kept through edits, including randomized edits; Unicode), selection, delete, undo/redo, keyboard resize, upload reservations and order, selected text replaced only on upload success (failure, cancellation, concurrent uploads, edits during upload), read-only, resource release |
 | `modules/dialogs/todo-submit.test.ts` | API payloads keep raw Markdown / raw note bodies |
 | `modules/views/board-rendering.test.ts` | Card titles do not render note Markdown or Mermaid |
 
