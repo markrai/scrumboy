@@ -102,6 +102,9 @@ func TestDockerComposeForwardsPublicBoardFeatureFlags(t *testing.T) {
 		"SCRUMBOY_MODE=${SCRUMBOY_MODE:-full}",
 		"SCRUMBOY_PUBLIC_PROJECTS_ENABLED=${SCRUMBOY_PUBLIC_PROJECTS_ENABLED:-}",
 		"SCRUMBOY_LANDING_PAGE_ENABLED=${SCRUMBOY_LANDING_PAGE_ENABLED:-}",
+		"SCRUMBOY_MARKDOWN_NOTES_ENABLED=${SCRUMBOY_MARKDOWN_NOTES_ENABLED:-}",
+		"SCRUMBOY_MERMAID_NOTES_ENABLED=${SCRUMBOY_MERMAID_NOTES_ENABLED:-}",
+		"SCRUMBOY_INLINE_IMAGES_ENABLED=${SCRUMBOY_INLINE_IMAGES_ENABLED:-}",
 	} {
 		if strings.Count(compose, want) != 1 {
 			t.Fatalf("docker-compose.yml count for %q = %d, want 1", want, strings.Count(compose, want))

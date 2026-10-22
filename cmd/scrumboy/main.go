@@ -34,6 +34,9 @@ func main() {
 	cfg := config.FromEnv()
 
 	logger := log.New(os.Stdout, "", log.LstdFlags)
+	for _, w := range cfg.Warnings {
+		logger.Printf("warning: config: %s", w)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "recover-owner" {
 		if err := runRecoverOwner(cfg, os.Args[2:], os.Stdin, os.Stdout); err != nil {
 			logger.Printf("recover-owner failed: %v", err)
@@ -150,16 +153,12 @@ func main() {
 		Blobs:       assetBlobs,
 		Pending:     assetPending,
 		Logger:      logger,
-		FlagEnabled: cfg.InlineImagesEnabled,
+		FlagEnabled: cfg.InlineImagesActive(),
 		Reaper:      st,
 		DataDir:     cfg.DataDir,
 	})
-	if cfg.InlineImagesEnabled {
-		if !cfg.MarkdownNotesEnabled || cfg.ScrumboyMode != "full" {
-			logger.Printf("inline images: SCRUMBOY_INLINE_IMAGES_ENABLED is set but inactive (requires full mode and SCRUMBOY_MARKDOWN_NOTES_ENABLED)")
-		} else {
-			logger.Printf("inline images: enabled (assets in %s)", assetBlobs.Root())
-		}
+	if cfg.InlineImagesActive() {
+		logger.Printf("inline images: enabled (assets in %s)", assetBlobs.Root())
 		if cfg.AssetProjectBudgetBytes == 0 || cfg.AssetInstanceBudgetBytes == 0 {
 			logger.Printf("warning: inline images storage budget disabled (SCRUMBOY_ASSET_*_BUDGET_MB=0)")
 		}

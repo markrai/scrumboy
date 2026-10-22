@@ -1,13 +1,13 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.39.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
-## [Unreleased]
+## [3.39.0] - 2026-10-22
 
 ### Added
 
-- **Images in story notes (opt-in)** - With `SCRUMBOY_INLINE_IMAGES_ENABLED=1`
-  (Full Mode, Markdown notes on), editors can paste screenshots, drag image
+- **Images in story notes** - In Full Mode with Markdown notes on (both the
+  default, see **Changed**), editors can paste screenshots, drag image
   files onto the notes box, or use the new **image** button. PNG (including
   APNG), JPEG and GIF up to 10 MB are stored under `DATA_DIR/assets/` and
   referenced as `![alt](/api/assets/{uuid})`. Pixels are not re-encoded;
@@ -32,12 +32,36 @@
 
 ### Changed
 
+- **Markdown preview, Mermaid diagrams and inline images are now on by default
+  in Full Mode** - Fresh Full Mode installations get all three without any
+  configuration. Existing installations that upgrade with
+  `SCRUMBOY_MARKDOWN_NOTES_ENABLED`, `SCRUMBOY_MERMAID_NOTES_ENABLED` and
+  `SCRUMBOY_INLINE_IMAGES_ENABLED` unset gain them too. Installations with an
+  explicit `=0` (or `false`/`off`/`no`) keep that feature off.
+  - Each feature can be turned off independently with its variable. Mermaid
+    and inline images depend on Markdown, so `SCRUMBOY_MARKDOWN_NOTES_ENABLED=0`
+    turns off all three. An unrecognized value turns that feature off and logs
+    a startup warning.
+  - Existing story notes are not migrated or rewritten by this change.
+  - Image files are stored under `DATA_DIR/assets/` and must be included in
+    instance-level backups. Exports of projects whose stories embed images are
+    `.sbz` archives instead of JSON.
+  - Other restrictions are unchanged: images are never available on temporary
+    boards or in Anonymous Mode, and the Android app still cannot export or
+    import image backups. In Anonymous Mode, Markdown preview and Mermaid now
+    also default on.
+  - `scrumboy.env.example` leaves the three variables commented out, and the
+    stock `docker-compose.yml` forwards them so they can be set to `0`.
 - **Crashed Replace imports are cleaned up on restart** - Invisible staging
   projects left by an interrupted Replace import (and their image files) are
   removed after the next restart, whether or not inline images are enabled.
 
 ### Upgrade notes
 
+- Markdown preview, Mermaid and inline images turn on at upgrade unless the
+  instance sets them to `0` (see **Changed**). Before upgrading, check that
+  backups cover `DATA_DIR/assets/` and that the reverse-proxy limits below are
+  in place, or set `SCRUMBOY_INLINE_IMAGES_ENABLED=0`.
 - Migration `078` adds the `project_assets` and `todo_assets` tables (additive;
   applied automatically). Older binaries can run against the upgraded database,
   but image references edited while downgraded are re-checked on the next start.

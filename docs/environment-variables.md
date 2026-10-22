@@ -70,9 +70,9 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `SCRUMBOY_WALL_ENABLED`           | on (unset/empty) | Optional  | Sticky-note wall; opt out with `0`/`false`/`off`/`no`          |
 | `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Publication management plus read-only `/api/public/board/{slug}` routes and their content-free event stream in Full Mode |
 | `SCRUMBOY_LANDING_PAGE_ENABLED`    | off              | Optional  | Full Mode marketing landing at `/`; workspace at `/_app`; board URLs unchanged    |
-| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | off              | Optional  | Todo notes Markdown preview; opt in with `1`/`true`/`on`/`yes` |
-| `SCRUMBOY_MERMAID_NOTES_ENABLED`  | off              | Optional  | Mermaid in notes preview; requires Markdown notes enabled      |
-| `SCRUMBOY_INLINE_IMAGES_ENABLED`  | off              | Optional  | Images in story notes (paste/drop/upload); requires Markdown notes and Full Mode |
+| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | on (unset/empty) | Optional  | Todo notes Markdown preview; opt out with `0`/`false`/`off`/`no` |
+| `SCRUMBOY_MERMAID_NOTES_ENABLED`  | on (unset/empty) | Optional  | Mermaid in notes preview; requires Markdown notes enabled      |
+| `SCRUMBOY_INLINE_IMAGES_ENABLED`  | on (unset/empty) | Optional  | Images in story notes (paste/drop/upload); requires Markdown notes and Full Mode |
 | `SCRUMBOY_ASSET_PROJECT_BUDGET_MB` | 1024            | Optional  | Note-image storage budget per project, MiB (`0` disables)      |
 | `SCRUMBOY_ASSET_INSTANCE_BUDGET_MB` | 10240          | Optional  | Note-image storage budget per instance, MiB (`0` disables)     |
 
@@ -195,7 +195,7 @@ When `SQLITE_PATH` is set, `DATA_DIR` **is not read** for this resolution; the d
 | `BIND_ADDR`              | `:8080`            |
 
 
-Stock `docker-compose.yml` repeats those SQLite/data settings and also sets `MAX_REQUEST_BODY_BYTES=1048576`.
+Stock `docker-compose.yml` repeats those SQLite/data settings and also sets `MAX_REQUEST_BODY_BYTES=1048576`. It forwards the notes feature variables (`SCRUMBOY_MARKDOWN_NOTES_ENABLED`, `SCRUMBOY_MERMAID_NOTES_ENABLED`, `SCRUMBOY_INLINE_IMAGES_ENABLED`) from the host environment; unset there means empty in the container, which keeps the default (on).
 
 ### `SQLITE_BUSY_TIMEOUT_MS`
 
@@ -284,9 +284,9 @@ Boolean parsing differs by flag. Values are trimmed and compared case-insensitiv
 | `SCRUMBOY_WALL_ENABLED`           | **on**  | Disable with `0`, `false`, `off`, or `no`. Unset/empty/other → enabled. Durable projects only; anonymous/temp boards never expose the wall. [wall.md](wall.md) |
 | `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. In Full Mode this gates publication management and the isolated read-only `/api/public/board/{slug}` API. It never publishes a project automatically. Within the public-read rate budget, disabling it makes public-board reads and streams return the generic not-found response while retaining stored per-project preferences. Public reads are limited to 120 requests/minute/IP. |
 | `SCRUMBOY_LANDING_PAGE_ENABLED`    | **off** | Enable with the same truthy values. Independent of the public-projects flag. In Full Mode, `/` serves the existing English marketing landing (with an "Open app" link) and `/_app` becomes the workspace entry; `/{slug}` and `/{slug}/t/{localId}` are unchanged. Localized landing paths remain Anonymous Mode only. Anonymous Mode ignores this flag. |
-| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. [markdown-and-mermaid.md](markdown-and-mermaid.md)                                                                    |
-| `SCRUMBOY_MERMAID_NOTES_ENABLED`  | **off** | Same truthy set as Markdown; **ignored unless** Markdown notes are already enabled.                                                                            |
-| `SCRUMBOY_INLINE_IMAGES_ENABLED`  | **off** | Enable with `1`, `true`, `on`, or `yes`, then restart. Effective only in Full Mode with `SCRUMBOY_MARKDOWN_NOTES_ENABLED` on. Files are stored under `DATA_DIR/assets/`. [inline-images.md](inline-images.md) |
+| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | **on**  | Disable with `0`, `false`, `off`, or `no`. Unset/empty, `1`, `true`, `on` or `yes` → enabled. Any other value → disabled, with a startup warning. Disabling Markdown also disables Mermaid and inline images. [markdown-and-mermaid.md](markdown-and-mermaid.md) |
+| `SCRUMBOY_MERMAID_NOTES_ENABLED`  | **on**  | Same values as Markdown; **effective only while** Markdown notes are enabled.                                                                                  |
+| `SCRUMBOY_INLINE_IMAGES_ENABLED`  | **on**  | Same values as Markdown; restart after changing. Effective only in Full Mode with Markdown notes enabled. Files are stored under `DATA_DIR/assets/` (include it in instance backups). [inline-images.md](inline-images.md) |
 | `SCRUMBOY_ASSET_PROJECT_BUDGET_MB` / `SCRUMBOY_ASSET_INSTANCE_BUDGET_MB` | **1024** / **10240** | Byte budgets (MiB) for stored note images, unsaved drafts included. Uploads and archive imports beyond a budget fail with `507`. `0` disables a budget (not recommended; logged as a warning). |
 
 The public-read limiter runs before mode and per-project eligibility checks. Once an IP exhausts that namespace-level budget, every `/api/public/*` path returns the same generic `429` response before project lookup, including paths naming private or missing projects. This preserves resource protection without making rate-limit status an existence oracle.

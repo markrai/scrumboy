@@ -281,8 +281,8 @@ type Server struct {
 	dataDir string // user-wallpapers storage; empty = disabled
 
 	wallEnabled          bool // Scrumbaby wall; default on (SCRUMBOY_WALL_ENABLED=0 to disable)
-	markdownNotesEnabled bool // Todo notes markdown preview; default off unless explicitly enabled
-	mermaidNotesEnabled  bool // Mermaid in todo notes preview; default off unless explicitly enabled
+	markdownNotesEnabled bool // Todo notes markdown preview; default on (SCRUMBOY_MARKDOWN_NOTES_ENABLED=0 to disable)
+	mermaidNotesEnabled  bool // Mermaid in todo notes preview; default on, requires markdown notes
 
 	inlineImagesEnabled bool // effective inline-images capability (flag && full && markdown && data dir)
 	assetBlobs          *blobstore.Store

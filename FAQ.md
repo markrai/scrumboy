@@ -39,21 +39,21 @@ Existing Scrumboy sessions may continue until they expire or are revoked. New SS
 If no owner has an effective local method, a host operator must stop Scrumboy, back up the SQLite database/volume, and run `scrumboy recover-owner --email owner@example.com`. Recovery revokes the owner's sessions, does not clear 2FA, and does not automatically enable local authentication. Follow [`docs/recovery.md`](docs/recovery.md).
 ## How do I enable Markdown in my notes?
 
-Set `SCRUMBOY_MARKDOWN_NOTES_ENABLED=1` on the server (also accepts `true`, `on`, or `yes`; case-insensitive). The feature defaults to off.
+Markdown preview is on by default. To turn it off, set `SCRUMBOY_MARKDOWN_NOTES_ENABLED=0` on the server (also accepts `false`, `off`, or `no`; case-insensitive) and restart. Turning Markdown off also turns off Mermaid diagrams and inline images.
 
-After a restart, the todo dialog **Notes** field shows **markdown** and **preview** tabs. **markdown** is the source editor; **preview** is a sanitized rendered view. Supported syntax includes headings, emphasis, lists, blockquotes, inline and fenced code, horizontal rules (`---` on its own line with blank lines around it), and safe `http`/`https` links.
+With it on, the todo dialog **Notes** field shows **markdown** and **preview** tabs. **markdown** is the source editor; **preview** is a sanitized rendered view. Supported syntax includes headings, emphasis, lists, blockquotes, inline and fenced code, horizontal rules (`---` on its own line with blank lines around it), and safe `http`/`https` links.
 
-Notes are still stored as raw markdown in `todos.body`. Todo titles and board card titles stay plain text. The server exposes `markdownNotesEnabled` on `/api/auth/status` so the UI only enables preview when the server has opted in.
+Notes are still stored as raw markdown in `todos.body`. Todo titles and board card titles stay plain text. The server exposes `markdownNotesEnabled` on `/api/auth/status` so the UI only enables preview when the server has it enabled.
 
-Preview hardening: HTML in notes is not rendered; images stay as escaped text; dangerous link schemes and embedded content are stripped or neutralized.
+Preview hardening: HTML in notes is not rendered; external images stay as escaped text (only images uploaded to Scrumboy render; see [`docs/inline-images.md`](docs/inline-images.md)); dangerous link schemes and embedded content are stripped or neutralized.
 
 For architecture, security, and source references, see [`docs/markdown-and-mermaid.md`](docs/markdown-and-mermaid.md).
 
 ## How do I enable Mermaid diagrams in my notes?
 
-Mermaid is a **sub-feature of Markdown preview**. You need Markdown preview enabled first (`SCRUMBOY_MARKDOWN_NOTES_ENABLED=1`), then set **`SCRUMBOY_MERMAID_NOTES_ENABLED=1`** on the server (same truthy values: `1`, `true`, `on`, or `yes`; case-insensitive). Turning on Mermaid alone does nothing if Markdown preview is off.
+Mermaid is a **sub-feature of Markdown preview** and is on by default. It only works while Markdown preview is on. To turn Mermaid off alone, set **`SCRUMBOY_MERMAID_NOTES_ENABLED=0`** on the server (also `false`, `off`, or `no`) and restart; Markdown preview and images stay on.
 
-After a restart, fenced **` ```mermaid `** blocks in a todo note render as diagrams when you open the **preview** tab. Regular Markdown in the same note still works; non-Mermaid fenced code blocks stay as code.
+With it on, fenced **` ```mermaid `** blocks in a todo note render as diagrams when you open the **preview** tab. Regular Markdown in the same note still works; non-Mermaid fenced code blocks stay as code.
 
 Example:
 

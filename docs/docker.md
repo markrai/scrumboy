@@ -58,7 +58,7 @@ The image sets:
 - `DATA_DIR=/data`
 - `SQLITE_PATH=/data/app.db`
 
-Mount a named volume or host directory on `/data` if you want data to survive container recreation. That path holds the SQLite database, any WAL/SHM sidecars while the server is running, and file-backed uploads such as `user-wallpapers/` and note images in `assets/` (when [inline images](inline-images.md) are enabled; nothing else in the compose file changes).
+Mount a named volume or host directory on `/data` if you want data to survive container recreation. That path holds the SQLite database, any WAL/SHM sidecars while the server is running, and file-backed uploads such as `user-wallpapers/` and note images in `assets/` ([inline images](inline-images.md) are on by default in Full Mode).
 
 ## Backup
 
@@ -69,6 +69,19 @@ JSON export/import is **not** a complete replacement for a `/data` backup. See [
 ## Configuration
 
 Supply Scrumboy environment variables through normal container or Compose `environment` configuration. See [environment-variables.md](environment-variables.md).
+
+## Notes features
+
+Markdown preview, Mermaid diagrams and [inline images](inline-images.md) in story notes are on by default in Full Mode. To opt out, merge one or more of these into your `environment` block and recreate the container:
+
+```yaml
+environment:
+  SCRUMBOY_MERMAID_NOTES_ENABLED: "0"   # Mermaid only
+  SCRUMBOY_INLINE_IMAGES_ENABLED: "0"   # images only
+  SCRUMBOY_MARKDOWN_NOTES_ENABLED: "0"  # all three
+```
+
+The stock `docker-compose.yml` forwards these three variables from the host environment; leaving them unset keeps the defaults.
 
 ## Public boards
 

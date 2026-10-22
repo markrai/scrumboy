@@ -1,9 +1,10 @@
 /**
  * End-to-end: inline images in story notes.
  *
- * Builds the server once and runs three instances: inline images on (main), on with a 1 MiB
- * project budget, and off. Covers picker and drop uploads, the save lock, rendering in the member
- * and public dialogs, public eligibility, archive export/import and the flag-off baseline.
+ * Builds the server once and runs four instances: built-in defaults (main, all notes features on),
+ * images on with a 1 MiB project budget, images off, and Markdown off. Covers picker and drop
+ * uploads, the save lock, rendering in the member and public dialogs, public eligibility, archive
+ * export/import, the flag-off baseline and the default/opt-out capability matrix.
  */
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import crypto from "node:crypto";
@@ -30,6 +31,7 @@ const instances: Instance[] = [];
 let main: Instance;
 let budget: Instance;
 let off: Instance;
+let markdownOff: Instance;
 let owner: ReturnType<typeof apiClient>;
 let slug = "";
 
@@ -84,7 +86,10 @@ async function startInstance(env: Record<string, string>): Promise<Instance> {
       ...process.env,
       SCRUMBOY_MODE: "full",
       SCRUMBOY_PUBLIC_PROJECTS_ENABLED: "1",
-      SCRUMBOY_MARKDOWN_NOTES_ENABLED: "1",
+      // Notes features run on their built-in defaults (empty = unset) unless a test overrides them.
+      SCRUMBOY_MARKDOWN_NOTES_ENABLED: "",
+      SCRUMBOY_MERMAID_NOTES_ENABLED: "",
+      SCRUMBOY_INLINE_IMAGES_ENABLED: "",
       SCRUMBOY_TRUST_PROXY: "1",
       DATA_DIR: dataDir,
       BIND_ADDR: `127.0.0.1:${port}`,
@@ -147,10 +152,11 @@ test.beforeAll(async () => {
   tmpRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "scrumboy-images-"));
   binary = path.join(tmpRoot, process.platform === "win32" ? "scrumboy.exe" : "scrumboy");
   execFileSync("go", ["build", "-o", binary, "./cmd/scrumboy"], { cwd: repoRoot, stdio: "inherit" });
-  [main, budget, off] = await Promise.all([
-    startInstance({ SCRUMBOY_INLINE_IMAGES_ENABLED: "1" }),
+  [main, budget, off, markdownOff] = await Promise.all([
+    startInstance({}),
     startInstance({ SCRUMBOY_INLINE_IMAGES_ENABLED: "1", SCRUMBOY_ASSET_PROJECT_BUDGET_MB: "1" }),
     startInstance({ SCRUMBOY_INLINE_IMAGES_ENABLED: "0" }),
+    startInstance({ SCRUMBOY_MARKDOWN_NOTES_ENABLED: "0", SCRUMBOY_MERMAID_NOTES_ENABLED: "1", SCRUMBOY_INLINE_IMAGES_ENABLED: "1" }),
   ]);
   owner = apiClient(main.url);
   await owner.json("POST", "/api/auth/bootstrap", OWNER);
@@ -344,6 +350,33 @@ test("h. with the flag off, image syntax stays text and there is no insert butto
   await page.locator("#todoBodyPreviewTab").click();
   await expect(page.locator("#todoBodyPreview img")).toHaveCount(0);
   await expect(page.locator("#todoBodyPreview")).toContainText("![x](/api/assets/");
+});
+
+test("i. with no notes variables set, all three capabilities are on", async ({ page }) => {
+  const status = await (await fetch(`${main.url}/api/auth/status`)).json();
+  expect([status.markdownNotesEnabled, status.mermaidNotesEnabled, status.inlineImagesEnabled]).toEqual([true, true, true]);
+  const project = await owner.json<{ slug: string }>("POST", "/api/projects", { name: "Default Board" });
+  await owner.json("POST", `/api/board/${project.slug}/todos`, { title: "Default story" });
+  await signedInContext(page, owner);
+  await openStory(page, main, project.slug, "Default story");
+  await expect(page.locator("#todoBodyPreviewTab")).toBeVisible();
+  await expect(page.locator("#todoBodyInsertImage")).toBeVisible();
+});
+
+test("j. Markdown opt-out disables Mermaid and images despite explicit 1", async ({ page }) => {
+  const client = apiClient(markdownOff.url);
+  await client.json("POST", "/api/auth/bootstrap", OWNER);
+  const project = await client.json<{ slug: string }>("POST", "/api/projects", { name: "Text Board" });
+  const body = "```mermaid\ngraph TD; A-->B\n```\n![x](/api/assets/11111111-1111-4111-8111-111111111111)";
+  await client.json("POST", `/api/board/${project.slug}/todos`, { title: "Text story", body });
+  const status = await (await fetch(`${markdownOff.url}/api/auth/status`)).json();
+  expect([status.markdownNotesEnabled, status.mermaidNotesEnabled, status.inlineImagesEnabled]).toEqual([false, false, false]);
+  expect((await fetch(`${markdownOff.url}/api/assets/11111111-1111-4111-8111-111111111111`)).status).toBe(404);
+  await signedInContext(page, client);
+  await openStory(page, markdownOff, project.slug, "Text story");
+  await expect(page.locator("#todoBodyPreviewTab")).toBeHidden();
+  await expect(page.locator("#todoBodyInsertImage")).toBeHidden();
+  await expect(page.locator("#todoBody")).toHaveValue(body);
 });
 
 // ---- shared helpers (same as public-board.playwright.ts) ----

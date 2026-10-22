@@ -1,6 +1,6 @@
 # Todo notes Markdown + Mermaid preview (Phase 1 / 1B)
 
-Scrumboy supports an **optional, client-side preview** of Markdown in the todo dialog **Notes** field. Mermaid is an optional **sub-feature** of that preview. The server stores and serves notes as **plain text**; it does not parse or sanitize Markdown or Mermaid. Enabling these features only exposes UI and loads browser libraries—the preview pipeline runs entirely in the SPA.
+Scrumboy provides a **client-side preview** of Markdown in the todo dialog **Notes** field. Mermaid is a **sub-feature** of that preview. Both are on by default and can be turned off by the operator. Notes remain stored and served as raw Markdown text. The browser handles Markdown and Mermaid rendering, while the server separately parses Markdown image references for asset authorization, lifecycle management, and backup portability.
 
 For operator setup, see [`FAQ.md`](../FAQ.md). This document describes architecture, configuration, and the preview security model.
 
@@ -25,10 +25,10 @@ Todo **titles** and card titles on the board are always escaped plain text (see 
 
 | Variable | Default | Enabled when |
 |----------|---------|--------------|
-| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | off (unset) | `1`, `true`, `on`, or `yes` (trimmed, case-insensitive) |
-| `SCRUMBOY_MERMAID_NOTES_ENABLED` | off (unset) | `1`, `true`, `on`, or `yes` **and** Markdown notes are already enabled |
+| `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | on (unset or empty) | unless set to `0`, `false`, `off`, or `no` (trimmed, case-insensitive) |
+| `SCRUMBOY_MERMAID_NOTES_ENABLED` | on (unset or empty) | unless set to `0`, `false`, `off`, or `no`, **and** only while Markdown notes are enabled |
 
-Parsed in `internal/config/config.go` (`markdownNotesEnabledFromEnv`, `mermaidNotesEnabledFromEnv`), passed through `cmd/scrumboy/main.go` into the HTTP server (`ServerOpts.MarkdownNotesEnabled`, `ServerOpts.MermaidNotesEnabled`), and exposed to the SPA as **`markdownNotesEnabled`** and **`mermaidNotesEnabled`** on:
+`1`, `true`, `on` and `yes` also enable. Any other value disables that feature and logs a startup warning. Parsed in `internal/config/config.go` (`defaultOnFeatureFromEnv`); Mermaid is already off in the parsed config when Markdown is off. The values are passed through `cmd/scrumboy/main.go` into the HTTP server (`ServerOpts.MarkdownNotesEnabled`, `ServerOpts.MermaidNotesEnabled`), and exposed to the SPA as **`markdownNotesEnabled`** and **`mermaidNotesEnabled`** on:
 
 - `GET /api/auth/status` (authenticated and anonymous status payloads in `internal/httpapi/routing_auth.go`)
 

@@ -1,7 +1,7 @@
 <p align="center">
   <img width="372" src="internal/httpapi/web/githublogo.png" alt="scrumboy logo" />
   <br />
-  <img src="https://img.shields.io/badge/version-v3.38.10-blue" alt="version" />
+  <img src="https://img.shields.io/badge/version-v3.39.0-blue" alt="version" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--v3-orange" alt="license" /></a>
   <img src="https://img.shields.io/badge/i18n-23%20languages-yellow" alt="i18n" />
   <a href="https://github.com/markrai/scrumboy/actions/workflows/ci.yml"><img src="https://github.com/markrai/scrumboy/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
@@ -129,7 +129,7 @@ Scrumboy includes a native Android client, implemented with Capacitor, under `mo
 - VoiceFlow - deterministic voice commands in the browser; on supported Android devices, **AI VoiceFlow** adds on-device speech and Gemini Nano planning with confirmation before mutations (see [docs/voiceflow.md](docs/voiceflow.md), [docs/enhanced-voiceflow.md](docs/enhanced-voiceflow.md)).
 - **Visual Story Wall:** Organize sticky notes and stories on a freeform canvas, and connect them visually to map relationships and ideas. Available on desktop.
 - Agenda - today's events from subscribed ICS feeds on durable boards (see [docs/calendar.md](docs/calendar.md)). Requires `SCRUMBOY_ENCRYPTION_KEY`.
-- Todo notes Markdown preview (optional) - **markdown** / **preview** tabs in the todo Notes field; optional Mermaid diagrams in fenced mermaid blocks in preview only (see [FAQ.md](FAQ.md), [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md)).
+- Todo notes Markdown preview (on by default) - **markdown** / **preview** tabs in the todo Notes field; Mermaid diagrams in fenced mermaid blocks in preview only; images pasted or dropped into notes in Full Mode. Each can be turned off by the operator (see [FAQ.md](FAQ.md), [docs/markdown-and-mermaid.md](docs/markdown-and-mermaid.md), [docs/inline-images.md](docs/inline-images.md)).
 
 # Modes
 

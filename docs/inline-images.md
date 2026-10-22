@@ -10,12 +10,14 @@ The image renders in the note **Preview** and in the read-only story dialog of a
 
 ## Enabling
 
-Inline images are **off by default**. They require Full Mode and Markdown notes:
+Inline images are **on by default** in Full Mode; no configuration is needed. They need Markdown notes, so they are off whenever Markdown notes are off. To opt out, set either variable and restart:
 
 ```bash
-SCRUMBOY_MARKDOWN_NOTES_ENABLED=1
-SCRUMBOY_INLINE_IMAGES_ENABLED=1
+SCRUMBOY_INLINE_IMAGES_ENABLED=0    # images only
+SCRUMBOY_MARKDOWN_NOTES_ENABLED=0   # Markdown preview, Mermaid and images
 ```
+
+`0`, `false`, `off` and `no` disable (case-insensitive); unset or empty keeps the default. Any other value disables images and logs a startup warning. Image files are stored under `DATA_DIR/assets/`, so include that folder in instance-level backups. Projects whose stories embed images export as `.sbz` archives instead of JSON ([backup-and-import.md](backup-and-import.md)).
 
 Restart Scrumboy after changing either value. The database migration is applied automatically at startup; no other configuration is required. See [environment-variables.md](environment-variables.md) for the storage budget variables.
 

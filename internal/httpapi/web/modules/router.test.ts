@@ -1503,3 +1503,44 @@ describe('router invalid URL redirect', () => {
     });
   });
 });
+
+describe('router notes feature capabilities', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    apiFetchMock.mockReset();
+    renderAuthMock.mockReset();
+    renderProjectsMock.mockReset();
+    renderProjectsMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+  });
+
+  const cases: Array<{ name: string; status: Record<string, unknown>; want: [boolean, boolean, boolean] }> = [
+    { name: 'server defaults', status: { mode: 'full', markdownNotesEnabled: true, mermaidNotesEnabled: true, inlineImagesEnabled: true }, want: [true, true, true] },
+    { name: 'mermaid opted out', status: { mode: 'full', markdownNotesEnabled: true, mermaidNotesEnabled: false, inlineImagesEnabled: true }, want: [true, false, true] },
+    { name: 'images opted out', status: { mode: 'full', markdownNotesEnabled: true, mermaidNotesEnabled: true, inlineImagesEnabled: false }, want: [true, true, false] },
+    { name: 'markdown opted out', status: { mode: 'full', markdownNotesEnabled: false, mermaidNotesEnabled: false, inlineImagesEnabled: false }, want: [false, false, false] },
+    { name: 'fields absent (older server)', status: { mode: 'full' }, want: [false, false, false] },
+    { name: 'anonymous never enables images', status: { mode: 'anonymous', markdownNotesEnabled: true, mermaidNotesEnabled: true, inlineImagesEnabled: true }, want: [true, true, false] },
+  ];
+
+  for (const c of cases) {
+    it(`follows /api/auth/status: ${c.name}`, async () => {
+      apiFetchMock.mockImplementation(async (url: string) => {
+        if (url === '/api/auth/status') {
+          return { user: null, bootstrapAvailable: false, pushConfigured: false, localAuthEnabled: true, ...c.status };
+        }
+        throw new Error(`unexpected apiFetch url: ${url}`);
+      });
+      const mod = await loadRouterModule();
+      await mod.router();
+      const sel = await import('./state/selectors.js');
+      expect([sel.getMarkdownNotesEnabled(), sel.getMermaidNotesEnabled(), sel.getInlineImagesEnabled()]).toEqual(c.want);
+    });
+  }
+});
