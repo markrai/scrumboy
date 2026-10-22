@@ -584,11 +584,6 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 		if err != nil {
 			return nil, fmt.Errorf("export tags for project %d: %w", p.ID, err)
 		}
-		assetExports, err := s.exportAssetsForProject(ctx, p.ID)
-		if err != nil {
-			return nil, err
-		}
-
 		// Convert to export format
 		todoExports := make([]TodoExport, 0, len(todos))
 		for _, t := range todos {
@@ -633,6 +628,13 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 				ArchivedAtPresent:  true,
 				DueAt:              dueAtMs,
 			})
+		}
+
+		// The image list is derived from the exported bodies themselves, so it always matches
+		// them (concurrent edits, or references an older binary wrote without link rows).
+		assetExports, err := s.exportAssetsForProject(ctx, p.ID, todoExports)
+		if err != nil {
+			return nil, err
 		}
 
 		// Import uses normal CanonicalizeTag validation and todo create/update do too.
@@ -1504,9 +1506,6 @@ func (s *Store) importProjects(ctx context.Context, data *ExportData, mode Mode,
 	default:
 		return nil, fmt.Errorf("%w: invalid import mode %q", ErrValidation, importMode)
 	}
-	if err == nil && plan != nil {
-		result.Warnings = append(result.Warnings, plan.Warnings...)
-	}
 	return result, err
 }
 
@@ -1752,7 +1751,7 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 		}
 
 		// Archive images: rows for the staging project, then remapped note bodies.
-		todos, err := s.applyImportAssetsTx(ctx, tx, plan, pi, projectID, pExport.Todos, time.Now().UTC().UnixMilli())
+		todos, err := s.applyImportAssetsTx(ctx, tx, plan, pi, projectID, pExport, time.Now().UTC().UnixMilli())
 		if err != nil {
 			tx.Rollback()
 			return nil, err
@@ -2222,7 +2221,7 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		}
 
 		// Archive images: rows (or content dedupe) in the target project, then remapped bodies.
-		todos, err := s.applyImportAssetsTx(ctx, tx, plan, pi, projectID, pExport.Todos, time.Now().UTC().UnixMilli())
+		todos, err := s.applyImportAssetsTx(ctx, tx, plan, pi, projectID, pExport, time.Now().UTC().UnixMilli())
 		if err != nil {
 			return nil, err
 		}
@@ -2614,7 +2613,7 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		}
 
 		// Archive images: rows in the new project, then remapped bodies.
-		todos, err := s.applyImportAssetsTx(ctx, tx, plan, pi, newProjectID, pExport.Todos, time.Now().UTC().UnixMilli())
+		todos, err := s.applyImportAssetsTx(ctx, tx, plan, pi, newProjectID, pExport, time.Now().UTC().UnixMilli())
 		if err != nil {
 			return nil, err
 		}

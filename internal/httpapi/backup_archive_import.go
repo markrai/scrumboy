@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 
 	assetapp "scrumboy/internal/application/asset"
+	backupimportapp "scrumboy/internal/application/backupimport"
 	"scrumboy/internal/assets/imagecheck"
 	"scrumboy/internal/backuparchive"
 	"scrumboy/internal/store"
@@ -28,12 +30,37 @@ func (s *Server) isArchiveBackupRequest(r *http.Request) bool {
 // importMode, confirmation (replace only) and archive (the .sbz file).
 func (s *Server) handleArchiveBackup(w http.ResponseWriter, r *http.Request, action string) {
 	ctx := s.requestContext(r)
-	if _, ok := store.UserIDFromContext(ctx); !ok {
+	userID, ok := store.UserIDFromContext(ctx)
+	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
 		return
 	}
+	// Admission happens before any body byte is read or any temporary file exists: declared
+	// size, per-user rate, then a staging slot (global and per user), which bounds temporary
+	// disk use to the slot count times the archive limit however many requests arrive.
 	limits := s.backupImports.Limits()
-	r.Body = http.MaxBytesReader(w, r.Body, limits.MaxArchiveBytes+multipartOverheadBytes)
+	maxBody := limits.MaxArchiveBytes + multipartOverheadBytes
+	if r.ContentLength > maxBody {
+		writeError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "backup archive too large", validationDetails("archive_too_large", nil))
+		return
+	}
+	if !s.archiveImportLimit.Allow(fmt.Sprintf("user:%d", userID), "") {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many backup archive requests, please wait", nil)
+		return
+	}
+	release, err := s.backupImports.AdmitStaging(userID)
+	if err != nil {
+		w.Header().Set("Retry-After", "10")
+		if errors.Is(err, backupimportapp.ErrStagingUserBusy) {
+			writeError(w, http.StatusTooManyRequests, "IMPORT_IN_PROGRESS", "another backup archive of yours is still being processed", nil)
+			return
+		}
+		writeError(w, http.StatusServiceUnavailable, "BUSY", "the server is processing other backup archives, please retry", nil)
+		return
+	}
+	defer release()
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
 
 	dir := filepath.Join(s.dataDir, assetapp.ImportStagingDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

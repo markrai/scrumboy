@@ -308,8 +308,11 @@ func (j *Janitor) RunReap(ctx context.Context) error {
 
 // Tick runs one janitor cycle: reap, reconcile, then GC, each with its own deadline. The sweep
 // runs separately (see RunSweep) on a slower cadence.
+//
+// The reap always runs: crashed Replace imports leave staging projects whether or not inline
+// images were ever enabled. Only reconcile and GC wait for Active.
 func (j *Janitor) Tick(parent context.Context) {
-	if j == nil || !j.Active(parent) {
+	if j == nil {
 		return
 	}
 	run := func(name string, fn func(context.Context) error) {
@@ -320,13 +323,21 @@ func (j *Janitor) Tick(parent context.Context) {
 		}
 	}
 	run("reap", j.RunReap)
+	if !j.Active(parent) {
+		return
+	}
 	run("reconcile", j.RunReconcile)
 	run("gc", j.RunGC)
 }
 
-// Sweep runs RunSweep with a deadline when the janitor is active.
+// Sweep runs RunSweep with a deadline when the janitor is active. Uploaded backup archives left
+// in the import staging directory by a crash are removed either way.
 func (j *Janitor) Sweep(parent context.Context) {
-	if j == nil || !j.Active(parent) {
+	if j == nil {
+		return
+	}
+	if !j.Active(parent) {
+		j.sweepImportStaging(j.now().Add(-OrphanFileGrace))
 		return
 	}
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)

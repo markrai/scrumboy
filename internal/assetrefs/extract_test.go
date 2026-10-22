@@ -2,6 +2,7 @@ package assetrefs
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"slices"
 	"strings"
@@ -16,10 +17,10 @@ type extractFixture struct {
 }
 
 type remapFixture struct {
-	Name     string   `json:"name"`
-	Markdown string   `json:"markdown"`
-	Expected string   `json:"expected"`
-	Unmapped []string `json:"unmapped"`
+	Name     string `json:"name"`
+	Markdown string `json:"markdown"`
+	Expected string `json:"expected"`
+	Error    string `json:"error,omitempty"`
 }
 
 const (
@@ -95,29 +96,48 @@ func FuzzExtract(f *testing.F) {
 func TestRemapFixtures(t *testing.T) {
 	for _, f := range loadJSON[remapFixture](t, "testdata/remap_fixtures.json") {
 		t.Run(f.Name, func(t *testing.T) {
-			got, unmapped, err := RemapImageDestinations(f.Markdown, fixtureMapping)
+			got, err := RemapImageDestinations(f.Markdown, fixtureMapping)
+			if f.Error != "" {
+				want := map[string]error{"unmapped": ErrUnmappedReference, "shared": ErrSharedLinkDestination}[f.Error]
+				if want == nil || !errors.Is(err, want) {
+					t.Fatalf("want %v, got %q, %v", want, got, err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("RemapImageDestinations: %v", err)
 			}
 			if got != f.Expected {
 				t.Fatalf("got  %q\nwant %q", got, f.Expected)
 			}
-			if !slices.Equal(unmapped, f.Unmapped) && !(len(unmapped) == 0 && len(f.Unmapped) == 0) {
-				t.Fatalf("unmapped = %v, want %v", unmapped, f.Unmapped)
-			}
 		})
 	}
 }
 
+// Every image Extract reports must come out remapped: no mapped ID may survive a successful remap.
+func TestRemapFixturesLeaveNoMappedEmbed(t *testing.T) {
+	for _, f := range loadJSON[remapFixture](t, "testdata/remap_fixtures.json") {
+		got, err := RemapImageDestinations(f.Markdown, fixtureMapping)
+		if err != nil {
+			continue
+		}
+		for _, id := range Extract(got) {
+			if _, ok := fixtureMapping[id]; ok {
+				t.Errorf("%s: %s still embedded after remap", f.Name, id)
+			}
+		}
+	}
+}
+
 func TestRemapRejectsNonCanonicalMapping(t *testing.T) {
-	if _, _, err := RemapImageDestinations("x", map[string]string{"nope": n1}); err == nil {
+	if _, err := RemapImageDestinations("x", map[string]string{"nope": n1}); err == nil {
 		t.Fatal("want error")
 	}
 }
 
 func TestRemapTooManyCandidates(t *testing.T) {
-	body := strings.Repeat("`/api/assets/"+u1+"` ", MaxRemapCandidates+1)
-	if _, _, err := RemapImageDestinations(body, fixtureMapping); err != ErrTooManyReferences {
+	body := "![a](/api/assets/" + u1 + ") " + strings.Repeat("`/api/assets/"+u1+"` ", MaxRemapCandidates+1)
+	if _, err := RemapImageDestinations(body, fixtureMapping); err != ErrTooManyReferences {
 		t.Fatalf("want ErrTooManyReferences, got %v", err)
 	}
 }
@@ -127,14 +147,22 @@ func FuzzRemap(f *testing.F) {
 		f.Add(fx.Markdown)
 	}
 	f.Fuzz(func(t *testing.T, body string) {
-		out, _, err := RemapImageDestinations(body, fixtureMapping)
+		out, err := RemapImageDestinations(body, fixtureMapping)
 		if err != nil {
+			return
+		}
+		for _, id := range Extract(out) {
+			if _, ok := fixtureMapping[id]; ok {
+				t.Fatalf("mapped id %s still embedded", id)
+			}
+		}
+		if strings.ContainsAny(body, `&\`) {
 			return
 		}
 		if len(out) != len(body) {
 			t.Fatalf("length changed")
 		}
-		// Bytes may differ only inside rewritten 36-byte UUID spans.
+		// Without escapes or references, bytes may differ only inside rewritten 36-byte UUID spans.
 		for i := 0; i < len(body); i++ {
 			if body[i] == out[i] {
 				continue

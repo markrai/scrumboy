@@ -32,8 +32,6 @@ type ImportAssetPlan struct {
 	UsedNewUUIDs map[string]struct{}
 	// RemovedAssets are files of projects deleted by a Replace swap, for post-commit removal.
 	RemovedAssets []AssetFileRef
-	// Warnings report image references that could not be remapped.
-	Warnings []string
 }
 
 func (p *ImportAssetPlan) markUsed(uuid string) {
@@ -48,7 +46,11 @@ func (p *ImportAssetPlan) markUsed(uuid string) {
 // target asset UUIDs. Only image destinations change: prose, code and links keep their bytes.
 // It must run before the todos are written, so their sync links the new rows. With a nil plan
 // it returns todos unchanged.
-func (s *Store) applyImportAssetsTx(ctx context.Context, tx *sql.Tx, plan *ImportAssetPlan, projectIndex int, projectID int64, todos []TodoExport, nowMs int64) ([]TodoExport, error) {
+//
+// Every manifest image that a story embeds (per assetrefs.Extract) must be staged and must be
+// rewritten; otherwise the whole import fails with ErrValidation before anything commits.
+func (s *Store) applyImportAssetsTx(ctx context.Context, tx *sql.Tx, plan *ImportAssetPlan, projectIndex int, projectID int64, pExport ProjectExport, nowMs int64) ([]TodoExport, error) {
+	todos := pExport.Todos
 	if plan == nil {
 		return todos, nil
 	}
@@ -81,23 +83,32 @@ func (s *Store) applyImportAssetsTx(ctx context.Context, tx *sql.Tx, plan *Impor
 		plan.markUsed(staged.NewUUID)
 		mapping[staged.ArchiveID] = staged.NewUUID
 	}
+	inManifest := make(map[string]struct{}, len(pExport.Assets))
+	for _, a := range pExport.Assets {
+		inManifest[a.ID] = struct{}{}
+	}
 	out := make([]TodoExport, len(todos))
 	copy(out, todos)
-	if len(mapping) == 0 {
-		return out, nil
-	}
 	for i := range out {
-		body, unmapped, err := assetrefs.RemapImageDestinations(out[i].Body, mapping)
+		for _, id := range assetrefs.Extract(out[i].Body) {
+			if _, ok := inManifest[id]; !ok {
+				continue
+			}
+			if _, ok := mapping[id]; !ok {
+				return nil, fmt.Errorf("%w: story %d embeds image %s, which was not restored", ErrValidation, out[i].LocalID, id)
+			}
+		}
+		if len(mapping) == 0 {
+			continue
+		}
+		body, err := assetrefs.RemapImageDestinations(out[i].Body, mapping)
 		if err != nil {
-			if errors.Is(err, assetrefs.ErrTooManyReferences) || errors.Is(err, assetrefs.ErrRemapInvariant) {
+			if errors.Is(err, assetrefs.ErrTooManyReferences) || errors.Is(err, assetrefs.ErrRemapInvariant) || errors.Is(err, assetrefs.ErrUnmappedReference) || errors.Is(err, assetrefs.ErrSharedLinkDestination) || errors.Is(err, assetrefs.ErrNoteTooLarge) {
 				return nil, fmt.Errorf("%w: story %d images could not be remapped: %v", ErrValidation, out[i].LocalID, err)
 			}
 			return nil, err
 		}
 		out[i].Body = body
-		for _, id := range unmapped {
-			plan.Warnings = append(plan.Warnings, fmt.Sprintf("Story %d: image %s could not be remapped and was left as text", out[i].LocalID, id))
-		}
 	}
 	return out, nil
 }

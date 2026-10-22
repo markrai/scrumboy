@@ -22,14 +22,19 @@
   download as a `.sbz` archive (backup JSON format 1.3 plus image files);
   image-free exports stay JSON 1.2. Archive import supports Replace, Merge and
   Create copy, mints new image ids and rewrites only image destinations in
-  notes. The Android app refuses image backups and JSON backups over 8 MB with
+  notes (including entity-encoded or escaped ones); an archive whose embedded
+  images cannot all be restored, or whose image shares a reference definition
+  with an ordinary link, is rejected before anything changes. The
+  exported image list is derived from the exported notes, and archive uploads
+  are admitted (one per user, two per server, rate-limited) before any bytes
+  are stored. The Android app refuses image backups and JSON backups over 8 MB with
   a message instead of attempting the transfer.
 
 ### Changed
 
 - **Crashed Replace imports are cleaned up on restart** - Invisible staging
   projects left by an interrupted Replace import (and their image files) are
-  removed after the next restart.
+  removed after the next restart, whether or not inline images are enabled.
 
 ### Upgrade notes
 

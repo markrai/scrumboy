@@ -1,10 +1,12 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -263,31 +265,112 @@ func sqlPlaceholders(n int) string {
 	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }
 
-// exportAssetsForProject lists the assets referenced by at least one story of the project
-// (archived stories included, unreferenced drafts excluded), in id order.
-func (s *Store) exportAssetsForProject(ctx context.Context, projectID int64) ([]AssetExport, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT pa.uuid, pa.mime_type, pa.size_bytes, pa.width, pa.height, pa.sha256, pa.original_name
-FROM project_assets pa
-WHERE pa.project_id = ?
-  AND EXISTS (SELECT 1 FROM todo_assets ta JOIN todos t ON t.id = ta.todo_id WHERE ta.asset_id = pa.id AND t.project_id = pa.project_id)
-ORDER BY pa.id`, projectID)
-	if err != nil {
-		return nil, fmt.Errorf("export assets for project %d: %w", projectID, err)
-	}
-	defer func() { _ = rows.Close() }()
-	var out []AssetExport
-	for rows.Next() {
-		var a AssetExport
-		if err := rows.Scan(&a.ID, &a.MimeType, &a.SizeBytes, &a.Width, &a.Height, &a.SHA256, &a.Name); err != nil {
-			return nil, fmt.Errorf("scan export asset: %w", err)
+// exportAssetsBeforeVerifyHook lets tests change the database between the body snapshot and
+// the asset row read.
+var exportAssetsBeforeVerifyHook func()
+
+// exportAssetsForProject returns the asset rows of every image that the exported story bodies
+// embed (per assetrefs.Extract, archived stories included), in row id order. The list is derived
+// from the bodies being exported, not from todo_assets, so a concurrent edit or a reference an
+// older binary wrote without a link row can never leave an exported body without its image.
+//
+// Rows are immutable and are deleted only when no current body embeds them, so a required image
+// without a row is either a dangling reference (it never belonged to this project; it is shown
+// as unavailable at the source too and stays text in the backup) or was deleted after a
+// concurrent edit removed it. The second case is detected by re-reading, in the same short read
+// transaction, the bodies that embed it: if any changed, the export fails with ErrConflict
+// rather than silently omitting the image. No file is read here.
+func (s *Store) exportAssetsForProject(ctx context.Context, projectID int64, todos []TodoExport) ([]AssetExport, error) {
+	var required []string
+	embeddedBy := map[string][]int{}
+	for i, t := range todos {
+		for _, id := range assetrefs.Extract(t.Body) {
+			if _, ok := embeddedBy[id]; !ok {
+				required = append(required, id)
+			}
+			embeddedBy[id] = append(embeddedBy[id], i)
 		}
-		out = append(out, a)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("export assets for project %d: %w", projectID, err)
+	if len(required) == 0 {
+		return nil, nil
 	}
-	return out, nil
+	if exportAssetsBeforeVerifyHook != nil {
+		exportAssetsBeforeVerifyHook()
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin export assets: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	type row struct {
+		id int64
+		a  AssetExport
+	}
+	found := map[string]row{}
+	for start := 0; start < len(required); start += sqlInChunk {
+		chunk := required[start:min(start+sqlInChunk, len(required))]
+		args := make([]any, 0, len(chunk)+1)
+		args = append(args, projectID)
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		rows, err := tx.QueryContext(ctx, `
+SELECT id, uuid, mime_type, size_bytes, width, height, sha256, original_name
+FROM project_assets
+WHERE project_id = ? AND uuid IN (`+sqlPlaceholders(len(chunk))+`)`, args...)
+		if err != nil {
+			return nil, fmt.Errorf("export assets for project %d: %w", projectID, err)
+		}
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.id, &r.a.ID, &r.a.MimeType, &r.a.SizeBytes, &r.a.Width, &r.a.Height, &r.a.SHA256, &r.a.Name); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan export asset: %w", err)
+			}
+			found[r.a.ID] = r
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("export assets for project %d: %w", projectID, err)
+		}
+		_ = rows.Close()
+	}
+
+	checked := map[int]bool{}
+	for _, id := range required {
+		if _, ok := found[id]; ok {
+			continue
+		}
+		for _, i := range embeddedBy[id] {
+			if checked[i] {
+				continue
+			}
+			checked[i] = true
+			var body string
+			err := tx.QueryRowContext(ctx, `SELECT body FROM todos WHERE project_id = ? AND local_id = ?`, projectID, todos[i].LocalID).Scan(&body)
+			if errors.Is(err, sql.ErrNoRows) || (err == nil && body != todos[i].Body) {
+				return nil, fmt.Errorf("%w: stories changed while the backup was being created; export again", ErrConflict)
+			}
+			if err != nil {
+				return nil, fmt.Errorf("verify export body: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit export assets: %w", err)
+	}
+
+	out := make([]row, 0, len(found))
+	for _, r := range found {
+		out = append(out, r)
+	}
+	slices.SortFunc(out, func(x, y row) int { return cmp.Compare(x.id, y.id) })
+	assets := make([]AssetExport, len(out))
+	for i, r := range out {
+		assets[i] = r.a
+	}
+	return assets, nil
 }
 
 // ExportHasAssets reports whether any exported project carries assets.

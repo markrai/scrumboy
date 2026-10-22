@@ -288,3 +288,78 @@ func TestJanitorSweepsStaleImportStaging(t *testing.T) {
 		t.Fatal("fresh staging archive removed")
 	}
 }
+
+// Finding D: a Replace import that crashed (even on a build without inline images) leaves a
+// staging project. The reap must run with the feature disabled and no asset rows or directory,
+// and must never touch a batch staged by the running process.
+func TestJanitorReapsLegacyStagingWhileInactive(t *testing.T) {
+	f := newJanitorFixture(t)
+	start := time.Now()
+	j := NewJanitor(JanitorOptions{Store: f.st, Blobs: f.blobs, Pending: f.pending, Logger: log.New(io.Discard, "", 0), FlagEnabled: false, Reaper: f.st, DataDir: f.dataDir, Now: func() time.Time { return start }})
+	if j.Active(f.ctx) {
+		t.Fatal("precondition: janitor must be inactive")
+	}
+	crashed, err := f.st.CreateProject(f.ctx, "Crashed staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := f.st.CreateProject(f.ctx, "Live staging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sqlDB.Exec(`UPDATE projects SET import_batch_id = 'legacy-crash', last_activity_at = ? WHERE id = ?`, start.Add(-time.Hour).UnixMilli(), crashed.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sqlDB.Exec(`UPDATE projects SET import_batch_id = 'in-flight', last_activity_at = ? WHERE id = ?`, start.Add(time.Second).UnixMilli(), live.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	j.Tick(f.ctx)
+
+	if n := countProjects(t, f.sqlDB, `import_batch_id = 'legacy-crash'`); n != 0 {
+		t.Fatalf("crashed legacy staging batch kept (%d rows)", n)
+	}
+	if n := countProjects(t, f.sqlDB, `import_batch_id = 'in-flight'`); n != 1 {
+		t.Fatalf("current-process staging batch deleted (%d rows)", n)
+	}
+	if n := countProjects(t, f.sqlDB, `id = ?`, f.project.ID); n != 1 {
+		t.Fatal("ordinary project deleted")
+	}
+	if f.blobs.RootExists() {
+		t.Fatal("reap created the assets directory")
+	}
+	if j.Reconciled() {
+		t.Fatal("inactive janitor ran reconciliation")
+	}
+}
+
+func TestJanitorSweepsImportStagingWhileInactive(t *testing.T) {
+	f := newJanitorFixture(t)
+	j := f.janitor(false)
+	dir := filepath.Join(f.dataDir, ImportStagingDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, "import-old.sbz")
+	if err := os.WriteFile(stale, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	_ = os.Chtimes(stale, old, old)
+	j.Sweep(f.ctx)
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatal("stale staging archive kept while inactive")
+	}
+	if f.blobs.RootExists() {
+		t.Fatal("sweep created the assets directory")
+	}
+}
+
+func countProjects(t *testing.T, db *sql.DB, where string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM projects WHERE `+where, args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}

@@ -118,6 +118,12 @@ type Options struct {
 	AssetUploadRateLimit *ratelimit.Limiter
 	AssetPublicRateLimit *ratelimit.Limiter
 	AssetReadSlots       int
+	// ArchiveImportRateLimit (per user, .sbz preview and import requests) defaults to 10/10min.
+	// ArchiveStagingSlots and ArchiveStagingSlotsPerUser bound archives received at once
+	// (defaults 2 and 1).
+	ArchiveImportRateLimit     *ratelimit.Limiter
+	ArchiveStagingSlots        int
+	ArchiveStagingSlotsPerUser int
 
 	// SMTP (optional). Enables self-service "forgot password" email via
 	// POST /api/auth/request-password-reset. Enabled when Host is set, Port
@@ -286,6 +292,7 @@ type Server struct {
 	backupImports       *backupimportapp.Service
 	assetUploadLimit    *ratelimit.Limiter
 	assetPublicLimit    *ratelimit.Limiter
+	archiveImportLimit  *ratelimit.Limiter
 }
 
 type storeAPI interface {
@@ -789,11 +796,17 @@ func NewServer(st storeAPI, opts Options) *Server {
 		if server.assetPublicLimit == nil {
 			server.assetPublicLimit = ratelimit.New(600, time.Minute)
 		}
+		server.archiveImportLimit = opts.ArchiveImportRateLimit
+		if server.archiveImportLimit == nil {
+			server.archiveImportLimit = ratelimit.New(10, 10*time.Minute)
+		}
 		importDeps := backupimportapp.Options{
-			Store:     st,
-			Blobs:     opts.AssetBlobs,
-			Pending:   opts.AssetPending,
-			Validator: server.assetService,
+			Store:               st,
+			Blobs:               opts.AssetBlobs,
+			Pending:             opts.AssetPending,
+			Validator:           server.assetService,
+			StagingSlots:        opts.ArchiveStagingSlots,
+			StagingSlotsPerUser: opts.ArchiveStagingSlotsPerUser,
 		}
 		if opts.AssetJanitor != nil {
 			importDeps.Remover = opts.AssetJanitor

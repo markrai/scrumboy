@@ -5,9 +5,10 @@ package backupimport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"slices"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -38,6 +39,22 @@ type FileRemover interface {
 	RemoveFiles(refs []store.AssetFileRef)
 }
 
+// Default staging admission bounds: at most DefaultStagingSlots archives (each up to
+// Limits.MaxArchiveBytes on disk) are received or processed at once, and at most
+// DefaultStagingSlotsPerUser per user, so temporary disk use stays bounded however many
+// requests arrive in parallel.
+const (
+	DefaultStagingSlots        = 2
+	DefaultStagingSlotsPerUser = 1
+)
+
+var (
+	// ErrStagingBusy reports that every archive staging slot is in use.
+	ErrStagingBusy = errors.New("backupimport: too many backup archives are being processed")
+	// ErrStagingUserBusy reports that the user already has an archive being processed.
+	ErrStagingUserBusy = errors.New("backupimport: another backup archive of yours is still being processed")
+)
+
 // Service imports archives.
 type Service struct {
 	store     Store
@@ -46,6 +63,12 @@ type Service struct {
 	validator Validator
 	remover   FileRemover
 	limits    backuparchive.Limits
+
+	stagingMu      sync.Mutex
+	stagingActive  int
+	stagingByUser  map[int64]int
+	stagingSlots   int
+	stagingPerUser int
 }
 
 // Options configures a Service.
@@ -56,6 +79,10 @@ type Options struct {
 	Validator Validator
 	Remover   FileRemover
 	Limits    *backuparchive.Limits
+	// StagingSlots and StagingSlotsPerUser bound concurrent archive requests (defaults
+	// DefaultStagingSlots and DefaultStagingSlotsPerUser).
+	StagingSlots        int
+	StagingSlotsPerUser int
 }
 
 // New constructs a Service.
@@ -64,7 +91,43 @@ func New(opts Options) *Service {
 	if opts.Limits != nil {
 		limits = *opts.Limits
 	}
-	return &Service{store: opts.Store, blobs: opts.Blobs, pending: opts.Pending, validator: opts.Validator, remover: opts.Remover, limits: limits}
+	slots, perUser := opts.StagingSlots, opts.StagingSlotsPerUser
+	if slots <= 0 {
+		slots = DefaultStagingSlots
+	}
+	if perUser <= 0 {
+		perUser = DefaultStagingSlotsPerUser
+	}
+	return &Service{
+		store: opts.Store, blobs: opts.Blobs, pending: opts.Pending, validator: opts.Validator, remover: opts.Remover, limits: limits,
+		stagingByUser: map[int64]int{}, stagingSlots: slots, stagingPerUser: perUser,
+	}
+}
+
+// AdmitStaging reserves an archive staging slot for userID without blocking. Callers acquire it
+// before reading any request body and call release once the staged archive is removed.
+func (s *Service) AdmitStaging(userID int64) (release func(), err error) {
+	s.stagingMu.Lock()
+	defer s.stagingMu.Unlock()
+	if s.stagingByUser[userID] >= s.stagingPerUser {
+		return nil, ErrStagingUserBusy
+	}
+	if s.stagingActive >= s.stagingSlots {
+		return nil, ErrStagingBusy
+	}
+	s.stagingActive++
+	s.stagingByUser[userID]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			s.stagingMu.Lock()
+			defer s.stagingMu.Unlock()
+			s.stagingActive--
+			if s.stagingByUser[userID]--; s.stagingByUser[userID] <= 0 {
+				delete(s.stagingByUser, userID)
+			}
+		})
+	}, nil
 }
 
 // Limits returns the archive limits in force.
@@ -76,38 +139,44 @@ func (s *Service) PreviewArchive(ctx context.Context, ra io.ReaderAt, size int64
 	if err != nil {
 		return nil, err
 	}
+	if _, _, err := neededAssets(arch); err != nil {
+		return nil, err
+	}
 	return s.store.PreviewImportArchive(ctx, arch.Data, mode, importMode)
 }
 
-// neededAssets returns, per project index, the archive images that some story embeds at a
-// remappable image destination. Other manifest images are skipped with a warning.
-func neededAssets(arch *backuparchive.Archive) (map[int][]string, []string) {
+// neededAssets returns, per project index, the archive images that some story embeds (per
+// assetrefs.Extract, the same rule GC and serving use). Every one of them is required: if a
+// story's body cannot be remapped, the import fails here, before any file is written or any
+// existing project is touched. Manifest images no story embeds are skipped with a warning.
+func neededAssets(arch *backuparchive.Archive) (map[int][]string, []string, error) {
 	needed := map[int][]string{}
 	var warnings []string
 	for pi, p := range arch.Data.Projects {
 		inProject := map[string]bool{}
-		identity := map[string]string{}
 		for _, a := range p.Assets {
 			inProject[a.ID] = true
-			identity[a.ID] = a.ID
 		}
 		if len(inProject) == 0 {
 			continue
 		}
 		used := map[string]bool{}
 		for _, t := range p.Todos {
-			embedded := assetrefs.Extract(t.Body)
-			if len(embedded) == 0 {
+			// A dry run with fresh IDs (the import mints new ones) proves the store import can
+			// rewrite every embedded destination of this story without retargeting a link. The
+			// identity mapping would hide a shared link reference definition.
+			fresh := map[string]string{}
+			for _, id := range assetrefs.Extract(t.Body) {
+				if inProject[id] {
+					used[id] = true
+					fresh[id] = uuid.NewString()
+				}
+			}
+			if len(fresh) == 0 {
 				continue
 			}
-			_, unmapped, err := assetrefs.RemapImageDestinations(t.Body, identity)
-			if err != nil {
-				continue // the store import reports remap failures as validation errors
-			}
-			for _, id := range embedded {
-				if inProject[id] && !slices.Contains(unmapped, id) {
-					used[id] = true
-				}
+			if _, err := assetrefs.RemapImageDestinations(t.Body, fresh); err != nil {
+				return nil, nil, fmt.Errorf("%w: story %d in project %q: images cannot be restored: %v", backuparchive.ErrInvalidArchive, t.LocalID, p.Name, err)
 			}
 		}
 		for _, a := range p.Assets {
@@ -118,7 +187,7 @@ func neededAssets(arch *backuparchive.Archive) (map[int][]string, []string) {
 			}
 		}
 	}
-	return needed, warnings
+	return needed, warnings, nil
 }
 
 // ImportArchive imports a validated archive. Order: validate everything, write image files
@@ -131,7 +200,10 @@ func (s *Service) ImportArchive(ctx context.Context, ra io.ReaderAt, size int64,
 	if err := s.store.PreflightImport(ctx, arch.Data, mode, importMode, true); err != nil {
 		return nil, err
 	}
-	needed, skipWarnings := neededAssets(arch)
+	needed, skipWarnings, err := neededAssets(arch)
+	if err != nil {
+		return nil, err
+	}
 
 	// Advisory budget pre-check before writing any file; the import transaction re-checks.
 	perProject := make([]int64, 0, len(needed))

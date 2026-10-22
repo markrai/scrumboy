@@ -82,4 +82,5 @@ Proxies must accept request bodies of at least **11 MB** for uploads, and about 
 | "Too many uploads" (429) | Upload rate limit; wait a few minutes |
 | "The server is busy" (503) | Too many uploads in progress; retry |
 | "Image storage for this board is full" (507) | A storage budget is reached |
+| "Another backup archive of yours is still being processed" (429) / busy (503) | `.sbz` imports are processed one per user and two per server; retry shortly |
 | "Image unavailable" in preview | The image was deleted, you lack access, or the board is no longer public |
