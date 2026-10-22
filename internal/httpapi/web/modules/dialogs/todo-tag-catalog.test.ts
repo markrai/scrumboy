@@ -119,6 +119,7 @@ async function loadOpenTodoDialog() {
     getBoardMembers: () => [],
     getMarkdownNotesEnabled: () => false,
     getMermaidNotesEnabled: () => false,
+    getInlineImagesEnabled: () => false,
     getSlug: () => selectorState.slug,
     getTagColors: () => selectorState.tagColors,
     getUser: () => null,

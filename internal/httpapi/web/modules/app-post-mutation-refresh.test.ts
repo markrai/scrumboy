@@ -123,6 +123,7 @@ vi.mock("../dist/dialogs/todo.js", () => ({
   resetAssigneeSelect: vi.fn(),
   getTodoFormPermissions: vi.fn(() => ({ canSubmitTodo: true })),
   requestTodoDialogClose: vi.fn().mockResolvedValue(true),
+  isTodoImageUploadPending: vi.fn(() => false),
 }));
 
 vi.mock("../dist/dialogs/todo-submit.js", () => ({

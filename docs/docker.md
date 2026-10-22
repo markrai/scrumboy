@@ -58,7 +58,7 @@ The image sets:
 - `DATA_DIR=/data`
 - `SQLITE_PATH=/data/app.db`
 
-Mount a named volume or host directory on `/data` if you want data to survive container recreation. That path holds the SQLite database, any WAL/SHM sidecars while the server is running, and file-backed uploads such as `user-wallpapers/`.
+Mount a named volume or host directory on `/data` if you want data to survive container recreation. That path holds the SQLite database, any WAL/SHM sidecars while the server is running, and file-backed uploads such as `user-wallpapers/` and note images in `assets/` (when [inline images](inline-images.md) are enabled; nothing else in the compose file changes).
 
 ## Backup
 

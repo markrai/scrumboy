@@ -89,6 +89,8 @@ type Options struct {
 	Mode         string
 	PublicOrigin *publicorigin.Resolver
 	Logger       *log.Logger
+	// AssetFiles removes a deleted project's image files after the deletion commits (optional).
+	AssetFiles projectapp.AssetFileRemover
 }
 
 type Adapter struct {
@@ -155,9 +157,10 @@ func New(st storeAPI, opts Options) *Adapter {
 			Projects: st,
 		}),
 		projectDeletions: projectapp.NewMCPDeletionService(projectapp.MCPDeletionServiceDependencies{
-			Access:   st,
-			Manage:   st,
-			Projects: st,
+			Access:     st,
+			Manage:     st,
+			Projects:   st,
+			AssetFiles: opts.AssetFiles,
 		}),
 		todoCreates: todoapp.NewMCPCreateService(todoapp.MCPCreateServiceDependencies{
 			Access: st,

@@ -1,5 +1,6 @@
 import { buildMermaidSemanticLabelColors, loadMermaidSemanticEdgeConfig, paintMermaidSemanticLabelBackgrounds, } from "./mermaid-semantic-edges.js";
 import { hasI18nKey, t } from "./i18n/index.js";
+import { getAppRuntime } from "./platform/runtime.js";
 import { escapeHTML } from "./utils.js";
 const SAFE_TAGS = [
     "a",
@@ -30,6 +31,12 @@ const MERMAID_MAX_BLOCKS_PER_PREVIEW = 4;
 const MERMAID_MAX_CHARS_PER_BLOCK = 4000;
 const MERMAID_MAX_TOTAL_CHARS_PER_PREVIEW = 8000;
 const MERMAID_DIRECTIVE_BLOCK_RE = /%%\{[\s\S]*?\}%%/g;
+const IMAGE_PLACEHOLDER_PREFIX = "__SCRUMBOY_IMAGE__";
+// The only image destination that renders: a Scrumboy-managed asset. Must match the server rule
+// in internal/assetrefs (lowercase canonical UUIDv4, no query, fragment or host).
+const CANONICAL_ASSET_SRC_RE = /^\/api\/assets\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const MAX_IMAGES_PER_PREVIEW = 50;
+const IMAGE_ACQUIRE_CONCURRENCY = 4;
 function previewText(key, fallback, values = {}) {
     return hasI18nKey(key) ? t(key, values) : fallback;
 }
@@ -37,6 +44,7 @@ let markdownRenderer = null;
 let mermaidConfiguredThemeKey = null;
 let mermaidLoadPromise = null;
 const renderEpochByContainer = new WeakMap();
+const previewResourcesByContainer = new WeakMap();
 function getMarkdownFactory() {
     if (typeof window === "undefined" || typeof window.markdownit !== "function") {
         throw new Error("Markdown preview is unavailable: missing /vendor/markdown-it.min.js");
@@ -117,15 +125,45 @@ function getMermaidWarningMessage(blockIndex, displaySource, renderSource, total
     }
     return undefined;
 }
-function renderMarkdownHtml(markdown, mermaidEnabled) {
+function renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled = false) {
     const renderer = getMarkdownRenderer();
-    if (!mermaidEnabled) {
-        return { html: renderer.render(markdown || ""), mermaidBlocks: [] };
+    const images = [];
+    if (!mermaidEnabled && !inlineImagesEnabled) {
+        return { html: renderer.render(markdown || ""), mermaidBlocks: [], images };
     }
     const mermaidBlocks = [];
     const placeholderNonce = createMermaidPlaceholderNonce();
     let totalMermaidChars = 0;
     const originalFence = renderer.renderer.rules.fence;
+    const originalImage = renderer.renderer.rules.image;
+    if (inlineImagesEnabled) {
+        // Canonical asset images become nonce placeholders inside <code>; real <img> elements are
+        // created by code after sanitization (materializeImagePlaceholders). Everything else keeps
+        // the escaped-text rendering.
+        renderer.renderer.rules.image = (tokens, idx) => {
+            const token = tokens[idx];
+            const src = token?.attrGet?.("src") ?? "";
+            if (!CANONICAL_ASSET_SRC_RE.test(src) || images.length >= MAX_IMAGES_PER_PREVIEW) {
+                return renderImageTokenAsText(token);
+            }
+            const placeholder = `${IMAGE_PLACEHOLDER_PREFIX}${placeholderNonce}_${images.length}__`;
+            images.push({
+                placeholder,
+                path: src,
+                alt: String(token?.content ?? ""),
+                title: String(token?.attrGet?.("title") ?? ""),
+            });
+            return `<code>${escapeHTML(placeholder)}</code>`;
+        };
+    }
+    if (!mermaidEnabled) {
+        try {
+            return { html: renderer.render(markdown || ""), mermaidBlocks, images };
+        }
+        finally {
+            renderer.renderer.rules.image = originalImage;
+        }
+    }
     renderer.renderer.rules.fence = (tokens, idx) => {
         const token = tokens[idx];
         if (getFenceLanguage(token?.info ?? "") !== "mermaid") {
@@ -145,10 +183,12 @@ function renderMarkdownHtml(markdown, mermaidEnabled) {
         return {
             html: renderer.render(markdown || ""),
             mermaidBlocks,
+            images,
         };
     }
     finally {
         renderer.renderer.rules.fence = originalFence;
+        renderer.renderer.rules.image = originalImage;
     }
 }
 function isSafeLinkHref(href) {
@@ -359,7 +399,141 @@ export function renderMarkdownToSafeHtml(markdown) {
     const { html } = renderMarkdownHtml(markdown, false);
     return sanitizeMarkdownHtml(html);
 }
+function safeRelease(resource) {
+    try {
+        resource.release();
+    }
+    catch {
+        // release() must be idempotent and best-effort; never let it break rendering.
+    }
+}
+// releaseOwnedResources aborts pending acquisitions and releases every resource the container
+// owns. It does not touch the DOM.
+function releaseOwnedResources(container) {
+    const owned = previewResourcesByContainer.get(container);
+    if (!owned) {
+        return;
+    }
+    previewResourcesByContainer.delete(container);
+    owned.controller.abort();
+    for (const resource of owned.owned) {
+        safeRelease(resource);
+    }
+}
+/**
+ * Releases every server resource (for example native image files) acquired for a preview
+ * container and cancels in-flight work for it. Call when the preview is hidden, replaced or its
+ * dialog closes. Idempotent; safe on containers that never rendered.
+ */
+export function releaseMarkdownPreviewResources(container) {
+    beginRenderEpoch(container);
+    releaseOwnedResources(container);
+    for (const img of Array.from(container.querySelectorAll("img.todo-notes-image__img"))) {
+        img.removeAttribute("src");
+    }
+}
+function imageUnavailableText(alt) {
+    const label = previewText("todo.markdownPreview.imageUnavailable", "Image unavailable");
+    return alt ? `${label}: ${alt}` : label;
+}
+function setImageUnavailable(wrapper, alt) {
+    wrapper.className = "todo-notes-image todo-notes-image--unavailable";
+    wrapper.textContent = imageUnavailableText(alt);
+}
+// materializeImagePlaceholders replaces placeholder <code> elements (never inside <pre>) with
+// code-built image elements. A user cannot forge a placeholder: the nonce is random per render.
+function materializeImagePlaceholders(container, images) {
+    const byPlaceholder = new Map();
+    for (const image of images) {
+        byPlaceholder.set(image.placeholder, image);
+    }
+    const byPath = new Map();
+    for (const code of Array.from(container.querySelectorAll("code"))) {
+        if (code.parentElement?.tagName === "PRE") {
+            continue;
+        }
+        const image = byPlaceholder.get(code.textContent || "");
+        if (!image) {
+            continue;
+        }
+        byPlaceholder.delete(image.placeholder);
+        const wrapper = document.createElement("span");
+        wrapper.className = "todo-notes-image todo-notes-image--loading";
+        const img = document.createElement("img");
+        img.className = "todo-notes-image__img";
+        img.alt = image.alt;
+        if (image.title) {
+            img.title = image.title;
+        }
+        img.decoding = "async";
+        img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        img.draggable = false;
+        wrapper.append(img);
+        code.replaceWith(wrapper);
+        const list = byPath.get(image.path) ?? [];
+        list.push(img);
+        byPath.set(image.path, list);
+    }
+    return byPath;
+}
+// loadPreviewImages acquires each distinct image path once (bounded concurrency) through the
+// platform transport, so browsers and Capacitor share one code path. Stale results are released.
+async function loadPreviewImages(container, renderEpoch, imagesByPath) {
+    if (imagesByPath.size === 0) {
+        return;
+    }
+    const state = { controller: new AbortController(), owned: [] };
+    previewResourcesByContainer.set(container, state);
+    const isCurrent = () => isActiveRender(container, renderEpoch) && previewResourcesByContainer.get(container) === state;
+    const queue = Array.from(imagesByPath.entries());
+    const transport = getAppRuntime().transport();
+    const worker = async () => {
+        for (let next = queue.shift(); next; next = queue.shift()) {
+            const [path, imgs] = next;
+            let resource;
+            try {
+                resource = await transport.acquireResource(path, { signal: state.controller.signal });
+            }
+            catch {
+                if (isCurrent() && !state.controller.signal.aborted) {
+                    for (const img of imgs) {
+                        const wrapper = img.parentElement;
+                        if (wrapper) {
+                            setImageUnavailable(wrapper, img.alt);
+                        }
+                    }
+                }
+                continue;
+            }
+            if (!isCurrent() || !imgs.some((img) => container.contains(img))) {
+                safeRelease(resource);
+                continue;
+            }
+            state.owned.push(resource);
+            for (const img of imgs) {
+                const wrapper = img.parentElement;
+                img.addEventListener("error", () => {
+                    if (wrapper && container.contains(img)) {
+                        setImageUnavailable(wrapper, img.alt);
+                    }
+                }, { once: true });
+                img.addEventListener("load", () => {
+                    wrapper?.classList.remove("todo-notes-image--loading");
+                }, { once: true });
+                img.src = resource.url;
+            }
+        }
+    };
+    const workers = [];
+    const poolSize = Math.min(IMAGE_ACQUIRE_CONCURRENCY, queue.length);
+    for (let i = 0; i < poolSize; i += 1) {
+        workers.push(worker());
+    }
+    await Promise.all(workers);
+}
 export async function renderMarkdownPreviewInto(container, markdown, options = {}) {
+    releaseOwnedResources(container);
     const renderEpoch = beginRenderEpoch(container);
     const isEmpty = markdown.trim() === "";
     container.classList.toggle("todo-markdown-preview--empty", isEmpty);
@@ -368,11 +542,23 @@ export async function renderMarkdownPreviewInto(container, markdown, options = {
         return;
     }
     const mermaidEnabled = !!options.mermaidEnabled;
-    const { html, mermaidBlocks } = renderMarkdownHtml(markdown, mermaidEnabled);
+    const inlineImagesEnabled = !!options.inlineImagesEnabled;
+    const { html, mermaidBlocks, images } = renderMarkdownHtml(markdown, mermaidEnabled, inlineImagesEnabled);
     if (!isActiveRender(container, renderEpoch)) {
         return;
     }
     container.innerHTML = sanitizeMarkdownHtml(html);
+    const imageLoad = images.length > 0
+        ? loadPreviewImages(container, renderEpoch, materializeImagePlaceholders(container, images))
+        : Promise.resolve();
+    try {
+        await renderMermaidHosts(container, renderEpoch, mermaidEnabled, mermaidBlocks);
+    }
+    finally {
+        await imageLoad;
+    }
+}
+async function renderMermaidHosts(container, renderEpoch, mermaidEnabled, mermaidBlocks) {
     if (!mermaidEnabled || mermaidBlocks.length === 0) {
         return;
     }

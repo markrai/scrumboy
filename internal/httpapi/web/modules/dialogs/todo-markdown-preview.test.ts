@@ -73,6 +73,7 @@ function mockTodoModule(markdownNotesEnabled: boolean, mermaidNotesEnabled = fal
     getBoardMembers: () => [],
     getMarkdownNotesEnabled: () => markdownNotesEnabled,
     getMermaidNotesEnabled: () => mermaidNotesEnabled,
+    getInlineImagesEnabled: () => false,
     getSlug: () => "",
     getTagColors: () => ({}),
     getUser: () => null,
@@ -177,6 +178,7 @@ describe("todo markdown preview", () => {
       const renderSpy = vi.fn().mockResolvedValue(undefined);
       vi.doMock("../markdown-preview.js", () => ({
         renderMarkdownPreviewInto: renderSpy,
+        releaseMarkdownPreviewResources: vi.fn(),
       }));
       mockTodoModule(true, true);
       const { openTodoDialog } = await import("./todo.js");
@@ -226,5 +228,50 @@ describe("todo markdown preview", () => {
     markdownTab.click();
     expect(body.hidden).toBe(false);
     expect(body.value).toBe(rawBody);
+  });
+});
+
+describe("todo markdown preview resource lifecycle", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installTodoDom();
+    installDialogStubs();
+    installMarkdownVendors();
+  });
+
+  afterEach(() => {
+    vi.doUnmock("../markdown-preview.js");
+    vi.resetModules();
+    HTMLDialogElement.prototype.showModal = originalShowModal;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    document.body.innerHTML = "";
+  });
+
+  it("releases preview resources on write switch, dialog close, and reopen", async () => {
+    const releaseSpy = vi.fn();
+    vi.doMock("../markdown-preview.js", () => ({
+      renderMarkdownPreviewInto: vi.fn().mockResolvedValue(undefined),
+      releaseMarkdownPreviewResources: releaseSpy,
+    }));
+    mockTodoModule(true);
+    const { openTodoDialog } = await import("./todo.js");
+    const preview = document.getElementById("todoBodyPreview") as HTMLElement;
+
+    await openTodoDialog({ mode: "create", role: "maintainer" });
+    const opened = releaseSpy.mock.calls.length;
+    expect(opened).toBeGreaterThanOrEqual(1);
+
+    (document.getElementById("todoBodyPreviewTab") as HTMLButtonElement).click();
+    (document.getElementById("todoBodyWriteTab") as HTMLButtonElement).click();
+    expect(releaseSpy.mock.calls.length).toBe(opened + 1);
+    expect(releaseSpy).toHaveBeenLastCalledWith(preview);
+
+    const dialog = document.getElementById("todoDialog") as HTMLDialogElement;
+    dialog.dispatchEvent(new Event("close"));
+    expect(releaseSpy.mock.calls.length).toBe(opened + 2);
+
+    await openTodoDialog({ mode: "create", role: "maintainer" });
+    expect(releaseSpy.mock.calls.length).toBeGreaterThan(opened + 2);
   });
 });

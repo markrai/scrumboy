@@ -101,3 +101,63 @@ describe('public story detail content', () => {
     expect(container.querySelector('input, textarea, select, form, button:not([data-public-link-open])')).toBeNull();
   });
 });
+
+describe('public story detail inline images', () => {
+  const asset = '/api/assets/11111111-1111-4111-8111-111111111111';
+  let acquired: string[];
+  let released: string[];
+
+  beforeEach(async () => {
+    (window as any).markdownit = (preset?: string, options?: Record<string, unknown>) => new MarkdownIt(preset, options);
+    (window as any).DOMPurify = createDOMPurify(window);
+    document.body.innerHTML = '';
+    acquired = [];
+    released = [];
+    const { installAppRuntime } = await import('../platform/runtime.js');
+    installAppRuntime({
+      kind: 'capacitor',
+      capability: () => null,
+      assetOrigin: () => '',
+      serverOrigin: () => '',
+      publicLinkOrigin: () => '',
+      supportsPWA: () => false,
+      supportsWebPush: () => false,
+      supportsInteractiveOIDC: () => false,
+      startInteractiveOIDC: async () => undefined,
+      transport: () => ({
+        request: vi.fn(),
+        openEventStream: vi.fn(),
+        logout: vi.fn(),
+        acquireResource: async (path: string) => {
+          acquired.push(path);
+          let done = false;
+          return { url: `capacitor://file${path}`, release: () => { if (!done) { done = true; released.push(path); } } };
+        },
+      }),
+    } as any);
+  });
+
+  const imageTodo: PublicTodo = { ...todo, body: `Screenshot: ![shot](${asset})` };
+
+  it('renders canonical images through the transport when enabled', async () => {
+    const container = document.createElement('div');
+    await renderPublicTodoContent(container, imageTodo, [], context({ inlineImagesEnabled: true }));
+    const img = container.querySelector('.public-todo__notes img') as HTMLImageElement;
+    expect(img?.getAttribute('src')).toBe(`capacitor://file${asset}`);
+    expect(acquired).toEqual([asset]);
+  });
+
+  it('keeps image syntax as text when disabled', async () => {
+    const container = document.createElement('div');
+    await renderPublicTodoContent(container, imageTodo, [], context());
+    expect(container.querySelector('img')).toBeNull();
+    expect(acquired).toEqual([]);
+  });
+
+  it('releases the previous story resources when navigating to another story', async () => {
+    const container = document.createElement('div');
+    await renderPublicTodoContent(container, imageTodo, [], context({ inlineImagesEnabled: true }));
+    await renderPublicTodoContent(container, { ...todo, localId: 8, body: 'no images' }, [], context({ inlineImagesEnabled: true }));
+    expect(released).toEqual([asset]);
+  });
+});

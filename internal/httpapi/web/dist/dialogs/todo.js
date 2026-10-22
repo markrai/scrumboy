@@ -2,9 +2,10 @@ import { addTagBtn, archiveTodoBtn, closeTodoBtn, deleteTodoBtn, restoreTodoBtn,
 import { apiFetch } from '../api.js';
 import { isoToLocalInputValue, resolveDueAtForOverdueCheck, setTodoOverdueIndicatorVisibility } from './todo-due.js';
 import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
-import { renderMarkdownPreviewInto } from '../markdown-preview.js';
+import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
+import { createTodoImageUploader } from './todo-image-upload.js';
 import { THEME_CHANGE_EVENT } from '../theme.js';
-import { getBoard, getBoardMembers, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getTagColors, getUser } from '../state/selectors.js';
+import { getBoard, getBoardMembers, getInlineImagesEnabled, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getTagColors, getUser } from '../state/selectors.js';
 import { setAvailableTags, setAvailableTagsMap, setEditingTodo, setTagColors } from '../state/mutations.js';
 import { escapeHTML, isAnonymousBoard, showConfirmDialog, showToast } from '../utils.js';
 import { applyFieldTooltips, TODO_DIALOG_TOOLTIPS } from '../field-tooltips.js';
@@ -19,6 +20,9 @@ export { getTodoFormPermissions, } from './todo-permissions.js';
 export { getTagsFromChips, normalizeTagName, removeTag, renderTagAutocomplete, renderTagsChips, setupTagAutocomplete, } from './todo-tags.js';
 let todoNotesMode = "markdown";
 let todoNotesPreviewBound = false;
+let todoImageUploader = null;
+let todoImageContext = null;
+let todoSaveBlockedByPermissions = false;
 let todoOverdueStateAbort = null;
 let todoDialogCloseGuardsBound = false;
 let todoTooltipsApplied = false;
@@ -121,7 +125,7 @@ async function renderTodoNotesPreview() {
         return;
     }
     try {
-        await renderMarkdownPreviewInto(todoBodyPreview, todoBody.value || "", { mermaidEnabled: getMermaidNotesEnabled() });
+        await renderMarkdownPreviewInto(todoBodyPreview, todoBody.value || "", { mermaidEnabled: getMermaidNotesEnabled(), inlineImagesEnabled: getInlineImagesEnabled() });
     }
     catch (err) {
         showToast(apiErrorMessage(err, { fallbackKey: "todo.notes.previewUnavailable" }));
@@ -161,6 +165,69 @@ function setTodoNotesMode(mode) {
     if (todoNotesMode === "preview") {
         void renderTodoNotesPreview();
     }
+    else {
+        releaseTodoNotesPreview();
+    }
+}
+/** True while note images are uploading; the dialog must not be submitted until they finish. */
+export function isTodoImageUploadPending() {
+    return (todoImageUploader?.pending() ?? 0) > 0;
+}
+function updateTodoSaveLock(pending, total) {
+    const saveTodoBtn = document.getElementById("saveTodoBtn");
+    if (!saveTodoBtn) {
+        return;
+    }
+    if (pending > 0) {
+        saveTodoBtn.disabled = true;
+        const values = { done: total - pending, total };
+        saveTodoBtn.textContent = hasI18nKey("todo.images.uploading")
+            ? t("todo.images.uploading", values)
+            : `Uploading images (${values.done}/${values.total})…`;
+        return;
+    }
+    saveTodoBtn.disabled = todoSaveBlockedByPermissions;
+    saveTodoBtn.textContent = hasI18nKey("common.save") ? t("common.save") : "Save";
+}
+// ensureTodoImageUploader binds paste/drop/picker image uploads to the notes textarea once.
+// Whether uploads are allowed is decided per open via todoImageContext.
+function ensureTodoImageUploader() {
+    if (todoImageUploader || !todoBody) {
+        return;
+    }
+    todoImageUploader = createTodoImageUploader({
+        textarea: todoBody,
+        getContext: () => todoImageContext,
+        onPendingChange: updateTodoSaveLock,
+    });
+    todoImageUploader.attach();
+    const button = document.getElementById("todoBodyInsertImage");
+    const input = document.getElementById("todoBodyImageInput");
+    button?.addEventListener("click", () => input?.click());
+    input?.addEventListener("change", () => {
+        if (input.files && input.files.length > 0) {
+            todoImageUploader?.pickFiles(input.files);
+        }
+        input.value = "";
+    });
+}
+function configureTodoImageUploads(context) {
+    ensureTodoImageUploader();
+    todoImageUploader?.abortAll();
+    todoImageContext = context;
+    const button = document.getElementById("todoBodyInsertImage");
+    if (button) {
+        button.hidden = context === null;
+    }
+}
+// releaseTodoNotesPreview drops the hidden preview DOM and releases any server resources (for
+// example native image files) it holds.
+function releaseTodoNotesPreview() {
+    if (!todoBodyPreview) {
+        return;
+    }
+    releaseMarkdownPreviewResources(todoBodyPreview);
+    todoBodyPreview.replaceChildren();
 }
 function bindTodoNotesPreviewControls() {
     if (todoNotesPreviewBound) {
@@ -295,6 +362,9 @@ function bindTodoDialogCloseGuards() {
         void closeTodoDialogInternal({ reason: detail?.reason === "outside" ? "outside" : "button" });
     });
     todoDialog.addEventListener("close", () => {
+        todoImageUploader?.abortAll();
+        todoImageContext = null;
+        releaseTodoNotesPreview();
         resetTodoDialogCloseState();
     });
 }
@@ -328,6 +398,7 @@ export async function notifyTodoCreated(todo, generation = todoDialogOpenGenerat
 export async function openTodoDialog(opts) {
     const { mode, todo, status, onNavigateToLinkedTodo } = opts;
     const openGeneration = ++todoDialogOpenGeneration;
+    releaseTodoNotesPreview();
     todoCreatedCallback = mode === "create" && opts.onCreated
         ? { generation: openGeneration, callback: opts.onCreated }
         : null;
@@ -632,10 +703,22 @@ export async function openTodoDialog(opts) {
     todoTitle.readOnly = !permissions.canEditTitle;
     todoStatus.disabled = !permissions.canEditStatus;
     const saveTodoBtn = document.getElementById("saveTodoBtn");
+    todoSaveBlockedByPermissions = !permissions.canSubmitTodo;
     if (saveTodoBtn) {
         saveTodoBtn.disabled = !permissions.canSubmitTodo;
         saveTodoBtn.style.display = isArchived ? "none" : "";
     }
+    const imageSlug = getSlug();
+    const imagesAllowed = getInlineImagesEnabled() &&
+        getMarkdownNotesEnabled() &&
+        !!imageSlug &&
+        !!board?.project &&
+        !board.project.expiresAt &&
+        !isAnonymousBoard(board) &&
+        !isArchived &&
+        permissions.canEditNotes &&
+        (mode === "create" ? permissions.canSubmitTodo : todo?.localId != null);
+    configureTodoImageUploads(imagesAllowed ? { slug: imageSlug, todoLocalId: mode === "create" ? null : Number(todo.localId) } : null);
     const tagsChips = document.getElementById("tagsChips");
     if (tagsChips)
         tagsChips.innerHTML = "";

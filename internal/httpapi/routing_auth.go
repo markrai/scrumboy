@@ -125,6 +125,7 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 				"emailNotifyAvailable":            false,
 				"markdownNotesEnabled":            s.markdownNotesEnabled,
 				"mermaidNotesEnabled":             s.mermaidNotesEnabled,
+				"inlineImagesEnabled":             false,
 				"publicProjectsEnabled":           false,
 				"landingPageEnabled":              false,
 			})
@@ -165,6 +166,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request, rest []strin
 			"selfServicePasswordResetEnabled": s.selfServicePasswordResetEnabled(),
 			"markdownNotesEnabled":            s.markdownNotesEnabled,
 			"mermaidNotesEnabled":             s.mermaidNotesEnabled,
+			// Presentation only; never authorization evidence.
+			"inlineImagesEnabled": s.inlineImagesEnabled,
 		}
 		resp["oidcEnabled"] = s.oidcService != nil
 		resp["mobileOidcEnabled"] = s.oidcService != nil

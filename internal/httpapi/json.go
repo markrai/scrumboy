@@ -845,6 +845,8 @@ type projectExportJSON struct {
 	Tags               []tagExportJSON              `json:"tags"`
 	Links              []linkExportJSON             `json:"links,omitempty"`
 	Wall               *store.WallExport            `json:"wall,omitempty"`
+	// Assets is set only in .sbz archive manifests (format 1.3).
+	Assets []store.AssetExport `json:"assets,omitempty"`
 }
 
 type todoExportJSON struct {
@@ -923,7 +925,7 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 			DefaultSprintWeeks: p.DefaultSprintWeeks, SprintsEnabled: p.SprintsEnabled,
 			ExpiresAt: p.ExpiresAt, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 			WorkflowColumns: p.WorkflowColumns, PriorityTiers: p.PriorityTiers, Sprints: p.Sprints,
-			Todos: todos, Tags: tags, Links: links, Wall: p.Wall,
+			Todos: todos, Tags: tags, Links: links, Wall: p.Wall, Assets: p.Assets,
 		})
 	}
 
@@ -962,6 +964,8 @@ type previewResultJSON struct {
 	WillUpdate int      `json:"willUpdate,omitempty"`
 	WillCreate int      `json:"willCreate,omitempty"`
 	Warnings   []string `json:"warnings,omitempty"`
+	Assets     int      `json:"assets,omitempty"`
+	AssetBytes int64    `json:"assetBytes,omitempty"`
 }
 
 func previewResultToJSON(result *store.PreviewResult) previewResultJSON {
@@ -974,5 +978,7 @@ func previewResultToJSON(result *store.PreviewResult) previewResultJSON {
 		WillUpdate: result.WillUpdate,
 		WillCreate: result.WillCreate,
 		Warnings:   result.Warnings,
+		Assets:     result.Assets,
+		AssetBytes: result.AssetBytes,
 	}
 }

@@ -45,6 +45,7 @@ describe('server transport residue', () => {
   it('uses only asynchronous acquired resources for authenticated display URLs', () => {
     expect(locationsFor(/\bresourceUrl\b/g)).toEqual([]);
     expect(locationsFor(/\bacquireResource\s*\(/g).map((location) => location.split(':')[0])).toEqual([
+      'markdown-preview.ts',
       'platform/browser-server-transport.ts',
       'platform/runtime.ts',
       'platform/server-transport.ts',

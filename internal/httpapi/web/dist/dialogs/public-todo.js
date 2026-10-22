@@ -6,7 +6,7 @@
  * delete, link-editing, or assignment handlers can be reached.
  */
 import { fetchPublicTodo, fetchPublicTodoLinks, isPublicAbort, isPublicNotFound, } from '../public-board-api.js';
-import { renderMarkdownPreviewInto } from '../markdown-preview.js';
+import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
 import { sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
 export const PUBLIC_TODO_DIALOG_ID = 'publicTodoDialog';
@@ -66,6 +66,7 @@ function ensureDialog() {
         controller = null;
         generation++;
         openLocalId = null;
+        releaseNotesWithin(dialog);
         ctx?.onClosedByUser();
     });
     document.body.appendChild(dialog);
@@ -112,7 +113,10 @@ async function renderBody(container, body, ctx) {
     }
     if (ctx.markdownEnabled) {
         try {
-            await renderMarkdownPreviewInto(container, body, { mermaidEnabled: ctx.mermaidEnabled });
+            await renderMarkdownPreviewInto(container, body, {
+                mermaidEnabled: ctx.mermaidEnabled,
+                inlineImagesEnabled: !!ctx.inlineImagesEnabled,
+            });
             return;
         }
         catch {
@@ -145,6 +149,7 @@ function renderLinks(links, ctx) {
     return list;
 }
 export async function renderPublicTodoContent(container, todo, links, ctx) {
+    releaseNotesWithin(container);
     container.replaceChildren();
     const notes = document.createElement('div');
     container.append(field('todo.fields.notes', notes));
@@ -184,7 +189,15 @@ function setLoading(dialog, localId) {
     loading.setAttribute('role', 'status');
     loading.setAttribute('data-i18n-text', 'publicBoard.loading');
     loading.textContent = t('publicBoard.loading');
+    releaseNotesWithin(body);
     body.replaceChildren(loading);
+}
+// releaseNotesWithin releases preview resources (for example native image files) held by any
+// notes container under root before that content is discarded.
+function releaseNotesWithin(root) {
+    for (const notes of Array.from(root.querySelectorAll('.public-todo__notes'))) {
+        releaseMarkdownPreviewResources(notes);
+    }
 }
 function closeProgrammatically() {
     activeContext = null;
@@ -249,6 +262,8 @@ export function closePublicTodo() {
     generation++;
     openLocalId = null;
     closeProgrammatically();
+    if (dialogEl)
+        releaseNotesWithin(dialogEl);
     dialogEl?.querySelector('[data-public-todo-body]')?.replaceChildren();
     const title = dialogEl?.querySelector('#publicTodoDialogTitle');
     if (title)

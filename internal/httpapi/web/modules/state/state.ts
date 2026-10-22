@@ -43,6 +43,8 @@ export interface State {
   _wallEnabled?: boolean;
   _markdownNotesEnabled?: boolean;
   _mermaidNotesEnabled?: boolean;
+  /** Effective inline-images capability (presentation only, never authorization). */
+  _inlineImagesEnabled?: boolean;
   /** Effective Full Mode public-projects capability (presentation only, never authorization). */
   _publicProjectsEnabled?: boolean;
   /** Effective Full Mode landing override: / is marketing and /_app is the workspace. */

@@ -137,6 +137,18 @@ The widget renders a sanitized on-device snapshot. It does not use a WebView, Wo
 
 Taps open the existing app routes `/dashboard` or `/{slug}/t/{localId}` through an internal `MainActivity` extra, not a public deep-link scheme.
 
+## Note images and backups
+
+When the server enables [inline images](inline-images.md), note images render in the app through the native transport, which downloads each image and releases the cached file when the preview closes. Images can be added with the **image** button, which opens the system file chooser.
+
+The native bridge buffers whole requests and responses in memory, so the app refuses transfers it cannot hold safely:
+
+- **Export Backup** on a board with images shows *"This backup contains images. Export or import it from Scrumboy in a web browser."* The server refuses before sending any data.
+- Selecting a `.sbz` file for import shows the same message without reading the file.
+- JSON backups larger than 8 MB are refused the same way, for both export and import.
+
+Use Scrumboy in a web browser for those backups.
+
 ## VoiceFlow and on-device capabilities
 
 On Android, VoiceFlow can use native speech I/O. On supported English devices that report ready on-device speech **and** local text generation, the app may open **AI VoiceFlow** (on-device recognition and Gemini Nano planning, with confirmation before mutations). Otherwise it uses **Basic VoiceFlow**.

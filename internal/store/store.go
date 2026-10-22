@@ -24,11 +24,19 @@ type Store struct {
 	configuredOIDCIssuer   string
 	todoAssignedPublisher  TodoAssignedFunc
 	todoLifecyclePublisher TodoLifecycleFunc
+	assetBudgets           AssetBudgets
 }
 
 type StoreOptions struct {
 	EncryptionKey        []byte // Base64-decoded 32-byte key for AES-256-GCM; nil or empty to disable 2FA encryption
 	ConfiguredOIDCIssuer string // Canonical active issuer; empty means no currently usable SSO provider.
+	AssetBudgets         AssetBudgets
+}
+
+// AssetBudgets caps committed note-image bytes per project and per instance. Zero disables a budget.
+type AssetBudgets struct {
+	ProjectBytes  int64
+	InstanceBytes int64
 }
 
 func New(db *sql.DB, opts *StoreOptions) *Store {
@@ -38,6 +46,7 @@ func New(db *sql.DB, opts *StoreOptions) *Store {
 	}
 	if opts != nil {
 		s.configuredOIDCIssuer = opts.ConfiguredOIDCIssuer
+		s.assetBudgets = opts.AssetBudgets
 	}
 	return s
 }

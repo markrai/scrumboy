@@ -32,11 +32,15 @@ async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): P
 }
 
 /** POST multipart (no JSON Content-Type; browser sets boundary). */
-async function apiFetchForm<T = unknown>(path: string, form: FormData): Promise<T> {
+async function apiFetchForm<T = unknown>(path: string, form: FormData, options: { signal?: AbortSignal } = {}): Promise<T> {
+  if (options.signal?.aborted) {
+    throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
+  }
   const res = await getAppRuntime().transport().request(path, {
     method: "POST",
     headers: { "X-Scrumboy": "1" },
     body: form,
+    signal: options.signal,
   });
   const data = await res.json().catch(() => null);
   if (!res.ok) {

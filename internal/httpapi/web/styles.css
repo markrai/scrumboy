@@ -1065,6 +1065,20 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   outline-offset: 1px;
 }
 
+.todo-notes-insert-image {
+  flex-shrink: 0;
+  margin-left: var(--s-10);
+}
+
+.todo-notes-insert-image[hidden] {
+  display: none;
+}
+
+.todo-notes-field .todo-notes-input.todo-notes-input--drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 .todo-notes-field .todo-notes-input {
   border: none;
   border-radius: 0;
@@ -1196,6 +1210,37 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 #todoDialog .todo-markdown-preview .todo-mermaid-host,
 #publicTodoDialog .todo-markdown-preview .todo-mermaid-host {
   margin: 0 0 var(--s-10);
+}
+
+/* Inline note images (Scrumboy-managed assets only; created after sanitization). */
+#todoDialog .todo-markdown-preview .todo-notes-image,
+#publicTodoDialog .todo-markdown-preview .todo-notes-image {
+  display: block;
+  margin: var(--s-6) 0;
+  max-width: 100%;
+}
+
+#todoDialog .todo-markdown-preview .todo-notes-image__img,
+#publicTodoDialog .todo-markdown-preview .todo-notes-image__img {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+#todoDialog .todo-markdown-preview .todo-notes-image--loading,
+#publicTodoDialog .todo-markdown-preview .todo-notes-image--loading {
+  min-height: 48px;
+}
+
+#todoDialog .todo-markdown-preview .todo-notes-image--unavailable,
+#publicTodoDialog .todo-markdown-preview .todo-notes-image--unavailable {
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: var(--fs-12);
+  padding: var(--s-6) var(--s-10);
 }
 
 #todoDialog .todo-markdown-preview .todo-mermaid-status,

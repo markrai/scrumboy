@@ -856,6 +856,9 @@ type DeletedProjectSnapshot struct {
 	ProjectID     int64
 	Name          string
 	MemberUserIDs []int64
+	// AssetFiles lists the image files owned by the deleted project, captured inside the deleting
+	// transaction. Callers remove them only after DeleteProject returns successfully.
+	AssetFiles []AssetFileRef
 }
 
 func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64) (DeletedProjectSnapshot, error) {
@@ -914,6 +917,10 @@ func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64
 	if err := insertAuditEventTx(ctx, tx, projectID, actorUserID, "project_deleted", "project", &projectID, meta); err != nil {
 		return DeletedProjectSnapshot{}, fmt.Errorf("audit project_deleted: %w", err)
 	}
+	assetFiles, err := listProjectAssetUUIDsTx(ctx, tx, []int64{projectID})
+	if err != nil {
+		return DeletedProjectSnapshot{}, err
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
 	if err != nil {
 		return DeletedProjectSnapshot{}, fmt.Errorf("delete project: %w", err)
@@ -928,7 +935,7 @@ func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64
 	if err := tx.Commit(); err != nil {
 		return DeletedProjectSnapshot{}, fmt.Errorf("commit delete project: %w", err)
 	}
-	return DeletedProjectSnapshot{ProjectID: projectID, Name: name, MemberUserIDs: memberUserIDs}, nil
+	return DeletedProjectSnapshot{ProjectID: projectID, Name: name, MemberUserIDs: memberUserIDs, AssetFiles: assetFiles}, nil
 }
 
 // userCanCreateTagsInProject checks if user has access to create tags in a project.
@@ -1704,14 +1711,49 @@ func (s *Store) BackfillDominantColors(ctx context.Context, extractor func(strin
 // audit_events has no FK to projects and is append-only (migration 047), so rows for a deleted
 // project_id may remain intentionally; that is not a failed CASCADE.
 func (s *Store) DeleteExpiredProjects(ctx context.Context) (int64, error) {
+	n, _, err := s.DeleteExpiredProjectsCollectingAssets(ctx)
+	return n, err
+}
+
+// DeleteExpiredProjectsCollectingAssets is DeleteExpiredProjects that also returns the image files
+// owned by the deleted projects, captured in the same transaction. The caller removes the files
+// only after this returns successfully.
+func (s *Store) DeleteExpiredProjectsCollectingAssets(ctx context.Context) (int64, []AssetFileRef, error) {
 	nowMs := time.Now().UTC().UnixMilli()
-	res, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE expires_at IS NOT NULL AND expires_at < ?`, nowMs)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return 0, fmt.Errorf("delete expired projects: %w", err)
+		return 0, nil, fmt.Errorf("begin delete expired projects: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM projects WHERE expires_at IS NOT NULL AND expires_at < ?`, nowMs)
+	if err != nil {
+		return 0, nil, fmt.Errorf("list expired projects: %w", err)
+	}
+	idSet := map[int64]struct{}{}
+	if err := collectIDs(rows, idSet); err != nil {
+		return 0, nil, fmt.Errorf("list expired projects: %w", err)
+	}
+	if len(idSet) == 0 {
+		return 0, nil, nil
+	}
+	ids := make([]int64, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	refs, err := listProjectAssetUUIDsTx(ctx, tx, ids)
+	if err != nil {
+		return 0, nil, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE expires_at IS NOT NULL AND expires_at < ?`, nowMs)
+	if err != nil {
+		return 0, nil, fmt.Errorf("delete expired projects: %w", err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("rows affected delete expired: %w", err)
+		return 0, nil, fmt.Errorf("rows affected delete expired: %w", err)
 	}
-	return n, nil
+	if err := tx.Commit(); err != nil {
+		return 0, nil, fmt.Errorf("commit delete expired projects: %w", err)
+	}
+	return n, refs, nil
 }

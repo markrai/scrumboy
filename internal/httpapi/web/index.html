@@ -145,6 +145,8 @@
               <button class="todo-notes-tab is-active" type="button" id="todoBodyWriteTab" role="tab" aria-pressed="true" data-i18n-text="todo.notes.markdown">markdown</button>
               <button class="todo-notes-tab" type="button" id="todoBodyPreviewTab" role="tab" aria-pressed="false" data-i18n-text="todo.notes.preview">preview</button>
             </div>
+            <button class="todo-notes-tab todo-notes-insert-image" type="button" id="todoBodyInsertImage" hidden data-i18n-text="todo.images.insert" data-i18n-aria-label="todo.images.insertLabel" aria-label="Insert image">image</button>
+            <input type="file" id="todoBodyImageInput" accept="image/png,image/jpeg,image/gif" multiple hidden />
           </div>
           <div class="todo-notes-editor">
             <textarea class="textarea todo-notes-input" id="todoBody" name="body" rows="6" maxlength="20000"></textarea>

@@ -86,3 +86,34 @@ docker start scrumboy
 - Newer/unknown schema: use the same or a newer compatible binary.
 
 Successful output contains no password or authentication secret. Recovery touches only the owner's password hash, sessions, and pending login challenges; it does not change OIDC identities, roles, ownership, projects, API tokens, profile, or 2FA configuration.
+
+## Instance backup and restore
+
+An instance backup is the SQLite database plus the files Scrumboy keeps beside it: `DATA_DIR/user-wallpapers/` and, when [inline images](inline-images.md) are used, `DATA_DIR/assets/`. The database and `assets/` must come from the **same** backup.
+
+Copying a live database and then copying `assets/` is **not** consistent. Project deletion, temporary-board expiry, image cleanup and Replace imports delete database rows and then remove the matching files. A file can vanish between the database copy and the file copy, and restoring that pair gives broken images.
+
+### Offline (recommended)
+
+1. Stop Scrumboy (`docker compose stop`, or stop the service).
+2. Copy `SQLITE_PATH` together with any `-wal`/`-shm` files, and `DATA_DIR/assets/`. Copying all of `DATA_DIR` is simplest and also covers wallpapers.
+3. Start Scrumboy.
+
+### Online
+
+1. Create the file `DATA_DIR/assets/.removal-hold` (`touch`, or `New-Item` in PowerShell).
+2. Wait at least 5 seconds.
+3. Take a consistent SQLite copy: `sqlite3 "$SQLITE_PATH" ".backup '/backup/app.db'"` or `sqlite3 "$SQLITE_PATH" "VACUUM INTO '/backup/app.db'"`. Never copy a live database file directly.
+4. Copy `DATA_DIR/assets/`, excluding `.removal-hold`.
+5. Delete `.removal-hold`.
+
+While the hold file exists, uploads, saves and deletions keep working, but no image file is deleted. Disk use can grow by the deleted images until the hold is removed and the next cleanup runs, so keep the hold short. The Docker image may not include the `sqlite3` CLI: run it from the host or a sidecar container, or use the offline procedure.
+
+### Restore
+
+1. Stop Scrumboy.
+2. Put the database and `assets/` from the same backup in place.
+3. Make sure no `.removal-hold` file was restored (delete it if present).
+4. Start Scrumboy.
+
+Every image row then has its file. Extra files left from newer activity are removed automatically after about 24 hours. Never restore a database and an `assets/` directory from different backups.

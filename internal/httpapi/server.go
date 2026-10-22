@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	assetapp "scrumboy/internal/application/asset"
+	backupimportapp "scrumboy/internal/application/backupimport"
 	boardapp "scrumboy/internal/application/board"
 	calendarapp "scrumboy/internal/application/calendar"
 	membershipapp "scrumboy/internal/application/membership"
@@ -26,6 +28,7 @@ import (
 	useradminapp "scrumboy/internal/application/useradmin"
 	wallapp "scrumboy/internal/application/wall"
 	workflowapp "scrumboy/internal/application/workflow"
+	"scrumboy/internal/assets/blobstore"
 	"scrumboy/internal/config"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/httpapi/ratelimit"
@@ -99,6 +102,22 @@ type Options struct {
 	// MermaidNotesEnabled gates Mermaid rendering within the markdown preview.
 	// Effective only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
+
+	// InlineImagesEnabled gates image upload/serving for story notes
+	// (SCRUMBOY_INLINE_IMAGES_ENABLED). Effective only in Full mode with markdown
+	// notes enabled, a data dir, and AssetBlobs.
+	InlineImagesEnabled bool
+	// AssetBlobs, AssetPending and AssetJanitor are the shared inline-image file
+	// store, in-flight registry and lifecycle janitor (constructed once in main).
+	AssetBlobs   *blobstore.Store
+	AssetPending *blobstore.Pending
+	AssetJanitor *assetapp.Janitor
+	// AssetUploadRateLimit (per user) and AssetPublicRateLimit (per IP, public asset reads)
+	// default to 60/10min and 600/min. AssetReadSlots caps upload bodies held at once
+	// (default 8; negative means zero, for tests).
+	AssetUploadRateLimit *ratelimit.Limiter
+	AssetPublicRateLimit *ratelimit.Limiter
+	AssetReadSlots       int
 
 	// SMTP (optional). Enables self-service "forgot password" email via
 	// POST /api/auth/request-password-reset. Enabled when Host is set, Port
@@ -258,6 +277,15 @@ type Server struct {
 	wallEnabled          bool // Scrumbaby wall; default on (SCRUMBOY_WALL_ENABLED=0 to disable)
 	markdownNotesEnabled bool // Todo notes markdown preview; default off unless explicitly enabled
 	mermaidNotesEnabled  bool // Mermaid in todo notes preview; default off unless explicitly enabled
+
+	inlineImagesEnabled bool // effective inline-images capability (flag && full && markdown && data dir)
+	assetBlobs          *blobstore.Store
+	assetPending        *blobstore.Pending
+	assetJanitor        *assetapp.Janitor
+	assetService        *assetapp.Service
+	backupImports       *backupimportapp.Service
+	assetUploadLimit    *ratelimit.Limiter
+	assetPublicLimit    *ratelimit.Limiter
 }
 
 type storeAPI interface {
@@ -328,6 +356,8 @@ type storeAPI interface {
 	publicboardapp.PublicationStatusStore
 	publicboardapp.EligibilityStore
 	publicboardapp.ProjectionStore
+	assetapp.ServiceStore
+	backupimportapp.Store
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	calendarapp.SourceStore
@@ -738,6 +768,37 @@ func NewServer(st storeAPI, opts Options) *Server {
 		wallEnabled:                    opts.WallEnabled,
 		markdownNotesEnabled:           opts.MarkdownNotesEnabled,
 		mermaidNotesEnabled:            opts.MermaidNotesEnabled && opts.MarkdownNotesEnabled,
+		inlineImagesEnabled: opts.InlineImagesEnabled && mode == "full" && opts.MarkdownNotesEnabled &&
+			strings.TrimSpace(opts.DataDir) != "" && opts.AssetBlobs != nil && opts.AssetPending != nil,
+		assetBlobs:   opts.AssetBlobs,
+		assetPending: opts.AssetPending,
+		assetJanitor: opts.AssetJanitor,
+	}
+	if server.inlineImagesEnabled {
+		server.assetService = assetapp.NewService(assetapp.ServiceOptions{
+			Store:     st,
+			Blobs:     opts.AssetBlobs,
+			Pending:   opts.AssetPending,
+			ReadSlots: opts.AssetReadSlots,
+		})
+		server.assetUploadLimit = opts.AssetUploadRateLimit
+		if server.assetUploadLimit == nil {
+			server.assetUploadLimit = ratelimit.New(60, 10*time.Minute)
+		}
+		server.assetPublicLimit = opts.AssetPublicRateLimit
+		if server.assetPublicLimit == nil {
+			server.assetPublicLimit = ratelimit.New(600, time.Minute)
+		}
+		importDeps := backupimportapp.Options{
+			Store:     st,
+			Blobs:     opts.AssetBlobs,
+			Pending:   opts.AssetPending,
+			Validator: server.assetService,
+		}
+		if opts.AssetJanitor != nil {
+			importDeps.Remover = opts.AssetJanitor
+		}
+		server.backupImports = backupimportapp.New(importDeps)
 	}
 	if mode != "anonymous" {
 		scheduler := newDueReminderScheduler(st, server.PublishEvent, opts.DueReminderInterval, logger)
@@ -778,10 +839,14 @@ func NewServer(st storeAPI, opts Options) *Server {
 		Names:     st,
 		Publisher: projectUpdatePublisher{server: server},
 	})
-	server.projectDeletions = projectapp.NewRESTDeletionService(projectapp.RESTDeletionServiceDependencies{
+	projectDeletionDeps := projectapp.RESTDeletionServiceDependencies{
 		Projects:  st,
 		Publisher: projectDeletionPublisher{server: server},
-	})
+	}
+	if opts.AssetJanitor != nil {
+		projectDeletionDeps.AssetFiles = opts.AssetJanitor
+	}
+	server.projectDeletions = projectapp.NewRESTDeletionService(projectDeletionDeps)
 	server.projectClaims = projectapp.NewRESTClaimService(projectapp.RESTClaimServiceDependencies{
 		Claims:    st,
 		Publisher: projectClaimPublisher{server: server},

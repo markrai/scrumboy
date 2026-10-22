@@ -62,5 +62,8 @@ func cloneDeletedProjectSnapshot(value store.DeletedProjectSnapshot) store.Delet
 	if value.MemberUserIDs != nil {
 		value.MemberUserIDs = append([]int64{}, value.MemberUserIDs...)
 	}
+	if value.AssetFiles != nil {
+		value.AssetFiles = append([]store.AssetFileRef{}, value.AssetFiles...)
+	}
 	return value
 }

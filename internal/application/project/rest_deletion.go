@@ -22,13 +22,16 @@ func (nopRESTDeletionPublisher) PublishProjectDeleted(context.Context, store.Del
 type RESTDeletionServiceDependencies struct {
 	Projects  ProjectDeletionStore
 	Publisher RESTDeletionPublisher
+	// AssetFiles removes the deleted project's image files after the deletion commits (optional).
+	AssetFiles AssetFileRemover
 }
 
 // RESTDeletionService owns exactly-one deletion followed by REST-only semantic
 // publication from the committed snapshot.
 type RESTDeletionService struct {
-	projects  ProjectDeletionStore
-	publisher RESTDeletionPublisher
+	projects   ProjectDeletionStore
+	publisher  RESTDeletionPublisher
+	assetFiles AssetFileRemover
 }
 
 // NewRESTDeletionService constructs the additive REST deletion service.
@@ -37,7 +40,7 @@ func NewRESTDeletionService(deps RESTDeletionServiceDependencies) *RESTDeletionS
 	if publisher == nil {
 		publisher = nopRESTDeletionPublisher{}
 	}
-	return &RESTDeletionService{projects: deps.Projects, publisher: publisher}
+	return &RESTDeletionService{projects: deps.Projects, publisher: publisher, assetFiles: deps.AssetFiles}
 }
 
 // PreparedRESTDeletion binds the exact numeric identity and actor for one REST
@@ -69,6 +72,7 @@ func (p *PreparedRESTDeletion) Delete() error {
 	if err != nil {
 		return err
 	}
+	removeDeletedProjectAssets(p.service.assetFiles, deleted.AssetFiles)
 	p.service.publisher.PublishProjectDeleted(p.ctx, cloneDeletedProjectSnapshot(deleted))
 	return nil
 }

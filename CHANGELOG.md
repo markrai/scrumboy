@@ -2,6 +2,45 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.38.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [Unreleased]
+
+### Added
+
+- **Images in story notes (opt-in)** - With `SCRUMBOY_INLINE_IMAGES_ENABLED=1`
+  (Full Mode, Markdown notes on), editors can paste screenshots, drag image
+  files onto the notes box, or use the new **image** button. PNG (including
+  APNG), JPEG and GIF up to 10 MB are stored under `DATA_DIR/assets/` and
+  referenced as `![alt](/api/assets/{uuid})`. Pixels are not re-encoded;
+  EXIF/GPS metadata is stripped and JPEG orientation is kept. Images render in
+  the note preview and in public story dialogs (browser and Android app).
+  Uploads follow the story's edit permissions; public visitors see an image
+  only when a non-archived story of a published board embeds it. Unsaved or
+  removed images are cleaned up after about 7 days, and per-project/instance
+  storage budgets (`SCRUMBOY_ASSET_PROJECT_BUDGET_MB`,
+  `SCRUMBOY_ASSET_INSTANCE_BUDGET_MB`) cap usage. See `docs/inline-images.md`.
+- **`.sbz` backups with images** - Project exports whose stories embed images
+  download as a `.sbz` archive (backup JSON format 1.3 plus image files);
+  image-free exports stay JSON 1.2. Archive import supports Replace, Merge and
+  Create copy, mints new image ids and rewrites only image destinations in
+  notes. The Android app refuses image backups and JSON backups over 8 MB with
+  a message instead of attempting the transfer.
+
+### Changed
+
+- **Crashed Replace imports are cleaned up on restart** - Invisible staging
+  projects left by an interrupted Replace import (and their image files) are
+  removed after the next restart.
+
+### Upgrade notes
+
+- Migration `078` adds the `project_assets` and `todo_assets` tables (additive;
+  applied automatically). Older binaries can run against the upgraded database,
+  but image references edited while downgraded are re-checked on the next start.
+- Instance backups must include `DATA_DIR/assets/` from the same backup as the
+  database; see `docs/recovery.md` for consistent offline and online procedures.
+- Reverse proxies need to allow about 11 MB request bodies for image uploads,
+  and about 520 MB for `.sbz` imports.
+
 ## [3.38.10] - 2026-10-19
 
 ### Added

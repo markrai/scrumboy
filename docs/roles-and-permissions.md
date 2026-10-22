@@ -41,6 +41,8 @@ Public system-role updates accept only `admin` and `user`. Setting `owner` throu
 | Create todo                    | Maintainer    |                                        |
 | Edit todo (title, body, tags, sprint, estimation) | Maintainer | Except body when assigned (see below)   |
 | Edit body when assigned        | Contributor   | Body-only; no title, tags, sprint, assign |
+| Add images to notes            | Maintainer, or assigned Contributor | Same scope as editing the body; new stories Maintainer only; durable projects only ([inline-images.md](inline-images.md)) |
+| View note images               | Viewer+       | Public visitors only via a published board's active stories |
 | Move todo                      | Maintainer    |                                        |
 | Delete todo                    | Maintainer    | Hard delete; allowed on archived todos too |
 | Archive / restore todo         | Maintainer    | Single or atomic batch (1-500); durable projects |

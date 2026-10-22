@@ -82,6 +82,13 @@ func writeStoreErr(w http.ResponseWriter, err error, hideUnauthorized bool) {
 		writeValidationError(w, store.ErrSprintsDisabled.Error(), "sprints_disabled", nil)
 	case errors.Is(err, store.ErrValidation):
 		writeValidationError(w, err.Error(), validationReasonFromStoreError(err), nil)
+	case errors.Is(err, store.ErrStorageBudget):
+		var budget *store.StorageBudgetError
+		details := map[string]any{}
+		if errors.As(err, &budget) {
+			details = map[string]any{"scope": budget.Scope, "limitBytes": budget.LimitBytes, "usedBytes": budget.UsedBytes}
+		}
+		writeError(w, http.StatusInsufficientStorage, "STORAGE_BUDGET_EXCEEDED", "storage budget exceeded", details)
 	case errors.Is(err, store.ErrConflict):
 		writeError(w, http.StatusConflict, "CONFLICT", err.Error(), validationDetails(store.ErrorReason(err), nil))
 	case errors.Is(err, store.ErrTooManyAttempts):

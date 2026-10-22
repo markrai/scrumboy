@@ -14,7 +14,8 @@ For operator setup, see [`FAQ.md`](../FAQ.md). This document describes architect
 | Preview of `todos.body` when the user opens the **preview** tab | Server-side Markdown → HTML conversion |
 | Sanitized HTML in the preview pane only | WYSIWYG editing (Notes stay a `<textarea>`) |
 | Optional Mermaid rendering for fenced ` ```mermaid ` blocks in the preview pane only | Rendering Mermaid on cards, notifications, exports, or any server path |
-| Raw Markdown persisted on create/patch | Images, raw HTML, or non-http(s) links in preview |
+| Raw Markdown persisted on create/patch | Raw HTML, external images, or non-http(s) links in preview |
+| Scrumboy-managed images (`/api/assets/{uuid}`) when inline images are enabled ([inline-images.md](inline-images.md)) | Any other image source |
 
 Todo **titles** and card titles on the board are always escaped plain text (see `board-rendering` tests).
 
@@ -113,6 +114,8 @@ Instance options (`getMarkdownRenderer()`):
 | `linkify` | `false` | Bare URLs are not auto-linked (explicit `[text](url)` only) |
 
 **Custom rule:** `renderer.rules.image` rewrites image tokens to **escaped plain text** (`![alt](url)`) so no `<img>` is emitted.
+
+**Inline images** (only when `inlineImagesEnabled`): an image whose destination is exactly `/api/assets/{lowercase uuid v4}` becomes a random-nonce placeholder inside `<code>`. After DOMPurify and the post-sanitize pass, code creates the `<img>` element (alt and title set as DOM properties) and loads it through `ServerTransport.acquireResource()`, so browsers and the Capacitor app share one path; every acquisition is released on re-render, tab switch and dialog close. Every other image destination keeps the escaped-text rendering. The DOMPurify allowlist and the purge pass are unchanged, so Markdown can never produce an `<img>` itself. The server applies the same rule (`internal/assetrefs`, goldmark) to decide which assets a note embeds; `internal/assetrefs/testdata/fixtures.json` is a shared parity corpus tested in Go and vitest.
 
 ### 2. DOMPurify
 
@@ -215,7 +218,8 @@ npm run verify:vendor
 | `internal/config/config_markdown_enabled_test.go` | Markdown + Mermaid env parsing |
 | `internal/httpapi/routing_auth_markdown_test.go` | `markdownNotesEnabled` and `mermaidNotesEnabled` on auth status |
 | `modules/markdown-preview.test.ts` | Supported subset, links, HTML/images neutralization, Mermaid fences, placeholder spoofing regression, full directive stripping, preview-size limits, async rerender cancellation |
-| `modules/dialogs/todo-markdown-preview.test.ts` | Dialog gating, preview vs textarea, raw body on save |
+| `modules/dialogs/todo-markdown-preview.test.ts` | Dialog gating, preview vs textarea, raw body on save, preview resource release |
+| `modules/markdown-preview-images.test.ts` | Inline images: canonical-only rendering, placeholder spoofing, sanitizer unchanged, acquire/release lifecycle, stale renders, Go/markdown-it parity fixtures |
 | `modules/dialogs/todo-submit.test.ts` | API payloads keep raw Markdown / raw note bodies |
 | `modules/views/board-rendering.test.ts` | Card titles do not render note Markdown or Mermaid |
 

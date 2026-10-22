@@ -76,6 +76,7 @@ function mockTodoModule(): void {
     getBoardMembers: () => [],
     getMarkdownNotesEnabled: () => false,
     getMermaidNotesEnabled: () => false,
+    getInlineImagesEnabled: () => false,
     getSlug: () => "",
     getTagColors: () => ({}),
     getUser: () => null,

@@ -75,6 +75,14 @@ type Config struct {
 	// only when MarkdownNotesEnabled is also true.
 	MermaidNotesEnabled bool
 
+	// Inline images in story notes. Defaults off; effective only in Full mode with markdown
+	// notes enabled (computed in httpapi). SCRUMBOY_INLINE_IMAGES_ENABLED.
+	InlineImagesEnabled bool
+	// Byte budgets for stored note images (0 disables that budget).
+	// SCRUMBOY_ASSET_PROJECT_BUDGET_MB / SCRUMBOY_ASSET_INSTANCE_BUDGET_MB.
+	AssetProjectBudgetBytes  int64
+	AssetInstanceBudgetBytes int64
+
 	// SMTP (optional). Enables self-service "forgot password" emails. Host and
 	// From are required; Port defaults to 587 when omitted. Invalid explicit
 	// port values become 0 (SMTP stays off). Username/Password are optional
@@ -156,6 +164,10 @@ func FromEnv() Config {
 		WallEnabled:          wallEnabledFromEnv(),
 		MarkdownNotesEnabled: markdownNotesEnabled,
 		MermaidNotesEnabled:  mermaidNotesEnabledFromEnv(markdownNotesEnabled),
+
+		InlineImagesEnabled:      optInFeatureEnabledFromEnv("SCRUMBOY_INLINE_IMAGES_ENABLED"),
+		AssetProjectBudgetBytes:  assetBudgetBytesFromEnv("SCRUMBOY_ASSET_PROJECT_BUDGET_MB", 1024),
+		AssetInstanceBudgetBytes: assetBudgetBytesFromEnv("SCRUMBOY_ASSET_INSTANCE_BUDGET_MB", 10240),
 
 		SMTPHost:         strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_HOST")),
 		SMTPPort:         smtpPort,
@@ -380,6 +392,16 @@ func smtpPortFromEnv() (port int, explicit bool) {
 		return 0, true
 	}
 	return n, true
+}
+
+// assetBudgetBytesFromEnv reads a budget in MiB. 0 disables the budget; negative or invalid
+// values fall back to the default.
+func assetBudgetBytesFromEnv(key string, defaultMB int) int64 {
+	mb := getenvInt(key, defaultMB)
+	if mb < 0 {
+		mb = defaultMB
+	}
+	return int64(mb) << 20
 }
 
 func getenvInt(key string, defaultValue int) int {

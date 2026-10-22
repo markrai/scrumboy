@@ -1,6 +1,6 @@
 # Data model and persistence
 
-SQLite is the primary store for board, auth, and domain state. Uploaded wallpapers are file-backed under `DATA_DIR/user-wallpapers/` (preference JSON stays in SQLite). `internal/store` owns domain rules; `internal/migrate` applies numbered SQL files discovered from the embedded migrations tree (no fixed upper bound).
+SQLite is the primary store for board, auth, and domain state. Uploaded wallpapers are file-backed under `DATA_DIR/user-wallpapers/` (preference JSON stays in SQLite). Note images are immutable files under `DATA_DIR/assets/` with metadata in `project_assets` and note references in `todo_assets` (derived from note bodies on every write; `project_assets.unreferenced_at` is NULL exactly while a story embeds the image). `internal/store` owns domain rules; `internal/migrate` applies numbered SQL files discovered from the embedded migrations tree (no fixed upper bound).
 
 ```mermaid
 flowchart TB

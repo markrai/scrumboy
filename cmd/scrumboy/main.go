@@ -16,6 +16,8 @@ import (
 	_ "time/tzdata" // embed IANA zone database for minimal runtimes (e.g. Alpine) without system tzdata
 
 	"scrumboy/internal/agora"
+	assetapp "scrumboy/internal/application/asset"
+	"scrumboy/internal/assets/blobstore"
 	"scrumboy/internal/config"
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
@@ -75,7 +77,14 @@ func main() {
 	if cfg.OIDCEnabled() {
 		configuredOIDCIssuer = cfg.OIDCIssuerCanonical
 	}
-	storeOpts := &store.StoreOptions{EncryptionKey: encKey, ConfiguredOIDCIssuer: configuredOIDCIssuer}
+	storeOpts := &store.StoreOptions{
+		EncryptionKey:        encKey,
+		ConfiguredOIDCIssuer: configuredOIDCIssuer,
+		AssetBudgets: store.AssetBudgets{
+			ProjectBytes:  cfg.AssetProjectBudgetBytes,
+			InstanceBytes: cfg.AssetInstanceBudgetBytes,
+		},
+	}
 	st := store.New(sqlDB, storeOpts)
 	if malformed, err := st.CountMalformedPasswordHashes(ctx); err != nil {
 		logger.Printf("warning: could not inspect local password hash health: %v", err)
@@ -128,7 +137,35 @@ func main() {
 		maxB = 1 << 20
 	}
 	publicOrigin := publicorigin.New(cfg.PublicBaseURL, cfg.TrustProxy)
-	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger})
+
+	// Inline-image asset files: one blob store, in-flight registry and janitor shared by the HTTP
+	// server, MCP project deletion and the background loop.
+	assetBlobs, err := blobstore.New(cfg.DataDir)
+	if err != nil {
+		logger.Fatalf("asset storage: %v", err)
+	}
+	assetPending := blobstore.NewPending()
+	assetJanitor := assetapp.NewJanitor(assetapp.JanitorOptions{
+		Store:       st,
+		Blobs:       assetBlobs,
+		Pending:     assetPending,
+		Logger:      logger,
+		FlagEnabled: cfg.InlineImagesEnabled,
+		Reaper:      st,
+		DataDir:     cfg.DataDir,
+	})
+	if cfg.InlineImagesEnabled {
+		if !cfg.MarkdownNotesEnabled || cfg.ScrumboyMode != "full" {
+			logger.Printf("inline images: SCRUMBOY_INLINE_IMAGES_ENABLED is set but inactive (requires full mode and SCRUMBOY_MARKDOWN_NOTES_ENABLED)")
+		} else {
+			logger.Printf("inline images: enabled (assets in %s)", assetBlobs.Root())
+		}
+		if cfg.AssetProjectBudgetBytes == 0 || cfg.AssetInstanceBudgetBytes == 0 {
+			logger.Printf("warning: inline images storage budget disabled (SCRUMBOY_ASSET_*_BUDGET_MB=0)")
+		}
+	}
+
+	mcpH := mcp.New(st, mcp.Options{Mode: cfg.ScrumboyMode, PublicOrigin: publicOrigin, Logger: logger, AssetFiles: assetJanitor})
 	srv := httpapi.NewServer(st, httpapi.Options{
 		Logger:                logger,
 		MaxRequestBody:        cfg.MaxRequestBodyBytes,
@@ -148,6 +185,10 @@ func main() {
 		WallEnabled:           cfg.WallEnabled,
 		MarkdownNotesEnabled:  cfg.MarkdownNotesEnabled,
 		MermaidNotesEnabled:   cfg.MermaidNotesEnabled,
+		InlineImagesEnabled:   cfg.InlineImagesEnabled,
+		AssetBlobs:            assetBlobs,
+		AssetPending:          assetPending,
+		AssetJanitor:          assetJanitor,
 		SMTPHost:              cfg.SMTPHost,
 		SMTPPort:              cfg.SMTPPort,
 		SMTPUsername:          cfg.SMTPUsername,
@@ -233,17 +274,31 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour) // Run every hour
 		defer ticker.Stop()
+		// Asset reconciliation starts shortly after startup (GC waits for it); the orphan-file
+		// sweep runs 10 minutes after startup and then once a day.
+		reconcileTimer := time.NewTimer(1 * time.Minute)
+		defer reconcileTimer.Stop()
+		sweepTimer := time.NewTimer(10 * time.Minute)
+		defer sweepTimer.Stop()
+		ticks := 0
 
 		for {
 			select {
+			case <-reconcileTimer.C:
+				assetJanitor.Tick(context.Background())
+			case <-sweepTimer.C:
+				assetJanitor.Sweep(context.Background())
 			case <-ticker.C:
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
-				deleted, err := st.DeleteExpiredProjects(ctx)
+				deleted, expiredAssets, err := st.DeleteExpiredProjectsCollectingAssets(ctx)
 				if err != nil {
 					logger.Printf("cleanup expired projects: %v", err)
-				} else if deleted > 0 {
-					logger.Printf("deleted %d expired projects", deleted)
+				} else {
+					assetJanitor.RemoveFiles(expiredAssets)
+					if deleted > 0 {
+						logger.Printf("deleted %d expired projects", deleted)
+					}
 				}
 
 				if deletedOAuth, err := st.DeleteExpiredOAuthArtifacts(ctx); err != nil {
@@ -262,6 +317,12 @@ func main() {
 				}
 
 				cancel()
+
+				assetJanitor.Tick(context.Background())
+				ticks++
+				if ticks%24 == 0 {
+					assetJanitor.Sweep(context.Background())
+				}
 			case <-stop:
 				return
 			}

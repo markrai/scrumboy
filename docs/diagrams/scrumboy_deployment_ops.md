@@ -12,6 +12,7 @@ flowchart TB
   Vol["Persistent volume DATA_DIR"]
   DB[(app.db WAL journal)]
   Wallpapers["user-wallpapers user-id.jpg"]
+  Assets["assets shard/uuid.png|jpg|gif"]
   IdP[Optional OIDC IdP]
 
   User --> Proxy
@@ -20,6 +21,7 @@ flowchart TB
   App --> Vol
   Vol --> DB
   Vol --> Wallpapers
+  Vol --> Assets
   App --> IdP
 ```
 
@@ -38,10 +40,12 @@ flowchart LR
   WAL[WAL mode default]
   Files["app.db plus -wal -shm sidecars"]
   Uploads["user-wallpapers/*.jpg"]
+  Assets["assets/xx/uuid.ext note images"]
   Hourly[Hourly PRAGMA wal_checkpoint TRUNCATE]
 
   Env --> Open --> Mig --> WAL --> Files
   Env --> Uploads
+  Env --> Assets
   Hourly --> Files
 ```
 
@@ -66,6 +70,7 @@ What lives where, what JSON export covers, and what a full restore needs. See al
 | SQLite | `SQLITE_PATH` (default under `DATA_DIR`) | scoped projects | yes |
 | WAL/SHM | beside DB | no | quiesce/copy with DB |
 | Wallpapers | `DATA_DIR/user-wallpapers/` | no | yes |
+| Note images | `DATA_DIR/assets/<uuid[0:2]>/<uuid>.<ext>` | in `.sbz` exports only | yes, from the same backup as SQLite ([recovery.md](../recovery.md#instance-backup-and-restore)) |
 | Encryption key | env/secret (`SCRUMBOY_ENCRYPTION_KEY`) | no | yes if encrypted auth or calendar data |
 | Mermaid override | `DATA_DIR/mermaid-semantic-edges.json` when used | no | only for that override |
 
@@ -97,7 +102,7 @@ flowchart TB
   NewBin --> SameData --> AutoMig
 ```
 
-- **File backup:** Prefer stopping the process (or otherwise ensuring no concurrent writes), then copy the **entire** `DATA_DIR` (Docker `/data`). That includes `app.db`, any `-wal` / `-shm` sidecars, and `user-wallpapers/`. If you must copy a live database, copy `app.db` together with its WAL/SHM sidecars **and** the `user-wallpapers/` directory — copying only `app.db` is not sufficient. Restoring the database without the wallpaper files leaves image-mode preferences pointing at missing files.
+- **File backup:** Prefer stopping the process (or otherwise ensuring no concurrent writes), then copy the **entire** `DATA_DIR` (Docker `/data`). That includes `app.db`, any `-wal` / `-shm` sidecars, and `user-wallpapers/`. If you must copy a live database, copy `app.db` together with its WAL/SHM sidecars **and** the `user-wallpapers/` directory — copying only `app.db` is not sufficient. Restoring the database without the wallpaper files leaves image-mode preferences pointing at missing files. Note images (`assets/`) must come from the same backup as the database; a live "database first, then files" copy is not consistent - use the offline procedure or the `.removal-hold` online procedure in [recovery.md](../recovery.md#instance-backup-and-restore).
 - **JSON backup:** Project-scoped logical export via API; import supports replace, merge, or copy-as-new (see `scrumboy_backup_import.md`). It does **not** include uploaded wallpaper files, general user preferences, or `audit_events`, and is not a substitute for a complete file-level `DATA_DIR` backup.
 - **2FA and calendar feeds:** back up `SCRUMBOY_ENCRYPTION_KEY` with the database; rotating it breaks stored TOTP secrets and encrypted ICS URLs. Once encrypted security data exists, startup requires the original valid key. On a fresh install with no encrypted data yet, an invalid key is ignored with a warning (2FA, password-reset encryption, and calendar URL encryption stay off until a valid key is set).
 - **Owner recovery:** host-side `recover-owner` can establish or replace an owner local password without the IdP; see `docs/recovery.md` (stop the service and back up `DATA_DIR` first).

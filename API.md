@@ -1046,6 +1046,49 @@ is an explicit user or API action.
 
 ---
 
+## REST: Note images (inline images)
+
+Available only when `SCRUMBOY_INLINE_IMAGES_ENABLED` is on (Full Mode, Markdown notes on). Otherwise both routes return the generic `404`. See [docs/inline-images.md](docs/inline-images.md).
+
+### `POST /api/board/{slug}/assets[?todo={localId}]`
+
+`multipart/form-data` with exactly one file part named `file` (PNG, JPEG or GIF, at most 10 MB), plus the `X-Scrumboy: 1` header. With `todo`, the caller needs edit rights on that story's notes (Maintainer, or the assigned Contributor). Without it, the caller must be able to create stories (Maintainer). Durable projects only.
+
+`201` (new) or `200` (identical bytes already stored in the project):
+
+```json
+{"assetId":"550e8400-e29b-41d4-a716-446655440000","url":"/api/assets/550e8400-e29b-41d4-a716-446655440000","mimeType":"image/png","sizeBytes":184320,"width":1280,"height":720,"filename":"screenshot.png"}
+```
+
+Errors:
+
+| Status | Meaning |
+|---|---|
+| `400` | `invalid_multipart`, `invalid_todo`, `unsupported_image_type`, `invalid_image`, `image_dimensions`, `image_trailing_data`, `image_too_many_frames` |
+| `403` | Member without edit scope |
+| `404` | Nonmember, temporary/staging project, or flag off |
+| `409` | Archived story |
+| `413` | Image too large |
+| `429` | Upload rate limit |
+| `503` | `BUSY` |
+| `507` | `STORAGE_BUDGET_EXCEEDED`, with `scope` (`project`/`instance`) |
+
+Embed the result in a note with `![alt](/api/assets/{uuid})`.
+
+### `GET|HEAD /api/assets/{uuid}`
+
+Served to members (Viewer+) of the asset's durable project. Anyone else, signed in or not, can read it only when the project is an eligible public board and a non-archived story embeds the image. Every other case is `404`.
+
+Responses carry `Cache-Control: private, no-cache`, `ETag: "<sha256>"` (honored by `If-None-Match` only after authorization), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-origin` and `Content-Disposition: inline`.
+
+## REST: Backup archives (`.sbz`)
+
+- `GET /api/backup/export` returns `application/zip` (`.sbz`) when exported stories embed images, and JSON otherwise.
+- `GET /api/backup/export?clientMaxBytes=N` (`1 <= N <= 64 MiB`, used by native clients) instead answers `409 ARCHIVE_EXPORT_UNSUPPORTED_CLIENT` when the export would be an archive, and `413 EXPORT_TOO_LARGE_FOR_CLIENT` when the JSON exceeds `N`. Both are sent before any body.
+- `POST /api/backup/preview` and `POST /api/backup/import` accept `multipart/form-data` with parts `importMode`, `confirmation` (Replace only, must be `REPLACE`) and `archive` (the `.sbz` file). The responses match the JSON variants, and the preview adds `assets` and `assetBytes`. Invalid archives give `400 invalid_backup_archive`, oversize uploads `413`, and budget overruns `507`. With inline images off, multipart requests behave as before (JSON is required).
+
+See [docs/backup-and-import.md](docs/backup-and-import.md).
+
 ## Error codes
 
 - **`AUTH_REQUIRED`** - Sign-in required (including some store unauthorized paths mapped from the store layer).

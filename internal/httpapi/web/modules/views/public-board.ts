@@ -12,7 +12,7 @@
 import { app } from '../dom/elements.js';
 import { t } from '../i18n/index.js';
 import { showToast } from '../utils.js';
-import { getAuthStatusAvailable, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
+import { getAuthStatusAvailable, getInlineImagesEnabled, getMarkdownNotesEnabled, getMermaidNotesEnabled, getSlug, getUser } from '../state/selectors.js';
 import { signInPath } from '../app-home.js';
 import { setBoard, setBoardAccess, setProjectId } from '../state/mutations.js';
 import { PUBLIC_BOARD_ACCESS } from '../state/board-access.js';
@@ -781,6 +781,7 @@ function dialogContext(s: PublicSession): PublicTodoDialogContext {
     showPoints: showPublicPoints(s.snapshot),
     markdownEnabled: getMarkdownNotesEnabled(),
     mermaidEnabled: getMermaidNotesEnabled(),
+    inlineImagesEnabled: getInlineImagesEnabled(),
     onNavigateToStory: (localId) => openStoryFromBoard(s, localId),
     onSignIn: !getUser() && getAuthStatusAvailable() ? startSignIn : undefined,
     onClosedByUser: () => {

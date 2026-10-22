@@ -152,6 +152,10 @@ export function getMermaidNotesEnabled(): boolean {
   return !!current._mermaidNotesEnabled;
 }
 
+export function getInlineImagesEnabled(): boolean {
+  return !!current._inlineImagesEnabled;
+}
+
 export function getPublicProjectsEnabled(): boolean {
   return !!current._publicProjectsEnabled;
 }

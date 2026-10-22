@@ -40,6 +40,7 @@ type ProjectionStore interface {
 	GetPublicTodoDetail(ctx context.Context, projectID int64, expectedSlug string, localID int64) (store.PublicTodoProjection, error)
 	ListPublicTodoLinks(ctx context.Context, projectID int64, expectedSlug string, localID int64) ([]store.PublicTodoLinkProjection, error)
 	ListPublicSprints(ctx context.Context, projectID int64, expectedSlug string) ([]store.PublicSprintProjection, error)
+	IsAssetPubliclyReferenced(ctx context.Context, projectID int64, expectedSlug string, assetID int64) (bool, error)
 }
 
 type ReadServiceOptions struct {
@@ -335,6 +336,16 @@ func (p PreparedRead) ReadTodo(ctx context.Context, localID int64) (store.Public
 	}
 	result, err := p.service.projections.GetPublicTodoDetail(ctx, p.projectID, p.slug, localID)
 	return result, mapReadError(err)
+}
+
+// AssetReferenced reports whether a non-archived story of the resolved public board embeds the
+// asset, re-checking eligibility inside the read.
+func (p PreparedRead) AssetReferenced(ctx context.Context, assetID int64) (bool, error) {
+	ok, err := p.service.projections.IsAssetPubliclyReferenced(ctx, p.projectID, p.slug, assetID)
+	if err != nil {
+		return false, mapReadError(err)
+	}
+	return ok, nil
 }
 
 func (p PreparedRead) ReadLinks(ctx context.Context, localID int64) ([]store.PublicTodoLinkProjection, error) {

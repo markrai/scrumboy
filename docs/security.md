@@ -240,6 +240,8 @@ Additional controls include Origin checks for browser MCP JSON-RPC and Agora, th
 
 `SCRUMBOY_TRUST_PROXY` and `SCRUMBOY_PUBLIC_BASE_URL` affect client IP for limits and public origin / MCP resource URLs (`internal/publicorigin`). Misconfiguration can break OAuth discovery or weaken IP-based limits.
 
+**Note images** ([inline-images.md](inline-images.md), off by default): uploads are authorized against the story's edit scope before any body bytes are read, and again when the row is inserted. Request bodies are capped with `MaxBytesReader` and parsed as a stream, so no multipart temp files are created. Concurrency is bounded (8 bodies, 2 decodes), uploads are rate-limited per user, and byte budgets cap storage. Only PNG/JPEG/GIF are accepted, identified from their bytes, structurally validated and fully decoded. SVG, polyglots and trailing data are rejected, and EXIF/GPS/XMP/text metadata is stripped losslessly. UUIDs are minted by the server and never taken from clients or archives. Image responses carry `nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-origin` and `Cache-Control: private, no-cache`, and every denial is a 404. In the browser, images are created only after sanitization, for `/api/assets/{uuid}` destinations; the DOMPurify allowlist is unchanged. `.sbz` archives are read with absolute size and entry limits, exact entry-name matching and per-image checksum verification.
+
 This section is not a full API reference—see `[API.md](../API.md)` and `[docs/mcp.md](mcp.md)`.
 
 ---
@@ -254,6 +256,7 @@ This section is not a full API reference—see `[API.md](../API.md)` and `[docs/
 | Application DB            | `SQLITE_PATH` (default under `DATA_DIR`) | Board, auth, preferences, hashed secrets                |
 | WAL/SHM                   | Beside the DB file                       | Copy with the DB when backing up live/quiesced files    |
 | Wallpapers                | `DATA_DIR/user-wallpapers/<user-id>.jpg` | Preference JSON in SQLite; files are not in JSON export |
+| Note images               | `DATA_DIR/assets/<shard>/<uuid>.<ext>`   | Metadata in SQLite; included in `.sbz` exports          |
 | Encryption key            | Environment / secret store               | Required once encrypted TOTP or calendar data exists |
 | Optional Mermaid override | `DATA_DIR/mermaid-semantic-edges.json`   | Only if operators deploy an override                    |
 

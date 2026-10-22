@@ -304,6 +304,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			return Todo{}, fmt.Errorf("last insert id todo: %w", err)
 		}
 
+		if err := syncTodoAssetsTx(ctx, tx, projectID, todoID, in.Body, nowMs); err != nil {
+			_ = tx.Rollback()
+			return Todo{}, err
+		}
+
 		// Board-scoped tag path: unowned anonymous temp, OR any temp with no user in ctx (link holder creating todos with tags).
 		useBoardScopedTags := isAnonymousBoard || (isTemporaryProject(p) && userIDPtr == nil)
 		if userIDPtr != nil || useBoardScopedTags {
@@ -589,6 +594,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 				in.Body, nowMs, todoID); err != nil {
 				return Todo{}, fmt.Errorf("update todo body: %w", err)
 			}
+			if err := syncTodoAssetsTx(ctx, tx, existing.ProjectID, todoID, in.Body, nowMs); err != nil {
+				return Todo{}, err
+			}
 			if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
 				return Todo{}, err
 			}
@@ -798,6 +806,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		`, in.Title, in.Body, assigneeValue, estimationPoints, priorityKeyValue, nowMs, todoID); err != nil {
 			return Todo{}, fmt.Errorf("update todo: %w", err)
 		}
+	}
+	if err := syncTodoAssetsTx(ctx, tx, existing.ProjectID, todoID, in.Body, nowMs); err != nil {
+		return Todo{}, err
 	}
 
 	if dueAtChanged {

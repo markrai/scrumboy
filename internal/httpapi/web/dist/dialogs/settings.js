@@ -1,5 +1,5 @@
 import { settingsDialog, closeSettingsBtn } from '../dom/elements.js';
-import { apiFetch } from '../api.js';
+import { apiFetch, apiFetchForm } from '../api.js';
 import { fetchProjectMembers } from '../members-cache.js';
 import { attachDialogClose, bindDialogLocale, escapeHTML, showToast, getAppVersion, showConfirmDialog, confirmDelete, isAnonymousBoard, renderUserAvatar, processImageFile, renderAvatarContent } from '../utils.js';
 import { getStoredTheme, handleThemeChange, THEME_SYSTEM, THEME_DARK, THEME_LIGHT } from '../theme.js';
@@ -7,7 +7,7 @@ import { getStoredWallpaperState, setWallpaperOff, setWallpaperColor, uploadWall
 import { CARDS_PER_LANE_ALLOWED, CARDS_PER_LANE_PREFERENCE_KEY, getDefaultCardsPerLane, setDefaultCardsPerLane, invalidateBoard, usePreferenceLimitOnNextBoardRequest, } from '../orchestration/board-refresh.js';
 import { clearBoardPrefetchCache } from '../views/board-prefetch-cache.js';
 import { processWallpaperFileForUpload } from '../utils.js';
-import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers, getBoardAccess, getPublicProjectsEnabled } from '../state/selectors.js';
+import { getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getBoard, getProjectId, getProjects, getSettingsProjectId, getSettingsActiveTab, getTagColors, getUser, getAuthStatusAvailable, getOidcEnabled, getLocalAuthEnabled, getPushConfigured, getEmailNotifyAvailable, getPushStatus, getBackupImportBtn, getBackupData, getBackupPreview, getTrelloImportBtn, getTrelloImportData, getTrelloImportPreview, getTrelloImportResult, getBoardMembers, getBoardAccess, getPublicProjectsEnabled, getInlineImagesEnabled } from '../state/selectors.js';
 import { bindSharingTab, renderSharingTabShell } from './settings-sharing.js';
 import { isPublicBoardAccess } from '../state/board-access.js';
 import { setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview, setTrelloImportBtn, setTrelloImportData, setTrelloImportPreview, setTrelloImportResult, setUser, setBoardMembers, } from '../state/mutations.js';
@@ -18,6 +18,7 @@ import { KEY_ACTION_LIST, chordFromKeyboardEvent, formatChordForDisplay, getReso
 import { requestDesktopNotificationPermission, getDesktopNotificationStatusDescription, getDesktopNotificationStatusKind, } from '../core/assignmentNotify.js';
 import { isPushSubscribed, subscribeToPush, unsubscribeFromPush } from '../core/push.js';
 import { getAppRuntime } from '../platform/runtime.js';
+import { NATIVE_BACKUP_MAX_BYTES } from '../platform/native-limits.js';
 import { getVoiceFlowEnabledPreference, setVoiceFlowEnabledPreference } from '../core/voiceflow-preferences.js';
 import { getEnhancedSpeechWaitPreset, setEnhancedSpeechWaitPreset, } from '../core/enhanced-speech-wait-preferences.js';
 import { VOICE_SPEECH_RATE_PRESETS, getVoiceSpeechRate, setVoiceSpeechRate, sliderPositionForVoiceSpeechRate, voiceSpeechRateDisplayLabel, voiceSpeechRateFromSliderPosition, } from '../core/voice-speech-rate-preferences.js';
@@ -536,7 +537,7 @@ export function renderBackupTabHTML() {
       <div class="settings-backup-import">
         <div class="settings-section__title" data-i18n-text="settings.backup.import.title">Import Data</div>
         <div class="settings-section__description muted" data-i18n-text="settings.backup.import.description">Restore from a backup file or merge data from another instance.</div>
-        <input type="file" accept=".json" id="backupFileInput" style="margin-bottom: 16px;">
+        <input type="file" accept=".json,.sbz,application/json,application/zip" id="backupFileInput" style="margin-bottom: 16px;">
         <div style="margin-bottom: 16px;">
           <label style="display: block; margin-bottom: 8px;">
             <input type="radio" name="importMode" value="merge" checked>
@@ -652,6 +653,11 @@ function renderBackupPreview(preview) {
     if (preview.links !== undefined && preview.links > 0) {
         previewHTML += `${escapeHTML(t("settings.backup.preview.links", { count: preview.links }))}<br>`;
     }
+    if (preview.assets !== undefined && preview.assets > 0) {
+        previewHTML += `${escapeHTML(t("settings.backup.preview.assets", { count: preview.assets }))}<br>`;
+        const mb = ((preview.assetBytes ?? 0) / (1024 * 1024)).toFixed(1);
+        previewHTML += `${escapeHTML(t("settings.backup.preview.assetBytes", { size: `${mb} MB` }))}<br>`;
+    }
     if (preview.willDelete !== undefined) {
         previewHTML += `${escapeHTML(t("settings.backup.preview.willDelete", { count: preview.willDelete }))}<br>`;
     }
@@ -680,20 +686,46 @@ function renderBackupWarnings(warnings) {
     warningsEl.innerHTML = `<strong>${escapeHTML(t("settings.backup.warnings.heading"))}</strong><br>${warnings.map((w) => escapeHTML(w)).join("<br>")}`;
     warningsEl.style.display = "block";
 }
+// isZipBlob reports whether an export response is a .sbz archive (backups with images).
+async function isZipBlob(blob) {
+    if (blob.type.includes("zip")) {
+        return true;
+    }
+    try {
+        const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+        return head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+    }
+    catch {
+        return false;
+    }
+}
 // Backup handlers
 async function handleBackupExport() {
     try {
-        const response = await getAppRuntime().transport().request("/api/backup/export", {
+        const isNative = getAppRuntime().kind === "capacitor";
+        // Native clients declare a byte ceiling; the server refuses archives and oversize JSON
+        // before sending a body the base64 bridge would have to buffer.
+        const exportPath = isNative ? `/api/backup/export?clientMaxBytes=${NATIVE_BACKUP_MAX_BYTES}` : "/api/backup/export";
+        const response = await getAppRuntime().transport().request(exportPath, {
             headers: {
                 "X-Scrumboy": "1"
             }
         });
         if (!response.ok) {
+            if (isNative && response.status === 409) {
+                showToast(t("settings.backup.native.archiveUnsupported"));
+                return;
+            }
+            if (isNative && response.status === 413) {
+                showToast(t("settings.backup.native.tooLarge"));
+                return;
+            }
             const err = await response.json();
             showToast(apiErrorMessageOrRaw({ data: err }, { fallbackKey: "settings.backup.toast.exportFailed" }));
             return;
         }
         const blob = await response.blob();
+        const isArchive = await isZipBlob(blob);
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -704,7 +736,7 @@ async function handleBackupExport() {
         const minutes = now.getMinutes().toString().padStart(2, '0');
         const ampm = hours >= 12 ? 'PM' : 'AM';
         const hours12 = (hours % 12 || 12).toString().padStart(2, '0');
-        a.download = `scrumboy-backup-${dateStr}-${hours12}-${minutes}-${ampm}.json`;
+        a.download = `scrumboy-backup-${dateStr}-${hours12}-${minutes}-${ampm}.${isArchive ? "sbz" : "json"}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -721,7 +753,48 @@ async function handleBackupFileSelect(e) {
     if (!file) {
         return;
     }
+    const resetSelection = () => {
+        target.value = "";
+        setBackupData(null);
+        setBackupPreview(null);
+        renderBackupPreview(null);
+        renderBackupWarnings(null);
+        updateBackupUI();
+    };
+    const isNative = getAppRuntime().kind === "capacitor";
+    // Native: decide from name and size only. Reading the file would buffer it through the base64
+    // bridge, which is exactly what large archives must never do.
+    if (isNative) {
+        if (file.name.toLowerCase().endsWith(".sbz")) {
+            showToast(t("settings.backup.native.archiveUnsupported"));
+            resetSelection();
+            return;
+        }
+        if (file.size > NATIVE_BACKUP_MAX_BYTES) {
+            showToast(t("settings.backup.native.tooLarge"));
+            resetSelection();
+            return;
+        }
+    }
     try {
+        if (!isNative && (file.name.toLowerCase().endsWith(".sbz") || (await isZipBlob(file)))) {
+            if (!getInlineImagesEnabled()) {
+                showToast(t("settings.backup.toast.archiveUnsupported"));
+                resetSelection();
+                return;
+            }
+            const importMode = document.querySelector('input[name="importMode"]:checked')?.value || "merge";
+            const form = new FormData();
+            form.append("importMode", importMode);
+            form.append("archive", file, file.name || "backup.sbz");
+            const preview = await apiFetchForm("/api/backup/preview", form);
+            setBackupData({ archiveFile: file });
+            setBackupPreview(preview);
+            renderBackupPreview(preview);
+            renderBackupWarnings(preview.warnings ?? null);
+            updateBackupUI();
+            return;
+        }
         const text = await file.text();
         const data = JSON.parse(text);
         // Validate structure
@@ -860,10 +933,26 @@ async function handleBackupImport() {
             importBtn.textContent = t("settings.backup.import.importing");
         }
         console.log("handleBackupImport: Calling API...");
-        const result = await apiFetch("/api/backup/import", {
-            method: "POST",
-            body: JSON.stringify(body)
-        });
+        const selection = getBackupData();
+        let result;
+        if (selection?.archiveFile) {
+            // Archives are uploaded again for import (the preview kept no server state).
+            if (importBtn)
+                importBtn.textContent = t("settings.backup.import.uploading");
+            const form = new FormData();
+            form.append("importMode", importMode);
+            if (importMode === "replace") {
+                form.append("confirmation", confirmationInput.value.trim());
+            }
+            form.append("archive", selection.archiveFile, selection.archiveFile.name || "backup.sbz");
+            result = await apiFetchForm("/api/backup/import", form);
+        }
+        else {
+            result = await apiFetch("/api/backup/import", {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
+        }
         console.log("handleBackupImport: API call completed", result);
         // Show results
         const summaryParts = [];
@@ -3292,3 +3381,4 @@ async function showRegenerateRecoveryCodesDialog() {
         showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.recovery.regenerateFailed" }));
     }
 }
+export { handleBackupExport as __handleBackupExportForTest, handleBackupFileSelect as __handleBackupFileSelectForTest };

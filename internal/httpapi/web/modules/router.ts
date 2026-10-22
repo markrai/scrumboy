@@ -4,7 +4,7 @@ import { startGlobalRealtime, stopGlobalRealtime, initForegroundLifecycle } from
 import { hydrateNotificationsForUser, initNotificationBadge } from './core/notifications.js';
 import { unsubscribeFromPush, maybeAutoSubscribePushAfterLogin } from './core/push.js';
 import { getAuthStatusChecked, getUser, getBootstrapAvailable, getAuthStatusAvailable, getBoard, getOidcEnabled, getMobileOidcEnabled, getLocalAuthEnabled, getPushConfigured, getSelfServicePasswordResetEnabled } from './state/selectors.js';
-import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
+import { setAuthStatusChecked, setAuthStatusAvailable, setUser, setBootstrapAvailable, setPushConfigured, setPushStatus, setSelfServicePasswordResetEnabled, setEmailNotifyAvailable, setOidcEnabled, setMobileOidcEnabled, setLocalAuthEnabled, setWallEnabled, setMarkdownNotesEnabled, setMermaidNotesEnabled, setInlineImagesEnabled, setPublicProjectsEnabled, setLandingPageEnabled, setRoute, setSearch, setSlug, setProjectId, setBoard, setBoardAccess, resetUserScopedState, setTagColors, setOpenTodoSegment, hydrateDashboardTodoSortFromServer } from './state/mutations.js';
 import { getTagsFromUrl, sameOrderedTags } from './state/board-filter-url.js';
 import type { Board } from './types.js';
 import { RouteName, AuthStatusResponse, User } from './types.js';
@@ -244,6 +244,7 @@ async function routeOnceBody(): Promise<void> {
     setWallEnabled(!!(st && st.wallEnabled));
     setMarkdownNotesEnabled(!!(st && st.markdownNotesEnabled));
     setMermaidNotesEnabled(!!(st && st.mermaidNotesEnabled));
+    setInlineImagesEnabled(!isAnonymousMode && !!(st && st.inlineImagesEnabled));
     setPublicProjectsEnabled(!isAnonymousMode && !!(st && st.publicProjectsEnabled));
     setLandingPageEnabled(!isAnonymousMode && !!(st && st.landingPageEnabled));
     

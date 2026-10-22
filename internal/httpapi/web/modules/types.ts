@@ -305,6 +305,8 @@ export interface AuthStatusResponse {
   wallEnabled?: boolean;
   markdownNotesEnabled?: boolean;
   mermaidNotesEnabled?: boolean;
+  /** Effective inline-images capability (presentation only). */
+  inlineImagesEnabled?: boolean;
   /** Effective Full Mode public-projects capability (presentation only). */
   publicProjectsEnabled?: boolean;
   /** Effective Full Mode landing override (/ is marketing, /_app is the workspace). */
@@ -340,6 +342,9 @@ export interface BackupPreviewResponse {
   willDelete?: number;
   willUpdate?: number;
   willCreate?: number;
+  /** Images in a .sbz archive preview. */
+  assets?: number;
+  assetBytes?: number;
   warnings?: string[];
 }
 

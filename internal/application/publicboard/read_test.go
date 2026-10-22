@@ -53,6 +53,10 @@ func (f *projectionFake) ListPublicSprints(context.Context, int64, string) ([]st
 	return nil, f.err
 }
 
+func (f *projectionFake) IsAssetPubliclyReferenced(context.Context, int64, string, int64) (bool, error) {
+	return f.err == nil, f.err
+}
+
 func (f *eligibilityFake) ResolveEligiblePublicProject(_ context.Context, slug string) (int64, error) {
 	f.calls++
 	f.slug = slug

@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -36,29 +38,60 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 			}
 		}
 
+		// Native (Capacitor) clients buffer whole responses through a base64 bridge, so they
+		// declare a byte ceiling; the server refuses before writing any body it cannot hold.
+		clientMaxBytes, guarded, ok := parseClientMaxBytes(r)
+		if !ok {
+			writeValidationError(w, "clientMaxBytes must be between 1 and 67108864", "invalid_client_max_bytes", nil)
+			return
+		}
+
 		data, err := s.store.ExportAllProjects(ctx, mode)
 		if err != nil {
 			writeStoreErr(w, err, false)
 			return
 		}
 
-		// Convert to JSON
-		jsonData := exportDataToJSON(data)
-
-		// Set headers for download
 		now := time.Now()
 		// Format: scrumboy-backup-2026-01-24-03-45-PM.json
-		filename := fmt.Sprintf("scrumboy-backup-%s-%s.json",
-			now.Format("2006-01-02"),
-			now.Format("03-04-PM"))
+		stem := fmt.Sprintf("scrumboy-backup-%s-%s", now.Format("2006-01-02"), now.Format("03-04-PM"))
+
+		if store.ExportHasAssets(data) {
+			if guarded {
+				writeError(w, http.StatusConflict, "ARCHIVE_EXPORT_UNSUPPORTED_CLIENT", "this backup contains images; export it from a web browser", nil)
+				return
+			}
+			s.writeArchiveExport(w, data, stem+".sbz")
+			return
+		}
+
+		// Convert to JSON
+		jsonData := exportDataToJSON(data)
+		if guarded {
+			var buf bytes.Buffer
+			if err := json.NewEncoder(&buf).Encode(jsonData); err != nil {
+				writeInternal(w, err)
+				return
+			}
+			if int64(buf.Len()) > clientMaxBytes {
+				writeError(w, http.StatusRequestEntityTooLarge, "EXPORT_TOO_LARGE_FOR_CLIENT", "backup is too large for this app; export it from a web browser", map[string]any{"bytes": buf.Len()})
+				return
+			}
+		}
+
+		// Set headers for download
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", stem+".json"))
 		writeJSON(w, http.StatusOK, jsonData)
 		return
 
 	case "preview":
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+			return
+		}
+		if s.isArchiveBackupRequest(r) {
+			s.handleArchiveBackup(w, r, "preview")
 			return
 		}
 
@@ -92,6 +125,10 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 		s.logger.Printf("BACKUP IMPORT: method=%s, content-length=%s", r.Method, r.Header.Get("Content-Length"))
 		if r.Method != http.MethodPost {
 			writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed", nil)
+			return
+		}
+		if s.isArchiveBackupRequest(r) {
+			s.handleArchiveBackup(w, r, "import")
 			return
 		}
 

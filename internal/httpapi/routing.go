@@ -48,6 +48,13 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case "board":
 		s.handleBoard(w, r, parts[2:])
 		return
+	case "assets":
+		if s.inlineImagesEnabled {
+			s.handleAssets(w, r, parts[2:])
+			return
+		}
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
 	case "todos":
 		s.handleTodos(w, r, parts[2:])
 		return

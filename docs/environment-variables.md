@@ -72,6 +72,9 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `SCRUMBOY_LANDING_PAGE_ENABLED`    | off              | Optional  | Full Mode marketing landing at `/`; workspace at `/_app`; board URLs unchanged    |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | off              | Optional  | Todo notes Markdown preview; opt in with `1`/`true`/`on`/`yes` |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | off              | Optional  | Mermaid in notes preview; requires Markdown notes enabled      |
+| `SCRUMBOY_INLINE_IMAGES_ENABLED`  | off              | Optional  | Images in story notes (paste/drop/upload); requires Markdown notes and Full Mode |
+| `SCRUMBOY_ASSET_PROJECT_BUDGET_MB` | 1024            | Optional  | Note-image storage budget per project, MiB (`0` disables)      |
+| `SCRUMBOY_ASSET_INSTANCE_BUDGET_MB` | 10240          | Optional  | Note-image storage budget per instance, MiB (`0` disables)     |
 
 
 ### Web Push (VAPID)
@@ -283,6 +286,8 @@ Boolean parsing differs by flag. Values are trimmed and compared case-insensitiv
 | `SCRUMBOY_LANDING_PAGE_ENABLED`    | **off** | Enable with the same truthy values. Independent of the public-projects flag. In Full Mode, `/` serves the existing English marketing landing (with an "Open app" link) and `/_app` becomes the workspace entry; `/{slug}` and `/{slug}/t/{localId}` are unchanged. Localized landing paths remain Anonymous Mode only. Anonymous Mode ignores this flag. |
 | `SCRUMBOY_MARKDOWN_NOTES_ENABLED` | **off** | Enable with `1`, `true`, `on`, or `yes`. [markdown-and-mermaid.md](markdown-and-mermaid.md)                                                                    |
 | `SCRUMBOY_MERMAID_NOTES_ENABLED`  | **off** | Same truthy set as Markdown; **ignored unless** Markdown notes are already enabled.                                                                            |
+| `SCRUMBOY_INLINE_IMAGES_ENABLED`  | **off** | Enable with `1`, `true`, `on`, or `yes`, then restart. Effective only in Full Mode with `SCRUMBOY_MARKDOWN_NOTES_ENABLED` on. Files are stored under `DATA_DIR/assets/`. [inline-images.md](inline-images.md) |
+| `SCRUMBOY_ASSET_PROJECT_BUDGET_MB` / `SCRUMBOY_ASSET_INSTANCE_BUDGET_MB` | **1024** / **10240** | Byte budgets (MiB) for stored note images, unsaved drafts included. Uploads and archive imports beyond a budget fail with `507`. `0` disables a budget (not recommended; logged as a warning). |
 
 The public-read limiter runs before mode and per-project eligibility checks. Once an IP exhausts that namespace-level budget, every `/api/public/*` path returns the same generic `429` response before project lookup, including paths naming private or missing projects. This preserves resource protection without making rate-limit status an existence oracle.
 

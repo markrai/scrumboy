@@ -113,6 +113,9 @@ export function getMarkdownNotesEnabled() {
 export function getMermaidNotesEnabled() {
     return !!current._mermaidNotesEnabled;
 }
+export function getInlineImagesEnabled() {
+    return !!current._inlineImagesEnabled;
+}
 export function getPublicProjectsEnabled() {
     return !!current._publicProjectsEnabled;
 }

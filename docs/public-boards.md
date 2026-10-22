@@ -104,6 +104,13 @@ select the same durable-project logical tag and generate the same pagination
 filter fingerprint. The public projection groups equivalent historical rows
 without exposing their owners or private per-user color preferences.
 
+When [inline images](inline-images.md) are enabled, images embedded in a
+**non-archived** story of a published board are visible to visitors, signed in
+or not. An image mentioned only in text or code, or embedded only in archived
+stories, stays private. Image responses are `private, no-cache`, so
+unpublishing makes them return the generic not-found response on the next
+load. Public image reads have their own limit of 600 requests/minute/IP.
+
 Visitors cannot sign in from the public view to gain more access to that
 board; signing in takes them through the normal member route instead.
 

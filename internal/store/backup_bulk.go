@@ -436,6 +436,9 @@ func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []T
 		if err != nil {
 			return nil, fmt.Errorf("last insert id: %w", err)
 		}
+		if err := syncTodoAssetsTx(ctx, tx, projectID, todoID, tExport.Body, time.Now().UTC().UnixMilli()); err != nil {
+			return nil, err
+		}
 
 		todoIDMap[tExport.LocalID] = todoID
 	}

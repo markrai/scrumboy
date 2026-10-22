@@ -8,13 +8,16 @@ type MCPDeletionServiceDependencies struct {
 	Access   ProjectAccessStore
 	Manage   ProjectManageAuthorizationStore
 	Projects ProjectDeletionStore
+	// AssetFiles removes the deleted project's image files after the deletion commits (optional).
+	AssetFiles AssetFileRemover
 }
 
 // MCPDeletionService preserves MCP's access/manage/delete sequence, canonical
 // pre-read slug projection, and structural realtime silence.
 type MCPDeletionService struct {
-	managed  mcpManagedProjectPreparer
-	projects ProjectDeletionStore
+	managed    mcpManagedProjectPreparer
+	projects   ProjectDeletionStore
+	assetFiles AssetFileRemover
 }
 
 // NewMCPDeletionService constructs the additive MCP deletion service.
@@ -24,7 +27,8 @@ func NewMCPDeletionService(deps MCPDeletionServiceDependencies) *MCPDeletionServ
 			access: deps.Access,
 			manage: deps.Manage,
 		},
-		projects: deps.Projects,
+		projects:   deps.Projects,
+		assetFiles: deps.AssetFiles,
 	}
 }
 
@@ -63,6 +67,7 @@ func (p *PreparedMCPDeletion) Delete() (MCPDeletionResult, error) {
 	if err != nil {
 		return MCPDeletionResult{}, err
 	}
+	removeDeletedProjectAssets(p.service.assetFiles, deleted.AssetFiles)
 	return MCPDeletionResult{
 		ProjectSlug: p.projectSlug,
 		ProjectID:   deleted.ProjectID,

@@ -106,6 +106,9 @@ func (s *Store) ImportTrelloProject(ctx context.Context, data *ExportData, proje
 		if err != nil {
 			return Project{}, fmt.Errorf("last insert id for Trello todo %q: %w", todoExport.Title, err)
 		}
+		if err := syncTodoAssetsTx(ctx, tx, newProjectID, todoID, todoExport.Body, nowMs); err != nil {
+			return Project{}, err
+		}
 		if err := s.importTodoTags(ctx, tx, newProjectID, todoID, todoExport.Tags, mode); err != nil {
 			return Project{}, fmt.Errorf("import Trello todo tags for %q: %w", todoExport.Title, err)
 		}

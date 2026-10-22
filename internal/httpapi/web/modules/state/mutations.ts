@@ -142,6 +142,10 @@ export function setMermaidNotesEnabled(enabled: boolean): void {
   current._mermaidNotesEnabled = enabled;
 }
 
+export function setInlineImagesEnabled(enabled: boolean): void {
+  current._inlineImagesEnabled = enabled;
+}
+
 export function setPublicProjectsEnabled(enabled: boolean): void {
   current._publicProjectsEnabled = enabled;
 }

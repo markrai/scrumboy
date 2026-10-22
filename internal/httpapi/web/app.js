@@ -13,7 +13,7 @@ import { apiFetch, archiveTodos, restoreTodos } from './dist/api.js';
 import { navigate, router } from './dist/router.js';
 import { getRoute, getProjectId, getBoard, getAuthStatusAvailable, getMobileTab, getSlug, getTagsFromUrl, getSearch, getSprintIdFromUrl, getAssigneeFromUrl, getSortFromUrl, getPriorityFromUrl, getProjectView, getProjectsTab, getProjects, getSettingsProjectId, getEditingTodo, getAvailableTags, getAutocompleteSuggestion, getAvailableTagsMap, getTagColors, getUser, getSettingsActiveTab, getBackupImportBtn, getBackupData, getBackupPreview, getAuthStatusChecked } from './dist/state/selectors.js';
 import { setProjectId, setBoard, setSlug, setMobileTab, setProjects, setProjectsTab, setProjectView, setEditingTodo, setAvailableTags, setAvailableTagsMap, setAutocompleteSuggestion, setTagColors, setSettingsProjectId, setSettingsActiveTab, setBackupImportBtn, setBackupData, setBackupPreview } from './dist/state/mutations.js';
-import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated } from './dist/dialogs/todo.js';
+import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated, isTodoImageUploadPending } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload, shouldSubmitSprintAssignment } from './dist/dialogs/todo-submit.js';
 import { hasIncompleteDueInput, resolveDueAtForSubmit } from './dist/dialogs/todo-due.js';
 import { renderSettingsModal, invalidateTagsCache, resumeAuthenticationMethodFlow } from './dist/dialogs/settings.js';
@@ -209,6 +209,10 @@ todoForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   if (!getTodoFormPermissions().canSubmitTodo) {
+    return;
+  }
+  // Images still uploading would be saved as placeholders; keyboard submits must wait too.
+  if (isTodoImageUploadPending()) {
     return;
   }
 

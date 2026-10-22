@@ -105,6 +105,9 @@ export function setMarkdownNotesEnabled(enabled) {
 export function setMermaidNotesEnabled(enabled) {
     current._mermaidNotesEnabled = enabled;
 }
+export function setInlineImagesEnabled(enabled) {
+    current._inlineImagesEnabled = enabled;
+}
 export function setPublicProjectsEnabled(enabled) {
     current._publicProjectsEnabled = enabled;
 }

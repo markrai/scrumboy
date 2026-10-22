@@ -16,7 +16,7 @@ import {
   type PublicTodo,
   type PublicTodoLink,
 } from '../public-board-api.js';
-import { renderMarkdownPreviewInto } from '../markdown-preview.js';
+import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
 import { sanitizeHexColor } from '../utils.js';
 import { t } from '../i18n/index.js';
 
@@ -29,6 +29,8 @@ export type PublicTodoDialogContext = {
   readonly showPoints: boolean;
   readonly markdownEnabled: boolean;
   readonly mermaidEnabled: boolean;
+  /** Effective inline-images capability; images still require public-board access per request. */
+  readonly inlineImagesEnabled?: boolean;
   /** Navigates to another story of the same public board by local ID. */
   readonly onNavigateToStory: (localId: number) => void;
   /** Called when the dialog is closed by the user (button, Escape, outside click). */
@@ -94,6 +96,7 @@ function ensureDialog(): HTMLDialogElement {
     controller = null;
     generation++;
     openLocalId = null;
+    releaseNotesWithin(dialog);
     ctx?.onClosedByUser();
   });
   document.body.appendChild(dialog);
@@ -144,7 +147,10 @@ async function renderBody(container: HTMLElement, body: string, ctx: PublicTodoD
   }
   if (ctx.markdownEnabled) {
     try {
-      await renderMarkdownPreviewInto(container, body, { mermaidEnabled: ctx.mermaidEnabled });
+      await renderMarkdownPreviewInto(container, body, {
+        mermaidEnabled: ctx.mermaidEnabled,
+        inlineImagesEnabled: !!ctx.inlineImagesEnabled,
+      });
       return;
     } catch {
       // Markdown vendor unavailable: fall through to inert plain text.
@@ -182,6 +188,7 @@ export async function renderPublicTodoContent(
   links: readonly PublicTodoLink[],
   ctx: PublicTodoDialogContext,
 ): Promise<void> {
+  releaseNotesWithin(container);
   container.replaceChildren();
   const notes = document.createElement('div');
   container.append(field('todo.fields.notes', notes));
@@ -225,7 +232,16 @@ function setLoading(dialog: HTMLDialogElement, localId: number): void {
   loading.setAttribute('role', 'status');
   loading.setAttribute('data-i18n-text', 'publicBoard.loading');
   loading.textContent = t('publicBoard.loading');
+  releaseNotesWithin(body);
   body.replaceChildren(loading);
+}
+
+// releaseNotesWithin releases preview resources (for example native image files) held by any
+// notes container under root before that content is discarded.
+function releaseNotesWithin(root: ParentNode): void {
+  for (const notes of Array.from(root.querySelectorAll<HTMLElement>('.public-todo__notes'))) {
+    releaseMarkdownPreviewResources(notes);
+  }
 }
 
 function closeProgrammatically(): void {
@@ -288,6 +304,7 @@ export function closePublicTodo(): void {
   generation++;
   openLocalId = null;
   closeProgrammatically();
+  if (dialogEl) releaseNotesWithin(dialogEl);
   dialogEl?.querySelector('[data-public-todo-body]')?.replaceChildren();
   const title = dialogEl?.querySelector('#publicTodoDialogTitle');
   if (title) title.textContent = '';
