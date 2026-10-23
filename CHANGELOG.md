@@ -2,6 +2,19 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.39.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.39.1] - 2026-10-22
+
+### Security
+
+- **Go 1.26.10 toolchain and frontend dependency advisories** - Pin the
+  toolchain to `go1.26.10` (GO-2026-6809, `crypto/x509`) and the Docker
+  builder to `golang:1.26.10-alpine` (by manifest digest). In
+  `internal/httpapi/web`, pin `dompurify` to `3.4.17` and `markdown-it` to
+  `14.3.3`, and the dev-only `vite` to `6.4.4` and `vitest` to `4.1.12`
+  (including `@vitest/mocker`). Vendored browser bundles (including Mermaid's
+  bundled DOMPurify) updated. No new scanner suppressions; no
+  behavior change.
+
 ## [3.39.0] - 2026-10-22
 
 ### Added
