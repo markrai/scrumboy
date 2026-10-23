@@ -23,7 +23,7 @@ jobs:
           clean: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -179,7 +179,7 @@ jobs:
           Set-Content -LiteralPath $env:SHA_PATH -Value "$hash  $fileName" -Encoding ASCII
 
       - name: Upload executable artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.names.outputs.artifact_stem }}.exe
           path: ${{ steps.names.outputs.exe_path }}
@@ -187,7 +187,7 @@ jobs:
           archive: false
 
       - name: Upload checksum artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.names.outputs.artifact_stem }}.exe.sha256
           path: ${{ steps.names.outputs.sha_path }}
@@ -208,7 +208,7 @@ jobs:
 
     steps:
       - name: Download executable artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: ${{ runner.temp }}/release-assets
           merge-multiple: true
@@ -240,7 +240,7 @@ jobs:
 
       - name: Attest Windows executable
         id: attest
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ steps.resolve.outputs.exe_path }}
 
