@@ -1179,16 +1179,23 @@ html[data-wallpaper-active] #settingsDialog.dialog {
 }
 
 /*
- * Resize handles: square grips centred on the image's bottom corners (a 24px hit area for touch),
- * with diagonal cursors: resizing keeps the proportions, so both edges move together.
+ * Resize handle: one square grip centred on the image's bottom-right corner (bottom-left in
+ * right-to-left text), a 24px hit area for touch, with a diagonal cursor: resizing keeps the
+ * proportions, so both edges move together.
  */
 #todoBodyEditor .todo-notes-image__handle {
   bottom: -12px;
+  cursor: nwse-resize;
   display: none;
   height: 24px;
+  inset-inline-end: -12px;
   position: absolute;
   touch-action: none;
   width: 24px;
+}
+
+[dir="rtl"] #todoBodyEditor .todo-notes-image__handle {
+  cursor: nesw-resize;
 }
 
 #todoBodyEditor .todo-notes-image__handle::after {
@@ -1202,25 +1209,6 @@ html[data-wallpaper-active] #settingsDialog.dialog {
   position: absolute;
   top: 7px;
   width: 10px;
-}
-
-#todoBodyEditor .todo-notes-image__handle--start {
-  cursor: nesw-resize;
-  inset-inline-start: -12px;
-}
-
-#todoBodyEditor .todo-notes-image__handle--end {
-  cursor: nwse-resize;
-  inset-inline-end: -12px;
-}
-
-/* In right-to-left text the start corner is bottom-right and the end corner bottom-left. */
-[dir="rtl"] #todoBodyEditor .todo-notes-image__handle--start {
-  cursor: nwse-resize;
-}
-
-[dir="rtl"] #todoBodyEditor .todo-notes-image__handle--end {
-  cursor: nesw-resize;
 }
 
 #todoBodyEditor .cm-editor:not(.is-readonly) .todo-notes-image--editor.is-selected:not(.todo-notes-image--unavailable) .todo-notes-image__handle {

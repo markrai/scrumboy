@@ -197,13 +197,12 @@ export function createNotesEditor(opts) {
             img.referrerPolicy = "no-referrer";
             img.draggable = false;
             wrapper.append(img);
-            for (const side of ["start", "end"]) {
-                const handle = document.createElement("span");
-                handle.className = `todo-notes-image__handle todo-notes-image__handle--${side}`;
-                handle.setAttribute("aria-hidden", "true");
-                handle.addEventListener("pointerdown", (event) => startResize(view, wrapper, side, event));
-                wrapper.append(handle);
-            }
+            // One resize handle, on the bottom end corner (bottom-right; bottom-left in right-to-left text).
+            const handle = document.createElement("span");
+            handle.className = "todo-notes-image__handle";
+            handle.setAttribute("aria-hidden", "true");
+            handle.addEventListener("pointerdown", (event) => startResize(view, wrapper, event));
+            wrapper.append(handle);
             wrapper.addEventListener("mousedown", (event) => event.preventDefault());
             wrapper.addEventListener("click", (event) => {
                 event.preventDefault();
@@ -368,7 +367,7 @@ export function createNotesEditor(opts) {
         });
         announce(text("todo.images.resizedStatus", "Image resized to {width} px.", { width: width ?? displayedWidth(view, { ...ref, width: null }) }));
     };
-    const startResize = (view, wrapper, side, event) => {
+    const startResize = (view, wrapper, event) => {
         if (view.state.readOnly || event.button !== 0)
             return;
         event.preventDefault();
@@ -387,9 +386,9 @@ export function createNotesEditor(opts) {
         const startWidth = startBox.width || displayedWidth(view, ref);
         const startHeight = startBox.height;
         const ceiling = widthCeiling(view, wrapper);
-        // Growing moves the dragged bottom corner away from the opposite top corner: right and down
-        // for the bottom-right corner, left and down for the bottom-left one.
-        const direction = (side === "end") === (getComputedStyle(view.contentDOM).direction !== "rtl") ? 1 : -1;
+        // Growing moves the handle's corner away from the opposite top corner: right and down, or
+        // left and down in right-to-left text.
+        const direction = getComputedStyle(view.contentDOM).direction !== "rtl" ? 1 : -1;
         // The pointer's movement projected onto that diagonal gives one scale factor for both sides,
         // so vertical, horizontal and diagonal drags all resize, always proportionally.
         const diagonal2 = startWidth * startWidth + startHeight * startHeight;

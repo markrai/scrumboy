@@ -340,7 +340,7 @@ test("l. click selects, drag resizes proportionally, and the width survives save
   expect(Math.round(start.width)).toBe(320);
   await widget.click();
   await expect(widget).toHaveClass(/is-selected/);
-  const handle = widget.locator(".todo-notes-image__handle--end");
+  const handle = widget.locator(".todo-notes-image__handle");
   await expect(handle).toBeVisible();
   const hb = (await handle.boundingBox())!;
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
@@ -458,7 +458,7 @@ test("o. touch: tap selects and dragging a handle resizes", async ({ browser }) 
   const box = await imageBox(page);
   await widget.tap();
   await expect(widget).toHaveClass(/is-selected/);
-  const hb = (await widget.locator(".todo-notes-image__handle--end").boundingBox())!;
+  const hb = (await widget.locator(".todo-notes-image__handle").boundingBox())!;
   const cdp = await context.newCDPSession(page);
   const x = hb.x + hb.width / 2;
   const y = hb.y + hb.height / 2;
@@ -703,7 +703,7 @@ test("u. plain text editing: typing, multiline paste, shortcuts, Unicode, IME, f
 
 /**
  * Selection geometry of the nth image widget: the wrapper (which carries the outline), the
- * rendered image, the handle centres, and the handle cursors.
+ * rendered image, the resize handle's centre, and its cursor.
  */
 async function selectionGeometry(page: Page, nth: number) {
   const widget = page.locator(widgetSel).nth(nth);
@@ -723,13 +723,10 @@ async function selectionGeometry(page: Page, nth: number) {
       outline: style.outlineStyle,
       wrapper: { left: box.left, top: box.top, width: box.width, height: box.height },
       image: { left: image.left, top: image.top, width: image.width, height: image.height, right: image.right, bottom: image.bottom },
-      start: centre(".todo-notes-image__handle--start"),
-      end: centre(".todo-notes-image__handle--end"),
-      cursors: [
-        getComputedStyle(w.querySelector(".todo-notes-image__handle--start")!).cursor,
-        getComputedStyle(w.querySelector(".todo-notes-image__handle--end")!).cursor,
-      ],
-      handlesShown: getComputedStyle(w.querySelector(".todo-notes-image__handle--end")!).display !== "none",
+      handle: centre(".todo-notes-image__handle"),
+      handleCount: w.querySelectorAll(".todo-notes-image__handle").length,
+      cursor: getComputedStyle(w.querySelector(".todo-notes-image__handle")!).cursor,
+      handlesShown: getComputedStyle(w.querySelector(".todo-notes-image__handle")!).display !== "none",
       contentWidth: (document.querySelector("#todoBodyEditor .cm-content") as HTMLElement).clientWidth,
     };
   });
@@ -746,14 +743,11 @@ async function expectSelectionMatchesImage(page: Page, nth: number, rtl = false)
   expect(Math.abs(g.wrapper.width - g.image.width)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(g.wrapper.height - g.image.height)).toBeLessThanOrEqual(0.5);
   expect(Math.abs(g.wrapper.left - g.image.left)).toBeLessThanOrEqual(0.5);
-  // Handles sit on the image's bottom corners (start = left in LTR, right in RTL).
-  const [left, right] = rtl ? [g.end, g.start] : [g.start, g.end];
-  for (const [h, x] of [[left, g.image.left], [right, g.image.right]] as const) {
-    expect(Math.abs(h.x - x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(h.y - g.image.bottom)).toBeLessThanOrEqual(1);
-  }
-  // Diagonal cursors: bottom-left corner nesw, bottom-right corner nwse.
-  expect(g.cursors).toEqual(rtl ? ["nwse-resize", "nesw-resize"] : ["nesw-resize", "nwse-resize"]);
+  // One handle, on the image's bottom-right corner (bottom-left in RTL), with a diagonal cursor.
+  expect(g.handleCount).toBe(1);
+  expect(Math.abs(g.handle.x - (rtl ? g.image.left : g.image.right))).toBeLessThanOrEqual(1);
+  expect(Math.abs(g.handle.y - g.image.bottom)).toBeLessThanOrEqual(1);
+  expect(g.cursor).toBe(rtl ? "nesw-resize" : "nwse-resize");
   return g;
 }
 
@@ -797,9 +791,9 @@ test("v. the selection outline and handles follow the image itself on the first 
   const portrait = page.locator(widgetSel).nth(4);
   await portrait.locator("img").click();
   const before = await selectionGeometry(page, 4);
-  await page.mouse.move(before.end.x, before.end.y);
+  await page.mouse.move(before.handle.x, before.handle.y);
   await page.mouse.down();
-  await page.mouse.move(before.end.x + 20, before.end.y + 80, { steps: 6 });
+  await page.mouse.move(before.handle.x + 20, before.handle.y + 80, { steps: 6 });
   await page.mouse.up();
   const width = Number(/!\[portrait\|(\d+)\]/.exec(await editorText(page))?.[1]);
   expect(width).toBeGreaterThan(before.image.width + 10);
@@ -833,7 +827,7 @@ test("v. the selection outline and handles follow the image itself on the first 
   await page.setViewportSize({ width: 1280, height: 900 });
   expect(Math.abs((await expectSelectionMatchesImage(page, 1)).image.width - 320)).toBeLessThanOrEqual(2);
 
-  // Right-to-left: handles swap corners and cursors with the text direction.
+  // Right-to-left: the handle moves to the bottom-left corner, with the mirrored cursor.
   await page.evaluate(() => (document.documentElement.dir = "rtl"));
   await expectSelectionMatchesImage(page, 3, true);
   await page.evaluate(() => (document.documentElement.dir = "ltr"));
@@ -844,10 +838,10 @@ function projectedWidth(w: number, h: number, dx: number, dy: number, growRight:
   return w * (1 + ((growRight ? dx : -dx) * w + dy * h) / (w * w + h * h));
 }
 
-/** Drags a corner handle of the selected nth image by (dx, dy) with the mouse; returns the stored width. */
-async function dragCorner(page: Page, nth: number, side: "start" | "end", dx: number, dy: number, alt: string) {
+/** Drags the resize handle of the selected nth image by (dx, dy) with the mouse; returns the stored width. */
+async function dragCorner(page: Page, nth: number, dx: number, dy: number, alt: string) {
   const g = await selectionGeometry(page, nth);
-  const from = g[side];
+  const from = g.handle;
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(from.x + dx / 2, from.y + dy / 2, { steps: 4 });
@@ -857,7 +851,7 @@ async function dragCorner(page: Page, nth: number, side: "start" | "end", dx: nu
   return { before: g, width };
 }
 
-test("w. corner drags resize proportionally along both axes, at both corners, with limits, cancel, undo and save", async ({ page, browser }) => {
+test("w. corner drags resize proportionally along both axes, with limits, cancel, undo and save", async ({ page, browser }) => {
   const land = await uploadViaApi(main, owner, slug, "land.png", makePng(400, 200, 60)); // 320 x 160 by default
   const port = await uploadViaApi(main, owner, slug, "port.png", makePng(300, 600, 61)); // 120 x 240 by default
   const body = `![land](${land.body.url})\n![port](${port.body.url})`;
@@ -868,21 +862,21 @@ test("w. corner drags resize proportionally along both axes, at both corners, wi
   await expect(page.locator(widgetSel)).toHaveCount(2);
 
   const cases = [
-    // [image, alt, corner, dx, dy]: vertical-dominant and horizontal-dominant, shrinking and growing.
-    [1, "port", "end", 4, 60],
-    [1, "port", "start", -4, -50],
-    [0, "land", "end", -70, 6],
-    [0, "land", "start", -6, -45],
-    [0, "land", "end", 50, 4],
+    // [image, alt, dx, dy]: vertical-dominant and horizontal-dominant, shrinking and growing.
+    [1, "port", 4, 60],
+    [1, "port", -4, -50],
+    [0, "land", -70, 6],
+    [0, "land", -6, -45],
+    [0, "land", 50, 4],
   ] as const;
   let text = body;
-  for (const [nth, alt, side, dx, dy] of cases) {
+  for (const [nth, alt, dx, dy] of cases) {
     await page.locator(widgetSel).nth(nth).locator("img").click();
-    const { before, width } = await dragCorner(page, nth, side, dx, dy, alt);
+    const { before, width } = await dragCorner(page, nth, dx, dy, alt);
     // Projected, within 48px and the image's own width plus its border.
-    const want = Math.max(48, Math.min(projectedWidth(before.image.width, before.image.height, dx, dy, side === "end"), alt === "land" ? 402 : 302));
-    expect(width, `${alt} ${side} ${dx},${dy}`).toBeGreaterThan(0);
-    expect(Math.abs(width - want), `${alt} ${side} ${dx},${dy}: ${width} vs ${want}`).toBeLessThanOrEqual(2);
+    const want = Math.max(48, Math.min(projectedWidth(before.image.width, before.image.height, dx, dy, true), alt === "land" ? 402 : 302));
+    expect(width, `${alt} ${dx},${dy}`).toBeGreaterThan(0);
+    expect(Math.abs(width - want), `${alt} ${dx},${dy}: ${width} vs ${want}`).toBeLessThanOrEqual(2);
     expect(Math.abs(width - before.image.width)).toBeGreaterThan(5); // the drag did resize
     // One scale factor: the image keeps its proportions, and the outline still fits it.
     const after = await expectSelectionMatchesImage(page, nth);
@@ -902,9 +896,9 @@ test("w. corner drags resize proportionally along both axes, at both corners, wi
 
   // Limits: dragging far inward stops at 48px, far outward at the image's own width (plus border).
   await page.locator(widgetSel).nth(1).locator("img").click();
-  expect((await dragCorner(page, 1, "end", -400, -800, "port")).width).toBe(48);
+  expect((await dragCorner(page, 1, -400, -800, "port")).width).toBe(48);
   await page.locator(widgetSel).nth(1).locator("img").click();
-  expect((await dragCorner(page, 1, "end", 200, 600, "port")).width).toBe(302);
+  expect((await dragCorner(page, 1, 200, 600, "port")).width).toBe(302);
   text = await editorText(page);
 
   await page.locator("#saveTodoBtn").click();
@@ -914,13 +908,14 @@ test("w. corner drags resize proportionally along both axes, at both corners, wi
   expect(await editorText(page)).toBe(text);
   expect(Math.round((await expectSelectionMatchesImage(page, 1)).image.width)).toBe(302);
 
-  // Right-to-left: the start handle is the bottom-right corner, and dragging it down grows the image.
+  // Right-to-left: the handle is on the bottom-left corner; dragging it down and left grows the image.
   await page.evaluate(() => (document.documentElement.dir = "rtl"));
   await page.locator(widgetSel).nth(0).locator("img").click();
   const rtlBefore = Number(/!\[land\|(\d+)\]/.exec(await editorText(page))?.[1]);
-  const rtl = await dragCorner(page, 0, "start", 5, 40, "land");
+  const rtl = await dragCorner(page, 0, -5, 40, "land");
   expect(rtl.width).toBeGreaterThan(rtlBefore + 5);
-  expect(Math.abs(rtl.width - projectedWidth(rtl.before.image.width, rtl.before.image.height, 5, 40, true))).toBeLessThanOrEqual(2);
+  expect(Math.abs(rtl.width - projectedWidth(rtl.before.image.width, rtl.before.image.height, -5, 40, false))).toBeLessThanOrEqual(2);
+  await expectSelectionMatchesImage(page, 0, true);
   await page.evaluate(() => (document.documentElement.dir = "ltr"));
 
   // Touch: a vertical drag on a handle resizes; a cancelled touch leaves the note unchanged.
@@ -935,7 +930,7 @@ test("w. corner drags resize proportionally along both axes, at both corners, wi
   const cdp = await context.newCDPSession(touchPage);
   const touchDrag = async (dy: number, end: "touchEnd" | "touchCancel") => {
     const g = await selectionGeometry(touchPage, 1);
-    const { x, y } = g.end;
+    const { x, y } = g.handle;
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
     for (let i = 1; i <= 6; i += 1) {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + (i * dy) / 6 }] });
