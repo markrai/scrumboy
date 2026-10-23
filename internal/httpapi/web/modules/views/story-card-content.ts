@@ -27,6 +27,8 @@ export interface StoryCardContentInput {
   /** null hides the badge; callers apply their estimation-mode rule. */
   readonly points: number | null;
   readonly due: StoryCardDue | null;
+  /** Member-only custom field values (key -> value); never set for public boards. */
+  readonly customFields?: Readonly<Record<string, string | number>> | null;
 }
 
 export interface StoryCardContentOptions {
@@ -52,6 +54,30 @@ function dueHtml(due: StoryCardDue | null): string {
   return `<span class="card__due${overdue ? " card__due--overdue" : ""}" title="${aria}" aria-label="${aria}">${escapeHTML(label)}</span>`;
 }
 
+/** Short card label for a value: URLs show their host, everything else its text. */
+export function customFieldBadgeLabel(value: string | number): string {
+  if (typeof value === 'number') return String(value);
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      return new URL(value).host;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function customFieldsHtml(values: StoryCardContentInput['customFields']): string {
+  if (!values) return "";
+  return Object.entries(values)
+    .map(([key, value]) => {
+      const label = escapeHTML(customFieldBadgeLabel(value));
+      if (!label) return "";
+      return `<span class="card__field" title="${escapeHTML(key)}: ${escapeHTML(String(value))}">${label}</span>`;
+    })
+    .join("");
+}
+
 function priorityHtml(priority: StoryCardPriority | null, tooltips: boolean): string {
   if (!priority) return "";
   const color = sanitizeHexColor(priority.color ?? undefined);
@@ -70,6 +96,7 @@ function pointsHtml(points: number | null, tooltips: boolean): string {
 function buildContentHtml(input: StoryCardContentInput, options: StoryCardContentOptions, trailingBadgeHtml: string): string {
   const tags = input.tags.map((tag) => tagHtml(tag, options.tagTone)).join("");
   const footerContent = dueHtml(input.due)
+    + customFieldsHtml(input.customFields)
     + priorityHtml(input.priority, options.tooltips)
     + pointsHtml(input.points, options.tooltips)
     + trailingBadgeHtml;

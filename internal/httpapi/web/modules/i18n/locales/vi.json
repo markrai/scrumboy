@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "Bất kỳ ai có liên kết đều có thể đọc tiêu đề câu chuyện, ghi chú, thẻ, mức ưu tiên, ước lượng, sprint và liên kết giữa các câu chuyện của bảng này, kèm cập nhật trực tiếp, mà không cần đăng nhập. Việc này không cấp tư cách thành viên hay quyền chỉnh sửa, và thành viên, người được giao, câu chuyện đã lưu trữ, Tường và Lịch trình vẫn riêng tư. Liên kết hoặc hình ảnh trong ghi chú có thể tải nội dung từ trang khác. Các công cụ tìm kiếm được yêu cầu không lập chỉ mục bảng này.",
   "settings.sharing.confirmPublishAction": "Xuất bản",
   "settings.sharing.confirmUnpublishTitle": "Đặt bảng này ở chế độ riêng tư?",
-  "settings.sharing.confirmUnpublishMessage": "Quyền truy cập công khai kết thúc ngay và mọi người đang xem bảng công khai sẽ bị ngắt kết nối. Nội dung khách đã xem không thể thu hồi."
+  "settings.sharing.confirmUnpublishMessage": "Quyền truy cập công khai kết thúc ngay và mọi người đang xem bảng công khai sẽ bị ngắt kết nối. Nội dung khách đã xem không thể thu hồi.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

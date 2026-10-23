@@ -72,6 +72,9 @@ type storeAPI interface {
 	workflowapp.MutationStore
 	priorityapp.MutationStore
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
+	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
+	CreateCustomField(ctx context.Context, projectID int64, key, name string, typ store.CustomFieldType) (store.CustomField, error)
+	DeleteCustomField(ctx context.Context, projectID int64, key string) error
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilters []string, searchFilter string, assigneeFilter store.AssigneeFilter, priorityFilter store.PriorityFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
@@ -470,6 +473,9 @@ func (a *Adapter) implementedTools() []string {
 		"priorities_create",
 		"priorities_update",
 		"priorities_delete",
+		"customFields_list",
+		"customFields_create",
+		"customFields_delete",
 		"dashboard_getSummary",
 		"dashboard_listTodos",
 		"metrics_getBurndown",

@@ -12,6 +12,8 @@ export type TodoBasePayloadInput = {
   priorityKey?: string | null;
   /** RFC 3339 to set, null to clear, undefined to leave the due date untouched. */
   dueAt?: string | null;
+  /** Changed custom field values by key (null clears); omitted when nothing changed. */
+  customFields?: Record<string, string | number | null>;
 };
 
 export type TodoCreatePayloadInput = TodoBasePayloadInput & {
@@ -48,6 +50,9 @@ function appendOptionalFields(
   payload.priorityKey = input.priorityKey || null;
   if (input.dueAt !== undefined) {
     payload.dueAt = input.dueAt;
+  }
+  if (input.customFields && Object.keys(input.customFields).length > 0) {
+    payload.customFields = input.customFields;
   }
   return payload;
 }

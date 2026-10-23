@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "लिंक वाला कोई भी व्यक्ति साइन इन किए बिना इस बोर्ड के स्टोरी शीर्षक, नोट्स, टैग, प्राथमिकताएं, अनुमान, स्प्रिंट और स्टोरी लिंक लाइव अपडेट के साथ पढ़ सकेगा। इससे सदस्यता या संपादन अधिकार नहीं मिलते, और सदस्य, असाइनी, संग्रहीत स्टोरी, वॉल और एजेंडा निजी रहते हैं। नोट्स के लिंक या चित्र अन्य साइटों से सामग्री लोड कर सकते हैं। सर्च इंजन से इसे इंडेक्स न करने का अनुरोध किया जाता है।",
   "settings.sharing.confirmPublishAction": "प्रकाशित करें",
   "settings.sharing.confirmUnpublishTitle": "यह बोर्ड निजी बनाएं?",
-  "settings.sharing.confirmUnpublishMessage": "सार्वजनिक पहुंच अभी समाप्त होगी और सार्वजनिक बोर्ड देख रहे लोगों का कनेक्शन टूट जाएगा। आगंतुक जो पहले देख चुके हैं उसे वापस नहीं लिया जा सकता।"
+  "settings.sharing.confirmUnpublishMessage": "सार्वजनिक पहुंच अभी समाप्त होगी और सार्वजनिक बोर्ड देख रहे लोगों का कनेक्शन टूट जाएगा। आगंतुक जो पहले देख चुके हैं उसे वापस नहीं लिया जा सकता।",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

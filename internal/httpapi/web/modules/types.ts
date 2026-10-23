@@ -43,6 +43,8 @@ export interface Todo {
   archivedAt?: string;
   /** Optional deadline, RFC 3339 UTC. */
   dueAt?: string | null;
+  /** Typed custom field values by field key (text/url: string, number: number). */
+  customFields?: Record<string, string | number>;
 }
 
 export interface PriorityTier {

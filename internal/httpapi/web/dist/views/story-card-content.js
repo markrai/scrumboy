@@ -27,6 +27,32 @@ function dueHtml(due) {
     const aria = escapeHTML(t("todo.due.cardLabel", { date: label }));
     return `<span class="card__due${overdue ? " card__due--overdue" : ""}" title="${aria}" aria-label="${aria}">${escapeHTML(label)}</span>`;
 }
+/** Short card label for a value: URLs show their host, everything else its text. */
+export function customFieldBadgeLabel(value) {
+    if (typeof value === 'number')
+        return String(value);
+    if (/^https?:\/\//i.test(value)) {
+        try {
+            return new URL(value).host;
+        }
+        catch {
+            return value;
+        }
+    }
+    return value;
+}
+function customFieldsHtml(values) {
+    if (!values)
+        return "";
+    return Object.entries(values)
+        .map(([key, value]) => {
+        const label = escapeHTML(customFieldBadgeLabel(value));
+        if (!label)
+            return "";
+        return `<span class="card__field" title="${escapeHTML(key)}: ${escapeHTML(String(value))}">${label}</span>`;
+    })
+        .join("");
+}
 function priorityHtml(priority, tooltips) {
     if (!priority)
         return "";
@@ -45,6 +71,7 @@ function pointsHtml(points, tooltips) {
 function buildContentHtml(input, options, trailingBadgeHtml) {
     const tags = input.tags.map((tag) => tagHtml(tag, options.tagTone)).join("");
     const footerContent = dueHtml(input.due)
+        + customFieldsHtml(input.customFields)
         + priorityHtml(input.priority, options.tooltips)
         + pointsHtml(input.points, options.tooltips)
         + trailingBadgeHtml;

@@ -373,6 +373,9 @@ type storeAPI interface {
 	CountTodosByColumnKey(ctx context.Context, projectID int64) (map[string]int, error)
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
+	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
+	CreateCustomField(ctx context.Context, projectID int64, key, name string, typ store.CustomFieldType) (store.CustomField, error)
+	DeleteCustomField(ctx context.Context, projectID int64, key string) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)

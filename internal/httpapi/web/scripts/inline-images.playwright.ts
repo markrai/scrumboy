@@ -1161,6 +1161,167 @@ test("r. Markdown opt-out disables Mermaid and images despite explicit 1", async
   await expect(page.locator("#todoBody")).toHaveValue(body);
 });
 
+test("y. custom fields and inline images edit together without disturbing each other", async ({ page }) => {
+  const CONTRIBUTOR = { email: "images-contributor-e2e@example.com", password: "password123", name: "Image Contributor" };
+  const project = await owner.json<{ slug: string; id: number }>("POST", "/api/projects", { name: "Fields Board" });
+  const other = await owner.json<{ slug: string }>("POST", "/api/projects", { name: "Plain Board" });
+  for (const def of [
+    { key: "ticket", name: "Ticket", type: "url" },
+    { key: "points", name: "Points", type: "number" },
+    { key: "note", name: "<i>Note</i>", type: "text" },
+  ]) {
+    await owner.json("POST", `/api/board/${project.slug}/custom-fields`, def);
+  }
+  const asset = (await uploadViaApi(main, owner, project.slug, "f.png", makePng(16, 12, 41))).body.assetId as string;
+  const body = `Before\n![image](/api/assets/${asset})\nAfter`;
+  const created = await owner.json<{ localId: number }>("POST", `/api/board/${project.slug}/todos`, {
+    title: "Fields story",
+    body,
+    customFields: { ticket: "https://example.com/T-1", points: 5, note: "<b>keep</b>" },
+  });
+  await owner.json("POST", `/api/board/${other.slug}/todos`, { title: "Plain story" });
+  const read = () => owner.json<any>("GET", `/api/board/${project.slug}/todos/${created.localId}`);
+  const cf = (key: string) => page.locator(`#todoCustomFields input[data-cf-key="${key}"]`);
+
+  await signedInContext(page, owner);
+  // Card badges and field labels are text, never markup.
+  await page.goto(`${main.url}/${project.slug}`);
+  const card = page.locator(".card[data-todo-local-id]", { hasText: "Fields story" });
+  await expect(card.locator(".card__field", { hasText: "<b>keep</b>" })).toHaveCount(1);
+  await expect(card.locator(".card__field b")).toHaveCount(0);
+
+  await openStory(page, main, project.slug, "Fields story");
+  await expect(page.locator(widgetSel)).toHaveCount(1);
+  await expect(cf("ticket")).toHaveValue("https://example.com/T-1");
+  await expect(cf("points")).toHaveValue("5");
+  await expect(cf("note")).toHaveValue("<b>keep</b>");
+  await expect(page.locator("#todoCustomFields .field__label", { hasText: "<i>Note</i>" })).toHaveCount(1);
+  await expect(page.locator("#todoCustomFields i")).toHaveCount(0);
+  // Fields arrive after the dialog opened; that alone is not an unsaved change.
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#todoDialog")).toBeHidden();
+
+  // A custom field change alone is an unsaved change.
+  await openStory(page, main, project.slug, "Fields story");
+  await cf("points").fill("6");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#confirmDialogCancel")).toBeVisible();
+  await page.locator("#confirmDialogCancel").click();
+  await expect(cf("points")).toHaveValue("6");
+
+  // Browser validation blocks a bad URL before any request.
+  const patches: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "PATCH") patches.push(req.postData() ?? "");
+  });
+  await cf("ticket").fill("not a url");
+  await page.locator("#saveTodoBtn").click();
+  await expect(page.locator("#todoDialog")).toBeVisible();
+  expect(patches).toHaveLength(0);
+
+  // Change one field, clear one, leave one, and edit the notes beside the image.
+  await cf("ticket").fill("https://example.com/T-1");
+  await cf("points").fill("8");
+  await cf("note").fill("");
+  await placeCaret(page, (await editorText(page)).length);
+  await page.keyboard.type(" edited");
+  await page.locator("#saveTodoBtn").click();
+  await expect(page.locator("#todoDialog")).toBeHidden();
+  expect(patches).toHaveLength(1);
+  expect(JSON.parse(patches[0]).customFields).toEqual({ points: 8, note: null });
+  let saved = await read();
+  expect(saved.customFields).toEqual({ ticket: "https://example.com/T-1", points: 8 });
+  expect(saved.body).toBe(`${body} edited`);
+
+  // Reopen: values and image are as saved; a definition deleted while the dialog is open does
+  // not block saving other changes, since only changed fields are sent.
+  await openStory(page, main, project.slug, "Fields story");
+  await expect(page.locator(widgetSel)).toHaveCount(1);
+  await expect(cf("points")).toHaveValue("8");
+  await expect(cf("note")).toHaveValue("");
+  await owner.json("DELETE", `/api/board/${project.slug}/custom-fields/note`);
+  await cf("points").fill("13");
+  await page.locator("#saveTodoBtn").click();
+  await expect(page.locator("#todoDialog")).toBeHidden();
+  saved = await read();
+  expect(saved.customFields).toEqual({ ticket: "https://example.com/T-1", points: 13 });
+  expect(saved.body).toBe(`${body} edited`);
+
+  // Definitions that load late for a dialog that was closed never land in another board's dialog.
+  // Stay in the SPA when switching boards so Board A's in-flight defs request is not aborted by
+  // a full document navigation (page.goto), which would make a stale-response race impossible.
+  let releaseDefs: () => void = () => {};
+  const defsGate = new Promise<void>((r) => (releaseDefs = r));
+  let markPending: () => void = () => {};
+  const defsPending = new Promise<void>((r) => (markPending = r));
+  await page.route(`**/api/board/${project.slug}/custom-fields`, async (route) => {
+    markPending();
+    await defsGate;
+    await route.continue();
+  });
+  // Open without a second goto: already on Fields Board from earlier steps.
+  await page.locator(".card[data-todo-local-id]", { hasText: "Fields story" }).first().click();
+  await expect(page.locator("#todoDialog")).toBeVisible();
+  await defsPending; // Board A defs request intercepted and still held
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#todoDialog")).toBeHidden();
+  const boardBDefs = page.waitForResponse(
+    (res) =>
+      res.request().method() === "GET"
+      && new URL(res.url()).pathname === `/api/board/${other.slug}/custom-fields`,
+  );
+  const staleDefs = page.waitForResponse(
+    (res) =>
+      res.request().method() === "GET"
+      && new URL(res.url()).pathname === `/api/board/${project.slug}/custom-fields`,
+  );
+  await page.evaluate((path) => {
+    history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, `/${other.slug}`);
+  await expect(page.locator(".card[data-todo-local-id]", { hasText: "Plain story" })).toBeVisible();
+  await page.locator(".card[data-todo-local-id]", { hasText: "Plain story" }).first().click();
+  await expect(page.locator("#todoDialog")).toBeVisible();
+  await boardBDefs;
+  await expect(page.locator("#todoCustomFields input")).toHaveCount(0);
+  releaseDefs();
+  const staleResponse = await staleDefs;
+  await staleResponse.finished();
+  // Flush microtasks/macrotasks so Board A's loadCustomFieldDefs().then(...) has run.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        queueMicrotask(() => {
+          setTimeout(resolve, 0);
+        });
+      }),
+  );
+  await expect(page.locator("#todoCustomFields input")).toHaveCount(0);
+  await page.unroute(`**/api/board/${project.slug}/custom-fields`);
+  await page.keyboard.press("Escape");
+
+  // A contributor sees the fields read-only and can still save notes around the image.
+  const contributorUser = await owner.json<{ id: number }>("POST", "/api/admin/users", CONTRIBUTOR);
+  await owner.json("POST", `/api/projects/${project.id}/members`, { user_id: contributorUser.id, role: "contributor" });
+  await owner.json("PATCH", `/api/board/${project.slug}/todos/${created.localId}`, {
+    title: "Fields story", body: saved.body, tags: [], assigneeUserId: contributorUser.id,
+  });
+  const contributor = apiClient(main.url);
+  await contributor.json("POST", "/api/auth/login", { email: CONTRIBUTOR.email, password: CONTRIBUTOR.password });
+  await page.context().clearCookies();
+  await signedInContext(page, contributor);
+  await openStory(page, main, project.slug, "Fields story");
+  await expect(cf("points")).toBeDisabled();
+  await expect(cf("ticket")).toBeDisabled();
+  await placeCaret(page, (await editorText(page)).length);
+  await page.keyboard.type(" by contributor");
+  await page.locator("#saveTodoBtn").click();
+  await expect(page.locator("#todoDialog")).toBeHidden();
+  saved = await read();
+  expect(saved.body).toBe(`${body} edited by contributor`);
+  expect(saved.customFields).toEqual({ ticket: "https://example.com/T-1", points: 13 });
+});
+
 // ---- shared helpers (same as public-board.playwright.ts) ----
 
 function toBrowserCookies(cookies: Cookie[]) {

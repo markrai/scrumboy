@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "লিংক থাকা যে কেউ সাইন ইন না করেই এই বোর্ডের স্টোরি শিরোনাম, নোট, ট্যাগ, অগ্রাধিকার, অনুমান, স্প্রিন্ট ও স্টোরি লিংক লাইভ আপডেটসহ পড়তে পারবেন। এতে সদস্যপদ বা সম্পাদনার অনুমতি দেওয়া হয় না, এবং সদস্য, দায়িত্বপ্রাপ্ত ব্যক্তি, আর্কাইভ করা স্টোরি, ওয়াল ও এজেন্ডা প্রাইভেট থাকে। নোটের লিংক বা ছবি অন্য সাইট থেকে কনটেন্ট লোড করতে পারে। সার্চ ইঞ্জিনকে এটি ইনডেক্স না করতে বলা হয়।",
   "settings.sharing.confirmPublishAction": "প্রকাশ করুন",
   "settings.sharing.confirmUnpublishTitle": "এই বোর্ড প্রাইভেট করবেন?",
-  "settings.sharing.confirmUnpublishMessage": "পাবলিক অ্যাক্সেস এখনই শেষ হবে এবং পাবলিক বোর্ড দেখছেন এমন সবার সংযোগ বিচ্ছিন্ন হবে। দর্শকরা যা আগে দেখেছেন তা ফেরানো যাবে না।"
+  "settings.sharing.confirmUnpublishMessage": "পাবলিক অ্যাক্সেস এখনই শেষ হবে এবং পাবলিক বোর্ড দেখছেন এমন সবার সংযোগ বিচ্ছিন্ন হবে। দর্শকরা যা আগে দেখেছেন তা ফেরানো যাবে না।",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

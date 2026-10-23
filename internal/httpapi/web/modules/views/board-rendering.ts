@@ -264,6 +264,7 @@ export function toMemberStoryCardInput(todo: Todo, opts?: RenderTodoCardOpts): S
     priority: priorityTier ? { name: priorityTier.name, color: priorityTier.color ?? null } : null,
     points: opts?.showPointsMode && todo.estimationPoints != null ? todo.estimationPoints : null,
     due: todo.dueAt ? { dueAt: todo.dueAt, inDoneColumn: opts?.doneColumnKeys?.has(doneKey) ?? false } : null,
+    customFields: todo.customFields ?? null,
   };
 }
 

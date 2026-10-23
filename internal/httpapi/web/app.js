@@ -16,6 +16,7 @@ import { setProjectId, setBoard, setSlug, setMobileTab, setProjects, setProjects
 import { openTodoDialog, renderTagsChips, setupTagAutocomplete, removeTag, renderTagAutocomplete, getTagsFromChips, resetAssigneeSelect, getTodoFormPermissions, requestTodoDialogClose, getTodoDialogOpenGeneration, notifyTodoCreated, isTodoImageUploadPending, getTodoNotesValue } from './dist/dialogs/todo.js';
 import { buildTodoCreatePayload, buildTodoPatchPayload, shouldSubmitSprintAssignment } from './dist/dialogs/todo-submit.js';
 import { hasIncompleteDueInput, resolveDueAtForSubmit } from './dist/dialogs/todo-due.js';
+import { hasInvalidCustomFieldInput, readCustomFieldInputs, readCustomFieldTypes, resolveCustomFieldsForSubmit } from './dist/dialogs/todo-custom-fields.js';
 import { renderSettingsModal, invalidateTagsCache, resumeAuthenticationMethodFlow } from './dist/dialogs/settings.js';
 import { initDnD, columnsSpec, dragInProgress, dragJustEnded } from './dist/features/drag-drop.js';
 import { setupContextMenuCloseHandler } from './dist/features/context-menu.js';
@@ -231,6 +232,13 @@ todoForm.addEventListener("submit", async (e) => {
     return;
   }
 
+  const customFieldsEl = document.getElementById("todoCustomFields");
+  if (hasInvalidCustomFieldInput(customFieldsEl)) {
+    return;
+  }
+  const customFieldInputs = readCustomFieldInputs(customFieldsEl);
+  const customFieldTypes = readCustomFieldTypes(customFieldsEl);
+
   const sprintEl = document.getElementById("todoSprint");
   const sprintField = document.getElementById("todoSprintField");
   const showSprint = boardSprintsEnabled(getBoard()) && sprintEl && sprintField && sprintField.style.display !== "none";
@@ -257,6 +265,7 @@ todoForm.addEventListener("submit", async (e) => {
         sprintId,
 		priorityKey,
         dueAt: resolveDueAtForSubmit("edit", dueAtValue, todo.dueAt),
+        customFields: resolveCustomFieldsForSubmit("edit", customFieldInputs, customFieldTypes, todo.customFields),
       });
       recordLocalMutation();
       await apiFetch(`/api/board/${getSlug()}/todos/${todo.localId}`, {
@@ -289,6 +298,7 @@ todoForm.addEventListener("submit", async (e) => {
         assigneeUserId,
 		priorityKey,
         dueAt: resolveDueAtForSubmit("create", dueAtValue, null),
+        customFields: resolveCustomFieldsForSubmit("create", customFieldInputs, customFieldTypes, null),
       });
       recordLocalMutation();
       const createdTodo = await apiFetch(`/api/board/${getSlug()}/todos`, {

@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "سيتمكن أي شخص لديه الرابط من قراءة عناوين القصص والملاحظات والوسوم والأولويات والتقديرات والسبرنتات والروابط بين القصص في هذه اللوحة مع التحديثات المباشرة دون تسجيل الدخول. لا يمنح ذلك عضوية أو صلاحية تعديل، ويبقى الأعضاء والمكلفون والقصص المؤرشفة والحائط والأجندة خاصة. قد تحمّل الروابط أو الصور في الملاحظات محتوى من مواقع أخرى. يُطلب من محركات البحث عدم فهرستها.",
   "settings.sharing.confirmPublishAction": "نشر",
   "settings.sharing.confirmUnpublishTitle": "جعل هذه اللوحة خاصة؟",
-  "settings.sharing.confirmUnpublishMessage": "سينتهي الوصول العام الآن وسيُفصل كل من يشاهد اللوحة العامة. لا يمكن استرجاع ما رآه الزوار بالفعل."
+  "settings.sharing.confirmUnpublishMessage": "سينتهي الوصول العام الآن وسيُفصل كل من يشاهد اللوحة العامة. لا يمكن استرجاع ما رآه الزوار بالفعل.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

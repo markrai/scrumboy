@@ -483,6 +483,7 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		"board_get",
 		"workflow_list", "workflow_create", "workflow_update", "workflow_delete",
 		"priorities_list", "priorities_create", "priorities_update", "priorities_delete",
+		"customFields_list", "customFields_create", "customFields_delete",
 		"dashboard_getSummary", "dashboard_listTodos",
 		"metrics_getBurndown", "metrics_getBacklogSize",
 		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",

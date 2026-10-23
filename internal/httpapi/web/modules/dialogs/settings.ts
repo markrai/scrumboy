@@ -131,6 +131,7 @@ import {
   resetPriorityDraftToBaseline,
   syncPriorityLocaleState,
 } from './settings-priorities.js';
+import { bindCustomFieldsTabInteractions, renderCustomFieldsTabShell } from './settings-custom-fields.js';
 import {
   bindTagTabInteractions,
   invalidateTagsCache as invalidateTagSettingsCache,
@@ -1538,6 +1539,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
   const showSprintsTab = !!slug && hasProjectAccess && myMember?.role === "maintainer";
   const showWorkflowTab = !!slug && hasProjectAccess && myMember?.role === "maintainer";
   const showPrioritiesTab = !!slug && hasProjectAccess && myMember?.role === "maintainer";
+  const showCustomFieldsTab = showPrioritiesTab;
 
   // Charts tab only applies in durable project board view (not Dashboard/Projects/Temporary Boards, not anonymous mode, not temporary boards)
   const board = getBoard();
@@ -1575,6 +1577,8 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
 	setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
   } else if (!showPrioritiesTab && getSettingsActiveTab() === "priorities") {
 	setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
+  } else if (!showCustomFieldsTab && getSettingsActiveTab() === "customFields") {
+    setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
   } else if (!showCalendarTab && getSettingsActiveTab() === "calendar") {
     setSettingsActiveTab(hasProjectAccess ? "tag-colors" : "customization");
   } else if (!showSharingTab && getSettingsActiveTab() === "sharing") {
@@ -2101,12 +2105,13 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
     prioritiesHTML = loadPriorityTabContent({ slug, rerender: () => renderSettingsModal() });
   }
 
-  const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCalendarTab || showChartsTab || showSharingTab;
+  const showBoardTabRow = showSprintsTab || showWorkflowTab || showPrioritiesTab || showCustomFieldsTab || showCalendarTab || showChartsTab || showSharingTab;
   const boardTabsHTML = showBoardTabRow
     ? `<div class="settings-tabs settings-tabs--board">
       ${showSprintsTab ? `<button class="settings-tab ${activeSettingsTab === "sprints" ? "settings-tab--active" : ""}" data-tab="sprints" data-i18n-text="settings.tabs.sprints">Sprints</button>` : ``}
       ${showWorkflowTab ? `<button class="settings-tab ${activeSettingsTab === "workflow" ? "settings-tab--active" : ""}" data-tab="workflow" data-i18n-text="settings.tabs.workflow">Workflow</button>` : ``}
       ${showPrioritiesTab ? `<button class="settings-tab ${activeSettingsTab === "priorities" ? "settings-tab--active" : ""}" data-tab="priorities" data-i18n-text="settings.tabs.priorities">Priorities</button>` : ``}
+      ${showCustomFieldsTab ? `<button class="settings-tab ${activeSettingsTab === "customFields" ? "settings-tab--active" : ""}" data-tab="customFields" data-i18n-text="settings.tabs.customFields">Custom fields</button>` : ``}
       ${showCalendarTab ? `<button class="settings-tab ${activeSettingsTab === "calendar" ? "settings-tab--active" : ""}" data-tab="calendar" data-i18n-text="settings.tabs.calendar">Agenda</button>` : ``}
       ${showChartsTab ? `<button class="settings-tab ${activeSettingsTab === "charts" ? "settings-tab--active" : ""}" data-tab="charts" data-i18n-text="settings.tabs.charts">Charts</button>` : ``}
       ${showSharingTab ? `<button class="settings-tab ${activeSettingsTab === "sharing" ? "settings-tab--active" : ""}" data-tab="sharing" data-i18n-text="settings.tabs.sharing">${escapeHTML(t("settings.tabs.sharing"))}</button>` : ``}
@@ -2126,7 +2131,7 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       </div>
     </div>
     <div class="settings-tab-content" id="settingsTabContent">
-      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : ""}
+      ${activeSettingsTab === "profile" ? profileHTML + apiTokensHTML : activeSettingsTab === "users" ? usersHTML : activeSettingsTab === "sprints" ? sprintsHTML : activeSettingsTab === "workflow" ? workflowHTML : activeSettingsTab === "priorities" ? prioritiesHTML : activeSettingsTab === "customFields" && showCustomFieldsTab ? renderCustomFieldsTabShell() : activeSettingsTab === "calendar" ? calendarHTML : activeSettingsTab === "customization" ? customizationHTML : activeSettingsTab === "tag-colors" ? tagColorsContent : activeSettingsTab === "charts" ? chartsContent : activeSettingsTab === "backup" ? renderBackupTabHTML() : activeSettingsTab === "sharing" && showSharingTab ? renderSharingTabShell() : ""}
     </div>
   `;
   if (!dialogWasOpen) {
@@ -2235,6 +2240,9 @@ export async function renderSettingsModal(options?: { skipProfileRefetch?: boole
       closeSettingsBtn,
       rerender: () => renderSettingsModal(),
     });
+  }
+  if (getSettingsActiveTab() === "customFields") {
+    bindCustomFieldsTabInteractions({ signal });
   }
   if (getSettingsActiveTab() === "calendar") {
     bindCalendarTabInteractions({

@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "リンクを知っている人は、サインインせずにこのボードのストーリーのタイトル、メモ、タグ、優先度、見積もり、スプリント、ストーリー間のリンクをリアルタイム更新付きで閲覧できます。メンバーシップや編集権限は付与されず、メンバー、担当者、アーカイブ済みストーリー、ウォール、アジェンダは非公開のままです。メモ内のリンクや画像は他のサイトからコンテンツを読み込む場合があります。検索エンジンにはインデックスしないよう求めます。",
   "settings.sharing.confirmPublishAction": "公開",
   "settings.sharing.confirmUnpublishTitle": "このボードを非公開にしますか？",
-  "settings.sharing.confirmUnpublishMessage": "公開アクセスは直ちに終了し、公開ボードを閲覧中の人は切断されます。訪問者がすでに見た内容は取り消せません。"
+  "settings.sharing.confirmUnpublishMessage": "公開アクセスは直ちに終了し、公開ボードを閲覧中の人は切断されます。訪問者がすでに見た内容は取り消せません。",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

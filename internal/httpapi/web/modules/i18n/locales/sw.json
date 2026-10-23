@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "Yeyote mwenye kiungo ataweza kusoma vichwa vya hadithi, maelezo, lebo, vipaumbele, makadirio, sprint na viungo vya hadithi vya ubao huu, pamoja na masasisho ya moja kwa moja, bila kuingia. Haitoi uanachama wala ruhusa ya kuhariri, na wanachama, wanaohusika, hadithi zilizohifadhiwa, Ukuta na Ajenda hubaki binafsi. Viungo au picha katika maelezo vinaweza kupakia maudhui kutoka tovuti nyingine. Injini za utafutaji zinaombwa zisiuorodheshe.",
   "settings.sharing.confirmPublishAction": "Chapisha",
   "settings.sharing.confirmUnpublishTitle": "Fanya ubao huu kuwa binafsi?",
-  "settings.sharing.confirmUnpublishMessage": "Ufikiaji wa umma unaisha sasa na yeyote anayetazama ubao wa umma atatenganishwa. Maudhui ambayo wageni tayari wameona hayawezi kurudishwa."
+  "settings.sharing.confirmUnpublishMessage": "Ufikiaji wa umma unaisha sasa na yeyote anayetazama ubao wa umma atatenganishwa. Maudhui ambayo wageni tayari wameona hayawezi kurudishwa.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "Будь-хто з посиланням зможе без входу читати назви історій, нотатки, теги, пріоритети, оцінки, спринти та зв'язки між історіями цієї дошки з оновленнями в реальному часі. Це не надає членства чи права редагування; учасники, виконавці, архівні історії, Стіна та Порядок денний залишаються приватними. Посилання або зображення в нотатках можуть завантажувати вміст з інших сайтів. Пошукові системи просять не індексувати дошку.",
   "settings.sharing.confirmPublishAction": "Опублікувати",
   "settings.sharing.confirmUnpublishTitle": "Зробити цю дошку приватною?",
-  "settings.sharing.confirmUnpublishMessage": "Публічний доступ припиняється зараз, і всіх, хто переглядає публічну дошку, буде від'єднано. Те, що відвідувачі вже побачили, відкликати неможливо."
+  "settings.sharing.confirmUnpublishMessage": "Публічний доступ припиняється зараз, і всіх, хто переглядає публічну дошку, буде від'єднано. Те, що відвідувачі вже побачили, відкликати неможливо.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

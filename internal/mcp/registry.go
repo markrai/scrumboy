@@ -53,6 +53,9 @@ func (a *Adapter) registerTools() {
 	a.tools["priorities_create"] = a.handlePriorityCreate
 	a.tools["priorities_update"] = a.handlePriorityUpdate
 	a.tools["priorities_delete"] = a.handlePriorityDelete
+	a.tools["customFields_list"] = a.handleCustomFieldsList
+	a.tools["customFields_create"] = a.handleCustomFieldsCreate
+	a.tools["customFields_delete"] = a.handleCustomFieldsDelete
 	a.tools["dashboard_getSummary"] = a.handleDashboardGetSummary
 	a.tools["dashboard_listTodos"] = a.handleDashboardListTodos
 	a.tools["metrics_getBurndown"] = a.handleMetricsGetBurndown

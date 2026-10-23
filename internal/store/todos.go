@@ -21,6 +21,8 @@ type CreateTodoInput struct {
 	DueAt            *time.Time // NULL = no due date
 	AfterID          *int64
 	BeforeID         *int64
+	// CustomFields sets initial values by field key; nil values are ignored.
+	CustomFields CustomFieldValues
 }
 
 // Bounds for a due date: after the Unix epoch and before 2100-01-01 UTC. Past
@@ -318,6 +320,20 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			}
 		}
 
+		var createdCustomFields CustomFieldValues
+		if len(in.CustomFields) > 0 {
+			patch, err := resolveCustomFieldPatchTx(ctx, tx, projectID, in.CustomFields)
+			if err != nil {
+				_ = tx.Rollback()
+				return Todo{}, err
+			}
+			_, createdCustomFields, err = applyCustomFieldPatchTx(ctx, tx, todoID, nil, patch)
+			if err != nil {
+				_ = tx.Rollback()
+				return Todo{}, err
+			}
+		}
+
 		if err := touchProject(ctx, tx, projectID, nowMs); err != nil {
 			_ = tx.Rollback()
 			return Todo{}, err
@@ -359,6 +375,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			PriorityKey:      cloneStringPtr(in.PriorityKey),
 			DueAt:            cloneTimePtr(in.DueAt),
 			Tags:             tags,
+			CustomFields:     createdCustomFields,
 			CreatedAt:        time.UnixMilli(nowMs).UTC(),
 			UpdatedAt:        time.UnixMilli(nowMs).UTC(),
 		}
@@ -412,6 +429,9 @@ type UpdateTodoInput struct {
 	KeepAssigneeUserID   bool
 	DueAt                *time.Time // nil means clear when DueAtPresent is true
 	DueAtPresent         bool       // false preserves the existing due date
+	// CustomFields is a sparse patch keyed by field key; a nil value clears
+	// that field. Keys not present are untouched.
+	CustomFields CustomFieldValues
 }
 
 // resolveDoneAtForColumnTransition returns the value to write for done_at.
@@ -585,6 +605,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	if scopeEnforced {
 		switch editScope {
 		case TodoEditBodyOnly:
+			if len(in.CustomFields) > 0 {
+				return Todo{}, ErrUnauthorized
+			}
 			if len(in.Body) > 20000 {
 				return Todo{}, fmt.Errorf("%w: body too large", ErrValidation)
 			}
@@ -727,6 +750,13 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		effectiveDueAt = cloneTimePtr(in.DueAt)
 	}
 	dueAtChanged := !sameTimePtr(existing.DueAt, effectiveDueAt)
+	var customFieldPatch map[string]resolvedCustomField
+	if len(in.CustomFields) > 0 {
+		customFieldPatch, err = resolveCustomFieldPatchTx(ctx, tx, existing.ProjectID, in.CustomFields)
+		if err != nil {
+			return Todo{}, err
+		}
+	}
 	var effectiveSprint *int64
 	if in.ClearSprint {
 		effectiveSprint = nil
@@ -863,6 +893,16 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 		existing.Tags = tags
 	}
 
+	var customFieldsChanged []string
+	if len(customFieldPatch) > 0 {
+		changed, next, err := applyCustomFieldPatchTx(ctx, tx, todoID, existing.CustomFields, customFieldPatch)
+		if err != nil {
+			return Todo{}, err
+		}
+		customFieldsChanged = changed
+		existing.CustomFields = next
+	}
+
 	if err := touchProject(ctx, tx, existing.ProjectID, nowMs); err != nil {
 		return Todo{}, err
 	}
@@ -886,6 +926,9 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 	}
 	if dueAtChanged {
 		changedFields = append(changedFields, "due")
+	}
+	if len(customFieldsChanged) > 0 {
+		changedFields = append(changedFields, "custom_fields")
 	}
 	existingTags := make(map[string]struct{}, len(originalTags))
 	for _, t := range originalTags {
@@ -919,6 +962,8 @@ func (s *Store) UpdateTodo(ctx context.Context, todoID int64, in UpdateTodoInput
 			case "title":
 				meta["before_len"] = len(existing.Title)
 				meta["after_len"] = len(in.Title)
+			case "custom_fields":
+				meta["custom_fields_changed"] = customFieldsChanged
 			case "tags":
 				meta["tags_added"] = tagsAdded
 				meta["tags_removed"] = tagsRemoved
@@ -1332,6 +1377,12 @@ func getTodoTx(ctx context.Context, tx *sql.Tx, todoID int64) (Todo, error) {
 		return Todo{}, err
 	}
 	t.Tags = tags
+
+	customFields, err := loadTodoCustomFieldsQ(ctx, tx, t.ID)
+	if err != nil {
+		return Todo{}, err
+	}
+	t.CustomFields = customFields
 
 	return t, nil
 }

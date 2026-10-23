@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "Sesiapa yang mempunyai pautan akan dapat membaca tajuk cerita, nota, tag, keutamaan, anggaran, sprint dan pautan antara cerita papan ini, dengan kemas kini langsung, tanpa log masuk. Ia tidak memberikan keahlian atau hak menyunting, dan ahli, penerima tugasan, cerita yang diarkibkan, Dinding dan Agenda kekal peribadi. Pautan atau imej dalam nota mungkin memuatkan kandungan daripada laman lain. Enjin carian diminta untuk tidak mengindeksnya.",
   "settings.sharing.confirmPublishAction": "Terbitkan",
   "settings.sharing.confirmUnpublishTitle": "Jadikan papan ini peribadi?",
-  "settings.sharing.confirmUnpublishMessage": "Akses awam tamat sekarang dan sesiapa yang sedang melihat papan awam akan diputuskan sambungan. Kandungan yang telah dilihat pelawat tidak boleh ditarik balik."
+  "settings.sharing.confirmUnpublishMessage": "Akses awam tamat sekarang dan sesiapa yang sedang melihat papan awam akan diputuskan sambungan. Kandungan yang telah dilihat pelawat tidak boleh ditarik balik.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

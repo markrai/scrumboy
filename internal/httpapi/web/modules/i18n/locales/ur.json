@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "لنک رکھنے والا کوئی بھی شخص سائن ان کیے بغیر اس بورڈ کے اسٹوری عنوانات، نوٹس، ٹیگز، ترجیحات، تخمینے، اسپرنٹس اور اسٹوری لنکس لائیو اپ ڈیٹس کے ساتھ پڑھ سکے گا۔ اس سے رکنیت یا ترمیم کا حق نہیں ملتا، اور اراکین، ذمہ داران، محفوظ شدہ اسٹوریز، وال اور ایجنڈا نجی رہتے ہیں۔ نوٹس میں موجود لنکس یا تصاویر دوسری سائٹس سے مواد لوڈ کر سکتی ہیں۔ سرچ انجنوں سے اسے انڈیکس نہ کرنے کی درخواست کی جاتی ہے۔",
   "settings.sharing.confirmPublishAction": "شائع کریں",
   "settings.sharing.confirmUnpublishTitle": "یہ بورڈ نجی بنائیں؟",
-  "settings.sharing.confirmUnpublishMessage": "عوامی رسائی ابھی ختم ہو جائے گی اور عوامی بورڈ دیکھنے والے سبھی افراد منقطع ہو جائیں گے۔ زائرین جو پہلے دیکھ چکے ہیں اسے واپس نہیں لیا جا سکتا۔"
+  "settings.sharing.confirmUnpublishMessage": "عوامی رسائی ابھی ختم ہو جائے گی اور عوامی بورڈ دیکھنے والے سبھی افراد منقطع ہو جائیں گے۔ زائرین جو پہلے دیکھ چکے ہیں اسے واپس نہیں لیا جا سکتا۔",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

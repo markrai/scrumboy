@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "任何拥有链接的人无需登录即可阅读此看板的故事标题、备注、标签、优先级、估算、冲刺和故事链接，并实时看到更新。这不会授予成员身份或编辑权限，成员、负责人、已归档故事、便签墙和日程仍保持私有。备注中的链接或图片可能会从其他网站加载内容。会请求搜索引擎不要将其编入索引。",
   "settings.sharing.confirmPublishAction": "公开",
   "settings.sharing.confirmUnpublishTitle": "将此看板设为私有？",
-  "settings.sharing.confirmUnpublishMessage": "公开访问将立即结束，正在查看公开看板的人会被断开连接。访客已看到的内容无法撤回。"
+  "settings.sharing.confirmUnpublishMessage": "公开访问将立即结束，正在查看公开看板的人会被断开连接。访客已看到的内容无法撤回。",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

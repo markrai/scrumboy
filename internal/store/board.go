@@ -522,8 +522,13 @@ ORDER BY `+orderBy+`
 	if err != nil {
 		return nil, err
 	}
+	cfMap, err := listCustomFieldsForTodosQ(ctx, s.db, todoIDs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
 		out[i].Tags = tagMap[out[i].ID]
+		out[i].CustomFields = cfMap[out[i].ID]
 	}
 	return out, nil
 }
@@ -703,8 +708,13 @@ ORDER BY `+orderBy+`
 	if err != nil {
 		return nil, err
 	}
+	cfMap, err := listCustomFieldsForTodosQ(ctx, s.db, todoIDs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range out {
 		out[i].Todo.Tags = tagMap[out[i].Todo.ID]
+		out[i].Todo.CustomFields = cfMap[out[i].Todo.ID]
 	}
 	return out, nil
 }
@@ -879,8 +889,13 @@ LIMIT ?
 	if err != nil {
 		return nil, "", false, err
 	}
+	cfMap, err := listCustomFieldsForTodosQ(ctx, s.db, todoIDs)
+	if err != nil {
+		return nil, "", false, err
+	}
 	for i := range out {
 		out[i].Tags = tagMap[out[i].ID]
+		out[i].CustomFields = cfMap[out[i].ID]
 	}
 	if hasMore {
 		last := out[len(out)-1]

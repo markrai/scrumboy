@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "Toute personne disposant du lien pourra lire les titres, notes, tags, priorités, estimations, sprints et liens entre stories de ce tableau, avec les mises à jour en direct, sans se connecter. Cela n'accorde ni appartenance ni droit de modification, et les membres, responsables, stories archivées, le Mur et l'Agenda restent privés. Les liens ou images des notes peuvent charger du contenu depuis d'autres sites. Il est demandé aux moteurs de recherche de ne pas l'indexer.",
   "settings.sharing.confirmPublishAction": "Publier",
   "settings.sharing.confirmUnpublishTitle": "Rendre ce tableau privé ?",
-  "settings.sharing.confirmUnpublishMessage": "L'accès public prend fin maintenant et toute personne consultant le tableau public sera déconnectée. Ce que les visiteurs ont déjà vu ne peut pas être retiré."
+  "settings.sharing.confirmUnpublishMessage": "L'accès public prend fin maintenant et toute personne consultant le tableau public sera déconnectée. Ce que les visiteurs ont déjà vu ne peut pas être retiré.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

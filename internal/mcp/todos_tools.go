@@ -13,16 +13,17 @@ import (
 )
 
 type createTodoInput struct {
-	ProjectSlug      string     `json:"projectSlug"`
-	Title            string     `json:"title"`
-	Body             string     `json:"body"`
-	Tags             []string   `json:"tags"`
-	ColumnKey        string     `json:"columnKey"`
-	EstimationPoints *int64     `json:"estimationPoints"`
-	SprintId         *int64     `json:"sprintId"`
-	AssigneeUserId   *int64     `json:"assigneeUserId"`
-	PriorityKey      *string    `json:"priorityKey"`
-	DueAt            *time.Time `json:"dueAt"`
+	ProjectSlug      string          `json:"projectSlug"`
+	Title            string          `json:"title"`
+	Body             string          `json:"body"`
+	Tags             []string        `json:"tags"`
+	ColumnKey        string          `json:"columnKey"`
+	EstimationPoints *int64          `json:"estimationPoints"`
+	SprintId         *int64          `json:"sprintId"`
+	AssigneeUserId   *int64          `json:"assigneeUserId"`
+	PriorityKey      *string         `json:"priorityKey"`
+	DueAt            *time.Time      `json:"dueAt"`
+	CustomFields     json.RawMessage `json:"customFields"`
 	Position         *struct {
 		AfterLocalId  *int64 `json:"afterLocalId"`
 		BeforeLocalId *int64 `json:"beforeLocalId"`
@@ -86,6 +87,15 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
 
+	var customFields store.CustomFieldValues
+	if len(in.CustomFields) > 0 && !isNullJSON(in.CustomFields) {
+		values, decodeErr := decodeCustomFieldPatch(in.CustomFields)
+		if decodeErr != nil {
+			return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid customFields (expected an object of field key to string or number)", map[string]any{"field": "customFields"})
+		}
+		customFields = values
+	}
+
 	prepared, prepareErr := a.todoCreates.Prepare(ctx, todoapp.SlugCreateTarget{
 		Slug: in.ProjectSlug,
 		Mode: a.storeMode(),
@@ -110,6 +120,7 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 			SprintID:         in.SprintId,
 			PriorityKey:      in.PriorityKey,
 			DueAt:            in.DueAt,
+			CustomFields:     customFields,
 		},
 	}
 	if in.Position != nil {
@@ -484,6 +495,7 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 		"sprintId":         {},
 		"priorityKey":      {},
 		"dueAt":            {},
+		"customFields":     {},
 	}
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
@@ -600,7 +612,37 @@ func buildUpdatePatch(patchRaw json.RawMessage) (todoapp.UpdatePatch, *adapterEr
 		}
 	}
 
+	if v, ok := raw["customFields"]; ok {
+		if isNullJSON(v) {
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "customFields cannot be null", map[string]any{"field": "customFields"})
+		}
+		values, err := decodeCustomFieldPatch(v)
+		if err != nil {
+			return todoapp.UpdatePatch{}, newAdapterError(http.StatusBadRequest, CodeValidationError, "invalid customFields (expected an object of field key to string, number or null)", map[string]any{"field": "customFields"})
+		}
+		patch.CustomFields = todoapp.Field[store.CustomFieldValues]{Present: true, Value: values}
+	}
+
 	return patch, nil
+}
+
+// decodeCustomFieldPatch parses {"key": "text"|number|null}. Booleans, arrays
+// and objects are rejected so a typed field never stores a coerced value.
+func decodeCustomFieldPatch(raw json.RawMessage) (store.CustomFieldValues, error) {
+	var in map[string]any
+	if err := json.Unmarshal(raw, &in); err != nil || in == nil {
+		return nil, errors.New("not an object")
+	}
+	out := make(store.CustomFieldValues, len(in))
+	for k, v := range in {
+		switch v.(type) {
+		case nil, string, float64:
+			out[k] = v
+		default:
+			return nil, errors.New("unsupported value type")
+		}
+	}
+	return out, nil
 }
 
 func isNullJSON(v json.RawMessage) bool {
@@ -625,6 +667,7 @@ func todoToItem(projectSlug string, todo store.Todo) todoItem {
 		DoneAt:           todo.DoneAt,
 		ArchivedAt:       todo.ArchivedAt,
 		DueAt:            todo.DueAt,
+		CustomFields:     todo.CustomFields,
 	}
 }
 
@@ -658,5 +701,6 @@ func todoResult(brief bool, item todoItem) any {
 		DoneAt:           item.DoneAt,
 		ArchivedAt:       item.ArchivedAt,
 		DueAt:            item.DueAt,
+		CustomFields:     item.CustomFields,
 	}
 }

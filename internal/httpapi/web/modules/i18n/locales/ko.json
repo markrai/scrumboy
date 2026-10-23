@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "링크가 있는 사람은 누구나 로그인하지 않고 이 보드의 스토리 제목, 메모, 태그, 우선순위, 추정치, 스프린트, 스토리 링크를 실시간 업데이트와 함께 읽을 수 있습니다. 멤버 자격이나 편집 권한은 부여되지 않으며 멤버, 담당자, 보관된 스토리, 월, 아젠다는 비공개로 유지됩니다. 메모의 링크나 이미지는 다른 사이트의 콘텐츠를 불러올 수 있습니다. 검색 엔진에는 색인하지 않도록 요청합니다.",
   "settings.sharing.confirmPublishAction": "공개",
   "settings.sharing.confirmUnpublishTitle": "이 보드를 비공개로 전환할까요?",
-  "settings.sharing.confirmUnpublishMessage": "공개 액세스가 즉시 종료되며 공개 보드를 보고 있는 모든 사람의 연결이 끊어집니다. 방문자가 이미 본 내용은 되돌릴 수 없습니다."
+  "settings.sharing.confirmUnpublishMessage": "공개 액세스가 즉시 종료되며 공개 보드를 보고 있는 모든 사람의 연결이 끊어집니다. 방문자가 이미 본 내용은 되돌릴 수 없습니다.",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

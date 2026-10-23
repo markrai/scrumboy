@@ -705,7 +705,7 @@ describe('settings tabs i18n (charts, sprints, workflow, tag colors)', () => {
 
     const boardTabs = Array.from(boardRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
     const personalTabs = Array.from(personalRow!.querySelectorAll('.settings-tab')).map((el) => el.getAttribute('data-tab'));
-    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'calendar', 'charts']);
+    expect(boardTabs).toEqual(['sprints', 'workflow', 'priorities', 'customFields', 'calendar', 'charts']);
     expect(personalTabs).toEqual(['profile', 'customization', 'tag-colors', 'backup']);
   });
 
@@ -1057,7 +1057,7 @@ describe('settings on a public read-only board', () => {
     await flushPromises();
 
     const tabs = Array.from(document.querySelectorAll('[data-tab]')).map((el) => el.getAttribute('data-tab'));
-    for (const forbidden of ['tag-colors', 'backup', 'charts', 'sprints', 'workflow', 'priorities', 'calendar']) {
+    for (const forbidden of ['tag-colors', 'backup', 'charts', 'sprints', 'workflow', 'priorities', 'customFields', 'calendar']) {
       expect(tabs).not.toContain(forbidden);
     }
     expect(tabs).toContain('customization');

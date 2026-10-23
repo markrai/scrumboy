@@ -515,6 +515,10 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 
 - `priorities_list`, `priorities_create`, `priorities_update`, `priorities_delete` - list and manage a project's ordered priority tiers.
 
+**custom fields**
+
+- `customFields_list`, `customFields_create`, `customFields_delete` - manage a project's typed custom field definitions. Values are set with `todos_update` `patch.customFields`.
+
 **Planned tools:** none exposed in capabilities today (`plannedTools` omitted when empty).
 
 ---
@@ -779,6 +783,27 @@ MCP tools:
 | `priorities_create` | `projectSlug`, `name` | `data.priority`; Maintainer+ |
 | `priorities_update` | `projectSlug`, `priorityKey`, `name`, `color` | `data.priority`; Maintainer+ |
 | `priorities_delete` | `projectSlug`, `priorityKey` | `data.deleted`; Maintainer+ |
+
+### Custom fields
+
+Typed, per-project fields for external references (a merge request URL, a repo
+name, a ticket number). Types: `text`, `url` (http/https only), `number`. Keys
+are lowercase letters, digits and underscores; a project holds at most 25.
+
+| Endpoint / tool | Role | Notes |
+|---|---|---|
+| `GET /api/board/{slug}/custom-fields` / `customFields_list` | Viewer+ | `{"items":[{"key","name","type","position"}]}` |
+| `POST /api/board/{slug}/custom-fields` / `customFields_create` | Maintainer+ | Body `{"name","type","key?"}`; `key` defaults to a slug of `name`; `201` field; duplicate key is a conflict |
+| `DELETE /api/board/{slug}/custom-fields/{key}` / `customFields_delete` | Maintainer+ | Removes the definition and every todo value under it; `204` |
+
+Set values on create (`POST /api/board/{slug}/todos` / `todos_create`
+`customFields`) or later through `PATCH /api/board/{slug}/todos/{localId}`
+(`customFields`) or `todos_update` `patch.customFields`: an object of field key to string (text/url),
+number, or `null` to clear. Unlisted fields are untouched; an unknown key or a
+value of the wrong type rejects the whole patch. Text values cannot be blank (use
+`null` to clear) and numbers must be below 2^53 in magnitude. Values are returned as
+`customFields` (omitted when empty) on `todos_get`, `todos_update` and the todo
+REST response. Contributors can set values only when they can edit the full todo.
 
 Stable priority validation reasons include `invalid_priority_key`,
 `invalid_priority_tier_name`, `invalid_priority_tier_color`,

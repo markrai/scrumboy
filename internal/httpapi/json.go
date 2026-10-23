@@ -326,25 +326,26 @@ func projectsToJSON(entries []store.ProjectListEntry) []projectJSON {
 }
 
 type todoJSON struct {
-	ID               int64      `json:"id"`
-	ProjectID        int64      `json:"projectId"`
-	LocalID          int64      `json:"localId"`
-	Title            string     `json:"title"`
-	Body             string     `json:"body"`
-	Status           string     `json:"status"`
-	ColumnKey        string     `json:"columnKey"`
-	Rank             int64      `json:"rank"`
-	EstimationPoints *int64     `json:"estimationPoints,omitempty"`
-	AssigneeUserId   *int64     `json:"assigneeUserId,omitempty"`
-	CreatedByUserId  *int64     `json:"createdByUserId,omitempty"`
-	SprintId         *int64     `json:"sprintId,omitempty"`
-	PriorityKey      *string    `json:"priorityKey,omitempty"`
-	Tags             []string   `json:"tags"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-	DoneAt           *time.Time `json:"doneAt,omitempty"`
-	ArchivedAt       *time.Time `json:"archivedAt,omitempty"`
-	DueAt            *time.Time `json:"dueAt,omitempty"`
+	ID               int64                   `json:"id"`
+	ProjectID        int64                   `json:"projectId"`
+	LocalID          int64                   `json:"localId"`
+	Title            string                  `json:"title"`
+	Body             string                  `json:"body"`
+	Status           string                  `json:"status"`
+	ColumnKey        string                  `json:"columnKey"`
+	Rank             int64                   `json:"rank"`
+	EstimationPoints *int64                  `json:"estimationPoints,omitempty"`
+	AssigneeUserId   *int64                  `json:"assigneeUserId,omitempty"`
+	CreatedByUserId  *int64                  `json:"createdByUserId,omitempty"`
+	SprintId         *int64                  `json:"sprintId,omitempty"`
+	PriorityKey      *string                 `json:"priorityKey,omitempty"`
+	Tags             []string                `json:"tags"`
+	CreatedAt        time.Time               `json:"createdAt"`
+	UpdatedAt        time.Time               `json:"updatedAt"`
+	DoneAt           *time.Time              `json:"doneAt,omitempty"`
+	ArchivedAt       *time.Time              `json:"archivedAt,omitempty"`
+	DueAt            *time.Time              `json:"dueAt,omitempty"`
+	CustomFields     store.CustomFieldValues `json:"customFields,omitempty"`
 }
 
 func todoToJSON(t store.Todo) todoJSON {
@@ -368,6 +369,7 @@ func todoToJSON(t store.Todo) todoJSON {
 		DoneAt:           t.DoneAt,
 		ArchivedAt:       t.ArchivedAt,
 		DueAt:            t.DueAt,
+		CustomFields:     t.CustomFields,
 	}
 }
 
@@ -845,26 +847,28 @@ type projectExportJSON struct {
 	Tags               []tagExportJSON              `json:"tags"`
 	Links              []linkExportJSON             `json:"links,omitempty"`
 	Wall               *store.WallExport            `json:"wall,omitempty"`
+	CustomFields       []store.CustomFieldExport    `json:"customFields,omitempty"`
 	// Assets is set only in .sbz archive manifests (format 1.3).
 	Assets []store.AssetExport `json:"assets,omitempty"`
 }
 
 type todoExportJSON struct {
-	LocalID          int64     `json:"localId"`
-	Title            string    `json:"title"`
-	Body             string    `json:"body"`
-	Status           string    `json:"status"`
-	Rank             int64     `json:"rank"`
-	EstimationPoints *int64    `json:"estimationPoints,omitempty"`
-	AssigneeUserId   *int64    `json:"assigneeUserId,omitempty"`
-	SprintNumber     *int64    `json:"sprintNumber,omitempty"`
-	PriorityKey      *string   `json:"priorityKey"`
-	Tags             []string  `json:"tags"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-	DoneAt           *int64    `json:"doneAt,omitempty"`
-	ArchivedAt       *int64    `json:"archivedAt"`
-	DueAt            *int64    `json:"dueAt,omitempty"`
+	LocalID          int64          `json:"localId"`
+	Title            string         `json:"title"`
+	Body             string         `json:"body"`
+	Status           string         `json:"status"`
+	Rank             int64          `json:"rank"`
+	EstimationPoints *int64         `json:"estimationPoints,omitempty"`
+	AssigneeUserId   *int64         `json:"assigneeUserId,omitempty"`
+	SprintNumber     *int64         `json:"sprintNumber,omitempty"`
+	PriorityKey      *string        `json:"priorityKey"`
+	Tags             []string       `json:"tags"`
+	CreatedAt        time.Time      `json:"createdAt"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
+	DoneAt           *int64         `json:"doneAt,omitempty"`
+	ArchivedAt       *int64         `json:"archivedAt"`
+	DueAt            *int64         `json:"dueAt,omitempty"`
+	CustomFields     map[string]any `json:"customFields,omitempty"`
 }
 
 type tagExportJSON struct {
@@ -899,6 +903,7 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 				DoneAt:           t.DoneAt,
 				ArchivedAt:       t.ArchivedAt,
 				DueAt:            t.DueAt,
+				CustomFields:     t.CustomFields,
 			})
 		}
 
@@ -925,7 +930,7 @@ func exportDataToJSON(data *store.ExportData) exportDataJSON {
 			DefaultSprintWeeks: p.DefaultSprintWeeks, SprintsEnabled: p.SprintsEnabled,
 			ExpiresAt: p.ExpiresAt, CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 			WorkflowColumns: p.WorkflowColumns, PriorityTiers: p.PriorityTiers, Sprints: p.Sprints,
-			Todos: todos, Tags: tags, Links: links, Wall: p.Wall, Assets: p.Assets,
+			Todos: todos, Tags: tags, Links: links, Wall: p.Wall, CustomFields: p.CustomFields, Assets: p.Assets,
 		})
 	}
 

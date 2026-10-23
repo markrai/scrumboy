@@ -87,9 +87,20 @@ type ProjectExport struct {
 	Tags                 []TagExport    `json:"tags"`
 	Links                []LinkExport   `json:"links,omitempty"`
 	Wall                 *WallExport    `json:"wall,omitempty"`
+	// CustomFields are the project's typed custom field definitions. Omitted when
+	// the project defines none, so such backups stay byte-compatible.
+	CustomFields []CustomFieldExport `json:"customFields,omitempty"`
 	// Assets lists the note images referenced by this project's stories. It is only present in
 	// .sbz archives (format 1.3), whose assets/ entries carry the bytes; JSON exports never set it.
 	Assets []AssetExport `json:"assets,omitempty"`
+}
+
+// CustomFieldExport is a project custom field definition in backup format.
+type CustomFieldExport struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Position int    `json:"position"`
 }
 
 // AssetExport describes one image in a .sbz archive. ID is the exporting instance's asset UUID;
@@ -125,6 +136,10 @@ type TodoExport struct {
 	// On merge import an absent value preserves the existing due date.
 	DueAt       *int64  `json:"dueAt,omitempty"`
 	PriorityKey *string `json:"priorityKey"`
+	// CustomFields holds the todo's custom field values by field key (string for
+	// text/url, number for number). Omitted when empty; on merge import an absent
+	// value preserves the todo's existing values.
+	CustomFields map[string]any `json:"customFields,omitempty"`
 	// PriorityKeyPresent distinguishes preserve-on-merge omission from an
 	// explicit null clear.
 	PriorityKeyPresent bool `json:"-"`
@@ -178,7 +193,14 @@ func validateBackupData(data *ExportData, fromArchive bool) error {
 	}
 	ceiling := time.Now().UTC().UnixMilli() + importArchivedAtFutureSlackMs
 	for _, project := range data.Projects {
+		localIDs := make(map[int64]struct{}, len(project.Todos))
 		for _, todo := range project.Todos {
+			if todo.LocalID != 0 {
+				if _, dup := localIDs[todo.LocalID]; dup {
+					return fmt.Errorf("%w: project %q has duplicate todo localId %d", ErrValidation, project.Name, todo.LocalID)
+				}
+				localIDs[todo.LocalID] = struct{}{}
+			}
 			if data.Version == "1.1" && todo.ArchivedAtPresent {
 				return fmt.Errorf("%w: format 1.1 todo %d contains 1.2 archivedAt data", ErrValidation, todo.LocalID)
 			}
@@ -609,6 +631,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 				}
 			}
 			todoExports = append(todoExports, TodoExport{
+				CustomFields:       map[string]any(t.CustomFields),
 				LocalID:            t.LocalID,
 				Title:              t.Title,
 				Body:               t.Body,
@@ -707,6 +730,14 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			})
 		}
 
+		customFieldDefs, err := s.ListProjectCustomFields(ctx, p.ID)
+		if err != nil {
+			return nil, fmt.Errorf("export custom fields for project %d: %w", p.ID, err)
+		}
+		var customFieldExports []CustomFieldExport
+		for _, f := range customFieldDefs {
+			customFieldExports = append(customFieldExports, CustomFieldExport{Key: f.Key, Name: f.Name, Type: string(f.Type), Position: f.Position})
+		}
 		priorityExports := make([]PriorityTierExport, 0, len(priorities))
 		if !priorityTiersMatchDefault(priorities) {
 			for _, tier := range priorities {
@@ -750,6 +781,7 @@ func (s *Store) ExportAllProjects(ctx context.Context, mode Mode) (*ExportData, 
 			Tags:                 tagExports,
 			Links:                linkExports,
 			Wall:                 wallExport,
+			CustomFields:         customFieldExports,
 			Assets:               assetExports,
 		})
 	}
@@ -1089,6 +1121,17 @@ func (s *Store) exportAllTodosForProject(ctx context.Context, projectID int64, m
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows todos: %w", err)
+	}
+	ids := make([]int64, len(out))
+	for i := range out {
+		ids[i] = out[i].ID
+	}
+	cfMap, err := listCustomFieldsForTodosQ(ctx, s.db, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].CustomFields = cfMap[out[i].ID]
 	}
 	return out, nil
 }
@@ -1454,6 +1497,44 @@ func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, m
 		}
 	}
 
+	// Runs after the role checks so a rejected caller learns nothing about stored definitions.
+	return s.validateImportCustomFieldsPreflight(ctx, data, mode, importMode)
+}
+
+// validateImportCustomFieldsPreflight applies the import's custom field rules without writing.
+// Only Merge into an existing project combines the backup with stored definitions; Replace,
+// Create Copy and anonymous Merge (which creates copies) always import into a new project.
+func (s *Store) validateImportCustomFieldsPreflight(ctx context.Context, data *ExportData, mode Mode, importMode string) error {
+	matchExisting := importMode == "merge" && mode != ModeAnonymous
+	var whereClause string
+	var args []any
+	if matchExisting {
+		var err error
+		if whereClause, args, err = s.getExportableProjectsSelector(ctx, mode); err != nil {
+			return fmt.Errorf("custom field check: %w", err)
+		}
+	}
+	for _, p := range data.Projects {
+		if !projectExportUsesCustomFields(p) {
+			continue
+		}
+		var existing []CustomField
+		if matchExisting && p.Slug != "" {
+			var projectID int64
+			err := s.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT id FROM projects WHERE slug = ? AND (%s)`, whereClause), append([]any{p.Slug}, args...)...).Scan(&projectID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("custom field check project %q: %w", p.Slug, err)
+			}
+			if err == nil {
+				if existing, err = listCustomFieldsQ(ctx, s.db, projectID); err != nil {
+					return err
+				}
+			}
+		}
+		if err := validateImportCustomFields(p, existing); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -1543,7 +1624,8 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 
 	// Import all todos from all projects in the export into the target board
 	for _, pExport := range data.Projects {
-		for _, tExport := range pExport.Todos {
+		imported := newImportedTodos(len(pExport.Todos))
+		for i, tExport := range pExport.Todos {
 			// Create todo with new local_id (find max and increment)
 			var maxLocalID sql.NullInt64
 			if err := tx.QueryRowContext(ctx, `SELECT MAX(local_id) FROM todos WHERE project_id = ?`, targetProject.ID).Scan(&maxLocalID); err != nil {
@@ -1606,6 +1688,7 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 			if err != nil {
 				return nil, fmt.Errorf("get todo id: %w", err)
 			}
+			imported.record(i, tExport.LocalID, newLocalID, todoID, true)
 			if err := syncTodoAssetsTx(ctx, tx, targetProject.ID, todoID, tExport.Body, time.Now().UTC().UnixMilli()); err != nil {
 				return nil, err
 			}
@@ -1625,8 +1708,11 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 			}
 		}
 
-		if err := bulkInsertLinks(ctx, tx, targetProject.ID, pExport.Links); err != nil {
+		if err := bulkInsertLinks(ctx, tx, targetProject.ID, pExport.Links, imported, false); err != nil {
 			return nil, fmt.Errorf("import links: %w", err)
+		}
+		if err := importCustomFieldsTx(ctx, tx, targetProject.ID, pExport, imported); err != nil {
+			return nil, fmt.Errorf("import custom fields: %w", err)
 		}
 	}
 
@@ -1758,7 +1844,7 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 		}
 
 		// Bulk insert todos (strict mode for Replace)
-		todoIDMap, err := bulkInsertTodos(ctx, tx, projectID, todos, true, &result.Warnings, sprintIDByNumber)
+		imported, err := bulkInsertTodos(ctx, tx, projectID, todos, true, &result.Warnings, sprintIDByNumber)
 		if err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("import todos for project %q: %w", pExport.Name, err)
@@ -1772,21 +1858,25 @@ func (s *Store) importReplaceAll(ctx context.Context, data *ExportData, mode Mod
 		}
 
 		// Bulk link todos to tags
-		todoTagMap := buildTodoTagMap(pExport.Todos, todoIDMap)
+		todoTagMap := buildTodoTagMap(pExport.Todos, imported)
 		if err := bulkLinkTodoTags(ctx, tx, todoTagMap, tagIDMap); err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("link tags for project %q: %w", pExport.Name, err)
 		}
 
-		if err := bulkInsertLinks(ctx, tx, projectID, pExport.Links); err != nil {
+		if err := bulkInsertLinks(ctx, tx, projectID, pExport.Links, imported, false); err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("import links for project %q: %w", pExport.Name, err)
+		}
+		if err := importCustomFieldsTx(ctx, tx, projectID, pExport, imported); err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("import custom fields for project %q: %w", pExport.Name, err)
 		}
 
 		// Replace mode: a missing wall field in the backup produces no wall row,
 		// which matches the "nuke & restore" semantics (old rows were deleted by
 		// the project-level swap; ON DELETE CASCADE clears the wall with them).
-		if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall, &result.Warnings); err != nil {
+		if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall, &result.Warnings, imported.storyResolver(ctx, tx, projectID, false)); err != nil {
 			tx.Rollback()
 			return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 		}
@@ -2227,7 +2317,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		}
 
 		// Import todos - (project_id, local_id) is stable identity
-		for _, tExport := range todos {
+		imported := newImportedTodos(len(todos))
+		for i, tExport := range todos {
+			sourceLocalID := tExport.LocalID
 			// Validate required fields
 			if tExport.LocalID == 0 {
 				return nil, fmt.Errorf("%w: todo missing localId", ErrValidation)
@@ -2261,6 +2353,9 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return nil, fmt.Errorf("check todo: %w", err)
+			}
+			if existingTodoID.Valid && imported.wasCreated(existingTodoID.Int64) {
+				existingTodoID = sql.NullInt64{}
 			}
 
 			updatedAtMs := tExport.UpdatedAt.UnixMilli()
@@ -2324,6 +2419,7 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 				if err != nil {
 					return nil, fmt.Errorf("update todo: %w", err)
 				}
+				imported.record(i, sourceLocalID, sourceLocalID, existingTodoID.Int64, false)
 				if err := syncTodoAssetsTx(ctx, tx, projectID, existingTodoID.Int64, tExport.Body, time.Now().UTC().UnixMilli()); err != nil {
 					return nil, err
 				}
@@ -2392,6 +2488,7 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 				if err := tx.QueryRowContext(ctx, `SELECT id FROM todos WHERE project_id = ? AND local_id = ?`, projectID, tExport.LocalID).Scan(&todoID); err != nil {
 					return nil, fmt.Errorf("get todo id: %w", err)
 				}
+				imported.record(i, sourceLocalID, tExport.LocalID, todoID, true)
 				if err := syncTodoAssetsTx(ctx, tx, projectID, todoID, tExport.Body, time.Now().UTC().UnixMilli()); err != nil {
 					return nil, err
 				}
@@ -2417,8 +2514,11 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		if _, err := tx.ExecContext(ctx, `DELETE FROM todo_links WHERE project_id = ?`, projectID); err != nil {
 			return nil, fmt.Errorf("clear links for merge: %w", err)
 		}
-		if err := bulkInsertLinks(ctx, tx, projectID, pExport.Links); err != nil {
+		if err := bulkInsertLinks(ctx, tx, projectID, pExport.Links, imported, true); err != nil {
 			return nil, fmt.Errorf("import links: %w", err)
+		}
+		if err := importCustomFieldsTx(ctx, tx, projectID, pExport, imported); err != nil {
+			return nil, fmt.Errorf("import custom fields: %w", err)
 		}
 
 		// Merge mode wall policy: when the backup carries a wall payload,
@@ -2427,7 +2527,7 @@ func (s *Store) importMergeUpdate(ctx context.Context, data *ExportData, mode Mo
 		// the target project's existing wall untouched so upgraders don't lose
 		// work done between export and import.
 		if pExport.Wall != nil {
-			if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall, &result.Warnings); err != nil {
+			if err := upsertWallForImportTx(ctx, tx, projectID, pExport.Wall, &result.Warnings, imported.storyResolver(ctx, tx, projectID, true)); err != nil {
 				return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 			}
 		}
@@ -2619,7 +2719,8 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 		}
 
 		// Import todos - preserve localId values from import
-		for _, tExport := range todos {
+		imported := newImportedTodos(len(todos))
+		for i, tExport := range todos {
 			// Validate required fields
 			if tExport.LocalID == 0 {
 				return nil, fmt.Errorf("%w: todo missing localId", ErrValidation)
@@ -2709,6 +2810,7 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 			if err := tx.QueryRowContext(ctx, `SELECT id FROM todos WHERE project_id = ? AND local_id = ?`, newProjectID, localID).Scan(&todoID); err != nil {
 				return nil, fmt.Errorf("get todo id: %w", err)
 			}
+			imported.record(i, tExport.LocalID, localID, todoID, true)
 			if err := syncTodoAssetsTx(ctx, tx, newProjectID, todoID, tExport.Body, time.Now().UTC().UnixMilli()); err != nil {
 				return nil, err
 			}
@@ -2726,14 +2828,17 @@ func (s *Store) importCreateCopy(ctx context.Context, data *ExportData, mode Mod
 			}
 		}
 
-		if err := bulkInsertLinks(ctx, tx, newProjectID, pExport.Links); err != nil {
+		if err := bulkInsertLinks(ctx, tx, newProjectID, pExport.Links, imported, false); err != nil {
 			return nil, fmt.Errorf("import links: %w", err)
+		}
+		if err := importCustomFieldsTx(ctx, tx, newProjectID, pExport, imported); err != nil {
+			return nil, fmt.Errorf("import custom fields: %w", err)
 		}
 
 		// Copy mode: always write the wall block verbatim when present. The
 		// target project was just created so there is no pre-existing wall
 		// to merge with.
-		if err := upsertWallForImportTx(ctx, tx, newProjectID, pExport.Wall, &result.Warnings); err != nil {
+		if err := upsertWallForImportTx(ctx, tx, newProjectID, pExport.Wall, &result.Warnings, imported.storyResolver(ctx, tx, newProjectID, false)); err != nil {
 			return nil, fmt.Errorf("import wall for project %q: %w", pExport.Name, err)
 		}
 
@@ -3104,6 +3209,11 @@ func (s *Store) previewImport(ctx context.Context, data *ExportData, mode Mode, 
 			result.WillCreate += len(p.Todos)
 		}
 		log.Printf("PreviewImport: Copy mode - will create %d items", result.WillCreate)
+	}
+
+	// Custom field rules the import enforces; after the merge role checks above.
+	if err := s.validateImportCustomFieldsPreflight(ctx, data, mode, importMode); err != nil {
+		return nil, err
 	}
 
 	log.Printf("PreviewImport: Returning preview - Projects:%d Todos:%d Tags:%d WillCreate:%d WillUpdate:%d WillDelete:%d",

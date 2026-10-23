@@ -1,6 +1,10 @@
 package mcp
 
-import "time"
+import (
+	"time"
+
+	"scrumboy/internal/store"
+)
 
 type successResponse struct {
 	OK   bool           `json:"ok"`
@@ -68,41 +72,43 @@ type projectItem struct {
 }
 
 type todoItem struct {
-	ProjectSlug      string     `json:"projectSlug"`
-	LocalID          int64      `json:"localId"`
-	Title            string     `json:"title"`
-	Body             string     `json:"body"`
-	ColumnKey        string     `json:"columnKey"`
-	Tags             []string   `json:"tags"`
-	EstimationPoints *int64     `json:"estimationPoints"`
-	AssigneeUserId   *int64     `json:"assigneeUserId"`
-	CreatedByUserId  *int64     `json:"createdByUserId"`
-	SprintId         *int64     `json:"sprintId"`
-	PriorityKey      *string    `json:"priorityKey"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-	DoneAt           *time.Time `json:"doneAt"`
-	ArchivedAt       *time.Time `json:"archivedAt"`
-	DueAt            *time.Time `json:"dueAt"`
+	ProjectSlug      string                  `json:"projectSlug"`
+	LocalID          int64                   `json:"localId"`
+	Title            string                  `json:"title"`
+	Body             string                  `json:"body"`
+	ColumnKey        string                  `json:"columnKey"`
+	Tags             []string                `json:"tags"`
+	EstimationPoints *int64                  `json:"estimationPoints"`
+	AssigneeUserId   *int64                  `json:"assigneeUserId"`
+	CreatedByUserId  *int64                  `json:"createdByUserId"`
+	SprintId         *int64                  `json:"sprintId"`
+	PriorityKey      *string                 `json:"priorityKey"`
+	CreatedAt        time.Time               `json:"createdAt"`
+	UpdatedAt        time.Time               `json:"updatedAt"`
+	DoneAt           *time.Time              `json:"doneAt"`
+	ArchivedAt       *time.Time              `json:"archivedAt"`
+	DueAt            *time.Time              `json:"dueAt"`
+	CustomFields     store.CustomFieldValues `json:"customFields,omitempty"`
 }
 
 // todoItemBrief is todoItem without the body (see todoResult).
 type todoItemBrief struct {
-	ProjectSlug      string     `json:"projectSlug"`
-	LocalID          int64      `json:"localId"`
-	Title            string     `json:"title"`
-	ColumnKey        string     `json:"columnKey"`
-	Tags             []string   `json:"tags"`
-	EstimationPoints *int64     `json:"estimationPoints"`
-	AssigneeUserId   *int64     `json:"assigneeUserId"`
-	CreatedByUserId  *int64     `json:"createdByUserId"`
-	SprintId         *int64     `json:"sprintId"`
-	PriorityKey      *string    `json:"priorityKey"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
-	DoneAt           *time.Time `json:"doneAt"`
-	ArchivedAt       *time.Time `json:"archivedAt"`
-	DueAt            *time.Time `json:"dueAt"`
+	ProjectSlug      string                  `json:"projectSlug"`
+	LocalID          int64                   `json:"localId"`
+	Title            string                  `json:"title"`
+	ColumnKey        string                  `json:"columnKey"`
+	Tags             []string                `json:"tags"`
+	EstimationPoints *int64                  `json:"estimationPoints"`
+	AssigneeUserId   *int64                  `json:"assigneeUserId"`
+	CreatedByUserId  *int64                  `json:"createdByUserId"`
+	SprintId         *int64                  `json:"sprintId"`
+	PriorityKey      *string                 `json:"priorityKey"`
+	CreatedAt        time.Time               `json:"createdAt"`
+	UpdatedAt        time.Time               `json:"updatedAt"`
+	DoneAt           *time.Time              `json:"doneAt"`
+	ArchivedAt       *time.Time              `json:"archivedAt"`
+	DueAt            *time.Time              `json:"dueAt"`
+	CustomFields     store.CustomFieldValues `json:"customFields,omitempty"`
 }
 
 type todoSearchItem struct {
@@ -331,4 +337,11 @@ type adminUserItem struct {
 	SystemRole  string    `json:"systemRole"`
 	IsBootstrap bool      `json:"isBootstrap"`
 	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type customFieldItem struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Position int    `json:"position"`
 }

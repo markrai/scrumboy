@@ -134,6 +134,9 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 	if s.handleBoardPriorityRoutes(w, r, rest, &pc) {
 		return
 	}
+	if s.handleBoardCustomFieldRoutes(w, r, rest, &pc) {
+		return
+	}
 	if s.handleBoardClaimRoute(w, r, rest, &pc) {
 		return
 	}
@@ -636,16 +639,17 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 	// POST /api/board/{slug}/todos
 	if len(rest) == 2 && rest[1] == "todos" && r.Method == http.MethodPost {
 		var in struct {
-			Title            string     `json:"title"`
-			Body             string     `json:"body"`
-			Tags             []string   `json:"tags"`
-			ColumnKey        string     `json:"columnKey"`
-			Status           string     `json:"status"`
-			EstimationPoints *int64     `json:"estimationPoints"`
-			SprintID         *int64     `json:"sprintId"`
-			AssigneeUserID   *int64     `json:"assigneeUserId"`
-			PriorityKey      *string    `json:"priorityKey"`
-			DueAt            *time.Time `json:"dueAt"`
+			Title            string          `json:"title"`
+			Body             string          `json:"body"`
+			Tags             []string        `json:"tags"`
+			ColumnKey        string          `json:"columnKey"`
+			Status           string          `json:"status"`
+			EstimationPoints *int64          `json:"estimationPoints"`
+			SprintID         *int64          `json:"sprintId"`
+			AssigneeUserID   *int64          `json:"assigneeUserId"`
+			PriorityKey      *string         `json:"priorityKey"`
+			DueAt            *time.Time      `json:"dueAt"`
+			CustomFields     json.RawMessage `json:"customFields"`
 			Position         *struct {
 				AfterID  *int64 `json:"afterId"`
 				BeforeID *int64 `json:"beforeId"`
@@ -653,6 +657,16 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
+		}
+
+		var customFields store.CustomFieldValues
+		if len(in.CustomFields) > 0 && strings.TrimSpace(string(in.CustomFields)) != "null" {
+			values, err := decodeCustomFieldsPatch(in.CustomFields)
+			if err != nil {
+				writeValidationError(w, "invalid customFields (expected an object of field key to string or number)", "invalid_custom_fields", map[string]any{"field": "customFields"})
+				return true
+			}
+			customFields = values
 		}
 
 		columnKey := normalizeLaneKey(in.ColumnKey)
@@ -684,6 +698,7 @@ func (s *Server) handleBoardTodoRoutes(w http.ResponseWriter, r *http.Request, r
 				SprintID:         in.SprintID,
 				PriorityKey:      in.PriorityKey,
 				DueAt:            in.DueAt,
+				CustomFields:     customFields,
 			},
 			Position: position,
 		})
@@ -1001,6 +1016,14 @@ func (s *Server) handleBoardTodoItemRoutes(w http.ResponseWriter, r *http.Reques
 			}
 			if _, hasDueAt := raw["dueAt"]; hasDueAt {
 				patch.DueAt = todoapp.Field[*time.Time]{Present: true, Value: in.DueAt}
+			}
+			if rawFields, hasCustomFields := raw["customFields"]; hasCustomFields {
+				values, err := decodeCustomFieldsPatch(rawFields)
+				if err != nil {
+					writeValidationError(w, "invalid customFields (expected an object of field key to string, number or null)", "invalid_custom_fields", map[string]any{"field": "customFields"})
+					return true
+				}
+				patch.CustomFields = todoapp.Field[store.CustomFieldValues]{Present: true, Value: values}
 			}
 			prepared := s.todoUpdates.Prepare(s.requestContext(r), todoapp.ResolvedUpdateTarget{
 				ProjectContext: *pc,

@@ -1,5 +1,6 @@
 import { addTagBtn, archiveTodoBtn, closeTodoBtn, deleteTodoBtn, restoreTodoBtn, shareTodoBtn, todoBody, todoBodyPreview, todoBodyPreviewTab, todoBodyToggle, todoBodyWriteTab, todoDialog, todoDialogTitle, todoEstimationField, todoEstimationPoints, todoPriority, todoDueAt, todoStatus, todoTags, todoTitle, } from '../dom/elements.js';
 import { apiFetch } from '../api.js';
+import { loadCustomFieldDefs, readCustomFieldInputs, renderCustomFieldInputs } from './todo-custom-fields.js';
 import { isoToLocalInputValue, resolveDueAtForOverdueCheck, setTodoOverdueIndicatorVisibility } from './todo-due.js';
 import { DIALOG_CLOSE_REQUEST_EVENT } from '../core/modal-outside-click.js';
 import { releaseMarkdownPreviewResources, renderMarkdownPreviewInto } from '../markdown-preview.js';
@@ -333,6 +334,7 @@ function readTodoDialogSnapshot() {
         sprint: sprint?.value ?? "",
         priority: todoPriority?.value ?? "",
         dueAt: todoDueAt?.value ?? "",
+        customFields: JSON.stringify(readCustomFieldInputs(document.getElementById("todoCustomFields"))),
     };
 }
 function captureTodoDialogBaseline() {
@@ -351,6 +353,7 @@ function isTodoDialogDirty() {
         current.sprint !== todoDialogBaseline.sprint ||
         current.priority !== todoDialogBaseline.priority ||
         current.dueAt !== todoDialogBaseline.dueAt ||
+        current.customFields !== todoDialogBaseline.customFields ||
         current.tags.length !== todoDialogBaseline.tags.length ||
         current.tags.some((tag, idx) => tag !== todoDialogBaseline?.tags[idx]));
 }
@@ -803,6 +806,26 @@ export async function openTodoDialog(opts) {
             .catch((err) => {
             console.error("Failed to fetch project tag catalog:", err);
         });
+    }
+    const customFieldsContainer = document.getElementById("todoCustomFields");
+    const customFieldsSlug = getSlug();
+    if (customFieldsContainer) {
+        customFieldsContainer.replaceChildren();
+        customFieldsContainer.hidden = true;
+        if (customFieldsSlug) {
+            void loadCustomFieldDefs(customFieldsSlug, { force: true }).then((defs) => {
+                const dialog = todoDialog;
+                if (openGeneration !== todoDialogOpenGeneration || getSlug() !== customFieldsSlug || !dialog?.open) {
+                    return;
+                }
+                renderCustomFieldInputs(customFieldsContainer, defs, mode === "edit" ? todo?.customFields : null, {
+                    disabled: !permissions.canChangeEstimation,
+                });
+                if (todoDialogBaseline) {
+                    todoDialogBaseline.customFields = JSON.stringify(readCustomFieldInputs(customFieldsContainer));
+                }
+            });
+        }
     }
     bindShareTodoButton();
     captureTodoDialogBaseline();

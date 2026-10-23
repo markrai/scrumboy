@@ -1475,5 +1475,22 @@
   "settings.sharing.confirmPublishMessage": "ทุกคนที่มีลิงก์จะอ่านชื่อสตอรี บันทึก แท็ก ลำดับความสำคัญ การประมาณ สปรินต์ และลิงก์ระหว่างสตอรีของบอร์ดนี้ได้พร้อมการอัปเดตแบบเรียลไทม์โดยไม่ต้องลงชื่อเข้าใช้ ซึ่งไม่ได้ให้สิทธิ์สมาชิกหรือสิทธิ์แก้ไข และสมาชิก ผู้รับผิดชอบ สตอรีที่เก็บถาวร วอลล์ และวาระยังคงเป็นส่วนตัว ลิงก์หรือรูปภาพในบันทึกอาจโหลดเนื้อหาจากเว็บไซต์อื่น ขอให้เครื่องมือค้นหาไม่จัดทำดัชนี",
   "settings.sharing.confirmPublishAction": "เผยแพร่",
   "settings.sharing.confirmUnpublishTitle": "ตั้งบอร์ดนี้เป็นส่วนตัวหรือไม่",
-  "settings.sharing.confirmUnpublishMessage": "การเข้าถึงแบบสาธารณะจะสิ้นสุดทันที และผู้ที่กำลังดูบอร์ดสาธารณะจะถูกตัดการเชื่อมต่อ เนื้อหาที่ผู้เยี่ยมชมเห็นแล้วเรียกคืนไม่ได้"
+  "settings.sharing.confirmUnpublishMessage": "การเข้าถึงแบบสาธารณะจะสิ้นสุดทันที และผู้ที่กำลังดูบอร์ดสาธารณะจะถูกตัดการเชื่อมต่อ เนื้อหาที่ผู้เยี่ยมชมเห็นแล้วเรียกคืนไม่ได้",
+  "settings.tabs.customFields": "Custom fields",
+  "settings.customFields.title": "Custom fields",
+  "settings.customFields.description": "Typed fields (text, URL, number) you can fill in on every todo, for example a merge request link. Values are set in the todo dialog or through the API.",
+  "settings.customFields.loading": "Loading custom fields…",
+  "settings.customFields.empty": "No custom fields yet.",
+  "settings.customFields.namePlaceholder": "Field name",
+  "settings.customFields.nameLabel": "Custom field name",
+  "settings.customFields.typeLabel": "Custom field type",
+  "settings.customFields.type.text": "Text",
+  "settings.customFields.type.url": "URL",
+  "settings.customFields.type.number": "Number",
+  "settings.customFields.add": "Add field",
+  "settings.customFields.deleteAction": "Delete",
+  "settings.customFields.deleteConfirm.title": "Delete custom field",
+  "settings.customFields.deleteConfirm.message": "Delete the field \"{key}\" and every value stored in it? This cannot be undone.",
+  "settings.customFields.deleteConfirm.confirm": "Delete field",
+  "settings.customFields.saveFailed": "Could not save the custom field."
 }

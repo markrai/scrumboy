@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -300,16 +301,77 @@ func insertSprintsForImport(ctx context.Context, tx *sql.Tx, projectID int64, sp
 	return sprintIDByNumber, nil
 }
 
+// importedTodos records where each todo of one imported project landed, so later import steps
+// (tags, links, custom fields) never re-resolve a todo by its backup local ID. It is scoped to a
+// single source project: two source projects importing into one board each get their own.
+type importedTodos struct {
+	todoIDs  []int64
+	localIDs map[int64]int64
+	created  map[int64]struct{}
+}
+
+func newImportedTodos(n int) *importedTodos {
+	return &importedTodos{todoIDs: make([]int64, n), localIDs: make(map[int64]int64, n), created: make(map[int64]struct{}, n)}
+}
+
+// record notes that the export todo at index landed as todoID with destination local ID destLocalID.
+// The first todo carrying a backup local ID owns it for link resolution.
+func (m *importedTodos) record(index int, sourceLocalID, destLocalID, todoID int64, created bool) {
+	m.todoIDs[index] = todoID
+	if _, ok := m.localIDs[sourceLocalID]; !ok {
+		m.localIDs[sourceLocalID] = destLocalID
+	}
+	if created {
+		m.created[todoID] = struct{}{}
+	}
+}
+
+func (m *importedTodos) wasCreated(todoID int64) bool {
+	_, ok := m.created[todoID]
+	return ok
+}
+
+// linkEndpoint resolves a backup link endpoint to a destination local ID. With keepUnimported, an
+// endpoint that is not an imported todo keeps its local ID when the destination already had that
+// todo before this import (merge semantics); otherwise it is unresolved.
+func (m *importedTodos) linkEndpoint(ctx context.Context, tx *sql.Tx, projectID, sourceLocalID int64, keepUnimported bool) (int64, bool, error) {
+	if dest, ok := m.localIDs[sourceLocalID]; ok {
+		return dest, true, nil
+	}
+	if !keepUnimported {
+		return 0, false, nil
+	}
+	var todoID int64
+	err := tx.QueryRowContext(ctx, `SELECT id FROM todos WHERE project_id = ? AND local_id = ?`, projectID, sourceLocalID).Scan(&todoID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("resolve link endpoint %d: %w", sourceLocalID, err)
+	}
+	if m.wasCreated(todoID) {
+		return 0, false, nil
+	}
+	return sourceLocalID, true, nil
+}
+
+// storyResolver adapts linkEndpoint for wall story references in projectID.
+func (m *importedTodos) storyResolver(ctx context.Context, tx *sql.Tx, projectID int64, keepUnimported bool) func(int64) (int64, bool, error) {
+	return func(sourceLocalID int64) (int64, bool, error) {
+		return m.linkEndpoint(ctx, tx, projectID, sourceLocalID, keepUnimported)
+	}
+}
+
 // bulkInsertTodos inserts todos in bulk for a project.
-// Returns a map from local_id to todo_id.
+// Returns where each todo landed, indexed like todos.
 // If strict is true, errors immediately on local_id collision (for Replace mode).
 // If warnings is non-nil, appends a warning when an unknown status is defaulted to backlog.
 // sprintIDByNumber maps export sprint number to sprint id; nil means no sprint resolution.
-func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []TodoExport, strict bool, warnings *[]string, sprintIDByNumber map[int64]int64) (map[int64]int64, error) {
-	todoIDMap := make(map[int64]int64)
+func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []TodoExport, strict bool, warnings *[]string, sprintIDByNumber map[int64]int64) (*importedTodos, error) {
+	imported := newImportedTodos(len(todos))
 
 	if len(todos) == 0 {
-		return todoIDMap, nil
+		return imported, nil
 	}
 
 	// For strict mode, check for collisions first
@@ -333,7 +395,8 @@ func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []T
 
 	// Insert todos one by one (SQLite doesn't support multi-row INSERT with RETURNING easily)
 	// We could batch with VALUES, but then we'd need to query back for IDs
-	for _, tExport := range todos {
+	for i, tExport := range todos {
+		sourceLocalID := tExport.LocalID
 		// Validate required fields
 		if tExport.LocalID == 0 {
 			return nil, fmt.Errorf("%w: todo missing localId", ErrValidation)
@@ -440,10 +503,10 @@ func bulkInsertTodos(ctx context.Context, tx *sql.Tx, projectID int64, todos []T
 			return nil, err
 		}
 
-		todoIDMap[tExport.LocalID] = todoID
+		imported.record(i, sourceLocalID, tExport.LocalID, todoID, true)
 	}
 
-	return todoIDMap, nil
+	return imported, nil
 }
 
 // bulkUpsertTags upserts tags for a project with importing user's user_id.
@@ -539,8 +602,9 @@ ON CONFLICT(user_id, tag_id) DO UPDATE SET color = excluded.color`, userID, tagI
 	return tagIDMap, nil
 }
 
-// bulkInsertLinks inserts todo links for a project. Skips invalid pairs (self-link, missing todos, invalid link_type).
-func bulkInsertLinks(ctx context.Context, tx *sql.Tx, projectID int64, links []LinkExport) error {
+// bulkInsertLinks inserts todo links for a project, translating backup local IDs through imported.
+// Skips invalid pairs (self-link, unresolved or missing todos, invalid link_type).
+func bulkInsertLinks(ctx context.Context, tx *sql.Tx, projectID int64, links []LinkExport, imported *importedTodos, keepUnimported bool) error {
 	if len(links) == 0 {
 		return nil
 	}
@@ -557,29 +621,43 @@ func bulkInsertLinks(ctx context.Context, tx *sql.Tx, projectID int64, links []L
 		if !linkTypeAllowed[lt] {
 			continue
 		}
-		var fromExists, toExists int
-		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM todos WHERE project_id = ? AND local_id = ?`, projectID, l.FromLocalID).Scan(&fromExists); err != nil || fromExists != 1 {
+		from, ok, err := imported.linkEndpoint(ctx, tx, projectID, l.FromLocalID, keepUnimported)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			continue
 		}
-		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM todos WHERE project_id = ? AND local_id = ?`, projectID, l.ToLocalID).Scan(&toExists); err != nil || toExists != 1 {
+		to, ok, err := imported.linkEndpoint(ctx, tx, projectID, l.ToLocalID, keepUnimported)
+		if err != nil {
+			return err
+		}
+		if !ok || from == to {
+			continue
+		}
+		var fromExists, toExists int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM todos WHERE project_id = ? AND local_id = ?`, projectID, from).Scan(&fromExists); err != nil || fromExists != 1 {
+			continue
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM todos WHERE project_id = ? AND local_id = ?`, projectID, to).Scan(&toExists); err != nil || toExists != 1 {
 			continue
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT OR IGNORE INTO todo_links(project_id, from_local_id, to_local_id, link_type, created_at)
-			VALUES (?, ?, ?, ?, ?)`, projectID, l.FromLocalID, l.ToLocalID, lt, nowMs); err != nil {
-			return fmt.Errorf("insert link %d->%d: %w", l.FromLocalID, l.ToLocalID, err)
+			VALUES (?, ?, ?, ?, ?)`, projectID, from, to, lt, nowMs); err != nil {
+			return fmt.Errorf("insert link %d->%d: %w", from, to, err)
 		}
 	}
 	return nil
 }
 
 // buildTodoTagMap builds a map from todo_id to tag names for bulk linking.
-func buildTodoTagMap(todos []TodoExport, todoIDMap map[int64]int64) map[int64][]string {
+func buildTodoTagMap(todos []TodoExport, imported *importedTodos) map[int64][]string {
 	todoTagMap := make(map[int64][]string)
 
-	for _, tExport := range todos {
-		todoID, ok := todoIDMap[tExport.LocalID]
-		if !ok {
+	for i, tExport := range todos {
+		todoID := imported.todoIDs[i]
+		if todoID == 0 {
 			continue // Skip if todo wasn't inserted
 		}
 		if len(tExport.Tags) > 0 {

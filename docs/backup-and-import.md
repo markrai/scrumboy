@@ -57,6 +57,9 @@ Replace is the destructive “make this scope match the backup” option:
 In Full mode, Merge matches each backup project by **slug**:
 
 - If a project with that slug already exists and you are a **Maintainer** on it, Scrumboy updates that project’s imported data (including todos, tags, and links) to match the backup
+  - Stories are matched by their project-local ID; stories that are not in the backup are kept
+  - The project's links are **replaced** by the backup's, so links the backup does not contain (including links between kept stories) are removed, even when the backup has no links at all
+  - When the backup has a `wall` field, the project's wall (notes, edges and story placements) is replaced by it; a backup without that field leaves the wall unchanged
 - Otherwise Scrumboy creates a new project where appropriate
 
 Anonymous-mode Merge behavior is described below (it does not match durable projects the same way).
@@ -114,6 +117,7 @@ New exports explicitly include:
 - Todo `priorityKey` — `null` means no priority assigned
 - Todo `archivedAt` — a Unix-millisecond timestamp for archived stories, or explicit `null` for active stories
 - Todo `dueAt` — a Unix-millisecond due date, **omitted** when the story has none (so exports that use no due dates are unchanged); an importing server that predates due dates rejects the unknown field. `dueAt` must be after the epoch and before year 2100
+- Project `customFields` (definitions: `key`, `name`, `type` of `text`/`url`/`number`, `position`) and todo `customFields` (key → string or number) — both **omitted** when unused. Import matches definitions by key (an existing key with a different type is rejected), validates every value against its definition, and rejects a value for an undefined field; preview reports the same errors before anything is written. An absent todo `customFields` preserves that todo’s existing values on merge.
 
 During **matched-project merge**:
 

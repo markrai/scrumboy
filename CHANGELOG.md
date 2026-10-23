@@ -1,6 +1,27 @@
 # Changelog
 
-> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.39.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+> **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.40.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
+
+## [3.40.0] - 2026-10-23
+
+### Added
+
+- **Typed custom fields on todos** (#324) - Maintainers define per-project
+  fields of type `text`, `url` (http/https only) or `number` (max 25 per
+  project). Values are set sparsely through `todos_update`
+  `patch.customFields` / REST `PATCH .../todos/{localId}` `customFields`
+  (`null` clears a field, omitted fields are untouched), applied atomically with
+  the rest of the update, and returned as `customFields` on `todos_get` and the
+  todo REST projection. New MCP tools `customFields_list`,
+  `customFields_create`, `customFields_delete` and REST routes
+  `GET|POST /api/board/{slug}/custom-fields`,
+  `DELETE /api/board/{slug}/custom-fields/{key}`. Migration
+  `079_add_custom_fields.sql`. Values can also be given on `todos_create` /
+  `POST .../todos`, appear on board, search-free lane and archive reads, and
+  round-trip through backup export/import (`customFields` on projects and
+  todos; backup format unchanged, absent when unused). In the web UI,
+  maintainers manage fields under **Settings > Custom fields**, the todo dialog
+  edits values, and cards show them as small badges (URLs by host).
 
 ## [3.39.1] - 2026-10-22
 

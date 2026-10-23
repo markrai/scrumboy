@@ -140,6 +140,13 @@ func cloneMCPUpdateTodo(todo store.Todo) store.Todo {
 	todo.SprintID = cloneUpdateInt64Ptr(todo.SprintID)
 	todo.PriorityKey = cloneUpdateStringPtr(todo.PriorityKey)
 	todo.DueAt = cloneUpdateTimePtr(todo.DueAt)
+	if todo.CustomFields != nil {
+		fields := make(store.CustomFieldValues, len(todo.CustomFields))
+		for k, v := range todo.CustomFields {
+			fields[k] = v
+		}
+		todo.CustomFields = fields
+	}
 	if todo.DoneAt != nil {
 		doneAt := *todo.DoneAt
 		todo.DoneAt = &doneAt

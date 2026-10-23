@@ -121,7 +121,7 @@ Instance options (`getMarkdownRenderer()`):
 
 ### 2. DOMPurify
 
-Second pass via `/vendor/purify.min.js` (`dompurify@3.4.16`):
+Second pass via `/vendor/purify.min.js` (`dompurify@3.4.17`):
 
 - **`ALLOWED_TAGS`:** `a`, `blockquote`, `br`, `code`, `em`, `h1`–`h6`, `hr`, `li`, `ol`, `p`, `pre`, `strong`, `ul`
 - **`ALLOWED_ATTR`:** `href`, `rel`, `target` only

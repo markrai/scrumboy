@@ -330,8 +330,13 @@ LIMIT ?`, args...)
 	if err != nil {
 		return nil, "", false, err
 	}
+	cfMap, err := listCustomFieldsForTodosQ(ctx, tx, todoIDs)
+	if err != nil {
+		return nil, "", false, err
+	}
 	for i := range out {
 		out[i].Tags = tagMap[out[i].ID]
+		out[i].CustomFields = cfMap[out[i].ID]
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, "", false, fmt.Errorf("commit archive page read: %w", err)

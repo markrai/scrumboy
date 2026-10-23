@@ -19,6 +19,9 @@ function appendOptionalFields(payload, input) {
     if (input.dueAt !== undefined) {
         payload.dueAt = input.dueAt;
     }
+    if (input.customFields && Object.keys(input.customFields).length > 0) {
+        payload.customFields = input.customFields;
+    }
     return payload;
 }
 export function buildTodoCreatePayload(input) {

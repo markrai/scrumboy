@@ -33,6 +33,8 @@ type UpdatePatch struct {
 	PriorityKey      Field[*string]
 	// DueAt: present with a nil value clears the due date.
 	DueAt Field[*time.Time]
+	// CustomFields is a sparse key->value patch; a nil value clears that field.
+	CustomFields Field[store.CustomFieldValues]
 }
 
 // HasFields reports syntactic patch presence. It intentionally does not
@@ -47,7 +49,8 @@ func (p UpdatePatch) HasFields() bool {
 		p.AssigneeUserID.Present ||
 		p.SprintID.Present ||
 		p.PriorityKey.Present ||
-		p.DueAt.Present
+		p.DueAt.Present ||
+		p.CustomFields.Present
 }
 
 // UpdateCommand identifies a todo by its project-local ID and carries its
@@ -150,6 +153,7 @@ func MaterializeUpdateInput(existing store.Todo, patch UpdatePatch) store.Update
 		KeepAssigneeUserID:   !patch.AssigneeUserID.Present,
 		DueAt:                dueAt,
 		DueAtPresent:         patch.DueAt.Present,
+		CustomFields:         cloneUpdateCustomFields(patch.CustomFields),
 	}
 }
 
@@ -184,4 +188,15 @@ func cloneUpdateStringPtr(value *string) *string {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func cloneUpdateCustomFields(f Field[store.CustomFieldValues]) store.CustomFieldValues {
+	if !f.Present || len(f.Value) == 0 {
+		return nil
+	}
+	cloned := make(store.CustomFieldValues, len(f.Value))
+	for k, v := range f.Value {
+		cloned[k] = v
+	}
+	return cloned
 }

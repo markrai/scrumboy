@@ -173,6 +173,7 @@ export function toMemberStoryCardInput(todo, opts) {
         priority: priorityTier ? { name: priorityTier.name, color: priorityTier.color ?? null } : null,
         points: opts?.showPointsMode && todo.estimationPoints != null ? todo.estimationPoints : null,
         due: todo.dueAt ? { dueAt: todo.dueAt, inDoneColumn: opts?.doneColumnKeys?.has(doneKey) ?? false } : null,
+        customFields: todo.customFields ?? null,
     };
 }
 /** Shared canonical story content used by both board cards and Wall pins. */

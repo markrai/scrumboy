@@ -101,6 +101,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"assigneeUserId":   jsonPropWithNull("integer", "User ID to assign"),
 				"priorityKey":      jsonPropWithNull("string", "Priority tier key to assign"),
 				"dueAt":            jsonPropWithNull("string", "Due date as an RFC 3339 timestamp (for example 2026-11-01T17:00:00Z)"),
+				"customFields":     jsonObjectProp("Initial custom field values keyed by field key (see customFields_list): a string for text/url fields, a number for number fields", map[string]any{}, nil),
 				"position": jsonObjectProp("Position hint within the target column", map[string]any{
 					"afterLocalId":  jsonPropWithNull("integer", "Place after this todo local ID"),
 					"beforeLocalId": jsonPropWithNull("integer", "Place before this todo local ID"),
@@ -143,6 +144,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 					"sprintId":         jsonPropWithNull("integer", "Sprint ID"),
 					"priorityKey":      jsonPropWithNull("string", "Priority tier key"),
 					"dueAt":            jsonPropWithNull("string", "Due date as an RFC 3339 timestamp; null clears it"),
+					"customFields":     jsonObjectProp("Custom field values keyed by field key (see customFields_list): a string for text/url fields, a number for number fields, null to clear. Unlisted fields are unchanged.", map[string]any{}, nil),
 				}, nil),
 			}, []string{"projectSlug", "localId", "patch"}),
 		},
@@ -465,6 +467,31 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"priorityKey": jsonProp("string", "Priority tier key to delete"),
 			}, []string{"projectSlug", "priorityKey"}),
+		},
+		"customFields_list": {
+			Name:        "customFields_list",
+			Description: "List a project's custom field definitions (key, name, type text|url|number) in position order. Values are set through todos_update patch.customFields and returned on todos_get.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+			}, []string{"projectSlug"}),
+		},
+		"customFields_create": {
+			Name:        "customFields_create",
+			Description: "Define a typed custom field on a project (for example a url field holding a merge request link). Requires maintainer role or higher. At most 25 fields per project.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"name":        jsonProp("string", "Display name"),
+				"type":        jsonProp("string", "Field type: text, url (http/https only) or number"),
+				"key":         jsonProp("string", "Optional stable key (lowercase letters, digits, underscore); derived from the name when omitted"),
+			}, []string{"projectSlug", "name", "type"}),
+		},
+		"customFields_delete": {
+			Name:        "customFields_delete",
+			Description: "Delete a custom field definition and every todo value stored under it. Requires maintainer role or higher.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"key":         jsonProp("string", "Custom field key to delete"),
+			}, []string{"projectSlug", "key"}),
 		},
 		"dashboard_getSummary": {
 			Name:        "dashboard_getSummary",

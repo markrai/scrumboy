@@ -236,6 +236,9 @@ Malformed, invalid, expired, revoked, unbound, or wrong-resource Bearer tokens r
     "priorities_create",
     "priorities_update",
     "priorities_delete",
+    "customFields_list",
+    "customFields_create",
+    "customFields_delete",
     "dashboard_getSummary",
     "dashboard_listTodos",
     "metrics_getBurndown",
@@ -502,6 +505,15 @@ partial update). `workflow_delete` removes an empty non-done column and rejects 
 columns, and deletes that would leave fewer than 2 columns. See [API.md](../API.md#workflow) for full
 semantics.
 
+**Custom fields**
+
+- `customFields_list` (Viewer+), `customFields_create`, `customFields_delete` (Maintainer+)
+
+Typed per-project fields (`text`, `url`, `number`). Set values with
+`todos_update` `patch.customFields` (`{"merge_request": "https://..."}`, `null`
+clears); values come back as `customFields` on `todos_get`. See
+[API.md](../API.md#custom-fields).
+
 **Priorities**
 
 - `priorities_list`
@@ -565,6 +577,9 @@ priorities_list
 priorities_create
 priorities_update
 priorities_delete
+customFields_list
+customFields_create
+customFields_delete
 dashboard_getSummary
 dashboard_listTodos
 metrics_getBurndown

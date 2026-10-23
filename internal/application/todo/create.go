@@ -21,6 +21,7 @@ type CreateValues struct {
 	SprintID         *int64
 	PriorityKey      *string
 	DueAt            *time.Time
+	CustomFields     store.CustomFieldValues
 }
 
 // ResolvedCreatePosition carries internal todo-row identities (store.Todo.ID)
@@ -78,6 +79,7 @@ func MaterializeCreateInput(command CreateCommand) store.CreateTodoInput {
 		AssigneeUserID:   cloneCreateInt64Ptr(command.Values.AssigneeUserID),
 		PriorityKey:      cloneCreateStringPtr(command.Values.PriorityKey),
 		DueAt:            cloneCreateTimePtr(command.Values.DueAt),
+		CustomFields:     cloneCreateCustomFields(command.Values.CustomFields),
 		AfterID:          cloneCreateInt64Ptr(command.Position.AfterTodoID),
 		BeforeID:         cloneCreateInt64Ptr(command.Position.BeforeTodoID),
 	}
@@ -114,4 +116,15 @@ func cloneCreateStringPtr(value *string) *string {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func cloneCreateCustomFields(values store.CustomFieldValues) store.CustomFieldValues {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(store.CustomFieldValues, len(values))
+	for k, v := range values {
+		cloned[k] = v
+	}
+	return cloned
 }

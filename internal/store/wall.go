@@ -724,8 +724,10 @@ func (s *Store) DeleteEdge(ctx context.Context, projectID int64, edgeID string) 
 // backup does not fail the whole import. Edges referencing unknown Wall
 // endpoints (notes or story local IDs) are dropped. Passing a nil payload is a
 // no-op; callers decide whether a missing wall field in the backup should wipe
-// or preserve an existing wall row.
-func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport, warnings *[]string) error {
+// or preserve an existing wall row. resolveStory maps a backup story local ID to
+// the destination local ID the import gave that todo; placements and story edge
+// endpoints are written with the destination ID.
+func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, payload *WallExport, warnings *[]string, resolveStory func(int64) (int64, bool, error)) error {
 	if payload == nil {
 		return nil
 	}
@@ -795,10 +797,20 @@ func upsertWallForImportTx(ctx context.Context, tx *sql.Tx, projectID int64, pay
 				continue
 			}
 			seenStories[story.LocalID] = struct{}{}
+			destLocalID, ok, err := resolveStory(story.LocalID)
+			if err != nil {
+				return fmt.Errorf("resolve imported wall story #%d: %w", story.LocalID, err)
+			}
+			if !ok {
+				if warnings != nil {
+					*warnings = append(*warnings, fmt.Sprintf("Dropped dangling Wall placement for story #%d", story.LocalID))
+				}
+				continue
+			}
 			var todoID int64
 			if err := tx.QueryRowContext(ctx,
 				`SELECT id FROM todos WHERE project_id = ? AND local_id = ?`,
-				projectID, story.LocalID,
+				projectID, destLocalID,
 			).Scan(&todoID); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
 					if warnings != nil {
@@ -817,7 +829,7 @@ INSERT INTO wall_story_placements(project_id, todo_id, x, y, version)
 VALUES (?, ?, ?, ?, ?)`, projectID, todoID, clampNoteCoord(story.X), clampNoteCoord(story.Y), placementVersion); err != nil {
 				return fmt.Errorf("insert imported wall story #%d: %w", story.LocalID, err)
 			}
-			storyLocalIDs[story.LocalID] = struct{}{}
+			storyLocalIDs[destLocalID] = struct{}{}
 		}
 	} else {
 		rows, err := tx.QueryContext(ctx, `
@@ -848,13 +860,20 @@ WHERE p.project_id = ?`, projectID)
 	}
 	keptEdges := make([]WallEdge, 0, len(edges))
 	seenEdges := make(map[string]struct{}, len(edges))
-	resolves := func(endpoint WallEdgeEndpoint) bool {
-		if endpoint.Kind() == WallEdgeEndpointStory {
-			_, ok := storyLocalIDs[endpoint.TodoLocalID()]
-			return ok
+	resolveEndpoint := func(endpoint WallEdgeEndpoint) (WallEdgeEndpoint, bool, error) {
+		if endpoint.Kind() != WallEdgeEndpointStory {
+			_, ok := seenIDs[endpoint.NoteID()]
+			return endpoint, ok, nil
 		}
-		_, ok := seenIDs[endpoint.NoteID()]
-		return ok
+		destLocalID, ok, err := resolveStory(endpoint.TodoLocalID())
+		if err != nil || !ok {
+			return endpoint, false, err
+		}
+		if _, placed := storyLocalIDs[destLocalID]; !placed {
+			return endpoint, false, nil
+		}
+		dest, err := ParseWallEdgeEndpoint(FormatWallStoryEndpoint(destLocalID))
+		return dest, err == nil, err
 	}
 	for _, e := range edges {
 		from, err := ParseWallEdgeEndpoint(e.From)
@@ -874,16 +893,28 @@ WHERE p.project_id = ?`, projectID)
 		if from.Canonical() == to.Canonical() {
 			continue
 		}
-		if !resolves(from) {
+		destFrom, ok, err := resolveEndpoint(from)
+		if err != nil {
+			return fmt.Errorf("resolve imported wall edge endpoint %q: %w", from.Canonical(), err)
+		}
+		if !ok {
 			if warnings != nil {
 				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with unknown endpoint %q", from.Canonical()))
 			}
 			continue
 		}
-		if !resolves(to) {
+		destTo, ok, err := resolveEndpoint(to)
+		if err != nil {
+			return fmt.Errorf("resolve imported wall edge endpoint %q: %w", to.Canonical(), err)
+		}
+		if !ok {
 			if warnings != nil {
 				*warnings = append(*warnings, fmt.Sprintf("Dropped Wall edge with unknown endpoint %q", to.Canonical()))
 			}
+			continue
+		}
+		from, to = destFrom, destTo
+		if from.Canonical() == to.Canonical() {
 			continue
 		}
 		// Normalize to an undirected key so the same pair imported in either
