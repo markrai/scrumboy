@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "artifact": "vendor/mermaid.min.js",
-  "sha256": "53a70f771dddac6764d04210a8c44270ad3a9c80fdcf83922d2105cf77646fb5",
+  "sha256": "ad231e0ecf696547fe109df300f9e4fb656ffa8309491d538e80b454fb8bc9ab",
   "dependencies": {
     "mermaid": {
       "version": "11.17.2",
@@ -442,7 +442,7 @@
     },
     {
       "name": "dompurify",
-      "version": "3.4.16",
+      "version": "3.4.17",
       "license": "(MPL-2.0 OR Apache-2.0)",
       "files": [
         "LICENSE",
