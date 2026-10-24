@@ -2,6 +2,17 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.40.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.40.1] - 2026-10-24
+
+### Security
+
+- **happy-dom and undici advisories** - In `internal/httpapi/web`, bump
+  `happy-dom` to `^21.0.4` (GHSA-834v-8h66-3h79) and the `undici` npm
+  override to `7.30.1` for jsdom (GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472,
+  GHSA-xjj6-f33q-929c). Dev/test tooling only; no production runtime
+  dependency change. Dependency security regression tests extended; no new
+  scanner suppressions.
+
 ## [3.40.0] - 2026-10-23
 
 ### Added

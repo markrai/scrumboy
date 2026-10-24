@@ -61,8 +61,12 @@ describe("security dependency resolutions", () => {
     expectLockedVersionsMatch(lock, "mermaid", manifest.dependencies.mermaid);
     expectLockedVersionsMatch(lock, "katex", manifest.overrides.katex);
     expectLockedVersionsMatch(lock, "source-map-js", manifest.overrides["source-map-js"]);
+    expectLockedVersionsMatch(lock, "undici", manifest.overrides.undici);
     expect(await installedVersion(webDir, "mermaid")).toBe(manifest.dependencies.mermaid);
     expect(await installedVersion(webDir, "source-map-js")).toBe(manifest.overrides["source-map-js"]);
+    expect(await installedVersion(webDir, "undici")).toBe(manifest.overrides.undici);
+    expect(await installedVersion(webDir, "happy-dom")).toMatch(/^21\./);
+    expect(compareVersions(await installedVersion(webDir, "happy-dom"), "21.0.4")).toBeGreaterThanOrEqual(0);
 
     for (const version of lockedVersions(lock, "katex")) {
       expect(inRange(version, "0.11.0", "0.18.2")).toBe(false);
@@ -70,6 +74,17 @@ describe("security dependency resolutions", () => {
     for (const version of lockedVersions(lock, "source-map-js")) {
       expect(inRange(version, "1.0.0", "1.2.2")).toBe(false);
     }
+    for (const version of lockedVersions(lock, "undici")) {
+      expect(inRange(version, "7.0.0", "7.30.1")).toBe(false);
+      expect(inRange(version, "6.5.0", "6.29.1")).toBe(false);
+      expect(inRange(version, "8.0.0", "8.12.2")).toBe(false);
+    }
+    for (const version of lockedVersions(lock, "happy-dom")) {
+      expect(inRange(version, "17.0.0", "21.0.4")).toBe(false);
+      expect(compareVersions(version, "21.0.4")).toBeGreaterThanOrEqual(0);
+    }
+    expect(manifest.devDependencies["happy-dom"]).toMatch(/^\^21\./);
+    expect(compareVersions(manifest.overrides.undici, "7.30.1")).toBeGreaterThanOrEqual(0);
   });
 
   it("records the declared and installed dependencies incorporated into the generated Mermaid bundle", async () => {
