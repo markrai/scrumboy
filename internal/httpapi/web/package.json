@@ -26,8 +26,8 @@
     "lint:delete-confirms": "node scripts/check-delete-confirms.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "esbuild": "0.25.12",
+    "@playwright/test": "^1.64.1",
+    "esbuild": "0.28.2",
     "happy-dom": "^21.0.4",
     "jsdom": "^29.1.1",
     "typescript": "^5.0.0",
@@ -37,7 +37,7 @@
   "dependencies": {
     "@codemirror/commands": "6.11.1",
     "@codemirror/state": "6.7.6",
-    "@codemirror/view": "6.43.14",
+    "@codemirror/view": "6.43.15",
     "dompurify": "3.4.17",
     "markdown-it": "14.3.3",
     "mermaid": "11.17.2",
