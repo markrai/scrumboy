@@ -15,6 +15,7 @@ import (
 	backupimportapp "scrumboy/internal/application/backupimport"
 	boardapp "scrumboy/internal/application/board"
 	calendarapp "scrumboy/internal/application/calendar"
+	customfieldapp "scrumboy/internal/application/customfield"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
 	projectapp "scrumboy/internal/application/project"
@@ -191,6 +192,7 @@ type Server struct {
 	sprintDeletions               *sprintapp.RESTDeletionService
 	workflowMutations             *workflowapp.RESTMutationService
 	priorityMutations             *priorityapp.RESTMutationService
+	customFieldMutations          *customfieldapp.RESTService
 	calendarSources               *calendarapp.RESTService
 	boardSettings                 *projectsettingsapp.RESTService
 	agenda                        *calendarapp.AgendaService
@@ -367,6 +369,7 @@ type storeAPI interface {
 	backupimportapp.Store
 	workflowapp.MutationStore
 	priorityapp.MutationStore
+	customfieldapp.MutationStore
 	calendarapp.SourceStore
 	calendarapp.SnapshotStore
 	membershipapp.MutationStore
@@ -374,8 +377,6 @@ type storeAPI interface {
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
-	CreateCustomField(ctx context.Context, projectID int64, key, name string, typ store.CustomFieldType) (store.CustomField, error)
-	DeleteCustomField(ctx context.Context, projectID int64, key string) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
@@ -956,6 +957,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 			server.emitPublicRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
+	server.customFieldMutations = customfieldapp.NewRESTService(st)
 	refreshPublisher := calendarapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 		server.emitRefreshNeeded(ctx, projectID, reason, entity)
 	})

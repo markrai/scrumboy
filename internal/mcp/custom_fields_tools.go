@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
+	customfieldapp "scrumboy/internal/application/customfield"
 	"scrumboy/internal/store"
 )
 
@@ -26,6 +28,21 @@ type customFieldDeleteInput struct {
 
 func customFieldToItem(f store.CustomField) customFieldItem {
 	return customFieldItem{Key: f.Key, Name: f.Name, Type: string(f.Type), Position: f.Position}
+}
+
+func mapCustomFieldMutationError(err error) *adapterError {
+	switch {
+	case errors.Is(err, customfieldapp.ErrMaintainerRequired):
+		return newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
+	case errors.Is(err, customfieldapp.ErrNameRequired):
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, "name required", map[string]any{"field": "name"})
+	case errors.Is(err, customfieldapp.ErrInvalidType):
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, "type must be text, url or number", map[string]any{"field": "type"})
+	case errors.Is(err, customfieldapp.ErrKeyRequired):
+		return newAdapterError(http.StatusBadRequest, CodeValidationError, "missing key", map[string]any{"field": "key"})
+	default:
+		return mapStoreError(err)
+	}
 }
 
 // customFieldsGate applies the same availability rules as the priorities tools.
@@ -82,24 +99,16 @@ func (a *Adapter) handleCustomFieldsCreate(ctx context.Context, input any) (any,
 	if in.ProjectSlug == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
-	in.Name = strings.TrimSpace(in.Name)
-	if in.Name == "" {
-		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "name required", map[string]any{"field": "name"})
-	}
-	typ := store.CustomFieldType(strings.TrimSpace(in.Type))
-	if !store.ValidCustomFieldType(typ) {
-		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "type must be text, url or number", map[string]any{"field": "type"})
-	}
-	pc, err := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
+	field, err := a.customFieldMutations.Create(ctx, customfieldapp.MCPTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	}, customfieldapp.CreateCommand{
+		Key:  in.Key,
+		Name: in.Name,
+		Type: in.Type,
+	})
 	if err != nil {
-		return nil, nil, mapStoreError(err)
-	}
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-	field, err := a.store.CreateCustomField(ctx, pc.Project.ID, in.Key, in.Name, typ)
-	if err != nil {
-		return nil, nil, mapStoreError(err)
+		return nil, nil, mapCustomFieldMutationError(err)
 	}
 	return map[string]any{"field": customFieldToItem(field)}, map[string]any{}, nil
 }
@@ -115,19 +124,11 @@ func (a *Adapter) handleCustomFieldsDelete(ctx context.Context, input any) (any,
 	if in.ProjectSlug == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
-	in.Key = strings.TrimSpace(in.Key)
-	if in.Key == "" {
-		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing key", map[string]any{"field": "key"})
+	if err := a.customFieldMutations.Delete(ctx, customfieldapp.MCPTarget{
+		ProjectSlug: in.ProjectSlug,
+		Mode:        a.storeMode(),
+	}, customfieldapp.DeleteCommand{Key: in.Key}); err != nil {
+		return nil, nil, mapCustomFieldMutationError(err)
 	}
-	pc, err := a.store.GetProjectContextBySlug(ctx, in.ProjectSlug, a.storeMode())
-	if err != nil {
-		return nil, nil, mapStoreError(err)
-	}
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		return nil, nil, newAdapterError(http.StatusForbidden, CodeForbidden, "maintainer or higher required", nil)
-	}
-	if err := a.store.DeleteCustomField(ctx, pc.Project.ID, in.Key); err != nil {
-		return nil, nil, mapStoreError(err)
-	}
-	return map[string]any{"deleted": map[string]any{"projectSlug": in.ProjectSlug, "key": in.Key}}, map[string]any{}, nil
+	return map[string]any{"deleted": map[string]any{"projectSlug": in.ProjectSlug, "key": strings.TrimSpace(in.Key)}}, map[string]any{}, nil
 }

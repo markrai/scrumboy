@@ -90,12 +90,24 @@ func TestCustomFieldsRESTRolesAtomicityAndPublicProjection(t *testing.T) {
 				t.Errorf("%s list: %d %s, want %d", role, status, raw, want)
 			}
 		}
-		for _, role := range []string{"contributor", "viewer", "outsider"} {
-			create, _ := f.roleJSON(t, role, http.MethodPost, board+"/custom-fields", map[string]any{"name": "Sneaky", "type": "text"})
-			del, _ := f.roleJSON(t, role, http.MethodDelete, board+"/custom-fields/secret", nil)
-			if create == http.StatusCreated || create == http.StatusOK || del == http.StatusNoContent {
-				t.Errorf("%s create=%d delete=%d", role, create, del)
+		for _, role := range []string{"contributor", "viewer"} {
+			create, createRaw := f.roleJSON(t, role, http.MethodPost, board+"/custom-fields", map[string]any{"name": "Sneaky", "type": "text"})
+			del, delRaw := f.roleJSON(t, role, http.MethodDelete, board+"/custom-fields/secret", nil)
+			if create != http.StatusForbidden || customFieldRESTError(t, []byte(createRaw))["code"] != "FORBIDDEN" || customFieldRESTError(t, []byte(createRaw))["message"] != "forbidden" {
+				t.Errorf("%s create=%d %s", role, create, createRaw)
 			}
+			if del != http.StatusForbidden || customFieldRESTError(t, []byte(delRaw))["code"] != "FORBIDDEN" || customFieldRESTError(t, []byte(delRaw))["message"] != "forbidden" {
+				t.Errorf("%s delete=%d %s", role, del, delRaw)
+			}
+			emptyName, emptyRaw := f.roleJSON(t, role, http.MethodPost, board+"/custom-fields", map[string]any{"name": "", "type": "boolean"})
+			if emptyName != http.StatusForbidden || customFieldRESTError(t, []byte(emptyRaw))["message"] != "forbidden" {
+				t.Errorf("%s empty-name create=%d %s, want 403 before validation", role, emptyName, emptyRaw)
+			}
+		}
+		outsiderCreate, outsiderCreateRaw := f.roleJSON(t, "outsider", http.MethodPost, board+"/custom-fields", map[string]any{"name": "Sneaky", "type": "text"})
+		outsiderDelete, outsiderDeleteRaw := f.roleJSON(t, "outsider", http.MethodDelete, board+"/custom-fields/secret", nil)
+		if outsiderCreate != http.StatusNotFound || outsiderDelete != http.StatusNotFound {
+			t.Errorf("outsider create=%d %s delete=%d %s", outsiderCreate, outsiderCreateRaw, outsiderDelete, outsiderDeleteRaw)
 		}
 		unchanged("non-maintainer definition requests")
 	})

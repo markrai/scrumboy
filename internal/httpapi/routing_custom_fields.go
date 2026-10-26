@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
+	customfieldapp "scrumboy/internal/application/customfield"
 	"scrumboy/internal/store"
 )
 
@@ -18,6 +18,21 @@ type customFieldJSON struct {
 
 func customFieldToJSON(f store.CustomField) customFieldJSON {
 	return customFieldJSON{Key: f.Key, Name: f.Name, Type: string(f.Type), Position: f.Position}
+}
+
+func writeCustomFieldMutationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, customfieldapp.ErrMaintainerRequired):
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+	case errors.Is(err, customfieldapp.ErrNameRequired):
+		writeValidationError(w, "name required", "invalid_custom_field_name", map[string]any{"field": "name"})
+	case errors.Is(err, customfieldapp.ErrInvalidType):
+		writeValidationError(w, "type must be text, url or number", "invalid_custom_field_type", map[string]any{"field": "type"})
+	case errors.Is(err, customfieldapp.ErrKeyRequired):
+		writeValidationError(w, "invalid custom field key", "invalid_custom_field_key", map[string]any{"field": "key"})
+	default:
+		writeStoreErr(w, err, true)
+	}
 }
 
 // decodeCustomFieldsPatch parses {"key": "text"|number|null}; booleans, arrays
@@ -72,8 +87,12 @@ func (s *Server) handleBoardCustomFieldRoutes(w http.ResponseWriter, r *http.Req
 	if !isCreate && !isDelete {
 		return false
 	}
-	if !pc.Role.HasMinimumRole(store.RoleMaintainer) {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
+	prepared, err := s.customFieldMutations.Prepare(ctx, customfieldapp.ResolvedRESTMutationTarget{
+		ProjectID: project.ID,
+		Role:      pc.Role,
+	})
+	if err != nil {
+		writeCustomFieldMutationError(w, err)
 		return true
 	}
 
@@ -86,32 +105,21 @@ func (s *Server) handleBoardCustomFieldRoutes(w http.ResponseWriter, r *http.Req
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
-		in.Name = strings.TrimSpace(in.Name)
-		if in.Name == "" {
-			writeValidationError(w, "name required", "invalid_custom_field_name", map[string]any{"field": "name"})
-			return true
-		}
-		typ := store.CustomFieldType(strings.TrimSpace(in.Type))
-		if !store.ValidCustomFieldType(typ) {
-			writeValidationError(w, "type must be text, url or number", "invalid_custom_field_type", map[string]any{"field": "type"})
-			return true
-		}
-		field, err := s.store.CreateCustomField(ctx, project.ID, in.Key, in.Name, typ)
+		field, err := prepared.Create(customfieldapp.CreateCommand{
+			Key:  in.Key,
+			Name: in.Name,
+			Type: in.Type,
+		})
 		if err != nil {
-			writeStoreErr(w, err, true)
+			writeCustomFieldMutationError(w, err)
 			return true
 		}
 		writeJSON(w, http.StatusCreated, customFieldToJSON(field))
 		return true
 	}
 
-	key := strings.TrimSpace(rest[2])
-	if key == "" {
-		writeValidationError(w, "invalid custom field key", "invalid_custom_field_key", map[string]any{"field": "key"})
-		return true
-	}
-	if err := s.store.DeleteCustomField(ctx, project.ID, key); err != nil {
-		writeStoreErr(w, err, true)
+	if err := prepared.Delete(customfieldapp.DeleteCommand{Key: rest[2]}); err != nil {
+		writeCustomFieldMutationError(w, err)
 		return true
 	}
 	w.WriteHeader(http.StatusNoContent)

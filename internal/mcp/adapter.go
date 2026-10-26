@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	boardapp "scrumboy/internal/application/board"
+	customfieldapp "scrumboy/internal/application/customfield"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
 	projectapp "scrumboy/internal/application/project"
@@ -71,10 +72,10 @@ type storeAPI interface {
 	GetProjectWorkflow(ctx context.Context, projectID int64) ([]store.WorkflowColumn, error)
 	workflowapp.MutationStore
 	priorityapp.MutationStore
+	customfieldapp.MutationStore
+	customfieldapp.MCPAccessStore
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
-	CreateCustomField(ctx context.Context, projectID int64, key, name string, typ store.CustomFieldType) (store.CustomField, error)
-	DeleteCustomField(ctx context.Context, projectID int64, key string) error
 	CountTodosForBoardLane(ctx context.Context, projectID int64, columnKey string, tagFilters []string, searchFilter string, assigneeFilter store.AssigneeFilter, priorityFilter store.PriorityFilter, sprintFilter store.SprintFilter) (int, error)
 	UpdateBoardActivity(ctx context.Context, projectID int64) error
 	GetDashboardSummary(ctx context.Context, userID int64, timezone string) (store.DashboardSummary, error)
@@ -111,6 +112,7 @@ type Adapter struct {
 	todoLinkMutations    *todolinkapp.MCPMutationService
 	workflowMutations    *workflowapp.MCPMutationService
 	priorityMutations    *priorityapp.MCPMutationService
+	customFieldMutations *customfieldapp.MCPService
 	membershipMutations  *membershipapp.MCPMutationService
 	sprintDefinitions    *sprintapp.MCPDefinitionService
 	sprintLifecycle      *sprintapp.MCPLifecycleService
@@ -196,6 +198,7 @@ func New(st storeAPI, opts Options) *Adapter {
 		priorityMutations: priorityapp.NewMCPMutationService(priorityapp.MCPMutationServiceDependencies{
 			Access: st, Mutations: st, Priority: st,
 		}),
+		customFieldMutations: customfieldapp.NewMCPService(st, st),
 		membershipMutations: membershipapp.NewMCPMutationService(membershipapp.MCPMutationServiceDependencies{
 			Access:    st,
 			Mutations: st,
