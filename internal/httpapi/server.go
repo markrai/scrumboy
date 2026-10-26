@@ -202,6 +202,7 @@ type Server struct {
 	userCreations                 *useradminapp.RESTCreationService
 	userRoleMutations             *useradminapp.RESTRoleService
 	userDeletions                 *useradminapp.RESTDeletionService
+	userPasswordResets            *useradminapp.RESTPasswordResetService
 	wallNoteMutations             *wallapp.RESTNoteService
 	wallReplacements              *wallapp.RESTReplacementService
 	wallEdgeMutations             *wallapp.RESTEdgeService
@@ -1017,6 +1018,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.userDeletions = useradminapp.NewRESTDeletionService(useradminapp.RESTDeletionServiceDependencies{
 		Deletions: st,
+	})
+	server.userPasswordResets = useradminapp.NewRESTPasswordResetService(useradminapp.RESTPasswordResetServiceDependencies{
+		RequesterRead: st,
+		TargetRead:    st,
+		Hashes:        st,
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)

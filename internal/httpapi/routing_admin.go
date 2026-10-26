@@ -9,7 +9,6 @@ import (
 	"time"
 
 	useradminapp "scrumboy/internal/application/useradmin"
-	"scrumboy/internal/auth/tokens"
 	"scrumboy/internal/store"
 )
 
@@ -23,10 +22,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 	// | Promote admin -> owner | ❌     | ❌     | ❌    |
 	// | Delete user           | ✅     | ❌     | ❌    |
 	// | Demote admin          | ✅     | ❌     | ❌    |
+	// | Password reset link   | ✅     | ❌     | ❌    |
 	// | Service-token archive | ✅     | ❌     | ❌    |
 	// Store remains authoritative for mutation-time Owner and persistence
-	// invariants. Selected create, role, and deletion orchestration delegates
-	// through internal/application/useradmin after this shared transport gate.
+	// invariants. Selected create, role, deletion, and password-reset
+	// orchestration delegates through internal/application/useradmin after
+	// this shared transport gate.
 	ctx := s.requestContext(r)
 	userID, ok := store.UserIDFromContext(ctx)
 	if !ok {
@@ -59,7 +60,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request, rest []stri
 			s.handleAdminUsersUpdateRole(w, r, rest[1])
 		} else if len(rest) == 3 && rest[2] == "password-reset" {
 			// POST /api/admin/users/{id}/password-reset
-			s.handleAdminUsersPasswordReset(w, r, userID, rest[1])
+			s.handleAdminUsersPasswordReset(w, r, rest[1])
 		} else if len(rest) == 2 {
 			// DELETE /api/admin/users/{id}
 			s.handleAdminUsersDelete(w, r, rest[1])
@@ -228,7 +229,7 @@ func (s *Server) handleAdminUsersDelete(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusNoContent, nil)
 }
 
-func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Request, requesterID int64, targetIDStr string) {
+func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Request, targetIDStr string) {
 	if s.oidcService != nil && s.oidcService.Config().LocalAuthDisabled {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
 		return
@@ -250,58 +251,46 @@ func (s *Server) handleAdminUsersPasswordReset(w http.ResponseWriter, r *http.Re
 	}
 
 	ctx := s.requestContext(r)
-
-	// Owner-only (same as Promote/Delete)
-	requester, err := s.store.GetUser(ctx, requesterID)
+	prepared, err := s.userPasswordResets.Prepare(ctx, useradminapp.PasswordResetCommand{
+		TargetUserID: targetID,
+	})
 	if err != nil {
-		writeStoreErr(w, err, false)
-		return
-	}
-	if requester.SystemRole != store.SystemRoleOwner {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required", nil)
-		return
-	}
-
-	// Admin cannot generate reset link for themselves (prevents self-lockout)
-	if requesterID == targetID {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "cannot generate reset link for yourself", nil)
-		return
-	}
-
-	// Deny if targetRole >= requesterRole (owner cannot reset another owner)
-	target, err := s.store.GetUser(ctx, targetID)
-	if err != nil {
-		writeStoreErr(w, err, false)
-		return
-	}
-	if target.SystemRole == store.SystemRoleOwner {
-		writeError(w, http.StatusForbidden, "FORBIDDEN", "cannot reset password for another owner", nil)
+		switch {
+		case errors.Is(err, useradminapp.ErrActorRequired):
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+		case errors.Is(err, useradminapp.ErrOwnerRequired):
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "owner role required", nil)
+		case errors.Is(err, useradminapp.ErrSelfPasswordReset):
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "cannot generate reset link for yourself", nil)
+		case errors.Is(err, useradminapp.ErrOwnerPasswordResetTarget):
+			writeError(w, http.StatusForbidden, "FORBIDDEN", "cannot reset password for another owner", nil)
+		default:
+			writeStoreErr(w, err, false)
+		}
 		return
 	}
 
 	// Rate limit: max 10 resets per minute per admin
-	if s.passwordResetAdminLimiter != nil && !s.passwordResetAdminLimiter.Allow("admin_reset:"+strconv.FormatInt(requesterID, 10), "") {
+	if s.passwordResetAdminLimiter != nil && !s.passwordResetAdminLimiter.Allow("admin_reset:"+strconv.FormatInt(prepared.RequesterID(), 10), "") {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many reset links; try again later", nil)
 		return
 	}
 
-	passwordHash, err := s.store.GetUserPasswordHash(ctx, targetID)
+	issued, err := prepared.Issue(s.encryptionKey)
 	if err != nil {
+		if errors.Is(err, useradminapp.ErrResetTokenGeneration) {
+			writeInternal(w, err)
+			return
+		}
 		writeStoreErr(w, err, false)
 		return
 	}
 
-	token, expiresAt, err := tokens.GeneratePasswordResetToken(s.encryptionKey, targetID, passwordHash)
-	if err != nil {
-		writeInternal(w, err)
-		return
-	}
-
-	resetURL := s.resetBaseURL(r) + "/auth/reset-password?token=" + url.QueryEscape(token)
+	resetURL := s.resetBaseURL(r) + "/auth/reset-password?token=" + url.QueryEscape(issued.Token)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"reset_url":  resetURL,
-		"expires_at": expiresAt.UTC().Format(time.RFC3339),
+		"expires_at": issued.ExpiresAt.UTC().Format(time.RFC3339),
 	})
 }
 
