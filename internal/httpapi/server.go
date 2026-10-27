@@ -470,6 +470,7 @@ type storeAPI interface {
 	CreateLogin2FAPending(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)
 	GetUserByLogin2FAPendingToken(ctx context.Context, token string) (store.User, int, error)
 	IncrementLogin2FAPendingAttempt(ctx context.Context, token string) error
+	CompleteLogin2FA(ctx context.Context, rawPendingToken string, userID int64, proof store.RecoveryCodeProof, sessionTTL time.Duration) (sessionToken string, expiresAt time.Time, err error)
 	DeleteLogin2FAPendingToken(ctx context.Context, token string) error
 	CreateTwoFactorEnrollment(ctx context.Context, userID int64, secretEnc string, ttl time.Duration) (setupToken string, expiresAt time.Time, err error)
 	GetTwoFactorEnrollmentByToken(ctx context.Context, token string) (userID int64, secretEnc string, err error)

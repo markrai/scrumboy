@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"net"
@@ -105,31 +104,26 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
 		return
 	}
-	if proof.ID > 0 {
-		consumed, err := s.store.ConsumeRecoveryCodeProof(ctx, u.ID, proof)
-		if err != nil {
-			writeStoreErr(w, err, true)
+
+	token, expiresAt, err := s.store.CompleteLogin2FA(ctx, in.TempToken, u.ID, proof, 30*24*time.Hour)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired code", nil)
 			return
 		}
-		if !consumed {
+		if errors.Is(err, store.ErrUnauthorized) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
 			return
 		}
+		if errors.Is(err, store.ErrTooManyAttempts) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "too many attempts; please sign in again", nil)
+			return
+		}
+		writeStoreErr(w, err, true)
+		return
 	}
-
-	s.finishLogin2FA(w, r, ctx, in.TempToken, u)
-}
-
-func (s *Server) finishLogin2FA(w http.ResponseWriter, r *http.Request, ctx context.Context, tempToken string, u store.User) {
-	_ = s.store.DeleteLogin2FAPendingToken(ctx, tempToken)
 	if err := s.store.AssignUnownedDurableProjectsToUser(ctx, u.ID); err != nil {
-		writeStoreErr(w, err, true)
-		return
-	}
-	token, expiresAt, err := s.store.CreateSession(ctx, u.ID, 30*24*time.Hour)
-	if err != nil {
-		writeStoreErr(w, err, true)
-		return
+		s.logger.Printf("login 2fa: assign unowned projects: %v", err)
 	}
 	setSessionCookie(w, r, token, expiresAt)
 	writeJSON(w, http.StatusOK, userToJSON(u))

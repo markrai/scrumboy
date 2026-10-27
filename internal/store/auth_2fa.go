@@ -135,6 +135,66 @@ func (s *Store) IncrementLogin2FAPendingAttempt(ctx context.Context, token strin
 	return nil
 }
 
+// CompleteLogin2FA consumes a pending 2FA challenge and creates a session in one
+// transaction. The pending-token DELETE is the first statement so one challenge
+// can commit at most one session. A recovery proof is consumed only after that
+// CAS succeeds. Rollback leaves the code unused and the pending row intact.
+func (s *Store) CompleteLogin2FA(ctx context.Context, rawPendingToken string, userID int64, proof RecoveryCodeProof, sessionTTL time.Duration) (string, time.Time, error) {
+	rawPendingToken = strings.TrimSpace(rawPendingToken)
+	if rawPendingToken == "" || userID <= 0 {
+		return "", time.Time{}, ErrNotFound
+	}
+	if proof.ID > 0 && proof.Hash == "" {
+		return "", time.Time{}, ErrUnauthorized
+	}
+	if sessionTTL <= 0 {
+		sessionTTL = 30 * 24 * time.Hour
+	}
+
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", time.Time{}, fmt.Errorf("rand session token: %w", err)
+	}
+	sessionToken := base64.RawURLEncoding.EncodeToString(b)
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("begin complete login 2fa: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	now := time.Now().UTC()
+	deleted, err := tx.ExecContext(ctx, `
+DELETE FROM login_2fa_pending
+WHERE token_hash = ? AND user_id = ? AND expires_at > ? AND attempt_count >= 1 AND attempt_count <= ?`,
+		hashToken(rawPendingToken), userID, now.UnixMilli(), maxAttemptsPerToken)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("consume login 2fa pending: %w", err)
+	}
+	changed, err := deleted.RowsAffected()
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("count consumed login 2fa pending: %w", err)
+	}
+	if changed != 1 {
+		return "", time.Time{}, ErrNotFound
+	}
+
+	if proof.ID > 0 {
+		if err := consumeRecoveryProofTx(ctx, tx, userID, proof); err != nil {
+			return "", time.Time{}, err
+		}
+	}
+
+	expiresAt := now.Add(sessionTTL)
+	if err := insertSessionTx(ctx, tx, userID, hashToken(sessionToken), now, expiresAt); err != nil {
+		return "", time.Time{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", time.Time{}, fmt.Errorf("commit complete login 2fa: %w", err)
+	}
+	return sessionToken, expiresAt, nil
+}
+
 // DeleteLogin2FAPendingToken removes the pending token (e.g. after successful 2FA).
 func (s *Store) DeleteLogin2FAPendingToken(ctx context.Context, token string) error {
 	token = strings.TrimSpace(token)

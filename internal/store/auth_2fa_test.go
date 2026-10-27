@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"scrumboy/internal/crypto"
@@ -939,5 +940,359 @@ func TestConsumeRecoveryCodeProofRejectsIncompleteProofWithoutError(t *testing.T
 	ok, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
 	if err != nil || !ok {
 		t.Fatalf("id-only proof consumed the code: consumed=%v err=%v", ok, err)
+	}
+}
+
+func enrollLogin2FAUser(t *testing.T, st *Store, email string) (User, []string) {
+	t.Helper()
+	u, err := st.BootstrapUser(context.Background(), email, "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token := seedTwoFactorEnrollment(t, st, u.ID)
+	codes := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.CompleteTwoFactorEnrollment(context.Background(), u.ID, token, codes); err != nil {
+		t.Fatalf("CompleteTwoFactorEnrollment: %v", err)
+	}
+	return u, codes
+}
+
+func readyLogin2FAPending(t *testing.T, st *Store, userID int64) string {
+	t.Helper()
+	token, _, err := st.CreateLogin2FAPending(context.Background(), userID, 0)
+	if err != nil {
+		t.Fatalf("CreateLogin2FAPending: %v", err)
+	}
+	if err := st.IncrementLogin2FAPendingAttempt(context.Background(), token); err != nil {
+		t.Fatalf("IncrementLogin2FAPendingAttempt: %v", err)
+	}
+	return token
+}
+
+func sessionCountForUser(t *testing.T, st *Store, userID int64) int {
+	t.Helper()
+	var n int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = ?`, userID).Scan(&n); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	return n
+}
+
+func TestCompleteLogin2FAConsumesProofAndCreatesOneSession(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-once@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	session, expires, err := st.CompleteLogin2FA(ctx, pending, u.ID, proof, time.Hour)
+	if err != nil {
+		t.Fatalf("CompleteLogin2FA: %v", err)
+	}
+	if session == "" || expires.IsZero() {
+		t.Fatal("expected session token and expiry")
+	}
+	got, err := st.GetUserBySessionToken(ctx, session)
+	if err != nil || got.ID != u.ID {
+		t.Fatalf("session user=%+v err=%v", got, err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 1 {
+		t.Fatalf("sessions=%d, want 1", sessionCountForUser(t, st, u.ID))
+	}
+	if _, _, err := st.GetUserByLogin2FAPendingToken(ctx, pending); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("pending remained usable: %v", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || consumed {
+		t.Fatalf("proof reused: consumed=%v err=%v", consumed, err)
+	}
+
+	_, _, err = st.CompleteLogin2FA(ctx, pending, u.ID, proof, time.Hour)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replay err=%v, want ErrNotFound", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 1 {
+		t.Fatalf("replay created another session: %d", sessionCountForUser(t, st, u.ID))
+	}
+}
+
+func TestCompleteLogin2FATOTPDoesNotConsumeRecoveryCodes(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-totp@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+
+	if _, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, RecoveryCodeProof{}, time.Hour); err != nil {
+		t.Fatalf("CompleteLogin2FA TOTP: %v", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("TOTP completion consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FASessionInsertFailureRollsBackProof(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-session-fail@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	if _, err := st.db.Exec(`CREATE TRIGGER fail_login_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'injected failure'); END`); err != nil {
+		t.Fatalf("install trigger: %v", err)
+	}
+	_, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, proof, time.Hour)
+	if err == nil {
+		t.Fatal("expected session insert failure")
+	}
+	if errors.Is(err, ErrUnauthorized) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("insert failure classified as caller error: %v", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 0 {
+		t.Fatal("failed completion created a session")
+	}
+	if _, _, err := st.GetUserByLogin2FAPendingToken(ctx, pending); err != nil {
+		t.Fatalf("pending was not restored after rollback: %v", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("session failure consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FAExpiredOrReplacedPendingDoesNotConsume(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-expired@x.com")
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	expired := readyLogin2FAPending(t, st, u.ID)
+	if _, err := st.db.Exec(`UPDATE login_2fa_pending SET expires_at = 0 WHERE token_hash = ?`, hashToken(expired)); err != nil {
+		t.Fatalf("expire pending: %v", err)
+	}
+	_, _, err := st.CompleteLogin2FA(ctx, expired, u.ID, proof, time.Hour)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired pending err=%v, want ErrNotFound", err)
+	}
+
+	stale := readyLogin2FAPending(t, st, u.ID)
+	_ = readyLogin2FAPending(t, st, u.ID) // latest-wins replacement
+	_, _, err = st.CompleteLogin2FA(ctx, stale, u.ID, proof, time.Hour)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replaced pending err=%v, want ErrNotFound", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 0 {
+		t.Fatal("invalid pending created a session")
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("invalid pending consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FARejectsStaleProofAfterRowIDReuse(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, original := enrollLogin2FAUser(t, st, "complete-stale@x.com")
+	stale := matchRecoveryProof(t, st, u.ID, original[1])
+	current := matchRecoveryProof(t, st, u.ID, original[0])
+	replacement := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.ReplaceRecoveryCodes(ctx, u.ID, replacement, current); err != nil {
+		t.Fatalf("ReplaceRecoveryCodes: %v", err)
+	}
+	ids := recoveryCodeIDs(t, st, u.ID)
+	if !containsRecoveryID(ids, stale.ID) {
+		t.Fatalf("replacement ids %v did not reuse stale proof id %d", ids, stale.ID)
+	}
+
+	pending := readyLogin2FAPending(t, st, u.ID)
+	_, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, stale, time.Hour)
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("stale proof err=%v, want ErrUnauthorized", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 0 {
+		t.Fatal("stale proof created a session")
+	}
+	if _, _, err := st.GetUserByLogin2FAPendingToken(ctx, pending); err != nil {
+		t.Fatalf("pending was consumed by stale proof: %v", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, replacement[0])
+	if err != nil || !consumed {
+		t.Fatalf("stale proof consumed replacement: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FARequiresIncrementedAttempt(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-no-increment@x.com")
+	pending, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+	_, _, err = st.CompleteLogin2FA(ctx, pending, u.ID, proof, time.Hour)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("zero-attempt pending err=%v, want ErrNotFound", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("zero-attempt completion consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FAConcurrentSameProofCreatesOneSession(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-concurrent@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, proof, time.Hour)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var succeeded, notFound, other int
+	for err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrNotFound):
+			notFound++
+		default:
+			other++
+			t.Errorf("unexpected concurrent error: %v", err)
+		}
+	}
+	if succeeded != 1 || notFound != 1 || other != 0 {
+		t.Fatalf("concurrent results succeeded=%d notFound=%d other=%d, want 1/1/0", succeeded, notFound, other)
+	}
+	if sessionCountForUser(t, st, u.ID) != 1 {
+		t.Fatalf("concurrent sessions=%d, want 1", sessionCountForUser(t, st, u.ID))
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || consumed {
+		t.Fatalf("losing concurrent callback consumed or left proof unused: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FAConcurrentTOTPCreatesOneSession(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-concurrent-totp@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, RecoveryCodeProof{}, time.Hour)
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var succeeded, notFound int
+	for err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrNotFound):
+			notFound++
+		default:
+			t.Fatalf("unexpected concurrent TOTP error: %v", err)
+		}
+	}
+	if succeeded != 1 || notFound != 1 {
+		t.Fatalf("concurrent TOTP succeeded=%d notFound=%d, want 1/1", succeeded, notFound)
+	}
+	if sessionCountForUser(t, st, u.ID) != 1 {
+		t.Fatalf("concurrent TOTP sessions=%d, want 1", sessionCountForUser(t, st, u.ID))
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("TOTP concurrent completion consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FAAllowsAdditionalCreateSession(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, _ := enrollLogin2FAUser(t, st, "complete-multidevice@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+	if _, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, RecoveryCodeProof{}, time.Hour); err != nil {
+		t.Fatalf("CompleteLogin2FA: %v", err)
+	}
+	if _, _, err := st.CreateSession(ctx, u.ID, time.Hour); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 2 {
+		t.Fatalf("multi-device sessions=%d, want 2", sessionCountForUser(t, st, u.ID))
+	}
+}
+
+func TestCompleteLogin2FAIncompleteProofLeavesPending(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-incomplete@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	_, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, RecoveryCodeProof{ID: proof.ID}, time.Hour)
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("incomplete proof err=%v, want ErrUnauthorized", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 0 {
+		t.Fatal("incomplete proof created a session")
+	}
+	if _, _, err := st.GetUserByLogin2FAPendingToken(ctx, pending); err != nil {
+		t.Fatalf("incomplete proof consumed pending: %v", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("incomplete proof consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FADefaultSessionTTL(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	u, _ := enrollLogin2FAUser(t, st, "complete-ttl@x.com")
+	pending := readyLogin2FAPending(t, st, u.ID)
+	_, expires, err := st.CompleteLogin2FA(context.Background(), pending, u.ID, RecoveryCodeProof{}, 0)
+	if err != nil {
+		t.Fatalf("CompleteLogin2FA: %v", err)
+	}
+	delta := time.Until(expires)
+	if delta < 29*24*time.Hour || delta > 31*24*time.Hour {
+		t.Fatalf("session TTL = %v, want ~30 days", delta)
 	}
 }

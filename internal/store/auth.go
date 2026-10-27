@@ -362,9 +362,7 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 	tokenHash := hashToken(token)
 
 	now := time.Now().UTC()
-	nowMs := now.UnixMilli()
 	expiresAt = now.Add(ttl)
-	expiresAtMs := expiresAt.UnixMilli()
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
@@ -374,18 +372,26 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 
 	// NOTE: We no longer rotate sessions by deleting existing rows for this user.
 	// This enables multiple concurrent sessions per user (one cookie token per device/browser).
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO sessions(user_id, token_hash, created_at, expires_at, last_seen_at)
-VALUES (?, ?, ?, ?, ?)`, userID, tokenHash, nowMs, expiresAtMs, nowMs); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: sessions.token_hash") {
-			return "", time.Time{}, ErrConflict
-		}
-		return "", time.Time{}, fmt.Errorf("insert session: %w", err)
+	if err := insertSessionTx(ctx, tx, userID, tokenHash, now, expiresAt); err != nil {
+		return "", time.Time{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return "", time.Time{}, fmt.Errorf("commit create session tx: %w", err)
 	}
 	return token, expiresAt, nil
+}
+
+func insertSessionTx(ctx context.Context, tx *sql.Tx, userID int64, tokenHash string, now, expiresAt time.Time) error {
+	nowMs := now.UnixMilli()
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO sessions(user_id, token_hash, created_at, expires_at, last_seen_at)
+VALUES (?, ?, ?, ?, ?)`, userID, tokenHash, nowMs, expiresAt.UnixMilli(), nowMs); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed: sessions.token_hash") {
+			return ErrConflict
+		}
+		return fmt.Errorf("insert session: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
