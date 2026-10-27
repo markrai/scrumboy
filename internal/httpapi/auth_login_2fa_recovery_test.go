@@ -167,6 +167,46 @@ func TestLogin2FAOldPlaintextAfterRegenDoesNotEstablishSession(t *testing.T) {
 	}
 }
 
+func TestLogin2FASixthAttemptInvalidatesChallenge(t *testing.T) {
+	ts, _, st, _, userID := new2FAHTTPFixture(t)
+	ctx := context.Background()
+	encrypted, err := st.EncryptTOTPSecret([]byte(testTOTPSecret))
+	if err != nil {
+		t.Fatalf("encrypt TOTP secret: %v", err)
+	}
+	if err := st.SetUserTwoFactor(ctx, userID, encrypted); err != nil {
+		t.Fatalf("SetUserTwoFactor: %v", err)
+	}
+	if err := st.AddRecoveryCodes(ctx, userID, []string{"ABCD-EFGH"}); err != nil {
+		t.Fatalf("AddRecoveryCodes: %v", err)
+	}
+
+	client := newCookieClient(t)
+	tempToken, _ := loginRequires2FA(t, client, ts.URL, "2fa-enable@example.com", "password123")
+	for i := 0; i < 5; i++ {
+		resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/login/2fa", map[string]any{
+			"tempToken": tempToken,
+			"code":      "not-a-valid-code",
+		}, nil)
+		if resp.StatusCode != http.StatusUnauthorized || clientHasSessionCookie(t, client, ts.URL) {
+			t.Fatalf("attempt %d status=%d session=%v body=%s", i+1, resp.StatusCode, clientHasSessionCookie(t, client, ts.URL), body)
+		}
+		if !strings.Contains(string(body), `"message":"invalid code"`) {
+			t.Fatalf("attempt %d body=%s, want invalid code", i+1, body)
+		}
+	}
+	resp, body := doJSON(t, client, http.MethodPost, ts.URL+"/api/auth/login/2fa", map[string]any{
+		"tempToken": tempToken,
+		"code":      "not-a-valid-code",
+	}, nil)
+	if resp.StatusCode != http.StatusUnauthorized || clientHasSessionCookie(t, client, ts.URL) {
+		t.Fatalf("sixth attempt status=%d session=%v body=%s", resp.StatusCode, clientHasSessionCookie(t, client, ts.URL), body)
+	}
+	if !strings.Contains(string(body), "too many attempts; please sign in again") {
+		t.Fatalf("sixth attempt body=%s, want too many attempts; please sign in again", body)
+	}
+}
+
 func TestLogin2FAJSONDoesNotLeakSecrets(t *testing.T) {
 	raw, err := json.Marshal(userToJSON(store.User{ID: 1, Email: "a@b.com", Name: "A"}))
 	if err != nil {

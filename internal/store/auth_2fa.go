@@ -107,7 +107,9 @@ func (s *Store) GetUserByLogin2FAPendingToken(ctx context.Context, token string)
 	return u, attemptCount, nil
 }
 
-// IncrementLogin2FAPendingAttempt increments attempt_count and returns ErrTooManyAttempts if over cap.
+// IncrementLogin2FAPendingAttempt atomically advances attempt_count using SQLite's
+// own UPDATE. Each admitted call increases the persisted count by one, at most
+// maxAttemptsPerToken times. The next call invalidates the unexpired challenge.
 func (s *Store) IncrementLogin2FAPendingAttempt(ctx context.Context, token string) error {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -116,23 +118,37 @@ func (s *Store) IncrementLogin2FAPendingAttempt(ctx context.Context, token strin
 	tokenHash := hashToken(token)
 	nowMs := time.Now().UTC().UnixMilli()
 
-	var attemptCount int
-	if err := s.db.QueryRowContext(ctx, `SELECT attempt_count FROM login_2fa_pending WHERE token_hash = ? AND expires_at > ?`, tokenHash, nowMs).Scan(&attemptCount); err != nil {
-		if err == sql.ErrNoRows {
-			return ErrNotFound
-		}
-		return fmt.Errorf("get attempt count: %w", err)
-	}
-	attemptCount++
-	if attemptCount > maxAttemptsPerToken {
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM login_2fa_pending WHERE token_hash = ?`, tokenHash)
-		return ErrTooManyAttempts
-	}
-	_, err := s.db.ExecContext(ctx, `UPDATE login_2fa_pending SET attempt_count = ?, last_attempt_at = ? WHERE token_hash = ?`, attemptCount, nowMs, tokenHash)
+	admitted, err := s.db.ExecContext(ctx, `
+UPDATE login_2fa_pending
+SET attempt_count = attempt_count + 1, last_attempt_at = ?
+WHERE token_hash = ? AND expires_at > ? AND attempt_count < ?`,
+		nowMs, tokenHash, nowMs, maxAttemptsPerToken)
 	if err != nil {
 		return fmt.Errorf("increment attempt: %w", err)
 	}
-	return nil
+	changed, err := admitted.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count incremented attempts: %w", err)
+	}
+	if changed == 1 {
+		return nil
+	}
+
+	invalidated, err := s.db.ExecContext(ctx, `
+DELETE FROM login_2fa_pending
+WHERE token_hash = ? AND expires_at > ? AND attempt_count >= ?`,
+		tokenHash, nowMs, maxAttemptsPerToken)
+	if err != nil {
+		return fmt.Errorf("invalidate exhausted login 2fa pending: %w", err)
+	}
+	removed, err := invalidated.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count invalidated login 2fa pending: %w", err)
+	}
+	if removed == 1 {
+		return ErrTooManyAttempts
+	}
+	return ErrNotFound
 }
 
 // CompleteLogin2FA consumes a pending 2FA challenge and creates a session in one
@@ -144,7 +160,7 @@ func (s *Store) CompleteLogin2FA(ctx context.Context, rawPendingToken string, us
 	if rawPendingToken == "" || userID <= 0 {
 		return "", time.Time{}, ErrNotFound
 	}
-	if proof.ID > 0 && proof.Hash == "" {
+	if proof.ID < 0 || (proof.ID == 0 && proof.Hash != "") || (proof.ID > 0 && proof.Hash == "") {
 		return "", time.Time{}, ErrUnauthorized
 	}
 	if sessionTTL <= 0 {

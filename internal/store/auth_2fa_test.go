@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"sync"
@@ -99,6 +100,205 @@ func TestIncrementAttemptRevokesAfterMax(t *testing.T) {
 	_, _, err = st.GetUserByLogin2FAPendingToken(ctx, token)
 	if err != ErrNotFound {
 		t.Fatalf("expected ErrNotFound after revoke, got %v", err)
+	}
+}
+
+func login2FAPendingRow(t *testing.T, st *Store, token string) (attemptCount int, exists bool) {
+	t.Helper()
+	err := st.db.QueryRow(`SELECT attempt_count FROM login_2fa_pending WHERE token_hash = ?`, hashToken(token)).Scan(&attemptCount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false
+	}
+	if err != nil {
+		t.Fatalf("read login 2fa pending: %v", err)
+	}
+	return attemptCount, true
+}
+
+func TestIncrementLogin2FAPendingAttemptIsAtomic(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "inc-atomic@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatalf("CreateLogin2FAPending: %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, maxAttemptsPerToken)
+	var wg sync.WaitGroup
+	for range maxAttemptsPerToken {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- st.IncrementLogin2FAPendingAttempt(ctx, token)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent admitted increment: %v", err)
+		}
+	}
+	count, exists := login2FAPendingRow(t, st, token)
+	if !exists {
+		t.Fatal("pending challenge was deleted before the sixth attempt")
+	}
+	if count != maxAttemptsPerToken {
+		t.Fatalf("attempt_count=%d, want %d (lost concurrent updates)", count, maxAttemptsPerToken)
+	}
+}
+
+func TestIncrementLogin2FAPendingAttemptConcurrentCapInvalidates(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "inc-cap@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatalf("CreateLogin2FAPending: %v", err)
+	}
+
+	const callers = 12
+	start := make(chan struct{})
+	errs := make(chan error, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- st.IncrementLogin2FAPendingAttempt(ctx, token)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var admitted, exhausted, missing int
+	for err := range errs {
+		switch {
+		case err == nil:
+			admitted++
+		case errors.Is(err, ErrTooManyAttempts):
+			exhausted++
+		case errors.Is(err, ErrNotFound):
+			missing++
+		default:
+			t.Fatalf("unexpected increment error: %v", err)
+		}
+	}
+	if admitted != maxAttemptsPerToken {
+		t.Fatalf("admitted=%d, want %d", admitted, maxAttemptsPerToken)
+	}
+	if exhausted != 1 {
+		t.Fatalf("exhausted=%d, want 1 sixth-attempt invalidation", exhausted)
+	}
+	if missing != callers-maxAttemptsPerToken-1 {
+		t.Fatalf("missing=%d, want %d", missing, callers-maxAttemptsPerToken-1)
+	}
+	if _, exists := login2FAPendingRow(t, st, token); exists {
+		t.Fatal("sixth attempt left the challenge in place")
+	}
+	if _, _, err := st.GetUserByLogin2FAPendingToken(ctx, token); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("invalidated challenge still authorized: %v", err)
+	}
+}
+
+func TestIncrementLogin2FAPendingAttemptFifthStillCompletes(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, _ := enrollLogin2FAUser(t, st, "inc-fifth@x.com")
+	token, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatalf("CreateLogin2FAPending: %v", err)
+	}
+	for i := 0; i < maxAttemptsPerToken; i++ {
+		if err := st.IncrementLogin2FAPendingAttempt(ctx, token); err != nil {
+			t.Fatalf("increment %d: %v", i, err)
+		}
+	}
+	got, count, err := st.GetUserByLogin2FAPendingToken(ctx, token)
+	if err != nil || got.ID != u.ID || count != maxAttemptsPerToken {
+		t.Fatalf("fifth attempt user=%+v count=%d err=%v", got, count, err)
+	}
+	if _, _, err := st.CompleteLogin2FA(ctx, token, u.ID, RecoveryCodeProof{}, time.Hour); err != nil {
+		t.Fatalf("fifth attempt CompleteLogin2FA: %v", err)
+	}
+	if sessionCountForUser(t, st, u.ID) != 1 {
+		t.Fatalf("sessions=%d, want 1", sessionCountForUser(t, st, u.ID))
+	}
+}
+
+func TestIncrementLogin2FAPendingAttemptDoesNotReviveExpiredOrReplaced(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "inc-revive@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+
+	expired, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatalf("CreateLogin2FAPending: %v", err)
+	}
+	if _, err := st.db.Exec(`UPDATE login_2fa_pending SET expires_at = 0 WHERE token_hash = ?`, hashToken(expired)); err != nil {
+		t.Fatalf("expire pending: %v", err)
+	}
+	if err := st.IncrementLogin2FAPendingAttempt(ctx, expired); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired increment err=%v, want ErrNotFound", err)
+	}
+	count, exists := login2FAPendingRow(t, st, expired)
+	if !exists {
+		t.Fatal("expired challenge was deleted instead of left unusable")
+	}
+	if count != 0 {
+		t.Fatalf("expired attempt_count=%d, want 0", count)
+	}
+
+	stale, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, _, err := st.CreateLogin2FAPending(ctx, u.ID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.IncrementLogin2FAPendingAttempt(ctx, stale); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("replaced increment err=%v, want ErrNotFound", err)
+	}
+	if _, exists := login2FAPendingRow(t, st, stale); exists {
+		t.Fatal("replaced challenge was revived")
+	}
+	if err := st.IncrementLogin2FAPendingAttempt(ctx, current); err != nil {
+		t.Fatalf("current increment: %v", err)
+	}
+	count, exists = login2FAPendingRow(t, st, current)
+	if !exists || count != 1 {
+		t.Fatalf("current challenge exists=%v count=%d, want 1", exists, count)
+	}
+
+	if err := st.DeleteLogin2FAPendingToken(ctx, current); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.IncrementLogin2FAPendingAttempt(ctx, current); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted increment err=%v, want ErrNotFound", err)
+	}
+	if _, exists := login2FAPendingRow(t, st, current); exists {
+		t.Fatal("deleted challenge was revived")
 	}
 }
 
@@ -1279,6 +1479,42 @@ func TestCompleteLogin2FAIncompleteProofLeavesPending(t *testing.T) {
 	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
 	if err != nil || !consumed {
 		t.Fatalf("incomplete proof consumed recovery: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestCompleteLogin2FARejectsInvalidProofShapes(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, codes := enrollLogin2FAUser(t, st, "complete-shape@x.com")
+	valid := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	cases := []struct {
+		name  string
+		proof RecoveryCodeProof
+	}{
+		{name: "negative id", proof: RecoveryCodeProof{ID: -1, Hash: valid.Hash}},
+		{name: "zero id with hash", proof: RecoveryCodeProof{ID: 0, Hash: valid.Hash}},
+		{name: "positive id without hash", proof: RecoveryCodeProof{ID: valid.ID}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pending := readyLogin2FAPending(t, st, u.ID)
+			_, _, err := st.CompleteLogin2FA(ctx, pending, u.ID, tc.proof, time.Hour)
+			if !errors.Is(err, ErrUnauthorized) {
+				t.Fatalf("err=%v, want ErrUnauthorized", err)
+			}
+			if sessionCountForUser(t, st, u.ID) != 0 {
+				t.Fatal("invalid proof shape created a session")
+			}
+			if _, _, err := st.GetUserByLogin2FAPendingToken(ctx, pending); err != nil {
+				t.Fatalf("invalid proof shape consumed pending: %v", err)
+			}
+		})
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("invalid proof shape consumed recovery: consumed=%v err=%v", consumed, err)
 	}
 }
 
