@@ -476,10 +476,13 @@ type storeAPI interface {
 	DeleteTwoFactorEnrollmentByToken(ctx context.Context, token string) error
 	GetUserTwoFactorSecret(ctx context.Context, userID int64) (string, error)
 	SetUserTwoFactor(ctx context.Context, userID int64, encryptedSecret string) error
+	CompleteTwoFactorEnrollment(ctx context.Context, userID int64, setupToken string, codes []string) error
 	ClearUserTwoFactor(ctx context.Context, userID int64) error
 	AddRecoveryCodes(ctx context.Context, userID int64, codes []string) error
+	ReplaceRecoveryCodes(ctx context.Context, userID int64, codes []string, proof store.RecoveryCodeProof) error
 	ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error)
 	MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error)
+	MatchRecoveryCodeProof(ctx context.Context, userID int64, code string) (int64, string, error)
 	ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error)
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)

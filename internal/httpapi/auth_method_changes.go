@@ -47,30 +47,38 @@ func classifySecondFactor(code string) string {
 }
 
 func (s *Server) verifySensitiveSecondFactor(r *http.Request, u store.User, code string) (bool, int64, error) {
+	ok, proof, err := s.verifySensitiveSecondFactorProof(r, u, code)
+	return ok, proof.ID, err
+}
+
+func (s *Server) verifySensitiveSecondFactorProof(r *http.Request, u store.User, code string) (bool, store.RecoveryCodeProof, error) {
 	if !u.IsTwoFactorActive() {
-		return true, 0, nil
+		return true, store.RecoveryCodeProof{}, nil
 	}
 	if !s.allowSensitive(s.secondFactorLimiter, r, u.ID) {
-		return false, 0, errSensitiveRateLimited
+		return false, store.RecoveryCodeProof{}, errSensitiveRateLimited
 	}
 	switch classifySecondFactor(code) {
 	case "recovery":
 		if !s.allowSensitive(s.recoveryCodeLimiter, r, u.ID) {
-			return false, 0, errSensitiveRateLimited
+			return false, store.RecoveryCodeProof{}, errSensitiveRateLimited
 		}
-		recoveryCodeID, err := s.store.MatchRecoveryCode(r.Context(), u.ID, code)
-		return recoveryCodeID != 0, recoveryCodeID, err
+		id, hash, err := s.store.MatchRecoveryCodeProof(r.Context(), u.ID, code)
+		if err != nil || id == 0 || hash == "" {
+			return false, store.RecoveryCodeProof{}, err
+		}
+		return true, store.RecoveryCodeProof{ID: id, Hash: hash}, nil
 	case "totp":
 		if !s.allowSensitive(s.totpLimiter, r, u.ID) {
-			return false, 0, errSensitiveRateLimited
+			return false, store.RecoveryCodeProof{}, errSensitiveRateLimited
 		}
 		secret, err := s.store.GetUserTwoFactorSecret(r.Context(), u.ID)
 		if err != nil {
-			return false, 0, err
+			return false, store.RecoveryCodeProof{}, err
 		}
-		return crypto.ValidateTOTPCode(secret, strings.TrimSpace(code)), 0, nil
+		return crypto.ValidateTOTPCode(secret, strings.TrimSpace(code)), store.RecoveryCodeProof{}, nil
 	default:
-		return false, 0, nil
+		return false, store.RecoveryCodeProof{}, nil
 	}
 }
 

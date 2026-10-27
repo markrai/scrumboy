@@ -3676,18 +3676,82 @@ function showDisable2FADialog(): void {
   }
 }
 
-async function showRegenerateRecoveryCodesDialog(): Promise<void> {
-  try {
-    const res = await apiFetch<{ recoveryCodes: string[] }>("/api/auth/2fa/recovery/regenerate", {
-      method: "POST",
-    });
-    if (res?.recoveryCodes?.length) {
-      showRecoveryCodesDialog(res.recoveryCodes);
-      showToast(t("settings.profile.toast.recoveryRegenerated"));
-      await renderSettingsModal();
+function showRegenerateRecoveryCodesDialog(): void {
+  const dialog = document.createElement("dialog");
+  dialog.className = "dialog";
+  dialog.innerHTML = `
+    <form method="dialog" class="dialog__form" id="regenerateRecoveryCodesForm">
+      <div class="dialog__header">
+        <div class="dialog__title" data-i18n-text="settings.profile.recovery.regenerateTitle">Regenerate recovery codes</div>
+        <button class="btn btn--ghost" type="button" id="regenerateRecoveryCodesClose" aria-label="Close" data-i18n-aria-label="common.close">✕</button>
+      </div>
+      <div class="muted" style="margin-bottom: 12px;" data-i18n-text="settings.profile.recovery.regenerateDescription">Enter an authenticator code or unused recovery code to replace your recovery codes.</div>
+      <label class="field">
+        <div class="field__label" data-i18n-text="settings.profile.authentication.twoFactorCode">Authenticator or recovery code</div>
+        <input type="text" id="regenerateRecoveryCodesCode" class="input" autocomplete="one-time-code" required />
+        <div id="regenerateRecoveryCodesError" class="field-error" style="display: none;" role="alert"></div>
+      </label>
+      <div class="dialog__footer">
+        <div class="spacer"></div>
+        <button type="button" class="btn btn--ghost" id="regenerateRecoveryCodesCancel" data-i18n-text="common.cancel">Cancel</button>
+        <button type="submit" class="btn" id="regenerateRecoveryCodesSubmit" data-i18n-text="settings.profile.recovery.regenerateSubmit">Regenerate</button>
+      </div>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  (dialog as HTMLDialogElement).showModal();
+  const releaseLocale = bindDialogLocale(dialog);
+
+  const form = dialog.querySelector<HTMLFormElement>("#regenerateRecoveryCodesForm");
+  const codeInput = dialog.querySelector<HTMLInputElement>("#regenerateRecoveryCodesCode");
+  const errorEl = dialog.querySelector<HTMLElement>("#regenerateRecoveryCodesError");
+
+  const close = attachDialogClose(dialog, releaseLocale, () => {
+    if (codeInput) codeInput.value = "";
+  });
+
+  dialog.querySelector<HTMLElement>("#regenerateRecoveryCodesClose")?.addEventListener("click", close);
+  dialog.querySelector<HTMLElement>("#regenerateRecoveryCodesCancel")?.addEventListener("click", close);
+  dialog.addEventListener("click", (e) => {
+    if (e.target === dialog) close();
+  });
+
+  const showError = (msg: string) => {
+    if (errorEl) {
+      errorEl.textContent = msg;
+      errorEl.style.display = "";
     }
-  } catch (err: any) {
-    showToast(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.recovery.regenerateFailed" }));
+    showToast(msg);
+  };
+  const clearError = () => {
+    if (errorEl) {
+      errorEl.textContent = "";
+      errorEl.style.display = "none";
+    }
+  };
+
+  if (form && codeInput) {
+    codeInput.addEventListener("input", clearError);
+    codeInput.addEventListener("focus", clearError);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+      const code = codeInput.value.trim();
+      try {
+        const res = await apiFetch<{ recoveryCodes: string[] }>("/api/auth/2fa/recovery/regenerate", {
+          method: "POST",
+          body: JSON.stringify({ code }),
+        });
+        close();
+        if (res?.recoveryCodes?.length) {
+          showRecoveryCodesDialog(res.recoveryCodes);
+        }
+        showToast(t("settings.profile.toast.recoveryRegenerated"));
+        await renderSettingsModal();
+      } catch (err: any) {
+        showError(apiErrorMessageOrRaw(err, { fallbackKey: "settings.profile.recovery.regenerateFailed" }));
+      }
+    });
   }
 }
 

@@ -286,6 +286,163 @@ func (s *Store) SetUserTwoFactor(ctx context.Context, userID int64, encryptedSec
 	return nil
 }
 
+// CompleteTwoFactorEnrollment enables 2FA, inserts the complete recovery-code
+// set, and consumes the enrollment in one transaction. Recovery codes are
+// hashed before the transaction begins so a hashing failure writes nothing.
+func (s *Store) CompleteTwoFactorEnrollment(ctx context.Context, userID int64, setupToken string, codes []string) error {
+	if s.encryptionKey == nil {
+		return Err2FAEncryptionNotConfigured
+	}
+	if userID <= 0 {
+		return fmt.Errorf("%w: invalid user id", ErrValidation)
+	}
+	setupToken = strings.TrimSpace(setupToken)
+	if setupToken == "" {
+		return ErrNotFound
+	}
+	hashes, err := hashRecoveryCodeSet(codes)
+	if err != nil {
+		return err
+	}
+
+	tokenHash := hashToken(setupToken)
+	nowMs := time.Now().UTC().UnixMilli()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin complete 2fa enrollment tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var enrollUserID int64
+	var secretEnc string
+	err = tx.QueryRowContext(ctx, `SELECT user_id, secret_enc FROM two_factor_enrollments WHERE token_hash = ? AND expires_at > ?`, tokenHash, nowMs).Scan(&enrollUserID, &secretEnc)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get enrollment for complete: %w", err)
+	}
+	if enrollUserID != userID {
+		return ErrForbidden
+	}
+	if secretEnc == "" {
+		return fmt.Errorf("%w: secret required", ErrValidation)
+	}
+
+	deleted, err := tx.ExecContext(ctx, `DELETE FROM two_factor_enrollments WHERE token_hash = ? AND user_id = ?`, tokenHash, userID)
+	if err != nil {
+		return fmt.Errorf("consume enrollment: %w", err)
+	}
+	if n, err := deleted.RowsAffected(); err != nil {
+		return fmt.Errorf("count consumed enrollments: %w", err)
+	} else if n != 1 {
+		return ErrNotFound
+	}
+
+	enabled, err := tx.ExecContext(ctx, `UPDATE users SET two_factor_enabled = 1, two_factor_secret_enc = ? WHERE id = ? AND two_factor_enabled = 0`, secretEnc, userID)
+	if err != nil {
+		return fmt.Errorf("enable user two factor: %w", err)
+	}
+	if n, err := enabled.RowsAffected(); err != nil {
+		return fmt.Errorf("count enabled two factor: %w", err)
+	} else if n != 1 {
+		return fmt.Errorf("%w: two-factor authentication is already enabled", ErrConflict)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_recovery_codes WHERE user_id = ?`, userID); err != nil {
+		return fmt.Errorf("clear leftover recovery codes: %w", err)
+	}
+	if err := insertHashedRecoveryCodesTx(ctx, tx, userID, hashes); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit complete 2fa enrollment tx: %w", err)
+	}
+	return nil
+}
+
+// RecoveryCodeProof is a matched unused recovery-code identity. Hash is the
+// stored bcrypt value at match time. ReplaceRecoveryCodes compare-and-swaps
+// both the row ID and this hash so a later row that reuses the SQLite
+// INTEGER PRIMARY KEY cannot satisfy a stale proof.
+type RecoveryCodeProof struct {
+	ID   int64
+	Hash string
+}
+
+// ReplaceRecoveryCodes replaces the user's recovery-code set in one
+// transaction. When proof.ID is set, that unused code is consumed in the
+// same transaction as the replay guard, identified by both row ID and the
+// bcrypt hash captured at match time. Codes are hashed before the
+// transaction begins so a hashing failure leaves the prior set intact.
+func (s *Store) ReplaceRecoveryCodes(ctx context.Context, userID int64, codes []string, proof RecoveryCodeProof) error {
+	if userID <= 0 {
+		return fmt.Errorf("%w: invalid user id", ErrValidation)
+	}
+	if proof.ID < 0 || (proof.ID == 0 && proof.Hash != "") || (proof.ID > 0 && proof.Hash == "") {
+		return ErrUnauthorized
+	}
+	hashes, err := hashRecoveryCodeSet(codes)
+	if err != nil {
+		return err
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin replace recovery codes tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var enabled int
+	if err := tx.QueryRowContext(ctx, `SELECT two_factor_enabled FROM users WHERE id = ?`, userID).Scan(&enabled); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get two factor for replace recovery codes: %w", err)
+	}
+	if enabled != 1 {
+		return fmt.Errorf("%w: two-factor authentication is not enabled", ErrValidation)
+	}
+
+	nowMs := time.Now().UTC().UnixMilli()
+	if proof.ID > 0 {
+		result, err := tx.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL AND code_hash = ?`, nowMs, proof.ID, userID, proof.Hash)
+		if err != nil {
+			return fmt.Errorf("consume recovery code for regenerate: %w", err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("count consumed recovery codes for regenerate: %w", err)
+		}
+		if changed != 1 {
+			return ErrUnauthorized
+		}
+		// Keep the proof row until after insert so this transaction cannot
+		// recycle its own INTEGER PRIMARY KEY onto a replacement row.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM user_recovery_codes WHERE user_id = ? AND id != ?`, userID, proof.ID); err != nil {
+			return fmt.Errorf("delete recovery codes: %w", err)
+		}
+		if err := insertHashedRecoveryCodesTx(ctx, tx, userID, hashes); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM user_recovery_codes WHERE id = ? AND user_id = ?`, proof.ID, userID); err != nil {
+			return fmt.Errorf("delete consumed recovery proof: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM user_recovery_codes WHERE user_id = ?`, userID); err != nil {
+			return fmt.Errorf("delete recovery codes: %w", err)
+		}
+		if err := insertHashedRecoveryCodesTx(ctx, tx, userID, hashes); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit replace recovery codes tx: %w", err)
+	}
+	return nil
+}
+
 // ClearUserTwoFactor clears both two_factor_enabled and two_factor_secret_enc.
 func (s *Store) ClearUserTwoFactor(ctx context.Context, userID int64) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
@@ -352,6 +509,44 @@ func GenerateRecoveryCodes(n int) []string {
 	return codes
 }
 
+func normalizeRecoveryCode(code string) string {
+	return strings.ReplaceAll(strings.ToUpper(strings.TrimSpace(code)), "-", "")
+}
+
+func hashRecoveryCodeSet(codes []string) ([]string, error) {
+	if len(codes) != RecoveryCodeCount {
+		return nil, fmt.Errorf("%w: expected %d recovery codes", ErrValidation, RecoveryCodeCount)
+	}
+	hashes := make([]string, 0, len(codes))
+	seen := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		normalized := normalizeRecoveryCode(code)
+		if len(normalized) != recoveryCodeLength {
+			return nil, fmt.Errorf("%w: invalid recovery code", ErrValidation)
+		}
+		if _, dup := seen[normalized]; dup {
+			return nil, fmt.Errorf("%w: duplicate recovery code", ErrValidation)
+		}
+		seen[normalized] = struct{}{}
+		hash, err := bcrypt.GenerateFromPassword([]byte(normalized), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, fmt.Errorf("hash recovery code: %w", err)
+		}
+		hashes = append(hashes, string(hash))
+	}
+	return hashes, nil
+}
+
+func insertHashedRecoveryCodesTx(ctx context.Context, tx *sql.Tx, userID int64, hashes []string) error {
+	nowMs := time.Now().UTC().UnixMilli()
+	for _, hash := range hashes {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO user_recovery_codes(user_id, code_hash, created_at) VALUES (?, ?, ?)`, userID, hash, nowMs); err != nil {
+			return fmt.Errorf("insert recovery code: %w", err)
+		}
+	}
+	return nil
+}
+
 // AddRecoveryCodes stores bcrypt hashes of recovery codes.
 func (s *Store) AddRecoveryCodes(ctx context.Context, userID int64, codes []string) error {
 	if userID <= 0 {
@@ -359,8 +554,7 @@ func (s *Store) AddRecoveryCodes(ctx context.Context, userID int64, codes []stri
 	}
 	nowMs := time.Now().UTC().UnixMilli()
 	for _, code := range codes {
-		code = strings.TrimSpace(strings.ToUpper(code))
-		code = strings.ReplaceAll(code, "-", "")
+		code = normalizeRecoveryCode(code)
 		if len(code) != recoveryCodeLength {
 			continue
 		}
@@ -379,18 +573,26 @@ func (s *Store) AddRecoveryCodes(ctx context.Context, userID int64, codes []stri
 // must use ConsumeRecoveryCodeID, or a transactional operation that consumes the
 // returned row, before treating the proof as authorized.
 func (s *Store) MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error) {
-	code = strings.TrimSpace(strings.ToUpper(code))
-	code = strings.ReplaceAll(code, "-", "")
+	id, _, err := s.MatchRecoveryCodeProof(ctx, userID, code)
+	return id, err
+}
+
+// MatchRecoveryCodeProof finds an unused recovery code and returns both its
+// row ID and stored bcrypt hash. The hash is the durable identity used by
+// ReplaceRecoveryCodes; the ID alone is not.
+func (s *Store) MatchRecoveryCodeProof(ctx context.Context, userID int64, code string) (int64, string, error) {
+	code = normalizeRecoveryCode(code)
 	if len(code) != recoveryCodeLength {
-		return 0, nil
+		return 0, "", nil
 	}
 
 	rows, err := s.db.QueryContext(ctx, `SELECT id, code_hash FROM user_recovery_codes WHERE user_id = ? AND used_at IS NULL`, userID)
 	if err != nil {
-		return 0, fmt.Errorf("list recovery codes: %w", err)
+		return 0, "", fmt.Errorf("list recovery codes: %w", err)
 	}
 
 	var matchingID int64
+	var matchingHash string
 	var scanErr error
 	for rows.Next() {
 		var id int64
@@ -401,19 +603,20 @@ func (s *Store) MatchRecoveryCode(ctx context.Context, userID int64, code string
 		}
 		if bcrypt.CompareHashAndPassword([]byte(codeHash), []byte(code)) == nil {
 			matchingID = id
+			matchingHash = codeHash
 			break
 		}
 	}
 	if err := rows.Close(); err != nil {
-		return 0, fmt.Errorf("close recovery code rows: %w", err)
+		return 0, "", fmt.Errorf("close recovery code rows: %w", err)
 	}
 	if scanErr != nil {
-		return 0, fmt.Errorf("scan recovery code: %w", scanErr)
+		return 0, "", fmt.Errorf("scan recovery code: %w", scanErr)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate recovery codes: %w", err)
+		return 0, "", fmt.Errorf("iterate recovery codes: %w", err)
 	}
-	return matchingID, nil
+	return matchingID, matchingHash, nil
 }
 
 // ConsumeRecoveryCodeID atomically marks a matched code used. The used_at
