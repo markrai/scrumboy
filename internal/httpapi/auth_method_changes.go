@@ -46,11 +46,6 @@ func classifySecondFactor(code string) string {
 	return "invalid"
 }
 
-func (s *Server) verifySensitiveSecondFactor(r *http.Request, u store.User, code string) (bool, int64, error) {
-	ok, proof, err := s.verifySensitiveSecondFactorProof(r, u, code)
-	return ok, proof.ID, err
-}
-
 func (s *Server) verifySensitiveSecondFactorProof(r *http.Request, u store.User, code string) (bool, store.RecoveryCodeProof, error) {
 	if !u.IsTwoFactorActive() {
 		return true, store.RecoveryCodeProof{}, nil
@@ -190,7 +185,7 @@ func (s *Server) handleOIDCSetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	verified, recoveryCodeID, err := s.verifySensitiveSecondFactor(r, u, in.TwoFactorCode)
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.TwoFactorCode)
 	if errors.Is(err, errSensitiveRateLimited) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
@@ -203,8 +198,8 @@ func (s *Server) handleOIDCSetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	if recoveryCodeID > 0 {
-		err = s.store.SetFirstPasswordWithRecoveryCode(r.Context(), u.ID, grant, sessionToken, in.NewPassword, recoveryCodeID)
+	if proof.ID > 0 {
+		err = s.store.SetFirstPasswordWithRecoveryCode(r.Context(), u.ID, grant, sessionToken, in.NewPassword, proof)
 	} else {
 		err = s.store.SetFirstPassword(r.Context(), u.ID, grant, sessionToken, in.NewPassword)
 	}

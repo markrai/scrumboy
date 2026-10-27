@@ -794,3 +794,150 @@ func TestReplaceRecoveryCodesRejectsIDOnlyProof(t *testing.T) {
 		t.Fatal("id-only proof mutated recovery codes")
 	}
 }
+
+func TestConsumeRecoveryCodeProofRejectsStaleProofAfterRowIDReuse(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "consume-stale-id@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token := seedTwoFactorEnrollment(t, st, u.ID)
+	original := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.CompleteTwoFactorEnrollment(ctx, u.ID, token, original); err != nil {
+		t.Fatalf("CompleteTwoFactorEnrollment: %v", err)
+	}
+	stale := matchRecoveryProof(t, st, u.ID, original[1])
+	current := matchRecoveryProof(t, st, u.ID, original[0])
+	replacement := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.ReplaceRecoveryCodes(ctx, u.ID, replacement, current); err != nil {
+		t.Fatalf("ReplaceRecoveryCodes: %v", err)
+	}
+	ids := recoveryCodeIDs(t, st, u.ID)
+	if !containsRecoveryID(ids, stale.ID) {
+		t.Fatalf("replacement ids %v did not reuse stale proof id %d", ids, stale.ID)
+	}
+
+	consumed, err := st.ConsumeRecoveryCodeProof(ctx, u.ID, stale)
+	if err != nil {
+		t.Fatalf("ConsumeRecoveryCodeProof stale: %v", err)
+	}
+	if consumed {
+		t.Fatal("stale proof consumed a replacement recovery row")
+	}
+	if !hashesMatchCodeSet(recoveryCodeHashes(t, st, u.ID), replacement) {
+		t.Fatal("stale proof mutated replacement recovery codes")
+	}
+	ok, err := st.ConsumeRecoveryCode(ctx, u.ID, replacement[0])
+	if err != nil || !ok {
+		t.Fatalf("replacement plaintext consumed=%v err=%v", ok, err)
+	}
+}
+
+func TestConsumeRecoveryCodeRejectsPlaintextAfterRegeneration(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "consume-old-plaintext@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token := seedTwoFactorEnrollment(t, st, u.ID)
+	original := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.CompleteTwoFactorEnrollment(ctx, u.ID, token, original); err != nil {
+		t.Fatalf("CompleteTwoFactorEnrollment: %v", err)
+	}
+	current := matchRecoveryProof(t, st, u.ID, original[0])
+	replacement := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.ReplaceRecoveryCodes(ctx, u.ID, replacement, current); err != nil {
+		t.Fatalf("ReplaceRecoveryCodes: %v", err)
+	}
+
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, original[1])
+	if err != nil {
+		t.Fatalf("ConsumeRecoveryCode old plaintext: %v", err)
+	}
+	if consumed {
+		t.Fatal("generic helper consumed a replacement row using old plaintext")
+	}
+	if !hashesMatchCodeSet(recoveryCodeHashes(t, st, u.ID), replacement) {
+		t.Fatal("old plaintext mutated replacement recovery codes")
+	}
+}
+
+func TestConsumeRecoveryCodeProofConcurrentSameProof(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "consume-proof-concurrent@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token := seedTwoFactorEnrollment(t, st, u.ID)
+	codes := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.CompleteTwoFactorEnrollment(ctx, u.ID, token, codes); err != nil {
+		t.Fatalf("CompleteTwoFactorEnrollment: %v", err)
+	}
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	start := make(chan struct{})
+	results := make(chan bool, 2)
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			consumed, err := st.ConsumeRecoveryCodeProof(ctx, u.ID, proof)
+			results <- consumed
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("ConsumeRecoveryCodeProof: %v", err)
+		}
+	}
+	successes := 0
+	for consumed := range results {
+		if consumed {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("successful concurrent proof consumptions = %d, want 1", successes)
+	}
+}
+
+func TestConsumeRecoveryCodeProofRejectsIncompleteProofWithoutError(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, err := st.BootstrapUser(ctx, "consume-incomplete@x.com", "password123", "U")
+	if err != nil {
+		t.Fatalf("BootstrapUser: %v", err)
+	}
+	token := seedTwoFactorEnrollment(t, st, u.ID)
+	codes := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.CompleteTwoFactorEnrollment(ctx, u.ID, token, codes); err != nil {
+		t.Fatalf("CompleteTwoFactorEnrollment: %v", err)
+	}
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+	consumed, err := st.ConsumeRecoveryCodeProof(ctx, u.ID, RecoveryCodeProof{ID: proof.ID})
+	if err != nil {
+		t.Fatalf("incomplete proof should not surface as a store error: %v", err)
+	}
+	if consumed {
+		t.Fatal("id-only proof consumed a recovery code")
+	}
+	ok, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !ok {
+		t.Fatalf("id-only proof consumed the code: consumed=%v err=%v", ok, err)
+	}
+}

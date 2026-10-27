@@ -213,20 +213,20 @@ SELECT EXISTS(
 // SetFirstPassword consumes a narrowly scoped grant and uses an exact-value CAS
 // so it cannot overwrite a valid password installed by a concurrent operation.
 func (s *Store) SetFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string) error {
-	return s.setFirstPassword(ctx, userID, rawGrant, sessionToken, password, 0)
+	return s.setFirstPassword(ctx, userID, rawGrant, sessionToken, password, RecoveryCodeProof{})
 }
 
-// SetFirstPasswordWithRecoveryCode consumes the recovery code and installs the
-// first password in one transaction. A failed grant check, password CAS, or
-// commit therefore leaves the recovery code usable.
-func (s *Store) SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, recoveryCodeID int64) error {
-	if recoveryCodeID <= 0 {
+// SetFirstPasswordWithRecoveryCode consumes the recovery-code identity and
+// installs the first password in one transaction. A failed grant check,
+// password CAS, or commit therefore leaves the recovery code usable.
+func (s *Store) SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, proof RecoveryCodeProof) error {
+	if proof.ID <= 0 || proof.Hash == "" {
 		return ErrUnauthorized
 	}
-	return s.setFirstPassword(ctx, userID, rawGrant, sessionToken, password, recoveryCodeID)
+	return s.setFirstPassword(ctx, userID, rawGrant, sessionToken, password, proof)
 }
 
-func (s *Store) setFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string, recoveryCodeID int64) error {
+func (s *Store) setFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string, proof RecoveryCodeProof) error {
 	if err := auth.ValidatePassword(password); err != nil {
 		return err
 	}
@@ -252,17 +252,9 @@ func (s *Store) setFirstPassword(ctx context.Context, userID int64, rawGrant, se
 	if old.Valid && IsUsablePasswordHash(old.String) {
 		return ErrConflict
 	}
-	if recoveryCodeID > 0 {
-		result, err := tx.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL`, now, recoveryCodeID, userID)
-		if err != nil {
-			return fmt.Errorf("consume recovery code for first password: %w", err)
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("count consumed recovery codes for first password: %w", err)
-		}
-		if changed != 1 {
-			return ErrUnauthorized
+	if proof.ID > 0 {
+		if err := consumeRecoveryProofTx(ctx, tx, userID, proof); err != nil {
+			return err
 		}
 	}
 	var result sql.Result

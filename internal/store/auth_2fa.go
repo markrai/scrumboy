@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -579,17 +580,9 @@ func (s *Store) AddRecoveryCodes(ctx context.Context, userID int64, codes []stri
 	return nil
 }
 
-// MatchRecoveryCode finds an unused recovery code without consuming it. Callers
-// must use ConsumeRecoveryCodeID, or a transactional operation that consumes the
-// returned row, before treating the proof as authorized.
-func (s *Store) MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error) {
-	id, _, err := s.MatchRecoveryCodeProof(ctx, userID, code)
-	return id, err
-}
-
 // MatchRecoveryCodeProof finds an unused recovery code and returns both its
 // row ID and stored bcrypt hash. The hash is the durable identity used by
-// ReplaceRecoveryCodes; the ID alone is not.
+// recovery-code consumption; the ID alone is not.
 func (s *Store) MatchRecoveryCodeProof(ctx context.Context, userID int64, code string) (int64, string, error) {
 	code = normalizeRecoveryCode(code)
 	if len(code) != recoveryCodeLength {
@@ -629,31 +622,36 @@ func (s *Store) MatchRecoveryCodeProof(ctx context.Context, userID int64, code s
 	return matchingID, matchingHash, nil
 }
 
-// ConsumeRecoveryCodeID atomically marks a matched code used. The used_at
-// predicate is the replay guard when two requests verify the same bcrypt hash.
-func (s *Store) ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error) {
-	if userID <= 0 || recoveryCodeID <= 0 {
-		return false, nil
-	}
-	result, err := s.db.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL`, time.Now().UTC().UnixMilli(), recoveryCodeID, userID)
+// ConsumeRecoveryCodeProof consumes a previously matched recovery-code identity.
+// Only ErrUnauthorized (incomplete or stale proof) is reported as not consumed;
+// begin, SQL, and commit failures propagate.
+func (s *Store) ConsumeRecoveryCodeProof(ctx context.Context, userID int64, proof RecoveryCodeProof) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return false, fmt.Errorf("mark recovery code used: %w", err)
+		return false, fmt.Errorf("begin consume recovery proof: %w", err)
 	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("count consumed recovery codes: %w", err)
+	defer func() { _ = tx.Rollback() }()
+	if err := consumeRecoveryProofTx(ctx, tx, userID, proof); err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			return false, nil
+		}
+		return false, err
 	}
-	return changed == 1, nil
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit consume recovery proof: %w", err)
+	}
+	return true, nil
 }
 
 // ConsumeRecoveryCode finds an unused code, verifies it, and atomically marks
-// it used. Exactly one concurrent caller can consume a matching row.
+// it used using the matched ID-plus-hash identity. Exactly one concurrent
+// caller can consume a matching row.
 func (s *Store) ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error) {
-	recoveryCodeID, err := s.MatchRecoveryCode(ctx, userID, code)
-	if err != nil || recoveryCodeID == 0 {
+	id, hash, err := s.MatchRecoveryCodeProof(ctx, userID, code)
+	if err != nil || id == 0 || hash == "" {
 		return false, err
 	}
-	return s.ConsumeRecoveryCodeID(ctx, userID, recoveryCodeID)
+	return s.ConsumeRecoveryCodeProof(ctx, userID, RecoveryCodeProof{ID: id, Hash: hash})
 }
 
 // DeleteRecoveryCodesByUser removes all recovery codes for the user.

@@ -92,7 +92,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verified, recoveryCodeID, err := s.verifySensitiveSecondFactor(r, u, in.Code)
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.Code)
 	if errors.Is(err, errSensitiveRateLimited) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
@@ -105,8 +105,8 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
 		return
 	}
-	if recoveryCodeID > 0 {
-		consumed, err := s.store.ConsumeRecoveryCodeID(ctx, u.ID, recoveryCodeID)
+	if proof.ID > 0 {
+		consumed, err := s.store.ConsumeRecoveryCodeProof(ctx, u.ID, proof)
 		if err != nil {
 			writeStoreErr(w, err, true)
 			return

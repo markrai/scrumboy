@@ -348,7 +348,7 @@ type storeAPI interface {
 	CreateFirstPasswordGrant(ctx context.Context, userID int64, sessionToken string, ttl time.Duration) (string, time.Time, error)
 	FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionToken string, userID int64) (bool, error)
 	SetFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string) error
-	SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, recoveryCodeID int64) error
+	SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, proof store.RecoveryCodeProof) error
 
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)
@@ -481,10 +481,8 @@ type storeAPI interface {
 	ClearUserTwoFactor(ctx context.Context, userID int64) error
 	AddRecoveryCodes(ctx context.Context, userID int64, codes []string) error
 	ReplaceRecoveryCodes(ctx context.Context, userID int64, codes []string, proof store.RecoveryCodeProof) error
-	ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error)
-	MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error)
 	MatchRecoveryCodeProof(ctx context.Context, userID int64, code string) (int64, string, error)
-	ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error)
+	ConsumeRecoveryCodeProof(ctx context.Context, userID int64, proof store.RecoveryCodeProof) (bool, error)
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)
 	DecryptTOTPSecret(encrypted string) ([]byte, error)
