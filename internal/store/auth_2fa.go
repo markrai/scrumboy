@@ -405,18 +405,9 @@ func (s *Store) ReplaceRecoveryCodes(ctx context.Context, userID int64, codes []
 		return fmt.Errorf("%w: two-factor authentication is not enabled", ErrValidation)
 	}
 
-	nowMs := time.Now().UTC().UnixMilli()
 	if proof.ID > 0 {
-		result, err := tx.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL AND code_hash = ?`, nowMs, proof.ID, userID, proof.Hash)
-		if err != nil {
-			return fmt.Errorf("consume recovery code for regenerate: %w", err)
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("count consumed recovery codes for regenerate: %w", err)
-		}
-		if changed != 1 {
-			return ErrUnauthorized
+		if err := consumeRecoveryProofTx(ctx, tx, userID, proof); err != nil {
+			return err
 		}
 		// Keep the proof row until after insert so this transaction cannot
 		// recycle its own INTEGER PRIMARY KEY onto a replacement row.
@@ -535,6 +526,25 @@ func hashRecoveryCodeSet(codes []string) ([]string, error) {
 		hashes = append(hashes, string(hash))
 	}
 	return hashes, nil
+}
+
+func consumeRecoveryProofTx(ctx context.Context, tx *sql.Tx, userID int64, proof RecoveryCodeProof) error {
+	if proof.ID <= 0 || proof.Hash == "" {
+		return ErrUnauthorized
+	}
+	nowMs := time.Now().UTC().UnixMilli()
+	result, err := tx.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL AND code_hash = ?`, nowMs, proof.ID, userID, proof.Hash)
+	if err != nil {
+		return fmt.Errorf("consume recovery proof: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("count consumed recovery proofs: %w", err)
+	}
+	if changed != 1 {
+		return ErrUnauthorized
+	}
+	return nil
 }
 
 func insertHashedRecoveryCodesTx(ctx context.Context, tx *sql.Tx, userID int64, hashes []string) error {

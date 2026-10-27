@@ -343,6 +343,7 @@ type storeAPI interface {
 	GetUserByEmail(ctx context.Context, email string) (store.User, error)
 	LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subject, email string) error
 	LinkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string) error
+	LinkOIDCIdentityExplicitWithRecoveryProof(ctx context.Context, userID int64, issuer, subject, verifiedEmail string, proof store.RecoveryCodeProof) error
 	CreateUserOIDCWithDomainPolicy(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (store.User, error)
 	CreateFirstPasswordGrant(ctx context.Context, userID int64, sessionToken string, ttl time.Duration) (string, time.Time, error)
 	FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionToken string, userID int64) (bool, error)

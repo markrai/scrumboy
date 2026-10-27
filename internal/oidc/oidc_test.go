@@ -277,3 +277,51 @@ func TestStateStoreUnknownKey(t *testing.T) {
 		t.Fatal("expected nil for unknown key, got non-nil")
 	}
 }
+
+func TestStateStorePreservesRecoveryProofUntilTake(t *testing.T) {
+	s := newStateStore(10 * time.Minute)
+	s.Put("abc", &loginState{
+		Purpose:          FlowLink,
+		RecoveryCodeID:   7,
+		RecoveryCodeHash: "server-side-hash",
+		CreatedAt:        time.Now(),
+	})
+	got := s.Take("abc")
+	if got == nil {
+		t.Fatal("expected stored link state")
+	}
+	if got.RecoveryCodeID != 7 || got.RecoveryCodeHash != "server-side-hash" {
+		t.Fatalf("recovery proof not preserved: id=%d hash=%q", got.RecoveryCodeID, got.RecoveryCodeHash)
+	}
+	if s.Take("abc") != nil {
+		t.Fatal("recovery proof state was not single-use")
+	}
+}
+
+func TestStateStoreExpireForTestDropsProofOnTake(t *testing.T) {
+	s := newStateStore(10 * time.Minute)
+	s.Put("abc", &loginState{
+		Purpose:          FlowLink,
+		RecoveryCodeID:   7,
+		RecoveryCodeHash: "server-side-hash",
+		CreatedAt:        time.Now(),
+	})
+	if !s.expireForTest("abc") {
+		t.Fatal("expected stored state to expire")
+	}
+	if s.Take("abc") != nil {
+		t.Fatal("expired link state returned recovery proof")
+	}
+}
+
+func TestSensitiveAuthorizationRequestWithRecoveryProofRejectsNonLink(t *testing.T) {
+	s := &Service{}
+	_, err := s.SensitiveAuthorizationRequestWithRecoveryProof(context.Background(), FlowSetPassword, 1, "session", "/", 1, "hash")
+	if err == nil {
+		t.Fatal("expected recovery proof to be rejected for set-password")
+	}
+	_, err = s.SensitiveAuthorizationRequestWithRecoveryProof(context.Background(), FlowLink, 1, "session", "/", 0, "hash")
+	if err == nil {
+		t.Fatal("expected empty recovery proof to be rejected")
+	}
+}

@@ -249,16 +249,7 @@ func (s *Server) handleOIDCLinkStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	returnTo := oidc.SanitizeReturnTo(in.ReturnTo)
-	if returnTo == "/" {
-		returnTo = "/?auth_method=linked"
-	}
-	req, err := s.oidcService.SensitiveAuthorizationRequest(r.Context(), oidc.FlowLink, u.ID, sessionToken, returnTo)
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "OIDC is currently unavailable", nil)
-		return
-	}
-	verified, recoveryCodeID, err := s.verifySensitiveSecondFactor(r, u, in.TwoFactorCode)
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.TwoFactorCode)
 	if errors.Is(err, errSensitiveRateLimited) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
@@ -271,16 +262,19 @@ func (s *Server) handleOIDCLinkStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	if recoveryCodeID > 0 {
-		consumed, err := s.store.ConsumeRecoveryCodeID(r.Context(), u.ID, recoveryCodeID)
-		if err != nil {
-			writeStoreErr(w, err, true)
-			return
-		}
-		if !consumed {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
-			return
-		}
+	returnTo := oidc.SanitizeReturnTo(in.ReturnTo)
+	if returnTo == "/" {
+		returnTo = "/?auth_method=linked"
+	}
+	var req *oidc.AuthorizationRequest
+	if proof.ID > 0 {
+		req, err = s.oidcService.SensitiveAuthorizationRequestWithRecoveryProof(r.Context(), oidc.FlowLink, u.ID, sessionToken, returnTo, proof.ID, proof.Hash)
+	} else {
+		req, err = s.oidcService.SensitiveAuthorizationRequest(r.Context(), oidc.FlowLink, u.ID, sessionToken, returnTo)
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "OIDC is currently unavailable", nil)
+		return
 	}
 	writeJSON(w, http.StatusOK, req)
 }

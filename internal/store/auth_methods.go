@@ -87,12 +87,31 @@ func (s *Store) UpdateOIDCIdentityEmailAtLogin(ctx context.Context, userID int64
 // LinkOIDCIdentityExplicit attaches an identity only after both-side proof has
 // been completed by the HTTP layer. Canonical email matching is rechecked here.
 func (s *Store) LinkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string) error {
+	return s.linkOIDCIdentityExplicit(ctx, userID, issuer, subject, verifiedEmail, RecoveryCodeProof{})
+}
+
+// LinkOIDCIdentityExplicitWithRecoveryProof consumes a previously matched
+// recovery-code identity in the same transaction as the OIDC link. A failed
+// ownership check or insert leaves the recovery code unused.
+func (s *Store) LinkOIDCIdentityExplicitWithRecoveryProof(ctx context.Context, userID int64, issuer, subject, verifiedEmail string, proof RecoveryCodeProof) error {
+	if proof.ID <= 0 || proof.Hash == "" {
+		return ErrUnauthorized
+	}
+	return s.linkOIDCIdentityExplicit(ctx, userID, issuer, subject, verifiedEmail, proof)
+}
+
+func (s *Store) linkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string, proof RecoveryCodeProof) error {
 	verifiedEmail = normalizeEmail(verifiedEmail)
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin oidc link: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if proof.ID > 0 {
+		if err := consumeRecoveryProofTx(ctx, tx, userID, proof); err != nil {
+			return err
+		}
+	}
 	var canonical string
 	if err := tx.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ?`, userID).Scan(&canonical); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
