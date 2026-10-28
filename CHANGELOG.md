@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [3.40.3] - 2026-10-28
+
 ### Security
 
 - **Anonymous-board abuse protection** - Optional JSON policy
