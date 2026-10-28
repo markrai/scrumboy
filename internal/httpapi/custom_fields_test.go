@@ -1,24 +1,47 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"scrumboy/internal/store"
 )
 
+func customFieldRESTError(t *testing.T, body []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatalf("decode error body %s: %v", body, err)
+	}
+	errObj, _ := out["error"].(map[string]any)
+	if errObj == nil {
+		t.Fatalf("missing error object: %s", body)
+	}
+	return errObj
+}
+
 func TestCustomFieldsREST(t *testing.T) {
 	fx := newPriorityRESTFixture(t, "custom-fields")
 	base := fx.ts.URL + "/api/board/" + fx.project.Slug
 
-	resp, body := doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "Merge Request", "type": "url"}, nil)
+	var created customFieldJSON
+	resp, body := doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "Merge Request", "type": "url"}, &created)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("create status=%d %s", resp.StatusCode, body)
+	}
+	if created.Key != "merge_request" || created.Name != "Merge Request" || created.Type != "url" || created.Position != 0 {
+		t.Fatalf("create body=%s", body)
 	}
 	resp, body = doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "X", "type": "boolean"}, nil)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad type status=%d %s", resp.StatusCode, body)
+	}
+	errObj := customFieldRESTError(t, body)
+	if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "type must be text, url or number" {
+		t.Fatalf("bad type error=%s", body)
 	}
 
 	var list struct {
@@ -79,8 +102,119 @@ func TestCustomFieldsREST(t *testing.T) {
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("delete status=%d %s", resp.StatusCode, body)
 	}
-	resp, _ = doJSON(t, fx.client, http.MethodDelete, base+"/custom-fields/merge_request", nil, nil)
+	if len(body) != 0 {
+		t.Fatalf("delete body=%q, want empty", body)
+	}
+	resp, body = doJSON(t, fx.client, http.MethodDelete, base+"/custom-fields/merge_request", nil, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("second delete status=%d, want 404", resp.StatusCode)
+	}
+	if customFieldRESTError(t, body)["code"] != "NOT_FOUND" {
+		t.Fatalf("second delete error=%s", body)
+	}
+}
+
+func TestCustomFieldsRESTDefinitionContracts(t *testing.T) {
+	fx := newPriorityRESTFixture(t, "custom-fields-contracts")
+	base := fx.ts.URL + "/api/board/" + fx.project.Slug
+	stream := subscribeTodoUpdateEvents(t, fx.client, base+"/events")
+
+	t.Run("empty and invalid name and type", func(t *testing.T) {
+		for name, payload := range map[string]map[string]any{
+			"empty name":      {"name": "", "type": "text"},
+			"whitespace name": {"name": "   ", "type": "text"},
+		} {
+			resp, body := doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", payload, nil)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("%s status=%d %s", name, resp.StatusCode, body)
+			}
+			errObj := customFieldRESTError(t, body)
+			details, _ := errObj["details"].(map[string]any)
+			if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "name required" || details["reason"] != "invalid_custom_field_name" || details["field"] != "name" {
+				t.Fatalf("%s error=%s", name, body)
+			}
+		}
+		resp, body := doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "X", "type": "   "}, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("blank type status=%d %s", resp.StatusCode, body)
+		}
+		errObj := customFieldRESTError(t, body)
+		details, _ := errObj["details"].(map[string]any)
+		if errObj["message"] != "type must be text, url or number" || details["reason"] != "invalid_custom_field_type" || details["field"] != "type" {
+			t.Fatalf("blank type error=%s", body)
+		}
+	})
+
+	t.Run("store constraints and conflict", func(t *testing.T) {
+		var created customFieldJSON
+		resp, body := doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "Ticket", "type": "text", "key": "ticket"}, &created)
+		if resp.StatusCode != http.StatusCreated || created.Key != "ticket" || created.Name != "Ticket" || created.Type != "text" {
+			t.Fatalf("create status=%d %s", resp.StatusCode, body)
+		}
+		resp, body = doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "Dup", "type": "url", "key": "ticket"}, nil)
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("duplicate status=%d %s", resp.StatusCode, body)
+		}
+		errObj := customFieldRESTError(t, body)
+		if errObj["code"] != "CONFLICT" || errObj["message"] != "conflict: custom field key already exists" {
+			t.Fatalf("duplicate error=%s", body)
+		}
+		resp, body = doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": "x", "type": "text", "key": "Bad Key!"}, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("invalid key status=%d %s", resp.StatusCode, body)
+		}
+		errObj = customFieldRESTError(t, body)
+		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field key" || errObj["details"] != nil {
+			t.Fatalf("invalid key error=%s", body)
+		}
+		resp, body = doJSON(t, fx.client, http.MethodPost, base+"/custom-fields", map[string]any{"name": strings.Repeat("n", 101), "type": "text"}, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("long name status=%d %s", resp.StatusCode, body)
+		}
+		errObj = customFieldRESTError(t, body)
+		if errObj["code"] != "VALIDATION_ERROR" || errObj["message"] != "validation: invalid custom field name" || errObj["details"] != nil {
+			t.Fatalf("long name error=%s", body)
+		}
+	})
+
+	t.Run("delete key and missing field", func(t *testing.T) {
+		resp, body := doJSON(t, fx.client, http.MethodDelete, base+"/custom-fields/%20", nil, nil)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("blank key status=%d %s", resp.StatusCode, body)
+		}
+		errObj := customFieldRESTError(t, body)
+		details, _ := errObj["details"].(map[string]any)
+		if errObj["message"] != "invalid custom field key" || details["reason"] != "invalid_custom_field_key" || details["field"] != "key" {
+			t.Fatalf("blank key error=%s", body)
+		}
+		resp, body = doJSON(t, fx.client, http.MethodDelete, base+"/custom-fields/missing_field", nil, nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("missing field status=%d %s", resp.StatusCode, body)
+		}
+		if customFieldRESTError(t, body)["code"] != "NOT_FOUND" {
+			t.Fatalf("missing field error=%s", body)
+		}
+		resp, body = doJSON(t, fx.client, http.MethodDelete, base+"/custom-fields/ticket", nil, nil)
+		if resp.StatusCode != http.StatusNoContent || len(body) != 0 {
+			t.Fatalf("delete status=%d body=%q", resp.StatusCode, body)
+		}
+	})
+
+	t.Run("unknown project", func(t *testing.T) {
+		resp, body := doJSON(t, fx.client, http.MethodPost, fx.ts.URL+"/api/board/no-such-board/custom-fields", map[string]any{"name": "X", "type": "text"}, nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("unknown create status=%d %s", resp.StatusCode, body)
+		}
+		resp, body = doJSON(t, fx.client, http.MethodDelete, fx.ts.URL+"/api/board/no-such-board/custom-fields/ticket", nil, nil)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("unknown delete status=%d %s", resp.StatusCode, body)
+		}
+	})
+
+	events := collectTodoUpdateEvents(t, stream)
+	for _, event := range events {
+		if event.Type == "board.refresh_needed" {
+			t.Fatalf("definition mutations emitted refresh: %+v", events)
+		}
 	}
 }

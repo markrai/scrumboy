@@ -344,8 +344,18 @@ func (s *Server) handleSensitiveOIDCCallback(w http.ResponseWriter, r *http.Requ
 		setFirstPasswordGrantCookie(w, r, grant, expires)
 		http.Redirect(w, r, result.ReturnTo, http.StatusFound)
 	case oidc.FlowLink:
-		if err := s.store.LinkOIDCIdentityExplicit(ctx, userID, result.Issuer, result.Subject, result.Email); err != nil {
-			if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrValidation) {
+		var err error
+		if result.RecoveryCodeID > 0 {
+			if result.RecoveryCodeHash == "" {
+				http.Redirect(w, r, "/?oidc_error=link_rejected", http.StatusFound)
+				return
+			}
+			err = s.store.LinkOIDCIdentityExplicitWithRecoveryProof(ctx, userID, result.Issuer, result.Subject, result.Email, store.RecoveryCodeProof{ID: result.RecoveryCodeID, Hash: result.RecoveryCodeHash})
+		} else {
+			err = s.store.LinkOIDCIdentityExplicit(ctx, userID, result.Issuer, result.Subject, result.Email)
+		}
+		if err != nil {
+			if errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrValidation) || errors.Is(err, store.ErrUnauthorized) {
 				http.Redirect(w, r, "/?oidc_error=link_rejected", http.StatusFound)
 				return
 			}

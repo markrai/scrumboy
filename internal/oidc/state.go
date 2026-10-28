@@ -22,6 +22,10 @@ type loginState struct {
 	UserID           int64
 	SessionTokenHash [32]byte
 	CreatedAt        time.Time
+	// RecoveryCodeID and RecoveryCodeHash bind a previously matched recovery
+	// code to this server-side state. They are never placed in callback URLs.
+	RecoveryCodeID   int64
+	RecoveryCodeHash string
 }
 
 func (s *loginState) sensitive() bool { return s.Purpose != "" && s.Purpose != FlowLogin }
@@ -65,6 +69,21 @@ func (s *stateStore) Take(raw string) *loginState {
 		return nil
 	}
 	return ls
+}
+
+func (s *stateStore) expireForTest(raw string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ls, ok := s.m[stateHash(raw)]
+	if !ok {
+		return false
+	}
+	ttl := s.loginTTL
+	if ls.sensitive() {
+		ttl = s.sensitiveTTL
+	}
+	ls.CreatedAt = time.Now().Add(-ttl - time.Second)
+	return true
 }
 
 func (s *stateStore) evictLocked() {

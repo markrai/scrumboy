@@ -15,6 +15,7 @@ import (
 	backupimportapp "scrumboy/internal/application/backupimport"
 	boardapp "scrumboy/internal/application/board"
 	calendarapp "scrumboy/internal/application/calendar"
+	customfieldapp "scrumboy/internal/application/customfield"
 	membershipapp "scrumboy/internal/application/membership"
 	priorityapp "scrumboy/internal/application/priority"
 	projectapp "scrumboy/internal/application/project"
@@ -191,6 +192,7 @@ type Server struct {
 	sprintDeletions               *sprintapp.RESTDeletionService
 	workflowMutations             *workflowapp.RESTMutationService
 	priorityMutations             *priorityapp.RESTMutationService
+	customFieldMutations          *customfieldapp.RESTService
 	calendarSources               *calendarapp.RESTService
 	boardSettings                 *projectsettingsapp.RESTService
 	agenda                        *calendarapp.AgendaService
@@ -200,6 +202,7 @@ type Server struct {
 	userCreations                 *useradminapp.RESTCreationService
 	userRoleMutations             *useradminapp.RESTRoleService
 	userDeletions                 *useradminapp.RESTDeletionService
+	userPasswordResets            *useradminapp.RESTPasswordResetService
 	wallNoteMutations             *wallapp.RESTNoteService
 	wallReplacements              *wallapp.RESTReplacementService
 	wallEdgeMutations             *wallapp.RESTEdgeService
@@ -340,11 +343,12 @@ type storeAPI interface {
 	GetUserByEmail(ctx context.Context, email string) (store.User, error)
 	LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subject, email string) error
 	LinkOIDCIdentityExplicit(ctx context.Context, userID int64, issuer, subject, verifiedEmail string) error
+	LinkOIDCIdentityExplicitWithRecoveryProof(ctx context.Context, userID int64, issuer, subject, verifiedEmail string, proof store.RecoveryCodeProof) error
 	CreateUserOIDCWithDomainPolicy(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (store.User, error)
 	CreateFirstPasswordGrant(ctx context.Context, userID int64, sessionToken string, ttl time.Duration) (string, time.Time, error)
 	FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionToken string, userID int64) (bool, error)
 	SetFirstPassword(ctx context.Context, userID int64, rawGrant, sessionToken, password string) error
-	SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, recoveryCodeID int64) error
+	SetFirstPasswordWithRecoveryCode(ctx context.Context, userID int64, rawGrant, sessionToken, password string, proof store.RecoveryCodeProof) error
 
 	ListProjects(ctx context.Context) ([]store.ProjectListEntry, error)
 	GetProject(ctx context.Context, projectID int64) (store.Project, error)
@@ -367,6 +371,7 @@ type storeAPI interface {
 	backupimportapp.Store
 	workflowapp.MutationStore
 	priorityapp.MutationStore
+	customfieldapp.MutationStore
 	calendarapp.SourceStore
 	calendarapp.SnapshotStore
 	membershipapp.MutationStore
@@ -374,8 +379,6 @@ type storeAPI interface {
 	CountTodosByPriorityKey(ctx context.Context, projectID int64) (map[string]int, error)
 	GetProjectPriorities(ctx context.Context, projectID int64) ([]store.PriorityTier, error)
 	ListProjectCustomFields(ctx context.Context, projectID int64) ([]store.CustomField, error)
-	CreateCustomField(ctx context.Context, projectID int64, key, name string, typ store.CustomFieldType) (store.CustomField, error)
-	DeleteCustomField(ctx context.Context, projectID int64, key string) error
 	GetProjectRole(ctx context.Context, projectID int64, userID int64) (store.ProjectRole, error)
 	CheckProjectRole(ctx context.Context, projectID int64, userID int64, requiredRole store.ProjectRole) error
 	ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]store.ProjectMember, error)
@@ -467,6 +470,7 @@ type storeAPI interface {
 	CreateLogin2FAPending(ctx context.Context, userID int64, ttl time.Duration) (token string, expiresAt time.Time, err error)
 	GetUserByLogin2FAPendingToken(ctx context.Context, token string) (store.User, int, error)
 	IncrementLogin2FAPendingAttempt(ctx context.Context, token string) error
+	CompleteLogin2FA(ctx context.Context, rawPendingToken string, userID int64, proof store.RecoveryCodeProof, sessionTTL time.Duration) (sessionToken string, expiresAt time.Time, err error)
 	DeleteLogin2FAPendingToken(ctx context.Context, token string) error
 	CreateTwoFactorEnrollment(ctx context.Context, userID int64, secretEnc string, ttl time.Duration) (setupToken string, expiresAt time.Time, err error)
 	GetTwoFactorEnrollmentByToken(ctx context.Context, token string) (userID int64, secretEnc string, err error)
@@ -474,11 +478,12 @@ type storeAPI interface {
 	DeleteTwoFactorEnrollmentByToken(ctx context.Context, token string) error
 	GetUserTwoFactorSecret(ctx context.Context, userID int64) (string, error)
 	SetUserTwoFactor(ctx context.Context, userID int64, encryptedSecret string) error
+	CompleteTwoFactorEnrollment(ctx context.Context, userID int64, setupToken string, codes []string) error
 	ClearUserTwoFactor(ctx context.Context, userID int64) error
 	AddRecoveryCodes(ctx context.Context, userID int64, codes []string) error
-	ConsumeRecoveryCode(ctx context.Context, userID int64, code string) (bool, error)
-	MatchRecoveryCode(ctx context.Context, userID int64, code string) (int64, error)
-	ConsumeRecoveryCodeID(ctx context.Context, userID, recoveryCodeID int64) (bool, error)
+	ReplaceRecoveryCodes(ctx context.Context, userID int64, codes []string, proof store.RecoveryCodeProof) error
+	MatchRecoveryCodeProof(ctx context.Context, userID int64, code string) (int64, string, error)
+	ConsumeRecoveryCodeProof(ctx context.Context, userID int64, proof store.RecoveryCodeProof) (bool, error)
 	DeleteRecoveryCodesByUser(ctx context.Context, userID int64) error
 	EncryptTOTPSecret(plaintext []byte) (string, error)
 	DecryptTOTPSecret(encrypted string) ([]byte, error)
@@ -956,6 +961,7 @@ func NewServer(st storeAPI, opts Options) *Server {
 			server.emitPublicRefreshNeeded(ctx, projectID, reason, entity)
 		}),
 	})
+	server.customFieldMutations = customfieldapp.NewRESTService(st)
 	refreshPublisher := calendarapp.BoardRefreshPublisherFunc(func(ctx context.Context, projectID int64, reason string, entity refresh.Entity) {
 		server.emitRefreshNeeded(ctx, projectID, reason, entity)
 	})
@@ -1015,6 +1021,11 @@ func NewServer(st storeAPI, opts Options) *Server {
 	})
 	server.userDeletions = useradminapp.NewRESTDeletionService(useradminapp.RESTDeletionServiceDependencies{
 		Deletions: st,
+	})
+	server.userPasswordResets = useradminapp.NewRESTPasswordResetService(useradminapp.RESTPasswordResetServiceDependencies{
+		RequesterRead: st,
+		TargetRead:    st,
+		Hashes:        st,
 	})
 	if opts.MCPHandler != nil {
 		opts.MCPHandler.BindCreatorNotificationRequestPublisher(creatorRequestPublisher)

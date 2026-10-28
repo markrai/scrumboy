@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -999,6 +1000,12 @@ func TestOIDCCallbackInvalidState(t *testing.T) {
 // store so tests can pre-create local users before exercising the OIDC flow.
 func newTestOIDCServerWithStore(t *testing.T, idp *fakeIdP) (*httptest.Server, *store.Store, func()) {
 	t.Helper()
+	ts, st, _, cleanup := newTestOIDCServerWithDB(t, idp)
+	return ts, st, cleanup
+}
+
+func newTestOIDCServerWithDB(t *testing.T, idp *fakeIdP) (*httptest.Server, *store.Store, *sql.DB, func()) {
+	t.Helper()
 
 	dir := t.TempDir()
 	sqlDB, err := db.Open(filepath.Join(dir, "app.db"), db.Options{
@@ -1039,7 +1046,7 @@ func newTestOIDCServerWithStore(t *testing.T, idp *fakeIdP) (*httptest.Server, *
 	})
 	srv.oidcService = oidcSvc2
 
-	return ts, st, func() {
+	return ts, st, sqlDB, func() {
 		ts.Close()
 		_ = sqlDB.Close()
 	}

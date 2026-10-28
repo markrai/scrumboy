@@ -40,6 +40,12 @@ type DeleteCommand struct {
 	TargetUserID int64
 }
 
+// PasswordResetCommand identifies the target selected for a privileged
+// administrator-generated password-reset link.
+type PasswordResetCommand struct {
+	TargetUserID int64
+}
+
 // UserCreationStore creates one non-bootstrap local user using the existing
 // store-owned normalization, hashing, seeding, and transaction semantics.
 type UserCreationStore interface {
@@ -75,4 +81,10 @@ type UserDeletionStore interface {
 		requesterID int64,
 		targetUserID int64,
 	) error
+}
+
+// UserPasswordHashStore reads the current password hash used to bind a
+// privileged password-reset token. It has no password-mutation capability.
+type UserPasswordHashStore interface {
+	GetUserPasswordHash(ctx context.Context, userID int64) (string, error)
 }

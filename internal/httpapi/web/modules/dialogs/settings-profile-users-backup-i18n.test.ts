@@ -512,6 +512,82 @@ describe('settings i18n (profile / users / backup / customization)', () => {
     expect(dialog?.querySelector('.dialog__title')?.textContent).toBe('Enable two-factor authentication');
   });
 
+  it('asks for authenticator or recovery proof before regenerating codes and does not POST on cancel', async () => {
+    const user = { id: 1, name: 'Grace', email: 'grace@example.com', systemRole: 'owner', twoFactorEnabled: true };
+    await setupSettingsView({ activeTab: 'profile', user });
+
+    apiFetchMock.mockClear();
+    document.getElementById('regenerateRecoveryCodesBtn')?.dispatchEvent(new Event('click'));
+    await flushPromises();
+
+    const dialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement | null;
+    expect(dialog).not.toBeNull();
+    expect(dialog?.querySelector('.dialog__title')?.textContent).toBe('Regenerate recovery codes');
+    expect(document.getElementById('regenerateRecoveryCodesCode')).not.toBeNull();
+    expect(apiFetchMock).not.toHaveBeenCalled();
+
+    dialog?.querySelector('#regenerateRecoveryCodesCancel')?.dispatchEvent(new Event('click'));
+    expect(document.body.contains(dialog)).toBe(false);
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('posts authenticator or recovery proof when regenerating codes', async () => {
+    const user = { id: 1, name: 'Grace', email: 'grace@example.com', systemRole: 'owner', twoFactorEnabled: true };
+    await setupSettingsView({ activeTab: 'profile', user });
+
+    document.getElementById('regenerateRecoveryCodesBtn')?.dispatchEvent(new Event('click'));
+    await flushPromises();
+    const proofDialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement;
+    const codeInput = document.getElementById('regenerateRecoveryCodesCode') as HTMLInputElement;
+    codeInput.value = 'ABCD-EFGH';
+
+    apiFetchMock.mockResolvedValueOnce({ recoveryCodes: ['WXYZ-1234', 'WXYZ-5678'] });
+    proofDialog.querySelector('#regenerateRecoveryCodesForm')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await flushPromises();
+
+    expect(apiFetchMock).toHaveBeenCalledWith('/api/auth/2fa/recovery/regenerate', {
+      method: 'POST',
+      body: JSON.stringify({ code: 'ABCD-EFGH' }),
+    });
+    expect(showToastMock).toHaveBeenCalled();
+    const codesDialog = document.querySelector('body > dialog.dialog');
+    expect(codesDialog?.querySelector('.dialog__title')?.textContent).toBe('Recovery codes');
+    expect(codesDialog?.textContent).toContain('WXYZ-1234');
+  });
+
+  it('relocalizes an open regenerate-recovery dialog in place without resetting typed proof or posting', async () => {
+    const user = { id: 1, name: 'Grace', email: 'grace@example.com', systemRole: 'owner', twoFactorEnabled: true };
+    const { i18n } = await setupSettingsView({ activeTab: 'profile', user });
+
+    document.getElementById('regenerateRecoveryCodesBtn')?.dispatchEvent(new Event('click'));
+    await flushPromises();
+    const dialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement | null;
+    const codeInput = document.getElementById('regenerateRecoveryCodesCode') as HTMLInputElement;
+    codeInput.value = '123456';
+
+    apiFetchMock.mockClear();
+    await i18n.setLocale('de');
+    await flushPromises();
+
+    expect(dialog?.querySelector('.dialog__title')?.textContent).toBe('Wiederherstellungscodes neu generieren');
+    expect((document.getElementById('regenerateRecoveryCodesCode') as HTMLInputElement).value).toBe('123456');
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('clears regenerate-recovery proof when Escape cancels the dialog', async () => {
+    const user = { id: 1, name: 'Grace', email: 'grace@example.com', systemRole: 'owner', twoFactorEnabled: true };
+    await setupSettingsView({ activeTab: 'profile', user });
+
+    document.getElementById('regenerateRecoveryCodesBtn')?.dispatchEvent(new Event('click'));
+    await flushPromises();
+    const dialog = document.querySelector('body > dialog.dialog') as HTMLDialogElement;
+    const codeInput = document.getElementById('regenerateRecoveryCodesCode') as HTMLInputElement;
+    codeInput.value = 'ABCD-EFGH';
+    dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+    expect(codeInput.value).toBe('');
+    expect(document.body.contains(dialog)).toBe(false);
+  });
+
   // ---- Users ------------------------------------------------------------
 
   it('relocalizes users table chrome/actions on locale change without /api/admin/users refetch and preserves raw rows', async () => {

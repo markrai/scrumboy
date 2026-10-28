@@ -144,20 +144,46 @@ func (s *Service) LoginRedirectURL(ctx context.Context, returnTo string) (string
 }
 
 func (s *Service) LoginAuthorizationRequest(ctx context.Context, returnTo string) (*AuthorizationRequest, error) {
-	return s.startAuthorization(ctx, FlowLogin, 0, "", returnTo)
+	return s.startAuthorization(ctx, FlowLogin, 0, "", returnTo, 0, "")
 }
 
 func (s *Service) SensitiveAuthorizationRequest(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string) (*AuthorizationRequest, error) {
+	return s.sensitiveAuthorizationRequest(ctx, purpose, userID, sessionToken, returnTo, 0, "")
+}
+
+// SensitiveAuthorizationRequestWithRecoveryProof starts a link flow whose
+// callback must consume the supplied recovery-code identity. The proof stays
+// in server-side state; it is not added to the authorization URL.
+func (s *Service) SensitiveAuthorizationRequestWithRecoveryProof(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string, recoveryCodeID int64, recoveryCodeHash string) (*AuthorizationRequest, error) {
+	if purpose != FlowLink {
+		return nil, fmt.Errorf("recovery proof is only valid for link")
+	}
+	if recoveryCodeID <= 0 || recoveryCodeHash == "" {
+		return nil, fmt.Errorf("invalid recovery proof")
+	}
+	return s.sensitiveAuthorizationRequest(ctx, purpose, userID, sessionToken, returnTo, recoveryCodeID, recoveryCodeHash)
+}
+
+func (s *Service) sensitiveAuthorizationRequest(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string, recoveryCodeID int64, recoveryCodeHash string) (*AuthorizationRequest, error) {
 	if purpose != FlowSetPassword && purpose != FlowLink {
 		return nil, fmt.Errorf("invalid sensitive OIDC purpose")
 	}
 	if userID <= 0 || sessionToken == "" {
 		return nil, fmt.Errorf("authenticated session required")
 	}
-	return s.startAuthorization(ctx, purpose, userID, sessionToken, returnTo)
+	return s.startAuthorization(ctx, purpose, userID, sessionToken, returnTo, recoveryCodeID, recoveryCodeHash)
 }
 
-func (s *Service) startAuthorization(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string) (*AuthorizationRequest, error) {
+// ExpireStoredStateForTest marks a stored authorization state expired so tests
+// can exercise callback TTL without waiting. It does not log state contents.
+func (s *Service) ExpireStoredStateForTest(raw string) bool {
+	if s == nil || s.states == nil {
+		return false
+	}
+	return s.states.expireForTest(raw)
+}
+
+func (s *Service) startAuthorization(ctx context.Context, purpose FlowPurpose, userID int64, sessionToken, returnTo string, recoveryCodeID int64, recoveryCodeHash string) (*AuthorizationRequest, error) {
 	provider, _, err := s.ensureProvider(ctx)
 	if err != nil {
 		return nil, err
@@ -183,6 +209,8 @@ func (s *Service) startAuthorization(ctx context.Context, purpose FlowPurpose, u
 		UserID:           userID,
 		SessionTokenHash: sessionHash(sessionToken),
 		CreatedAt:        time.Now(),
+		RecoveryCodeID:   recoveryCodeID,
+		RecoveryCodeHash: recoveryCodeHash,
 	})
 
 	cfg := s.oauth2Config(provider)
@@ -222,6 +250,8 @@ type CallbackResult struct {
 	Purpose          FlowPurpose
 	UserID           int64
 	SessionTokenHash [32]byte
+	RecoveryCodeID   int64
+	RecoveryCodeHash string
 }
 
 func (r *CallbackResult) SessionMatches(raw string) bool {
@@ -326,6 +356,8 @@ func (s *Service) HandleCallback(ctx context.Context, r *http.Request) (*Callbac
 		Purpose:          ls.Purpose,
 		UserID:           ls.UserID,
 		SessionTokenHash: ls.SessionTokenHash,
+		RecoveryCodeID:   ls.RecoveryCodeID,
+		RecoveryCodeHash: ls.RecoveryCodeHash,
 	}, ""
 }
 

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"encoding/base64"
 	"errors"
 	"net"
@@ -92,7 +91,7 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verified, recoveryCodeID, err := s.verifySensitiveSecondFactor(r, u, in.Code)
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.Code)
 	if errors.Is(err, errSensitiveRateLimited) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
@@ -105,31 +104,26 @@ func (s *Server) handleLogin2FA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
 		return
 	}
-	if recoveryCodeID > 0 {
-		consumed, err := s.store.ConsumeRecoveryCodeID(ctx, u.ID, recoveryCodeID)
-		if err != nil {
-			writeStoreErr(w, err, true)
+
+	token, expiresAt, err := s.store.CompleteLogin2FA(ctx, in.TempToken, u.ID, proof, 30*24*time.Hour)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid or expired code", nil)
 			return
 		}
-		if !consumed {
+		if errors.Is(err, store.ErrUnauthorized) {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
 			return
 		}
+		if errors.Is(err, store.ErrTooManyAttempts) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "too many attempts; please sign in again", nil)
+			return
+		}
+		writeStoreErr(w, err, true)
+		return
 	}
-
-	s.finishLogin2FA(w, r, ctx, in.TempToken, u)
-}
-
-func (s *Server) finishLogin2FA(w http.ResponseWriter, r *http.Request, ctx context.Context, tempToken string, u store.User) {
-	_ = s.store.DeleteLogin2FAPendingToken(ctx, tempToken)
 	if err := s.store.AssignUnownedDurableProjectsToUser(ctx, u.ID); err != nil {
-		writeStoreErr(w, err, true)
-		return
-	}
-	token, expiresAt, err := s.store.CreateSession(ctx, u.ID, 30*24*time.Hour)
-	if err != nil {
-		writeStoreErr(w, err, true)
-		return
+		s.logger.Printf("login 2fa: assign unowned projects: %v", err)
 	}
 	setSessionCookie(w, r, token, expiresAt)
 	writeJSON(w, http.StatusOK, userToJSON(u))
@@ -269,14 +263,8 @@ func (s *Server) handle2FAEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.store.SetUserTwoFactor(ctx, userID, secretEnc); err != nil {
-		writeStoreErr(w, err, true)
-		return
-	}
-	_ = s.store.DeleteTwoFactorEnrollmentByToken(ctx, in.SetupToken)
-
 	codes := store.GenerateRecoveryCodes(store.RecoveryCodeCount)
-	if err := s.store.AddRecoveryCodes(ctx, userID, codes); err != nil {
+	if err := s.store.CompleteTwoFactorEnrollment(ctx, userID, in.SetupToken, codes); err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
@@ -354,20 +342,53 @@ func (s *Server) handle2FARecoveryRegenerate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	u, _ := s.store.GetUser(ctx, userID)
+	var in struct {
+		Code string `json:"code"`
+	}
+	if err := readJSON(w, r, s.maxBody, &in); err != nil {
+		return
+	}
+	if strings.TrimSpace(in.Code) == "" {
+		writeValidationError(w, "code required", "code_required", nil)
+		return
+	}
+
+	u, err := s.store.GetUser(ctx, userID)
+	if err != nil {
+		writeStoreErr(w, err, false)
+		return
+	}
 	ipKey := "ip:" + s.clientIP(r)
 	emailKey := "email:" + ratelimit.NormalizeEmail(u.Email)
 	if s.authRateLimit != nil && !s.authRateLimit.Allow(ipKey, emailKey) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
 	}
+	if !u.IsTwoFactorActive() {
+		writeValidationError(w, "two-factor authentication is not enabled", "two_factor_not_enabled", nil)
+		return
+	}
 
-	if err := s.store.DeleteRecoveryCodesByUser(ctx, userID); err != nil {
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.Code)
+	if errors.Is(err, errSensitiveRateLimited) {
+		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
+		return
+	}
+	if err != nil {
 		writeStoreErr(w, err, true)
 		return
 	}
+	if !verified {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
+		return
+	}
+
 	codes := store.GenerateRecoveryCodes(store.RecoveryCodeCount)
-	if err := s.store.AddRecoveryCodes(ctx, userID, codes); err != nil {
+	if err := s.store.ReplaceRecoveryCodes(ctx, userID, codes, proof); err != nil {
+		if errors.Is(err, store.ErrUnauthorized) {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid code", nil)
+			return
+		}
 		writeStoreErr(w, err, true)
 		return
 	}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 )
@@ -364,11 +365,8 @@ func TestFirstPasswordFailureDoesNotConsumeRecoveryCode(t *testing.T) {
 	if err := st.AddRecoveryCodes(ctx, u.ID, []string{recoveryCode}); err != nil {
 		t.Fatalf("AddRecoveryCodes: %v", err)
 	}
-	recoveryCodeID, err := st.MatchRecoveryCode(ctx, u.ID, recoveryCode)
-	if err != nil || recoveryCodeID == 0 {
-		t.Fatalf("MatchRecoveryCode: id=%d err=%v", recoveryCodeID, err)
-	}
-	if err := st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, "wrong-grant", session, "NewPassword123!", recoveryCodeID); !errors.Is(err, ErrUnauthorized) {
+	proof := matchRecoveryProof(t, st, u.ID, recoveryCode)
+	if err := st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, "wrong-grant", session, "NewPassword123!", proof); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("wrong grant error = %v, want ErrUnauthorized", err)
 	}
 	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, recoveryCode)
@@ -383,15 +381,169 @@ func TestFirstPasswordFailureDoesNotConsumeRecoveryCode(t *testing.T) {
 	if err := st.AddRecoveryCodes(ctx, u.ID, []string{secondCode}); err != nil {
 		t.Fatalf("AddRecoveryCodes second code: %v", err)
 	}
-	secondID, err := st.MatchRecoveryCode(ctx, u.ID, secondCode)
-	if err != nil || secondID == 0 {
-		t.Fatalf("MatchRecoveryCode second code: id=%d err=%v", secondID, err)
-	}
-	if err := st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, grant, session, "weak", secondID); err == nil {
+	secondProof := matchRecoveryProof(t, st, u.ID, secondCode)
+	if err := st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, grant, session, "weak", secondProof); err == nil {
 		t.Fatal("weak first password unexpectedly succeeded")
 	}
 	consumed, err = st.ConsumeRecoveryCode(ctx, u.ID, secondCode)
 	if err != nil || !consumed {
 		t.Fatalf("weak password consumed recovery code: consumed=%v err=%v", consumed, err)
+	}
+}
+
+func firstPasswordUserWithRecovery(t *testing.T, st *Store, email string) (User, string, string, []string) {
+	t.Helper()
+	ctx := context.Background()
+	u, err := st.CreateUserOIDC(ctx, "https://issuer.example", "https://issuer.example", email, email, "Recovery")
+	if err != nil {
+		t.Fatalf("CreateUserOIDC: %v", err)
+	}
+	session, _, err := st.CreateSession(ctx, u.ID, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	grant, _, err := st.CreateFirstPasswordGrant(ctx, u.ID, session, time.Minute)
+	if err != nil {
+		t.Fatalf("CreateFirstPasswordGrant: %v", err)
+	}
+	token := seedTwoFactorEnrollment(t, st, u.ID)
+	codes := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.CompleteTwoFactorEnrollment(ctx, u.ID, token, codes); err != nil {
+		t.Fatalf("CompleteTwoFactorEnrollment: %v", err)
+	}
+	return u, session, grant, codes
+}
+
+func TestSetFirstPasswordWithRecoveryProofConsumesOnce(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, session, grant, codes := firstPasswordUserWithRecovery(t, st, "first-pw-once@x.com")
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	if err := st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, grant, session, "NewPassword123!", proof); err != nil {
+		t.Fatalf("SetFirstPasswordWithRecoveryCode: %v", err)
+	}
+	got, err := st.GetUser(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasLocalPassword {
+		t.Fatal("first password was not installed")
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil {
+		t.Fatalf("ConsumeRecoveryCode used proof: %v", err)
+	}
+	if consumed {
+		t.Fatal("successful first password left the recovery proof unused")
+	}
+	err = st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, grant, session, "AnotherPassword123!", proof)
+	if err == nil {
+		t.Fatal("replayed recovery proof installed another password")
+	}
+	sibling, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[1])
+	if err != nil || !sibling {
+		t.Fatalf("unrelated recovery code consumed=%v err=%v", sibling, err)
+	}
+}
+
+func TestSetFirstPasswordWithRecoveryProofRejectsStaleProofAfterRowIDReuse(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, session, grant, original := firstPasswordUserWithRecovery(t, st, "first-pw-stale@x.com")
+	stale := matchRecoveryProof(t, st, u.ID, original[1])
+	current := matchRecoveryProof(t, st, u.ID, original[0])
+
+	replacement := GenerateRecoveryCodes(RecoveryCodeCount)
+	if err := st.ReplaceRecoveryCodes(ctx, u.ID, replacement, current); err != nil {
+		t.Fatalf("ReplaceRecoveryCodes: %v", err)
+	}
+	ids := recoveryCodeIDs(t, st, u.ID)
+	if !containsRecoveryID(ids, stale.ID) {
+		t.Fatalf("replacement ids %v did not reuse stale proof id %d", ids, stale.ID)
+	}
+
+	err := st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, grant, session, "NewPassword123!", stale)
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("stale proof err=%v, want ErrUnauthorized", err)
+	}
+	got, err := st.GetUser(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HasLocalPassword {
+		t.Fatal("stale proof installed a local password")
+	}
+	if !hashesMatchCodeSet(recoveryCodeHashes(t, st, u.ID), replacement) {
+		t.Fatal("stale proof mutated replacement recovery codes")
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, replacement[0])
+	if err != nil || !consumed {
+		t.Fatalf("replacement code consumed=%v err=%v", consumed, err)
+	}
+}
+
+func TestSetFirstPasswordWithRecoveryProofConcurrentSameProof(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, session, grant, codes := firstPasswordUserWithRecovery(t, st, "first-pw-concurrent@x.com")
+	proof := matchRecoveryProof(t, st, u.ID, codes[0])
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs <- st.SetFirstPasswordWithRecoveryCode(ctx, u.ID, grant, session, "NewPassword123!", proof)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var succeeded, failed int
+	for err := range errs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		failed++
+	}
+	if succeeded != 1 || failed != 1 {
+		t.Fatalf("concurrent first-password results succeeded=%d failed=%d, want 1/1", succeeded, failed)
+	}
+	got, err := st.GetUser(ctx, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasLocalPassword {
+		t.Fatal("winning concurrent first password did not install")
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if consumed {
+		t.Fatal("winning concurrent first password left the recovery proof unused")
+	}
+}
+
+func TestSetFirstPasswordWithoutProofDoesNotConsumeRecoveryCodes(t *testing.T) {
+	st, cleanup := newTestStoreWith2FA(t)
+	defer cleanup()
+	ctx := context.Background()
+	u, session, grant, codes := firstPasswordUserWithRecovery(t, st, "first-pw-totp@x.com")
+	if err := st.SetFirstPassword(ctx, u.ID, grant, session, "NewPassword123!"); err != nil {
+		t.Fatalf("SetFirstPassword: %v", err)
+	}
+	consumed, err := st.ConsumeRecoveryCode(ctx, u.ID, codes[0])
+	if err != nil || !consumed {
+		t.Fatalf("TOTP/no-proof first password consumed recovery: consumed=%v err=%v", consumed, err)
 	}
 }

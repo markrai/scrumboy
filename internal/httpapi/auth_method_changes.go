@@ -46,31 +46,34 @@ func classifySecondFactor(code string) string {
 	return "invalid"
 }
 
-func (s *Server) verifySensitiveSecondFactor(r *http.Request, u store.User, code string) (bool, int64, error) {
+func (s *Server) verifySensitiveSecondFactorProof(r *http.Request, u store.User, code string) (bool, store.RecoveryCodeProof, error) {
 	if !u.IsTwoFactorActive() {
-		return true, 0, nil
+		return true, store.RecoveryCodeProof{}, nil
 	}
 	if !s.allowSensitive(s.secondFactorLimiter, r, u.ID) {
-		return false, 0, errSensitiveRateLimited
+		return false, store.RecoveryCodeProof{}, errSensitiveRateLimited
 	}
 	switch classifySecondFactor(code) {
 	case "recovery":
 		if !s.allowSensitive(s.recoveryCodeLimiter, r, u.ID) {
-			return false, 0, errSensitiveRateLimited
+			return false, store.RecoveryCodeProof{}, errSensitiveRateLimited
 		}
-		recoveryCodeID, err := s.store.MatchRecoveryCode(r.Context(), u.ID, code)
-		return recoveryCodeID != 0, recoveryCodeID, err
+		id, hash, err := s.store.MatchRecoveryCodeProof(r.Context(), u.ID, code)
+		if err != nil || id == 0 || hash == "" {
+			return false, store.RecoveryCodeProof{}, err
+		}
+		return true, store.RecoveryCodeProof{ID: id, Hash: hash}, nil
 	case "totp":
 		if !s.allowSensitive(s.totpLimiter, r, u.ID) {
-			return false, 0, errSensitiveRateLimited
+			return false, store.RecoveryCodeProof{}, errSensitiveRateLimited
 		}
 		secret, err := s.store.GetUserTwoFactorSecret(r.Context(), u.ID)
 		if err != nil {
-			return false, 0, err
+			return false, store.RecoveryCodeProof{}, err
 		}
-		return crypto.ValidateTOTPCode(secret, strings.TrimSpace(code)), 0, nil
+		return crypto.ValidateTOTPCode(secret, strings.TrimSpace(code)), store.RecoveryCodeProof{}, nil
 	default:
-		return false, 0, nil
+		return false, store.RecoveryCodeProof{}, nil
 	}
 }
 
@@ -182,7 +185,7 @@ func (s *Server) handleOIDCSetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	verified, recoveryCodeID, err := s.verifySensitiveSecondFactor(r, u, in.TwoFactorCode)
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.TwoFactorCode)
 	if errors.Is(err, errSensitiveRateLimited) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
@@ -195,8 +198,8 @@ func (s *Server) handleOIDCSetPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	if recoveryCodeID > 0 {
-		err = s.store.SetFirstPasswordWithRecoveryCode(r.Context(), u.ID, grant, sessionToken, in.NewPassword, recoveryCodeID)
+	if proof.ID > 0 {
+		err = s.store.SetFirstPasswordWithRecoveryCode(r.Context(), u.ID, grant, sessionToken, in.NewPassword, proof)
 	} else {
 		err = s.store.SetFirstPassword(r.Context(), u.ID, grant, sessionToken, in.NewPassword)
 	}
@@ -241,16 +244,7 @@ func (s *Server) handleOIDCLinkStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	returnTo := oidc.SanitizeReturnTo(in.ReturnTo)
-	if returnTo == "/" {
-		returnTo = "/?auth_method=linked"
-	}
-	req, err := s.oidcService.SensitiveAuthorizationRequest(r.Context(), oidc.FlowLink, u.ID, sessionToken, returnTo)
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "OIDC is currently unavailable", nil)
-		return
-	}
-	verified, recoveryCodeID, err := s.verifySensitiveSecondFactor(r, u, in.TwoFactorCode)
+	verified, proof, err := s.verifySensitiveSecondFactorProof(r, u, in.TwoFactorCode)
 	if errors.Is(err, errSensitiveRateLimited) {
 		writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts; try again later", nil)
 		return
@@ -263,16 +257,19 @@ func (s *Server) handleOIDCLinkStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
 		return
 	}
-	if recoveryCodeID > 0 {
-		consumed, err := s.store.ConsumeRecoveryCodeID(r.Context(), u.ID, recoveryCodeID)
-		if err != nil {
-			writeStoreErr(w, err, true)
-			return
-		}
-		if !consumed {
-			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid authentication", nil)
-			return
-		}
+	returnTo := oidc.SanitizeReturnTo(in.ReturnTo)
+	if returnTo == "/" {
+		returnTo = "/?auth_method=linked"
+	}
+	var req *oidc.AuthorizationRequest
+	if proof.ID > 0 {
+		req, err = s.oidcService.SensitiveAuthorizationRequestWithRecoveryProof(r.Context(), oidc.FlowLink, u.ID, sessionToken, returnTo, proof.ID, proof.Hash)
+	} else {
+		req, err = s.oidcService.SensitiveAuthorizationRequest(r.Context(), oidc.FlowLink, u.ID, sessionToken, returnTo)
+	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "OIDC is currently unavailable", nil)
+		return
 	}
 	writeJSON(w, http.StatusOK, req)
 }
