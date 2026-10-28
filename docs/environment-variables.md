@@ -109,6 +109,7 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | -------------------------- | ------- | ---------------------- | ---------------------------------------------------------------------------- |
 | `SCRUMBOY_PUBLIC_BASE_URL` | empty   | Conditionally required | Canonical public origin for reset links, email notify links, OAuth discovery |
 | `SCRUMBOY_TRUST_PROXY`     | off     | Optional               | Honor trusted forwarded headers for rate-limit IP / OAuth discovery          |
+| `SCRUMBOY_ABUSE_POLICY_FILE` | empty | Optional               | Optional JSON abuse-protection file; empty uses built-in defaults            |
 
 
 ### Development / build helpers
@@ -160,7 +161,18 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 - **When true:** auth/OAuth rate-limit IP keys may honor `X-Forwarded-For` (first hop); OAuth issuer discovery may use trusted `X-Forwarded-Proto` / `X-Forwarded-Host` / `CF-Visitor` when `SCRUMBOY_PUBLIC_BASE_URL` is unset.
 - **Security:** enable only when a reverse proxy is the sole client path and **overwrites or strips** client-supplied values for those headers. Without a valid public base URL, discovery requires forwarded HTTPS plus an explicit forwarded host; weak/multi-value forwarded fields fail closed (`503`). See [oauth.md](oauth.md).
 
-**Docker / Compose:** stock `docker-compose.yml` may pass through `SCRUMBOY_PUBLIC_BASE_URL` and `SCRUMBOY_TRUST_PROXY` from the host environment (empty if unset).
+**Docker / Compose:** stock `docker-compose.yml` may pass through `SCRUMBOY_PUBLIC_BASE_URL`, `SCRUMBOY_TRUST_PROXY`, and `SCRUMBOY_ABUSE_POLICY_FILE` from the host environment (empty if unset).
+
+### `SCRUMBOY_ABUSE_POLICY_FILE`
+
+- **Default:** empty (built-in defaults; the process does not auto-discover a file)
+- **Purpose:** Optional JSON policy for anonymous/temporary-board abuse protection. A missing env var uses defaults. A missing or invalid file **fails HTTP startup**. `recover-owner` does not load or validate this file.
+- **`rateLimits.enabled`:** default on. `false` disables request throttling only. CSRF, authorization, payload size limits, import record-count ceilings, in-flight anonymous export slots, and anonymous-board SSE caps stay enforced.
+- **Built-in request budgets (single-instance self-host):** anonymous board creation 5/hour and 10/day per IP, 20/hour and 50/day instance-wide; expiring-board mutations 120/minute per IP, 40/10s burst, 240/minute per board; anonymous imports and backup exports 10/hour per IP. Workshop operators raise the creation windows in the JSON file.
+- **Always-on safety ceilings:** 2000 stories and 20 projects per anonymous/expiring-board import (not applied to authenticated durable-library restore), 1 in-flight anonymous backup export, 500/10/50 SSE connections (global / per IP / per expiring board).
+- **IP keys:** same trusted-client-IP rules as other limiters (`RemoteAddr`, or first `X-Forwarded-For` hop only when `SCRUMBOY_TRUST_PROXY` is on).
+- **Example:** [`configs/scrumboy-abuse-policy.example.json`](../configs/scrumboy-abuse-policy.example.json)
+- **Docker / Compose:** pass the env var and mount the file at that path inside the container.
 
 ---
 

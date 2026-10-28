@@ -170,6 +170,9 @@ func (a *Adapter) handleTodosLinkAdd(ctx context.Context, input any) (any, map[s
 	if prepareErr != nil {
 		return nil, nil, mapTodoLinkMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	linkType := in.LinkType
 	if linkType == "" {
@@ -226,6 +229,9 @@ func (a *Adapter) handleTodosLinkRemove(ctx context.Context, input any) (any, ma
 	})
 	if prepareErr != nil {
 		return nil, nil, mapTodoLinkMutationPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 
 	linkSet, removeErr := prepared.Remove(todolinkapp.RemoveCommand{

@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
 	"scrumboy/internal/migrate"
@@ -46,7 +47,8 @@ func newLegacyTodoMutationFixture(t *testing.T, mode string) *legacyTodoMutation
 
 	st := store.New(sqlDB, nil)
 	collector := &collectingConsumer{}
-	srv := NewServer(st, Options{MaxRequestBody: 1 << 20, ScrumboyMode: mode})
+	disabled := abusepolicy.DisabledThrottling()
+	srv := NewServer(st, Options{MaxRequestBody: 1 << 20, ScrumboyMode: mode, AbusePolicy: &disabled})
 	srv.fanout = eventbus.NewFanout(newSSEBridge(srv.hub, srv.creatorNotificationAuthorizer), collector)
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 	ts := httptest.NewServer(srv)
@@ -528,34 +530,23 @@ func TestLegacyTodoMutationsAnonymousModeContract(t *testing.T) {
 	patchBody := legacyTodoFullPatch(patchTodo)
 	patchBody["body"] = "anonymous body"
 	response, body := doJSON(t, client, http.MethodPatch, fmt.Sprintf("%s/api/todos/%d", fixture.ts.URL, patchTodo.ID), patchBody, nil)
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("anonymous PATCH status=%d body=%s", response.StatusCode, body)
+	legacyTodoAssertError(t, response, body, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+	if got := legacyTodoRead(t, fixture, patchTodo.ID); got.Body == "anonymous body" {
+		t.Fatalf("anonymous numeric PATCH persisted=%+v", got)
 	}
-	if got := legacyTodoRead(t, fixture, patchTodo.ID); got.Body != "anonymous body" || got.AssigneeUserID != nil {
-		t.Fatalf("anonymous PATCH persisted=%+v", got)
-	}
-	legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_updated", patchTodo.ID)
-	legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_updated", 0)
 
 	legacyTodoResetEvents(fixture)
 	response, body = doJSON(t, client, http.MethodPost, fmt.Sprintf("%s/api/todos/%d/move", fixture.ts.URL, moveTodo.ID), map[string]any{"toColumnKey": store.DefaultColumnDoing}, nil)
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("anonymous MOVE status=%d body=%s", response.StatusCode, body)
+	legacyTodoAssertError(t, response, body, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+	if got := legacyTodoRead(t, fixture, moveTodo.ID); got.ColumnKey == store.DefaultColumnDoing {
+		t.Fatalf("anonymous numeric MOVE persisted=%+v", got)
 	}
-	if got := legacyTodoRead(t, fixture, moveTodo.ID); got.ColumnKey != store.DefaultColumnDoing {
-		t.Fatalf("anonymous MOVE column=%q", got.ColumnKey)
-	}
-	legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_moved", moveTodo.ID)
-	legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_moved", 0)
 
 	legacyTodoResetEvents(fixture)
 	response, body = doJSON(t, client, http.MethodDelete, fmt.Sprintf("%s/api/todos/%d", fixture.ts.URL, deleteTodo.ID), nil, nil)
-	if response.StatusCode != http.StatusNoContent || len(body) != 0 {
-		t.Fatalf("anonymous DELETE status=%d body=%q, want empty 204", response.StatusCode, body)
+	legacyTodoAssertError(t, response, body, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+	if legacyTodoRowCount(t, fixture, deleteTodo.ID) != 1 {
+		t.Fatal("anonymous numeric DELETE removed Todo")
 	}
-	if legacyTodoRowCount(t, fixture, deleteTodo.ID) != 0 {
-		t.Fatal("anonymous DELETE retained Todo")
-	}
-	legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_deleted", deleteTodo.ID)
-	legacyTodoAssertDeleteRefresh(t, fixture, project.ID, 0)
+	legacyTodoAssertNoEvents(t, fixture, project.ID)
 }

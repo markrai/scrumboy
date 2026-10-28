@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/db"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/store"
@@ -36,10 +37,12 @@ func newTestHTTPServerWithLimits(t *testing.T, mode string, maxBody, maxTrelloBo
 	}
 
 	st := store.New(sqlDB, nil)
+	disabled := abusepolicy.DisabledThrottling()
 	srv := NewServer(st, Options{
 		MaxRequestBody:      maxBody,
 		MaxTrelloImportBody: maxTrelloBody,
 		ScrumboyMode:        mode,
+		AbusePolicy:         &disabled,
 	})
 	ts := httptest.NewServer(srv)
 	return ts, sqlDB, func() {

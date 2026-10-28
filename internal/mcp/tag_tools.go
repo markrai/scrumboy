@@ -320,6 +320,9 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 		if prepareErr != nil {
 			return nil, nil, mapTagColorPrepareError(prepareErr)
 		}
+		if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+			return nil, nil, admitErr
+		}
 		tag, updateErr := prepared.Update()
 		if updateErr != nil {
 			return nil, nil, mapTagColorUpdateError(updateErr)
@@ -335,6 +338,9 @@ func (a *Adapter) handleTagsUpdateProjectColor(ctx context.Context, input any) (
 	})
 	if prepareErr != nil {
 		return nil, nil, mapTagColorPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 	tag, updateErr := prepared.Update()
 	if updateErr != nil {
@@ -379,6 +385,9 @@ func (a *Adapter) handleTagsDeleteProject(ctx context.Context, input any) (any, 
 	})
 	if prepareErr != nil {
 		return nil, nil, mapTagDeletionPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 	if deleteErr := prepared.Delete(); deleteErr != nil {
 		return nil, nil, mapTagDeletionExecuteError(deleteErr)

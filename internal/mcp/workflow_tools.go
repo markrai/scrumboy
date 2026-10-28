@@ -155,6 +155,9 @@ func (a *Adapter) handleWorkflowCreate(ctx context.Context, input any) (any, map
 	if prepareErr != nil {
 		return nil, nil, mapWorkflowMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	col, colErr := prepared.Create(workflowapp.CreateCommand{Name: in.Name})
 	if colErr != nil {
@@ -214,6 +217,9 @@ func (a *Adapter) handleWorkflowUpdate(ctx context.Context, input any) (any, map
 	if prepareErr != nil {
 		return nil, nil, mapWorkflowMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	col, updateErr := prepared.Update(workflowapp.UpdateCommand{
 		Key:   in.ColumnKey,
@@ -262,6 +268,9 @@ func (a *Adapter) handleWorkflowDelete(ctx context.Context, input any) (any, map
 	})
 	if prepareErr != nil {
 		return nil, nil, mapWorkflowMutationPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 
 	if deleteErr := prepared.Delete(workflowapp.DeleteCommand{Key: in.ColumnKey}); deleteErr != nil {

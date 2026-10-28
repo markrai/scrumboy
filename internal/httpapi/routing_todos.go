@@ -21,6 +21,10 @@ func (s *Server) handleTodos(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	if s.rejectLegacyNumericExpiringTodo(w, r, todoID) {
+		return
+	}
+
 	if s.handleTodosPatchOrDelete(w, r, rest, todoID) {
 		return
 	}
@@ -29,6 +33,28 @@ func (s *Server) handleTodos(w http.ResponseWriter, r *http.Request, rest []stri
 	}
 
 	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+}
+
+func (s *Server) rejectLegacyNumericExpiringTodo(w http.ResponseWriter, r *http.Request, todoID int64) bool {
+	if r.Method != http.MethodPatch && r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		return false
+	}
+	projectID, err := s.store.GetProjectIDForTodo(s.requestContext(r), todoID)
+	if err != nil {
+		// Preserve the existing handler's validation/not-found ordering for
+		// unknown IDs; only close the numeric path when the todo is known to
+		// live on an expiring board.
+		return false
+	}
+	project, err := s.store.GetProject(s.requestContext(r), projectID)
+	if err != nil {
+		return false
+	}
+	if project.ExpiresAt != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return true
+	}
+	return false
 }
 
 func (s *Server) handleTodosPatchOrDelete(w http.ResponseWriter, r *http.Request, rest []string, todoID int64) bool {

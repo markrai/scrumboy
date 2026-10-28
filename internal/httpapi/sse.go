@@ -9,6 +9,7 @@ import (
 	"time"
 
 	publicboardapp "scrumboy/internal/application/publicboard"
+	"scrumboy/internal/store"
 )
 
 const heartbeatInterval = 25 * time.Second
@@ -202,11 +203,23 @@ func drainQueuedPublicRefreshes(events <-chan PublicEvent) publicQueueState {
 	}
 }
 
-func (s *Server) handleBoardEvents(w http.ResponseWriter, r *http.Request, projectID int64) {
+func (s *Server) handleBoardEvents(w http.ResponseWriter, r *http.Request, project store.Project) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "streaming not supported", nil)
 		return
+	}
+
+	projectID := project.ID
+	if project.ExpiresAt != nil {
+		release, err := s.anonStreamSlots.acquire(projectID, s.clientIP(r))
+		if err != nil {
+			s.logger.Printf("anonymous board stream concurrency limit reached")
+			w.Header().Set("Retry-After", "60")
+			writeError(w, http.StatusTooManyRequests, "RATE_LIMITED", "too many requests", nil)
+			return
+		}
+		defer release()
 	}
 
 	// SSE + proxy safety headers.

@@ -1252,9 +1252,45 @@ func statusResolvesInWorkflow(statusFromExport string, validColumnKeys map[strin
 
 // validateImportPreflight runs all validation before any import writes.
 // Replace mode must not delete anything until this passes.
+func importWorkCounts(data *ExportData) (projects, todos int) {
+	if data == nil {
+		return 0, 0
+	}
+	projects = len(data.Projects)
+	for _, p := range data.Projects {
+		todos += len(p.Todos)
+	}
+	return projects, todos
+}
+
+func (s *Store) rejectImportWorkLimit(data *ExportData) error {
+	projects, todos := importWorkCounts(data)
+	maxProjects := s.maxImportProjects
+	maxTodos := s.maxImportTodos
+	if maxProjects <= 0 {
+		maxProjects = DefaultMaxImportProjects
+	}
+	if maxTodos <= 0 {
+		maxTodos = DefaultMaxImportTodos
+	}
+	if projects > maxProjects {
+		return fmt.Errorf("%w: import has %d projects; maximum is %d", ErrValidation, projects, maxProjects)
+	}
+	if todos > maxTodos {
+		return fmt.Errorf("%w: import has %d stories; maximum is %d", ErrValidation, todos, maxTodos)
+	}
+	return nil
+}
+
 func (s *Store) validateImportPreflight(ctx context.Context, data *ExportData, mode Mode, importMode string) error {
 	if data == nil || len(data.Projects) == 0 {
 		return nil // Empty import is allowed
+	}
+	// Record-count ceilings are anonymous/expiring-board safety, not a durable-library cap.
+	if mode == ModeAnonymous {
+		if err := s.rejectImportWorkLimit(data); err != nil {
+			return err
+		}
 	}
 
 	linkTypesAllowed := map[string]bool{"relates_to": true, "blocks": true, "duplicates": true, "parent": true}
@@ -1603,6 +1639,10 @@ func (s *Store) importIntoBoard(ctx context.Context, data *ExportData, mode Mode
 	targetProject, err := s.GetProjectBySlug(ctx, targetSlug)
 	if err != nil {
 		return nil, fmt.Errorf("get target project: %w", err)
+	}
+
+	if err := s.rejectImportWorkLimit(data); err != nil {
+		return nil, err
 	}
 
 	// Verify it's an anonymous board

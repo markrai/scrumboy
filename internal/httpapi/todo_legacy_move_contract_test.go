@@ -97,11 +97,8 @@ func TestLegacyTodoMoveAccessAndModeContracts(t *testing.T) {
 		todo := legacyTodoCreateTodo(t, fixture, ownerCtx, project.ID, store.ModeFull, store.CreateTodoInput{Title: "Temporary move"})
 		legacyTodoResetEvents(fixture)
 		response, body := legacyTodoMoveRequest(t, fixture, legacyTodoAnonymousClient(t, fixture), todo.ID, map[string]any{"toColumnKey": store.DefaultColumnDoing}, nil)
-		if response.StatusCode != http.StatusOK {
-			t.Fatalf("temporary MOVE status=%d body=%s", response.StatusCode, body)
-		}
-		legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_moved", todo.ID)
-		legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_moved", 0)
+		legacyTodoAssertError(t, response, body, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+		legacyTodoAssertMoveFailureUnchanged(t, fixture, project.ID, todo)
 	})
 
 	t.Run("expired_temporary_currently_succeeds", func(t *testing.T) {
@@ -114,17 +111,12 @@ func TestLegacyTodoMoveAccessAndModeContracts(t *testing.T) {
 		}
 		legacyTodoResetEvents(fixture)
 
-		// This freezes existing compatibility behavior for refactor safety. It is
-		// deliberately not a statement that mutating an expired board is desirable.
 		response, body := legacyTodoMoveRequest(t, fixture, legacyTodoAnonymousClient(t, fixture), todo.ID, map[string]any{"toColumnKey": store.DefaultColumnDoing}, nil)
-		if response.StatusCode != http.StatusOK {
-			t.Fatalf("expired temporary MOVE status=%d body=%s, want current 200", response.StatusCode, body)
+		legacyTodoAssertError(t, response, body, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+		if got := legacyTodoRead(t, fixture, todo.ID); got.ColumnKey == store.DefaultColumnDoing {
+			t.Fatalf("expired temporary MOVE persisted: %+v", got)
 		}
-		if got := legacyTodoRead(t, fixture, todo.ID); got.ColumnKey != store.DefaultColumnDoing {
-			t.Fatalf("expired temporary MOVE did not persist: %+v", got)
-		}
-		legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_moved", todo.ID)
-		legacyTodoAssertOneRefresh(t, fixture, project.ID, "todo_moved", 0)
+		legacyTodoAssertMoveFailureUnchanged(t, fixture, project.ID, todo)
 	})
 }
 

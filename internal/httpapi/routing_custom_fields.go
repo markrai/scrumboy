@@ -95,6 +95,9 @@ func (s *Server) handleBoardCustomFieldRoutes(w http.ResponseWriter, r *http.Req
 		writeCustomFieldMutationError(w, err)
 		return true
 	}
+	if !s.admitExpiringMutation(w, r, project) {
+		return true
+	}
 
 	if isCreate {
 		var in struct {

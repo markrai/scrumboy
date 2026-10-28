@@ -122,6 +122,14 @@ func (s *Server) handleBoard(w http.ResponseWriter, r *http.Request, rest []stri
 		return
 	}
 
+	if isMutatingMethod(r.Method) && !deferExpiringMutationAdmission(r.Method, rest) && !s.admitExpiringMutation(w, r, pc.Project) {
+		return
+	}
+
+	if s.handleBoardRenameRoute(w, r, rest, &pc) {
+		return
+	}
+
 	if s.handleBoardReadEventsAndSettings(w, r, rest, &pc) {
 		return
 	}
@@ -182,12 +190,66 @@ func writeBoardSettingsPrepareError(w http.ResponseWriter, err error) {
 	}
 }
 
+func (s *Server) handleBoardRenameRoute(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
+	if len(rest) != 1 || r.Method != http.MethodPatch {
+		return false
+	}
+	if pc.Project.ExpiresAt == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return true
+	}
+	var in struct {
+		Name  *string `json:"name"`
+		Image *string `json:"image"`
+	}
+	if err := readJSON(w, r, s.maxBody, &in); err != nil {
+		return true
+	}
+	if in.Name == nil && in.Image == nil {
+		writeValidationError(w, "missing name", "missing_name", map[string]any{"field": "name"})
+		return true
+	}
+	ctx := s.requestContext(r)
+	// Creator-owned temporary boards use project-settings authorization for
+	// name, image, or both. Creator-less anonymous boards keep unauthenticated
+	// slug rename; image still requires the same manage check.
+	if in.Image != nil || pc.Project.CreatorUserID != nil {
+		userID, ok := store.UserIDFromContext(ctx)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+			return true
+		}
+		if err := s.store.CheckCanManageProject(ctx, pc.Project.ID, userID); err != nil {
+			writeStoreErr(w, err, true)
+			return true
+		}
+	}
+	if !s.admitExpiringMutation(w, r, pc.Project) {
+		return true
+	}
+	prepared, err := s.projectUpdates.Prepare(ctx, projectapp.RESTUpdateTarget{
+		ProjectID: pc.Project.ID,
+		Mode:      s.storeMode(),
+	})
+	if err != nil {
+		writeProjectUpdateError(w, err)
+		return true
+	}
+	project, err := prepared.Update(projectapp.RESTUpdateCommand{Name: in.Name, Image: in.Image})
+	if err != nil {
+		writeProjectUpdateError(w, err)
+		return true
+	}
+	writeJSON(w, http.StatusOK, projectToJSON(project))
+	return true
+}
+
 func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http.Request, rest []string, pc *store.ProjectContext) bool {
 	project := pc.Project
 
 	// GET /api/board/{slug}/events
 	if len(rest) == 2 && rest[1] == "events" && r.Method == http.MethodGet {
-		s.handleBoardEvents(w, r, project.ID)
+		s.handleBoardEvents(w, r, project)
 		return true
 	}
 
@@ -197,6 +259,9 @@ func (s *Server) handleBoardReadEventsAndSettings(w http.ResponseWriter, r *http
 		prepared, err := s.boardSettings.Prepare(ctx, projectsettingsapp.ResolvedRESTTarget{ProjectID: project.ID})
 		if err != nil {
 			writeBoardSettingsPrepareError(w, err)
+			return true
+		}
+		if !s.admitExpiringMutation(w, r, project) {
 			return true
 		}
 
@@ -292,6 +357,9 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 			writeWorkflowMutationPrepareError(w, err)
 			return true
 		}
+		if !s.admitExpiringMutation(w, r, project) {
+			return true
+		}
 
 		var in struct {
 			Name string `json:"name"`
@@ -332,6 +400,9 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 		})
 		if err != nil {
 			writeWorkflowMutationPrepareError(w, err)
+			return true
+		}
+		if !s.admitExpiringMutation(w, r, project) {
 			return true
 		}
 		columnKey := strings.TrimSpace(rest[2])
@@ -385,6 +456,9 @@ func (s *Server) handleBoardWorkflowRoutes(w http.ResponseWriter, r *http.Reques
 		})
 		if err != nil {
 			writeWorkflowMutationPrepareError(w, err)
+			return true
+		}
+		if !s.admitExpiringMutation(w, r, project) {
 			return true
 		}
 		columnKey := strings.TrimSpace(rest[2])
@@ -453,6 +527,9 @@ func (s *Server) handleBoardPriorityRoutes(w http.ResponseWriter, r *http.Reques
 			writePriorityMutationPrepareError(w, err)
 			return true
 		}
+		if !s.admitExpiringMutation(w, r, project) {
+			return true
+		}
 		var in struct {
 			Name string `json:"name"`
 		}
@@ -481,6 +558,9 @@ func (s *Server) handleBoardPriorityRoutes(w http.ResponseWriter, r *http.Reques
 		prepared, err := s.priorityMutations.Prepare(ctx, priorityapp.ResolvedRESTMutationTarget{ProjectID: project.ID})
 		if err != nil {
 			writePriorityMutationPrepareError(w, err)
+			return true
+		}
+		if !s.admitExpiringMutation(w, r, project) {
 			return true
 		}
 		key := strings.TrimSpace(rest[2])
@@ -519,6 +599,9 @@ func (s *Server) handleBoardPriorityRoutes(w http.ResponseWriter, r *http.Reques
 			writePriorityMutationPrepareError(w, err)
 			return true
 		}
+		if !s.admitExpiringMutation(w, r, project) {
+			return true
+		}
 		key := strings.TrimSpace(rest[2])
 		if key == "" {
 			writeValidationError(w, "invalid priority key", "invalid_priority_key", map[string]any{"field": "key"})
@@ -555,6 +638,13 @@ func (s *Server) handleBoardClaimRoute(w http.ResponseWriter, r *http.Request, r
 	userID, ok := store.UserIDFromContext(ctx)
 	if !ok {
 		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized", nil)
+		return true
+	}
+	if project.CreatorUserID == nil || *project.CreatorUserID != userID {
+		writeStoreErr(w, store.ErrNotFound, true)
+		return true
+	}
+	if !s.admitExpiringMutation(w, r, project) {
 		return true
 	}
 	prepared := s.projectClaims.Prepare(ctx, projectapp.ClaimCommand{
@@ -1144,6 +1234,9 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			writeSprintDefinitionPrepareError(w, err)
 			return true
 		}
+		if !s.admitExpiringMutation(w, r, project) {
+			return true
+		}
 		var in struct {
 			Name           string `json:"name"`
 			PlannedStartAt int64  `json:"plannedStartAt"`
@@ -1216,6 +1309,9 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 				writeSprintDefinitionPrepareError(w, err)
 				return true
 			}
+			if !s.admitExpiringMutation(w, r, project) {
+				return true
+			}
 			var in struct {
 				Name           *string `json:"name"`
 				PlannedStartAt *int64  `json:"plannedStartAt"`
@@ -1249,6 +1345,9 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			})
 			if err != nil {
 				writeSprintLifecyclePrepareError(w, err)
+				return true
+			}
+			if !s.admitExpiringMutation(w, r, project) {
 				return true
 			}
 			if err := prepared.Delete(); err != nil {
@@ -1295,6 +1394,9 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 			writeSprintLifecyclePrepareError(w, err)
 			return true
 		}
+		if !s.admitExpiringMutation(w, r, project) {
+			return true
+		}
 		if err := prepared.Activate(); err != nil {
 			writeStoreErr(w, err, true)
 			return true
@@ -1317,6 +1419,9 @@ func (s *Server) handleBoardSprintRoutes(w http.ResponseWriter, r *http.Request,
 		})
 		if err != nil {
 			writeSprintLifecyclePrepareError(w, err)
+			return true
+		}
+		if !s.admitExpiringMutation(w, r, project) {
 			return true
 		}
 		if err := prepared.Close(); err != nil {

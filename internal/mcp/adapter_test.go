@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/db"
 	"scrumboy/internal/httpapi"
 	"scrumboy/internal/mcp"
@@ -41,10 +42,12 @@ func newTestServer(t *testing.T, mode string) (*httptest.Server, *sql.DB, func()
 	}
 
 	st := store.New(sqlDB, nil)
+	disabled := abusepolicy.DisabledThrottling()
 	srv := httpapi.NewServer(st, httpapi.Options{
 		MaxRequestBody: 1 << 20,
 		ScrumboyMode:   mode,
 		MCPHandler:     mcp.New(st, mcp.Options{Mode: mode}),
+		AbusePolicy:    &disabled,
 	})
 	ts := httptest.NewServer(srv)
 	return ts, sqlDB, func() {

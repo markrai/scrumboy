@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/store"
 )
 
@@ -14,6 +15,7 @@ const (
 	CodeValidationError       = "VALIDATION_ERROR"
 	CodeConflict              = "CONFLICT"
 	CodeCapabilityUnavailable = "CAPABILITY_UNAVAILABLE"
+	CodeRateLimited           = "RATE_LIMITED"
 	CodeInternal              = "INTERNAL"
 	CodeMethodNotAllowed      = "METHOD_NOT_ALLOWED"
 )
@@ -49,6 +51,8 @@ func newAdapterError(status int, code, message string, details any) *adapterErro
 
 func mapStoreError(err error) *adapterError {
 	switch {
+	case errors.Is(err, ratelimit.ErrLimited):
+		return newAdapterError(http.StatusTooManyRequests, CodeRateLimited, "too many requests", nil)
 	case errors.Is(err, store.ErrUnauthorized):
 		return newAdapterError(http.StatusUnauthorized, CodeAuthRequired, "Sign-in required for this tool", nil)
 	case errors.Is(err, store.ErrForbidden):

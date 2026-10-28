@@ -112,6 +112,11 @@ type Config struct {
 	// an explicit X-Forwarded-Host; it never falls back to the request Host.
 	TrustProxy bool
 
+	// AbusePolicyFile is the optional JSON file pointed to by
+	// SCRUMBOY_ABUSE_POLICY_FILE. Empty means built-in defaults. The server
+	// does not auto-discover a file; operators must set the env var.
+	AbusePolicyFile string
+
 	// Warnings lists configuration values FromEnv did not recognize and how it
 	// treated them, for the caller to log at startup.
 	Warnings []string
@@ -185,8 +190,9 @@ func FromEnv() Config {
 		SMTPTLSMode:      normalizeSMTPTLSMode(os.Getenv("SCRUMBOY_SMTP_TLS_MODE")),
 		SMTPDebug:        strings.TrimSpace(os.Getenv("SCRUMBOY_SMTP_DEBUG")) == "1",
 
-		PublicBaseURL: NormalizeBaseURL(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")),
-		TrustProxy:    trustProxyFromEnv(),
+		PublicBaseURL:   NormalizeBaseURL(os.Getenv("SCRUMBOY_PUBLIC_BASE_URL")),
+		TrustProxy:      trustProxyFromEnv(),
+		AbusePolicyFile: strings.TrimSpace(os.Getenv("SCRUMBOY_ABUSE_POLICY_FILE")),
 
 		Warnings: warnings,
 	}

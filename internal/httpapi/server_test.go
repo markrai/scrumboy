@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/db"
 	"scrumboy/internal/migrate"
 	"scrumboy/internal/store"
@@ -50,6 +51,10 @@ func newTestHTTPServerWithOptions(t *testing.T, opts Options) (*httptest.Server,
 	}
 	if opts.ScrumboyMode == "" {
 		opts.ScrumboyMode = "full"
+	}
+	if opts.AbusePolicy == nil {
+		disabled := abusepolicy.DisabledThrottling()
+		opts.AbusePolicy = &disabled
 	}
 	srv := NewServer(st, opts)
 	ts := httptest.NewServer(srv)
@@ -4192,15 +4197,9 @@ func testTagScope_AnonymousMode_ColorIsolation_Old(t *testing.T) {
 	}
 }
 
-// TestAnonymousMode_RenameProjectAuthorization verifies that PATCH /api/projects/{id} in anonymous mode
-// correctly enforces authorization at the store boundary. This test is critical because routing allows
-// PATCH requests through in anonymous mode, relying entirely on store-layer authorization.
-//
-// Test cases:
-// - Anonymous + non-temp board → 404 (not found, store rejects)
-// - Anonymous + expired temp board → 404 (not found, store rejects)
-// - Anonymous + active anonymous temp board → 200 (allowed, no auth required)
-// - Anonymous + authenticated temp board → 404 (not found, store rejects)
+// TestAnonymousMode_RenameProjectAuthorization verifies that numeric
+// PATCH /api/projects/{id} is closed in anonymous mode and that rename uses
+// PATCH /api/board/{slug} for active anonymous boards.
 func TestAnonymousMode_RenameProjectAuthorization(t *testing.T) {
 	ts, sqlDB, cleanup := newTestHTTPServer(t, "anonymous")
 	defer cleanup()
@@ -4257,8 +4256,14 @@ func TestAnonymousMode_RenameProjectAuthorization(t *testing.T) {
 	resp, body := doJSON(t, client, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(activeAnonymousProject.ID, 10), map[string]interface{}{
 		"name": "Renamed Anonymous Board",
 	}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("Test 3: Expected 404 for numeric rename of active anonymous board, got %d body=%s", resp.StatusCode, string(body))
+	}
+	resp, body = doJSON(t, client, http.MethodPatch, ts.URL+"/api/board/"+activeAnonymousProject.Slug, map[string]interface{}{
+		"name": "Renamed Anonymous Board",
+	}, nil)
 	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Test 3: Expected 200 for active anonymous temp board, got %d body=%s", resp.StatusCode, string(body))
+		t.Errorf("Test 3: Expected 200 for slug rename of active anonymous temp board, got %d body=%s", resp.StatusCode, string(body))
 	}
 
 	// Verify the name was actually updated

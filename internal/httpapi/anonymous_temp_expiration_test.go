@@ -145,8 +145,7 @@ func TestAnonymousMode_PatchRename_ImageRejected(t *testing.T) {
 	resp, _ := doJSON(t, client, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(p.ID, 10), map[string]any{
 		"image": "data:image/png;base64,aaaa",
 	}, nil)
-	// Anonymous mode has no session; image PATCH requires auth (route is open only for rename on active anon temps).
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("expected 401 for image PATCH in anonymous mode, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for numeric image PATCH in anonymous mode, got %d", resp.StatusCode)
 	}
 }

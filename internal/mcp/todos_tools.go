@@ -103,6 +103,9 @@ func (a *Adapter) handleTodosCreate(ctx context.Context, input any) (any, map[st
 	if prepareErr != nil {
 		return nil, nil, mapStoreError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	columnKey := normalizeColumnKey(in.ColumnKey)
 	if columnKey == "" {
@@ -305,6 +308,9 @@ func (a *Adapter) handleTodosUpdate(ctx context.Context, input any) (any, map[st
 	if prepareErr != nil {
 		return nil, nil, mapStoreError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, env.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	preparedTodo, getErr := prepared.PrepareTodo(env.LocalID)
 	if getErr != nil {
@@ -365,6 +371,9 @@ func (a *Adapter) handleTodosDelete(ctx context.Context, input any) (any, map[st
 	if prepareErr != nil {
 		return nil, nil, mapStoreError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	deleteErr := prepared.Delete(todoapp.DeleteCommand{LocalID: in.LocalID})
 	if deleteErr != nil {
@@ -422,6 +431,9 @@ func (a *Adapter) handleTodosMove(ctx context.Context, input any) (any, map[stri
 	})
 	if prepareErr != nil {
 		return nil, nil, mapStoreError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 	toColumnKey := normalizeColumnKey(in.ToColumnKey)
 	result, moveErr := prepared.Move(todoapp.MoveCommand{
