@@ -105,7 +105,7 @@ Preview typography and colors are scoped under `#todoDialog .todo-markdown-previ
 
 ### 1. markdown-it
 
-Loaded from `/vendor/markdown-it.min.js` (global `window.markdownit`). Pinned dependency: `markdown-it@14.3.2` in `internal/httpapi/web/package.json`, copied by `scripts/sync-vendor.mjs`.
+Loaded from `/vendor/markdown-it.min.js` (global `window.markdownit`). Pinned dependency: `markdown-it@14.3.3` in `internal/httpapi/web/package.json`, copied by `scripts/sync-vendor.mjs`.
 
 Instance options (`getMarkdownRenderer()`):
 

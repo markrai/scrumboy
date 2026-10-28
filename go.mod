@@ -8,7 +8,7 @@ require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/arran4/golang-ical v0.3.5
 	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/pquerna/otp v1.5.0
