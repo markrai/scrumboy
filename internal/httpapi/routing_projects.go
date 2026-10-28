@@ -14,22 +14,14 @@ import (
 )
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request, rest []string) {
-	// In anonymous deployment mode, block most numeric-ID project routes.
-	// Only slug-based routes (/api/board/{slug}) are allowed for pastebin semantics.
-	//
-	// Exception: PATCH /api/projects/{id} stays available only for active anonymous temp boards
-	// so paste-style boards can be renamed without exposing broader project mutation paths.
-	//
+	// In anonymous deployment mode, numeric-ID project routes are closed.
+	// Paste-style rename uses PATCH /api/board/{slug}.
 	// See TestAnonymousMode_RenameProjectAuthorization for the contract.
 	if s.mode == "anonymous" {
-		// Keep PATCH reachable so eligible anonymous temp boards can be renamed.
-		// The route still applies temp-board gating below before store mutation runs.
-		if len(rest) == 1 && r.Method == http.MethodPatch {
-			// Continue to PATCH handler below
-		} else {
-			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
-			return
-		}
+		// Numeric project routes are not part of the paste-board contract.
+		// Anonymous rename uses PATCH /api/board/{slug}.
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+		return
 	}
 
 	if s.handleProjectsRoot(w, r, rest) {
@@ -163,19 +155,23 @@ func (s *Server) handleProjectsProjectItem(w http.ResponseWriter, r *http.Reques
 
 	case http.MethodPatch:
 		ctx := s.requestContext(r)
+		var in struct {
+			Name  *string `json:"name"`
+			Image *string `json:"image"`
+		}
+		if err := readJSON(w, r, s.maxBody, &in); err != nil {
+			return true
+		}
+		if existing, err := s.store.GetProject(ctx, projectID); err == nil && existing.ExpiresAt != nil {
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "not found", nil)
+			return true
+		}
 		prepared, err := s.projectUpdates.Prepare(ctx, projectapp.RESTUpdateTarget{
 			ProjectID: projectID,
 			Mode:      s.storeMode(),
 		})
 		if err != nil {
 			writeProjectUpdateError(w, err)
-			return true
-		}
-		var in struct {
-			Name  *string `json:"name"`
-			Image *string `json:"image"`
-		}
-		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return true
 		}
 		project, err := prepared.Update(projectapp.RESTUpdateCommand{

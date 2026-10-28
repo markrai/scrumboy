@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/agora"
 	todoapp "scrumboy/internal/application/todo"
 	"scrumboy/internal/db"
@@ -53,10 +54,12 @@ func newAgoraTestServer(t *testing.T, mode string, withAgora bool) (*httptest.Se
 	st := store.New(sqlDB, nil)
 	maxB := int64(1 << 20)
 	mcpH := mcp.New(st, mcp.Options{Mode: mode})
+	disabled := abusepolicy.DisabledThrottling()
 	opts := httpapi.Options{
 		MaxRequestBody: maxB,
 		ScrumboyMode:   mode,
 		MCPHandler:     mcpH,
+		AbusePolicy:    &disabled,
 	}
 	if withAgora {
 		opts.AgoraHandler = agora.New(mcpH, agora.Options{MaxRequestBytes: maxB})

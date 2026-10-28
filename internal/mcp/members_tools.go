@@ -230,6 +230,9 @@ func (a *Adapter) handleMembersAdd(ctx context.Context, input any) (any, map[str
 	if prepareErr != nil {
 		return nil, nil, mapMembershipMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	member, addErr := prepared.Add(membershipapp.AddCommand{
 		TargetUserID: in.UserID,
@@ -295,6 +298,9 @@ func (a *Adapter) handleMembersUpdateRole(ctx context.Context, input any) (any, 
 	if prepareErr != nil {
 		return nil, nil, mapMembershipMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	member, updateErr := prepared.UpdateRole(membershipapp.UpdateRoleCommand{
 		TargetUserID: in.UserID,
@@ -351,6 +357,9 @@ func (a *Adapter) handleMembersRemove(ctx context.Context, input any) (any, map[
 	})
 	if prepareErr != nil {
 		return nil, nil, mapMembershipMutationPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 
 	removeErr := prepared.Remove(membershipapp.RemoveCommand{TargetUserID: in.UserID})

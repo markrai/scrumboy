@@ -21,6 +21,7 @@ import (
 	todolinkapp "scrumboy/internal/application/todolink"
 	useradminapp "scrumboy/internal/application/useradmin"
 	workflowapp "scrumboy/internal/application/workflow"
+	"scrumboy/internal/httpapi/ratelimit"
 	"scrumboy/internal/publicorigin"
 	"scrumboy/internal/store"
 )
@@ -97,6 +98,10 @@ type Options struct {
 	AssetFiles projectapp.AssetFileRemover
 }
 
+// MutationAdmitter is invoked after slug access succeeds and before an MCP
+// mutation on an expiring board. A nil admitter skips throttling.
+type MutationAdmitter func(ctx context.Context, project store.Project) error
+
 type Adapter struct {
 	store                storeAPI
 	boardReads           *boardapp.MCPBoardReadService
@@ -126,6 +131,7 @@ type Adapter struct {
 	publicOrigin         *publicorigin.Resolver
 	logger               *log.Logger
 	creatorRequestsBound bool
+	admitMutation        MutationAdmitter
 }
 
 func New(st storeAPI, opts Options) *Adapter {
@@ -268,6 +274,42 @@ func (a *Adapter) BindCreatorNotificationRequestPublisher(publisher todoapp.Crea
 	}
 	a.configureTodoMutationServices(publisher)
 	a.creatorRequestsBound = true
+}
+
+// BindMutationAdmitter installs optional expiring-board mutation admission.
+func (a *Adapter) BindMutationAdmitter(fn MutationAdmitter) {
+	a.admitMutation = fn
+}
+
+func (a *Adapter) admitExpiringBoard(ctx context.Context, slug string) *adapterError {
+	if a == nil || a.admitMutation == nil || strings.TrimSpace(slug) == "" {
+		return nil
+	}
+	pc, err := a.store.GetProjectContextBySlug(ctx, slug, a.storeMode())
+	if err != nil {
+		// Do not fail-open: a lookup miss after Prepare is a race, not a reason
+		// to skip admission. mapStoreError preserves the store's 401/403/404
+		// mapping instead of converting it into RATE_LIMITED.
+		return mapStoreError(err)
+	}
+	return a.admitExpiringProject(ctx, pc.Project)
+}
+
+func (a *Adapter) admitExpiringProject(ctx context.Context, project store.Project) *adapterError {
+	if a == nil || a.admitMutation == nil {
+		return nil
+	}
+	if project.ExpiresAt == nil {
+		return nil
+	}
+	if err := a.admitMutation(ctx, project); err != nil {
+		var rejected *ratelimit.Rejected
+		if errors.As(err, &rejected) || errors.Is(err, ratelimit.ErrLimited) {
+			return newAdapterError(http.StatusTooManyRequests, CodeRateLimited, "too many requests", nil)
+		}
+		return mapStoreError(err)
+	}
+	return nil
 }
 
 func (a *Adapter) configureTodoMutationServices(publisher todoapp.CreatorNotificationRequestPublisher) {

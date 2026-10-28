@@ -9,10 +9,12 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	assetapp "scrumboy/internal/application/asset"
 	backupimportapp "scrumboy/internal/application/backupimport"
+	"scrumboy/internal/abusepolicy"
 	boardapp "scrumboy/internal/application/board"
 	calendarapp "scrumboy/internal/application/calendar"
 	customfieldapp "scrumboy/internal/application/customfield"
@@ -125,6 +127,11 @@ type Options struct {
 	ArchiveImportRateLimit     *ratelimit.Limiter
 	ArchiveStagingSlots        int
 	ArchiveStagingSlotsPerUser int
+
+	// AbusePolicy is the resolved anonymous-board abuse policy. Nil uses
+	// abusepolicy.Default(). AbuseNow injects a clock for deterministic tests.
+	AbusePolicy *abusepolicy.Policy
+	AbuseNow    func() time.Time
 
 	// SMTP (optional). Enables self-service "forgot password" email via
 	// POST /api/auth/request-password-reset. Enabled when Host is set, Port
@@ -296,6 +303,11 @@ type Server struct {
 	assetUploadLimit    *ratelimit.Limiter
 	assetPublicLimit    *ratelimit.Limiter
 	archiveImportLimit  *ratelimit.Limiter
+
+	abusePolicy         abusepolicy.Policy
+	abuseAdmission      *ratelimit.Admission
+	anonStreamSlots     *streamSlots
+	anonExportsInFlight atomic.Int32
 }
 
 type storeAPI interface {
@@ -821,6 +833,29 @@ func NewServer(st storeAPI, opts Options) *Server {
 		}
 		server.backupImports = backupimportapp.New(importDeps)
 	}
+	if opts.AbusePolicy != nil {
+		server.abusePolicy = *opts.AbusePolicy
+	} else {
+		server.abusePolicy = abusepolicy.Default()
+	}
+	if setter, ok := st.(interface {
+		SetImportWorkLimits(projects, todos int)
+	}); ok {
+		setter.SetImportWorkLimits(server.abusePolicy.Safety.MaxProjectsPerImport, server.abusePolicy.Safety.MaxTodosPerImport)
+	}
+	server.abuseAdmission = ratelimit.NewAdmission(opts.AbuseNow)
+	server.anonStreamSlots = newStreamSlots(
+		server.abusePolicy.Safety.AnonymousSSEGlobal,
+		server.abusePolicy.Safety.AnonymousSSEPerIP,
+		server.abusePolicy.Safety.AnonymousSSEPerBoard,
+	)
+	if binder, ok := opts.MCPHandler.(interface {
+		BindMutationAdmitter(func(ctx context.Context, project store.Project) error)
+	}); ok {
+		binder.BindMutationAdmitter(func(ctx context.Context, project store.Project) error {
+			return server.admitMCPExpiringMutation(project, ratelimit.ClientIPFrom(ctx))
+		})
+	}
 	if mode != "anonymous" {
 		scheduler := newDueReminderScheduler(st, server.PublishEvent, opts.DueReminderInterval, logger)
 		reminderCtx, reminderCancel := context.WithCancel(context.Background())
@@ -1063,11 +1098,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.agoraHandler != nil && (r.URL.Path == "/agora/v1" || strings.HasPrefix(r.URL.Path, "/agora/v1/")) {
+		r = r.WithContext(ratelimit.WithClientIP(r.Context(), s.clientIP(r)))
 		s.agoraHandler.ServeHTTP(w, r)
 		return
 	}
 
 	if s.mcpHandler != nil && (r.URL.Path == "/mcp" || strings.HasPrefix(r.URL.Path, "/mcp/")) {
+		r = r.WithContext(ratelimit.WithClientIP(r.Context(), s.clientIP(r)))
 		s.mcpHandler.ServeHTTP(w, r)
 		return
 	}
@@ -1104,6 +1141,8 @@ func (s *Server) requestContext(r *http.Request) context.Context {
 	// Anonymous mode intentionally establishes no actor, even if a valid session
 	// cookie is present. This keeps anonymous temp boards creator-less and out of
 	// authenticated user listings.
+	ctx = ratelimit.WithClientIP(ctx, s.clientIP(r))
+
 	if s.mode == "anonymous" {
 		return ctx // Do not extract user from session cookie
 	}

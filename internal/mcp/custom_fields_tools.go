@@ -99,7 +99,7 @@ func (a *Adapter) handleCustomFieldsCreate(ctx context.Context, input any) (any,
 	if in.ProjectSlug == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
-	field, err := a.customFieldMutations.Create(ctx, customfieldapp.MCPTarget{
+	prepared, err := a.customFieldMutations.PrepareCreate(ctx, customfieldapp.MCPTarget{
 		ProjectSlug: in.ProjectSlug,
 		Mode:        a.storeMode(),
 	}, customfieldapp.CreateCommand{
@@ -107,6 +107,13 @@ func (a *Adapter) handleCustomFieldsCreate(ctx context.Context, input any) (any,
 		Name: in.Name,
 		Type: in.Type,
 	})
+	if err != nil {
+		return nil, nil, mapCustomFieldMutationError(err)
+	}
+	if admitErr := a.admitExpiringProject(ctx, prepared.Project()); admitErr != nil {
+		return nil, nil, admitErr
+	}
+	field, err := prepared.Create()
 	if err != nil {
 		return nil, nil, mapCustomFieldMutationError(err)
 	}
@@ -124,10 +131,17 @@ func (a *Adapter) handleCustomFieldsDelete(ctx context.Context, input any) (any,
 	if in.ProjectSlug == "" {
 		return nil, nil, newAdapterError(http.StatusBadRequest, CodeValidationError, "missing projectSlug", map[string]any{"field": "projectSlug"})
 	}
-	if err := a.customFieldMutations.Delete(ctx, customfieldapp.MCPTarget{
+	prepared, err := a.customFieldMutations.PrepareDelete(ctx, customfieldapp.MCPTarget{
 		ProjectSlug: in.ProjectSlug,
 		Mode:        a.storeMode(),
-	}, customfieldapp.DeleteCommand{Key: in.Key}); err != nil {
+	}, customfieldapp.DeleteCommand{Key: in.Key})
+	if err != nil {
+		return nil, nil, mapCustomFieldMutationError(err)
+	}
+	if admitErr := a.admitExpiringProject(ctx, prepared.Project()); admitErr != nil {
+		return nil, nil, admitErr
+	}
+	if err := prepared.Delete(); err != nil {
 		return nil, nil, mapCustomFieldMutationError(err)
 	}
 	return map[string]any{"deleted": map[string]any{"projectSlug": in.ProjectSlug, "key": strings.TrimSpace(in.Key)}}, map[string]any{}, nil

@@ -247,6 +247,9 @@ func (a *Adapter) handleSprintsCreate(ctx context.Context, input any) (any, map[
 	if prepareErr != nil {
 		return nil, nil, mapSprintDefinitionPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	sp, createErr := prepared.Create(sprintapp.CreateCommand{
 		Name:           in.Name,
@@ -298,6 +301,9 @@ func (a *Adapter) handleSprintsUpdate(ctx context.Context, input any) (any, map[
 	})
 	if prepareErr != nil {
 		return nil, nil, mapSprintDefinitionPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, env.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 
 	command, patchErr := buildSprintUpdateCommand(env.Patch)
@@ -357,6 +363,9 @@ func (a *Adapter) handleSprintsDelete(ctx context.Context, input any) (any, map[
 	if prepareErr != nil {
 		return nil, nil, mapSprintDefinitionPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 	if deleteErr := prepared.Delete(); deleteErr != nil {
 		return nil, nil, mapStoreError(deleteErr)
 	}
@@ -406,6 +415,9 @@ func (a *Adapter) handleSprintAction(ctx context.Context, input any, action stri
 		if prepareErr != nil {
 			return nil, nil, mapSprintLifecyclePrepareError(prepareErr)
 		}
+		if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+			return nil, nil, admitErr
+		}
 		var activateErr error
 		updated, activateErr = prepared.Activate()
 		if activateErr != nil {
@@ -419,6 +431,9 @@ func (a *Adapter) handleSprintAction(ctx context.Context, input any, action stri
 		})
 		if prepareErr != nil {
 			return nil, nil, mapSprintLifecyclePrepareError(prepareErr)
+		}
+		if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+			return nil, nil, admitErr
 		}
 		var closeErr error
 		updated, closeErr = prepared.Close()

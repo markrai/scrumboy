@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "rateLimits": {
+    "enabled": true,
+    "anonymousBoardCreation": {
+      "perIP": { "limit": 5, "window": "1h" },
+      "perIPDaily": { "limit": 10, "window": "24h" },
+      "instance": { "limit": 20, "window": "1h" },
+      "instanceDaily": { "limit": 50, "window": "24h" }
+    },
+    "mutations": {
+      "perIP": { "limit": 120, "window": "1m" },
+      "perIPBurst": { "limit": 40, "window": "10s" },
+      "perBoard": { "limit": 240, "window": "1m" }
+    },
+    "bulkImports": {
+      "perIP": { "limit": 10, "window": "1h" }
+    },
+    "exports": {
+      "perIP": { "limit": 10, "window": "1h" }
+    }
+  },
+  "safetyCeilings": {
+    "maxTodosPerImport": 2000,
+    "maxProjectsPerImport": 20,
+    "maxInFlightAnonymousExports": 1,
+    "anonymousSSEGlobal": 500,
+    "anonymousSSEPerIP": 10,
+    "anonymousSSEPerBoard": 50
+  }
+}

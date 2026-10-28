@@ -170,7 +170,7 @@ func TestRESTPatchProjectName_temporaryBoardOwnerSuccess(t *testing.T) {
 
 	ownerClient, _, tempBoard := setupRESTTemporaryBoardOwner(t, ts, sqlDB)
 
-	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(tempBoard.ID, 10), map[string]any{
+	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug, map[string]any{
 		"name": "Temporary Board Renamed",
 	}, nil)
 	if resp.StatusCode != http.StatusOK {
@@ -190,7 +190,7 @@ func TestRESTPatchProjectName_temporaryBoardNonOwnerForbidden(t *testing.T) {
 	otherClient := newCookieClient(t)
 	loginUserClient(t, otherClient, ts.URL, "temp-rename-other@example.com", "password123")
 
-	resp, body := doJSON(t, otherClient, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(tempBoard.ID, 10), map[string]any{
+	resp, body := doJSON(t, otherClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug, map[string]any{
 		"name": "Should Not Stick",
 	}, nil)
 	if resp.StatusCode != http.StatusForbidden {
@@ -210,8 +210,25 @@ func TestRESTPatchProjectImage_temporaryBoardOwnerSuccess(t *testing.T) {
 	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(tempBoard.ID, 10), map[string]any{
 		"image": "data:image/png;base64,aaaa",
 	}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for numeric PATCH on a temporary board, got %d body=%s", resp.StatusCode, string(body))
+	}
+
+	image := "data:image/png;base64,aaaa"
+	resp, body = doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug, map[string]any{
+		"image": image,
+	}, nil)
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, string(body))
+		t.Fatalf("expected 200 for slug image PATCH, got %d body=%s", resp.StatusCode, string(body))
+	}
+	var got struct {
+		Image *string `json:"image"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode: %v body=%s", err, string(body))
+	}
+	if got.Image == nil || *got.Image != image {
+		t.Fatalf("image=%v want %q", got.Image, image)
 	}
 }
 
@@ -227,14 +244,21 @@ func TestRESTPatchProjectImage_temporaryBoardNonOwnerForbidden(t *testing.T) {
 	otherClient := newCookieClient(t)
 	loginUserClient(t, otherClient, ts.URL, "temp-image-other@example.com", "password123")
 
-	resp, body := doJSON(t, otherClient, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(tempBoard.ID, 10), map[string]any{
+	resp, body := doJSON(t, otherClient, http.MethodPatch, ts.URL+"/api/board/"+tempBoard.Slug, map[string]any{
 		"image": "data:image/png;base64,aaaa",
 	}, nil)
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d body=%s", resp.StatusCode, string(body))
+		t.Fatalf("expected 403 for unauthorized slug image PATCH, got %d body=%s", resp.StatusCode, string(body))
 	}
 	if code := apiErrorCode(t, body); code != "FORBIDDEN" {
 		t.Fatalf("expected FORBIDDEN, got %q", code)
+	}
+	var stored sql.NullString
+	if err := sqlDB.QueryRow(`SELECT image FROM projects WHERE id = ?`, tempBoard.ID).Scan(&stored); err != nil {
+		t.Fatalf("read image: %v", err)
+	}
+	if stored.Valid && stored.String == "data:image/png;base64,aaaa" {
+		t.Fatalf("unauthorized image write persisted: %q", stored.String)
 	}
 }
 
@@ -295,7 +319,7 @@ func TestRESTPatchProjectImage_anonymousBoardNotFound(t *testing.T) {
 		t.Fatalf("CreateAnonymousBoard: %v", err)
 	}
 
-	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/projects/"+strconv.FormatInt(anonBoard.ID, 10), map[string]any{
+	resp, body := doJSON(t, ownerClient, http.MethodPatch, ts.URL+"/api/board/"+anonBoard.Slug, map[string]any{
 		"image": "data:image/png;base64,aaaa",
 	}, nil)
 	if resp.StatusCode != http.StatusNotFound {
@@ -361,4 +385,3 @@ func TestRESTPatchBoardSettings_unauthorizedAndForbiddenEvaluatesBeforeBody(t *t
 		t.Fatalf("forbidden: expected FORBIDDEN, got %q", code)
 	}
 }
-

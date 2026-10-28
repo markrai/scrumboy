@@ -99,14 +99,11 @@ func TestLegacyTodoDeleteAccessAndModeContracts(t *testing.T) {
 		todo := legacyTodoCreateTodo(t, fixture, ownerCtx, project.ID, store.ModeFull, store.CreateTodoInput{Title: "Temporary delete"})
 		legacyTodoResetEvents(fixture)
 		response, body := doJSON(t, legacyTodoAnonymousClient(t, fixture), http.MethodDelete, fmt.Sprintf("%s/api/todos/%d", fixture.ts.URL, todo.ID), nil, nil)
-		if response.StatusCode != http.StatusNoContent || len(body) != 0 {
-			t.Fatalf("temporary DELETE status=%d body=%q, want empty 204", response.StatusCode, body)
+		legacyTodoAssertError(t, response, body, http.StatusNotFound, "NOT_FOUND", "not found", "", "")
+		if legacyTodoRowCount(t, fixture, todo.ID) != 1 || len(legacyTodoAudits(t, fixture, "todo_deleted", todo.ID)) != 0 {
+			t.Fatal("legacy numeric DELETE on a temporary board changed persistence")
 		}
-		if legacyTodoRowCount(t, fixture, todo.ID) != 0 {
-			t.Fatal("temporary DELETE retained Todo")
-		}
-		legacyTodoAssertAnonymousAuditActor(t, fixture, "todo_deleted", todo.ID)
-		legacyTodoAssertDeleteRefresh(t, fixture, project.ID, 0)
+		legacyTodoAssertNoEvents(t, fixture, project.ID)
 	})
 
 	t.Run("expired_temporary_rejected", func(t *testing.T) {

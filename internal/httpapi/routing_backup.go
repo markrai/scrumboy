@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"scrumboy/internal/store"
@@ -27,6 +28,16 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 
 		ctx := s.requestContext(r)
 		mode := s.storeMode()
+
+		if mode == store.ModeAnonymous {
+			if !s.admitAnonymousExport(w, r) {
+				return
+			}
+			if !s.acquireAnonymousExportSlot(w) {
+				return
+			}
+			defer s.releaseAnonymousExportSlot()
+		}
 
 		// In full mode, require authentication
 		if mode == store.ModeFull {
@@ -110,6 +121,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 
 		ctx := s.requestContext(r)
 		mode := s.storeMode()
+		if mode == store.ModeAnonymous && !s.admitAnonymousImport(w, r, 0) {
+			return
+		}
 
 		result, err := s.store.PreviewImport(ctx, in.Data, mode, in.ImportMode)
 		if err != nil {
@@ -159,6 +173,25 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 
 		ctx := s.requestContext(r)
 		mode := s.storeMode()
+		if mode == store.ModeAnonymous {
+			targetSlug := strings.TrimSpace(in.TargetSlug)
+			if targetSlug != "" {
+				pc, err := s.store.GetProjectContextBySlug(ctx, targetSlug, mode)
+				if err != nil {
+					writeStoreErr(w, err, false)
+					return
+				}
+				if pc.Project.ExpiresAt == nil {
+					writeStoreErr(w, fmt.Errorf("%w: target board is not an anonymous board", store.ErrValidation), false)
+					return
+				}
+				if !s.admitAnonymousTargetedImport(w, r, pc.Project) {
+					return
+				}
+			} else if !s.admitAnonymousImport(w, r, len(in.Data.Projects)) {
+				return
+			}
+		}
 		s.logger.Printf("BACKUP IMPORT: Calling ImportProjects with mode=%s, importMode=%s, targetSlug=%s", mode, in.ImportMode, in.TargetSlug)
 
 		result, err := s.store.ImportProjectsWithTarget(ctx, in.Data, mode, in.ImportMode, in.TargetSlug)

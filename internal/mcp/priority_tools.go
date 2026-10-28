@@ -153,6 +153,9 @@ func (a *Adapter) handlePriorityCreate(ctx context.Context, input any) (any, map
 	if prepareErr != nil {
 		return nil, nil, mapPriorityMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	tier, tierErr := prepared.Create(priorityapp.CreateCommand{Name: in.Name})
 	if tierErr != nil {
@@ -212,6 +215,9 @@ func (a *Adapter) handlePriorityUpdate(ctx context.Context, input any) (any, map
 	if prepareErr != nil {
 		return nil, nil, mapPriorityMutationPrepareError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 
 	tier, updateErr := prepared.Update(priorityapp.UpdateCommand{
 		Key:   in.PriorityKey,
@@ -260,6 +266,9 @@ func (a *Adapter) handlePriorityDelete(ctx context.Context, input any) (any, map
 	})
 	if prepareErr != nil {
 		return nil, nil, mapPriorityMutationPrepareError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 
 	if deleteErr := prepared.Delete(priorityapp.DeleteCommand{Key: in.PriorityKey}); deleteErr != nil {

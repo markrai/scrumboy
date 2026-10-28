@@ -324,18 +324,18 @@ func TestProjectLifecycleRESTMigrationUpdateDelegatesAtCharacterizedPreparePoint
 		}
 	})
 
-	t.Run("anonymous mode prepares target before malformed body", func(t *testing.T) {
+	t.Run("anonymous mode numeric PATCH is closed before Prepare", func(t *testing.T) {
 		fx := newProjectLifecycleHTTPFixture(t, "anonymous")
 		expires := time.Now().UTC().Add(time.Hour)
 		recorder := &projectLifecycleRESTUpdateRecorder{project: store.Project{ID: 722, ExpiresAt: &expires}}
 		fx.server.projectUpdates = newProjectLifecycleRESTUpdateService(fx.server, recorder)
 
 		resp, body := doProjectLifecycleRaw(t, fx.ts.Client(), http.MethodPatch, fx.ts.URL+"/api/projects/722", "{bad")
-		if resp.StatusCode != http.StatusBadRequest || apiErrorCode(t, body) != "VALIDATION_ERROR" {
+		if resp.StatusCode != http.StatusNotFound || apiErrorCode(t, body) != "NOT_FOUND" {
 			t.Fatalf("status=%d body=%s", resp.StatusCode, body)
 		}
-		if !reflect.DeepEqual(recorder.trace, []string{"get-project"}) {
-			t.Fatalf("anonymous malformed trace=%v", recorder.trace)
+		if len(recorder.trace) != 0 {
+			t.Fatalf("anonymous numeric PATCH trace=%v want none", recorder.trace)
 		}
 	})
 

@@ -25,6 +25,8 @@ type Store struct {
 	todoAssignedPublisher  TodoAssignedFunc
 	todoLifecyclePublisher TodoLifecycleFunc
 	assetBudgets           AssetBudgets
+	maxImportProjects      int
+	maxImportTodos         int
 }
 
 type StoreOptions struct {
@@ -39,8 +41,17 @@ type AssetBudgets struct {
 	InstanceBytes int64
 }
 
+const (
+	DefaultMaxImportProjects = 20
+	DefaultMaxImportTodos    = 2000
+)
+
 func New(db *sql.DB, opts *StoreOptions) *Store {
-	s := &Store{db: db}
+	s := &Store{
+		db:                db,
+		maxImportProjects: DefaultMaxImportProjects,
+		maxImportTodos:    DefaultMaxImportTodos,
+	}
 	if opts != nil && len(opts.EncryptionKey) == 32 {
 		s.encryptionKey = opts.EncryptionKey
 	}
@@ -53,6 +64,17 @@ func New(db *sql.DB, opts *StoreOptions) *Store {
 
 func (s *Store) SetTodoAssignedPublisher(fn TodoAssignedFunc) {
 	s.todoAssignedPublisher = fn
+}
+
+// SetImportWorkLimits overrides the always-on import record ceilings. Non-positive
+// values keep the current (default) ceilings; they cannot disable the guard.
+func (s *Store) SetImportWorkLimits(projects, todos int) {
+	if projects > 0 {
+		s.maxImportProjects = projects
+	}
+	if todos > 0 {
+		s.maxImportTodos = todos
+	}
 }
 
 func (s *Store) Health(ctx context.Context) error {

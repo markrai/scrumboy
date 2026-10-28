@@ -133,7 +133,9 @@ func TestLegacyNumericTodoMutationsSucceedWhenPostWriteProjectionFails(t *testin
 		assertTodoUpdateRefreshes(t, collectTodoUpdateEvents(t, stream), project.ID, "todo_moved", 0)
 	})
 
-	if got := failing.projectionReads.Load(); got != 2 {
-		t.Fatalf("post-mutation projection reads=%d want=2", got)
+	// Two mutations, each probing expiry via GetProject before write and
+	// again for the post-write projection (forced to fail).
+	if got := failing.projectionReads.Load(); got != 4 {
+		t.Fatalf("post-mutation projection reads=%d want=4", got)
 	}
 }

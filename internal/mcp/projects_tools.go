@@ -208,6 +208,9 @@ func (a *Adapter) handleProjectsUpdate(ctx context.Context, input any) (any, map
 	if prepareErr != nil {
 		return nil, nil, mapProjectApplicationError(prepareErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, env.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 	result, updateErr := prepared.Update()
 	if updateErr != nil {
 		return nil, nil, mapProjectApplicationError(updateErr)
@@ -249,6 +252,9 @@ func (a *Adapter) handleProjectsDelete(ctx context.Context, input any) (any, map
 	})
 	if prepareErr != nil {
 		return nil, nil, mapProjectApplicationError(prepareErr)
+	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
 	}
 	result, deleteErr := prepared.Delete()
 	if deleteErr != nil {

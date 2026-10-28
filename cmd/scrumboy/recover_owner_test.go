@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -52,6 +53,29 @@ func prepareRecoveryDB(t *testing.T, path string, owner bool) (string, int64) {
 		t.Fatal(err)
 	}
 	return token, u.ID
+}
+
+func TestRecoverOwnerCommandIgnoresMalformedAbusePolicyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "app.db")
+	policyPath := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(policyPath, []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recoverOwner, _, err := beforeServe([]string{"scrumboy", "recover-owner", "--email", "owner@example.com"}, policyPath)
+	if !recoverOwner || err != nil {
+		t.Fatalf("beforeServe recoverOwner=%v err=%v", recoverOwner, err)
+	}
+	prepareRecoveryDB(t, path, true)
+	cfg := recoveryTestConfig(path)
+	cfg.AbusePolicyFile = policyPath
+	var output bytes.Buffer
+	if err := runRecoverOwner(cfg, []string{"--email", "owner@example.com", "--password-stdin"}, strings.NewReader("RecoveredPassword123!\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "sessions") {
+		t.Fatalf("missing recovery output: %s", output.String())
+	}
 }
 
 func TestRecoverOwnerCommandWithoutMigration056(t *testing.T) {

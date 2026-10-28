@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"scrumboy/internal/abusepolicy"
 )
 
 func TestLogWebPushConfiguration(t *testing.T) {
@@ -109,5 +113,48 @@ func TestLogSMTPConfiguration(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBeforeServeRecoverOwnerSkipsMalformedPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(path, []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recoverOwner, _, err := beforeServe([]string{"scrumboy", "recover-owner", "--email", "owner@example.com"}, path)
+	if !recoverOwner || err != nil {
+		t.Fatalf("recoverOwner=%v err=%v", recoverOwner, err)
+	}
+}
+
+func TestBeforeServeRejectsMalformedPolicy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(path, []byte("{not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recoverOwner, _, err := beforeServe([]string{"scrumboy"}, path)
+	if recoverOwner || err == nil {
+		t.Fatalf("recoverOwner=%v err=%v", recoverOwner, err)
+	}
+}
+
+func TestBeforeServeEmptyPathUsesDefaultOnLimits(t *testing.T) {
+	recoverOwner, policy, err := beforeServe([]string{"scrumboy"}, "")
+	if recoverOwner || err != nil {
+		t.Fatalf("recoverOwner=%v err=%v", recoverOwner, err)
+	}
+	if !policy.RateLimits.Enabled {
+		t.Fatal("wanted default-on rate limits")
+	}
+	if policy.RateLimits.MutationPerIPBurst.Limit != abusepolicy.Default().RateLimits.MutationPerIPBurst.Limit {
+		t.Fatalf("burst=%+v", policy.RateLimits.MutationPerIPBurst)
+	}
+}
+
+func TestBeforeServeMissingPolicyFileFailsForServe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.json")
+	recoverOwner, _, err := beforeServe([]string{"scrumboy"}, path)
+	if recoverOwner || err == nil {
+		t.Fatalf("recoverOwner=%v err=%v", recoverOwner, err)
 	}
 }

@@ -58,6 +58,9 @@ func (a *Adapter) handleTodosArchiveState(ctx context.Context, input any, archiv
 	if storeErr != nil {
 		return nil, nil, mapStoreError(storeErr)
 	}
+	if admitErr := a.admitExpiringBoard(ctx, in.ProjectSlug); admitErr != nil {
+		return nil, nil, admitErr
+	}
 	var result store.TodoArchiveBatchResult
 	if archive {
 		result, storeErr = prepared.Archive(in.LocalIDs)

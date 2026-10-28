@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"scrumboy/internal/store"
 	"scrumboy/internal/trelloimport"
 )
 
@@ -35,6 +36,9 @@ func (s *Server) handleImportAPI(w http.ResponseWriter, r *http.Request, rest []
 }
 
 func (s *Server) handleTrelloPreview(w http.ResponseWriter, r *http.Request) {
+	if s.storeMode() == store.ModeAnonymous && !s.admitAnonymousImport(w, r, 0) {
+		return
+	}
 	body, err := readBodyBytes(w, r, s.maxTrelloImportBody)
 	if err != nil {
 		return
@@ -62,6 +66,10 @@ func (s *Server) handleTrelloImport(w http.ResponseWriter, r *http.Request) {
 			"hardErrors": bundle.Preview.HardErrors,
 			"warnings":   bundle.Preview.Warnings,
 		})
+		return
+	}
+
+	if s.storeMode() == store.ModeAnonymous && !s.admitAnonymousImport(w, r, 1) {
 		return
 	}
 

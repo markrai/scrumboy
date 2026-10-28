@@ -15,6 +15,7 @@ import (
 
 	_ "time/tzdata" // embed IANA zone database for minimal runtimes (e.g. Alpine) without system tzdata
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/agora"
 	assetapp "scrumboy/internal/application/asset"
 	"scrumboy/internal/assets/blobstore"
@@ -30,6 +31,16 @@ import (
 	"scrumboy/internal/tlsredirect"
 )
 
+// beforeServe dispatches recover-owner without reading SCRUMBOY_ABUSE_POLICY_FILE.
+// HTTP startup still fail-closes on a missing or invalid configured policy file.
+func beforeServe(args []string, policyFile string) (recoverOwner bool, policy abusepolicy.Policy, err error) {
+	if len(args) > 1 && args[1] == "recover-owner" {
+		return true, abusepolicy.Policy{}, nil
+	}
+	policy, err = abusepolicy.Load(policyFile)
+	return false, policy, err
+}
+
 func main() {
 	cfg := config.FromEnv()
 
@@ -37,13 +48,21 @@ func main() {
 	for _, w := range cfg.Warnings {
 		logger.Printf("warning: config: %s", w)
 	}
-	if len(os.Args) > 1 && os.Args[1] == "recover-owner" {
+	recoverOwner, abusePolicy, err := beforeServe(os.Args, cfg.AbusePolicyFile)
+	if recoverOwner {
 		if err := runRecoverOwner(cfg, os.Args[2:], os.Stdin, os.Stdout); err != nil {
 			logger.Printf("recover-owner failed: %v", err)
 			os.Exit(1)
 		}
 		return
 	}
+	if err != nil {
+		logger.Fatalf("%v", err)
+	}
+	if !abusePolicy.RateLimits.Enabled {
+		logger.Printf("warning: abuse policy: request rate limits disabled")
+	}
+	logger.Printf("abuse policy: %s", abusePolicy.LogSummary())
 
 	sqlDB, err := db.Open(cfg.DBPath, db.Options{
 		BusyTimeout: cfg.SQLiteBusyTimeout,
@@ -89,6 +108,7 @@ func main() {
 		},
 	}
 	st := store.New(sqlDB, storeOpts)
+	st.SetImportWorkLimits(abusePolicy.Safety.MaxProjectsPerImport, abusePolicy.Safety.MaxTodosPerImport)
 	if malformed, err := st.CountMalformedPasswordHashes(ctx); err != nil {
 		logger.Printf("warning: could not inspect local password hash health: %v", err)
 	} else if malformed > 0 {
@@ -198,6 +218,7 @@ func main() {
 		PublicBaseURL:         cfg.PublicBaseURL,
 		PublicOrigin:          publicOrigin,
 		TrustProxy:            cfg.TrustProxy,
+		AbusePolicy:           &abusePolicy,
 	})
 	st.SetTodoAssignedPublisher(srv.PublishTodoAssigned)
 	st.SetTodoLifecyclePublisher(srv.PublishTodoLifecycle)

@@ -757,10 +757,19 @@ async function handleProjectImageUpload(projectId) {
         try {
             const finalDataUrl = await processImageFile(file);
             recordLocalMutation();
-            await apiFetch(`/api/projects/${projectId}`, {
-                method: "PATCH",
-                body: JSON.stringify({ image: finalDataUrl }),
-            });
+            const slug = getSlug();
+            if (isTemporaryBoard(getBoard()) && slug) {
+                await apiFetch(`/api/board/${encodeURIComponent(slug)}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ image: finalDataUrl }),
+                });
+            }
+            else {
+                await apiFetch(`/api/projects/${projectId}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ image: finalDataUrl }),
+                });
+            }
             syncTopbarFromBoard({ project: { image: finalDataUrl } });
             if (getSlug()) {
                 await loadBoardBySlug(getSlug(), getTagsFromUrl(), getSearch(), getSprintIdFromUrl(), getAssigneeFromUrl(), getSortFromUrl(), getPriorityFromUrl());
@@ -1114,10 +1123,19 @@ function renderBoardFromData(board, projectId, tags, search, sprintId, assignee,
             }
             try {
                 recordLocalMutation();
-                await apiFetch(`/api/projects/${projectId}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ name: newName }),
-                });
+                const slug = getSlug();
+                if (isTemporaryBoard(board) && slug) {
+                    await apiFetch(`/api/board/${encodeURIComponent(slug)}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ name: newName }),
+                    });
+                }
+                else {
+                    await apiFetch(`/api/projects/${projectId}`, {
+                        method: "PATCH",
+                        body: JSON.stringify({ name: newName }),
+                    });
+                }
                 // Update the project name in the DOM immediately.
                 const topbar = document.querySelector(".topbar");
                 if (topbar) {

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"scrumboy/internal/abusepolicy"
 	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
 	mcpadapter "scrumboy/internal/mcp"
@@ -210,7 +211,8 @@ func newProjectLifecycleHTTPFixture(t *testing.T, mode string) *projectLifecycle
 	}
 	st := store.New(sqlDB, nil)
 	wrapped := &projectLifecycleHTTPStore{Store: st}
-	server := NewServer(wrapped, Options{MaxRequestBody: 1 << 20, ScrumboyMode: mode})
+	disabled := abusepolicy.DisabledThrottling()
+	server := NewServer(wrapped, Options{MaxRequestBody: 1 << 20, ScrumboyMode: mode, AbusePolicy: &disabled})
 	spy := &projectLifecycleEventSpy{store: wrapped}
 	server.fanout = eventbus.NewFanout(newSSEBridge(server.hub, server.creatorNotificationAuthorizer), spy)
 	ts := httptest.NewServer(server)
@@ -239,10 +241,12 @@ func newProjectLifecycleHTTPFixtureWithMCP(t *testing.T) *projectLifecycleHTTPFi
 	st := store.New(sqlDB, nil)
 	wrapped := &projectLifecycleHTTPStore{Store: st}
 	adapter := mcpadapter.New(wrapped, mcpadapter.Options{Mode: "full"})
+	disabled := abusepolicy.DisabledThrottling()
 	server := NewServer(wrapped, Options{
 		MaxRequestBody: 1 << 20,
 		ScrumboyMode:   "full",
 		MCPHandler:     adapter,
+		AbusePolicy:    &disabled,
 	})
 	spy := &projectLifecycleEventSpy{store: wrapped}
 	server.fanout = eventbus.NewFanout(newSSEBridge(server.hub, server.creatorNotificationAuthorizer), spy)
@@ -536,7 +540,7 @@ func TestProjectLifecycleRESTUpdatePartialSuccessPostReadAndPublication(t *testi
 			t.Fatalf("partial update status=%d body=%s", resp.StatusCode, body)
 		}
 		assertProjectLifecycleRESTError(t, body, "VALIDATION_ERROR", "validation: invalid project name", "invalid_project_name")
-		assertProjectLifecycleTrace(t, fx.wrapped, "update-image", "update-name")
+		assertProjectLifecycleTrace(t, fx.wrapped, "get-project", "update-image", "update-name")
 		fx.wrapped.deactivate()
 		persisted, err := fx.store.GetProject(context.Background(), project.ID)
 		if err != nil {
@@ -569,7 +573,7 @@ func TestProjectLifecycleRESTUpdatePartialSuccessPostReadAndPublication(t *testi
 			t.Fatalf("post-read status=%d body=%s", resp.StatusCode, body)
 		}
 		assertProjectLifecycleRESTError(t, body, "INTERNAL", "internal error", "")
-		assertProjectLifecycleTrace(t, fx.wrapped, "update-image", "update-name", "get-project")
+		assertProjectLifecycleTrace(t, fx.wrapped, "get-project", "update-image", "update-name", "get-project")
 		fx.wrapped.deactivate()
 		persisted, err := fx.store.GetProject(context.Background(), project.ID)
 		if err != nil {
@@ -599,7 +603,7 @@ func TestProjectLifecycleRESTUpdatePartialSuccessPostReadAndPublication(t *testi
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("successful update status=%d body=%s", resp.StatusCode, body)
 		}
-		assertProjectLifecycleTrace(t, fx.wrapped, "update-name", "get-project", "publish:project_updated")
+		assertProjectLifecycleTrace(t, fx.wrapped, "get-project", "update-name", "get-project", "publish:project_updated")
 		events, reasons := fx.spy.snapshot()
 		if len(events) != 1 || !reflect.DeepEqual(reasons, []string{"project_updated"}) || events[0].ProjectID != project.ID {
 			t.Fatalf("update events=%+v reasons=%v", events, reasons)
@@ -618,7 +622,7 @@ func TestProjectLifecycleRESTUpdatePartialSuccessPostReadAndPublication(t *testi
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("empty patch status=%d body=%s", resp.StatusCode, body)
 		}
-		assertProjectLifecycleTrace(t, fx.wrapped, "get-project")
+		assertProjectLifecycleTrace(t, fx.wrapped, "get-project", "get-project")
 		assertProjectLifecycleNoEvents(t, fx.spy)
 
 		fx.spy.reset()
@@ -627,7 +631,7 @@ func TestProjectLifecycleRESTUpdatePartialSuccessPostReadAndPublication(t *testi
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("same-value patch status=%d body=%s", resp.StatusCode, body)
 		}
-		assertProjectLifecycleTrace(t, fx.wrapped, "update-name", "get-project", "publish:project_updated")
+		assertProjectLifecycleTrace(t, fx.wrapped, "get-project", "update-name", "get-project", "publish:project_updated")
 		if got := projectLifecycleHTTPCount(t, fx.db, `SELECT COUNT(*) FROM audit_events WHERE project_id = ? AND action = 'project_renamed'`, project.ID); got != 2 {
 			t.Fatalf("changed plus same-value rename audits=%d want=2", got)
 		}
@@ -647,10 +651,16 @@ func TestProjectLifecycleRESTUpdateModeSpecificParseOrdering(t *testing.T) {
 		}
 		fx.wrapped.activate()
 		resp, body := doProjectLifecycleRaw(t, fx.ts.Client(), http.MethodPatch, fx.ts.URL+"/api/projects/"+strconv.FormatInt(board.ID, 10), "{bad")
-		if resp.StatusCode != http.StatusBadRequest || apiErrorCode(t, body) != "VALIDATION_ERROR" {
-			t.Fatalf("anonymous malformed status=%d body=%s", resp.StatusCode, body)
+		if resp.StatusCode != http.StatusNotFound || apiErrorCode(t, body) != "NOT_FOUND" {
+			t.Fatalf("anonymous numeric rename status=%d body=%s", resp.StatusCode, body)
 		}
-		assertProjectLifecycleTrace(t, fx.wrapped, "get-project")
+		assertProjectLifecycleTrace(t, fx.wrapped)
+		fx.wrapped.activate()
+		resp, body = doProjectLifecycleRaw(t, fx.ts.Client(), http.MethodPatch, fx.ts.URL+"/api/board/"+board.Slug, "{bad")
+		if resp.StatusCode != http.StatusBadRequest || apiErrorCode(t, body) != "VALIDATION_ERROR" {
+			t.Fatalf("anonymous slug malformed status=%d body=%s", resp.StatusCode, body)
+		}
+		assertProjectLifecycleTrace(t, fx.wrapped, "access")
 	})
 
 	t.Run("full mode parses malformed body before missing target", func(t *testing.T) {
@@ -786,7 +796,7 @@ func TestProjectLifecycleRESTClaimConditionalAuthorityAndEffects(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound || apiErrorCode(t, body) != "NOT_FOUND" {
 			t.Fatalf("non-creator claim status=%d body=%s", resp.StatusCode, body)
 		}
-		assertProjectLifecycleTrace(t, fx.wrapped, "access", "claim")
+		assertProjectLifecycleTrace(t, fx.wrapped, "access")
 		assertProjectLifecycleNoEvents(t, fx.spy)
 
 		expired, err := fx.store.CreateAnonymousBoard(creatorCtx)

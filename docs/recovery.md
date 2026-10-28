@@ -16,7 +16,7 @@ For what a full `DATA_DIR` restore includes (SQLite, WAL/SHM, wallpapers, encryp
 4. Run recovery against the same configured database path/volume.
 5. Restart Scrumboy. If `SCRUMBOY_OIDC_LOCAL_AUTH_DISABLED=true`, re-enable local authentication before using the recovered password.
 
-The command does **not** apply migrations. It reads `schema_migrations`, rejects schema versions unknown to the binary, requires the OIDC identity-era schema (migration 049 or later), and checks the required auth tables and columns. If the schema is too old, keep the backup, run the normal Scrumboy upgrade path, stop the service again, and rerun recovery. Migration 056 is not required.
+The command does **not** apply migrations. It reads `schema_migrations`, rejects schema versions unknown to the binary, requires the OIDC identity-era schema (migration 049 or later), and checks the required auth tables and columns. If the schema is too old, keep the backup, run the normal Scrumboy upgrade path, stop the service again, and rerun recovery. Migration 056 is not required. `SCRUMBOY_ABUSE_POLICY_FILE` is not read; a missing or invalid abuse-policy file cannot block recovery. HTTP server startup still fail-closes on that file.
 
 ## Native binary
 
