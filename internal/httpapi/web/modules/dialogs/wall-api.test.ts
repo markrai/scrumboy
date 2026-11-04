@@ -121,63 +121,70 @@ describe("wall-api", () => {
 });
 
 describe("wall-api.postTransient observability", () => {
+  let debug: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     mock.mockReset();
     __resetTransientFailureState();
     delete (globalThis as any).__scrumboyWallDebug;
+    // Silence the expected throttled failure logs. The file-level afterEach
+    // restores this spy even when an assertion below fails.
+    debug = vi.spyOn(console, "debug").mockImplementation(() => { /* noop */ });
   });
 
   it("increments the failure counter when the fetch rejects", async () => {
-    mock.mockRejectedValue(new Error("boom"));
+    const failure = new Error("boom");
+    mock.mockRejectedValue(failure);
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     expect(__getTransientFailureCount()).toBe(2);
+    // Throttled: only the first failure in the window logs, with count/error data.
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledWith("wall transient post failed", { count: 1, err: failure });
   });
 
   it("throttles logging to one message per window when bursts of failures occur", async () => {
-    const debug = vi.spyOn(console, "debug").mockImplementation(() => { /* noop */ });
-    mock.mockRejectedValue(new Error("boom"));
+    const failure = new Error("boom");
+    mock.mockRejectedValue(failure);
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     expect(debug).toHaveBeenCalledTimes(1);
-    debug.mockRestore();
+    expect(debug).toHaveBeenCalledWith("wall transient post failed", { count: 1, err: failure });
   });
 
   it("elevates the log level to warn when window.__scrumboyWallDebug is set", async () => {
     (globalThis as any).__scrumboyWallDebug = true;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => { /* noop */ });
-    const debug = vi.spyOn(console, "debug").mockImplementation(() => { /* noop */ });
     mock.mockRejectedValue(new Error("boom"));
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(debug).not.toHaveBeenCalled();
-    warn.mockRestore();
-    debug.mockRestore();
   });
 
   it("does not log anything on successful posts", async () => {
     mock.mockResolvedValue({});
-    const debug = vi.spyOn(console, "debug").mockImplementation(() => { /* noop */ });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => { /* noop */ });
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     expect(debug).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
     expect(__getTransientFailureCount()).toBe(0);
-    debug.mockRestore();
-    warn.mockRestore();
   });
 
   it("increments transientPostsSent on successful posts and leaves it at 0 on failure", async () => {
     mock.mockResolvedValueOnce({});
     await postTransient("abc", { noteId: "n1", x: 0, y: 0 });
     expect(__getTransientPostsSent()).toBe(1);
-    mock.mockRejectedValueOnce(new Error("boom"));
+    const failure = new Error("boom");
+    mock.mockRejectedValueOnce(failure);
     await postTransient("abc", { noteId: "n1", x: 1, y: 2 });
     expect(__getTransientPostsSent()).toBe(1);
     mock.mockResolvedValueOnce({});
     await postTransient("abc", { noteId: "n1", x: 3, y: 4 });
     expect(__getTransientPostsSent()).toBe(2);
+    // The single transient failure logs once (throttled) with count/error
+    // data; the successful posts stay silent.
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledWith("wall transient post failed", { count: 1, err: failure });
   });
 
   it("resets transientPostsSent via __resetTransientFailureState", async () => {

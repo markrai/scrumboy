@@ -177,6 +177,9 @@ describe("wall i18n", () => {
   afterEach(() => {
     if (wallDialogEl.open) wallDialogEl.close();
     vi.useRealTimers();
+    // Restore spies (console.warn, document.addEventListener) even when an
+    // assertion above failed, so no test leaks suppression into the next one.
+    vi.restoreAllMocks();
   });
 
   // ---- Listener lifecycle ------------------------------------------------
@@ -451,26 +454,38 @@ describe("wall i18n", () => {
   it("uses a localized toast for the failed note update path", async () => {
     const i18n = await importI18n();
     await i18n.setLocale("de");
+    const patchError = Object.assign(new Error("boom"), { status: 500 });
     apiFetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (typeof url === "string" && url.includes("/wall") && !init?.method) return singleNoteDoc();
-      if (init?.method === "PATCH") throw Object.assign(new Error("boom"), { status: 500 });
+      if (init?.method === "PATCH") throw patchError;
       return {};
     });
     await openWall();
 
-    // Single left-click on a note arms the color-cycle timer, which fires a
-    // PATCH; that PATCH rejects here, exercising the failure toast path.
-    vi.useFakeTimers();
-    const noteEl = wallSurfaceEl.querySelector<HTMLElement>('.wall-note[data-note-id="n1"]');
-    if (!noteEl) throw new Error("missing note");
-    noteEl.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { button: 0, clientX: 32, clientY: 32, pointerId: 1, pointerType: "mouse" }));
-    document.dispatchEvent(Object.assign(new Event("pointerup", { bubbles: true, cancelable: true }), { button: 0, clientX: 32, clientY: 32, pointerId: 1, pointerType: "mouse" }));
-    vi.advanceTimersByTime(500);
-    await flushPromises();
-    vi.useRealTimers();
-    await flushPromises();
+    // The expected PATCH failure logs a warning; suppress only that output
+    // and forward anything unexpected to the real console.
+    const originalWarn = console.warn;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args: any[]) => {
+      if (args[0] !== "wall patch failed") originalWarn(...args);
+    });
+    try {
+      // Single left-click on a note arms the color-cycle timer, which fires a
+      // PATCH; that PATCH rejects here, exercising the failure toast path.
+      vi.useFakeTimers();
+      const noteEl = wallSurfaceEl.querySelector<HTMLElement>('.wall-note[data-note-id="n1"]');
+      if (!noteEl) throw new Error("missing note");
+      noteEl.dispatchEvent(Object.assign(new Event("pointerdown", { bubbles: true, cancelable: true }), { button: 0, clientX: 32, clientY: 32, pointerId: 1, pointerType: "mouse" }));
+      document.dispatchEvent(Object.assign(new Event("pointerup", { bubbles: true, cancelable: true }), { button: 0, clientX: 32, clientY: 32, pointerId: 1, pointerType: "mouse" }));
+      vi.advanceTimersByTime(500);
+      await flushPromises();
+      vi.useRealTimers();
+      await flushPromises();
 
-    expect(showToastMock).toHaveBeenCalledWith(de["wall.toast.updateNoteFailed"]);
+      expect(warnSpy).toHaveBeenCalledWith("wall patch failed", patchError);
+      expect(showToastMock).toHaveBeenCalledWith(de["wall.toast.updateNoteFailed"]);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("shows the localized missing-wall toast on a 404 refetch", async () => {

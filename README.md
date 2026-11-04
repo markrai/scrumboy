@@ -43,7 +43,7 @@
   - [Webhooks (outbound HTTP)](#webhooks-outbound-http)
 - [Export scope](#export-scope)
 - [Import modes](#import-modes)
-- [Documentation](#documentation)
+- [Documentation & Roadmap](#documentation--roadmap)
 - [License and Contributions](#license-and-contributions)
 
 
@@ -224,9 +224,11 @@ Scrumboy supports three JSON import modes: **Replace** (destructive; makes the a
 
 
 
-# Documentation
+# Documentation & Roadmap
 
 The full documentation set is organized by audience in [docs/README.md](docs/README.md) (operator, feature, security, integration, architecture, and manual-check docs).
+
+The live product roadmap is a public Scrumboy kanban board at [scrumboy.com/scrumboy](https://scrumboy.com/scrumboy).
 
 ---
 
