@@ -31,7 +31,7 @@
     "happy-dom": "^21.0.4",
     "jsdom": "^29.1.1",
     "typescript": "^5.0.0",
-    "vite": "6.4.4",
+    "vite": "6.4.5",
     "vitest": "4.1.12"
   },
   "dependencies": {
