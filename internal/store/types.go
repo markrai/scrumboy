@@ -19,6 +19,7 @@ var (
 	ErrSprintsDisabled            = errors.New("sprints are disabled for this project")
 	ErrSnapshotSuperseded         = errors.New("calendar snapshot configuration changed")
 	ErrOIDCSignupDomainNotAllowed = errors.New("OIDC signup email domain is not allowed")
+	ErrServiceAccountRestricted   = errs.ErrServiceAccountRestricted
 )
 
 const (
@@ -293,6 +294,9 @@ type User struct {
 	OIDCLinked       bool // Linked to the currently configured issuer.
 	// HasAnyOIDCIdentity is internal account state. API serializers deliberately omit it.
 	HasAnyOIDCIdentity bool
+	// IsService marks a non-interactive service account (users.is_service, migration 080). It is
+	// unrelated to APITokenMeta.IsService, which marks an automation token owned by a human.
+	IsService bool
 	// two_factor_secret_enc is never loaded into User. Fetched only in GetUserTwoFactorSecret when verifying TOTP.
 }
 

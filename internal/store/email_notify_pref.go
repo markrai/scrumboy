@@ -97,6 +97,13 @@ func ValidateEmailNotifyPrefJSON(value string) error {
 // GetEmailNotifyPref loads and parses the caller's email-notification preference,
 // falling back to defaults when unset.
 func (s *Store) GetEmailNotifyPref(ctx context.Context, userID int64) (EmailNotifyPref, error) {
+	isService, err := isServiceUser(ctx, s.db, userID)
+	if err != nil {
+		return EmailNotifyPref{}, err
+	}
+	if isService {
+		return EmailNotifyPref{V: EmailNotifyPrefVersion}, nil
+	}
 	raw, err := s.GetUserPreference(ctx, userID, "emailNotifications")
 	if err != nil {
 		return EmailNotifyPref{}, err

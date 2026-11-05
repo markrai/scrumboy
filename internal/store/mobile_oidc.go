@@ -155,7 +155,7 @@ INSERT INTO mobile_oidc_handoff_grants(
 ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		hashToken(code), userID, stateHash, challenge, returnTo, now.UnixMilli(), grantExpires.UnixMilli())
 	if err != nil {
-		return "", time.Time{}, "", fmt.Errorf("insert mobile OIDC grant: %w", err)
+		return "", time.Time{}, "", wrapIdentityWriteErr("insert mobile OIDC grant", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return "", time.Time{}, "", fmt.Errorf("commit mobile OIDC grant: %w", err)
@@ -200,7 +200,8 @@ func (s *Store) ExchangeMobileOIDCHandoff(ctx context.Context, rawCode, rawState
 	err = tx.QueryRowContext(ctx, `
 SELECT user_id, flow_state_hash, handoff_challenge, return_to, expires_at, consumed_at
 FROM mobile_oidc_handoff_grants
-WHERE code_hash = ?`, hashToken(rawCode)).Scan(
+WHERE code_hash = ?
+  AND EXISTS(SELECT 1 FROM users WHERE id = mobile_oidc_handoff_grants.user_id AND is_service = 0)`, hashToken(rawCode)).Scan(
 		&userID, &expectedStateHash, &challenge, &returnTo, &expiresMS, &consumedMS,
 	)
 	if err != nil {
@@ -237,7 +238,7 @@ WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?`, now.UnixMilli()
 INSERT INTO sessions(user_id, token_hash, created_at, expires_at, last_seen_at)
 VALUES (?, ?, ?, ?, ?)`, userID, hashToken(sessionToken), now.UnixMilli(), sessionExpires.UnixMilli(), now.UnixMilli())
 	if err != nil {
-		return MobileOIDCExchange{}, fmt.Errorf("insert mobile session: %w", err)
+		return MobileOIDCExchange{}, wrapIdentityWriteErr("insert mobile session", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return MobileOIDCExchange{}, fmt.Errorf("commit mobile OIDC exchange: %w", err)

@@ -408,6 +408,7 @@ func (a *Adapter) resolveRequestAuth(r *http.Request, allowOAuth bool) requestAu
 			return requestAuthResult{Ctx: ctx, Err: err}
 		}
 		ctx = store.WithUserID(ctx, u.ID)
+		ctx = store.WithServiceIdentity(ctx, u.ID, u.IsService)
 		ctx = store.WithUserEmail(ctx, u.Email)
 		ctx = store.WithUserName(ctx, u.Name)
 		return requestAuthResult{Ctx: ctx, Authenticated: true}
@@ -427,6 +428,7 @@ func (a *Adapter) resolveRequestAuth(r *http.Request, allowOAuth bool) requestAu
 	}
 
 	ctx = store.WithUserID(ctx, u.ID)
+	ctx = store.WithServiceIdentity(ctx, u.ID, u.IsService)
 	ctx = store.WithUserEmail(ctx, u.Email)
 	ctx = store.WithUserName(ctx, u.Name)
 	return requestAuthResult{Ctx: ctx, Authenticated: true, SessionCookie: true}

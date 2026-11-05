@@ -1582,6 +1582,10 @@ func (s *Store) ImportProjectsWithTarget(ctx context.Context, data *ExportData, 
 // importProjects is the shared import entry. plan is nil for JSON imports (today's code paths)
 // and non-nil for .sbz archive imports, whose images are already written to disk.
 func (s *Store) importProjects(ctx context.Context, data *ExportData, mode Mode, importMode string, targetSlug string, plan *ImportAssetPlan) (*ImportResult, error) {
+	if err := rejectServiceActor(ctx, s.db); err != nil {
+		return nil, err
+	}
+
 	// Validate JSON structure and version
 	if err := validateBackupData(data, plan != nil); err != nil {
 		return nil, err
@@ -2922,7 +2926,7 @@ func (s *Store) importTodoTags(ctx context.Context, tx *sql.Tx, projectID, todoI
 				return fmt.Errorf("%w: userID required for tag import", ErrUnauthorized)
 			}
 			// Pre-bootstrap: use first user or skip
-			if err := tx.QueryRowContext(ctx, `SELECT id FROM users LIMIT 1`).Scan(&userID); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE is_service = 0 LIMIT 1`).Scan(&userID); err != nil {
 				// No users - skip tags
 				return nil
 			}
@@ -2972,7 +2976,7 @@ func (s *Store) importTag(ctx context.Context, tx *sql.Tx, projectID int64, tagN
 				return fmt.Errorf("%w: userID required for tag import", ErrUnauthorized)
 			}
 			// Pre-bootstrap: use first user or skip
-			if err := tx.QueryRowContext(ctx, `SELECT id FROM users LIMIT 1`).Scan(&userID); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE is_service = 0 LIMIT 1`).Scan(&userID); err != nil {
 				// No users - skip tag
 				return nil
 			}

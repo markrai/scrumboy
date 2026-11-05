@@ -1,6 +1,9 @@
 package errs
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // NOTE: All shared sentinel errors MUST be defined here.
 // Do not redefine errors.New(...) for these concepts elsewhere.
@@ -14,4 +17,8 @@ var (
 	ErrTooManyAttempts            = errors.New("too many attempts")
 	Err2FAEncryptionNotConfigured = errors.New("2FA encryption not configured")
 	ErrEncryptionNotConfigured    = errors.New("encryption not configured")
+
+	// ErrServiceAccountRestricted reports an operation that a service account can never perform,
+	// such as interactive authentication or holding a privileged role. It matches ErrForbidden.
+	ErrServiceAccountRestricted = fmt.Errorf("%w: operation not permitted for service accounts", ErrForbidden)
 )

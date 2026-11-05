@@ -25,8 +25,8 @@ func IsUsablePasswordHash(hash string) bool {
 }
 
 func (s *Store) populateUserAuthMethods(ctx context.Context, u *User) error {
-	if u == nil || u.ID <= 0 {
-		return nil
+	if u == nil || u.ID <= 0 || u.IsService {
+		return nil // A service account has no sign-in method, whatever its rows say.
 	}
 	var hash sql.NullString
 	var anyOIDC, configuredOIDC bool
@@ -73,7 +73,7 @@ func (s *Store) CountMalformedPasswordHashes(ctx context.Context) (int, error) {
 // changing the canonical Scrumboy email or display profile.
 func (s *Store) UpdateOIDCIdentityEmailAtLogin(ctx context.Context, userID int64, issuer, subject, email string) error {
 	email = normalizeEmail(email)
-	res, err := s.db.ExecContext(ctx, `UPDATE user_oidc_identities SET email_at_login = ? WHERE user_id = ? AND issuer = ? AND subject = ?`, email, userID, issuer, subject)
+	res, err := s.db.ExecContext(ctx, `UPDATE user_oidc_identities SET email_at_login = ? WHERE user_id = ? AND issuer = ? AND subject = ? AND EXISTS(SELECT 1 FROM users WHERE id = user_oidc_identities.user_id AND is_service = 0)`, email, userID, issuer, subject)
 	if err != nil {
 		return fmt.Errorf("update oidc identity email: %w", err)
 	}
@@ -113,7 +113,7 @@ func (s *Store) linkOIDCIdentityExplicit(ctx context.Context, userID int64, issu
 		}
 	}
 	var canonical string
-	if err := tx.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ?`, userID).Scan(&canonical); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT email FROM users WHERE id = ? AND is_service = 0`, userID).Scan(&canonical); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -149,7 +149,7 @@ func (s *Store) linkOIDCIdentityExplicit(ctx context.Context, userID int64, issu
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return ErrConflict
 		}
-		return fmt.Errorf("insert oidc identity: %w", err)
+		return wrapIdentityWriteErr("insert oidc identity", err)
 	}
 	return tx.Commit()
 }
@@ -178,7 +178,7 @@ func (s *Store) CreateFirstPasswordGrant(ctx context.Context, userID int64, sess
 	}
 	defer func() { _ = tx.Rollback() }()
 	var valid bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?)`, hashToken(sessionToken), userID, now.UnixMilli()).Scan(&valid); err != nil || !valid {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.user_id = ? AND s.expires_at > ? AND u.is_service = 0)`, hashToken(sessionToken), userID, now.UnixMilli()).Scan(&valid); err != nil || !valid {
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("validate grant session: %w", err)
 		}
@@ -186,7 +186,7 @@ func (s *Store) CreateFirstPasswordGrant(ctx context.Context, userID int64, sess
 	}
 	_, _ = tx.ExecContext(ctx, `DELETE FROM first_password_grants WHERE expires_at <= ? OR user_id = ?`, now.UnixMilli(), userID)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO first_password_grants(token_hash, user_id, session_token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`, hashToken(raw), userID, hashToken(sessionToken), now.UnixMilli(), expires.UnixMilli()); err != nil {
-		return "", time.Time{}, fmt.Errorf("insert first-password grant: %w", err)
+		return "", time.Time{}, wrapIdentityWriteErr("insert first-password grant", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return "", time.Time{}, fmt.Errorf("commit first-password grant: %w", err)
@@ -204,8 +204,9 @@ func (s *Store) FirstPasswordGrantValid(ctx context.Context, rawGrant, sessionTo
 SELECT EXISTS(
  SELECT 1 FROM first_password_grants g
  JOIN sessions s ON s.token_hash = g.session_token_hash AND s.user_id = g.user_id
+ JOIN users u ON u.id = g.user_id
  WHERE g.token_hash = ? AND g.user_id = ? AND g.session_token_hash = ?
-   AND g.expires_at > ? AND s.expires_at > ?
+   AND g.expires_at > ? AND s.expires_at > ? AND u.is_service = 0
 )`, hashToken(rawGrant), userID, hashToken(sessionToken), now, now).Scan(&valid)
 	return valid, err
 }
@@ -246,7 +247,7 @@ func (s *Store) setFirstPassword(ctx context.Context, userID int64, rawGrant, se
 		return ErrUnauthorized
 	}
 	var old sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&old); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ? AND is_service = 0`, userID).Scan(&old); err != nil {
 		return ErrNotFound
 	}
 	if old.Valid && IsUsablePasswordHash(old.String) {
@@ -259,12 +260,12 @@ func (s *Store) setFirstPassword(ctx context.Context, userID int64, rawGrant, se
 	}
 	var result sql.Result
 	if old.Valid {
-		result, err = tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?`, string(newHash), userID, old.String)
+		result, err = tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ? AND is_service = 0`, string(newHash), userID, old.String)
 	} else {
-		result, err = tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash IS NULL`, string(newHash), userID)
+		result, err = tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash IS NULL AND is_service = 0`, string(newHash), userID)
 	}
 	if err != nil {
-		return fmt.Errorf("set first password: %w", err)
+		return wrapIdentityWriteErr("set first password", err)
 	}
 	n, _ := result.RowsAffected()
 	if n != 1 {
@@ -294,7 +295,7 @@ func (s *Store) ResetLocalPassword(ctx context.Context, userID int64, expectedHa
 		return fmt.Errorf("begin password reset: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?`, string(hash), userID, expectedHash)
+	res, err := tx.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ? AND is_service = 0`, string(hash), userID, expectedHash)
 	if err != nil {
 		return fmt.Errorf("update reset password: %w", err)
 	}
@@ -325,7 +326,7 @@ SELECT password_hash,
        CASE WHEN ? = '' THEN FALSE ELSE EXISTS(
          SELECT 1 FROM user_oidc_identities WHERE user_id = users.id AND issuer = ?
        ) END
-FROM users WHERE system_role = 'owner'`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
+FROM users WHERE system_role = 'owner' AND is_service = 0`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
 	if err != nil {
 		return OwnerRecoveryPosture{}, err
 	}
@@ -384,15 +385,24 @@ func (s *Store) RecoverOwnerPassword(ctx context.Context, email, password string
 			_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
 		}
 	}()
-	rows, err := conn.QueryContext(ctx, `SELECT id, system_role FROM users WHERE LOWER(TRIM(email)) = ?`, email)
+	var hasServiceColumn bool
+	if err := conn.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pragma_table_info('users') WHERE name = 'is_service')`).Scan(&hasServiceColumn); err != nil {
+		return fmt.Errorf("inspect recovery schema: %w", err)
+	}
+	isServiceExpr := "0"
+	if hasServiceColumn {
+		isServiceExpr = "is_service <> 0"
+	}
+	rows, err := conn.QueryContext(ctx, `SELECT id, system_role, `+isServiceExpr+` FROM users WHERE LOWER(TRIM(email)) = ?`, email)
 	if err != nil {
 		return fmt.Errorf("find recovery owner: %w", err)
 	}
 	var userID int64
 	var role string
+	var isService bool
 	count := 0
 	for rows.Next() {
-		if err := rows.Scan(&userID, &role); err != nil {
+		if err := rows.Scan(&userID, &role, &isService); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -405,11 +415,21 @@ func (s *Store) RecoverOwnerPassword(ctx context.Context, email, password string
 	if count != 1 {
 		return fmt.Errorf("%w: normalized email is ambiguous", ErrConflict)
 	}
-	if role != SystemRoleOwner.String() {
+	if isService || role != SystemRoleOwner.String() {
 		return fmt.Errorf("%w: target is not an owner", ErrValidation)
 	}
-	if _, err := conn.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(hash), userID); err != nil {
-		return fmt.Errorf("recover owner password: %w", err)
+	updateHash := `UPDATE users SET password_hash = ? WHERE id = ?`
+	if hasServiceColumn {
+		updateHash += ` AND is_service = 0`
+	}
+	updated, err := conn.ExecContext(ctx, updateHash, string(hash), userID)
+	if err != nil {
+		return wrapIdentityWriteErr("recover owner password", err)
+	}
+	if n, err := updated.RowsAffected(); err != nil {
+		return fmt.Errorf("recover owner password rows: %w", err)
+	} else if n != 1 {
+		return ErrNotFound
 	}
 	if _, err := conn.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID); err != nil {
 		return fmt.Errorf("revoke owner sessions: %w", err)

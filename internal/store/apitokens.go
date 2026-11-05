@@ -28,6 +28,9 @@ type APITokenMeta struct {
 // other token. When the user is later deleted, DeleteUser copies its metadata and owner provenance
 // into archived_service_api_tokens before the row cascade-deletes, so the metadata is kept for
 // offboarding review while the secret stops working.
+//
+// This is the self-service path for humans, so it refuses a service account; provisioning a service
+// account's credentials needs its own explicitly authorized operation.
 func (s *Store) CreateUserAPIToken(ctx context.Context, userID int64, name *string, isService bool) (id int64, plaintext string, createdAt time.Time, err error) {
 	if userID <= 0 {
 		return 0, "", time.Time{}, fmt.Errorf("%w: invalid user id", ErrValidation)
@@ -54,13 +57,21 @@ func (s *Store) CreateUserAPIToken(ctx context.Context, userID int64, name *stri
 
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO api_tokens(user_id, token_hash, name, created_at, last_used_at, revoked_at, is_service)
-VALUES (?, ?, ?, ?, NULL, NULL, ?)
-`, userID, tokenHash, nameArg, nowMs, isService)
+SELECT ?, ?, ?, ?, NULL, NULL, ?
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_service <> 0)
+`, userID, tokenHash, nameArg, nowMs, isService, userID)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: api_tokens.token_hash") {
 			return 0, "", time.Time{}, ErrConflict
 		}
 		return 0, "", time.Time{}, fmt.Errorf("insert api token: %w", err)
+	}
+	inserted, err := res.RowsAffected()
+	if err != nil {
+		return 0, "", time.Time{}, fmt.Errorf("api token rows affected: %w", err)
+	}
+	if inserted != 1 {
+		return 0, "", time.Time{}, ErrServiceAccountRestricted
 	}
 	newID, err := res.LastInsertId()
 	if err != nil {
@@ -148,6 +159,8 @@ WHERE id = ? AND user_id = ? AND revoked_at IS NULL
 
 // GetUserByAPIToken returns the user for an active (non-revoked) API token. The full presented secret
 // (including sb_ prefix) is hashed and matched. last_used_at is updated best-effort and must not affect success.
+// Unlike every interactive lookup, this one does not exclude service accounts: an API token is their
+// machine-authentication channel. They come back with IsService set and the plain user role.
 func (s *Store) GetUserByAPIToken(ctx context.Context, rawToken string) (User, error) {
 	rawToken = strings.TrimSpace(rawToken)
 	if rawToken == "" {
@@ -168,12 +181,12 @@ func (s *Store) GetUserByAPIToken(ctx context.Context, rawToken string) (User, e
 		twoFactorEnabled bool
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT u.id, u.email, u.name, u.is_bootstrap, u.system_role, u.created_at, u.two_factor_enabled
+SELECT u.id, u.email, u.name, u.is_bootstrap, u.system_role, u.created_at, u.two_factor_enabled, u.is_service <> 0
 FROM api_tokens t
 JOIN users u ON u.id = t.user_id
 WHERE t.token_hash = ?
   AND t.revoked_at IS NULL
-`, tokenHash).Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled)
+`, tokenHash).Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled, &u.IsService)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return User{}, ErrNotFound
@@ -181,13 +194,9 @@ WHERE t.token_hash = ?
 		return User{}, fmt.Errorf("get api token user: %w", err)
 	}
 	u.IsBootstrap = isBootstrap
-	if role, ok := ParseSystemRole(systemRoleStr); ok {
-		u.SystemRole = role
-	} else {
-		u.SystemRole = SystemRoleUser
-	}
+	u.SystemRole = effectiveSystemRole(systemRoleStr, u.IsService)
 	u.CreatedAt = time.UnixMilli(createdAt).UTC()
-	u.TwoFactorEnabled = twoFactorEnabled
+	u.TwoFactorEnabled = twoFactorEnabled && !u.IsService
 
 	go func() {
 		_, _ = s.db.ExecContext(context.Background(),

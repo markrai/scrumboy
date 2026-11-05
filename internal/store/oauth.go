@@ -114,7 +114,7 @@ INSERT INTO oauth_auth_codes(code_hash, client_id, user_id, redirect_uri, code_c
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
 `, codeHash, clientID, userID, redirectURI, codeChallenge, codeChallengeMethod, resource, nowMs, expiresMs)
 	if err != nil {
-		return "", fmt.Errorf("insert oauth auth code: %w", err)
+		return "", wrapIdentityWriteErr("insert oauth auth code", err)
 	}
 	return secret, nil
 }
@@ -195,6 +195,7 @@ func (s *Store) redeemOAuthAuthCodeTx(ctx context.Context, tx *sql.Tx, rawCode, 
 SELECT client_id, user_id, redirect_uri, code_challenge, code_challenge_method, resource
 FROM oauth_auth_codes
 WHERE code_hash = ? AND consumed_at IS NULL AND expires_at > ?
+  AND EXISTS(SELECT 1 FROM users WHERE id = oauth_auth_codes.user_id AND is_service = 0)
 `, codeHash, nowMs).Scan(&ac.ClientID, &ac.UserID, &ac.RedirectURI, &ac.CodeChallenge, &ac.CodeChallengeMethod, &ac.Resource)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -264,13 +265,13 @@ func (s *Store) issueOAuthTokenPairTx(ctx context.Context, tx *sql.Tx, clientID 
 INSERT INTO oauth_access_tokens(token_hash, client_id, user_id, resource, created_at, expires_at, revoked_at)
 VALUES (?, ?, ?, ?, ?, ?, NULL)
 `, hashToken(accessSecret), clientID, userID, resource, nowMs, accessExpiresMs); err != nil {
-		return OAuthTokenPair{}, fmt.Errorf("insert oauth access token: %w", err)
+		return OAuthTokenPair{}, wrapIdentityWriteErr("insert oauth access token", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO oauth_refresh_tokens(token_hash, client_id, user_id, resource, created_at, expires_at, revoked_at)
 VALUES (?, ?, ?, ?, ?, ?, NULL)
 `, hashToken(refreshSecret), clientID, userID, resource, nowMs, refreshExpiresMs); err != nil {
-		return OAuthTokenPair{}, fmt.Errorf("insert oauth refresh token: %w", err)
+		return OAuthTokenPair{}, wrapIdentityWriteErr("insert oauth refresh token", err)
 	}
 
 	return OAuthTokenPair{
@@ -338,6 +339,7 @@ func (s *Store) consumeOAuthRefreshTokenTx(ctx context.Context, tx *sql.Tx, rawT
 SELECT client_id, user_id, resource
 FROM oauth_refresh_tokens
 WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?
+  AND EXISTS(SELECT 1 FROM users WHERE id = oauth_refresh_tokens.user_id AND is_service = 0)
 `, tokenHash, nowMs).Scan(&grant.ClientID, &grant.UserID, &grant.Resource)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -391,6 +393,7 @@ WHERE t.token_hash = ?
 	AND t.resource = ?
   AND t.revoked_at IS NULL
   AND t.expires_at > ?
+  AND u.is_service = 0
 `, tokenHash, expectedResource, nowMs).Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {

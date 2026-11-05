@@ -61,7 +61,7 @@ func (s *Store) CreateLogin2FAPending(ctx context.Context, userID int64, ttl tim
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO login_2fa_pending(user_id, token_hash, created_at, expires_at, attempt_count)
 		VALUES (?, ?, ?, ?, 0)`, userID, tokenHash, nowMs, expiresAtMs); err != nil {
-		return "", time.Time{}, fmt.Errorf("insert login 2fa pending: %w", err)
+		return "", time.Time{}, wrapIdentityWriteErr("insert login 2fa pending", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return "", time.Time{}, fmt.Errorf("commit create login 2fa pending tx: %w", err)
@@ -89,7 +89,7 @@ func (s *Store) GetUserByLogin2FAPendingToken(ctx context.Context, token string)
 		SELECT u.id, u.email, u.name, u.is_bootstrap, u.system_role, u.created_at, u.two_factor_enabled, p.attempt_count
 		FROM login_2fa_pending p
 		JOIN users u ON u.id = p.user_id
-		WHERE p.token_hash = ? AND p.expires_at > ?
+		WHERE p.token_hash = ? AND p.expires_at > ? AND u.is_service = 0
 	`, tokenHash, nowMs).Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &u.TwoFactorEnabled, &attemptCount)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -182,7 +182,8 @@ func (s *Store) CompleteLogin2FA(ctx context.Context, rawPendingToken string, us
 	now := time.Now().UTC()
 	deleted, err := tx.ExecContext(ctx, `
 DELETE FROM login_2fa_pending
-WHERE token_hash = ? AND user_id = ? AND expires_at > ? AND attempt_count >= 1 AND attempt_count <= ?`,
+WHERE token_hash = ? AND user_id = ? AND expires_at > ? AND attempt_count >= 1 AND attempt_count <= ?
+  AND EXISTS(SELECT 1 FROM users WHERE id = login_2fa_pending.user_id AND is_service = 0)`,
 		hashToken(rawPendingToken), userID, now.UnixMilli(), maxAttemptsPerToken)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("consume login 2fa pending: %w", err)
@@ -263,7 +264,7 @@ func (s *Store) CreateTwoFactorEnrollment(ctx context.Context, userID int64, sec
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO two_factor_enrollments(user_id, token_hash, secret_enc, created_at, expires_at, attempt_count)
 		VALUES (?, ?, ?, ?, ?, 0)`, userID, tokenHash, secretEnc, nowMs, expiresAtMs); err != nil {
-		return "", time.Time{}, fmt.Errorf("insert enrollment: %w", err)
+		return "", time.Time{}, wrapIdentityWriteErr("insert enrollment", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return "", time.Time{}, fmt.Errorf("commit create enrollment tx: %w", err)
@@ -280,7 +281,7 @@ func (s *Store) GetTwoFactorEnrollmentByToken(ctx context.Context, token string)
 	tokenHash := hashToken(token)
 	nowMs := time.Now().UTC().UnixMilli()
 
-	if err := s.db.QueryRowContext(ctx, `SELECT user_id, secret_enc FROM two_factor_enrollments WHERE token_hash = ? AND expires_at > ?`, tokenHash, nowMs).Scan(&userID, &secretEnc); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT e.user_id, e.secret_enc FROM two_factor_enrollments e JOIN users u ON u.id = e.user_id WHERE e.token_hash = ? AND e.expires_at > ? AND u.is_service = 0`, tokenHash, nowMs).Scan(&userID, &secretEnc); err != nil {
 		if err == sql.ErrNoRows {
 			return 0, "", ErrNotFound
 		}
@@ -336,7 +337,7 @@ func (s *Store) GetUserTwoFactorSecret(ctx context.Context, userID int64) (strin
 		return "", Err2FAEncryptionNotConfigured
 	}
 	var secretEnc string
-	if err := s.db.QueryRowContext(ctx, `SELECT two_factor_secret_enc FROM users WHERE id = ? AND two_factor_secret_enc IS NOT NULL`, userID).Scan(&secretEnc); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT two_factor_secret_enc FROM users WHERE id = ? AND two_factor_secret_enc IS NOT NULL AND is_service = 0`, userID).Scan(&secretEnc); err != nil {
 		if err == sql.ErrNoRows {
 			return "", ErrNotFound
 		}
@@ -357,8 +358,16 @@ func (s *Store) SetUserTwoFactor(ctx context.Context, userID int64, encryptedSec
 	if encryptedSecret == "" {
 		return fmt.Errorf("%w: secret required", ErrValidation)
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE users SET two_factor_enabled = 1, two_factor_secret_enc = ? WHERE id = ?`, encryptedSecret, userID); err != nil {
-		return fmt.Errorf("set user two factor: %w", err)
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET two_factor_enabled = 1, two_factor_secret_enc = ? WHERE id = ? AND is_service = 0`, encryptedSecret, userID)
+	if err != nil {
+		return wrapIdentityWriteErr("set user two factor", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set user two factor rows: %w", err)
+	}
+	if n != 1 {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -393,7 +402,7 @@ func (s *Store) CompleteTwoFactorEnrollment(ctx context.Context, userID int64, s
 
 	var enrollUserID int64
 	var secretEnc string
-	err = tx.QueryRowContext(ctx, `SELECT user_id, secret_enc FROM two_factor_enrollments WHERE token_hash = ? AND expires_at > ?`, tokenHash, nowMs).Scan(&enrollUserID, &secretEnc)
+	err = tx.QueryRowContext(ctx, `SELECT e.user_id, e.secret_enc FROM two_factor_enrollments e JOIN users u ON u.id = e.user_id WHERE e.token_hash = ? AND e.expires_at > ? AND u.is_service = 0`, tokenHash, nowMs).Scan(&enrollUserID, &secretEnc)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return ErrNotFound
@@ -417,9 +426,9 @@ func (s *Store) CompleteTwoFactorEnrollment(ctx context.Context, userID int64, s
 		return ErrNotFound
 	}
 
-	enabled, err := tx.ExecContext(ctx, `UPDATE users SET two_factor_enabled = 1, two_factor_secret_enc = ? WHERE id = ? AND two_factor_enabled = 0`, secretEnc, userID)
+	enabled, err := tx.ExecContext(ctx, `UPDATE users SET two_factor_enabled = 1, two_factor_secret_enc = ? WHERE id = ? AND two_factor_enabled = 0 AND is_service = 0`, secretEnc, userID)
 	if err != nil {
-		return fmt.Errorf("enable user two factor: %w", err)
+		return wrapIdentityWriteErr("enable user two factor", err)
 	}
 	if n, err := enabled.RowsAffected(); err != nil {
 		return fmt.Errorf("count enabled two factor: %w", err)
@@ -472,7 +481,7 @@ func (s *Store) ReplaceRecoveryCodes(ctx context.Context, userID int64, codes []
 	defer func() { _ = tx.Rollback() }()
 
 	var enabled int
-	if err := tx.QueryRowContext(ctx, `SELECT two_factor_enabled FROM users WHERE id = ?`, userID).Scan(&enabled); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT two_factor_enabled FROM users WHERE id = ? AND is_service = 0`, userID).Scan(&enabled); err != nil {
 		if err == sql.ErrNoRows {
 			return ErrNotFound
 		}
@@ -610,7 +619,7 @@ func consumeRecoveryProofTx(ctx context.Context, tx *sql.Tx, userID int64, proof
 		return ErrUnauthorized
 	}
 	nowMs := time.Now().UTC().UnixMilli()
-	result, err := tx.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL AND code_hash = ?`, nowMs, proof.ID, userID, proof.Hash)
+	result, err := tx.ExecContext(ctx, `UPDATE user_recovery_codes SET used_at = ? WHERE id = ? AND user_id = ? AND used_at IS NULL AND code_hash = ? AND EXISTS(SELECT 1 FROM users WHERE id = user_recovery_codes.user_id AND is_service = 0)`, nowMs, proof.ID, userID, proof.Hash)
 	if err != nil {
 		return fmt.Errorf("consume recovery proof: %w", err)
 	}
@@ -628,7 +637,7 @@ func insertHashedRecoveryCodesTx(ctx context.Context, tx *sql.Tx, userID int64, 
 	nowMs := time.Now().UTC().UnixMilli()
 	for _, hash := range hashes {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO user_recovery_codes(user_id, code_hash, created_at) VALUES (?, ?, ?)`, userID, hash, nowMs); err != nil {
-			return fmt.Errorf("insert recovery code: %w", err)
+			return wrapIdentityWriteErr("insert recovery code", err)
 		}
 	}
 	return nil
@@ -650,7 +659,7 @@ func (s *Store) AddRecoveryCodes(ctx context.Context, userID int64, codes []stri
 			return fmt.Errorf("hash recovery code: %w", err)
 		}
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO user_recovery_codes(user_id, code_hash, created_at) VALUES (?, ?, ?)`, userID, string(hash), nowMs); err != nil {
-			return fmt.Errorf("insert recovery code: %w", err)
+			return wrapIdentityWriteErr("insert recovery code", err)
 		}
 	}
 	return nil
@@ -665,7 +674,7 @@ func (s *Store) MatchRecoveryCodeProof(ctx context.Context, userID int64, code s
 		return 0, "", nil
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT id, code_hash FROM user_recovery_codes WHERE user_id = ? AND used_at IS NULL`, userID)
+	rows, err := s.db.QueryContext(ctx, `SELECT c.id, c.code_hash FROM user_recovery_codes c JOIN users u ON u.id = c.user_id WHERE c.user_id = ? AND c.used_at IS NULL AND u.is_service = 0`, userID)
 	if err != nil {
 		return 0, "", fmt.Errorf("list recovery codes: %w", err)
 	}
