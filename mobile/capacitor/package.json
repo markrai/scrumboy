@@ -24,7 +24,7 @@
   "devDependencies": {
     "@capacitor/cli": "8.5.1",
     "esbuild": "0.28.2",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "overrides": {
     "brace-expansion": "5.0.12",
