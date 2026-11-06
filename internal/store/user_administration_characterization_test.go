@@ -220,10 +220,19 @@ func TestUserAdministrationStoreDeleteOwnedProjectFailureIsAtomic(t *testing.T) 
 	if _, _, err := fx.store.CreateSession(ctx, owner2.ID, time.Hour); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
+	if err := fx.store.AddProjectMember(WithUserID(ctx, owner2.ID), owner2.ID, project.ID, fx.owner.ID, RoleMaintainer); err != nil {
+		t.Fatalf("add second maintainer: %v", err)
+	}
 
 	err = fx.store.DeleteUser(ctx, fx.owner.ID, owner2.ID)
-	if err == nil || !strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
-		t.Fatalf("delete owned-project user error=%v want foreign-key failure", err)
+	if err != nil && strings.Contains(err.Error(), "FOREIGN KEY") {
+		t.Fatalf("owned-project delete leaked storage internals: %v", err)
+	}
+	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), "account owns 1 project") {
+		t.Fatalf("delete owned-project user error=%v want owned-project conflict", err)
+	}
+	if strings.Contains(err.Error(), project.Name) || strings.Contains(err.Error(), project.Slug) {
+		t.Fatalf("owned-project conflict discloses project details: %v", err)
 	}
 	if _, err := fx.store.GetUser(ctx, owner2.ID); err != nil {
 		t.Fatalf("user missing after rolled-back delete: %v", err)

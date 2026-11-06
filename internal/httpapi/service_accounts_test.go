@@ -282,3 +282,47 @@ func TestRequestContext_RecordsHumanIdentityForSessions(t *testing.T) {
 		t.Fatalf("recorded identity = %v, %v, want a known human", isService, ok)
 	}
 }
+
+// The REST admin route reports the conflict as such, for either account type, and changes nothing.
+func TestAdminDeleteUser_SoleMaintainerIsAConflict(t *testing.T) {
+	f, _ := newServiceAccountHTTPFixture(t)
+	ownerCtx := store.WithUserID(context.Background(), f.ownerID)
+	human, err := f.st.CreateUser(context.Background(), "maintainer@example.com", "password123", "Maintainer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, id := range map[string]int64{"service": f.svc.ID, "human": human.ID} {
+		t.Run(name, func(t *testing.T) {
+			project, err := f.st.CreateProject(ownerCtx, "Led by "+name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := f.st.AddProjectMember(ownerCtx, f.ownerID, project.ID, id, store.RoleMaintainer); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.db.Exec(`DELETE FROM project_members WHERE project_id = ? AND user_id = ?`, project.ID, f.ownerID); err != nil {
+				t.Fatal(err)
+			}
+
+			url := f.ts + fmt.Sprintf("/api/admin/users/%d", id)
+			resp, body := doJSON(t, f.owner, http.MethodDelete, url, nil, nil)
+			if resp.StatusCode != http.StatusConflict {
+				t.Fatalf("status = %d: %s", resp.StatusCode, body)
+			}
+			var row int
+			if err := f.db.QueryRow(`SELECT COUNT(*) FROM users WHERE id = ?`, id).Scan(&row); err != nil {
+				t.Fatal(err)
+			}
+			if row != 1 {
+				t.Fatal("the account was deleted")
+			}
+
+			if err := f.st.AddProjectMember(store.WithUserID(context.Background(), id), id, project.ID, f.ownerID, store.RoleMaintainer); err != nil {
+				t.Fatal(err)
+			}
+			if resp, body := doJSON(t, f.owner, http.MethodDelete, url, nil, nil); resp.StatusCode != http.StatusNoContent {
+				t.Fatalf("delete once safe: status = %d: %s", resp.StatusCode, body)
+			}
+		})
+	}
+}

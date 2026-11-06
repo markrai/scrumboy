@@ -879,15 +879,15 @@ func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64
 		return DeletedProjectSnapshot{}, ErrNotFound
 	}
 
-	if err := s.checkCanManageProject(ctx, p, userID); err != nil {
-		return DeletedProjectSnapshot{}, err
-	}
-
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return DeletedProjectSnapshot{}, fmt.Errorf("begin delete project: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if err := s.checkProjectSettingsAuthTx(ctx, tx, p, userID); err != nil {
+		return DeletedProjectSnapshot{}, err
+	}
 
 	var name string
 	if err := tx.QueryRowContext(ctx, `SELECT name FROM projects WHERE id = ?`, projectID).Scan(&name); err != nil {

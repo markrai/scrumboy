@@ -12,10 +12,12 @@ import (
 // requiredServiceTriggers maps each protective trigger to the table it must be attached to.
 func requiredServiceTriggers() map[string]string {
 	required := map[string]string{
-		"trg_users_is_service_immutable":                "users",
-		"trg_users_service_reject_inherited_references": "users",
-		"trg_projects_reject_service_owner_insert":      "projects",
-		"trg_projects_reject_service_owner_update":      "projects",
+		"trg_users_is_service_immutable":                  "users",
+		"trg_users_service_reject_inherited_references":   "users",
+		"trg_projects_reject_service_owner_insert":        "projects",
+		"trg_projects_reject_service_owner_update":        "projects",
+		"trg_project_members_reject_service_owner_insert": "project_members",
+		"trg_project_members_reject_service_owner_update": "project_members",
 	}
 	for _, table := range interactiveCredentialTables {
 		required["trg_"+table+"_reject_service_insert"] = table
@@ -23,7 +25,7 @@ func requiredServiceTriggers() map[string]string {
 	return required
 }
 
-// missingServiceProtections lists every part of migration 080's protection absent from a schema.
+// missingServiceProtections lists every part of migrations 080 and 081's protection absent from a schema.
 func missingServiceProtections(t *testing.T, sqlDB *sql.DB) []string {
 	t.Helper()
 	var missing []string
@@ -57,18 +59,22 @@ func missingServiceProtections(t *testing.T, sqlDB *sql.DB) []string {
 	return missing
 }
 
-// Runs against the end of the whole chain, so a later migration that rebuilds a protected table and
-// forgets its triggers, or rebuilds users and loses the CHECK, fails here.
+// Runs against the end of the whole chain, including migration 081, so a later migration that
+// rebuilds a protected table and forgets its triggers, or rebuilds users and loses the CHECK,
+// fails here.
 func TestMigration080ProtectionsSurviveChain(t *testing.T) {
 	sqlDB := openMigratedDB(t)
 	if missing := missingServiceProtections(t, sqlDB); len(missing) != 0 {
 		t.Fatalf("the migration chain lost service-account protection:\n  %s", strings.Join(missing, "\n  "))
 	}
-	if n := len(requiredServiceTriggers()); n != 14 {
-		t.Fatalf("required trigger list has %d entries, want 14", n)
+	if n := len(requiredServiceTriggers()); n != 16 {
+		t.Fatalf("required trigger list has %d entries, want 16", n)
 	}
 	// Names can survive while behaviour does not, so exercise the protections on the final schema.
 	insertServiceRow(t, sqlDB, 1, validServiceEmail)
+	if _, err := sqlDB.Exec(`INSERT INTO projects(id, name, slug, estimation_mode, last_activity_at, created_at, updated_at) VALUES (1, 'host', 'svc-host', 'MODIFIED_FIBONACCI', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
 	const checkFailure, triggerFailure = "users_service_identity", "service identity:"
 	for name, tc := range map[string]struct{ stmt, want string }{
 		"role":       {`UPDATE users SET system_role = 'owner' WHERE id = 1`, checkFailure},
@@ -77,6 +83,7 @@ func TestMigration080ProtectionsSurviveChain(t *testing.T) {
 		"session":    {`INSERT INTO sessions(user_id, token_hash, created_at, expires_at, last_seen_at) VALUES (1, 'h', 1, 2, 1)`, triggerFailure},
 		"project":    {`INSERT INTO projects(name, slug, estimation_mode, owner_user_id, last_activity_at, created_at, updated_at) VALUES ('p', 'svc-owned', 'MODIFIED_FIBONACCI', 1, 1, 1, 1)`, triggerFailure},
 		"temp board": {`INSERT INTO projects(name, slug, estimation_mode, creator_user_id, last_activity_at, expires_at, created_at, updated_at) VALUES ('p', 'svc-temp', 'MODIFIED_FIBONACCI', 1, 1, 2, 1, 1)`, triggerFailure},
+		"owner role": {`INSERT INTO project_members(project_id, user_id, role, created_at) VALUES (1, 1, 'owner', 1)`, triggerFailure},
 	} {
 		// Name the expected failure: an unrelated constraint rejecting the row would prove nothing.
 		if _, err := sqlDB.Exec(tc.stmt); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -94,13 +101,21 @@ func TestMissingServiceProtectionsDetectsTableRebuild(t *testing.T) {
 		`DROP TABLE first_password_grants`,
 		`DROP TABLE sessions`,
 		`ALTER TABLE sessions_rebuilt RENAME TO sessions`,
+		`CREATE TABLE project_members_rebuilt AS SELECT * FROM project_members`,
+		`DROP TABLE project_members`,
+		`ALTER TABLE project_members_rebuilt RENAME TO project_members`,
 	} {
 		if _, err := sqlDB.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
 	missing := strings.Join(missingServiceProtections(t, sqlDB), "\n")
-	for _, want := range []string{"trg_sessions_reject_service_insert", "trg_first_password_grants_reject_service_insert"} {
+	for _, want := range []string{
+		"trg_sessions_reject_service_insert",
+		"trg_first_password_grants_reject_service_insert",
+		"trg_project_members_reject_service_owner_insert",
+		"trg_project_members_reject_service_owner_update",
+	} {
 		if !strings.Contains(missing, want) {
 			t.Errorf("detector did not report %s; it reported:\n%s", want, missing)
 		}
@@ -279,7 +294,7 @@ INSERT INTO projects(id, name, slug, estimation_mode, owner_user_id, creator_use
 			t.Errorf("%s: %v", stmt, err)
 		}
 	}
-	// Reusing the id of a user that a project still names is fine for a human, not for a service account.
+	// The reference check applies only to service accounts.
 	insert := `INSERT INTO users(id, email, name, created_at, system_role, is_service) VALUES (50, 'svc-r@service.invalid', 'r', 1, 'user', 1)`
 	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO projects(id, name, slug, estimation_mode, creator_user_id, last_activity_at, expires_at, created_at, updated_at) VALUES (4, 'Orphan', 'orphan', 'MODIFIED_FIBONACCI', 50, 1, 9999999999999, 1, 1)`); err != nil {
 		t.Fatal(err)

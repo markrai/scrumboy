@@ -91,6 +91,61 @@ func countMaintainersTx(ctx context.Context, tx *sql.Tx, projectID int64) (int, 
 	return count, nil
 }
 
+// rejectSoleMaintainerDeletionTx refuses to delete an account that holds the last Maintainer role on
+// a project that would survive. Deleting an account removes no project, so every durable project
+// counts. Temporary boards are excluded because their authority is their creator or link, not a
+// Maintainer row, and staged import rows because they are not projects yet. The error gives only a
+// count: the system Owner who sees it has no access to the projects themselves.
+func rejectSoleMaintainerDeletionTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	var count int
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM project_members pm
+		JOIN projects p ON p.id = pm.project_id
+		WHERE pm.user_id = ?
+		  AND pm.role IN (?, ?)
+		  AND p.expires_at IS NULL
+		  AND p.import_batch_id IS NULL
+		  AND NOT EXISTS (
+		    SELECT 1 FROM project_members other
+		    WHERE other.project_id = pm.project_id
+		      AND other.user_id <> pm.user_id
+		      AND other.role IN (?, ?)
+		  )
+	`, userID, RoleMaintainer, RoleOwner, RoleMaintainer, RoleOwner).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check sole maintainer: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: account is the sole maintainer of %d project(s); another maintainer must be added or the project deleted first", ErrConflict, count)
+	}
+	return nil
+}
+
+// rejectOwnedProjectDeletionTx refuses to delete an account that still owns
+// durable projects. projects.owner_user_id has no ON DELETE action, so without
+// this check the DELETE would fail with a raw FOREIGN KEY constraint error.
+// The error gives only a count, matching rejectSoleMaintainerDeletionTx: the
+// system Owner performing the deletion has no access to the projects
+// themselves and must not learn names, slugs, or IDs from the failure.
+func rejectOwnedProjectDeletionTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	var count int
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM projects p
+		WHERE p.owner_user_id = ?
+		  AND p.expires_at IS NULL
+		  AND p.import_batch_id IS NULL
+	`, userID).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check owned projects: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: account owns %d project(s); transfer ownership or delete the project first", ErrConflict, count)
+	}
+	return nil
+}
+
 // ListProjectMembers returns all members of a project.
 // Requires userID to have Viewer+; returns ErrNotFound when access denied.
 func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]ProjectMember, error) {
@@ -152,15 +207,12 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 	}
 
 	// Validate target user exists
-	var targetIsService bool
-	if err := tx.QueryRowContext(ctx, `SELECT is_service <> 0 FROM users WHERE id = ?`, targetUserID).Scan(&targetIsService); err != nil {
-		if err == sql.ErrNoRows {
-			return ErrNotFound
-		}
+	var targetExists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, targetUserID).Scan(&targetExists); err != nil {
 		return fmt.Errorf("check target user exists: %w", err)
 	}
-	if targetIsService && role == RoleOwner {
-		return ErrServiceAccountRestricted
+	if !targetExists {
+		return ErrNotFound
 	}
 
 	requesterProjectRole, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
@@ -188,7 +240,7 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 		VALUES (?, ?, ?, ?)
 	`, projectID, targetUserID, role, nowMs)
 	if err != nil {
-		return fmt.Errorf("add project member: %w", err)
+		return wrapIdentityWriteErr("add project member", err)
 	}
 
 	actorUserID := &requesterID

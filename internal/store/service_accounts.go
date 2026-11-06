@@ -35,7 +35,7 @@ func effectiveSystemRole(raw string, isService bool) SystemRole {
 	return SystemRoleUser
 }
 
-// isServiceIdentityViolation reports whether err came from migration 080's database enforcement:
+// isServiceIdentityViolation reports whether err came from migrations 080 and 081's database enforcement:
 // a "service identity:" trigger or the users_service_identity CHECK.
 func isServiceIdentityViolation(err error) bool {
 	if err == nil {

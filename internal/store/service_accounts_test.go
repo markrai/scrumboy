@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
-
-	"scrumboy/internal/db"
 )
 
 var serviceEmailPattern = regexp.MustCompile(`^svc-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}@service\.invalid$`)
@@ -930,28 +928,6 @@ func TestReservedServiceEmail(t *testing.T) {
 	}
 }
 
-// openSecondConnection returns a separate handle on the same database file. The store's own pool has
-// one connection, so this is how a transaction can overlap with one the store is running.
-func openSecondConnection(t *testing.T, f *serviceFixture) *sql.Conn {
-	t.Helper()
-	var seq int
-	var name, path string
-	if err := f.db.QueryRow(`PRAGMA database_list`).Scan(&seq, &name, &path); err != nil {
-		t.Fatal(err)
-	}
-	second, err := db.Open(path, db.Options{BusyTimeout: 5000, JournalMode: "WAL", Synchronous: "FULL"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = second.Close() })
-	conn, err := second.Conn(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	return conn
-}
-
 // A requester demoted by a transaction still in flight must not be authorized by a stale read: the
 // store's call overlaps the demotion and has to be refused however the two interleave. A check made
 // before the transaction would pass here, wait on the write lock, and then commit.
@@ -966,40 +942,37 @@ func TestServiceAccountMutations_RejectRequesterDemotedConcurrently(t *testing.T
 		},
 	}
 	for name, mutate := range cases {
-		t.Run(name, func(t *testing.T) {
-			f := newServiceFixture(t)
-			ctx := context.Background()
-			if err := f.st.UpdateUserRole(ctx, f.owner.ID, f.admin.ID, SystemRoleOwner); err != nil {
-				t.Fatal(err)
-			}
-			serviceBefore := f.count(t, `SELECT COUNT(*) FROM users WHERE is_service = 1`)
+		for label, at := range staleReadInterleavings() {
+			t.Run(name+"/"+label, func(t *testing.T) {
+				f := newServiceFixture(t)
+				ctx := context.Background()
+				if err := f.st.UpdateUserRole(ctx, f.owner.ID, f.admin.ID, SystemRoleOwner); err != nil {
+					t.Fatal(err)
+				}
+				serviceBefore := f.count(t, `SELECT COUNT(*) FROM users WHERE is_service = 1`)
 
-			conn := openSecondConnection(t, f)
-			if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := conn.ExecContext(ctx, `UPDATE users SET system_role = 'user' WHERE id = ?`, f.admin.ID); err != nil {
-				t.Fatal(err)
-			}
+				hooked, hook := f.hooked(t)
+				racing := *f
+				racing.st = hooked
+				hook.arm(at, func() {
+					if _, err := f.db.Exec(`UPDATE users SET system_role = 'user' WHERE id = ?`, f.admin.ID); err != nil {
+						t.Errorf("demote: %v", err)
+					}
+				})
 
-			done := make(chan error, 1)
-			go func() { done <- mutate(ctx, f, f.admin.ID) }()
-			time.Sleep(150 * time.Millisecond) // Let the call read the pre-demotion state first.
-			if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-				t.Fatal(err)
-			}
-
-			err := <-done
-			if err == nil {
-				t.Fatal("mutation succeeded on a stale authorization")
-			}
-			if got := f.count(t, `SELECT COUNT(*) FROM users WHERE is_service = 1`); got != serviceBefore {
-				t.Errorf("service accounts went from %d to %d", serviceBefore, got)
-			}
-			if n := f.count(t, `SELECT COUNT(*) FROM users WHERE id = ? AND system_role = 'user'`, f.human.ID); n != 1 {
-				t.Error("target was promoted on a stale authorization")
-			}
-		})
+				err := mutate(ctx, &racing, f.admin.ID)
+				hook.assertFired(t)
+				if err == nil {
+					t.Fatal("mutation succeeded on a stale authorization")
+				}
+				if got := f.count(t, `SELECT COUNT(*) FROM users WHERE is_service = 1`); got != serviceBefore {
+					t.Errorf("service accounts went from %d to %d", serviceBefore, got)
+				}
+				if n := f.count(t, `SELECT COUNT(*) FROM users WHERE id = ? AND system_role = 'user'`, f.human.ID); n != 1 {
+					t.Error("target was promoted on a stale authorization")
+				}
+			})
+		}
 	}
 }
 

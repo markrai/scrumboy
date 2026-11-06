@@ -552,7 +552,8 @@ FROM users ORDER BY created_at`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
 	return users, nil
 }
 
-// DeleteUser deletes a user. Requires owner role, and prevents deletion of the last owner.
+// DeleteUser deletes a user. Requires owner role, and prevents deletion of the last owner or of the
+// last Maintainer of a surviving project.
 func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64) error {
 	if requesterID == targetUserID {
 		return fmt.Errorf("%w: cannot delete yourself", ErrValidation)
@@ -586,6 +587,12 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 			return fmt.Errorf("%w: cannot delete the last owner", ErrValidation)
 		}
 	}
+	if err := rejectSoleMaintainerDeletionTx(ctx, tx, targetUserID); err != nil {
+		return err
+	}
+	if err := rejectOwnedProjectDeletionTx(ctx, tx, targetUserID); err != nil {
+		return err
+	}
 
 	// Archive the target's service (bot/automation) API token metadata, with immutable origin
 	// provenance, before the user row disappears. The api_tokens rows themselves (service and
@@ -595,8 +602,15 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 		return err
 	}
 
-	// Delete user (cascade will handle sessions and API tokens)
+	// Delete user (cascade will handle sessions and API tokens).
+	// The owned-project pre-check above covers the known RESTRICT link
+	// (projects.owner_user_id); this fallback keeps any residual FK failure
+	// (including a concurrent ownership change) a deliberate, non-disclosing
+	// conflict instead of a raw SQLite INTERNAL.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, targetUserID); err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			return fmt.Errorf("%w: account still owns project(s); transfer ownership or delete the project first", ErrConflict)
+		}
 		return fmt.Errorf("delete user: %w", err)
 	}
 

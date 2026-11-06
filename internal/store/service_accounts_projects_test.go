@@ -171,9 +171,9 @@ func TestServiceAccount_ImportsCannotDestroyOrMergeDelegatedProjects(t *testing.
 	}
 }
 
-// users.id is reused after a delete and projects.creator_user_id has no foreign key, so without care
-// a new service account would inherit a deleted human's temporary board and could claim it.
-func TestServiceAccount_DoesNotInheritBoardsThroughIDReuse(t *testing.T) {
+// Service accounts are always created with fresh identity references, and the
+// schema refuses any other insert path. See docs/architecture/service-accounts.md section 6.
+func TestServiceAccount_CreatedWithFreshIdentityReferences(t *testing.T) {
 	f := newServiceProjectFixture(t)
 	ctx := context.Background()
 
@@ -208,7 +208,7 @@ func TestServiceAccount_DoesNotInheritBoardsThroughIDReuse(t *testing.T) {
 		t.Fatalf("claim: err = %v, want ErrNotFound", err)
 	}
 
-	// The dashboard is keyed on the assignee alone, so a stale assignment would expose a card's title.
+	// Todo assignments carry the same guarantee.
 	assigned, err := f.st.CreateUser(ctx, "assigned@example.com", serviceTestPassword, "Assigned")
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestServiceAccount_DoesNotInheritBoardsThroughIDReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n := f.count(t, `SELECT COUNT(*) FROM todos WHERE id = ? AND assignee_user_id = ?`, todo.ID, assigned.ID); n != 1 {
-		t.Fatalf("expected the deleted user's assignment to remain, or this no longer exercises reuse (%d)", n)
+		t.Fatalf("expected the deleted user's assignment to remain, or this no longer exercises the check (%d)", n)
 	}
 	second, err := f.st.CreateServiceAccount(ctx, f.owner.ID, "Second")
 	if err != nil {
@@ -251,7 +251,7 @@ func TestServiceAccount_DoesNotInheritBoardsThroughIDReuse(t *testing.T) {
 		t.Fatalf("raw insert reusing the id: err = %v, want a service identity violation", err)
 	}
 
-	// A human reusing the id is unaffected by this slice.
+	// The schema check applies only to service accounts.
 	if _, err := f.db.Exec(`INSERT INTO users(id, email, name, created_at, system_role) VALUES (?, 'human-reuse@example.com', 'R', 1, 'user')`, departing.ID); err != nil {
 		t.Fatalf("human insert: %v", err)
 	}
@@ -496,39 +496,41 @@ func TestProjectMembership_RejectsRequesterDemotedConcurrently(t *testing.T) {
 		},
 	}
 	for name, mutate := range cases {
-		t.Run(name, func(t *testing.T) {
-			f := newServiceProjectFixture(t)
-			ctx := context.Background()
-			if err := f.st.AddProjectMember(ctx, f.owner.ID, f.durable.ID, f.admin.ID, RoleMaintainer); err != nil {
-				t.Fatal(err)
-			}
-			if err := f.st.AddProjectMember(ctx, f.owner.ID, f.durable.ID, f.human.ID, RoleViewer); err != nil {
-				t.Fatal(err)
-			}
+		for label, at := range staleReadInterleavings() {
+			t.Run(name+"/"+label, func(t *testing.T) {
+				f := newServiceProjectFixture(t)
+				ctx := context.Background()
+				if err := f.st.AddProjectMember(ctx, f.owner.ID, f.durable.ID, f.admin.ID, RoleMaintainer); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.st.AddProjectMember(ctx, f.owner.ID, f.durable.ID, f.human.ID, RoleViewer); err != nil {
+					t.Fatal(err)
+				}
 
-			conn := openSecondConnection(t, f.serviceFixture)
-			if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := conn.ExecContext(ctx, `UPDATE project_members SET role = 'viewer' WHERE project_id = ? AND user_id = ?`, f.durable.ID, f.admin.ID); err != nil {
-				t.Fatal(err)
-			}
-			done := make(chan error, 1)
-			go func() { done <- mutate(ctx, f, f.admin.ID) }()
-			time.Sleep(150 * time.Millisecond) // Let the call read the pre-demotion state first.
-			if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-				t.Fatal(err)
-			}
-			if err := <-done; err == nil {
-				t.Fatal("mutation succeeded on a stale project role")
-			}
-			if n := f.count(t, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ?`, f.durable.ID, f.svc.ID); n != 0 {
-				t.Error("service account was added on a stale project role")
-			}
-			if n := f.count(t, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ? AND role = 'viewer'`, f.durable.ID, f.human.ID); n != 1 {
-				t.Error("target membership changed on a stale project role")
-			}
-		})
+				hooked, hook := f.hooked(t)
+				base := *f.serviceFixture
+				base.st = hooked
+				racing := *f
+				racing.serviceFixture = &base
+				hook.arm(at, func() {
+					if _, err := f.db.Exec(`UPDATE project_members SET role = 'viewer' WHERE project_id = ? AND user_id = ?`, f.durable.ID, f.admin.ID); err != nil {
+						t.Errorf("demote: %v", err)
+					}
+				})
+
+				err := mutate(ctx, &racing, f.admin.ID)
+				hook.assertFired(t)
+				if err == nil {
+					t.Fatal("mutation succeeded on a stale project role")
+				}
+				if n := f.count(t, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ?`, f.durable.ID, f.svc.ID); n != 0 {
+					t.Error("service account was added on a stale project role")
+				}
+				if n := f.count(t, `SELECT COUNT(*) FROM project_members WHERE project_id = ? AND user_id = ? AND role = 'viewer'`, f.durable.ID, f.human.ID); n != 1 {
+					t.Error("target membership changed on a stale project role")
+				}
+			})
+		}
 	}
 }
 
