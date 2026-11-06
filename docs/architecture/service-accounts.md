@@ -239,7 +239,7 @@ Special-casing this would start the separate authorization framework this design
 
 **Consequence: there is no administrator override.** A system Owner cannot resolve this alone, because system roles grant no project access. A person or integration holding the sole Maintainer role must add a Maintainer or delete the project. Today an Owner can reach a stranded human project only through a password-reset link for that human, and cannot reach a project led only by a service account at all. Decision A provides that path once Slice 2 lets an Owner mint a token. Until then, a compromised service account that is a sole Maintainer cannot be deleted, and the token must be revoked in the database. Slice 2's revocation tool closes this.
 
-**Existing, unchanged:** an account recorded in `projects.owner_user_id` still cannot be deleted while that project exists, because of the foreign key. When another Maintainer exists, so that this check passes, that surfaces as a generic internal error rather than a conflict. It is atomic and safe, but not a helpful message.
+**Owned projects:** an account recorded in `projects.owner_user_id` still cannot be deleted while that project exists. Once the sole-Maintainer check passes, `rejectOwnedProjectDeletionTx` refuses with `ErrConflict` (`409 CONFLICT` over both REST and MCP). The error carries only a project count, never names, slugs, IDs, or raw SQLite errors, and the refused deletion rolls back atomically with credentials and history unchanged.
 
 ## 11. Token lifecycle (Slice 2 design)
 
