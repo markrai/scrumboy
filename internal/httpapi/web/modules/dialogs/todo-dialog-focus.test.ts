@@ -3,6 +3,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let capturedFrame: FrameRequestCallback | null = null;
 let coarsePointer = false;
+let readOnlyEdit = false;
+
+function testPermissions() {
+  if (readOnlyEdit) {
+    return {
+      canSubmitTodo: false,
+      canDeleteTodo: false,
+      canEditAssignment: false,
+      canChangeEstimation: false,
+      canEditTags: false,
+      canEditNotes: false,
+      canEditTitle: false,
+      canEditStatus: false,
+      canEditLinks: false,
+    };
+  }
+  return {
+    canSubmitTodo: true,
+    canDeleteTodo: true,
+    canEditAssignment: true,
+    canChangeEstimation: true,
+    canEditTags: true,
+    canEditNotes: true,
+    canEditTitle: true,
+    canEditStatus: true,
+    canEditLinks: true,
+  };
+}
 
 function installTodoDom(): void {
   document.body.innerHTML = `
@@ -93,28 +121,8 @@ function mockTodoModule(): void {
     resetTodoDialogLinks: vi.fn(),
   }));
   vi.doMock("./todo-permissions.js", () => ({
-    computeTodoDialogPermissions: () => ({
-      canSubmitTodo: true,
-      canDeleteTodo: true,
-      canEditAssignment: true,
-      canChangeEstimation: true,
-      canEditTags: true,
-      canEditNotes: true,
-      canEditTitle: true,
-      canEditStatus: true,
-      canEditLinks: true,
-    }),
-    getTodoFormPermissions: () => ({
-      canSubmitTodo: true,
-      canDeleteTodo: true,
-      canEditAssignment: true,
-      canChangeEstimation: true,
-      canEditTags: true,
-      canEditNotes: true,
-      canEditTitle: true,
-      canEditStatus: true,
-      canEditLinks: true,
-    }),
+    computeTodoDialogPermissions: () => ({ ...testPermissions() }),
+    getTodoFormPermissions: () => ({ ...testPermissions() }),
     setTodoFormPermissions: vi.fn(),
   }));
   vi.doMock("./todo-tags.js", () => ({
@@ -135,6 +143,7 @@ describe("todo dialog initial focus", () => {
     installDialogPolyfill();
     capturedFrame = null;
     coarsePointer = false;
+    readOnlyEdit = false;
     vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
       capturedFrame = cb;
       return 1;
@@ -166,7 +175,7 @@ describe("todo dialog initial focus", () => {
     expect(capturedFrame).not.toBeNull();
     capturedFrame!(0);
 
-    expect((document.getElementById("todoTitle") as HTMLInputElement).matches(":focus")).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById("todoTitle"));
   });
 
   it("does not steal focus already placed on a field when the frame runs late", async () => {
@@ -179,8 +188,8 @@ describe("todo dialog initial focus", () => {
     (document.getElementById("todoTags") as HTMLInputElement).focus();
     capturedFrame!(0);
 
-    expect((document.getElementById("todoTags") as HTMLInputElement).matches(":focus")).toBe(true);
-    expect((document.getElementById("todoTitle") as HTMLInputElement).matches(":focus")).toBe(false);
+    expect(document.activeElement).toBe(document.getElementById("todoTags"));
+    expect(document.activeElement).not.toBe(document.getElementById("todoTitle"));
   });
 
   it("still prefers the close button on coarse pointers when untouched", async () => {
@@ -191,7 +200,7 @@ describe("todo dialog initial focus", () => {
     expect(capturedFrame).not.toBeNull();
     capturedFrame!(0);
 
-    expect((document.getElementById("closeTodoBtn") as HTMLButtonElement).matches(":focus")).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById("closeTodoBtn"));
   });
 
   it("respects a user-chosen field on coarse pointers too", async () => {
@@ -203,6 +212,67 @@ describe("todo dialog initial focus", () => {
     (document.getElementById("todoTags") as HTMLInputElement).focus();
     capturedFrame!(0);
 
-    expect((document.getElementById("todoTags") as HTMLInputElement).matches(":focus")).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById("todoTags"));
+  });
+
+  it("focuses the status field for an untouched editable dialog in edit mode", async () => {
+    const { openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "maintainer",
+      todo: { title: "Alpha", body: "Body", columnKey: "backlog", tags: [] },
+    });
+
+    expect(capturedFrame).not.toBeNull();
+    capturedFrame!(0);
+
+    expect(document.activeElement).toBe(document.getElementById("todoStatus"));
+  });
+
+  it("focuses Close for an untouched read-only dialog in edit mode", async () => {
+    readOnlyEdit = true;
+    const { openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "viewer",
+      todo: { title: "Alpha", body: "Body", columnKey: "backlog", tags: [] },
+    });
+
+    expect(capturedFrame).not.toBeNull();
+    capturedFrame!(0);
+
+    expect(document.activeElement).toBe(document.getElementById("closeTodoBtn"));
+  });
+
+  it("does not steal a user-chosen field in edit mode when the frame runs late", async () => {
+    const { openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "maintainer",
+      todo: { title: "Alpha", body: "Body", columnKey: "backlog", tags: [] },
+    });
+
+    expect(capturedFrame).not.toBeNull();
+    (document.getElementById("todoTitle") as HTMLInputElement).focus();
+    capturedFrame!(0);
+
+    expect(document.activeElement).toBe(document.getElementById("todoTitle"));
+    expect(document.activeElement).not.toBe(document.getElementById("todoStatus"));
+  });
+
+  it("keeps an explicitly chosen Close button in read-only edit mode", async () => {
+    readOnlyEdit = true;
+    const { openTodoDialog } = await import("./todo.js");
+    await openTodoDialog({
+      mode: "edit",
+      role: "viewer",
+      todo: { title: "Alpha", body: "Body", columnKey: "backlog", tags: [] },
+    });
+
+    expect(capturedFrame).not.toBeNull();
+    (document.getElementById("closeTodoBtn") as HTMLButtonElement).focus();
+    capturedFrame!(0);
+
+    expect(document.activeElement).toBe(document.getElementById("closeTodoBtn"));
   });
 });
