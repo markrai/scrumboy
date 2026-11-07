@@ -635,7 +635,7 @@ func (s *Store) deleteUser(ctx context.Context, requesterID, targetUserID int64,
 		}
 		return fmt.Errorf("delete user: %w", err)
 	}
-	if requireService && s.instanceAuditEnabled {
+	if targetService && s.instanceAuditEnabled {
 		actorPublicID, err := userPublicIDTx(ctx, tx, requesterID)
 		if err != nil {
 			return err

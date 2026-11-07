@@ -22,18 +22,42 @@ func serviceAdminMCPData(t *testing.T, transport string, resp *http.Response, ou
 	t.Helper()
 	if transport == "legacy" {
 		if resp.StatusCode != http.StatusOK || out["ok"] != true {
-			t.Fatalf("legacy success status=%d response=%+v", resp.StatusCode, out)
+			t.Fatalf("legacy success status=%d ok=%v", resp.StatusCode, out["ok"])
 		}
 		return out["data"].(map[string]any)
 	}
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("JSON-RPC status=%d response=%+v", resp.StatusCode, out)
+		t.Fatalf("JSON-RPC status=%d", resp.StatusCode)
 	}
 	result := out["result"].(map[string]any)
 	if result["isError"] == true {
-		t.Fatalf("JSON-RPC tool error=%+v", result)
+		t.Fatal("JSON-RPC returned a tool error")
 	}
 	return result["structuredContent"].(map[string]any)
+}
+
+func serviceTokenCreationMCPData(t *testing.T, transport string, resp *http.Response, out map[string]any) map[string]any {
+	t.Helper()
+	if transport == "legacy" {
+		return serviceAdminMCPData(t, transport, resp, out)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("JSON-RPC status=%d", resp.StatusCode)
+	}
+	result := out["result"].(map[string]any)
+	if result["isError"] == true {
+		t.Fatal("JSON-RPC returned a tool error")
+	}
+	content := result["content"].([]any)
+	if len(content) != 1 {
+		t.Fatalf("JSON-RPC content blocks=%d, want 1", len(content))
+	}
+	textValue := content[0].(map[string]any)["text"].(string)
+	var data map[string]any
+	if err := json.Unmarshal([]byte(textValue), &data); err != nil {
+		t.Fatalf("decode one-time token text: %v", err)
+	}
+	return data
 }
 
 func TestMCPServiceAccountLifecycleAcrossTransports(t *testing.T) {
@@ -69,19 +93,26 @@ func TestMCPServiceAccountLifecycleAcrossTransports(t *testing.T) {
 			}
 
 			resp, out = callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "admin_createServiceToken", map[string]any{"userId": serviceUserID, "name": "primary"})
-			data = serviceAdminMCPData(t, transport, resp, out)
+			data = serviceTokenCreationMCPData(t, transport, resp, out)
 			created := data["token"].(map[string]any)
 			tokenID := int64(created["tokenId"].(float64))
 			plaintext := created["token"].(string)
 			if !strings.HasPrefix(plaintext, store.APITokenPrefix) {
-				t.Fatalf("created token = %+v", created)
+				t.Fatal("created token has an invalid prefix")
 			}
 			serialized, err := json.Marshal(out)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if strings.Count(string(serialized), plaintext) != 1 {
-				t.Fatalf("plaintext occurrence count = %d response=%s", strings.Count(string(serialized), plaintext), serialized)
+				t.Fatalf("plaintext occurrence count = %d, want 1", strings.Count(string(serialized), plaintext))
+			}
+			if transport == "jsonrpc" {
+				structured := out["result"].(map[string]any)["structuredContent"].(map[string]any)
+				structuredToken := structured["token"].(map[string]any)
+				if _, present := structuredToken["token"]; present || structuredToken["tokenDelivery"] != "content[0].text" {
+					t.Fatal("JSON-RPC structured token metadata did not use safe text delivery")
+				}
 			}
 			serviceClient := bearerClientForMCP(t, fx.ts, plaintext)
 			resp, out = callTodoUpdateMCP(t, serviceClient, fx.ts.URL, transport, "me_get", map[string]any{})
@@ -140,7 +171,7 @@ func TestMCPServiceAccountLifecycleAcrossTransports(t *testing.T) {
 				t.Fatal(err)
 			}
 			if strings.Contains(string(listBytes), plaintext) || strings.Contains(string(listBytes), hex.EncodeToString(sum[:])) {
-				t.Fatalf("token list leaked credential material: %s", listBytes)
+				t.Fatal("token list leaked credential material")
 			}
 			resp, out = callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "admin_listServiceTokens", map[string]any{"userId": serviceUserID})
 			data = serviceAdminMCPData(t, transport, resp, out)
@@ -163,6 +194,44 @@ func TestMCPServiceAccountLifecycleAcrossTransports(t *testing.T) {
 				t.Fatalf("delete result = %+v", data)
 			}
 		})
+	}
+}
+
+func TestMCPServiceAccountDeletionAuditAcrossAdministrativeTools(t *testing.T) {
+	for _, transport := range []string{"legacy", "jsonrpc"} {
+		for _, tool := range []string{"admin_deleteServiceAccount", "admin_deleteUser"} {
+			t.Run(transport+"/"+tool, func(t *testing.T) {
+				fx := newAdminMCPFixture(t, "full", true, true)
+				owner, err := fx.store.GetUser(context.Background(), fx.owner.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				account, err := fx.store.CreateServiceAccount(context.Background(), fx.owner.ID, "Audited Delete")
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, plaintext, _, err := fx.store.CreateServiceAccountToken(context.Background(), fx.owner.ID, account.ID, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, out := callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, tool, map[string]any{"userId": account.ID})
+				data := serviceAdminMCPData(t, transport, resp, out)
+				if data["status"] != "deleted" {
+					t.Fatalf("delete status=%v", data["status"])
+				}
+				var actorPublicID, targetPublicID, metadata string
+				if err := fx.db.QueryRow(`SELECT actor_public_id, target_public_id, COALESCE(metadata, '') FROM instance_audit_events WHERE action = 'service_account_deleted'`).Scan(&actorPublicID, &targetPublicID, &metadata); err != nil {
+					t.Fatal(err)
+				}
+				if actorPublicID != owner.PublicID || targetPublicID != account.PublicID {
+					t.Fatalf("audit identifiers match actor=%v target=%v", actorPublicID == owner.PublicID, targetPublicID == account.PublicID)
+				}
+				sum := sha256.Sum256([]byte(plaintext))
+				if strings.Contains(metadata, plaintext) || strings.Contains(metadata, hex.EncodeToString(sum[:])) {
+					t.Fatal("deletion audit metadata contains credential material")
+				}
+			})
+		}
 	}
 }
 

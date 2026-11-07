@@ -45,7 +45,7 @@ INSERT INTO archived_service_api_tokens(
 		t.Fatal(err)
 	}
 	if userID != 2 || tokenHash != "existing-hash" || !isService || createdByID.Valid || createdByPublic.Valid {
-		t.Fatalf("existing token changed: user=%d hash=%q service=%v creator=%v/%v", userID, tokenHash, isService, createdByID, createdByPublic)
+		t.Fatalf("existing token changed: user=%d hashMatches=%v service=%v creatorIDPresent=%v creatorPublicIDPresent=%v", userID, tokenHash == "existing-hash", isService, createdByID.Valid, createdByPublic.Valid)
 	}
 	var originService sql.NullBool
 	if err := database.QueryRowContext(ctx, `SELECT origin_user_is_service FROM archived_service_api_tokens WHERE token_id = 6`).Scan(&originService); err != nil {

@@ -593,14 +593,36 @@ func writeJSONRPCResult(w http.ResponseWriter, id json.RawMessage, result any) {
 }
 
 func writeJSONRPCToolSuccessResult(w http.ResponseWriter, id json.RawMessage, toolName string, data any) {
-	textValue := toolResultText(data)
 	if toolName == "admin_createServiceToken" {
-		textValue = `{"status":"created","token":"available once in structuredContent"}`
+		textValue, structured := serviceTokenCreationToolResult(data)
+		writeJSONRPCResult(w, id, map[string]any{
+			"content":           []mcpTextContent{{Type: "text", Text: textValue}},
+			"structuredContent": structured,
+		})
+		return
 	}
 	writeJSONRPCResult(w, id, map[string]any{
-		"content":           []mcpTextContent{{Type: "text", Text: textValue}},
+		"content":           []mcpTextContent{{Type: "text", Text: toolResultText(data)}},
 		"structuredContent": data,
 	})
+}
+
+func serviceTokenCreationToolResult(data any) (string, any) {
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		return "{}", map[string]any{}
+	}
+	var structured map[string]any
+	if err := json.Unmarshal(encoded, &structured); err != nil {
+		return string(encoded), map[string]any{"tokenDelivery": "content[0].text"}
+	}
+	token, ok := structured["token"].(map[string]any)
+	if !ok {
+		return string(encoded), map[string]any{"tokenDelivery": "content[0].text"}
+	}
+	delete(token, "token")
+	token["tokenDelivery"] = "content[0].text"
+	return string(encoded), structured
 }
 
 func writeJSONRPCToolErrorResult(w http.ResponseWriter, id json.RawMessage, err *adapterError) {

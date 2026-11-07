@@ -545,7 +545,7 @@ Service-account administration is available only in authenticated Full Mode. Aut
 
 Account and token lists are bounded (`limit` defaults to 20 and is at most 100) and use the opaque `cursor` returned as `nextCursor`. Account results contain only the stable public ID, numeric administrative ID, name, `isService`, and creation time. Token results contain metadata such as token ID, owner identity, name, creation/last-use/revocation time, and issuer provenance; they never contain plaintext or a hash.
 
-Creating an account issues no credential. `admin_createServiceToken` accepts a genuine service account's numeric `userId`, stores only the SHA-256 hash of a newly generated `sb_` credential, and returns the plaintext exactly once. In legacy responses it is under `data.token.token`; in JSON-RPC it appears only in `structuredContent.token.token`, while text content contains a non-secret availability notice. Only the system Owner may mint, including when the Owner is not a member of the account's projects.
+Creating an account issues no credential. `admin_createServiceToken` accepts a genuine service account's numeric `userId`, stores only the SHA-256 hash of a newly generated `sb_` credential, and returns the plaintext exactly once. In legacy responses it is under `data.token.token`. In JSON-RPC, `content[0].text` is the complete JSON creation result and is the only location containing `token.token`; `structuredContent.token` contains the same non-secret metadata, omits `token`, and adds `tokenDelivery: "content[0].text"`. This keeps the credential available to text-only MCP clients without duplicating it in the response. Only the system Owner may mint, including when the Owner is not a member of the account's projects.
 
 Rotation is deliberately a three-step workflow: mint a replacement, update the integration, then revoke the previous token by `tokenId`. Revocation is idempotent, affects the next authentication lookup, and does not interrupt an MCP request that already authenticated. An Owner or Admin can revoke a compromised credential without project membership even when account deletion is blocked because the service identity is a project's sole Maintainer. Deletion retains the existing count-only `CONFLICT` response and has no Owner override.
 
@@ -1003,7 +1003,7 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
   metadata beside existing JSON-RPC data fields: `system_getCapabilities`
   adds `adapterVersion`; `sprints_list` adds `unscheduledCount`; and both
   `projects_list`, `dashboard_listTodos`, `admin_listServiceAccounts`, and `admin_listServiceTokens` add `nextCursor` and `hasMore`. Except for one-time service-token creation, the JSON text and
-  structured object are equivalent. `admin_createServiceToken` places the plaintext only in `structuredContent` and returns a non-secret notice in text content, preventing duplication of the one-time secret. Unapproved metadata is omitted, and
+  structured object are equivalent. `admin_createServiceToken` instead places the complete one-time JSON result only in `content[0].text`; its `structuredContent.token` omits the plaintext and adds `tokenDelivery: "content[0].text"`. This supports clients that consume only MCP text content without duplicating the credential. Unapproved metadata is omitted, and
   existing data wins any top-level collision. Legacy `/mcp` keeps its
   `{data,meta}` separation.
 - **`board_get` success**: `structuredContent` keeps `project` and `columns` at

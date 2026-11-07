@@ -64,7 +64,7 @@ func TestServiceAccountTokenLifecycleAndHumanCredentialBoundary(t *testing.T) {
 		t.Fatalf("owner mint: %v", err)
 	}
 	if !strings.HasPrefix(plaintext, APITokenPrefix) || len(plaintext) != len(APITokenPrefix)+43 {
-		t.Fatalf("token format = %q", plaintext)
+		t.Fatalf("token format prefix=%v length=%d", strings.HasPrefix(plaintext, APITokenPrefix), len(plaintext))
 	}
 	var (
 		storedHash      string
@@ -79,7 +79,7 @@ func TestServiceAccountTokenLifecycleAndHumanCredentialBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if storedHash != hashToken(plaintext) || storedHash == plaintext || storedUserID != f.svc.ID || !lifecycleFlag || createdByUserID != f.owner.ID || createdByPublic == "" {
-		t.Fatalf("stored token metadata hash=%q user=%d flag=%v creator=%d/%q", storedHash, storedUserID, lifecycleFlag, createdByUserID, createdByPublic)
+		t.Fatalf("stored token metadata hashMatches=%v hashIsPlaintext=%v user=%d flag=%v creator=%d hasCreatorPublicID=%v", storedHash == hashToken(plaintext), storedHash == plaintext, storedUserID, lifecycleFlag, createdByUserID, createdByPublic != "")
 	}
 	if authenticated, err := f.st.GetUserByAPIToken(ctx, plaintext); err != nil || authenticated.ID != f.svc.ID || !authenticated.IsService {
 		t.Fatalf("service token authentication = %+v, %v", authenticated, err)
@@ -298,7 +298,37 @@ func TestInstanceAuditLifecycleAndSecretExclusion(t *testing.T) {
 	}
 	stored := serialized.String()
 	if strings.Contains(stored, plaintext) || strings.Contains(stored, hashToken(plaintext)) {
-		t.Fatalf("audit stream contains credential material: %q", stored)
+		t.Fatal("audit stream contains credential material")
+	}
+}
+
+func TestDeleteUserAuditsServiceIdentityButNotHumanAutomationOwner(t *testing.T) {
+	f := newServiceFixture(t)
+	ctx := context.Background()
+	owner, err := f.st.GetUser(ctx, f.owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = f.st.CreateUserAPIToken(ctx, f.human.ID, stringPtr("automation"), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.st.instanceAuditEnabled = true
+	if err := f.st.DeleteUser(ctx, f.owner.ID, f.human.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT COUNT(*) FROM instance_audit_events WHERE action = 'service_account_deleted'`); n != 0 {
+		t.Fatalf("human deletion service events=%d, want 0", n)
+	}
+	if err := f.st.DeleteUser(ctx, f.owner.ID, f.svc.ID); err != nil {
+		t.Fatal(err)
+	}
+	var actorPublicID, targetPublicID string
+	if err := f.db.QueryRow(`SELECT actor_public_id, target_public_id FROM instance_audit_events WHERE action = 'service_account_deleted'`).Scan(&actorPublicID, &targetPublicID); err != nil {
+		t.Fatal(err)
+	}
+	if actorPublicID != owner.PublicID || targetPublicID != f.svc.PublicID {
+		t.Fatalf("audit identifiers match actor=%v target=%v", actorPublicID == owner.PublicID, targetPublicID == f.svc.PublicID)
 	}
 }
 
@@ -337,7 +367,7 @@ END`); err != nil {
 	if _, err := f.st.GetUserByAPIToken(ctx, plaintext); err != nil {
 		t.Fatalf("failed revocation changed authentication: %v", err)
 	}
-	if err := f.st.DeleteServiceAccount(ctx, f.owner.ID, f.svc.ID); err == nil {
+	if err := f.st.DeleteUser(ctx, f.owner.ID, f.svc.ID); err == nil {
 		t.Fatal("deletion succeeded despite audit failure")
 	}
 	if _, err := f.st.GetUser(ctx, f.svc.ID); err != nil {
@@ -345,5 +375,8 @@ END`); err != nil {
 	}
 	if n := f.count(t, `SELECT COUNT(*) FROM archived_service_api_tokens WHERE token_id = ?`, tokenID); n != 0 {
 		t.Fatalf("failed deletion archived %d token rows", n)
+	}
+	if _, err := f.st.GetUserByAPIToken(ctx, plaintext); err != nil {
+		t.Fatalf("failed generic deletion invalidated credential: %v", err)
 	}
 }

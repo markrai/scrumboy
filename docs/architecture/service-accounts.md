@@ -316,7 +316,7 @@ The archive never holds a plaintext or hash, so an archived token can never auth
 - The same event shape as [audit-trail.md](../audit-trail.md): actor, past-tense action, target type, target ID, JSON metadata from a Go map, and a Unix-millisecond timestamp generated in Go.
 - Append-only, enforced by triggers.
 - The actor and target are not foreign keys, so history outlives the account. Service identities are identified by their stable `public_id`.
-- The events to record: account creation and deletion, and token minting and revocation, with actor, target public ID, token ID, and time. A refused deletion changes nothing and records nothing.
+- The events to record: account creation and deletion, and token minting and revocation, with actor, target public ID, token ID, and time. The shared `DeleteUser` transaction reads `users.is_service` for the target and records every successful service-identity deletion, including generic MCP and REST administration paths; it never infers identity from email or token lifecycle flags. A refused deletion changes nothing and records nothing.
 
 **Transactional guarantee:** when the stream is enabled, an event is written on the same transaction as the action it records, through one helper in the style of `insertAuditEventTx`. They commit or roll back together, so a failed audit write fails the action rather than leaving it unrecorded.
 

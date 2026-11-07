@@ -83,7 +83,7 @@ type adminMCPFixture struct {
 	userClient  *http.Client
 }
 
-func newAdminMCPFixture(t *testing.T, mode string, bootstrapped bool) *adminMCPFixture {
+func newAdminMCPFixture(t *testing.T, mode string, bootstrapped bool, instanceAuditEnabled ...bool) *adminMCPFixture {
 	t.Helper()
 	sqlDB, err := db.Open(filepath.Join(t.TempDir(), "app.db"), db.Options{
 		BusyTimeout: 5000,
@@ -97,7 +97,11 @@ func newAdminMCPFixture(t *testing.T, mode string, bootstrapped bool) *adminMCPF
 		_ = sqlDB.Close()
 		t.Fatalf("migrate: %v", err)
 	}
-	realStore := store.New(sqlDB, nil)
+	storeOptions := &store.StoreOptions{}
+	if len(instanceAuditEnabled) > 0 {
+		storeOptions.InstanceAuditEnabled = instanceAuditEnabled[0]
+	}
+	realStore := store.New(sqlDB, storeOptions)
 	spy := &adminMCPMutationStore{Store: realStore, getUserErrByID: map[int64]error{}}
 	adapter := mcp.New(spy, mcp.Options{Mode: mode})
 	srv := httpapi.NewServer(spy, httpapi.Options{

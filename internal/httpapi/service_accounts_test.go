@@ -8,11 +8,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"scrumboy/internal/auth/tokens"
+	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
+	"scrumboy/internal/migrate"
 	"scrumboy/internal/store"
 )
 
@@ -324,5 +329,59 @@ func TestAdminDeleteUser_SoleMaintainerIsAConflict(t *testing.T) {
 				t.Fatalf("delete once safe: status = %d: %s", resp.StatusCode, body)
 			}
 		})
+	}
+}
+
+func TestAdminDeleteUser_ServiceAccountWritesInstanceAudit(t *testing.T) {
+	database, err := db.Open(filepath.Join(t.TempDir(), "app.db"), db.Options{
+		BusyTimeout: 5000,
+		JournalMode: "WAL",
+		Synchronous: "FULL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := migrate.Apply(context.Background(), database); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(database, &store.StoreOptions{EncryptionKey: testEncryptionKey, InstanceAuditEnabled: true})
+	ts := httptest.NewServer(NewServer(st, Options{MaxRequestBody: 1 << 20, ScrumboyMode: "full", EncryptionKey: testEncryptionKey}))
+	t.Cleanup(ts.Close)
+	ownerClient := newCookieClient(t)
+	ownerJSON := bootstrapUserClient(t, ownerClient, ts.URL, "Owner", "audit-owner@example.com", "password123")
+	ownerID := int64(ownerJSON["id"].(float64))
+	owner, err := st.GetUser(context.Background(), ownerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	account, err := st.CreateServiceAccount(context.Background(), ownerID, "REST Audited Bot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, plaintext, _, err := st.CreateServiceAccountToken(context.Background(), ownerID, account.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, body := doJSON(t, ownerClient, http.MethodDelete, fmt.Sprintf("%s/api/admin/users/%d", ts.URL, account.ID), nil, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete status=%d bodyBytes=%d", resp.StatusCode, len(body))
+	}
+	var actorPublicID, targetPublicID, metadata string
+	if err := database.QueryRow(`SELECT actor_public_id, target_public_id, COALESCE(metadata, '') FROM instance_audit_events WHERE action = 'service_account_deleted'`).Scan(&actorPublicID, &targetPublicID, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if actorPublicID != owner.PublicID || targetPublicID != account.PublicID {
+		t.Fatalf("audit identifiers match actor=%v target=%v", actorPublicID == owner.PublicID, targetPublicID == account.PublicID)
+	}
+	sum := sha256.Sum256([]byte(plaintext))
+	if strings.Contains(metadata, plaintext) || strings.Contains(metadata, hex.EncodeToString(sum[:])) {
+		t.Fatal("REST deletion audit metadata contains credential material")
+	}
+	if _, err := st.GetUser(context.Background(), account.ID); err == nil {
+		t.Fatal("REST deletion left the service account intact")
+	}
+	if _, err := st.GetUserByAPIToken(context.Background(), plaintext); err == nil {
+		t.Fatal("REST deletion left the service credential active")
 	}
 }
