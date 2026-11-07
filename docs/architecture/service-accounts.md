@@ -2,11 +2,11 @@
 
 **Status:** policy decisions accepted by the maintainer (below). Tracks [issue #319](https://github.com/markrai/scrumboy/issues/319) and the maintainer's [guardrails](https://github.com/markrai/scrumboy/issues/319#issuecomment-6474883032).
 
-**Scope:** Slice 1 (identity foundation) is implemented. Slice 2 (accounts and tokens over MCP) and Slice 3 (webhooks over MCP) are designs only.
+**Scope:** Slice 1 (identity foundation) and Slice 2 (accounts and credential lifecycle over MCP) are implemented. Slice 3 (webhooks over MCP) remains a design only.
 
 Each statement below is marked:
 
-- **Implemented**: in the Slice 1 code, covered by tests.
+- **Implemented**: in the Slice 1 or Slice 2 code, covered by tests.
 - **Existing**: behaviour that predates this work and is preserved.
 - **Accepted**: a maintainer decision. Where it concerns a later slice it is a design, not built code.
 - **Proposed**: a design detail for a later slice, not built.
@@ -19,7 +19,7 @@ Each statement below is marked:
 | B | Anonymous and temporary boards | An authenticated service identity needs explicit membership on every project, including link-access boards. Unauthenticated visitors and human accounts are unchanged. This does not make a publicly accessible board private | Section 7 |
 | C | Service-account Maintainer | An explicitly assigned service account receives the existing Maintainer permissions, including project administration and deletion where permitted. There is no separate role hierarchy. System administration stays prohibited | Section 9 |
 | D | Identity-reference integrity | A pre-existing issue, handled independently of this slice through the private security process. Existing service-account protections stay | Section 6 |
-| E | Instance-level auditing | A small dedicated instance-audit stream, rather than rebuilding the project-scoped table for nullable project IDs. Not implemented in this slice | Section 12 |
+| E | Instance-level auditing | A small dedicated instance-audit stream, rather than rebuilding the project-scoped table for nullable project IDs. Implemented as an opt-in Slice 2 stream | Section 12 |
 | F | Webhook delegation | A project Maintainer may register a webhook owned by an assigned service-account member. Viewer membership suffices for the receiving identity. Not implemented yet | Section 13 |
 
 ## 1. Problem and security boundaries
@@ -169,16 +169,16 @@ A database holding only service accounts stays closed to bootstrap rather than r
 
 ## 9. Authorization matrix
 
-"Mint" is the one row where the proposed baseline was changed, by decision A. See the reasoning below.
+"Mint" is the one row where the original proposal was changed, by decision A. See the reasoning below.
 
 | Operation | Owner | Admin | Human user | Service account | Status |
 |---|---|---|---|---|---|
-| Create service account | Yes | Yes | No | No | Implemented in store, tool Proposed |
-| List service accounts | Yes | Yes | No | No | Proposed. Existing `admin_listUsers` already shows them, without a type flag |
-| Delete service account | Yes | No | No | No | Implemented through `DeleteUser`, tool Proposed |
-| Mint service token | Yes | **No** | No | No | Accepted (decision A), not built |
-| List service tokens (metadata) | Yes | Yes | No | No | Proposed |
-| Revoke service token | Yes | Yes | No | No | Proposed |
+| Create service account | Yes | Yes | No | No | Implemented: `admin_createServiceAccount` |
+| List service accounts | Yes | Yes | No | No | Implemented: `admin_listServiceAccounts` |
+| Delete service account | Yes | No | No | No | Implemented: `admin_deleteServiceAccount` |
+| Mint service token | Yes | **No** | No | No | Implemented: `admin_createServiceToken` |
+| List service tokens (metadata) | Yes | Yes | No | No | Implemented: `admin_listServiceTokens` |
+| Revoke service token | Yes | Yes | No | No | Implemented: `admin_revokeServiceToken` |
 | Change a human's system role | Yes | No | No | No | Existing |
 | Promote a service account | No one | No one | No | No | Implemented |
 | Issue a password-reset link | Yes | No | No | No | Existing |
@@ -237,17 +237,17 @@ Special-casing this would start the separate authorization framework this design
 - **Atomicity:** the check runs on the deletion's own transaction, before anything is written, and a refusal rolls back. Credentials, memberships, archive records, and audit history are unchanged, and the account's tokens keep working.
 - **Concurrency:** production uses one connection, so these transactions cannot overlap. With several connections SQLite gives the same outcome: a check that reads after a competing commit sees it, and one that read before fails with a busy error when it writes. Tests force both interleavings for peer removal, demotion, and deletion, and the opposite order for member mutations.
 
-**Consequence: there is no administrator override.** A system Owner cannot resolve this alone, because system roles grant no project access. A person or integration holding the sole Maintainer role must add a Maintainer or delete the project. Today an Owner can reach a stranded human project only through a password-reset link for that human, and cannot reach a project led only by a service account at all. Decision A provides that path once Slice 2 lets an Owner mint a token. Until then, a compromised service account that is a sole Maintainer cannot be deleted, and the token must be revoked in the database. Slice 2's revocation tool closes this.
+**Consequence: there is no deletion override.** A person or integration holding the sole Maintainer role must add a Maintainer or delete the project before the account can be deleted. For a service account, the system Owner may mint a credential and use the identity's existing project membership to resolve the condition. Independently, an Owner or Admin may immediately revoke a compromised service token even while deletion is blocked; revocation needs neither project membership nor account deletion.
 
 **Owned projects:** an account recorded in `projects.owner_user_id` still cannot be deleted while that project exists. Once the sole-Maintainer check passes, `rejectOwnedProjectDeletionTx` refuses with `ErrConflict` (`409 CONFLICT` over both REST and MCP). The error carries only a project count, never names, slugs, IDs, or raw SQLite errors, and the refused deletion rolls back atomically with credentials and history unchanged.
 
-## 11. Token lifecycle (Slice 2 design)
+## 11. Token lifecycle
 
-**Proposed.** No minting path exists yet. Tests insert token rows directly, and `CreateUserAPIToken` refuses service accounts.
+**Implemented.** Service credentials use the existing `api_tokens` table and authentication path. `CreateUserAPIToken` still refuses service identities; the authoritative provisioning path is `CreateServiceAccountToken`.
 
 ### Issuance
 
-A new store operation, `CreateServiceAccountToken(ctx, requesterID, serviceUserID, name)`, must in one transaction:
+`CreateServiceAccountToken(ctx, requesterID, serviceUserID, name)` performs in one transaction:
 
 1. Read the requester's role and require the system Owner (decision A).
 2. Require the requester to be human.
@@ -255,15 +255,15 @@ A new store operation, `CreateServiceAccountToken(ctx, requesterID, serviceUserI
 4. Reuse the existing `sb_` generation and SHA-256 hashing, by extracting them from `CreateUserAPIToken` rather than copying them.
 5. Store only the hash and return the plaintext exactly once.
 
-A service account's own credential cannot pass step 1, since its role is always `user`, or step 2. `TestServiceAccount_CannotProvisionCredentials` pins the current behaviour.
+A service account's own credential cannot pass step 1, since its role is always `user`, or step 2. The target check reads `users.is_service`; neither the placeholder email nor `api_tokens.is_service` can classify an identity. Multiple active tokens may coexist. The plaintext is returned only by the successful creation response and is absent from all later reads, errors, archives, logs, and audit events.
 
 ### Rotation and revocation
 
-There is no special rotation operation: mint a new token, move the integration, revoke the old one. Revocation reuses `api_tokens.revoked_at`, and must verify the token's owner is a service account so that it cannot revoke a human's tokens. It takes effect on the next lookup, because `GetUserByAPIToken` reads the row on every request.
+There is no special rotation operation: mint a new token, move the integration, revoke the old one. Revocation reuses `api_tokens.revoked_at` and verifies the token's actual owner is a service account, so a human-owned automation token is protected even when its `api_tokens.is_service` flag is set. Repeated revocation succeeds as an idempotent no-op. An unknown token, or a human-owned token presented to the service surface, returns `NOT_FOUND`. Revocation takes effect on the next lookup because `GetUserByAPIToken` reads the row on every request.
 
 ### Deletion
 
-**Implemented through `DeleteUser`, and tested.** In one transaction it refuses non-Owners, refuses a sole Maintainer (section 10), archives token metadata, and deletes the account. Tokens, memberships, webhooks, and sessions cascade.
+**Implemented through the service-account-specific `DeleteServiceAccount` boundary, which reuses the transactional `DeleteUser` lifecycle.** In one transaction it requires the Owner, verifies that the target is a service identity, refuses a sole Maintainer (section 10), archives token metadata, and deletes the account. Tokens, memberships, webhooks, and sessions cascade. Supplying a human ID returns `NOT_FOUND` and cannot delete the human.
 
 - Every token stops working at commit, including several active ones.
 - A lookup racing the deletion sees either the account before the commit or nothing after it.
@@ -293,13 +293,13 @@ The window is one request wide, and a later request is refused at authentication
 
 `DeleteUser` archives only `api_tokens.is_service = 1` rows, so a service account's token minted with the flag off would leave no record.
 
-**Proposed:**
+**Implemented:**
 
-- Mint every service-account token with `api_tokens.is_service = 1`. This reuses the archive and keeps the flag's documented meaning: an automation token whose metadata is kept.
-- When Slice 2 adds minting, add `origin_user_is_service` to `archived_service_api_tokens`. Today a reader could only tell a service account's record by the placeholder email domain, and this design does not infer identity from email.
-- Add a `created_by_user_id` to `api_tokens`, so a record shows which human minted the token.
+- Every service-account token is minted with `api_tokens.is_service = 1`. This reuses the archive and keeps the flag's documented meaning: an automation token whose metadata is kept.
+- Migration 082 adds nullable `origin_user_is_service` to `archived_service_api_tokens`. New archive rows store `true` for a genuine service identity and `false` for a human-owned automation token; a legacy row remains `NULL`, preserving unknown provenance without email inference.
+- Migration 082 adds nullable `created_by_user_id` plus a stable `created_by_user_public_id` snapshot to live tokens and the archive. Deleting the issuer clears the live numeric reference while the stable snapshot survives; token ownership and authentication are unchanged.
 
-The archive never holds a hash, so an archived token can never authenticate. `origin_user_email` holds the placeholder, which is accurate.
+The archive never holds a plaintext or hash, so an archived token can never authenticate. It also excludes session, OAuth, signing, password, recovery, and 2FA secrets. `origin_user_email` remains a historical display snapshot, not an identity classifier.
 
 ## 12. Audit
 
@@ -309,7 +309,7 @@ The archive never holds a hash, so an archived token can never authenticate. `or
 
 ### Instance-level events
 
-**Accepted (decision E), not built.** Instance-level events go in a small dedicated stream, rather than rebuilding `audit_events` solely to allow a nullable `project_id`. Project-scoped events stay where they are. No audit infrastructure or redesign is part of this slice.
+**Implemented (decision E).** Instance-level events use the dedicated append-only `instance_audit_events` stream introduced by migration 083. The project-scoped `audit_events` table and its semantics are unchanged. No viewer, retention engine, analytics layer, or general-purpose audit redesign is included.
 
 **Shared conventions**, so both streams read the same way:
 
@@ -320,7 +320,7 @@ The archive never holds a hash, so an archived token can never authenticate. `or
 
 **Transactional guarantee:** when the stream is enabled, an event is written on the same transaction as the action it records, through one helper in the style of `insertAuditEventTx`. They commit or roll back together, so a failed audit write fails the action rather than leaving it unrecorded.
 
-**Opt-in behaviour:** the stream may be turned off. With it off, the action still commits and nothing is written. Authorization, revocation, and deletion must never read the stream or depend on it. The existing project-scoped table stays always-on. Whether the instance stream has a configuration flag is a Slice 2 question, and this slice adds none.
+**Opt-in behaviour:** `SCRUMBOY_INSTANCE_AUDIT_ENABLED` is disabled by default and accepts the standard opt-in values `1`, `true`, `on`, or `yes` (case-insensitive after trimming). With it off, the action still commits and nothing is written. With it on, account creation/deletion and token issuance/revocation write their event in the mutation transaction; an event-write failure rolls back the mutation. Authorization, revocation, and deletion never read the stream or depend on it. The existing project-scoped table stays always-on.
 
 **Secret redaction:** metadata is built from an explicit allowlist of keys, never from a whole struct. It never contains a plaintext token, token hash, password or hash, signing secret, session or OAuth credential, or 2FA material. A test must assert this over the serialized row, as the archive's tests already do for token hashes.
 
@@ -378,7 +378,7 @@ Registration authority and delivery authority are separate. Registration is chec
 
 ## 14. Migration, compatibility, and rollback
 
-**Forward:** migrations 080 and 081 add a column with a default and create triggers. Migration 080 carries the column, the identity CHECK, and 14 triggers; migration 081 carries the two `project_members` owner-role triggers. Every existing row becomes a human account, and existing data is not rewritten. A database already migrated through 080 receives the 081 protection through ordinary forward migration, and 081 is idempotent, so databases that already have those triggers apply it without error.
+**Forward:** migrations 080 and 081 add the identity column and protective triggers. Migration 080 carries the column, the identity CHECK, and 14 triggers; migration 081 carries the two `project_members` owner-role triggers. Every existing row becomes a human account, and existing data is not rewritten. Migration 082 adds nullable issuer and archive-classification columns, so existing tokens remain valid without a backfill and legacy archive provenance remains unknown rather than guessed. Migration 083 adds the dedicated append-only instance stream. Databases already upgraded through 081 receive both additions through ordinary forward migration.
 
 **`recover-owner`** deliberately runs without migrating, on any schema from migration 049. `RecoverOwnerPassword` checks whether the column exists and does not reference it on older databases.
 
@@ -444,15 +444,11 @@ The sole-Maintainer check, the restored owner-role triggers, and the transaction
 
 **Remaining risks**
 
-1. A sole Maintainer cannot be deleted without project-level action (section 10). There is no administrator override, by design, until Slice 2 gives an Owner the means to act.
+1. A sole Maintainer cannot be deleted without project-level action (section 10). There is no deletion override; service-token revocation remains available for incident containment.
 2. Some project mutations authorize before their own transaction (section 11). This is an existing pattern, and limited to one request in flight.
 3. Token revocation does not interrupt a request that has already authenticated (section 11).
 4. The identity-reference integrity issue (section 6) stays open until the separate remediation lands.
 
 **Future work**
 
-- Slice 2: `admin_createServiceAccount`, `admin_listServiceAccounts`, `admin_deleteServiceAccount`, `admin_createServiceToken`, and `admin_revokeServiceToken`.
-- Add `isService` to the admin and member API projections. Today a service account appears as a user with a placeholder email.
-- Update the `API.md` text saying a service token is not a service account, which will need to distinguish the two.
-- Decide what `me_get` and `projects_create` report to a service token in capabilities.
 - Slice 3: `webhooks_create`, `webhooks_list`, and `webhooks_delete`.

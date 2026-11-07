@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,11 @@ import (
 // UNIQUE contract. .invalid can never resolve (RFC 2606), and every sign-in and recovery lookup by
 // email excludes service accounts, so a placeholder is never a login or recovery mechanism.
 const serviceAccountEmailDomain = "service.invalid"
+
+const (
+	DefaultServiceAccountPageSize = 20
+	MaxServiceAccountPageSize     = 100
+)
 
 // isReservedServiceEmail reports whether a normalized address belongs to the domain reserved for
 // service-account placeholders, which no human account may newly claim.
@@ -166,6 +172,15 @@ VALUES (?, ?, ?, NULL, 0, 'user', ?, 1)`, id, email, name, nowMs); err != nil {
 	if err := tx.QueryRowContext(ctx, `SELECT public_id FROM users WHERE id = ?`, id).Scan(&publicID); err != nil {
 		return User{}, fmt.Errorf("read service account public id: %w", err)
 	}
+	if s.instanceAuditEnabled {
+		actorPublicID, err := userPublicIDTx(ctx, tx, requesterID)
+		if err != nil {
+			return User{}, err
+		}
+		if err := s.insertInstanceAuditEventTx(ctx, tx, requesterID, actorPublicID, instanceActionServiceAccountCreated, id, publicID, nil); err != nil {
+			return User{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return User{}, fmt.Errorf("commit create service account tx: %w", err)
 	}
@@ -178,4 +193,77 @@ VALUES (?, ?, ?, NULL, 0, 'user', ?, 1)`, id, email, name, nowMs); err != nil {
 		SystemRole: SystemRoleUser,
 		CreatedAt:  time.UnixMilli(nowMs).UTC(),
 	}, nil
+}
+
+func (s *Store) ListServiceAccounts(ctx context.Context, requesterID int64, limit int, cursor *string) ([]User, *string, error) {
+	if limit <= 0 {
+		limit = DefaultServiceAccountPageSize
+	}
+	if limit > MaxServiceAccountPageSize {
+		return nil, nil, fmt.Errorf("%w: limit must not exceed %d", ErrValidation, MaxServiceAccountPageSize)
+	}
+
+	var beforeID int64
+	if cursor != nil && strings.TrimSpace(*cursor) != "" {
+		parsed, err := strconv.ParseInt(strings.TrimSpace(*cursor), 10, 64)
+		if err != nil || parsed <= 0 {
+			return nil, nil, fmt.Errorf("%w: invalid service account cursor", ErrValidation)
+		}
+		beforeID = parsed
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin list service accounts tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := requireAdminTx(ctx, tx, requesterID); err != nil {
+		return nil, nil, err
+	}
+
+	query := `
+SELECT id, COALESCE(public_id, ''), name, created_at
+FROM users
+WHERE is_service <> 0`
+	args := []any{}
+	if beforeID > 0 {
+		query += ` AND id < ?`
+		args = append(args, beforeID)
+	}
+	query += ` ORDER BY id DESC LIMIT ?`
+	args = append(args, limit+1)
+
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list service accounts: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]User, 0, limit+1)
+	for rows.Next() {
+		var item User
+		var createdAtMs int64
+		if err := rows.Scan(&item.ID, &item.PublicID, &item.Name, &createdAtMs); err != nil {
+			return nil, nil, fmt.Errorf("scan service account: %w", err)
+		}
+		item.IsService = true
+		item.SystemRole = SystemRoleUser
+		item.CreatedAt = time.UnixMilli(createdAtMs).UTC()
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate service accounts: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, fmt.Errorf("close service accounts: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("commit list service accounts tx: %w", err)
+	}
+	if len(items) <= limit {
+		return items, nil, nil
+	}
+	items = items[:limit]
+	next := strconv.FormatInt(items[len(items)-1].ID, 10)
+	return items, &next, nil
 }

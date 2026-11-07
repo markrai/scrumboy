@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	boardapp "scrumboy/internal/application/board"
 	customfieldapp "scrumboy/internal/application/customfield"
@@ -85,6 +86,12 @@ type storeAPI interface {
 	GetRealBurndownForSprint(ctx context.Context, projectID, sprintID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
+	CreateServiceAccount(ctx context.Context, requesterID int64, name string) (store.User, error)
+	ListServiceAccounts(ctx context.Context, requesterID int64, limit int, cursor *string) ([]store.User, *string, error)
+	DeleteServiceAccount(ctx context.Context, requesterID, targetUserID int64) error
+	CreateServiceAccountToken(ctx context.Context, requesterID, serviceUserID int64, name *string) (int64, string, time.Time, error)
+	ListServiceAccountTokens(ctx context.Context, requesterID, serviceUserID int64, limit int, beforeID int64) ([]store.APITokenMeta, *int64, error)
+	RevokeServiceAccountToken(ctx context.Context, requesterID, tokenID int64) error
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	useradminapp.UserRoleMutationStore
 	useradminapp.UserDeletionStore
@@ -530,6 +537,12 @@ func (a *Adapter) implementedTools() []string {
 		"admin_listUsers",
 		"admin_updateUserRole",
 		"admin_deleteUser",
+		"admin_createServiceAccount",
+		"admin_listServiceAccounts",
+		"admin_deleteServiceAccount",
+		"admin_createServiceToken",
+		"admin_listServiceTokens",
+		"admin_revokeServiceToken",
 	}
 }
 

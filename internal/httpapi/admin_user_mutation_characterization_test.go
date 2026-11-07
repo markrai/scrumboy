@@ -443,7 +443,7 @@ func TestAdminUserMutationRESTCreationNormalizationAuthorityAndProjection(t *tes
 	if got, want := created["name"], "Created Name"; got != want {
 		t.Fatalf("created name=%v want=%v", got, want)
 	}
-	wantKeys := []string{"createdAt", "email", "hasLocalPassword", "id", "image", "isBootstrap", "name", "oidcLinked", "systemRole", "twoFactorEnabled"}
+	wantKeys := []string{"createdAt", "email", "hasLocalPassword", "id", "image", "isBootstrap", "isService", "name", "oidcLinked", "systemRole", "twoFactorEnabled"}
 	gotKeys := make([]string, 0, len(created))
 	for key := range created {
 		gotKeys = append(gotKeys, key)

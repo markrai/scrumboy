@@ -102,6 +102,7 @@ func main() {
 	storeOpts := &store.StoreOptions{
 		EncryptionKey:        encKey,
 		ConfiguredOIDCIssuer: configuredOIDCIssuer,
+		InstanceAuditEnabled: cfg.InstanceAuditEnabled,
 		AssetBudgets: store.AssetBudgets{
 			ProjectBytes:  cfg.AssetProjectBudgetBytes,
 			InstanceBytes: cfg.AssetInstanceBudgetBytes,

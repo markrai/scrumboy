@@ -449,7 +449,7 @@ func (a *Adapter) handleJSONRPCToolsCall(w http.ResponseWriter, r *http.Request,
 		writeJSONRPCToolErrorResult(w, req.ID, toolErr)
 		return
 	}
-	writeJSONRPCToolSuccessResult(w, req.ID, jsonRPCToolStructuredContent(params.Name, data, meta))
+	writeJSONRPCToolSuccessResult(w, req.ID, params.Name, jsonRPCToolStructuredContent(params.Name, data, meta))
 }
 
 var jsonRPCToolMetadataKeys = map[string][]string{
@@ -457,6 +457,14 @@ var jsonRPCToolMetadataKeys = map[string][]string{
 		"adapterVersion",
 	},
 	"projects_list": {
+		"nextCursor",
+		"hasMore",
+	},
+	"admin_listServiceAccounts": {
+		"nextCursor",
+		"hasMore",
+	},
+	"admin_listServiceTokens": {
 		"nextCursor",
 		"hasMore",
 	},
@@ -584,9 +592,13 @@ func writeJSONRPCResult(w http.ResponseWriter, id json.RawMessage, result any) {
 	writeJSONRPCResponse(w, jsonRPCResponse{JSONRPC: "2.0", ID: id, Result: result})
 }
 
-func writeJSONRPCToolSuccessResult(w http.ResponseWriter, id json.RawMessage, data any) {
+func writeJSONRPCToolSuccessResult(w http.ResponseWriter, id json.RawMessage, toolName string, data any) {
+	textValue := toolResultText(data)
+	if toolName == "admin_createServiceToken" {
+		textValue = `{"status":"created","token":"available once in structuredContent"}`
+	}
 	writeJSONRPCResult(w, id, map[string]any{
-		"content":           []mcpTextContent{{Type: "text", Text: toolResultText(data)}},
+		"content":           []mcpTextContent{{Type: "text", Text: textValue}},
 		"structuredContent": data,
 	})
 }

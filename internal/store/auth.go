@@ -555,7 +555,15 @@ FROM users ORDER BY created_at`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
 // DeleteUser deletes a user. Requires owner role, and prevents deletion of the last owner or of the
 // last Maintainer of a surviving project.
 func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64) error {
-	if requesterID == targetUserID {
+	return s.deleteUser(ctx, requesterID, targetUserID, false)
+}
+
+func (s *Store) DeleteServiceAccount(ctx context.Context, requesterID, targetUserID int64) error {
+	return s.deleteUser(ctx, requesterID, targetUserID, true)
+}
+
+func (s *Store) deleteUser(ctx context.Context, requesterID, targetUserID int64, requireService bool) error {
+	if !requireService && requesterID == targetUserID {
 		return fmt.Errorf("%w: cannot delete yourself", ErrValidation)
 	}
 
@@ -574,10 +582,24 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 	if err := requireOwnerTx(ctx, tx, requesterID); err != nil {
 		return err
 	}
-	targetRole, err := systemRoleTx(ctx, tx, targetUserID)
-	if err != nil {
-		return err
+	if requesterID == targetUserID {
+		return fmt.Errorf("%w: cannot delete yourself", ErrValidation)
 	}
+	var (
+		targetRawRole  string
+		targetService  bool
+		targetPublicID string
+	)
+	if err := tx.QueryRowContext(ctx, `SELECT system_role, is_service <> 0, COALESCE(public_id, '') FROM users WHERE id = ?`, targetUserID).Scan(&targetRawRole, &targetService, &targetPublicID); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("read deletion target: %w", err)
+	}
+	if requireService && !targetService {
+		return ErrNotFound
+	}
+	targetRole := effectiveSystemRole(targetRawRole, targetService)
 	if targetRole == SystemRoleOwner {
 		count, err := countOwnersTx(ctx, tx)
 		if err != nil {
@@ -612,6 +634,15 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 			return fmt.Errorf("%w: account still owns project(s); transfer ownership or delete the project first", ErrConflict)
 		}
 		return fmt.Errorf("delete user: %w", err)
+	}
+	if requireService && s.instanceAuditEnabled {
+		actorPublicID, err := userPublicIDTx(ctx, tx, requesterID)
+		if err != nil {
+			return err
+		}
+		if err := s.insertInstanceAuditEventTx(ctx, tx, requesterID, actorPublicID, instanceActionServiceAccountDeleted, targetUserID, targetPublicID, nil); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

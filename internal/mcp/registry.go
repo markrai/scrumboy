@@ -63,6 +63,12 @@ func (a *Adapter) registerTools() {
 	a.tools["admin_listUsers"] = a.handleAdminListUsers
 	a.tools["admin_updateUserRole"] = a.handleAdminUpdateUserRole
 	a.tools["admin_deleteUser"] = a.handleAdminDeleteUser
+	a.tools["admin_createServiceAccount"] = a.handleAdminCreateServiceAccount
+	a.tools["admin_listServiceAccounts"] = a.handleAdminListServiceAccounts
+	a.tools["admin_deleteServiceAccount"] = a.handleAdminDeleteServiceAccount
+	a.tools["admin_createServiceToken"] = a.handleAdminCreateServiceToken
+	a.tools["admin_listServiceTokens"] = a.handleAdminListServiceTokens
+	a.tools["admin_revokeServiceToken"] = a.handleAdminRevokeServiceToken
 
 	a.registerLegacyToolAliases()
 }

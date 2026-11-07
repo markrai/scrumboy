@@ -206,7 +206,7 @@ func TestMCPAdminUserMutationTransportProjectionAndRealtimeSilence(t *testing.T)
 				t.Fatalf("data keys=%v want=%v", got, want)
 			}
 			user := data["user"].(map[string]any)
-			if got, want := sortedMapKeys(user), []string{"createdAt", "email", "isBootstrap", "name", "systemRole", "userId"}; !reflect.DeepEqual(got, want) {
+			if got, want := sortedMapKeys(user), []string{"createdAt", "email", "isBootstrap", "isService", "name", "systemRole", "userId"}; !reflect.DeepEqual(got, want) {
 				t.Fatalf("user keys=%v want=%v user=%+v", got, want, user)
 			}
 			if int64(user["userId"].(float64)) != fx.user.ID || user["systemRole"] != "admin" {

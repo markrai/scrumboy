@@ -256,7 +256,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (53 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()` (59 tools).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to
@@ -275,7 +275,7 @@ Exact names match `internal/mcp/registry.go` / `implementedTools()` (53 tools).
 **System**
 
 - `system_getCapabilities`
-- `me_get` — the user the credential authenticates as (`userId`, `stableUserId`, `email`, `name`); key external account links on `stableUserId`, since `userId` can be reused after a user is deleted. `stableUserId` is instance-scoped: persist it together with the server's canonical origin (as configured in the integration, not read from request headers). It never changes for the account's lifetime, but cloning or restoring a whole SQLite database copies the UUIDs, so separate installations can hold identical values; if the server's canonical origin changes, stored mappings must be migrated or relinked. See [`me_get` in API.md](../API.md#me_get).
+- `me_get` — the user the credential authenticates as (`userId`, `stableUserId`, `email`, `name`, `isService`, `canCreateProjects`); service identities report `canCreateProjects: false`. Key external account links on `stableUserId`, since `userId` can be reused after a user is deleted. `stableUserId` is instance-scoped: persist it together with the server's canonical origin (as configured in the integration, not read from request headers). It never changes for the account's lifetime, but cloning or restoring a whole SQLite database copies the UUIDs, so separate installations can hold identical values; if the server's canonical origin changes, stored mappings must be migrated or relinked. See [`me_get` in API.md](../API.md#me_get).
 
 **Projects**
 
@@ -526,6 +526,55 @@ Create/update/delete require Maintainer. Tiers use immutable `key`, editable
 `name` and `#RRGGBB` `color`, and stable `position` order. Projects support at
 most 12 tiers and must retain one; an in-use tier cannot be deleted.
 
+**Administration**
+
+- `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser`
+- `admin_createServiceAccount`, `admin_listServiceAccounts`, `admin_deleteServiceAccount`
+- `admin_createServiceToken`, `admin_listServiceTokens`, `admin_revokeServiceToken`
+
+Service-account administration is available only in authenticated Full Mode. Authorization is checked against the authenticated principal in the store transaction; request fields cannot substitute an actor, role, or identity classification.
+
+| Tool | Owner | Admin | Human user | Service account |
+|---|---:|---:|---:|---:|
+| `admin_createServiceAccount` | Allow | Allow | Deny | Deny |
+| `admin_listServiceAccounts` | Allow | Allow | Deny | Deny |
+| `admin_deleteServiceAccount` | Allow | Deny | Deny | Deny |
+| `admin_createServiceToken` | Allow | Deny | Deny | Deny |
+| `admin_listServiceTokens` | Allow | Allow | Deny | Deny |
+| `admin_revokeServiceToken` | Allow | Allow | Deny | Deny |
+
+Account and token lists are bounded (`limit` defaults to 20 and is at most 100) and use the opaque `cursor` returned as `nextCursor`. Account results contain only the stable public ID, numeric administrative ID, name, `isService`, and creation time. Token results contain metadata such as token ID, owner identity, name, creation/last-use/revocation time, and issuer provenance; they never contain plaintext or a hash.
+
+Creating an account issues no credential. `admin_createServiceToken` accepts a genuine service account's numeric `userId`, stores only the SHA-256 hash of a newly generated `sb_` credential, and returns the plaintext exactly once. In legacy responses it is under `data.token.token`; in JSON-RPC it appears only in `structuredContent.token.token`, while text content contains a non-secret availability notice. Only the system Owner may mint, including when the Owner is not a member of the account's projects.
+
+Rotation is deliberately a three-step workflow: mint a replacement, update the integration, then revoke the previous token by `tokenId`. Revocation is idempotent, affects the next authentication lookup, and does not interrupt an MCP request that already authenticated. An Owner or Admin can revoke a compromised credential without project membership even when account deletion is blocked because the service identity is a project's sole Maintainer. Deletion retains the existing count-only `CONFLICT` response and has no Owner override.
+
+`api_tokens.is_service` continues to mean human or service-owned automation-token lifecycle metadata; it does not classify the owning identity. Every service-management operation checks `users.is_service`, so a human-owned automation token cannot be listed, revoked, or deleted through this surface. Service identities receive only their explicit project memberships and can never acquire system Owner/Admin authority. Slice 3 webhook delegation is not implemented.
+
+Representative tool inputs and legacy `data` outputs are:
+
+```json
+{"tool":"admin_createServiceAccount","input":{"name":"Release Bot"}}
+{"account":{"userId":42,"stableUserId":"4ba6fbcf-7ca2-4d50-810c-e79b771e2f67","name":"Release Bot","isService":true,"createdAt":"2026-11-06T15:00:00Z"}}
+
+{"tool":"admin_listServiceAccounts","input":{"limit":20,"cursor":"41"}}
+{"items":[{"userId":40,"stableUserId":"9a514421-348a-45da-b546-222707d7cc27","name":"CI Bot","isService":true,"createdAt":"2026-11-05T15:00:00Z"}]}
+
+{"tool":"admin_deleteServiceAccount","input":{"userId":42}}
+{"status":"deleted","userId":42}
+
+{"tool":"admin_createServiceToken","input":{"userId":42,"name":"production"}}
+{"token":{"tokenId":17,"userId":42,"name":"production","createdAt":"2026-11-06T15:05:00Z","token":"sb_<shown-once>"}}
+
+{"tool":"admin_listServiceTokens","input":{"userId":42,"limit":20}}
+{"items":[{"tokenId":17,"userId":42,"stableUserId":"4ba6fbcf-7ca2-4d50-810c-e79b771e2f67","name":"production","createdAt":"2026-11-06T15:05:00Z","issuedByUserId":1,"issuedByStableUserId":"ac3dfc15-2594-435d-8261-cd86bea30a98"}]}
+
+{"tool":"admin_revokeServiceToken","input":{"tokenId":17}}
+{"status":"revoked","tokenId":17}
+```
+
+For paginated legacy calls, `nextCursor` and `hasMore` are in the response `meta`; JSON-RPC adds them beside `items` in `structuredContent`. Omit `cursor` for the first page. The examples abbreviate the one-time credential and use illustrative IDs and timestamps.
+
 ### Tool Index (Flat)
 
 One tool name per line (same order as `implementedTools()` in code):
@@ -587,6 +636,12 @@ metrics_getBacklogSize
 admin_listUsers
 admin_updateUserRole
 admin_deleteUser
+admin_createServiceAccount
+admin_listServiceAccounts
+admin_deleteServiceAccount
+admin_createServiceToken
+admin_listServiceTokens
+admin_revokeServiceToken
 ```
 
 ## Tool Schemas (Representative)
@@ -947,8 +1002,8 @@ Non-exhaustive **`code`** values from `internal/mcp/errors.go`:
   legacy `data` unchanged. A narrow allowlist adds already-public legacy
   metadata beside existing JSON-RPC data fields: `system_getCapabilities`
   adds `adapterVersion`; `sprints_list` adds `unscheduledCount`; and both
-  `projects_list` and `dashboard_listTodos` add `nextCursor` and `hasMore`. The JSON text and
-  structured object are equivalent. Unapproved metadata is omitted, and
+  `projects_list`, `dashboard_listTodos`, `admin_listServiceAccounts`, and `admin_listServiceTokens` add `nextCursor` and `hasMore`. Except for one-time service-token creation, the JSON text and
+  structured object are equivalent. `admin_createServiceToken` places the plaintext only in `structuredContent` and returns a non-secret notice in text content, preventing duplication of the one-time secret. Unapproved metadata is omitted, and
   existing data wins any top-level collision. Legacy `/mcp` keeps its
   `{data,meta}` separation.
 - **`board_get` success**: `structuredContent` keeps `project` and `columns` at

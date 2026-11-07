@@ -178,8 +178,12 @@ var userReferenceClasses = map[string]string{
 var nonAuthorityUserReferences = map[string]bool{
 	// History and provenance: never read to authorize anything.
 	"archived_service_api_tokens.archived_by_user_id": true,
+	"archived_service_api_tokens.created_by_user_id":  true,
 	"archived_service_api_tokens.origin_user_id":      true,
+	"api_tokens.created_by_user_id":                   true,
 	"audit_events.actor_user_id":                      true,
+	"instance_audit_events.actor_user_id":             true,
+	"instance_audit_events.target_user_id":            true,
 	"project_assets.uploader_user_id":                 true,
 	"todo_assignee_events.actor_user_id":              true,
 	"todo_assignee_events.from_assignee_user_id":      true,

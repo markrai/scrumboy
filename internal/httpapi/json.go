@@ -161,6 +161,7 @@ type userJSON struct {
 	TwoFactorEnabled bool      `json:"twoFactorEnabled"`
 	HasLocalPassword bool      `json:"hasLocalPassword"`
 	OIDCLinked       bool      `json:"oidcLinked"`
+	IsService        bool      `json:"isService"`
 }
 
 // userStatusJSON omits createdAt for /api/auth/status (status response contract).
@@ -189,6 +190,7 @@ func userToJSON(u store.User) userJSON {
 		TwoFactorEnabled: u.IsTwoFactorActive(),
 		HasLocalPassword: u.HasLocalPassword,
 		OIDCLinked:       u.OIDCLinked,
+		IsService:        u.IsService,
 	}
 }
 
@@ -210,22 +212,25 @@ type apiTokenCreateJSON struct {
 }
 
 type archivedServiceAPITokenUserJSON struct {
-	ID    int64  `json:"id"`
-	Email string `json:"email"`
-	Name  string `json:"name,omitempty"`
+	ID        int64  `json:"id"`
+	Email     string `json:"email"`
+	Name      string `json:"name,omitempty"`
+	IsService *bool  `json:"isService,omitempty"`
 }
 
 type archivedServiceAPITokenJSON struct {
-	ID               int64                           `json:"id"`
-	TokenID          int64                           `json:"tokenId"`
-	Name             *string                         `json:"name,omitempty"`
-	CreatedAt        time.Time                       `json:"createdAt"`
-	LastUsedAt       *time.Time                      `json:"lastUsedAt,omitempty"`
-	RevokedAt        time.Time                       `json:"revokedAt"`
-	RevokedOnArchive bool                            `json:"revokedOnArchive"`
-	OriginUser       archivedServiceAPITokenUserJSON `json:"originUser"`
-	ArchivedAt       time.Time                       `json:"archivedAt"`
-	ArchivedBy       archivedServiceAPITokenUserJSON `json:"archivedBy"`
+	ID                    int64                           `json:"id"`
+	TokenID               int64                           `json:"tokenId"`
+	Name                  *string                         `json:"name,omitempty"`
+	CreatedAt             time.Time                       `json:"createdAt"`
+	LastUsedAt            *time.Time                      `json:"lastUsedAt,omitempty"`
+	RevokedAt             time.Time                       `json:"revokedAt"`
+	RevokedOnArchive      bool                            `json:"revokedOnArchive"`
+	OriginUser            archivedServiceAPITokenUserJSON `json:"originUser"`
+	CreatedByUserID       *int64                          `json:"createdByUserId,omitempty"`
+	CreatedByStableUserID *string                         `json:"createdByStableUserId,omitempty"`
+	ArchivedAt            time.Time                       `json:"archivedAt"`
+	ArchivedBy            archivedServiceAPITokenUserJSON `json:"archivedBy"`
 }
 
 func archivedServiceAPITokensToJSON(items []store.ArchivedServiceAPIToken) []archivedServiceAPITokenJSON {
@@ -240,11 +245,14 @@ func archivedServiceAPITokensToJSON(items []store.ArchivedServiceAPIToken) []arc
 			RevokedAt:        item.RevokedAt,
 			RevokedOnArchive: item.RevokedOnArchive,
 			OriginUser: archivedServiceAPITokenUserJSON{
-				ID:    item.OriginUserID,
-				Email: item.OriginUserEmail,
-				Name:  item.OriginUserName,
+				ID:        item.OriginUserID,
+				Email:     item.OriginUserEmail,
+				Name:      item.OriginUserName,
+				IsService: item.OriginUserIsService,
 			},
-			ArchivedAt: item.ArchivedAt,
+			CreatedByUserID:       item.CreatedByUserID,
+			CreatedByStableUserID: item.CreatedByUserPublicID,
+			ArchivedAt:            item.ArchivedAt,
 			ArchivedBy: archivedServiceAPITokenUserJSON{
 				ID:    item.ArchivedByUserID,
 				Email: item.ArchivedByUserEmail,
@@ -274,6 +282,7 @@ type projectMemberJSON struct {
 	Name      string    `json:"name"`
 	Image     *string   `json:"image,omitempty"`
 	Role      string    `json:"role"`
+	IsService bool      `json:"isService"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -283,6 +292,7 @@ func projectMemberToJSON(m store.ProjectMember) projectMemberJSON {
 		Name:      m.Name,
 		Image:     m.Image,
 		Role:      m.Role.String(),
+		IsService: m.IsService,
 		CreatedAt: m.CreatedAt,
 	}
 }

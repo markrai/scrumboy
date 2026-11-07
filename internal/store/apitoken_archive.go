@@ -23,9 +23,12 @@ type ArchivedServiceAPIToken struct {
 	RevokedAt        time.Time
 	RevokedOnArchive bool
 
-	OriginUserID    int64
-	OriginUserEmail string
-	OriginUserName  string
+	OriginUserID          int64
+	OriginUserEmail       string
+	OriginUserName        string
+	OriginUserIsService   *bool
+	CreatedByUserID       *int64
+	CreatedByUserPublicID *string
 
 	ArchivedAt          time.Time
 	ArchivedByUserID    int64
@@ -44,11 +47,13 @@ func archiveServiceAPITokensTx(ctx context.Context, tx *sql.Tx, targetUserID, re
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO archived_service_api_tokens(
   token_id, name, created_at, last_used_at, revoked_at, revoked_on_archive,
-  origin_user_id, origin_user_email, origin_user_name,
+  origin_user_id, origin_user_email, origin_user_name, origin_user_is_service,
+  created_by_user_id, created_by_user_public_id,
   archived_at, archived_by_user_id, archived_by_user_email
 )
 SELECT t.id, t.name, t.created_at, t.last_used_at, COALESCE(t.revoked_at, ?), t.revoked_at IS NULL,
-       o.id, o.email, o.name,
+       o.id, o.email, o.name, o.is_service,
+       t.created_by_user_id, t.created_by_user_public_id,
        ?, a.id, a.email
 FROM api_tokens t
 JOIN users o ON o.id = t.user_id
@@ -77,7 +82,8 @@ func (s *Store) ListArchivedServiceAPITokens(ctx context.Context, requesterID in
 
 	query := `
 SELECT id, token_id, name, created_at, last_used_at, revoked_at, revoked_on_archive,
-       origin_user_id, origin_user_email, origin_user_name,
+       origin_user_id, origin_user_email, origin_user_name, origin_user_is_service,
+       created_by_user_id, created_by_user_public_id,
        archived_at, archived_by_user_id, archived_by_user_email
 FROM archived_service_api_tokens`
 	args := []any{}
@@ -97,16 +103,20 @@ FROM archived_service_api_tokens`
 	items = []ArchivedServiceAPIToken{}
 	for rows.Next() {
 		var (
-			item        ArchivedServiceAPIToken
-			name        sql.NullString
-			createdAtMs int64
-			lastUsedMs  sql.NullInt64
-			revokedMs   int64
-			archivedMs  int64
+			item              ArchivedServiceAPIToken
+			name              sql.NullString
+			createdAtMs       int64
+			lastUsedMs        sql.NullInt64
+			revokedMs         int64
+			archivedMs        int64
+			originIsService   sql.NullBool
+			createdByID       sql.NullInt64
+			createdByPublicID sql.NullString
 		)
 		if err := rows.Scan(
 			&item.ID, &item.TokenID, &name, &createdAtMs, &lastUsedMs, &revokedMs, &item.RevokedOnArchive,
-			&item.OriginUserID, &item.OriginUserEmail, &item.OriginUserName,
+			&item.OriginUserID, &item.OriginUserEmail, &item.OriginUserName, &originIsService,
+			&createdByID, &createdByPublicID,
 			&archivedMs, &item.ArchivedByUserID, &item.ArchivedByUserEmail,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan archived service api token: %w", err)
@@ -119,6 +129,18 @@ FROM archived_service_api_tokens`
 		if lastUsedMs.Valid {
 			t := time.UnixMilli(lastUsedMs.Int64).UTC()
 			item.LastUsedAt = &t
+		}
+		if originIsService.Valid {
+			value := originIsService.Bool
+			item.OriginUserIsService = &value
+		}
+		if createdByID.Valid {
+			value := createdByID.Int64
+			item.CreatedByUserID = &value
+		}
+		if createdByPublicID.Valid {
+			value := createdByPublicID.String
+			item.CreatedByUserPublicID = &value
 		}
 		item.RevokedAt = time.UnixMilli(revokedMs).UTC()
 		item.ArchivedAt = time.UnixMilli(archivedMs).UTC()

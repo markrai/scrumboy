@@ -26,6 +26,7 @@ func adminUserToItem(u store.User) adminUserItem {
 		SystemRole:  string(u.SystemRole),
 		IsBootstrap: u.IsBootstrap,
 		CreatedAt:   u.CreatedAt,
+		IsService:   u.IsService,
 	}
 }
 

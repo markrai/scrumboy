@@ -222,6 +222,7 @@ type ProjectMember struct {
 	Email     string
 	Name      string
 	Image     *string // User avatar (base64 data URL), same as users.image
+	IsService bool
 	Role      ProjectRole
 	CreatedAt time.Time
 }

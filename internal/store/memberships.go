@@ -153,7 +153,7 @@ func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID 
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pm.user_id, u.email, u.name, u.image, pm.role, pm.created_at
+		SELECT pm.user_id, u.email, u.name, u.image, u.is_service <> 0, pm.role, pm.created_at
 		FROM project_members pm
 		JOIN users u ON pm.user_id = u.id
 		WHERE pm.project_id = ?
@@ -170,7 +170,7 @@ func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID 
 		var roleStr string
 		var image sql.NullString
 		var createdAtMs int64
-		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &image, &roleStr, &createdAtMs); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &image, &m.IsService, &roleStr, &createdAtMs); err != nil {
 			return nil, fmt.Errorf("scan project member: %w", err)
 		}
 		if image.Valid {

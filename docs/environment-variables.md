@@ -36,6 +36,7 @@ Defaults below are Scrumboy's built-in defaults unless otherwise noted. Docker/C
 | `SCRUMBOY_MODE`           | `full`                     | Optional  | `full` (auth-capable) or `anonymous`                                               |
 | `SCRUMBOY_PUBLIC_PROJECTS_ENABLED` | off              | Optional  | Operator gate for durable-project publication management and isolated public reads; never publishes by itself |
 | `SCRUMBOY_LANDING_PAGE_ENABLED` | off                   | Optional  | Full Mode only: `/` serves the marketing landing and `/_app` is the workspace     |
+| `SCRUMBOY_INSTANCE_AUDIT_ENABLED` | off                  | Optional  | Opt in to transactional instance events for service-account and credential lifecycle mutations |
 | `SCRUMBOY_INTRANET_IP`    | empty                      | Optional  | LAN IP for optional startup intranet URL / certificate hints (does not bind)       |
 
 
@@ -354,6 +355,18 @@ Normative setup: [smtp.md](smtp.md), [notifications.md](notifications.md).
 
 
 **Compose note:** `docker-compose.yml` passes `SCRUMBOY_SMTP_PORT` as a bare key (no `${…:-}` default) so unset vs explicitly empty is preserved for the parser above.
+
+---
+
+## Instance service-account auditing
+
+`SCRUMBOY_INSTANCE_AUDIT_ENABLED` is disabled when unset or empty. Set it to `1`, `true`, `on`, or `yes` (trimmed and case-insensitive) to record successful service-account creation/deletion and service-token issuance/revocation in the dedicated append-only `instance_audit_events` stream.
+
+Each enabled event is written in the same transaction as its state mutation. If the event cannot be stored, the account or credential mutation rolls back. When disabled, those mutations work normally and write no instance event. The setting never changes authorization, and it does not change the existing always-on project-scoped `audit_events` table.
+
+Instance events retain actor and target IDs, stable public IDs, token IDs where applicable, and timestamps. They do not contain plaintext credentials, token hashes, passwords, session or OAuth secrets, signing keys, recovery material, or 2FA secrets. No general audit viewer, retention engine, or analytics interface is enabled by this setting.
+
+**Docker / Compose:** stock Compose forwards `SCRUMBOY_INSTANCE_AUDIT_ENABLED` from the host (optional).
 
 ---
 
