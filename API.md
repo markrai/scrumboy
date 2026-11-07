@@ -500,6 +500,12 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 - `admin_createServiceAccount`, `admin_listServiceAccounts`, `admin_deleteServiceAccount` - Service-identity lifecycle with per-tool Owner/Admin authorization.
 - `admin_createServiceToken`, `admin_listServiceTokens`, `admin_revokeServiceToken` - One-time credential issuance and metadata-only discovery/revocation. See [the MCP permission matrix and examples](docs/mcp.md#available-tools).
 
+**webhooks**
+
+- `webhooks_create` - Maintainer registration for self or an explicit service-account project member.
+- `webhooks_list` - Bounded project-scoped, non-secret management metadata.
+- `webhooks_delete` - Owner deletion, plus Maintainer deletion of service-owned subscriptions.
+
 **todos**
 
 - `todos_create`, `todos_get`, `todos_search`, `todos_update`, `todos_delete`, `todos_move`, `todos_linksList`, `todos_linkAdd`, `todos_linkRemove`
@@ -575,6 +581,13 @@ Conventions:
 - **`projects_create`:** `name` (required). Custom workflow columns are not set through this tool; use the `workflow_*` tools afterward. The creating user becomes **maintainer**. Output: `data.project` (same shape as a `projects_list` item).
 - **`projects_update`:** `projectSlug`, `patch` (object). Only fields present in `patch` are changed: `name` (string), `defaultSprintWeeks` (integer, `1` or `2`). Neither field accepts `null`. **Maintainer+** required. Output: `data.project`.
 - **`projects_delete`:** `projectSlug`. **Maintainer+** required. Anonymous temporary boards cannot be deleted this way (`NOT_FOUND`, matching the store's existence-hiding behavior). Output: `data` with `status: "deleted"`, `projectSlug`, `projectId`.
+
+### `webhooks_create`, `webhooks_list`, `webhooks_delete`
+
+- **`webhooks_create`:** `projectSlug`, `url`, and `events` are required. `secret` is optional and write-only. Omit `serviceAccountUserId` for self-ownership; when supplied it must identify a genuine service account with explicit Viewer-or-higher membership on the same project. The actor must be a current project Maintainer, including when a service Maintainer self-registers. Returns `data.webhook` without the signing secret.
+- **`webhooks_list`:** `projectSlug` plus optional `limit` (default 20, max 100) and `cursor`. Maintainers receive the project management view; another subscription owner receives only owned subscriptions, including after membership removal. Results include owner classification and stable ID, nullable registrar provenance, URL, events, and creation time, never the secret. Pagination uses legacy `meta` or JSON-RPC `structuredContent`.
+- **`webhooks_delete`:** `projectSlug` and `webhookId`. The owner may delete its subscription. A current project Maintainer may delete a service-owned subscription, but not another human's subscription solely by role. Repeated or inaccessible deletion returns `NOT_FOUND`.
+- **Delivery:** human owners require current Maintainer/legacy Owner membership; service owners require current explicit Viewer, Contributor, or Maintainer membership. Eligibility is rechecked before enqueue and before every send attempt. Registrar membership and service-token revocation do not affect delivery. Signing, SSRF filtering, retries, payloads, and best-effort delivery remain as documented in [docs/webhooks.md](docs/webhooks.md).
 
 ### `board_get`
 

@@ -32,6 +32,7 @@ type storeAPI interface {
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
 	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
 	GetUserByOAuthAccessToken(ctx context.Context, rawToken, expectedResource string) (store.User, error)
+	GetProjectBySlug(ctx context.Context, slug string) (store.Project, error)
 	ListProjectSummaries(ctx context.Context, limit int, cursor *string) ([]store.ProjectSummary, *string, error)
 	projectapp.ProjectCreationStore
 	projectapp.ProjectAccessStore
@@ -92,6 +93,9 @@ type storeAPI interface {
 	CreateServiceAccountToken(ctx context.Context, requesterID, serviceUserID int64, name *string) (int64, string, time.Time, error)
 	ListServiceAccountTokens(ctx context.Context, requesterID, serviceUserID int64, limit int, beforeID int64) ([]store.APITokenMeta, *int64, error)
 	RevokeServiceAccountToken(ctx context.Context, requesterID, tokenID int64) error
+	CreateWebhook(ctx context.Context, actorUserID int64, input store.CreateWebhookInput) (store.Webhook, error)
+	ListProjectWebhooks(ctx context.Context, actorUserID, projectID int64, limit int, beforeID int64) ([]store.Webhook, *int64, error)
+	DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	useradminapp.UserRoleMutationStore
 	useradminapp.UserDeletionStore
@@ -543,6 +547,9 @@ func (a *Adapter) implementedTools() []string {
 		"admin_createServiceToken",
 		"admin_listServiceTokens",
 		"admin_revokeServiceToken",
+		"webhooks_create",
+		"webhooks_list",
+		"webhooks_delete",
 	}
 }
 

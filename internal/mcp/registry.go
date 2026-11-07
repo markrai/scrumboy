@@ -69,6 +69,9 @@ func (a *Adapter) registerTools() {
 	a.tools["admin_createServiceToken"] = a.handleAdminCreateServiceToken
 	a.tools["admin_listServiceTokens"] = a.handleAdminListServiceTokens
 	a.tools["admin_revokeServiceToken"] = a.handleAdminRevokeServiceToken
+	a.tools["webhooks_create"] = a.handleWebhooksCreate
+	a.tools["webhooks_list"] = a.handleWebhooksList
+	a.tools["webhooks_delete"] = a.handleWebhooksDelete
 
 	a.registerLegacyToolAliases()
 }

@@ -468,6 +468,10 @@ var jsonRPCToolMetadataKeys = map[string][]string{
 		"nextCursor",
 		"hasMore",
 	},
+	"webhooks_list": {
+		"nextCursor",
+		"hasMore",
+	},
 	"sprints_list": {
 		"unscheduledCount",
 	},

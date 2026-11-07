@@ -201,9 +201,9 @@ var nonAuthorityUserReferences = map[string]bool{
 	// Reachable only from a browser session, which a service account cannot hold.
 	"push_subscriptions.user_id": true,
 
-	// Delivery re-checks Maintainer membership on the project. Registering one is session-only for
-	// now; webhook management over MCP must decide how it applies to service accounts.
-	"webhooks.user_id": true,
+	// Delivery re-checks the owner's current project role. Registration provenance never grants access.
+	"webhooks.user_id":               true,
+	"webhooks.registered_by_user_id": true,
 }
 
 // allUserReferences lists the columns worth classifying: foreign keys to users, plus columns named

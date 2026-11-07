@@ -549,7 +549,32 @@ Creating an account issues no credential. `admin_createServiceToken` accepts a g
 
 Rotation is deliberately a three-step workflow: mint a replacement, update the integration, then revoke the previous token by `tokenId`. Revocation is idempotent, affects the next authentication lookup, and does not interrupt an MCP request that already authenticated. An Owner or Admin can revoke a compromised credential without project membership even when account deletion is blocked because the service identity is a project's sole Maintainer. Deletion retains the existing count-only `CONFLICT` response and has no Owner override.
 
-`api_tokens.is_service` continues to mean human or service-owned automation-token lifecycle metadata; it does not classify the owning identity. Every service-management operation checks `users.is_service`, so a human-owned automation token cannot be listed, revoked, or deleted through this surface. Service identities receive only their explicit project memberships and can never acquire system Owner/Admin authority. Slice 3 webhook delegation is not implemented.
+`api_tokens.is_service` continues to mean human or service-owned automation-token lifecycle metadata; it does not classify the owning identity. Every service-management operation checks `users.is_service`, so a human-owned automation token cannot be listed, revoked, or deleted through this surface. Service identities receive only their explicit project memberships and can never acquire system Owner/Admin authority.
+
+**Webhooks**
+
+- `webhooks_create`
+- `webhooks_list`
+- `webhooks_delete`
+
+Webhook management is project-scoped and available through both legacy and JSON-RPC MCP. `webhooks_create` requires the authenticated actor to be a current project Maintainer. Omitting `serviceAccountUserId` creates a self-owned subscription; specifying it delegates ownership only to a genuine service account with an explicit Viewer-or-higher membership on that project. A service Maintainer may self-register, but a service Viewer or Contributor may not register. System roles grant no project bypass.
+
+`webhooks_list` accepts `projectSlug`, optional `limit` (default 20, max 100), and optional `cursor`. A Maintainer receives the project's management view; another subscription owner sees only subscriptions it owns, including an inert subscription after its project membership is removed. Results contain webhook/project identity, owner numeric and stable IDs with `ownerIsService`, nullable registrar provenance, URL, events, and creation time. Signing secrets are never returned. Legacy pagination is in `meta`; JSON-RPC places `nextCursor` and `hasMore` in `structuredContent`.
+
+`webhooks_delete` accepts `projectSlug` and `webhookId`. Owners may delete their own subscriptions. A current project Maintainer may additionally delete service-owned subscriptions, but never another human's subscription solely because of the Maintainer role. Unknown, inaccessible, cross-project, and repeated deletion return `NOT_FOUND` as applicable without a global Owner/Admin override.
+
+```json
+{"tool":"webhooks_create","input":{"projectSlug":"release","url":"https://hooks.example.com/scrumboy","events":["todo.assigned"],"secret":"write-only","serviceAccountUserId":42}}
+{"webhook":{"webhookId":9,"projectId":3,"projectSlug":"release","ownerUserId":42,"ownerStableUserId":"4ba6fbcf-7ca2-4d50-810c-e79b771e2f67","ownerName":"Release Bot","ownerIsService":true,"registeredByUserId":1,"url":"https://hooks.example.com/scrumboy","events":["todo.assigned"],"createdAt":"2026-11-07T12:00:00Z"}}
+
+{"tool":"webhooks_list","input":{"projectSlug":"release","limit":20}}
+{"items":[{"webhookId":9,"projectId":3,"projectSlug":"release","ownerUserId":42,"ownerStableUserId":"4ba6fbcf-7ca2-4d50-810c-e79b771e2f67","ownerName":"Release Bot","ownerIsService":true,"url":"https://hooks.example.com/scrumboy","events":["todo.assigned"],"createdAt":"2026-11-07T12:00:00Z"}]}
+
+{"tool":"webhooks_delete","input":{"projectSlug":"release","webhookId":9}}
+{"status":"deleted","webhookId":9,"projectSlug":"release"}
+```
+
+Human-owned delivery still requires current Maintainer/legacy Owner membership. Service-owned delivery requires current explicit Viewer, Contributor, or Maintainer membership. Both enqueue and every send attempt re-check that predicate. Registrar removal and service-token revocation do not stop an otherwise eligible subscription; owner removal stops it, owner re-addition resumes only future events, and owner/project deletion cascades it away. A request already being dialled may finish. Signing, SSRF controls, retries, and best-effort delivery are unchanged; see [webhooks.md](webhooks.md).
 
 Representative tool inputs and legacy `data` outputs are:
 
@@ -642,6 +667,9 @@ admin_deleteServiceAccount
 admin_createServiceToken
 admin_listServiceTokens
 admin_revokeServiceToken
+webhooks_create
+webhooks_list
+webhooks_delete
 ```
 
 ## Tool Schemas (Representative)

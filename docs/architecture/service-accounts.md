@@ -2,7 +2,7 @@
 
 **Status:** policy decisions accepted by the maintainer (below). Tracks [issue #319](https://github.com/markrai/scrumboy/issues/319) and the maintainer's [guardrails](https://github.com/markrai/scrumboy/issues/319#issuecomment-6474883032).
 
-**Scope:** Slice 1 (identity foundation) and Slice 2 (accounts and credential lifecycle over MCP) are implemented. Slice 3 (webhooks over MCP) remains a design only.
+**Scope:** Slice 1 (identity foundation), Slice 2 (accounts and credential lifecycle over MCP), and Slice 3 (webhook delegation over MCP) are implemented.
 
 Each statement below is marked:
 
@@ -20,7 +20,7 @@ Each statement below is marked:
 | C | Service-account Maintainer | An explicitly assigned service account receives the existing Maintainer permissions, including project administration and deletion where permitted. There is no separate role hierarchy. System administration stays prohibited | Section 9 |
 | D | Identity-reference integrity | A pre-existing issue, handled independently of this slice through the private security process. Existing service-account protections stay | Section 6 |
 | E | Instance-level auditing | A small dedicated instance-audit stream, rather than rebuilding the project-scoped table for nullable project IDs. Implemented as an opt-in Slice 2 stream | Section 12 |
-| F | Webhook delegation | A project Maintainer may register a webhook owned by an assigned service-account member. Viewer membership suffices for the receiving identity. Not implemented yet | Section 13 |
+| F | Webhook delegation | A project Maintainer may register a webhook owned by an assigned service-account member. Viewer membership suffices for the receiving identity. Implemented in Slice 3 | Section 13 |
 
 ## 1. Problem and security boundaries
 
@@ -326,14 +326,14 @@ The archive never holds a plaintext or hash, so an archived token can never auth
 
 Membership changes affecting a service account are already recorded by the existing `member_added`, `member_removed`, and `member_role_changed` events.
 
-## 13. Webhooks (Slice 3 design)
+## 13. Webhooks (Slice 3)
 
-**Accepted (decision F), not built.** Nothing is implemented. Registering a webhook stays session-only.
+**Implemented (decision F).** Webhooks can be managed through REST for the existing self-owned workflow and through `webhooks_create`, `webhooks_list`, and `webhooks_delete` over either MCP transport. There is no browser management UI.
 
-### Existing behaviour to preserve
+### Pre-Slice 3 behavior and controls to preserve
 
-- `webhooks.user_id` is the owner. Registration requires Maintainer, checked at the route.
-- Delivery re-checks that the owner is still a Maintainer, both when enqueuing and again at send time (`GetWebhookDeliveryTarget`).
+- `webhooks.user_id` is the owner. Registration requires Maintainer authority, checked in the store transaction shared by REST and MCP.
+- Before Slice 3, delivery re-checked that every owner was still a Maintainer both when enqueuing and at send time (`GetWebhookDeliveryTarget`). Slice 3 preserves both rechecks while allowing an explicit service owner at Viewer or above.
 - There is a limit of 20 per project.
 - URLs are checked at registration, and addresses are refused at dial time by `safehttp`.
 - An owner's webhooks cascade away with the account.
@@ -351,16 +351,22 @@ Membership changes affecting a service account are already recorded by the exist
 
 Delivery requires the owner to be a Maintainer, so a bot that only needs events would need the authority to delete the project. The maintainer called out exactly this.
 
-### Accepted model
+### Implemented model
 
 1. Add `webhooks.registered_by_user_id`, recording the actor separately from the owner.
 2. A project Maintainer may register a subscription **owned by a service account that is a member of that project**, at any role.
 3. Delivery eligibility becomes: a human owner must be a Maintainer (unchanged), a service-account owner must be a member at Viewer or above. A Viewer can already read what events contain, so this grants nothing new.
 4. Both enqueue-time and send-time checks keep applying, in `ListWebhooksByProject` and `GetWebhookDeliveryTarget`.
 5. A service Maintainer may register for itself. A service account below Maintainer cannot register anything.
-6. Maintainers may delete subscriptions owned by a service account on their project. Today `DeleteWebhook` is owner-only.
+6. Maintainers may delete subscriptions owned by a service account on their project. The REST owner-delete contract remains owner-only.
 
-SSRF checks, limits, signing, and delivery guarantees do not change. The limit check should move into the insert's transaction, since MCP makes concurrent registration easier.
+SSRF checks, limits, signing, and delivery guarantees do not change. The limit check runs in the insert transaction because MCP makes concurrent registration easier.
+
+The limit check and insertion now share the authorization transaction, so the project cannot commit more than 20 subscriptions through concurrent REST and MCP calls. Migration 084 adds nullable `registered_by_user_id REFERENCES users(id) ON DELETE SET NULL`; existing rows keep unknown provenance as `NULL`. New registrations derive the registrar from the authenticated principal, never request input.
+
+`webhooks_list` is project-scoped and bounded (default 20, maximum 100). A Maintainer can inspect the project's management view, while another subscription owner sees only subscriptions it owns. Ownership access remains available after project membership is removed so the inert subscription can still be inspected and deleted. System Owner/Admin status supplies no project visibility. Every projection omits the signing secret. Owners can delete their own subscriptions; a current project Maintainer can additionally delete service-owned subscriptions on that project, but cannot delete another human's subscription.
+
+Webhook management does not extend the Slice 2 `instance_audit_events` stream. Existing project-audit semantics are unchanged, and no new audit framework or enablement setting is introduced.
 
 ### When authority is later revoked
 
@@ -368,7 +374,7 @@ Registration authority and delivery authority are separate. Registration is chec
 
 | What changes | Subscription row | Delivery |
 |---|---|---|
-| The registering Maintainer loses the role, leaves, or is deleted | Stays. `registered_by_user_id` is cleared on account deletion, and history keeps the event | Continues. The owner's membership authorizes delivery, and other Maintainers can delete the subscription |
+| The registering Maintainer loses the role, leaves, or is deleted | Stays. `registered_by_user_id` is cleared on account deletion | Continues. The owner's membership authorizes delivery, and other Maintainers can delete the subscription |
 | The service owner's role changes, staying at Viewer or above | Stays | Continues |
 | The service owner is removed from the project | Stays, inert | Stops at the next enqueue or send check. A request already being dialled may complete. Missed events are not replayed. Re-adding the account resumes delivery, the same as a human owner today |
 | The service owner's account is deleted | Cascades away | Stops |
@@ -378,7 +384,7 @@ Registration authority and delivery authority are separate. Registration is chec
 
 ## 14. Migration, compatibility, and rollback
 
-**Forward:** migrations 080 and 081 add the identity column and protective triggers. Migration 080 carries the column, the identity CHECK, and 14 triggers; migration 081 carries the two `project_members` owner-role triggers. Every existing row becomes a human account, and existing data is not rewritten. Migration 082 adds nullable issuer and archive-classification columns, so existing tokens remain valid without a backfill and legacy archive provenance remains unknown rather than guessed. Migration 083 adds the dedicated append-only instance stream. Databases already upgraded through 081 receive both additions through ordinary forward migration.
+**Forward:** migrations 080 and 081 add the identity column and protective triggers. Migration 080 carries the column, the identity CHECK, and 14 triggers; migration 081 carries the two `project_members` owner-role triggers. Every existing row becomes a human account, and existing data is not rewritten. Migration 082 adds nullable issuer and archive-classification columns, so existing tokens remain valid without a backfill and legacy archive provenance remains unknown rather than guessed. Migration 083 adds the dedicated append-only instance stream. Migration 084 adds nullable webhook registration provenance and leaves every existing subscription unchanged with unknown provenance. Databases already upgraded through 081 receive all later additions through ordinary forward migration.
 
 **`recover-owner`** deliberately runs without migrating, on any schema from migration 049. `RecoverOwnerPassword` checks whether the column exists and does not reference it on older databases.
 
@@ -451,4 +457,4 @@ The sole-Maintainer check, the restored owner-role triggers, and the transaction
 
 **Future work**
 
-- Slice 3: `webhooks_create`, `webhooks_list`, and `webhooks_delete`.
+- No webhook-management UI is included in Slice 3.

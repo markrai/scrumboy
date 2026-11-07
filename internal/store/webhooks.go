@@ -14,27 +14,38 @@ import (
 	"scrumboy/internal/safehttp"
 )
 
-const maxWebhooksPerProject = 20
+const (
+	maxWebhooksPerProject        = 20
+	MaxWebhookManagementPageSize = 100
+)
 
 type Webhook struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"userId"`
-	ProjectID int64     `json:"projectId"`
-	URL       string    `json:"url"`
-	Events    []string  `json:"events"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID                       int64     `json:"id"`
+	UserID                   int64     `json:"userId"`
+	OwnerPublicID            string    `json:"ownerPublicId,omitempty"`
+	OwnerName                string    `json:"ownerName,omitempty"`
+	OwnerIsService           bool      `json:"ownerIsService"`
+	ProjectID                int64     `json:"projectId"`
+	ProjectSlug              string    `json:"projectSlug,omitempty"`
+	RegisteredByUserID       *int64    `json:"registeredByUserId,omitempty"`
+	RegisteredByUserPublicID *string   `json:"registeredByUserPublicId,omitempty"`
+	RegisteredByUserName     *string   `json:"registeredByUserName,omitempty"`
+	URL                      string    `json:"url"`
+	Events                   []string  `json:"events"`
+	CreatedAt                time.Time `json:"createdAt"`
 	// Secret is never returned in list/get responses.
 }
 
 type CreateWebhookInput struct {
-	ProjectID int64
-	URL       string
-	Events    []string
-	Secret    *string
+	ProjectID          int64
+	URL                string
+	Events             []string
+	Secret             *string
+	ServiceOwnerUserID *int64
 }
 
-func (s *Store) CreateWebhook(ctx context.Context, userID int64, in CreateWebhookInput) (Webhook, error) {
-	if userID <= 0 {
+func (s *Store) CreateWebhook(ctx context.Context, actorUserID int64, in CreateWebhookInput) (Webhook, error) {
+	if actorUserID <= 0 {
 		return Webhook{}, fmt.Errorf("%w: invalid user id", ErrValidation)
 	}
 	if in.ProjectID <= 0 {
@@ -53,36 +64,136 @@ func (s *Store) CreateWebhook(ctx context.Context, userID int64, in CreateWebhoo
 		}
 	}
 
+	eventsJSON, err := json.Marshal(in.Events)
+	if err != nil {
+		return Webhook{}, fmt.Errorf("marshal events: %w", err)
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return Webhook{}, fmt.Errorf("begin create webhook: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	project, err := getProjectTx(ctx, tx, in.ProjectID, s)
+	if err != nil {
+		return Webhook{}, err
+	}
+	if err := rejectIfExpiredTemporaryProject(project); err != nil {
+		return Webhook{}, err
+	}
+	actor, actorRole, err := webhookProjectActorTx(ctx, tx, in.ProjectID, actorUserID)
+	if err != nil {
+		return Webhook{}, err
+	}
+	if !actorRole.HasMinimumRole(RoleMaintainer) {
+		return Webhook{}, ErrForbidden
+	}
+
+	owner := actor
+	if in.ServiceOwnerUserID != nil {
+		if *in.ServiceOwnerUserID <= 0 {
+			return Webhook{}, fmt.Errorf("%w: invalid service owner user id", ErrValidation)
+		}
+		owner, err = webhookUserTx(ctx, tx, *in.ServiceOwnerUserID)
+		if err != nil {
+			return Webhook{}, err
+		}
+		if !owner.IsService {
+			return Webhook{}, ErrForbidden
+		}
+		ownerRole, roleErr := webhookExplicitProjectRoleTx(ctx, tx, in.ProjectID, owner.ID)
+		if roleErr != nil {
+			if errors.Is(roleErr, ErrNotFound) {
+				return Webhook{}, ErrForbidden
+			}
+			return Webhook{}, roleErr
+		}
+		if !ownerRole.HasMinimumRole(RoleViewer) {
+			return Webhook{}, ErrForbidden
+		}
+	}
+
 	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM webhooks WHERE project_id = ?`, in.ProjectID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM webhooks WHERE project_id = ?`, in.ProjectID).Scan(&count); err != nil {
 		return Webhook{}, fmt.Errorf("count webhooks: %w", err)
 	}
 	if count >= maxWebhooksPerProject {
 		return Webhook{}, fmt.Errorf("%w: maximum webhooks per project reached", ErrValidation)
 	}
 
-	eventsJSON, err := json.Marshal(in.Events)
-	if err != nil {
-		return Webhook{}, fmt.Errorf("marshal events: %w", err)
-	}
-
 	nowMs := time.Now().UTC().UnixMilli()
-	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO webhooks(user_id, project_id, url, events_json, secret, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, userID, in.ProjectID, u.String(), string(eventsJSON), in.Secret, nowMs)
+	res, err := tx.ExecContext(ctx, `
+		INSERT INTO webhooks(user_id, project_id, url, events_json, secret, created_at, registered_by_user_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, owner.ID, in.ProjectID, u.String(), string(eventsJSON), in.Secret, nowMs, actorUserID)
 	if err != nil {
 		return Webhook{}, fmt.Errorf("insert webhook: %w", err)
 	}
 	id, _ := res.LastInsertId()
+	if err := tx.Commit(); err != nil {
+		return Webhook{}, fmt.Errorf("commit create webhook: %w", err)
+	}
+	registeredByID := actorUserID
+	registeredByPublicID := actor.PublicID
+	registeredByName := actor.Name
 	return Webhook{
-		ID:        id,
-		UserID:    userID,
-		ProjectID: in.ProjectID,
-		URL:       u.String(),
-		Events:    in.Events,
-		CreatedAt: time.UnixMilli(nowMs).UTC(),
+		ID:                       id,
+		UserID:                   owner.ID,
+		OwnerPublicID:            owner.PublicID,
+		OwnerName:                owner.Name,
+		OwnerIsService:           owner.IsService,
+		ProjectID:                in.ProjectID,
+		ProjectSlug:              project.Slug,
+		RegisteredByUserID:       &registeredByID,
+		RegisteredByUserPublicID: &registeredByPublicID,
+		RegisteredByUserName:     &registeredByName,
+		URL:                      u.String(),
+		Events:                   in.Events,
+		CreatedAt:                time.UnixMilli(nowMs).UTC(),
 	}, nil
+}
+
+func webhookUserTx(ctx context.Context, tx *sql.Tx, userID int64) (User, error) {
+	var user User
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id, COALESCE(public_id, ''), name, is_service <> 0
+		FROM users
+		WHERE id = ?
+	`, userID).Scan(&user.ID, &user.PublicID, &user.Name, &user.IsService); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return User{}, ErrNotFound
+		}
+		return User{}, fmt.Errorf("get webhook user: %w", err)
+	}
+	return user, nil
+}
+
+func webhookExplicitProjectRoleTx(ctx context.Context, tx *sql.Tx, projectID, userID int64) (ProjectRole, error) {
+	var role ProjectRole
+	if err := tx.QueryRowContext(ctx, `
+		SELECT role
+		FROM project_members
+		WHERE project_id = ? AND user_id = ?
+	`, projectID, userID).Scan(&role); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("get webhook project role: %w", err)
+	}
+	return role, nil
+}
+
+func webhookProjectActorTx(ctx context.Context, tx *sql.Tx, projectID, actorUserID int64) (User, ProjectRole, error) {
+	actor, err := webhookUserTx(ctx, tx, actorUserID)
+	if err != nil {
+		return User{}, "", err
+	}
+	role, err := webhookExplicitProjectRoleTx(ctx, tx, projectID, actorUserID)
+	if err != nil {
+		return User{}, "", err
+	}
+	return actor, role, nil
 }
 
 func (s *Store) ListWebhooks(ctx context.Context, userID int64) ([]Webhook, error) {
@@ -112,17 +223,132 @@ func (s *Store) ListWebhooks(ctx context.Context, userID int64) ([]Webhook, erro
 	return out, rows.Err()
 }
 
-// ListWebhooksByProject returns subscriptions whose owner is currently an
-// authorized Maintainer of the project, used by the asynchronous delivery
-// pipeline to match events before enqueueing them.
+func (s *Store) ListProjectWebhooks(ctx context.Context, actorUserID, projectID int64, limit int, beforeID int64) ([]Webhook, *int64, error) {
+	if actorUserID <= 0 || projectID <= 0 {
+		return nil, nil, fmt.Errorf("%w: invalid webhook listing identity", ErrValidation)
+	}
+	if limit < 1 || limit > MaxWebhookManagementPageSize || beforeID < 0 {
+		return nil, nil, fmt.Errorf("%w: invalid webhook pagination", ErrValidation)
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, nil, fmt.Errorf("begin list project webhooks: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := getProjectTx(ctx, tx, projectID, s); err != nil {
+		return nil, nil, err
+	}
+	if _, err := webhookUserTx(ctx, tx, actorUserID); err != nil {
+		return nil, nil, err
+	}
+	visibility := "w.user_id = ?"
+	actorRole, err := webhookExplicitProjectRoleTx(ctx, tx, projectID, actorUserID)
+	if err == nil && actorRole.HasMinimumRole(RoleMaintainer) {
+		visibility = "1 = 1"
+	} else {
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return nil, nil, err
+		}
+		if err == nil && !actorRole.HasMinimumRole(RoleViewer) {
+			return nil, nil, ErrNotFound
+		}
+		var ownsSubscription int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM webhooks WHERE project_id = ? AND user_id = ?
+			)
+		`, projectID, actorUserID).Scan(&ownsSubscription); err != nil {
+			return nil, nil, fmt.Errorf("check webhook ownership: %w", err)
+		}
+		if errors.Is(err, ErrNotFound) && ownsSubscription == 0 {
+			return nil, nil, ErrNotFound
+		}
+	}
+	query := `
+		SELECT w.id, w.user_id, owner.public_id, owner.name, owner.is_service <> 0,
+		       w.project_id, p.slug, w.registered_by_user_id,
+		       registrar.public_id, registrar.name, w.url, w.events_json, w.created_at
+		FROM webhooks w
+		JOIN users owner ON owner.id = w.user_id
+		JOIN projects p ON p.id = w.project_id
+		LEFT JOIN users registrar ON registrar.id = w.registered_by_user_id
+		WHERE w.project_id = ? AND (` + visibility + `) AND (? = 0 OR w.id < ?)
+		ORDER BY w.id DESC
+		LIMIT ?`
+	args := []any{projectID}
+	if visibility != "1 = 1" {
+		args = append(args, actorUserID)
+	}
+	args = append(args, beforeID, beforeID, limit+1)
+	rows, err := tx.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list project webhooks: %w", err)
+	}
+	defer rows.Close()
+	items := make([]Webhook, 0, limit+1)
+	for rows.Next() {
+		var item Webhook
+		var eventsJSON string
+		var createdAtMs int64
+		var registeredByID sql.NullInt64
+		var registeredByPublicID, registeredByName sql.NullString
+		if err := rows.Scan(
+			&item.ID, &item.UserID, &item.OwnerPublicID, &item.OwnerName, &item.OwnerIsService,
+			&item.ProjectID, &item.ProjectSlug, &registeredByID,
+			&registeredByPublicID, &registeredByName, &item.URL, &eventsJSON, &createdAtMs,
+		); err != nil {
+			return nil, nil, fmt.Errorf("scan project webhook: %w", err)
+		}
+		if err := json.Unmarshal([]byte(eventsJSON), &item.Events); err != nil {
+			return nil, nil, fmt.Errorf("decode webhook events: %w", err)
+		}
+		if registeredByID.Valid {
+			value := registeredByID.Int64
+			item.RegisteredByUserID = &value
+		}
+		if registeredByPublicID.Valid {
+			value := registeredByPublicID.String
+			item.RegisteredByUserPublicID = &value
+		}
+		if registeredByName.Valid {
+			value := registeredByName.String
+			item.RegisteredByUserName = &value
+		}
+		item.CreatedAt = time.UnixMilli(createdAtMs).UTC()
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate project webhooks: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, nil, fmt.Errorf("close project webhooks: %w", err)
+	}
+	var nextBeforeID *int64
+	if len(items) > limit {
+		items = items[:limit]
+		value := items[len(items)-1].ID
+		nextBeforeID = &value
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, nil, fmt.Errorf("commit list project webhooks: %w", err)
+	}
+	return items, nextBeforeID, nil
+}
+
+// ListWebhooksByProject returns subscriptions whose human owner is a current
+// Maintainer or whose service owner is a current explicit project member.
 func (s *Store) ListWebhooksByProject(ctx context.Context, projectID int64) ([]WebhookRow, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT w.id, w.url, w.events_json, w.secret
 		FROM webhooks w
 		JOIN users u ON u.id = w.user_id
+		JOIN projects p ON p.id = w.project_id
 		JOIN project_members pm ON pm.project_id = w.project_id AND pm.user_id = w.user_id
-		WHERE w.project_id = ? AND pm.role IN (?, ?)
-	`, projectID, RoleMaintainer, RoleOwner)
+		WHERE w.project_id = ? AND (
+			(u.is_service = 0 AND pm.role IN (?, ?)) OR
+			(u.is_service = 1 AND pm.role IN (?, ?, ?))
+		)
+	`, projectID, RoleMaintainer, RoleOwner, RoleViewer, RoleContributor, RoleMaintainer)
 	if err != nil {
 		return nil, fmt.Errorf("list webhooks by project: %w", err)
 	}
@@ -150,14 +376,14 @@ type WebhookRow struct {
 
 // WebhookDeliveryTarget is the authoritative destination and signing material
 // for a queued delivery. It is intentionally resolved again by the worker so a
-// queue entry cannot outlive the subscription or its owner's Maintainer access.
+// queue entry cannot outlive the subscription or its owner's eligible membership.
 type WebhookDeliveryTarget struct {
 	URL    string
 	Secret *string
 }
 
 // GetWebhookDeliveryTarget returns eligible=false unless the subscription,
-// owner account, and Maintainer+ project membership all still exist. Database
+// owner account, project, and eligible project membership all still exist. Database
 // failures are returned separately so callers can fail closed without treating
 // a temporary lookup failure as authorization.
 func (s *Store) GetWebhookDeliveryTarget(ctx context.Context, webhookID int64) (WebhookDeliveryTarget, bool, error) {
@@ -166,9 +392,13 @@ func (s *Store) GetWebhookDeliveryTarget(ctx context.Context, webhookID int64) (
 		SELECT w.url, w.secret
 		FROM webhooks w
 		JOIN users u ON u.id = w.user_id
+		JOIN projects p ON p.id = w.project_id
 		JOIN project_members pm ON pm.project_id = w.project_id AND pm.user_id = w.user_id
-		WHERE w.id = ? AND pm.role IN (?, ?)
-	`, webhookID, RoleMaintainer, RoleOwner).Scan(&target.URL, &target.Secret)
+		WHERE w.id = ? AND (
+			(u.is_service = 0 AND pm.role IN (?, ?)) OR
+			(u.is_service = 1 AND pm.role IN (?, ?, ?))
+		)
+	`, webhookID, RoleMaintainer, RoleOwner, RoleViewer, RoleContributor, RoleMaintainer).Scan(&target.URL, &target.Secret)
 	if errors.Is(err, sql.ErrNoRows) {
 		return WebhookDeliveryTarget{}, false, nil
 	}
@@ -179,13 +409,68 @@ func (s *Store) GetWebhookDeliveryTarget(ctx context.Context, webhookID int64) (
 }
 
 func (s *Store) DeleteWebhook(ctx context.Context, userID, webhookID int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = ? AND user_id = ?`, webhookID, userID)
+	return s.deleteWebhook(ctx, userID, 0, webhookID)
+}
+
+func (s *Store) DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error {
+	if projectID <= 0 {
+		return fmt.Errorf("%w: invalid project id", ErrValidation)
+	}
+	return s.deleteWebhook(ctx, actorUserID, projectID, webhookID)
+}
+
+func (s *Store) deleteWebhook(ctx context.Context, actorUserID, expectedProjectID, webhookID int64) error {
+	if actorUserID <= 0 || webhookID <= 0 {
+		return fmt.Errorf("%w: invalid webhook deletion identity", ErrValidation)
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin delete webhook: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := webhookUserTx(ctx, tx, actorUserID); err != nil {
+		return err
+	}
+	var projectID, ownerUserID int64
+	var ownerIsService bool
+	if err := tx.QueryRowContext(ctx, `
+		SELECT w.project_id, w.user_id, u.is_service <> 0
+		FROM webhooks w
+		JOIN users u ON u.id = w.user_id
+		WHERE w.id = ?
+	`, webhookID).Scan(&projectID, &ownerUserID, &ownerIsService); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get webhook for deletion: %w", err)
+	}
+	if expectedProjectID > 0 && projectID != expectedProjectID {
+		return ErrNotFound
+	}
+	if actorUserID != ownerUserID {
+		actorRole, roleErr := webhookExplicitProjectRoleTx(ctx, tx, projectID, actorUserID)
+		if roleErr != nil {
+			return roleErr
+		}
+		if !actorRole.HasMinimumRole(RoleViewer) {
+			return ErrNotFound
+		}
+		if !ownerIsService || !actorRole.HasMinimumRole(RoleMaintainer) {
+			return ErrForbidden
+		}
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM webhooks WHERE id = ?`, webhookID)
 	if err != nil {
 		return fmt.Errorf("delete webhook: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if affected, err := res.RowsAffected(); err != nil || affected != 1 {
+		if err != nil {
+			return fmt.Errorf("read deleted webhook count: %w", err)
+		}
 		return ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete webhook: %w", err)
 	}
 	return nil
 }

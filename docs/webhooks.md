@@ -17,14 +17,14 @@ When an event fires, Scrumboy delivers a JSON body asynchronously. Delivery is b
 | Constraint | Behavior |
 | ---------- | -------- |
 | **Mode** | **Full mode only.** In anonymous mode, webhook HTTP routes return **404**. |
-| **Who** | Project **maintainers** may create subscriptions for a project they maintain. |
+| **Who** | Project **Maintainers** may create subscriptions for a project they maintain. MCP can make the Maintainer or an explicit service-account member the owner. |
 | **UI** | **API only** — there is no Settings screen for webhooks. |
-| **Auth** | Session cookie required (same as other authenticated `/api/*` routes). |
+| **Auth** | REST uses the existing session-cookie contract. MCP accepts its existing authenticated session, API-token, or OAuth principal. |
 | **CSRF** | Mutating calls need header `X-Scrumboy: 1`, like other mutating `/api/*` requests. |
 
-`GET /api/webhooks` lists webhooks owned by the **current user** (not every webhook on every project). `DELETE` removes a webhook only if it belongs to that user.
+`GET /api/webhooks` remains an owner-only compatibility view. REST create remains self-owned and retains its existing body and response. MCP listing lets an owner inspect only its own subscriptions even after membership removal. REST and MCP deletion let an owner remove its own subscription; a current project Maintainer may also remove a service-owned subscription on that project, but not another human's subscription.
 
-Delivery authorization is continuous, not a one-time grant at creation: a project webhook is eligible only while its owner account exists, the subscription still exists, and that owner remains a project Maintainer. Removing the owner from the project or demoting them to Contributor or Viewer stops delivery. Deleting either the subscription or its owner account also stops delivery.
+Delivery authorization is continuous, not a one-time grant at creation. A human-owned subscription is eligible only while its owner remains a Maintainer (or valid legacy Owner). A service-owned subscription is eligible while its owner remains an explicit Viewer, Contributor, or Maintainer. The same predicate is applied before enqueue and immediately before every send attempt. The registering actor's later role and the service owner's API-token state do not authorize delivery.
 
 ---
 
@@ -47,7 +47,29 @@ Delivery authorization is continuous, not a one-time grant at creation: a projec
 
 Limits enforced by the server include a maximum of **20** webhooks per project.
 
+Authorization, the project limit, insertion, and registration provenance are checked on the same transaction. The registrar is stored separately from the owner; deleting a distinct registrar clears that provenance reference without deleting the subscription.
+
 Create responses return `id`, `projectId`, `url`, `events`, and `createdAt` — never the secret.
+
+### MCP management
+
+The exact MCP tool names are `webhooks_create`, `webhooks_list`, and `webhooks_delete`; there are no dotted aliases.
+
+| Tool | Inputs | Authorization and output |
+| --- | --- | --- |
+| `webhooks_create` | `projectSlug`, `url`, `events`, optional write-only `secret`, optional `serviceAccountUserId` | Current project Maintainer. Omitting the owner makes the authenticated actor the owner. An explicit owner must be a genuine service account with an explicit Viewer-or-higher membership on the same project. Returns `webhook` metadata without the secret. |
+| `webhooks_list` | `projectSlug`, optional `limit` (default 20, max 100), optional `cursor` | Project Maintainers receive the project management view; other subscription owners receive only their own subscriptions, including after membership removal. Returns owner classification, nullable registrar provenance, URL, events, and creation time without the secret. |
+| `webhooks_delete` | `projectSlug`, `webhookId` | The owner, or a current project Maintainer when the owner is a service account. Repeated deletion returns `NOT_FOUND`. Returns only deletion status and identifiers. |
+
+Example delegated registration:
+
+```json
+{"tool":"webhooks_create","input":{"projectSlug":"release","url":"https://example.com/scrumboy-hook","events":["todo.assigned"],"secret":"write-only","serviceAccountUserId":42}}
+```
+
+The safe result identifies the subscription owner with numeric and stable user IDs, `ownerIsService`, and registrar provenance. Neither MCP transport returns `secret`.
+
+Registration authority and delivery authority remain separate. A service Viewer or Contributor cannot register a webhook, including for itself; a service Maintainer can self-register. System Owner/Admin roles do not bypass project membership or Maintainer authority.
 
 ### Example create
 
@@ -172,7 +194,7 @@ These controls reduce SSRF risk from webhook URLs. They also mean **LAN-only or 
 Delivery is **asynchronous** and **best-effort**:
 
 1. After an event is published, a dispatcher matches project subscriptions and enqueues work (without blocking SSE).
-2. Immediately before each send attempt, the worker reloads the subscription and verifies that its owner account still exists and still has Maintainer access to the project. Missing or unauthorized records are dropped. Authorization lookup failures fail closed and make no HTTP request.
+2. Immediately before each send attempt, the worker reloads the subscription and verifies the same human-Maintainer or service-Viewer-or-higher predicate used before enqueue. Missing or unauthorized records are dropped. Authorization lookup failures fail closed and make no HTTP request.
 3. An in-process worker POSTs to the currently stored subscription URL (10s HTTP timeout).
 4. **Success** is any HTTP status in **2xx**.
 5. **Retries:** up to **three** attempts with fixed backoff (immediate, then ~100ms, then ~400ms) for transient failures (network errors, non-2xx responses that are not classified permanent, and temporary authorization-lookup errors). Authorization is rechecked before every retry.
@@ -180,6 +202,8 @@ Delivery is **asynchronous** and **best-effort**:
 7. The queue is **in-memory** (bounded capacity). On process shutdown the queue is sealed and drained against a deadline; some queued items may still be lost if the process exits. Scrumboy is **not** a durable external queue — design your receiver accordingly and use event `id` for idempotency.
 
 Because authorization is revalidated at send time, an event queued while a subscription was eligible is dropped if membership, account, or subscription state is revoked before the HTTP request begins. Scrumboy does not attempt to cancel a request that was already in flight when revocation occurred.
+
+For a delegated service subscription, removing the service owner makes the row inert; re-adding it resumes only future events. Deleting the service owner or project cascades the subscription away. Removing or deleting a distinct registrar leaves it in place, and revoking the service owner's API token does not affect signing-secret delivery. Missed events are not replayed.
 
 ---
 

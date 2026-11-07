@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log"
@@ -120,6 +123,104 @@ func TestWebhookDeliveryAuthorizationRevalidatesQueuedSubscriptions(t *testing.T
 	assertHits("/wildcard", 2)
 	assertHits("/removed", 0)
 	assertHits("/demoted", 0)
+}
+
+func TestDelegatedServiceWebhookDeliveryLifecycleAndSigning(t *testing.T) {
+	_, st, _ := newTestServerWithCollector(t)
+	ownerCtx, owner, project := setupAuthenticatedProject(t, st)
+	registrar, err := st.CreateUser(context.Background(), "delegated-registrar@example.com", "pass1234A!", "Registrar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(ownerCtx, owner.ID, project.ID, registrar.ID, store.RoleMaintainer); err != nil {
+		t.Fatal(err)
+	}
+	serviceAccount, err := st.CreateServiceAccount(context.Background(), owner.ID, "Delivery Bot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddProjectMember(ownerCtx, owner.ID, project.ID, serviceAccount.ID, store.RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+	tokenID, _, _, err := st.CreateServiceAccountToken(context.Background(), owner.ID, serviceAccount.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const signingSecret = "delegated-delivery-signing-secret"
+
+	var hits atomic.Int32
+	var invalidSignature atomic.Bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, readErr := io.ReadAll(r.Body)
+		if readErr != nil {
+			invalidSignature.Store(true)
+		} else {
+			mac := hmac.New(sha256.New, []byte(signingSecret))
+			_, _ = mac.Write(body)
+			want := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+			if !hmac.Equal([]byte(r.Header.Get("X-Scrumboy-Signature")), []byte(want)) {
+				invalidSignature.Store(true)
+			}
+		}
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+	client, publicURL := webhookClientToTestServer(t, ts, "delegated-hooks.example")
+	hook, err := st.CreateWebhook(store.WithUserID(context.Background(), registrar.ID), registrar.ID, store.CreateWebhookInput{
+		ProjectID: project.ID, URL: publicURL, Events: []string{"todo.updated"}, Secret: stringPointerHTTP(signingSecret), ServiceOwnerUserID: &serviceAccount.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hook.UserID != serviceAccount.ID {
+		t.Fatal("delegated webhook has the wrong owner")
+	}
+	queue := newWebhookQueue(log.New(io.Discard, "", 0))
+	dispatcher := newWebhookDispatcher(st, queue, log.New(io.Discard, "", 0))
+	worker := newWebhookWorkerWithClient(st, queue, log.New(io.Discard, "", 0), client)
+	event := eventbus.Event{ID: "delegated-1", Type: "todo.updated", ProjectID: project.ID, Time: time.Now().UTC(), Payload: []byte(`{"todoId":1}`)}
+	dispatcher.enqueueWork(event)
+	worker.flush()
+	if hits.Load() != 1 || invalidSignature.Load() {
+		t.Fatalf("initial delegated delivery hits=%d signatureValid=%v", hits.Load(), !invalidSignature.Load())
+	}
+
+	if err := st.RemoveProjectMember(ownerCtx, owner.ID, project.ID, registrar.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RevokeServiceAccountToken(context.Background(), owner.ID, tokenID); err != nil {
+		t.Fatal(err)
+	}
+	event.ID = "delegated-2"
+	dispatcher.enqueueWork(event)
+	worker.flush()
+	if hits.Load() != 2 {
+		t.Fatalf("registrar removal or token revocation stopped delivery: hits=%d", hits.Load())
+	}
+
+	event.ID = "delegated-queued-before-removal"
+	dispatcher.enqueueWork(event)
+	if err := st.RemoveProjectMember(ownerCtx, owner.ID, project.ID, serviceAccount.ID); err != nil {
+		t.Fatal(err)
+	}
+	worker.flush()
+	if hits.Load() != 2 {
+		t.Fatalf("queued delivery survived service membership removal: hits=%d", hits.Load())
+	}
+	if err := st.AddProjectMember(ownerCtx, owner.ID, project.ID, serviceAccount.ID, store.RoleContributor); err != nil {
+		t.Fatal(err)
+	}
+	event.ID = "delegated-future-after-readd"
+	dispatcher.enqueueWork(event)
+	worker.flush()
+	if hits.Load() != 3 {
+		t.Fatalf("future delivery did not resume after membership restoration: hits=%d", hits.Load())
+	}
+}
+
+func stringPointerHTTP(value string) *string {
+	return &value
 }
 
 func TestWebhookDeliveryAuthorizationLookupFailureFailsClosed(t *testing.T) {

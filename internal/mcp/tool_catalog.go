@@ -590,6 +590,34 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"tokenId": jsonProp("integer", "Service credential token ID"),
 			}, []string{"tokenId"}),
 		},
+		"webhooks_create": {
+			Name:        "webhooks_create",
+			Description: "Create a webhook as a current project Maintainer. Omit serviceAccountUserId for self-ownership, or specify an explicit service-account member as owner. Signing secrets are accepted but never returned.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug":          jsonProp("string", "Project identifier (slug)"),
+				"url":                  jsonProp("string", "HTTPS or HTTP destination URL accepted by webhook destination security policy"),
+				"events":               jsonStringArrayProp("Event types or * wildcard", 1),
+				"secret":               jsonPropWithNull("string", "Optional HMAC-SHA256 signing secret; write-only"),
+				"serviceAccountUserId": jsonPropWithNull("integer", "Optional service-account owner user ID; must be an explicit member of this project"),
+			}, []string{"projectSlug", "url", "events"}),
+		},
+		"webhooks_list": {
+			Name:        "webhooks_list",
+			Description: "List a bounded page of non-secret webhook metadata for one project. Maintainers can inspect the project subscriptions; other owners can inspect only their own, including after membership removal.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"limit":       jsonPropWithNull("integer", "Maximum results to return (default 20, max 100)"),
+				"cursor":      jsonPropWithNull("string", "Pagination cursor from a previous call"),
+			}, []string{"projectSlug"}),
+		},
+		"webhooks_delete": {
+			Name:        "webhooks_delete",
+			Description: "Delete an owned webhook, or delete a service-owned webhook as a current project Maintainer. Maintainers cannot delete another human's webhook.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"webhookId":   jsonProp("integer", "Webhook subscription ID"),
+			}, []string{"projectSlug", "webhookId"}),
+		},
 	}
 }
 
