@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -222,6 +223,9 @@ func TestWebhookManagementVisibilityDeletionAndProvenanceLifecycle(t *testing.T)
 	if _, _, err := f.store.ListProjectWebhooks(ctx, f.owner.ID, f.project.ID, 20, 0); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("system owner without membership list err=%v", err)
 	}
+	if err := f.store.DeleteWebhook(ctx, f.maintainer.ID, serviceHook.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner-only deletion accepted a project Maintainer: %v", err)
+	}
 	if err := f.store.DeleteProjectWebhook(ctx, f.maintainer.ID, f.project.ID, humanHook.ID); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("maintainer deleted another human webhook: %v", err)
 	}
@@ -244,6 +248,105 @@ func TestWebhookManagementVisibilityDeletionAndProvenanceLifecycle(t *testing.T)
 	}
 	if err := f.store.DeleteProjectWebhook(ctx, f.maintainer.ID, f.project.ID, serviceHook.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("repeated deletion err=%v", err)
+	}
+}
+
+func TestWebhookOwnerDeletionSurvivesMembershipRemoval(t *testing.T) {
+	f := newWebhookDelegationFixture(t)
+	ctx := context.Background()
+	if err := f.store.AddProjectMember(WithUserID(ctx, f.maintainer.ID), f.maintainer.ID, f.project.ID, f.service.ID, RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+	hook, err := f.create(t, f.maintainer.ID, &f.service.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.RemoveProjectMember(WithUserID(ctx, f.maintainer.ID), f.maintainer.ID, f.project.ID, f.service.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.DeleteWebhook(ctx, f.service.ID, hook.ID); err != nil {
+		t.Fatalf("removed owner could not delete its subscription: %v", err)
+	}
+	if err := f.store.DeleteWebhook(ctx, f.service.ID, hook.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("repeated owner deletion err=%v", err)
+	}
+}
+
+func TestWebhookManagementRedactsCrossOwnerDestinations(t *testing.T) {
+	f := newWebhookDelegationFixture(t)
+	ctx := context.Background()
+	if err := f.store.AddProjectMember(WithUserID(ctx, f.maintainer.ID), f.maintainer.ID, f.project.ID, f.service.ID, RoleViewer); err != nil {
+		t.Fatal(err)
+	}
+	const serviceDestination = "https://userinfo-service:password-service@hooks.example.com/path-service/inbox?token=query-service#fragment-service"
+	serviceHook, err := f.store.CreateWebhook(WithUserID(ctx, f.maintainer.ID), f.maintainer.ID, CreateWebhookInput{
+		ProjectID: f.project.ID, URL: serviceDestination, Events: []string{"todo.created"}, ServiceOwnerUserID: &f.service.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if serviceHook.URL != serviceDestination || serviceHook.DestinationRedacted {
+		t.Fatal("immediate creation response did not retain the supplied destination")
+	}
+
+	humanOwner, err := f.store.CreateUser(ctx, "webhook-human-owner@example.com", "password123", "Human Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.AddProjectMember(WithUserID(ctx, f.maintainer.ID), f.maintainer.ID, f.project.ID, humanOwner.ID, RoleMaintainer); err != nil {
+		t.Fatal(err)
+	}
+	const humanDestination = "https://userinfo-human:password-human@human-hooks.example.com/path-human/inbox?token=query-human#fragment-human"
+	humanHook, err := f.store.CreateWebhook(WithUserID(ctx, humanOwner.ID), humanOwner.ID, CreateWebhookInput{
+		ProjectID: f.project.ID, URL: humanDestination, Events: []string{"todo.updated"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	maintainerItems, _, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, f.project.ID, 20, 0)
+	if err != nil || len(maintainerItems) != 2 {
+		t.Fatalf("maintainer listing failed: count=%d err=%v", len(maintainerItems), err)
+	}
+	for _, item := range maintainerItems {
+		if !item.DestinationRedacted || item.URL != "" || item.DestinationPreview == "" {
+			t.Fatal("cross-owner destination was not explicitly redacted")
+		}
+		for _, credential := range []string{"userinfo-service", "password-service", "path-service", "query-service", "fragment-service", "userinfo-human", "password-human", "path-human", "query-human", "fragment-human"} {
+			if strings.Contains(item.DestinationPreview, credential) {
+				t.Fatal("cross-owner destination preview exposed caller-supplied credential material")
+			}
+		}
+	}
+
+	serviceItems, _, err := f.store.ListProjectWebhooks(ctx, f.service.ID, f.project.ID, 20, 0)
+	if err != nil || len(serviceItems) != 1 || serviceItems[0].ID != serviceHook.ID {
+		t.Fatalf("service owner listing failed: count=%d err=%v", len(serviceItems), err)
+	}
+	if serviceItems[0].DestinationRedacted || serviceItems[0].URL != serviceDestination || serviceItems[0].DestinationPreview != "" {
+		t.Fatal("service owner did not retain its complete destination")
+	}
+	humanItems, _, err := f.store.ListProjectWebhooks(ctx, humanOwner.ID, f.project.ID, 20, 0)
+	if err != nil || len(humanItems) != 2 {
+		t.Fatalf("human owner listing failed: count=%d err=%v", len(humanItems), err)
+	}
+	var foundHumanOwner, foundCrossOwner bool
+	for _, item := range humanItems {
+		switch item.ID {
+		case humanHook.ID:
+			foundHumanOwner = true
+			if item.DestinationRedacted || item.URL != humanDestination || item.DestinationPreview != "" {
+				t.Fatal("human owner did not retain its complete destination")
+			}
+		case serviceHook.ID:
+			foundCrossOwner = true
+			if !item.DestinationRedacted || item.URL != "" || item.DestinationPreview == "" {
+				t.Fatal("human Maintainer received another owner's complete destination")
+			}
+		}
+	}
+	if !foundHumanOwner || !foundCrossOwner {
+		t.Fatal("human Maintainer management view omitted an expected subscription")
 	}
 }
 

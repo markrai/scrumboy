@@ -503,8 +503,8 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **webhooks**
 
 - `webhooks_create` - Maintainer registration for self or an explicit service-account project member.
-- `webhooks_list` - Bounded project-scoped, non-secret management metadata.
-- `webhooks_delete` - Owner deletion, plus Maintainer deletion of service-owned subscriptions.
+- `webhooks_list` - Bounded project-scoped management metadata with cross-owner destination redaction.
+- `webhooks_delete` - Owner deletion, plus MCP-only Maintainer deletion of service-owned subscriptions.
 
 **todos**
 
@@ -585,8 +585,8 @@ Conventions:
 ### `webhooks_create`, `webhooks_list`, `webhooks_delete`
 
 - **`webhooks_create`:** `projectSlug`, `url`, and `events` are required. `secret` is optional and write-only. Omit `serviceAccountUserId` for self-ownership; when supplied it must identify a genuine service account with explicit Viewer-or-higher membership on the same project. The actor must be a current project Maintainer, including when a service Maintainer self-registers. Returns `data.webhook` without the signing secret.
-- **`webhooks_list`:** `projectSlug` plus optional `limit` (default 20, max 100) and `cursor`. Maintainers receive the project management view; another subscription owner receives only owned subscriptions, including after membership removal. Results include owner classification and stable ID, nullable registrar provenance, URL, events, and creation time, never the secret. Pagination uses legacy `meta` or JSON-RPC `structuredContent`.
-- **`webhooks_delete`:** `projectSlug` and `webhookId`. The owner may delete its subscription. A current project Maintainer may delete a service-owned subscription, but not another human's subscription solely by role. Repeated or inaccessible deletion returns `NOT_FOUND`.
+- **`webhooks_list`:** `projectSlug` plus optional `limit` (default 20, max 100) and `cursor`. Maintainers receive the project management view; another subscription owner receives only owned subscriptions, including after membership removal. An owner receives its complete `url`. A different Maintainer receives no `url`; the row instead provides a host-level `destinationPreview` and `destinationRedacted: true`, excluding caller-supplied userinfo, path, query, and fragment values. Results retain owner classification and stable ID, nullable registrar provenance, events, and creation time, never the signing secret. Pagination uses legacy `meta` or JSON-RPC `structuredContent`.
+- **`webhooks_delete`:** `projectSlug` and `webhookId`. The owner may delete its subscription. Through MCP only, a current project Maintainer may delete a service-owned subscription, but not another human's subscription solely by role. REST `DELETE /api/webhooks/{id}` remains owner-only. Repeated or inaccessible deletion returns `NOT_FOUND`.
 - **Delivery:** human owners require current Maintainer/legacy Owner membership; service owners require current explicit Viewer, Contributor, or Maintainer membership. Eligibility is rechecked before enqueue and before every send attempt. Registrar membership and service-token revocation do not affect delivery. Signing, SSRF filtering, retries, payloads, and best-effort delivery remain as documented in [docs/webhooks.md](docs/webhooks.md).
 
 ### `board_get`

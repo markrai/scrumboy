@@ -40,13 +40,15 @@ type webhookManagementItem struct {
 	RegisteredByUserID       *int64    `json:"registeredByUserId,omitempty"`
 	RegisteredByStableUserID *string   `json:"registeredByStableUserId,omitempty"`
 	RegisteredByName         *string   `json:"registeredByName,omitempty"`
-	URL                      string    `json:"url"`
+	URL                      *string   `json:"url,omitempty"`
+	DestinationPreview       *string   `json:"destinationPreview,omitempty"`
+	DestinationRedacted      bool      `json:"destinationRedacted"`
 	Events                   []string  `json:"events"`
 	CreatedAt                time.Time `json:"createdAt"`
 }
 
 func webhookToManagementItem(webhook store.Webhook) webhookManagementItem {
-	return webhookManagementItem{
+	item := webhookManagementItem{
 		WebhookID:                webhook.ID,
 		ProjectID:                webhook.ProjectID,
 		ProjectSlug:              webhook.ProjectSlug,
@@ -57,10 +59,18 @@ func webhookToManagementItem(webhook store.Webhook) webhookManagementItem {
 		RegisteredByUserID:       webhook.RegisteredByUserID,
 		RegisteredByStableUserID: webhook.RegisteredByUserPublicID,
 		RegisteredByName:         webhook.RegisteredByUserName,
-		URL:                      webhook.URL,
+		DestinationRedacted:      webhook.DestinationRedacted,
 		Events:                   webhook.Events,
 		CreatedAt:                webhook.CreatedAt,
 	}
+	if webhook.DestinationRedacted {
+		preview := webhook.DestinationPreview
+		item.DestinationPreview = &preview
+	} else {
+		fullURL := webhook.URL
+		item.URL = &fullURL
+	}
+	return item
 }
 
 func (a *Adapter) webhookToolRequester(ctx context.Context, tool string) (int64, *adapterError) {

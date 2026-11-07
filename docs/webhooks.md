@@ -22,7 +22,7 @@ When an event fires, Scrumboy delivers a JSON body asynchronously. Delivery is b
 | **Auth** | REST uses the existing session-cookie contract. MCP accepts its existing authenticated session, API-token, or OAuth principal. |
 | **CSRF** | Mutating calls need header `X-Scrumboy: 1`, like other mutating `/api/*` requests. |
 
-`GET /api/webhooks` remains an owner-only compatibility view. REST create remains self-owned and retains its existing body and response. MCP listing lets an owner inspect only its own subscriptions even after membership removal. REST and MCP deletion let an owner remove its own subscription; a current project Maintainer may also remove a service-owned subscription on that project, but not another human's subscription.
+`GET /api/webhooks` remains an owner-only compatibility view. REST create remains self-owned and retains its existing body and response. REST deletion is owner-only. MCP listing lets an owner inspect only its own subscriptions even after membership removal, and MCP deletion additionally lets a current project Maintainer remove a service-owned subscription on that project, but not another human's subscription.
 
 Delivery authorization is continuous, not a one-time grant at creation. A human-owned subscription is eligible only while its owner remains a Maintainer (or valid legacy Owner). A service-owned subscription is eligible while its owner remains an explicit Viewer, Contributor, or Maintainer. The same predicate is applied before enqueue and immediately before every send attempt. The registering actor's later role and the service owner's API-token state do not authorize delivery.
 
@@ -58,8 +58,8 @@ The exact MCP tool names are `webhooks_create`, `webhooks_list`, and `webhooks_d
 | Tool | Inputs | Authorization and output |
 | --- | --- | --- |
 | `webhooks_create` | `projectSlug`, `url`, `events`, optional write-only `secret`, optional `serviceAccountUserId` | Current project Maintainer. Omitting the owner makes the authenticated actor the owner. An explicit owner must be a genuine service account with an explicit Viewer-or-higher membership on the same project. Returns `webhook` metadata without the secret. |
-| `webhooks_list` | `projectSlug`, optional `limit` (default 20, max 100), optional `cursor` | Project Maintainers receive the project management view; other subscription owners receive only their own subscriptions, including after membership removal. Returns owner classification, nullable registrar provenance, URL, events, and creation time without the secret. |
-| `webhooks_delete` | `projectSlug`, `webhookId` | The owner, or a current project Maintainer when the owner is a service account. Repeated deletion returns `NOT_FOUND`. Returns only deletion status and identifiers. |
+| `webhooks_list` | `projectSlug`, optional `limit` (default 20, max 100), optional `cursor` | Project Maintainers receive the project management view; other subscription owners receive only their own subscriptions, including after membership removal. Owners receive their complete URL. Cross-owner rows omit `url` and instead contain a host-level `destinationPreview` plus `destinationRedacted: true`; arbitrary userinfo, path, query, and fragment values are not disclosed. Returns owner classification, nullable registrar provenance, events, and creation time without the signing secret. |
+| `webhooks_delete` | `projectSlug`, `webhookId` | The owner, or a current project Maintainer when the owner is a service account. This delegated permission is MCP-only; REST deletion remains owner-only. Repeated deletion returns `NOT_FOUND`. Returns only deletion status and identifiers. |
 
 Example delegated registration:
 
@@ -67,7 +67,7 @@ Example delegated registration:
 {"tool":"webhooks_create","input":{"projectSlug":"release","url":"https://example.com/scrumboy-hook","events":["todo.assigned"],"secret":"write-only","serviceAccountUserId":42}}
 ```
 
-The safe result identifies the subscription owner with numeric and stable user IDs, `ownerIsService`, and registrar provenance. Neither MCP transport returns `secret`.
+The safe result identifies the subscription owner with numeric and stable user IDs, `ownerIsService`, and registrar provenance. The immediate creation response may include the complete URL because the creating actor supplied it. Later cross-owner listings redact it as described above. Neither MCP transport returns `secret`.
 
 Registration authority and delivery authority remain separate. A service Viewer or Contributor cannot register a webhook, including for itself; a service Maintainer can self-register. System Owner/Admin roles do not bypass project membership or Maintainer authority.
 

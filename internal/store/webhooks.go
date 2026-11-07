@@ -31,6 +31,8 @@ type Webhook struct {
 	RegisteredByUserPublicID *string   `json:"registeredByUserPublicId,omitempty"`
 	RegisteredByUserName     *string   `json:"registeredByUserName,omitempty"`
 	URL                      string    `json:"url"`
+	DestinationPreview       string    `json:"destinationPreview,omitempty"`
+	DestinationRedacted      bool      `json:"destinationRedacted,omitempty"`
 	Events                   []string  `json:"events"`
 	CreatedAt                time.Time `json:"createdAt"`
 	// Secret is never returned in list/get responses.
@@ -314,6 +316,11 @@ func (s *Store) ListProjectWebhooks(ctx context.Context, actorUserID, projectID 
 			value := registeredByName.String
 			item.RegisteredByUserName = &value
 		}
+		if item.UserID != actorUserID {
+			item.DestinationPreview = redactedWebhookDestination(item.URL)
+			item.DestinationRedacted = true
+			item.URL = ""
+		}
 		item.CreatedAt = time.UnixMilli(createdAtMs).UTC()
 		items = append(items, item)
 	}
@@ -409,45 +416,53 @@ func (s *Store) GetWebhookDeliveryTarget(ctx context.Context, webhookID int64) (
 }
 
 func (s *Store) DeleteWebhook(ctx context.Context, userID, webhookID int64) error {
-	return s.deleteWebhook(ctx, userID, 0, webhookID)
-}
-
-func (s *Store) DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error {
-	if projectID <= 0 {
-		return fmt.Errorf("%w: invalid project id", ErrValidation)
-	}
-	return s.deleteWebhook(ctx, actorUserID, projectID, webhookID)
-}
-
-func (s *Store) deleteWebhook(ctx context.Context, actorUserID, expectedProjectID, webhookID int64) error {
-	if actorUserID <= 0 || webhookID <= 0 {
+	if userID <= 0 || webhookID <= 0 {
 		return fmt.Errorf("%w: invalid webhook deletion identity", ErrValidation)
 	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("begin delete webhook: %w", err)
+		return fmt.Errorf("begin owner webhook deletion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := webhookUserTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	target, err := webhookDeletionTargetTx(ctx, tx, webhookID)
+	if err != nil {
+		return err
+	}
+	if target.OwnerUserID != userID {
+		return ErrNotFound
+	}
+	if err := deleteWebhookRowTx(ctx, tx, webhookID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit owner webhook deletion: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error {
+	if actorUserID <= 0 || projectID <= 0 || webhookID <= 0 {
+		return fmt.Errorf("%w: invalid managed webhook deletion identity", ErrValidation)
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin managed webhook deletion: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := webhookUserTx(ctx, tx, actorUserID); err != nil {
 		return err
 	}
-	var projectID, ownerUserID int64
-	var ownerIsService bool
-	if err := tx.QueryRowContext(ctx, `
-		SELECT w.project_id, w.user_id, u.is_service <> 0
-		FROM webhooks w
-		JOIN users u ON u.id = w.user_id
-		WHERE w.id = ?
-	`, webhookID).Scan(&projectID, &ownerUserID, &ownerIsService); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		return fmt.Errorf("get webhook for deletion: %w", err)
+	target, err := webhookDeletionTargetTx(ctx, tx, webhookID)
+	if err != nil {
+		return err
 	}
-	if expectedProjectID > 0 && projectID != expectedProjectID {
+	if target.ProjectID != projectID {
 		return ErrNotFound
 	}
-	if actorUserID != ownerUserID {
+	if actorUserID != target.OwnerUserID {
 		actorRole, roleErr := webhookExplicitProjectRoleTx(ctx, tx, projectID, actorUserID)
 		if roleErr != nil {
 			return roleErr
@@ -455,10 +470,42 @@ func (s *Store) deleteWebhook(ctx context.Context, actorUserID, expectedProjectI
 		if !actorRole.HasMinimumRole(RoleViewer) {
 			return ErrNotFound
 		}
-		if !ownerIsService || !actorRole.HasMinimumRole(RoleMaintainer) {
+		if !target.OwnerIsService || !actorRole.HasMinimumRole(RoleMaintainer) {
 			return ErrForbidden
 		}
 	}
+	if err := deleteWebhookRowTx(ctx, tx, webhookID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit managed webhook deletion: %w", err)
+	}
+	return nil
+}
+
+type webhookDeletionTarget struct {
+	ProjectID      int64
+	OwnerUserID    int64
+	OwnerIsService bool
+}
+
+func webhookDeletionTargetTx(ctx context.Context, tx *sql.Tx, webhookID int64) (webhookDeletionTarget, error) {
+	var target webhookDeletionTarget
+	if err := tx.QueryRowContext(ctx, `
+		SELECT w.project_id, w.user_id, u.is_service <> 0
+		FROM webhooks w
+		JOIN users u ON u.id = w.user_id
+		WHERE w.id = ?
+	`, webhookID).Scan(&target.ProjectID, &target.OwnerUserID, &target.OwnerIsService); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return webhookDeletionTarget{}, ErrNotFound
+		}
+		return webhookDeletionTarget{}, fmt.Errorf("get webhook for deletion: %w", err)
+	}
+	return target, nil
+}
+
+func deleteWebhookRowTx(ctx context.Context, tx *sql.Tx, webhookID int64) error {
 	res, err := tx.ExecContext(ctx, `DELETE FROM webhooks WHERE id = ?`, webhookID)
 	if err != nil {
 		return fmt.Errorf("delete webhook: %w", err)
@@ -469,10 +516,15 @@ func (s *Store) deleteWebhook(ctx context.Context, actorUserID, expectedProjectI
 		}
 		return ErrNotFound
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit delete webhook: %w", err)
-	}
 	return nil
+}
+
+func redactedWebhookDestination(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "<redacted>"
+	}
+	return u.Scheme + "://" + u.Host + "/<redacted>"
 }
 
 // parseWebhookURL is fail-fast syntax/literal-IP checking. Delivery still

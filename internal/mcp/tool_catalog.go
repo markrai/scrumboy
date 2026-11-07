@@ -603,7 +603,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"webhooks_list": {
 			Name:        "webhooks_list",
-			Description: "List a bounded page of non-secret webhook metadata for one project. Maintainers can inspect the project subscriptions; other owners can inspect only their own, including after membership removal.",
+			Description: "List a bounded page of non-secret webhook metadata for one project. Owners receive their complete destination; cross-owner Maintainer rows contain only an explicitly redacted destination preview.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"projectSlug": jsonProp("string", "Project identifier (slug)"),
 				"limit":       jsonPropWithNull("integer", "Maximum results to return (default 20, max 100)"),
