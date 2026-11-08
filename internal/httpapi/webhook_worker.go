@@ -81,7 +81,7 @@ func isPermanentWebhookError(err error) bool {
 func sendWebhook(client *http.Client, d webhookDelivery) error {
 	req, err := http.NewRequest(http.MethodPost, d.URL, bytes.NewReader(d.Body))
 	if err != nil {
-		return err
+		return &safeWebhookDeliveryError{cause: err}
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("X-Scrumboy-Event", d.EventType)
@@ -96,7 +96,7 @@ func sendWebhook(client *http.Client, d webhookDelivery) error {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return &safeWebhookDeliveryError{cause: err}
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -104,6 +104,16 @@ func sendWebhook(client *http.Client, d webhookDelivery) error {
 	}
 	return &webhookHTTPError{StatusCode: resp.StatusCode}
 }
+
+// safeWebhookDeliveryError keeps request URLs (including userinfo, path and
+// query credentials) out of worker logs while preserving errors.Is/As for the
+// existing SSRF and redirect classifications.
+type safeWebhookDeliveryError struct {
+	cause error
+}
+
+func (e *safeWebhookDeliveryError) Error() string { return "webhook request failed" }
+func (e *safeWebhookDeliveryError) Unwrap() error { return e.cause }
 
 type webhookHTTPError struct {
 	StatusCode int

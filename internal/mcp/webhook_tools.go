@@ -16,6 +16,7 @@ type webhookCreateInput struct {
 	Events               []string `json:"events"`
 	Secret               *string  `json:"secret"`
 	ServiceAccountUserID *int64   `json:"serviceAccountUserId"`
+	DeliveryMode         string   `json:"deliveryMode"`
 }
 
 type webhookListInput struct {
@@ -44,6 +45,7 @@ type webhookManagementItem struct {
 	DestinationPreview       *string   `json:"destinationPreview,omitempty"`
 	DestinationRedacted      bool      `json:"destinationRedacted"`
 	Events                   []string  `json:"events"`
+	DeliveryMode             string    `json:"deliveryMode"`
 	CreatedAt                time.Time `json:"createdAt"`
 }
 
@@ -61,6 +63,7 @@ func webhookToManagementItem(webhook store.Webhook) webhookManagementItem {
 		RegisteredByName:         webhook.RegisteredByUserName,
 		DestinationRedacted:      webhook.DestinationRedacted,
 		Events:                   webhook.Events,
+		DeliveryMode:             webhook.DeliveryMode,
 		CreatedAt:                webhook.CreatedAt,
 	}
 	if webhook.DestinationRedacted {
@@ -145,6 +148,7 @@ func (a *Adapter) handleWebhooksCreate(ctx context.Context, input any) (any, map
 		Events:             in.Events,
 		Secret:             in.Secret,
 		ServiceOwnerUserID: in.ServiceAccountUserID,
+		DeliveryMode:       in.DeliveryMode,
 	})
 	if err != nil {
 		return nil, nil, mapStoreError(err)

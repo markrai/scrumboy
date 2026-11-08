@@ -8,7 +8,7 @@ Webhooks are **not**:
 - Background **Web Push** (VAPID / PWA)
 - Live board updates — those continue over **SSE** as usual
 
-When an event fires, Scrumboy delivers a JSON body asynchronously. Delivery is best-effort inside the Scrumboy process; it is not a durable external message queue.
+When an event fires, Scrumboy delivers a JSON body asynchronously. Subscriptions remain best-effort by default. A subscription explicitly created with `deliveryMode: "durable"` can durably retry `todo.created` through the main SQLite database; no other event type is durable in this first slice.
 
 ---
 
@@ -44,12 +44,13 @@ Delivery authorization is continuous, not a one-time grant at creation. A human-
 | `url` | Yes | Absolute `http` or `https` URL with a host |
 | `events` | Yes | 1–50 non-empty event type strings (each ≤ 100 characters) |
 | `secret` | No | Shared secret for HMAC signing (omitted from list/create **response** JSON) |
+| `deliveryMode` | No | `best_effort` (default) or `durable`. Durable currently requires every subscribed event to be exactly `todo.created`; `*` and all other types are rejected. |
 
 Limits enforced by the server include a maximum of **20** webhooks per project.
 
 Authorization, the project limit, insertion, and registration provenance are checked on the same transaction. The registrar is stored separately from the owner; deleting a distinct registrar clears that provenance reference without deleting the subscription.
 
-Create responses return `id`, `projectId`, `url`, `events`, and `createdAt` — never the secret.
+Create responses return `id`, `projectId`, `url`, `events`, `deliveryMode`, and `createdAt` — never the secret. Existing subscriptions and requests that omit `deliveryMode` are `best_effort`.
 
 ### MCP management
 
@@ -57,7 +58,7 @@ The exact MCP tool names are `webhooks_create`, `webhooks_list`, and `webhooks_d
 
 | Tool | Inputs | Authorization and output |
 | --- | --- | --- |
-| `webhooks_create` | `projectSlug`, `url`, `events`, optional write-only `secret`, optional `serviceAccountUserId` | Current project Maintainer. Omitting the owner makes the authenticated actor the owner. An explicit owner must be a genuine service account with an explicit Viewer-or-higher membership on the same project. Returns `webhook` metadata without the secret. |
+| `webhooks_create` | `projectSlug`, `url`, `events`, optional write-only `secret`, optional `serviceAccountUserId`, optional `deliveryMode` | Current project Maintainer. Omitting the owner makes the authenticated actor the owner. An explicit owner must be a genuine service account with an explicit Viewer-or-higher membership on the same project. Omitting the mode preserves best-effort behavior. Returns `webhook` metadata without the secret. |
 | `webhooks_list` | `projectSlug`, optional `limit` (default 20, max 100), optional `cursor` | Project Maintainers receive the project management view; other subscription owners receive only their own subscriptions, including after membership removal. Owners receive their complete URL. Cross-owner rows omit `url` and instead contain a host-level `destinationPreview` plus `destinationRedacted: true`; arbitrary userinfo, path, query, and fragment values are not disclosed. Returns owner classification, nullable registrar provenance, events, and creation time without the signing secret. |
 | `webhooks_delete` | `projectSlug`, `webhookId` | The owner, or a current project Maintainer when the owner is a service account. This delegated permission is MCP-only; REST deletion remains owner-only. Repeated deletion returns `NOT_FOUND`. Returns only deletion status and identifiers. |
 
@@ -84,7 +85,7 @@ curl -b cookies.txt -X POST http://localhost:8080/api/webhooks \
 
 ## Event subscriptions
 
-Subscribe to **specific** event type strings (for example `todo.assigned`), or use `*` to match **all** event types that Scrumboy delivers as webhooks.
+Best-effort subscriptions may subscribe to **specific** event type strings (for example `todo.assigned`), or use `*` to match **all** event types that Scrumboy delivers as webhooks. Durable subscriptions are currently restricted to `todo.created` and reject `*` or any other type at registration.
 
 Matching is exact string equality, or `*`:
 
@@ -113,7 +114,7 @@ Common payload fields: `projectId`, `projectSlug`, `todoId`, `localId`, `title`,
 
 - **Stable ids:** integer user ids are kept for compatibility, but SQLite can reuse them after a user is deleted. Key any external account link on `actorStableUserId` / `assigneeStableUserId` (the same value as `stableUserId` from the MCP `me_get` tool).
 - **No duplicates:** a no-op update or same-column reorder emits nothing, and an assignee-only change is delivered as `todo.assigned` only (not also as `todo.updated`). Creating a todo that already has an assignee emits both `todo.created` and `todo.assigned`.
-- **Not guaranteed:** delivery stays best-effort (in-memory queue); see [Delivery and retry behavior](#delivery-and-retry-behavior).
+- **Default:** delivery stays best-effort (in-memory queue). Only an explicitly durable `todo.created` subscription uses SQLite recovery; see [Delivery and retry behavior](#delivery-and-retry-behavior).
 - Internal events such as `board.refresh_needed` are still never delivered.
 - **`todo.due_soon`** is emitted by a background scheduler, not by a mutation: once per due date, when a todo's `dueAt` falls within the configured lead time (default 24 hours; `GET/PUT/DELETE /api/admin/settings/due-reminder`, `0` disables). Changing `dueAt` starts a new cycle. Todos in a done column, archived todos, temporary boards, and todos whose due date had already passed when first seen never emit it. Delivery is at most once per due date; a reminder missed during downtime is not replayed. Changing only `dueAt` also reports `due` in `todo.updated`'s `changedFields`.
 
@@ -191,6 +192,8 @@ These controls reduce SSRF risk from webhook URLs. They also mean **LAN-only or 
 
 ## Delivery and retry behavior
 
+### Default best-effort mode
+
 Delivery is **asynchronous** and **best-effort**:
 
 1. After an event is published, a dispatcher matches project subscriptions and enqueues work (without blocking SSE).
@@ -204,6 +207,21 @@ Delivery is **asynchronous** and **best-effort**:
 Because authorization is revalidated at send time, an event queued while a subscription was eligible is dropped if membership, account, or subscription state is revoked before the HTTP request begins. Scrumboy does not attempt to cancel a request that was already in flight when revocation occurred.
 
 For a delegated service subscription, removing the service owner makes the row inert; re-adding it resumes only future events. Deleting the service owner or project cascades the subscription away. Removing or deleting a distinct registrar leaves it in place, and revoking the service owner's API token does not affect signing-secret delivery. Missed events are not replayed.
+
+### Opt-in durable `todo.created` mode
+
+For `deliveryMode: "durable"`, the dispatcher uses the same event matching and enqueue-time authorization predicate, serializes the same canonical body, and inserts one `webhook_deliveries` row for each webhook/event pair. The event ID is the unique retry identity. A persistence error is logged with safe identifiers and is never routed through the in-memory queue.
+
+The durable worker:
+
+1. Claims a bounded due batch in a short SQLite transaction using a lease token and expiry, then commits before any network request.
+2. Re-reads the current destination and signing secret and rechecks current owner membership. It uses the same SSRF-safe client, redirect refusal, request headers, and HMAC over the exact stored body bytes as best-effort delivery.
+3. Marks 2xx complete. Transient network/non-2xx failures return to pending with a future retry time; SSRF/redirect failures and exhausted attempts are terminal. Status rows retain only a bounded error class and optional HTTP status, never an error string, URL, secret, or payload diagnostic.
+4. Reclaims an abandoned lease after expiry. A state update must match the current lease token, so a stale worker cannot acknowledge or retry a newer claim. This is intentionally at-least-once: a receiver may process an event before Scrumboy records the 2xx, so receivers must deduplicate on the unchanged event ID.
+
+Membership revocation advances an authorization generation on the subscription. Pending work captures the prior generation and is skipped permanently, including after the owner is re-added; only events admitted under the new generation can be sent. Service Viewer/Contributor/Maintainer and human Maintainer/legacy Owner eligibility otherwise remains unchanged. Owner, webhook, and project deletion cascade pending work away. Registrar role changes and service-token revocation do not revoke an eligible delegated subscription.
+
+Durability begins only at the `webhook_deliveries` commit. Todo creation first commits its own mutation, then calls the lifecycle publisher; the event bus assigns the event ID/time and synchronously invokes the dispatcher, which starts asynchronous admission. A crash after the todo commit but before publication, or after publication but before the delivery-row commit, can still lose the webhook. This is a post-commit durable queue, not a mutation-atomic transactional outbox.
 
 ---
 

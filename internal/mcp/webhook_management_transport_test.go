@@ -25,13 +25,16 @@ func TestMCPWebhookManagementAcrossTransports(t *testing.T) {
 			const signingSecret = "transport-only-signing-secret"
 			resp, out := callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "webhooks_create", map[string]any{
 				"projectSlug": fx.project.Slug, "url": "https://example.com/delegated", "events": []string{"todo.created"},
-				"secret": signingSecret, "serviceAccountUserId": serviceAccount.ID,
+				"secret": signingSecret, "serviceAccountUserId": serviceAccount.ID, "deliveryMode": store.WebhookDeliveryDurable,
 			})
 			data := serviceAdminMCPData(t, transport, resp, out)
 			webhook := data["webhook"].(map[string]any)
 			webhookID := int64(webhook["webhookId"].(float64))
 			if int64(webhook["ownerUserId"].(float64)) != serviceAccount.ID || webhook["ownerIsService"] != true || int64(webhook["registeredByUserId"].(float64)) != fx.owner.ID {
 				t.Fatal("delegated ownership projection is incorrect")
+			}
+			if webhook["deliveryMode"] != store.WebhookDeliveryDurable {
+				t.Fatalf("durable MCP deliveryMode=%v", webhook["deliveryMode"])
 			}
 			serialized, err := json.Marshal(out)
 			if err != nil {
@@ -44,7 +47,16 @@ func TestMCPWebhookManagementAcrossTransports(t *testing.T) {
 			resp, out = callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "webhooks_create", map[string]any{
 				"projectSlug": fx.project.Slug, "url": "https://example.com/self", "events": []string{"*"},
 			})
-			serviceAdminMCPData(t, transport, resp, out)
+			legacyData := serviceAdminMCPData(t, transport, resp, out)
+			legacyWebhook := legacyData["webhook"].(map[string]any)
+			if legacyWebhook["deliveryMode"] != store.WebhookDeliveryBestEffort {
+				t.Fatalf("omitted MCP deliveryMode=%v", legacyWebhook["deliveryMode"])
+			}
+
+			resp, out = callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "webhooks_create", map[string]any{
+				"projectSlug": fx.project.Slug, "url": "https://example.com/rejected", "events": []string{"*"}, "deliveryMode": store.WebhookDeliveryDurable,
+			})
+			assertTodoLinkMCPError(t, transport, resp, out, http.StatusBadRequest, "VALIDATION_ERROR", "validation: durable delivery currently supports only todo.created")
 
 			resp, out = callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "webhooks_list", map[string]any{
 				"projectSlug": fx.project.Slug, "limit": 1,

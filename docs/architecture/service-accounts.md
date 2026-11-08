@@ -355,7 +355,7 @@ Delivery requires the owner to be a Maintainer, so a bot that only needs events 
 
 1. Add `webhooks.registered_by_user_id`, recording the actor separately from the owner.
 2. A project Maintainer may register a subscription **owned by a service account that is a member of that project**, at any role.
-3. Delivery eligibility becomes: a human owner must be a Maintainer (unchanged), a service-account owner must be a member at Viewer or above. A Viewer can already read what events contain, so this grants nothing new.
+3. Delivery eligibility becomes: a human owner must be a Maintainer (unchanged), a service-account owner must be a member at Viewer or above. A Viewer can already read what events contain, so this grants nothing new. Durable `todo.created` delivery applies this same predicate and binds pending rows to an authorization generation.
 4. Both enqueue-time and send-time checks keep applying, in `ListWebhooksByProject` and `GetWebhookDeliveryTarget`.
 5. A service Maintainer may register for itself. A service account below Maintainer cannot register anything.
 6. Maintainers may delete subscriptions owned by a service account on their project. The REST owner-delete contract remains owner-only.
@@ -376,7 +376,7 @@ Registration authority and delivery authority are separate. Registration is chec
 |---|---|---|
 | The registering Maintainer loses the role, leaves, or is deleted | Stays. `registered_by_user_id` is cleared on account deletion | Continues. The owner's membership authorizes delivery, and other Maintainers can delete the subscription |
 | The service owner's role changes, staying at Viewer or above | Stays | Continues |
-| The service owner is removed from the project | Stays, inert | Stops at the next enqueue or send check. A request already being dialled may complete. Missed events are not replayed. Re-adding the account resumes delivery, the same as a human owner today |
+| The service owner is removed from the project | Stays, inert; its authorization generation advances | Stops at the next admission or send check. A request already being dialled may complete. Re-adding the account resumes future delivery; durable rows admitted under the old generation remain permanently ineligible |
 | The service owner's account is deleted | Cascades away | Stops |
 | The service owner's API token is revoked | Stays | Continues. Delivery uses the signing secret and the owner's membership, and never a token |
 | The project is deleted | Cascades away | Stops |
@@ -384,7 +384,7 @@ Registration authority and delivery authority are separate. Registration is chec
 
 ## 14. Migration, compatibility, and rollback
 
-**Forward:** migrations 080 and 081 add the identity column and protective triggers. Migration 080 carries the column, the identity CHECK, and 14 triggers; migration 081 carries the two `project_members` owner-role triggers. Every existing row becomes a human account, and existing data is not rewritten. Migration 082 adds nullable issuer and archive-classification columns, so existing tokens remain valid without a backfill and legacy archive provenance remains unknown rather than guessed. Migration 083 adds the dedicated append-only instance stream. Migration 084 adds nullable webhook registration provenance and leaves every existing subscription unchanged with unknown provenance. Databases already upgraded through 081 receive all later additions through ordinary forward migration.
+**Forward:** migrations 080 and 081 add the identity column and protective triggers. Migration 080 carries the column, the identity CHECK, and 14 triggers; migration 081 carries the two `project_members` owner-role triggers. Every existing row becomes a human account, and existing data is not rewritten. Migration 082 adds nullable issuer and archive-classification columns, so existing tokens remain valid without a backfill and legacy archive provenance remains unknown rather than guessed. Migration 083 adds the dedicated append-only instance stream. Migration 084 adds nullable webhook registration provenance and leaves every existing subscription unchanged with unknown provenance. Migration 085 adds the defaulted `best_effort` mode, authorization generation, and durable delivery table; existing subscriptions are not opted in. Databases already upgraded through 081 receive all later additions through ordinary forward migration.
 
 **`recover-owner`** deliberately runs without migrating, on any schema from migration 049. `RecoverOwnerPassword` checks whether the column exists and does not reference it on older databases.
 

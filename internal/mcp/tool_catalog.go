@@ -599,6 +599,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 				"events":               jsonStringArrayProp("Event types or * wildcard", 1),
 				"secret":               jsonPropWithNull("string", "Optional HMAC-SHA256 signing secret; write-only"),
 				"serviceAccountUserId": jsonPropWithNull("integer", "Optional service-account owner user ID; must be an explicit member of this project"),
+				"deliveryMode":         jsonPropWithNull("string", "Optional delivery mode: best_effort (default) or durable; durable currently supports only todo.created"),
 			}, []string{"projectSlug", "url", "events"}),
 		},
 		"webhooks_list": {

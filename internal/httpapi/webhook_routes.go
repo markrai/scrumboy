@@ -23,19 +23,21 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request, rest []s
 	// POST /api/webhooks — create subscription
 	if len(rest) == 0 && r.Method == http.MethodPost {
 		var in struct {
-			ProjectID int64    `json:"projectId"`
-			URL       string   `json:"url"`
-			Events    []string `json:"events"`
-			Secret    *string  `json:"secret"`
+			ProjectID    int64    `json:"projectId"`
+			URL          string   `json:"url"`
+			Events       []string `json:"events"`
+			Secret       *string  `json:"secret"`
+			DeliveryMode string   `json:"deliveryMode"`
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
 			return
 		}
 		wh, err := s.store.CreateWebhook(ctx, userID, store.CreateWebhookInput{
-			ProjectID: in.ProjectID,
-			URL:       in.URL,
-			Events:    in.Events,
-			Secret:    in.Secret,
+			ProjectID:    in.ProjectID,
+			URL:          in.URL,
+			Events:       in.Events,
+			Secret:       in.Secret,
+			DeliveryMode: in.DeliveryMode,
 		})
 		if err != nil {
 			writeStoreErr(w, err, true)
@@ -79,19 +81,21 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request, rest []s
 }
 
 type webhookJSON struct {
-	ID        int64     `json:"id"`
-	ProjectID int64     `json:"projectId"`
-	URL       string    `json:"url"`
-	Events    []string  `json:"events"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           int64     `json:"id"`
+	ProjectID    int64     `json:"projectId"`
+	URL          string    `json:"url"`
+	Events       []string  `json:"events"`
+	DeliveryMode string    `json:"deliveryMode"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 func webhookToJSON(wh store.Webhook) webhookJSON {
 	return webhookJSON{
-		ID:        wh.ID,
-		ProjectID: wh.ProjectID,
-		URL:       wh.URL,
-		Events:    wh.Events,
-		CreatedAt: wh.CreatedAt,
+		ID:           wh.ID,
+		ProjectID:    wh.ProjectID,
+		URL:          wh.URL,
+		Events:       wh.Events,
+		DeliveryMode: wh.DeliveryMode,
+		CreatedAt:    wh.CreatedAt,
 	}
 }

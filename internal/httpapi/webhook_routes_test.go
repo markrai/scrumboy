@@ -32,6 +32,9 @@ func TestWebhookRESTCreateListDeleteCompatibilityAndAuthoritativeAuthorization(t
 	if _, present := created["secret"]; present {
 		t.Fatal("REST webhook create exposed the signing secret")
 	}
+	if created["deliveryMode"] != store.WebhookDeliveryBestEffort {
+		t.Fatalf("omitted REST deliveryMode=%v", created["deliveryMode"])
+	}
 	webhookID := int64(created["id"].(float64))
 	var listed []map[string]any
 	resp, _ = doJSON(t, ownerClient, http.MethodGet, ts.URL+"/api/webhooks", nil, &listed)
@@ -43,6 +46,24 @@ func TestWebhookRESTCreateListDeleteCompatibilityAndAuthoritativeAuthorization(t
 	}
 	if _, present := listed[0]["secret"]; present {
 		t.Fatal("REST webhook list exposed the signing secret")
+	}
+	if listed[0]["deliveryMode"] != store.WebhookDeliveryBestEffort {
+		t.Fatalf("listed REST deliveryMode=%v", listed[0]["deliveryMode"])
+	}
+
+	var durable map[string]any
+	resp, _ = doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/webhooks", map[string]any{
+		"projectId": project.ID, "url": "https://example.com/durable", "events": []string{"todo.created"}, "deliveryMode": store.WebhookDeliveryDurable,
+	}, &durable)
+	if resp.StatusCode != http.StatusCreated || durable["deliveryMode"] != store.WebhookDeliveryDurable {
+		t.Fatalf("durable REST create status=%d body=%v", resp.StatusCode, durable)
+	}
+	durableID := int64(durable["id"].(float64))
+	resp, _ = doJSON(t, ownerClient, http.MethodPost, ts.URL+"/api/webhooks", map[string]any{
+		"projectId": project.ID, "url": "https://example.com/rejected-durable", "events": []string{"*"}, "deliveryMode": store.WebhookDeliveryDurable,
+	}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("durable wildcard REST create status=%d want=400", resp.StatusCode)
 	}
 
 	viewer, err := st.CreateUser(context.Background(), "webhook-rest-viewer@example.com", "password123", "Viewer")
@@ -74,6 +95,10 @@ func TestWebhookRESTCreateListDeleteCompatibilityAndAuthoritativeAuthorization(t
 	resp, _ = doJSON(t, ownerClient, http.MethodDelete, fmt.Sprintf("%s/api/webhooks/%d", ts.URL, webhookID), nil, nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("repeated REST webhook delete status=%d want=404", resp.StatusCode)
+	}
+	resp, _ = doJSON(t, ownerClient, http.MethodDelete, fmt.Sprintf("%s/api/webhooks/%d", ts.URL, durableID), nil, nil)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("durable REST webhook delete status=%d", resp.StatusCode)
 	}
 }
 
