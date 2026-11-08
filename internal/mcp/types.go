@@ -197,6 +197,7 @@ type projectMemberItem struct {
 	Name        string    `json:"name"`
 	Image       *string   `json:"image,omitempty"`
 	Role        string    `json:"role"`
+	IsService   bool      `json:"isService"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -222,6 +223,7 @@ type availableUserItem struct {
 	SystemRole  string    `json:"systemRole"`
 	IsBootstrap bool      `json:"isBootstrap"`
 	CreatedAt   time.Time `json:"createdAt"`
+	IsService   bool      `json:"isService"`
 }
 
 type activeSprintInfoItem struct {
@@ -337,6 +339,7 @@ type adminUserItem struct {
 	SystemRole  string    `json:"systemRole"`
 	IsBootstrap bool      `json:"isBootstrap"`
 	CreatedAt   time.Time `json:"createdAt"`
+	IsService   bool      `json:"isService"`
 }
 
 type customFieldItem struct {

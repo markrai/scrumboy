@@ -217,7 +217,7 @@ func (s *Store) insertTrelloDurableProjectRow(ctx context.Context, tx *sql.Tx, n
 			if strings.Contains(err.Error(), "UNIQUE constraint failed: projects.slug") {
 				continue
 			}
-			return 0, Project{}, fmt.Errorf("insert Trello project: %w", err)
+			return 0, Project{}, wrapIdentityWriteErr("insert Trello project", err)
 		}
 		projectID, err = res.LastInsertId()
 		if err != nil {
@@ -283,7 +283,7 @@ func (s *Store) insertTrelloTemporaryProjectRow(ctx context.Context, tx *sql.Tx,
 			if strings.Contains(err.Error(), "UNIQUE constraint failed: projects.slug") {
 				continue
 			}
-			return 0, Project{}, fmt.Errorf("insert Trello temporary board: %w", err)
+			return 0, Project{}, wrapIdentityWriteErr("insert Trello temporary board", err)
 		}
 		projectID, err = res.LastInsertId()
 		if err != nil {

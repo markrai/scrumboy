@@ -62,24 +62,26 @@ func (s *Store) getProjectRoleTx(ctx context.Context, tx *sql.Tx, projectID, use
 	return ProjectRole(role), nil
 }
 
-// EnsureMaintainerMembership ensures a project has a maintainer membership for the given user
+// EnsureMaintainerMembership ensures a project has a maintainer membership for the given user. It is
+// an implicit grant with no requester to authorize it, so it does nothing for a service account.
 func (s *Store) EnsureMaintainerMembership(ctx context.Context, projectID int64, userID int64) error {
 	nowMs := time.Now().UTC().UnixMilli()
 	_, err := s.db.ExecContext(ctx, `
 		INSERT OR IGNORE INTO project_members (project_id, user_id, role, created_at)
-		VALUES (?, ?, ?, ?)
-	`, projectID, userID, RoleMaintainer, nowMs)
+		SELECT ?, ?, ?, ?
+		WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = ? AND is_service <> 0)
+	`, projectID, userID, RoleMaintainer, nowMs, userID)
 	if err != nil {
 		return fmt.Errorf("ensure maintainer membership: %w", err)
 	}
 	return nil
 }
 
-// countMaintainers returns the number of members with Maintainer+ (maintainer or owner).
+// countMaintainersTx returns the number of members with Maintainer+ (maintainer or owner).
 // Used for the last-maintainer invariant: cannot remove if it would leave zero.
-func (s *Store) countMaintainers(ctx context.Context, projectID int64) (int, error) {
+func countMaintainersTx(ctx context.Context, tx *sql.Tx, projectID int64) (int, error) {
 	var count int
-	err := s.db.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM project_members 
 		WHERE project_id = ? AND role IN (?, ?)
 	`, projectID, RoleMaintainer, RoleOwner).Scan(&count)
@@ -89,6 +91,61 @@ func (s *Store) countMaintainers(ctx context.Context, projectID int64) (int, err
 	return count, nil
 }
 
+// rejectSoleMaintainerDeletionTx refuses to delete an account that holds the last Maintainer role on
+// a project that would survive. Deleting an account removes no project, so every durable project
+// counts. Temporary boards are excluded because their authority is their creator or link, not a
+// Maintainer row, and staged import rows because they are not projects yet. The error gives only a
+// count: the system Owner who sees it has no access to the projects themselves.
+func rejectSoleMaintainerDeletionTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	var count int
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM project_members pm
+		JOIN projects p ON p.id = pm.project_id
+		WHERE pm.user_id = ?
+		  AND pm.role IN (?, ?)
+		  AND p.expires_at IS NULL
+		  AND p.import_batch_id IS NULL
+		  AND NOT EXISTS (
+		    SELECT 1 FROM project_members other
+		    WHERE other.project_id = pm.project_id
+		      AND other.user_id <> pm.user_id
+		      AND other.role IN (?, ?)
+		  )
+	`, userID, RoleMaintainer, RoleOwner, RoleMaintainer, RoleOwner).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check sole maintainer: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: account is the sole maintainer of %d project(s); another maintainer must be added or the project deleted first", ErrConflict, count)
+	}
+	return nil
+}
+
+// rejectOwnedProjectDeletionTx refuses to delete an account that still owns
+// durable projects. projects.owner_user_id has no ON DELETE action, so without
+// this check the DELETE would fail with a raw FOREIGN KEY constraint error.
+// The error gives only a count, matching rejectSoleMaintainerDeletionTx: the
+// system Owner performing the deletion has no access to the projects
+// themselves and must not learn names, slugs, or IDs from the failure.
+func rejectOwnedProjectDeletionTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	var count int
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM projects p
+		WHERE p.owner_user_id = ?
+		  AND p.expires_at IS NULL
+		  AND p.import_batch_id IS NULL
+	`, userID).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check owned projects: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("%w: account owns %d project(s); transfer ownership or delete the project first", ErrConflict, count)
+	}
+	return nil
+}
+
 // ListProjectMembers returns all members of a project.
 // Requires userID to have Viewer+; returns ErrNotFound when access denied.
 func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID int64) ([]ProjectMember, error) {
@@ -96,7 +153,7 @@ func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID 
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT pm.user_id, u.email, u.name, u.image, pm.role, pm.created_at
+		SELECT pm.user_id, u.email, u.name, u.image, u.is_service <> 0, pm.role, pm.created_at
 		FROM project_members pm
 		JOIN users u ON pm.user_id = u.id
 		WHERE pm.project_id = ?
@@ -113,7 +170,7 @@ func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID 
 		var roleStr string
 		var image sql.NullString
 		var createdAtMs int64
-		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &image, &roleStr, &createdAtMs); err != nil {
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Name, &image, &m.IsService, &roleStr, &createdAtMs); err != nil {
 			return nil, fmt.Errorf("scan project member: %w", err)
 		}
 		if image.Valid {
@@ -131,20 +188,34 @@ func (s *Store) ListProjectMembers(ctx context.Context, projectID int64, userID 
 
 // AddProjectMember adds a user to a project with the specified role.
 // Authorization: Requester must have Maintainer+ in the project. No system-role override.
+// Every check reads the mutation's own transaction: this is the route by which a service account
+// receives project access, so a concurrently removed Maintainer must not be able to grant it.
 func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64, role ProjectRole) error {
-	// Validate project exists
-	_, err := s.getProject(ctx, projectID)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return err
+		return fmt.Errorf("begin add project member: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Validate project exists
+	var projectExists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM projects WHERE id = ? AND import_batch_id IS NULL)`, projectID).Scan(&projectExists); err != nil {
+		return fmt.Errorf("check project exists: %w", err)
+	}
+	if !projectExists {
+		return ErrNotFound
 	}
 
 	// Validate target user exists
-	_, err = s.GetUser(ctx, targetUserID)
-	if err != nil {
-		return err
+	var targetExists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)`, targetUserID).Scan(&targetExists); err != nil {
+		return fmt.Errorf("check target user exists: %w", err)
+	}
+	if !targetExists {
+		return ErrNotFound
 	}
 
-	requesterProjectRole, err := s.GetProjectRole(ctx, projectID, requesterID)
+	requesterProjectRole, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
 	if err != nil {
 		return err
 	}
@@ -155,7 +226,7 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 	}
 
 	// Check for duplicate membership
-	existingRole, err := s.GetProjectRole(ctx, projectID, targetUserID)
+	existingRole, err := s.getProjectRoleTx(ctx, tx, projectID, targetUserID)
 	if err != nil {
 		return err
 	}
@@ -163,19 +234,13 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 		return fmt.Errorf("%w: user is already a member", ErrConflict)
 	}
 
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("begin add project member: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
 	nowMs := time.Now().UTC().UnixMilli()
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO project_members (project_id, user_id, role, created_at)
 		VALUES (?, ?, ?, ?)
 	`, projectID, targetUserID, role, nowMs)
 	if err != nil {
-		return fmt.Errorf("add project member: %w", err)
+		return wrapIdentityWriteErr("add project member", err)
 	}
 
 	actorUserID := &requesterID
@@ -195,8 +260,14 @@ func (s *Store) AddProjectMember(ctx context.Context, requesterID, projectID, ta
 // Authorization: Requester must be project maintainer
 // Validation: Cannot remove last maintainer
 func (s *Store) RemoveProjectMember(ctx context.Context, requesterID, projectID, targetUserID int64) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin remove project member: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// Check requester has Maintainer+
-	requesterRole, err := s.GetProjectRole(ctx, projectID, requesterID)
+	requesterRole, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
 	if err != nil {
 		return err
 	}
@@ -205,7 +276,7 @@ func (s *Store) RemoveProjectMember(ctx context.Context, requesterID, projectID,
 	}
 
 	// Get target user's role
-	targetRole, err := s.GetProjectRole(ctx, projectID, targetUserID)
+	targetRole, err := s.getProjectRoleTx(ctx, tx, projectID, targetUserID)
 	if err != nil {
 		return err
 	}
@@ -215,7 +286,7 @@ func (s *Store) RemoveProjectMember(ctx context.Context, requesterID, projectID,
 
 	// If removing Maintainer or Owner, ensure it's not the last one
 	if targetRole.HasMinimumRole(RoleMaintainer) {
-		count, err := s.countMaintainers(ctx, projectID)
+		count, err := countMaintainersTx(ctx, tx, projectID)
 		if err != nil {
 			return err
 		}
@@ -223,12 +294,6 @@ func (s *Store) RemoveProjectMember(ctx context.Context, requesterID, projectID,
 			return fmt.Errorf("%w: cannot remove last maintainer", ErrValidation)
 		}
 	}
-
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("begin remove project member: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id
@@ -314,8 +379,14 @@ func (s *Store) RemoveProjectMember(ctx context.Context, requesterID, projectID,
 // Authorization: requester must be Maintainer+. Validations: target must be member;
 // no self-demotion to contributor or viewer; cannot demote the last maintainer to contributor or viewer.
 func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projectID, targetUserID int64, newRole ProjectRole) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin update project member role: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	// 1. Requester must be Maintainer+
-	requesterRole, err := s.GetProjectRole(ctx, projectID, requesterID)
+	requesterRole, err := s.getProjectRoleTx(ctx, tx, projectID, requesterID)
 	if err != nil {
 		return err
 	}
@@ -330,7 +401,7 @@ func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projec
 	}
 
 	// 3. Target must be a member
-	currentRole, err := s.GetProjectRole(ctx, projectID, targetUserID)
+	currentRole, err := s.getProjectRoleTx(ctx, tx, projectID, targetUserID)
 	if err != nil {
 		return err
 	}
@@ -351,7 +422,7 @@ func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projec
 
 	// 6. Last-maintainer protection (cannot demote last maintainer to contributor or viewer)
 	if currentRole.HasMinimumRole(RoleMaintainer) && (role == "contributor" || role == "viewer") {
-		count, err := s.countMaintainers(ctx, projectID)
+		count, err := countMaintainersTx(ctx, tx, projectID)
 		if err != nil {
 			return err
 		}
@@ -359,12 +430,6 @@ func (s *Store) UpdateProjectMemberRole(ctx context.Context, requesterID, projec
 			return fmt.Errorf("%w: cannot demote the last maintainer", ErrConflict)
 		}
 	}
-
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("begin update project member role: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.ExecContext(ctx, `
 		UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?
@@ -407,7 +472,7 @@ func (s *Store) ListAvailableUsersForProject(ctx context.Context, requesterID, p
 
 	// Get all users excluding current project members
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, email, name, is_bootstrap, system_role, created_at
+		SELECT id, email, name, is_bootstrap, system_role, created_at, is_service <> 0
 		FROM users
 		WHERE id NOT IN (
 			SELECT user_id FROM project_members WHERE project_id = ?
@@ -425,15 +490,11 @@ func (s *Store) ListAvailableUsersForProject(ctx context.Context, requesterID, p
 		var isBootstrap bool
 		var systemRoleStr string
 		var createdAt int64
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &u.IsService); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		u.IsBootstrap = isBootstrap
-		if r, ok := ParseSystemRole(systemRoleStr); ok {
-			u.SystemRole = r
-		} else {
-			u.SystemRole = SystemRoleUser
-		}
+		u.SystemRole = effectiveSystemRole(systemRoleStr, u.IsService)
 		u.CreatedAt = time.UnixMilli(createdAt).UTC()
 		users = append(users, u)
 	}

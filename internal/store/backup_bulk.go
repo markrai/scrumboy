@@ -518,7 +518,7 @@ func bulkUpsertTags(ctx context.Context, tx *sql.Tx, projectID int64, tags []Tag
 	if !ok {
 		// For anonymous/pre-bootstrap, try to get first user
 		var firstUserID int64
-		if err := tx.QueryRowContext(ctx, `SELECT id FROM users LIMIT 1`).Scan(&firstUserID); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE is_service = 0 LIMIT 1`).Scan(&firstUserID); err != nil {
 			// No users - return empty map (tags will be skipped)
 			return make(map[string]int64), nil
 		}

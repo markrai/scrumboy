@@ -122,6 +122,7 @@ func (a *Adapter) handleMembersList(ctx context.Context, input any) (any, map[st
 			Name:        m.Name,
 			Image:       m.Image,
 			Role:        normalizeProjectMemberRoleForMCP(string(m.Role)),
+			IsService:   m.IsService,
 			CreatedAt:   m.CreatedAt,
 		})
 	}
@@ -181,6 +182,7 @@ func (a *Adapter) handleMembersListAvailable(ctx context.Context, input any) (an
 			SystemRole:  string(u.SystemRole),
 			IsBootstrap: u.IsBootstrap,
 			CreatedAt:   u.CreatedAt,
+			IsService:   u.IsService,
 		})
 	}
 
@@ -249,6 +251,7 @@ func (a *Adapter) handleMembersAdd(ctx context.Context, input any) (any, map[str
 		Name:        member.Name,
 		Image:       member.Image,
 		Role:        normalizeProjectMemberRoleForMCP(string(member.Role)),
+		IsService:   member.IsService,
 		CreatedAt:   member.CreatedAt,
 	}
 
@@ -317,6 +320,7 @@ func (a *Adapter) handleMembersUpdateRole(ctx context.Context, input any) (any, 
 		Name:        member.Name,
 		Image:       member.Image,
 		Role:        normalizeProjectMemberRoleForMCP(string(member.Role)),
+		IsService:   member.IsService,
 		CreatedAt:   member.CreatedAt,
 	}
 

@@ -403,6 +403,9 @@ func TestAdminServiceTokenArchiveAfterUserDeletion(t *testing.T) {
 	if int64(origin["id"].(float64)) != botKeeperID || origin["email"] != "bot-keeper@example.com" || origin["name"] != "Bot Keeper" {
 		t.Fatalf("originUser = %v", origin)
 	}
+	if origin["isService"] != false {
+		t.Fatalf("originUser.isService = %v, want false", origin["isService"])
+	}
 	if archivedBy["email"] != "archive-owner@example.com" {
 		t.Fatalf("archivedBy = %v", archivedBy)
 	}

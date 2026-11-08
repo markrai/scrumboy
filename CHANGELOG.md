@@ -2,6 +2,60 @@
 
 > **Upgrades:** No breaking changes for **3.7.0 ≤ v ≤ 3.40.x** unless noted below. Notable upgrade impact: **3.22.0** (MCP/OAuth), **3.24.0** (MCP tool names), **3.26.0** (MCP project tags), **3.29.0** (MCP JSON-RPC error/`board_get` identity), **3.30.0** (reversible per-project sprint capability), **3.31.0** (per-project priority tiers), **3.33.0** (Agenda ICS feeds need `SCRUMBOY_ENCRYPTION_KEY`), **3.33.12** (webhook destinations must be publicly routable), **3.35.0** (backup format 1.2; Trello closed-card titles) - see those releases.
 
+## [3.40.6] - 2026-11-08
+
+### Added
+
+- **Service accounts with MCP provisioning and credential lifecycle (issue #319, slices 1-2)** -
+  Service identities are `users` rows with `is_service = 1` (migration 080):
+  they never authenticate interactively, hold no instance authority, and
+  reach projects only through explicit membership; interactive credential
+  paths exclude them, and the legacy `owner` member role can never be
+  assigned to them (migration 081). New MCP tools
+  `admin_createServiceAccount`, `admin_listServiceAccounts`,
+  `admin_deleteServiceAccount`, `admin_createServiceToken`,
+  `admin_listServiceTokens`, and `admin_revokeServiceToken`: only the system
+  Owner may mint credentials, while Admins may manage accounts but cannot
+  mint. Token provenance is recorded by migration 082, and setting
+  `SCRUMBOY_INSTANCE_AUDIT_ENABLED` opts in to a dedicated append-only
+  `instance_audit_events` stream (migration 083) that commits
+  transactionally with the mutation and never stores credential material.
+  Deleting an account refuses while it holds a sole surviving Maintainer
+  role, and revocation stops later authentication at commit. See
+  `docs/architecture/service-accounts.md` and `docs/mcp.md`.
+- **MCP webhook management with service-account delegation (issue #319, slice 3)** -
+  `webhooks_create`, `webhooks_list`, and `webhooks_delete` over both MCP
+  transports. A project Maintainer may register a webhook owned by an
+  explicitly assigned service-account member (Viewer or higher); registration
+  authority and delivery authority stay separate, and eligibility is
+  rechecked before enqueue and before every send attempt. Registrar
+  provenance is recorded by migration 084. A Maintainer may delete a
+  service-owned subscription over MCP; REST deletion stays owner-only. See
+  `docs/webhooks.md`.
+
+### Security
+
+- **Service-token issuance hardening** - The plaintext service-token secret
+  from `admin_createServiceToken` is delivered exactly once in the JSON-RPC
+  content text; `structuredContent` carries only metadata plus a
+  `tokenDelivery` pointer. Service-account creation/deletion and token
+  issuance/revocation write `instance_audit_events` (when enabled) from
+  every deletion path, keyed on stable public IDs; human-account deletions
+  emit no service events, and the stream never contains credential material.
+- **Webhook ownership enforcement and cross-owner destination redaction** -
+  REST webhook deletion is owner-only; the delegated Maintainer-may-delete
+  permission for service-owned subscriptions is MCP-only. `webhooks_list`
+  returns the complete destination URL only to its owner; cross-owner
+  Maintainer rows carry a host-level `destinationPreview` with
+  `destinationRedacted: true` and never disclose userinfo, path, query, or
+  fragment. See `API.md` and `docs/webhooks.md`.
+
+### Fixed
+
+- **Todo-dialog focus theft** - The deferred focus frame no longer pulls
+  focus away from a dialog field the user already chose; it only applies
+  when focus is still on the dialog or its Close button.
+
 ## [3.40.5] - 2026-11-04
 
 ### Security

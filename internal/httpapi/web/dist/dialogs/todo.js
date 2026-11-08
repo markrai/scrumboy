@@ -840,6 +840,14 @@ export async function openTodoDialog(opts) {
         if (userChoseFocus) {
             return;
         }
+        const focusedField = document.activeElement;
+        // The frame can run late under load, after focus already moved into a
+        // dialog field. Never pull focus away from a field the user chose;
+        // showModal leaves focus on the dialog itself or the Close button when
+        // nothing was chosen yet.
+        if (focusedField && focusedField !== todoDialog && focusedField.id !== "closeTodoBtn" && todoDialog?.contains(focusedField)) {
+            return;
+        }
         if (window.matchMedia("(pointer: coarse)").matches) {
             closeTodoBtn?.focus();
             return;

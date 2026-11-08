@@ -29,7 +29,8 @@ type Config struct {
 	// LandingPageEnabled is the independent presentation gate for a future
 	// Full Mode landing page. Phase 1 only propagates the value; routing is
 	// unchanged. It defaults off.
-	LandingPageEnabled bool
+	LandingPageEnabled   bool
+	InstanceAuditEnabled bool
 
 	// TwoFactorEncryptionKey is a base64-encoded 32-byte key for AES-256-GCM encryption of TOTP secrets.
 	// Set via SCRUMBOY_ENCRYPTION_KEY. Generate with: openssl rand -base64 32
@@ -153,6 +154,7 @@ func FromEnv() Config {
 		ScrumboyMode:          mode,
 		PublicProjectsEnabled: optInFeatureEnabledFromEnv("SCRUMBOY_PUBLIC_PROJECTS_ENABLED"),
 		LandingPageEnabled:    optInFeatureEnabledFromEnv("SCRUMBOY_LANDING_PAGE_ENABLED"),
+		InstanceAuditEnabled:  optInFeatureEnabledFromEnv("SCRUMBOY_INSTANCE_AUDIT_ENABLED"),
 		// Trim whitespace so keys from .env / copy-paste decode (base64 is sensitive to newlines).
 		TwoFactorEncryptionKey: strings.TrimSpace(os.Getenv("SCRUMBOY_ENCRYPTION_KEY")),
 

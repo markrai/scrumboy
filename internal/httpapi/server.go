@@ -1159,6 +1159,7 @@ func (s *Server) requestContext(r *http.Request) context.Context {
 		return ctx
 	}
 	ctx = store.WithUserID(ctx, u.ID)
+	ctx = store.WithServiceIdentity(ctx, u.ID, u.IsService)
 	ctx = store.WithUserEmail(ctx, u.Email)
 	ctx = store.WithUserName(ctx, u.Name)
 	return ctx

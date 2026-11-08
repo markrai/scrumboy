@@ -8,7 +8,13 @@ const (
 	ctxKeyUserID ctxKey = iota
 	ctxKeyUserEmail
 	ctxKeyUserName
+	ctxKeyServiceIdentity
 )
+
+type serviceIdentity struct {
+	userID    int64
+	isService bool
+}
 
 // These helpers define the current transport-to-store actor envelope.
 // HTTP requestContext() and MCP resolveRequestAuth() populate them after
@@ -28,6 +34,22 @@ func WithUserEmail(ctx context.Context, email string) context.Context {
 // WithUserName attaches the authenticated user name to the context.
 func WithUserName(ctx context.Context, name string) context.Context {
 	return context.WithValue(ctx, ctxKeyUserName, name)
+}
+
+// WithServiceIdentity records the account type the transport read when it authenticated userID.
+// The type is immutable, so unlike a role it cannot go stale during a request.
+func WithServiceIdentity(ctx context.Context, userID int64, isService bool) context.Context {
+	return context.WithValue(ctx, ctxKeyServiceIdentity, serviceIdentity{userID: userID, isService: isService})
+}
+
+// ServiceIdentityFromContext reports the recorded account type of userID. ok is false when the
+// transport recorded none for that user, and callers must then read the users row.
+func ServiceIdentityFromContext(ctx context.Context, userID int64) (isService, ok bool) {
+	v, found := ctx.Value(ctxKeyServiceIdentity).(serviceIdentity)
+	if !found || v.userID != userID {
+		return false, false
+	}
+	return v.isService, true
 }
 
 // UserIDFromContext retrieves the ambient actor user id established by the

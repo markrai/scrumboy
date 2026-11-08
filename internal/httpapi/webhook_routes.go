@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -30,14 +29,6 @@ func (s *Server) handleWebhooks(w http.ResponseWriter, r *http.Request, rest []s
 			Secret    *string  `json:"secret"`
 		}
 		if err := readJSON(w, r, s.maxBody, &in); err != nil {
-			return
-		}
-		if err := s.store.CheckProjectRole(ctx, in.ProjectID, userID, store.RoleMaintainer); err != nil {
-			if errors.Is(err, store.ErrUnauthorized) {
-				writeError(w, http.StatusForbidden, "FORBIDDEN", "forbidden", nil)
-				return
-			}
-			writeStoreErr(w, err, true)
 			return
 		}
 		wh, err := s.store.CreateWebhook(ctx, userID, store.CreateWebhookInput{

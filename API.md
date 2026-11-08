@@ -323,9 +323,10 @@ Revoked tokens stay in the owning user's `GET /api/me/tokens` list with `revoked
 endpoint that removes them.
 
 `isService` (optional, default `false`; omitting it creates a personal token as before) marks a
-normal user-owned token for bot/automation use. It is not a service account: while its user exists,
-a service token authenticates as that user with exactly that user's permissions, like any other
-token. The flag only changes what is kept when the user is deleted (REST `DELETE
+normal human-owned token for bot/automation lifecycle use. Despite the legacy field name, it does
+not make the human a service account: while the user exists, the token authenticates as that user
+with exactly that user's permissions, like any other token. Identity type comes only from
+`users.is_service`. The token flag only changes what is kept when the user is deleted (REST `DELETE
 /api/admin/users/{id}` or MCP `admin_deleteUser`). In the same transaction as the deletion:
 
 - the metadata of each of the user's service tokens, active or already revoked, is copied into the
@@ -348,8 +349,8 @@ curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
   -d '{"name":"Claude"}'
 ```
 
-Create a service token for unattended automation (e.g. a CI job), so its metadata survives if the
-minting user's account is later removed:
+Create a human-owned automation token (e.g. for a CI job), so its metadata survives if the
+owning human account is later removed:
 
 ```bash
 curl -b cookies.txt -X POST http://localhost:8080/api/me/tokens \
@@ -384,7 +385,8 @@ actions).
 `nextBefore`, which is `null` on the last page.
 
 Each item is `{ "id", "tokenId", "name?", "createdAt", "lastUsedAt?", "revokedAt", "revokedOnArchive",
-"originUser": { "id", "email", "name" }, "archivedAt", "archivedBy": { "id", "email" } }`:
+"originUser": { "id", "email", "name", "isService?" }, "createdByUserId?", "createdByStableUserId?",
+"archivedAt", "archivedBy": { "id", "email" } }`:
 
 - `id` is the archive record's own id (and the pagination cursor).
 - `tokenId` is the historical id of the deleted token. It is not a credential; token ids are never
@@ -397,6 +399,11 @@ Each item is `{ "id", "tokenId", "name?", "createdAt", "lastUsedAt?", "revokedAt
   snapshots taken at deletion time. User ids can be reused after an account is deleted, so the
   recorded `id` may now belong to a different account. Identify people by the recorded
   email and name, never by looking the id up among current users.
+- `originUser.isService` is `true` for a genuine service identity and `false` for a human-owned
+  automation token. It is absent for legacy archive rows whose identity provenance is unknown.
+- `createdByStableUserId` is the durable issuer snapshot when one is available.
+  `createdByUserId` may be absent after the issuer is deleted and must not be resolved as a durable
+  identity key.
 
 **Personal data and retention.** Archive records contain identifying information: the deleted
 user's name and email and the deleting owner's email. These remain after both accounts are deleted,
@@ -468,7 +475,7 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **system**
 
 - `system_getCapabilities` - Server mode, auth snapshot, identity/pagination hints, full tool list.
-- `me_get` - The user the current credential (session, API token, or OAuth access token) authenticates as, including a permanent `stableUserId`.
+- `me_get` - The user the current credential (session, API token, or OAuth access token) authenticates as, including a permanent `stableUserId`, `isService`, and `canCreateProjects`.
 
 **projects**
 
@@ -490,6 +497,14 @@ Grouped by domain. All are listed in `implementedTools` from capabilities.
 **admin**
 
 - `admin_listUsers`, `admin_updateUserRole`, `admin_deleteUser` - System-level user management (owner/admin system role, not project role).
+- `admin_createServiceAccount`, `admin_listServiceAccounts`, `admin_deleteServiceAccount` - Service-identity lifecycle with per-tool Owner/Admin authorization.
+- `admin_createServiceToken`, `admin_listServiceTokens`, `admin_revokeServiceToken` - One-time credential issuance and metadata-only discovery/revocation. See [the MCP permission matrix and examples](docs/mcp.md#available-tools).
+
+**webhooks**
+
+- `webhooks_create` - Maintainer registration for self or an explicit service-account project member.
+- `webhooks_list` - Bounded project-scoped management metadata with cross-owner destination redaction.
+- `webhooks_delete` - Owner deletion, plus MCP-only Maintainer deletion of service-owned subscriptions.
 
 **todos**
 
@@ -546,7 +561,7 @@ Conventions:
 
 - **Purpose:** Tell an external client which user a credential belongs to (for example, to link a bot or integration to a Scrumboy account).
 - **Input:** `{}`
-- **Output:** `data` with `userId`, `stableUserId`, `email`, `name`.
+- **Output:** `data` with `userId`, `stableUserId`, `email`, `name`, `isService`, and `canCreateProjects`. Service identities always report `canCreateProjects: false`.
 - **Linking external accounts:** store `stableUserId`, not `userId`. `userId` is the internal integer key, and SQLite may reuse it for a different user after the original is deleted. `stableUserId` is a random UUID assigned once when the user is created (existing users were backfilled by migration 076) and never changed or reused.
 - **Identity is instance-scoped:** key a stored link on the pair (Scrumboy server's canonical origin, `stableUserId`), not on `stableUserId` alone. Use the origin the integration was configured with (the server's canonical public origin, `SCRUMBOY_PUBLIC_BASE_URL` when set, scheme + host + port) — never one taken from request headers such as `Host` or `X-Forwarded-*`.
   - A `stableUserId` stays the same for the whole lifetime of the account on that server.
@@ -566,6 +581,13 @@ Conventions:
 - **`projects_create`:** `name` (required). Custom workflow columns are not set through this tool; use the `workflow_*` tools afterward. The creating user becomes **maintainer**. Output: `data.project` (same shape as a `projects_list` item).
 - **`projects_update`:** `projectSlug`, `patch` (object). Only fields present in `patch` are changed: `name` (string), `defaultSprintWeeks` (integer, `1` or `2`). Neither field accepts `null`. **Maintainer+** required. Output: `data.project`.
 - **`projects_delete`:** `projectSlug`. **Maintainer+** required. Anonymous temporary boards cannot be deleted this way (`NOT_FOUND`, matching the store's existence-hiding behavior). Output: `data` with `status: "deleted"`, `projectSlug`, `projectId`.
+
+### `webhooks_create`, `webhooks_list`, `webhooks_delete`
+
+- **`webhooks_create`:** `projectSlug`, `url`, and `events` are required. `secret` is optional and write-only. Omit `serviceAccountUserId` for self-ownership; when supplied it must identify a genuine service account with explicit Viewer-or-higher membership on the same project. The actor must be a current project Maintainer, including when a service Maintainer self-registers. Returns `data.webhook` without the signing secret.
+- **`webhooks_list`:** `projectSlug` plus optional `limit` (default 20, max 100) and `cursor`. Maintainers receive the project management view; another subscription owner receives only owned subscriptions, including after membership removal. An owner receives its complete `url`. A different Maintainer receives no `url`; the row instead provides a host-level `destinationPreview` and `destinationRedacted: true`, excluding caller-supplied userinfo, path, query, and fragment values. Results retain owner classification and stable ID, nullable registrar provenance, events, and creation time, never the signing secret. Pagination uses legacy `meta` or JSON-RPC `structuredContent`.
+- **`webhooks_delete`:** `projectSlug` and `webhookId`. The owner may delete its subscription. Through MCP only, a current project Maintainer may delete a service-owned subscription, but not another human's subscription solely by role. REST `DELETE /api/webhooks/{id}` remains owner-only. Repeated or inaccessible deletion returns `NOT_FOUND`.
+- **Delivery:** human owners require current Maintainer/legacy Owner membership; service owners require current explicit Viewer, Contributor, or Maintainer membership. Eligibility is rechecked before enqueue and before every send attempt. Registrar membership and service-token revocation do not affect delivery. Signing, SSRF filtering, retries, payloads, and best-effort delivery remain as documented in [docs/webhooks.md](docs/webhooks.md).
 
 ### `board_get`
 
@@ -842,9 +864,15 @@ System-level user management, gated by **system role** (owner/admin), not projec
 
 | Tool | Input | Output |
 |------|-------|--------|
-| `admin_listUsers` | `{}` | `data.items` - all users (`userId`, `email`, `name`, `systemRole`, `isBootstrap`, `createdAt`); requires **owner or admin** |
+| `admin_listUsers` | `{}` | `data.items` - all users (`userId`, `email`, `name`, `systemRole`, `isBootstrap`, `isService`, `createdAt`); requires **owner or admin** |
 | `admin_updateUserRole` | `userId`, `role` (`admin` \| `user` only) | `data.user` (updated); requires **owner**. Promotion to `owner` is not exposed through this tool, matching the REST admin API. Demoting the last owner → `VALIDATION_ERROR` |
 | `admin_deleteUser` | `userId` | `data` with `status: "deleted"`, `userId`; requires **owner**. Self-deletion and deleting the last owner → `VALIDATION_ERROR` |
+| `admin_createServiceAccount` | `name` | `data.account` with `userId`, `stableUserId`, `name`, `isService`, `createdAt`; requires **owner or admin** and issues no credential |
+| `admin_listServiceAccounts` | optional `limit`, `cursor` | `data.items`, bounded to service identities only; requires **owner or admin** |
+| `admin_deleteServiceAccount` | `userId` | `data` with `status: "deleted"`, `userId`; requires **owner**, refuses human targets and sole-Maintainer/owned-project conflicts |
+| `admin_createServiceToken` | `userId`, optional `name` | `data.token` with one-time `token` plus safe metadata; requires **owner** and a genuine service identity target |
+| `admin_listServiceTokens` | `userId`, optional `limit`, `cursor` | `data.items` with metadata only, never plaintext or hashes; requires **owner or admin** |
+| `admin_revokeServiceToken` | `tokenId` | `data` with `status: "revoked"`, `tokenId`; requires **owner or admin**, is idempotent, and never selects human-owned tokens |
 
 ---
 

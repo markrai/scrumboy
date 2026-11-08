@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,7 +83,7 @@ type adminMCPFixture struct {
 	userClient  *http.Client
 }
 
-func newAdminMCPFixture(t *testing.T, mode string, bootstrapped bool) *adminMCPFixture {
+func newAdminMCPFixture(t *testing.T, mode string, bootstrapped bool, instanceAuditEnabled ...bool) *adminMCPFixture {
 	t.Helper()
 	sqlDB, err := db.Open(filepath.Join(t.TempDir(), "app.db"), db.Options{
 		BusyTimeout: 5000,
@@ -96,7 +97,11 @@ func newAdminMCPFixture(t *testing.T, mode string, bootstrapped bool) *adminMCPF
 		_ = sqlDB.Close()
 		t.Fatalf("migrate: %v", err)
 	}
-	realStore := store.New(sqlDB, nil)
+	storeOptions := &store.StoreOptions{}
+	if len(instanceAuditEnabled) > 0 {
+		storeOptions.InstanceAuditEnabled = instanceAuditEnabled[0]
+	}
+	realStore := store.New(sqlDB, storeOptions)
 	spy := &adminMCPMutationStore{Store: realStore, getUserErrByID: map[int64]error{}}
 	adapter := mcp.New(spy, mcp.Options{Mode: mode})
 	srv := httpapi.NewServer(spy, httpapi.Options{
@@ -205,7 +210,7 @@ func TestMCPAdminUserMutationTransportProjectionAndRealtimeSilence(t *testing.T)
 				t.Fatalf("data keys=%v want=%v", got, want)
 			}
 			user := data["user"].(map[string]any)
-			if got, want := sortedMapKeys(user), []string{"createdAt", "email", "isBootstrap", "name", "systemRole", "userId"}; !reflect.DeepEqual(got, want) {
+			if got, want := sortedMapKeys(user), []string{"createdAt", "email", "isBootstrap", "isService", "name", "systemRole", "userId"}; !reflect.DeepEqual(got, want) {
 				t.Fatalf("user keys=%v want=%v user=%+v", got, want, user)
 			}
 			if int64(user["userId"].(float64)) != fx.user.ID || user["systemRole"] != "admin" {
@@ -501,14 +506,30 @@ func TestMCPAdminDeleteOwnedProjectFailureProjectionAndRollback(t *testing.T) {
 			if err != nil {
 				t.Fatalf("create owned project: %v", err)
 			}
+			if err := fx.store.AddProjectMember(store.WithUserID(context.Background(), owner2.ID), owner2.ID, project.ID, fx.owner.ID, store.RoleMaintainer); err != nil {
+				t.Fatalf("add second maintainer: %v", err)
+			}
+			if _, _, err := fx.store.CreateSession(context.Background(), owner2.ID, time.Hour); err != nil {
+				t.Fatalf("create session: %v", err)
+			}
 			resp, out := callTodoUpdateMCP(t, fx.ownerClient, fx.ts.URL, transport, "admin_deleteUser", map[string]any{"userId": owner2.ID})
-			publicErr := assertTodoLinkMCPError(t, transport, resp, out, 500, "INTERNAL", "internal error")
+			publicErr := assertTodoLinkMCPError(t, transport, resp, out, 409, "CONFLICT", "conflict: account owns 1 project(s); transfer ownership or delete the project first")
 			assertEmptyTodoLinkMCPDetails(t, publicErr)
+			if msg, _ := publicErr["message"].(string); strings.Contains(msg, project.Name) || strings.Contains(msg, project.Slug) || strings.Contains(msg, "FOREIGN KEY") {
+				t.Fatalf("owned-project conflict discloses internals: %+v", publicErr)
+			}
 			if _, err := fx.store.GetUser(context.Background(), owner2.ID); err != nil {
 				t.Fatalf("user missing after failed delete: %v", err)
 			}
 			if _, err := fx.store.GetProject(context.Background(), project.ID); err != nil {
 				t.Fatalf("project missing after failed delete: %v", err)
+			}
+			var sessions int
+			if err := fx.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = ?`, owner2.ID).Scan(&sessions); err != nil {
+				t.Fatalf("count sessions: %v", err)
+			}
+			if sessions == 0 {
+				t.Fatal("session cascade was not rolled back with failed owned-project delete")
 			}
 			if fx.spy.deleteCalls != 1 {
 				t.Fatalf("delete calls=%d want 1", fx.spy.deleteCalls)

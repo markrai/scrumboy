@@ -44,7 +44,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"me_get": {
 			Name:        "me_get",
-			Description: "Return the user the current credential authenticates as (userId, email, name). Requires sign-in.",
+			Description: "Return the identity the current credential authenticates as, including service classification and project-creation capability. Requires sign-in.",
 			InputSchema: jsonSchema("object", map[string]any{}, nil),
 		},
 		"projects_list": {
@@ -64,7 +64,7 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 		},
 		"projects_create": {
 			Name:        "projects_create",
-			Description: "Create a new project. The creating user becomes maintainer. Custom workflow columns are not set here; use the workflow_* tools afterward.",
+			Description: "Create a new project as a human identity. Service accounts cannot create projects. The creating user becomes maintainer. Custom workflow columns are not set here; use the workflow_* tools afterward.",
 			InputSchema: jsonSchema("object", map[string]any{
 				"name": jsonProp("string", "Project name"),
 			}, []string{"name"}),
@@ -543,6 +543,80 @@ func toolCatalogDefinitions() map[string]mcpToolDef {
 			InputSchema: jsonSchema("object", map[string]any{
 				"userId": jsonProp("integer", "User ID"),
 			}, []string{"userId"}),
+		},
+		"admin_createServiceAccount": {
+			Name:        "admin_createServiceAccount",
+			Description: "Create a non-interactive service account without issuing a credential. Requires the owner or admin system role.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"name": jsonProp("string", "Service account display name"),
+			}, []string{"name"}),
+		},
+		"admin_listServiceAccounts": {
+			Name:        "admin_listServiceAccounts",
+			Description: "List a bounded page of service accounts. Requires the owner or admin system role.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"limit":  jsonPropWithNull("integer", "Maximum results to return (default 20, max 100)"),
+				"cursor": jsonPropWithNull("string", "Pagination cursor from a previous call"),
+			}, nil),
+		},
+		"admin_deleteServiceAccount": {
+			Name:        "admin_deleteServiceAccount",
+			Description: "Delete a service account and all remaining credentials. Requires the owner system role and refuses human targets or deletion that would strand a durable project.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"userId": jsonProp("integer", "Service account user ID"),
+			}, []string{"userId"}),
+		},
+		"admin_createServiceToken": {
+			Name:        "admin_createServiceToken",
+			Description: "Issue a service-account credential. Requires the owner system role. The plaintext token is returned only by this successful call.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"userId": jsonProp("integer", "Service account user ID"),
+				"name":   jsonPropWithNull("string", "Optional credential name"),
+			}, []string{"userId"}),
+		},
+		"admin_listServiceTokens": {
+			Name:        "admin_listServiceTokens",
+			Description: "List bounded, non-secret credential metadata for a service account. Requires the owner or admin system role.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"userId": jsonProp("integer", "Service account user ID"),
+				"limit":  jsonPropWithNull("integer", "Maximum results to return (default 20, max 100)"),
+				"cursor": jsonPropWithNull("string", "Pagination cursor from a previous call"),
+			}, []string{"userId"}),
+		},
+		"admin_revokeServiceToken": {
+			Name:        "admin_revokeServiceToken",
+			Description: "Revoke a service-account credential by token ID. Requires the owner or admin system role and is idempotent for an already-revoked credential.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"tokenId": jsonProp("integer", "Service credential token ID"),
+			}, []string{"tokenId"}),
+		},
+		"webhooks_create": {
+			Name:        "webhooks_create",
+			Description: "Create a webhook as a current project Maintainer. Omit serviceAccountUserId for self-ownership, or specify an explicit service-account member as owner. Signing secrets are accepted but never returned.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug":          jsonProp("string", "Project identifier (slug)"),
+				"url":                  jsonProp("string", "HTTPS or HTTP destination URL accepted by webhook destination security policy"),
+				"events":               jsonStringArrayProp("Event types or * wildcard", 1),
+				"secret":               jsonPropWithNull("string", "Optional HMAC-SHA256 signing secret; write-only"),
+				"serviceAccountUserId": jsonPropWithNull("integer", "Optional service-account owner user ID; must be an explicit member of this project"),
+			}, []string{"projectSlug", "url", "events"}),
+		},
+		"webhooks_list": {
+			Name:        "webhooks_list",
+			Description: "List a bounded page of non-secret webhook metadata for one project. Owners receive their complete destination; cross-owner Maintainer rows contain only an explicitly redacted destination preview.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"limit":       jsonPropWithNull("integer", "Maximum results to return (default 20, max 100)"),
+				"cursor":      jsonPropWithNull("string", "Pagination cursor from a previous call"),
+			}, []string{"projectSlug"}),
+		},
+		"webhooks_delete": {
+			Name:        "webhooks_delete",
+			Description: "Delete an owned webhook, or delete a service-owned webhook as a current project Maintainer. Maintainers cannot delete another human's webhook.",
+			InputSchema: jsonSchema("object", map[string]any{
+				"projectSlug": jsonProp("string", "Project identifier (slug)"),
+				"webhookId":   jsonProp("integer", "Webhook subscription ID"),
+			}, []string{"projectSlug", "webhookId"}),
 		},
 	}
 }

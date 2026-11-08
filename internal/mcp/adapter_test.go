@@ -490,6 +490,9 @@ func TestMCPSystemGetCapabilities_FullPreBootstrap(t *testing.T) {
 		"dashboard_getSummary", "dashboard_listTodos",
 		"metrics_getBurndown", "metrics_getBacklogSize",
 		"admin_listUsers", "admin_updateUserRole", "admin_deleteUser",
+		"admin_createServiceAccount", "admin_listServiceAccounts", "admin_deleteServiceAccount",
+		"admin_createServiceToken", "admin_listServiceTokens", "admin_revokeServiceToken",
+		"webhooks_create", "webhooks_list", "webhooks_delete",
 	}
 	if len(tools) != len(wantTools) {
 		t.Fatalf("unexpected implementedTools: %#v", tools)

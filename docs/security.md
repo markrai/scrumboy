@@ -7,8 +7,8 @@ Vulnerability **disclosure** (how to report a bug privately) lives in the root `
 
 | Field                    | Value                                      |
 | ------------------------ | ------------------------------------------ |
-| **Last verified commit** | `92d3a9a921b72709a854bc93b065bbbefe78d235` |
-| **Last verified date**   | 2026-07-21                                 |
+| **Historical verification baseline** | Commit `92d3a9a921b72709a854bc93b065bbbefe78d235`, verified 2026-07-21 (documentation audit; preserved as history) |
+| **Current branch state**   | Reviewed locally against the working branch; no branch-level CI results were available, so no CI qualification is claimed |
 
 
 Security depends on correct deployment and configuration (HTTPS, secrets, IdP hardening, host access, backups). **No security document, badge, or clean scan guarantees the absence of vulnerabilities.** Scrumboy does not claim formal certification, an external penetration test, or compliance with a named regulatory framework unless separately evidenced outside this repository.
@@ -310,8 +310,8 @@ Assignee history uses a separate `todo_assignee_events` table (also append-orien
 
 ### Webhooks
 
-- Maintainers configure outbound HTTP URLs (`http`/`https` with a host). Optional shared secret produces `X-Scrumboy-Signature` (`sha256=` HMAC of the body).
-- Before every send attempt, Scrumboy reloads the subscription and requires its owner account to still exist and still hold Maintainer access to the project. This check also applies to previously queued events; missing/deleted/demoted records and authorization-check failures make no outbound request.
+- Maintainers configure outbound HTTP URLs (`http`/`https` with a host). They may register for themselves or delegate ownership to an explicit service-account member. System roles do not bypass project Maintainer authority. Optional shared secret produces `X-Scrumboy-Signature` (`sha256=` HMAC of the body).
+- Before enqueue and every send attempt, Scrumboy reloads eligibility. Human owners require Maintainer/legacy Owner membership; service owners require an explicit Viewer, Contributor, or Maintainer membership. This check also applies to previously queued events; missing/deleted/demoted records and authorization-check failures make no outbound request. Registrar permissions and service API-token revocation do not authorize or stop delivery.
 - Delivery uses a small retry worker and timeouts; secrets are stored as configured (not hashed like session tokens) and omitted from list API responses.
 - Outbound delivery resolves the destination, refuses loopback/private/link-local/special-purpose addresses, and dials a vetted IP directly (the same classification used for Agenda ICS fetches). Redirects are not followed. `HTTP_PROXY`/`HTTPS_PROXY` are ignored for webhook delivery. Create-time URL checks reject literal unsafe hosts; **dial-time enforcement** is what protects already-stored URLs after upgrade.
 - Shutdown drains in-flight mail/webhook work as implemented in process lifecycle.

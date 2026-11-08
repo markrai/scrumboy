@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"scrumboy/internal/db"
 	"scrumboy/internal/eventbus"
@@ -365,18 +366,34 @@ func TestAdminUserMutationRESTDeleteOwnedProjectFailureProjectionAndRollback(t *
 	if err != nil {
 		t.Fatalf("create owned project: %v", err)
 	}
+	if err := fx.store.AddProjectMember(store.WithUserID(context.Background(), owner2.ID), owner2.ID, project.ID, fx.owner.ID, store.RoleMaintainer); err != nil {
+		t.Fatalf("add second maintainer: %v", err)
+	}
+	if _, _, err := fx.store.CreateSession(context.Background(), owner2.ID, time.Hour); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
 
 	resp, body := doJSON(t, fx.ownerClient, http.MethodDelete, fmt.Sprintf("%s/api/admin/users/%d", fx.ts.URL, owner2.ID), nil, nil)
-	got := assertAdminRESTError(t, resp, body, 500, "INTERNAL", "internal error")
-	detail, _ := got.Error.Details["detail"].(string)
-	if !strings.Contains(detail, "FOREIGN KEY constraint failed") {
-		t.Fatalf("details=%+v want foreign-key failure", got.Error.Details)
+	got := assertAdminRESTError(t, resp, body, 409, "CONFLICT", "conflict: account owns 1 project(s); transfer ownership or delete the project first")
+	if strings.Contains(string(body), project.Name) || strings.Contains(string(body), project.Slug) {
+		t.Fatalf("owned-project conflict discloses project details: %s", body)
 	}
+	if strings.Contains(string(body), "FOREIGN KEY") {
+		t.Fatalf("owned-project conflict leaks storage internals: %s", body)
+	}
+	_ = got
 	if _, err := fx.store.GetUser(context.Background(), owner2.ID); err != nil {
 		t.Fatalf("user missing after failed delete: %v", err)
 	}
 	if _, err := fx.store.GetProject(context.Background(), project.ID); err != nil {
 		t.Fatalf("project missing after failed delete: %v", err)
+	}
+	var sessions int
+	if err := fx.db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE user_id = ?`, owner2.ID).Scan(&sessions); err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	if sessions == 0 {
+		t.Fatal("session cascade was not rolled back with failed owned-project delete")
 	}
 	if fx.spy.deleteCalls != 1 || len(fx.collector.events) != 0 {
 		t.Fatalf("delete calls=%d events=%+v", fx.spy.deleteCalls, fx.collector.events)
@@ -426,7 +443,7 @@ func TestAdminUserMutationRESTCreationNormalizationAuthorityAndProjection(t *tes
 	if got, want := created["name"], "Created Name"; got != want {
 		t.Fatalf("created name=%v want=%v", got, want)
 	}
-	wantKeys := []string{"createdAt", "email", "hasLocalPassword", "id", "image", "isBootstrap", "name", "oidcLinked", "systemRole", "twoFactorEnabled"}
+	wantKeys := []string{"createdAt", "email", "hasLocalPassword", "id", "image", "isBootstrap", "isService", "name", "oidcLinked", "systemRole", "twoFactorEnabled"}
 	gotKeys := make([]string, 0, len(created))
 	for key := range created {
 		gotKeys = append(gotKeys, key)

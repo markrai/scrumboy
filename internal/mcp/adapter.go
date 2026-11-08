@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	boardapp "scrumboy/internal/application/board"
 	customfieldapp "scrumboy/internal/application/customfield"
@@ -31,6 +32,7 @@ type storeAPI interface {
 	GetUserBySessionToken(ctx context.Context, token string) (store.User, error)
 	GetUserByAPIToken(ctx context.Context, rawToken string) (store.User, error)
 	GetUserByOAuthAccessToken(ctx context.Context, rawToken, expectedResource string) (store.User, error)
+	GetProjectBySlug(ctx context.Context, slug string) (store.Project, error)
 	ListProjectSummaries(ctx context.Context, limit int, cursor *string) ([]store.ProjectSummary, *string, error)
 	projectapp.ProjectCreationStore
 	projectapp.ProjectAccessStore
@@ -85,6 +87,15 @@ type storeAPI interface {
 	GetRealBurndownForSprint(ctx context.Context, projectID, sprintID int64, mode store.Mode) ([]store.RealBurndownPoint, error)
 	GetBacklogSize(ctx context.Context, projectID int64, mode store.Mode) ([]store.BurndownPoint, error)
 	ListUsers(ctx context.Context, requesterID int64) ([]store.User, error)
+	CreateServiceAccount(ctx context.Context, requesterID int64, name string) (store.User, error)
+	ListServiceAccounts(ctx context.Context, requesterID int64, limit int, cursor *string) ([]store.User, *string, error)
+	DeleteServiceAccount(ctx context.Context, requesterID, targetUserID int64) error
+	CreateServiceAccountToken(ctx context.Context, requesterID, serviceUserID int64, name *string) (int64, string, time.Time, error)
+	ListServiceAccountTokens(ctx context.Context, requesterID, serviceUserID int64, limit int, beforeID int64) ([]store.APITokenMeta, *int64, error)
+	RevokeServiceAccountToken(ctx context.Context, requesterID, tokenID int64) error
+	CreateWebhook(ctx context.Context, actorUserID int64, input store.CreateWebhookInput) (store.Webhook, error)
+	ListProjectWebhooks(ctx context.Context, actorUserID, projectID int64, limit int, beforeID int64) ([]store.Webhook, *int64, error)
+	DeleteProjectWebhook(ctx context.Context, actorUserID, projectID, webhookID int64) error
 	GetUser(ctx context.Context, userID int64) (store.User, error)
 	useradminapp.UserRoleMutationStore
 	useradminapp.UserDeletionStore
@@ -408,6 +419,7 @@ func (a *Adapter) resolveRequestAuth(r *http.Request, allowOAuth bool) requestAu
 			return requestAuthResult{Ctx: ctx, Err: err}
 		}
 		ctx = store.WithUserID(ctx, u.ID)
+		ctx = store.WithServiceIdentity(ctx, u.ID, u.IsService)
 		ctx = store.WithUserEmail(ctx, u.Email)
 		ctx = store.WithUserName(ctx, u.Name)
 		return requestAuthResult{Ctx: ctx, Authenticated: true}
@@ -427,6 +439,7 @@ func (a *Adapter) resolveRequestAuth(r *http.Request, allowOAuth bool) requestAu
 	}
 
 	ctx = store.WithUserID(ctx, u.ID)
+	ctx = store.WithServiceIdentity(ctx, u.ID, u.IsService)
 	ctx = store.WithUserEmail(ctx, u.Email)
 	ctx = store.WithUserName(ctx, u.Name)
 	return requestAuthResult{Ctx: ctx, Authenticated: true, SessionCookie: true}
@@ -528,6 +541,15 @@ func (a *Adapter) implementedTools() []string {
 		"admin_listUsers",
 		"admin_updateUserRole",
 		"admin_deleteUser",
+		"admin_createServiceAccount",
+		"admin_listServiceAccounts",
+		"admin_deleteServiceAccount",
+		"admin_createServiceToken",
+		"admin_listServiceTokens",
+		"admin_revokeServiceToken",
+		"webhooks_create",
+		"webhooks_list",
+		"webhooks_delete",
 	}
 }
 

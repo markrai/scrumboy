@@ -57,7 +57,7 @@ func (s *Store) GetUser(ctx context.Context, userID int64) (User, error) {
 		twoFactorEnabled bool
 		image            sql.NullString
 	)
-	if err := s.db.QueryRowContext(ctx, `SELECT id, COALESCE(public_id, ''), email, name, image, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE id = ?`, userID).Scan(&u.ID, &u.PublicID, &u.Email, &u.Name, &image, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT id, COALESCE(public_id, ''), email, name, image, is_bootstrap, system_role, created_at, two_factor_enabled, is_service <> 0 FROM users WHERE id = ?`, userID).Scan(&u.ID, &u.PublicID, &u.Email, &u.Name, &image, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled, &u.IsService); err != nil {
 		if err == sql.ErrNoRows {
 			return User{}, ErrNotFound
 		}
@@ -67,13 +67,9 @@ func (s *Store) GetUser(ctx context.Context, userID int64) (User, error) {
 		u.Image = &image.String
 	}
 	u.IsBootstrap = isBootstrap
-	if role, ok := ParseSystemRole(systemRoleStr); ok {
-		u.SystemRole = role
-	} else {
-		u.SystemRole = SystemRoleUser // Default fallback
-	}
+	u.SystemRole = effectiveSystemRole(systemRoleStr, u.IsService)
 	u.CreatedAt = time.UnixMilli(createdAt).UTC()
-	u.TwoFactorEnabled = twoFactorEnabled
+	u.TwoFactorEnabled = twoFactorEnabled && !u.IsService
 	if err := s.populateUserAuthMethods(ctx, &u); err != nil {
 		return User{}, err
 	}
@@ -99,7 +95,7 @@ func (s *Store) UpdateUserImage(ctx context.Context, userID int64, image *string
 // GetUserPasswordHash returns the password hash for the given user.
 func (s *Store) GetUserPasswordHash(ctx context.Context, userID int64) (string, error) {
 	var hash sql.NullString
-	if err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ?`, userID).Scan(&hash); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT password_hash FROM users WHERE id = ? AND is_service = 0`, userID).Scan(&hash); err != nil {
 		if err == sql.ErrNoRows {
 			return "", ErrNotFound
 		}
@@ -120,7 +116,7 @@ func (s *Store) UpdateUserPassword(ctx context.Context, userID int64, newPasswor
 	if err != nil {
 		return fmt.Errorf("hash password: %w", err)
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ?`, string(hash), userID)
+	res, err := s.db.ExecContext(ctx, `UPDATE users SET password_hash = ? WHERE id = ? AND is_service = 0`, string(hash), userID)
 	if err != nil {
 		return fmt.Errorf("update user password: %w", err)
 	}
@@ -137,7 +133,7 @@ func (s *Store) BootstrapUser(ctx context.Context, email, password, name string)
 	email = normalizeEmail(email)
 	password = strings.TrimSpace(password)
 	name = strings.TrimSpace(name)
-	if email == "" || !strings.Contains(email, "@") {
+	if email == "" || !strings.Contains(email, "@") || isReservedServiceEmail(email) {
 		return User{}, fmt.Errorf("%w: invalid email", ErrValidation)
 	}
 	if err := auth.ValidatePassword(password); err != nil {
@@ -198,7 +194,7 @@ func (s *Store) AuthenticateUser(ctx context.Context, email, password string) (U
 		createdAtMs      int64
 		twoFactorEnabled bool
 	)
-	err := s.db.QueryRowContext(ctx, `SELECT id, email, name, password_hash, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE email = ?`, email).
+	err := s.db.QueryRowContext(ctx, `SELECT id, email, name, password_hash, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE email = ? AND is_service = 0`, email).
 		Scan(&u.ID, &u.Email, &u.Name, &pwHash, &isBootstrap, &systemRoleStr, &createdAtMs, &twoFactorEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -246,7 +242,7 @@ SET owner_user_id = ?
 WHERE owner_user_id IS NULL
   AND expires_at IS NULL
 `, userID); err != nil {
-		return fmt.Errorf("assign projects: %w", err)
+		return wrapIdentityWriteErr("assign projects", err)
 	}
 	// Also create maintainer memberships - again, only for durable projects
 	_, err = tx.ExecContext(ctx, `
@@ -311,7 +307,7 @@ WHERE id = ?
   AND creator_user_id = ?
 `, userID, nowMs, nowMs, projectID, nowMs, userID)
 	if err != nil {
-		return fmt.Errorf("claim temp board: %w", err)
+		return wrapIdentityWriteErr("claim temp board", err)
 	}
 	affected, err := res.RowsAffected()
 	if err != nil {
@@ -389,7 +385,7 @@ VALUES (?, ?, ?, ?, ?)`, userID, tokenHash, nowMs, expiresAt.UnixMilli(), nowMs)
 		if strings.Contains(err.Error(), "UNIQUE constraint failed: sessions.token_hash") {
 			return ErrConflict
 		}
-		return fmt.Errorf("insert session: %w", err)
+		return wrapIdentityWriteErr("insert session", err)
 	}
 	return nil
 }
@@ -441,6 +437,7 @@ FROM sessions s
 JOIN users u ON u.id = s.user_id
 WHERE s.token_hash = ?
   AND s.expires_at > ?
+  AND u.is_service = 0
 `, tokenHash, nowMs).Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -471,7 +468,7 @@ func (s *Store) CreateUser(ctx context.Context, email, password, name string) (U
 	email = normalizeEmail(email)
 	password = strings.TrimSpace(password)
 	name = strings.TrimSpace(name)
-	if email == "" || !strings.Contains(email, "@") {
+	if email == "" || !strings.Contains(email, "@") || isReservedServiceEmail(email) {
 		return User{}, fmt.Errorf("%w: invalid email", ErrValidation)
 	}
 	if err := auth.ValidatePassword(password); err != nil {
@@ -524,7 +521,7 @@ func (s *Store) ListUsers(ctx context.Context, requesterID int64) ([]User, error
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, email, name, is_bootstrap, system_role, created_at, two_factor_enabled, password_hash,
+SELECT id, email, name, is_bootstrap, system_role, created_at, two_factor_enabled, is_service <> 0, password_hash,
        EXISTS(SELECT 1 FROM user_oidc_identities WHERE user_id = users.id),
        CASE WHEN ? = '' THEN FALSE ELSE EXISTS(SELECT 1 FROM user_oidc_identities WHERE user_id = users.id AND issuer = ?) END
 FROM users ORDER BY created_at`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
@@ -540,15 +537,11 @@ FROM users ORDER BY created_at`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
 		var systemRoleStr string
 		var createdAt int64
 		var passwordHash sql.NullString
-		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &u.TwoFactorEnabled, &passwordHash, &u.HasAnyOIDCIdentity, &u.OIDCLinked); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.Name, &isBootstrap, &systemRoleStr, &createdAt, &u.TwoFactorEnabled, &u.IsService, &passwordHash, &u.HasAnyOIDCIdentity, &u.OIDCLinked); err != nil {
 			return nil, fmt.Errorf("scan user: %w", err)
 		}
 		u.IsBootstrap = isBootstrap
-		if role, ok := ParseSystemRole(systemRoleStr); ok {
-			u.SystemRole = role
-		} else {
-			u.SystemRole = SystemRoleUser
-		}
+		u.SystemRole = effectiveSystemRole(systemRoleStr, u.IsService)
 		u.CreatedAt = time.UnixMilli(createdAt).UTC()
 		u.HasLocalPassword = passwordHash.Valid && IsUsablePasswordHash(passwordHash.String)
 		users = append(users, u)
@@ -559,9 +552,18 @@ FROM users ORDER BY created_at`, s.configuredOIDCIssuer, s.configuredOIDCIssuer)
 	return users, nil
 }
 
-// DeleteUser deletes a user. Requires owner role, and prevents deletion of the last owner.
+// DeleteUser deletes a user. Requires owner role, and prevents deletion of the last owner or of the
+// last Maintainer of a surviving project.
 func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64) error {
-	if requesterID == targetUserID {
+	return s.deleteUser(ctx, requesterID, targetUserID, false)
+}
+
+func (s *Store) DeleteServiceAccount(ctx context.Context, requesterID, targetUserID int64) error {
+	return s.deleteUser(ctx, requesterID, targetUserID, true)
+}
+
+func (s *Store) deleteUser(ctx context.Context, requesterID, targetUserID int64, requireService bool) error {
+	if !requireService && requesterID == targetUserID {
 		return fmt.Errorf("%w: cannot delete yourself", ErrValidation)
 	}
 
@@ -580,17 +582,24 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 	if err := requireOwnerTx(ctx, tx, requesterID); err != nil {
 		return err
 	}
-	var targetRoleRaw string
-	if err := tx.QueryRowContext(ctx, `SELECT system_role FROM users WHERE id = ?`, targetUserID).Scan(&targetRoleRaw); err != nil {
+	if requesterID == targetUserID {
+		return fmt.Errorf("%w: cannot delete yourself", ErrValidation)
+	}
+	var (
+		targetRawRole  string
+		targetService  bool
+		targetPublicID string
+	)
+	if err := tx.QueryRowContext(ctx, `SELECT system_role, is_service <> 0, COALESCE(public_id, '') FROM users WHERE id = ?`, targetUserID).Scan(&targetRawRole, &targetService, &targetPublicID); err != nil {
 		if err == sql.ErrNoRows {
 			return ErrNotFound
 		}
-		return fmt.Errorf("get target user role: %w", err)
+		return fmt.Errorf("read deletion target: %w", err)
 	}
-	targetRole, ok := ParseSystemRole(targetRoleRaw)
-	if !ok {
-		targetRole = SystemRoleUser
+	if requireService && !targetService {
+		return ErrNotFound
 	}
+	targetRole := effectiveSystemRole(targetRawRole, targetService)
 	if targetRole == SystemRoleOwner {
 		count, err := countOwnersTx(ctx, tx)
 		if err != nil {
@@ -599,6 +608,12 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 		if count <= 1 {
 			return fmt.Errorf("%w: cannot delete the last owner", ErrValidation)
 		}
+	}
+	if err := rejectSoleMaintainerDeletionTx(ctx, tx, targetUserID); err != nil {
+		return err
+	}
+	if err := rejectOwnedProjectDeletionTx(ctx, tx, targetUserID); err != nil {
+		return err
 	}
 
 	// Archive the target's service (bot/automation) API token metadata, with immutable origin
@@ -609,9 +624,25 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 		return err
 	}
 
-	// Delete user (cascade will handle sessions and API tokens)
+	// Delete user (cascade will handle sessions and API tokens).
+	// The owned-project pre-check above covers the known RESTRICT link
+	// (projects.owner_user_id); this fallback keeps any residual FK failure
+	// (including a concurrent ownership change) a deliberate, non-disclosing
+	// conflict instead of a raw SQLite INTERNAL.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, targetUserID); err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			return fmt.Errorf("%w: account still owns project(s); transfer ownership or delete the project first", ErrConflict)
+		}
 		return fmt.Errorf("delete user: %w", err)
+	}
+	if targetService && s.instanceAuditEnabled {
+		actorPublicID, err := userPublicIDTx(ctx, tx, requesterID)
+		if err != nil {
+			return err
+		}
+		if err := s.insertInstanceAuditEventTx(ctx, tx, requesterID, actorPublicID, instanceActionServiceAccountDeleted, targetUserID, targetPublicID, nil); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -621,33 +652,13 @@ func (s *Store) DeleteUser(ctx context.Context, requesterID, targetUserID int64)
 }
 
 // UpdateUserRole updates a user's system role. Requires owner role.
-// Prevents demotion of the last owner.
+// Prevents demotion of the last owner, and promotion of a service account. Authorization, the
+// target's type and role, and the owner count are all read on the mutation's own transaction, so
+// a concurrent role change cannot invalidate them between the check and the write.
 func (s *Store) UpdateUserRole(ctx context.Context, requesterID, targetUserID int64, newRole SystemRole) error {
 	// Validate role
 	if newRole != SystemRoleOwner && newRole != SystemRoleAdmin && newRole != SystemRoleUser {
 		return fmt.Errorf("%w: invalid system role", ErrValidation)
-	}
-
-	// Require owner role
-	if err := s.requireOwner(ctx, requesterID); err != nil {
-		return err
-	}
-
-	// Get target user
-	target, err := s.GetUser(ctx, targetUserID)
-	if err != nil {
-		return err
-	}
-
-	// Prevent demotion of the last owner
-	if target.SystemRole == SystemRoleOwner && newRole != SystemRoleOwner {
-		count, err := s.countOwners(ctx)
-		if err != nil {
-			return err
-		}
-		if count <= 1 {
-			return fmt.Errorf("%w: cannot demote the last owner", ErrValidation)
-		}
 	}
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
@@ -656,8 +667,39 @@ func (s *Store) UpdateUserRole(ctx context.Context, requesterID, targetUserID in
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, `UPDATE users SET system_role = ? WHERE id = ?`, newRole.String(), targetUserID); err != nil {
-		return fmt.Errorf("update role: %w", err)
+	// Require owner role
+	if err := requireOwnerTx(ctx, tx, requesterID); err != nil {
+		return err
+	}
+
+	// Get target user
+	var (
+		targetRoleRaw   string
+		targetIsService bool
+	)
+	if err := tx.QueryRowContext(ctx, `SELECT system_role, is_service <> 0 FROM users WHERE id = ?`, targetUserID).Scan(&targetRoleRaw, &targetIsService); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get target user role: %w", err)
+	}
+	if targetIsService && newRole != SystemRoleUser {
+		return ErrServiceAccountRestricted
+	}
+
+	// Prevent demotion of the last owner
+	if effectiveSystemRole(targetRoleRaw, targetIsService) == SystemRoleOwner && newRole != SystemRoleOwner {
+		count, err := countOwnersTx(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if count <= 1 {
+			return fmt.Errorf("%w: cannot demote the last owner", ErrValidation)
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE users SET system_role = ? WHERE id = ? AND (is_service = 0 OR ? = 'user')`, newRole.String(), targetUserID, newRole.String()); err != nil {
+		return wrapIdentityWriteErr("update role", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -681,7 +723,7 @@ func (s *Store) GetUserByOIDCIdentity(ctx context.Context, issuer, subject strin
 SELECT u.id, u.email, u.name, u.image, u.is_bootstrap, u.system_role, u.created_at, u.two_factor_enabled
 FROM user_oidc_identities oi
 JOIN users u ON u.id = oi.user_id
-WHERE oi.issuer = ? AND oi.subject = ?
+WHERE oi.issuer = ? AND oi.subject = ? AND u.is_service = 0
 `, issuer, subject).Scan(&u.ID, &u.Email, &u.Name, &image, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -727,7 +769,7 @@ func (s *Store) CreateUserOIDCWithDomainPolicy(ctx context.Context, configuredIs
 // Returns ErrConflict if the email is already taken by another user.
 func (s *Store) createUserOIDC(ctx context.Context, configuredIssuer, issuer, subject, email, name string, emailDomainAllowed bool) (User, error) {
 	email = normalizeEmail(email)
-	if email == "" || !strings.Contains(email, "@") {
+	if email == "" || !strings.Contains(email, "@") || isReservedServiceEmail(email) {
 		return User{}, fmt.Errorf("%w: invalid email", ErrValidation)
 	}
 	name = strings.TrimSpace(name)
@@ -819,8 +861,9 @@ func (s *Store) createUserOIDC(ctx context.Context, configuredIssuer, issuer, su
 	}, nil
 }
 
-// GetUserByEmail returns the user with the given email (normalized to lowercase).
-// Returns ErrNotFound if no such user exists.
+// GetUserByEmail returns the human user with the given email (normalized to lowercase).
+// Returns ErrNotFound if no such user exists. Service accounts are excluded because this is the
+// lookup behind self-service password reset.
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	email = normalizeEmail(email)
 	if email == "" {
@@ -834,7 +877,7 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (User, error) 
 		twoFactorEnabled bool
 		image            sql.NullString
 	)
-	err := s.db.QueryRowContext(ctx, `SELECT id, email, name, image, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE email = ?`, email).
+	err := s.db.QueryRowContext(ctx, `SELECT id, email, name, image, is_bootstrap, system_role, created_at, two_factor_enabled FROM users WHERE email = ? AND is_service = 0`, email).
 		Scan(&u.ID, &u.Email, &u.Name, &image, &isBootstrap, &systemRoleStr, &createdAt, &twoFactorEnabled)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -873,7 +916,7 @@ func (s *Store) LinkOIDCIdentity(ctx context.Context, userID int64, issuer, subj
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			return ErrConflict
 		}
-		return fmt.Errorf("link oidc identity: %w", err)
+		return wrapIdentityWriteErr("link oidc identity", err)
 	}
 	return nil
 }

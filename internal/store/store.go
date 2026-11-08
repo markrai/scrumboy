@@ -27,12 +27,14 @@ type Store struct {
 	assetBudgets           AssetBudgets
 	maxImportProjects      int
 	maxImportTodos         int
+	instanceAuditEnabled   bool
 }
 
 type StoreOptions struct {
 	EncryptionKey        []byte // Base64-decoded 32-byte key for AES-256-GCM; nil or empty to disable 2FA encryption
 	ConfiguredOIDCIssuer string // Canonical active issuer; empty means no currently usable SSO provider.
 	AssetBudgets         AssetBudgets
+	InstanceAuditEnabled bool
 }
 
 // AssetBudgets caps committed note-image bytes per project and per instance. Zero disables a budget.
@@ -58,6 +60,7 @@ func New(db *sql.DB, opts *StoreOptions) *Store {
 	if opts != nil {
 		s.configuredOIDCIssuer = opts.ConfiguredOIDCIssuer
 		s.assetBudgets = opts.AssetBudgets
+		s.instanceAuditEnabled = opts.InstanceAuditEnabled
 	}
 	return s
 }

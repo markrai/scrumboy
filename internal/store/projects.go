@@ -51,7 +51,8 @@ func (s *Store) userHasProjectRole(ctx context.Context, projectID int64, userID 
 		return false, err
 	}
 	if p.ExpiresAt != nil {
-		return true, nil // Temporary boards are accessible
+		blocked, err := serviceLinkAccessBlocked(ctx, s.db, projectID, userID)
+		return !blocked, err // Temporary boards are accessible
 	}
 
 	// Pre-bootstrap: no auth required
@@ -744,6 +745,9 @@ func (s *Store) CreateProjectWithWorkflow(ctx context.Context, name string, work
 		return Project{}, fmt.Errorf("begin create project tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := rejectServiceActor(ctx, tx); err != nil {
+		return Project{}, err
+	}
 
 	// Try base slug, then baseSlug-2, baseSlug-3, etc. until we find a unique one
 	inserted := false
@@ -875,15 +879,15 @@ func (s *Store) DeleteProject(ctx context.Context, projectID int64, userID int64
 		return DeletedProjectSnapshot{}, ErrNotFound
 	}
 
-	if err := s.checkCanManageProject(ctx, p, userID); err != nil {
-		return DeletedProjectSnapshot{}, err
-	}
-
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return DeletedProjectSnapshot{}, fmt.Errorf("begin delete project: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+
+	if err := s.checkProjectSettingsAuthTx(ctx, tx, p, userID); err != nil {
+		return DeletedProjectSnapshot{}, err
+	}
 
 	var name string
 	if err := tx.QueryRowContext(ctx, `SELECT name FROM projects WHERE id = ?`, projectID).Scan(&name); err != nil {
@@ -947,7 +951,8 @@ func (s *Store) userCanCreateTagsInProject(ctx context.Context, projectID int64,
 		return false, err
 	}
 	if p.ExpiresAt != nil {
-		return true, nil // Temporary boards are accessible
+		blocked, err := serviceLinkAccessBlocked(ctx, s.db, projectID, userID)
+		return !blocked, err // Temporary boards are accessible
 	}
 
 	// Pre-bootstrap: no auth required
@@ -1031,6 +1036,9 @@ func (s *Store) getProject(ctx context.Context, projectID int64) (Project, error
 	if err != nil {
 		return p, err
 	}
+	if err := rejectServiceLinkAccess(ctx, s.db, p); err != nil {
+		return Project{}, err
+	}
 	// Safety check: if slug is missing, generate and persist it
 	if p.Slug == "" {
 		if err := s.ensureProjectHasSlug(ctx, projectID, p.Name); err != nil {
@@ -1054,7 +1062,14 @@ func (s *Store) GetProjectBySlug(ctx context.Context, slug string) (Project, err
 	}
 	// Keep the scan shape consistent with scanProject().
 	row := s.db.QueryRowContext(ctx, `SELECT `+projectSelectColumns+` FROM projects WHERE slug=? AND import_batch_id IS NULL`, slug)
-	return scanProject(row)
+	p, err := scanProject(row)
+	if err != nil {
+		return p, err
+	}
+	if err := rejectServiceLinkAccess(ctx, s.db, p); err != nil {
+		return Project{}, err
+	}
+	return p, nil
 }
 
 func getProjectTx(ctx context.Context, tx *sql.Tx, projectID int64, store *Store) (Project, error) {
@@ -1062,6 +1077,9 @@ func getProjectTx(ctx context.Context, tx *sql.Tx, projectID int64, store *Store
 	p, err := scanProject(row)
 	if err != nil {
 		return p, err
+	}
+	if err := rejectServiceLinkAccess(ctx, tx, p); err != nil {
+		return Project{}, err
 	}
 	// Safety check: if slug is missing, generate and persist it
 	// Note: We need to use the store's db connection, not the transaction, for the update
@@ -1085,7 +1103,8 @@ func (s *Store) userHasProjectRoleTx(ctx context.Context, tx *sql.Tx, projectID 
 		return false, err
 	}
 	if p.ExpiresAt != nil {
-		return true, nil // Temporary boards are accessible
+		blocked, err := serviceLinkAccessBlocked(ctx, tx, projectID, userID)
+		return !blocked, err // Temporary boards are accessible
 	}
 
 	// Pre-bootstrap: no auth required
@@ -1118,6 +1137,9 @@ func (s *Store) userHasProjectRoleTx(ctx context.Context, tx *sql.Tx, projectID 
 func (s *Store) getProjectForReadTx(ctx context.Context, tx *sql.Tx, projectID int64, mode Mode) (Project, error) {
 	p, err := scanProject(tx.QueryRowContext(ctx, `SELECT `+projectSelectColumns+` FROM projects WHERE id=? AND import_batch_id IS NULL`, projectID))
 	if err != nil {
+		return Project{}, err
+	}
+	if err := rejectServiceLinkAccess(ctx, tx, p); err != nil {
 		return Project{}, err
 	}
 	// Temporary boards bypass ownership because of project state, not because of request mode.
@@ -1562,7 +1584,7 @@ func (s *Store) CreateAnonymousBoard(ctx context.Context) (Project, error) {
 			if strings.Contains(err.Error(), "UNIQUE constraint failed: projects.slug") {
 				continue
 			}
-			return Project{}, fmt.Errorf("insert anonymous board: %w", err)
+			return Project{}, wrapIdentityWriteErr("insert anonymous board", err)
 		}
 		lastID, err := r.LastInsertId()
 		if err != nil {
