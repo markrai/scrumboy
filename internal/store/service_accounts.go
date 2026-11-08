@@ -239,7 +239,7 @@ WHERE is_service <> 0`
 	}
 	defer rows.Close()
 
-	items := make([]User, 0, limit+1)
+	items := make([]User, 0, limit)
 	for rows.Next() {
 		var item User
 		var createdAtMs int64

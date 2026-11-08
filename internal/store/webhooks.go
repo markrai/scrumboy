@@ -287,7 +287,7 @@ func (s *Store) ListProjectWebhooks(ctx context.Context, actorUserID, projectID 
 		return nil, nil, fmt.Errorf("list project webhooks: %w", err)
 	}
 	defer rows.Close()
-	items := make([]Webhook, 0, limit+1)
+	items := make([]Webhook, 0, limit)
 	for rows.Next() {
 		var item Webhook
 		var eventsJSON string

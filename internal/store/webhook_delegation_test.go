@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"fmt"
 	"strings"
 	"sync"
@@ -440,4 +441,73 @@ func TestWebhookOwnerAndProjectDeletionCascadeDelegatedSubscriptions(t *testing.
 			t.Fatalf("deleted project left webhook rows: count=%d err=%v", count, err)
 		}
 	})
+}
+
+func TestListProjectWebhooksPaginationBounds(t *testing.T) {
+	f := newWebhookDelegationFixture(t)
+	ctx := context.Background()
+	for i := 0; i < 7; i++ {
+		if _, err := f.create(t, f.maintainer.ID, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, limit := range []int{0, -2, 101, math.MaxInt} {
+		if _, _, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, f.project.ID, limit, 0); !errors.Is(err, ErrValidation) {
+			t.Fatalf("limit %d err=%v", limit, err)
+		}
+	}
+	if _, _, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, f.project.ID, 20, -1); !errors.Is(err, ErrValidation) {
+		t.Fatalf("beforeID -1 err=%v", err)
+	}
+	if _, _, err := f.store.ListProjectWebhooks(ctx, 0, f.project.ID, 20, 0); !errors.Is(err, ErrValidation) {
+		t.Fatalf("actor 0 err=%v", err)
+	}
+	var beforeID int64
+	seen := map[int64]bool{}
+	var previous int64
+	for round := 0; ; round++ {
+		page, next, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, f.project.ID, 3, beforeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 || len(page) > 3 {
+			t.Fatalf("round %d page size = %d", round, len(page))
+		}
+		for _, hook := range page {
+			if seen[hook.ID] {
+				t.Fatalf("duplicate webhook %d", hook.ID)
+			}
+			seen[hook.ID] = true
+			if previous != 0 && hook.ID >= previous {
+				t.Fatalf("order broke at %d after %d", hook.ID, previous)
+			}
+			previous = hook.ID
+		}
+		if next == nil {
+			break
+		}
+		beforeID = *next
+		if round > 10 {
+			t.Fatal("cursor did not terminate")
+		}
+	}
+	if len(seen) != 7 {
+		t.Fatalf("walked %d of 7 webhooks", len(seen))
+	}
+	exact, exactCursor, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, f.project.ID, 7, 0)
+	if err != nil || len(exact) != 7 || exactCursor != nil {
+		t.Fatalf("exact page = %d cursor=%v err=%v", len(exact), exactCursor, err)
+	}
+	full, fullCursor, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, f.project.ID, 100, 0)
+	if err != nil || len(full) != 7 || fullCursor != nil {
+		t.Fatalf("limit 100 = %d cursor=%v err=%v", len(full), fullCursor, err)
+	}
+	quiet, err := f.store.CreateProject(WithUserID(ctx, f.maintainer.ID), "Quiet webhooks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, noneCursor, err := f.store.ListProjectWebhooks(ctx, f.maintainer.ID, quiet.ID, 20, 0)
+	if err != nil || len(none) != 0 || noneCursor != nil {
+		t.Fatalf("empty project list = %d cursor=%v err=%v", len(none), noneCursor, err)
+	}
 }

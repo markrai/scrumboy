@@ -214,7 +214,7 @@ WHERE user_id = ?`
 	}
 	defer rows.Close()
 
-	items := make([]APITokenMeta, 0, limit+1)
+	items := make([]APITokenMeta, 0, limit)
 	for rows.Next() {
 		var (
 			item            APITokenMeta

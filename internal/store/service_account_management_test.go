@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"testing"
@@ -378,5 +380,157 @@ END`); err != nil {
 	}
 	if _, err := f.st.GetUserByAPIToken(ctx, plaintext); err != nil {
 		t.Fatalf("failed generic deletion invalidated credential: %v", err)
+	}
+}
+
+func TestServiceAccountListPaginationBounds(t *testing.T) {
+	f := newServiceFixture(t)
+	ctx := context.Background()
+	for _, name := range []string{"Bot A", "Bot B", "Bot C", "Bot D"} {
+		if _, err := f.st.CreateServiceAccount(ctx, f.owner.ID, name); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, limit := range []int{0, -3} {
+		page, cursor, err := f.st.ListServiceAccounts(ctx, f.owner.ID, limit, nil)
+		if err != nil || len(page) != 5 || cursor != nil {
+			t.Fatalf("limit %d default page = %d cursor=%v err=%v", limit, len(page), cursor, err)
+		}
+	}
+	for _, limit := range []int{101, math.MaxInt} {
+		if _, _, err := f.st.ListServiceAccounts(ctx, f.owner.ID, limit, nil); !errors.Is(err, ErrValidation) {
+			t.Fatalf("limit %d err=%v", limit, err)
+		}
+	}
+	if _, _, err := f.st.ListServiceAccounts(ctx, f.owner.ID, 20, stringPointer("bogus")); !errors.Is(err, ErrValidation) {
+		t.Fatalf("bogus cursor err=%v", err)
+	}
+	var cursor *string
+	seen := map[int64]bool{}
+	var previous int64
+	for round := 0; ; round++ {
+		page, next, err := f.st.ListServiceAccounts(ctx, f.owner.ID, 2, cursor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 || len(page) > 2 {
+			t.Fatalf("round %d page size = %d", round, len(page))
+		}
+		for _, account := range page {
+			if seen[account.ID] {
+				t.Fatalf("duplicate account %d", account.ID)
+			}
+			seen[account.ID] = true
+			if previous != 0 && account.ID >= previous {
+				t.Fatalf("order broke at %d after %d", account.ID, previous)
+			}
+			previous = account.ID
+			if !account.IsService {
+				t.Fatalf("non-service account listed: %+v", account)
+			}
+		}
+		cursor = next
+		if next == nil {
+			break
+		}
+		if round > 10 {
+			t.Fatal("cursor did not terminate")
+		}
+	}
+	if len(seen) != 5 {
+		t.Fatalf("walked %d of 5 accounts", len(seen))
+	}
+	exact, exactCursor, err := f.st.ListServiceAccounts(ctx, f.owner.ID, 5, nil)
+	if err != nil || len(exact) != 5 || exactCursor != nil {
+		t.Fatalf("exact page = %d cursor=%v err=%v", len(exact), exactCursor, err)
+	}
+	full, _, err := f.st.ListServiceAccounts(ctx, f.owner.ID, 100, nil)
+	if err != nil || len(full) != 5 {
+		t.Fatalf("limit 100 = %d err=%v", len(full), err)
+	}
+	blank, blankCleanup := newTestStoreWith2FA(t)
+	t.Cleanup(blankCleanup)
+	blankOwner, err := blank.BootstrapUser(ctx, "blank-owner@example.com", serviceTestPassword, "Blank Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, noneCursor, err := blank.ListServiceAccounts(ctx, blankOwner.ID, 20, nil)
+	if err != nil || len(none) != 0 || noneCursor != nil {
+		t.Fatalf("empty store list = %d cursor=%v err=%v", len(none), noneCursor, err)
+	}
+}
+
+func TestServiceTokenListPaginationBounds(t *testing.T) {
+	f := newServiceFixture(t)
+	ctx := context.Background()
+	empty, emptyCursor, err := f.st.ListServiceAccountTokens(ctx, f.owner.ID, f.svc.ID, 20, 0)
+	if err != nil || len(empty) != 0 || emptyCursor != nil {
+		t.Fatalf("empty token list = %d cursor=%v err=%v", len(empty), emptyCursor, err)
+	}
+	var plaintexts []string
+	for i := 0; i < 3; i++ {
+		_, plaintext, _, err := f.st.CreateServiceAccountToken(ctx, f.owner.ID, f.svc.ID, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plaintexts = append(plaintexts, plaintext)
+	}
+	for _, limit := range []int{0, -1} {
+		page, cursor, err := f.st.ListServiceAccountTokens(ctx, f.owner.ID, f.svc.ID, limit, 0)
+		if err != nil || len(page) != 3 || cursor != nil {
+			t.Fatalf("limit %d default page = %d cursor=%v err=%v", limit, len(page), cursor, err)
+		}
+	}
+	for _, limit := range []int{101, math.MaxInt} {
+		if _, _, err := f.st.ListServiceAccountTokens(ctx, f.owner.ID, f.svc.ID, limit, 0); !errors.Is(err, ErrValidation) {
+			t.Fatalf("limit %d err=%v", limit, err)
+		}
+	}
+	if _, _, err := f.st.ListServiceAccountTokens(ctx, f.owner.ID, f.svc.ID, 20, -1); !errors.Is(err, ErrValidation) {
+		t.Fatalf("beforeID -1 err=%v", err)
+	}
+	var beforeID int64
+	seen := map[int64]bool{}
+	var collected []APITokenMeta
+	for round := 0; ; round++ {
+		page, next, err := f.st.ListServiceAccountTokens(ctx, f.owner.ID, f.svc.ID, 2, beforeID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) == 0 || len(page) > 2 {
+			t.Fatalf("round %d page size = %d", round, len(page))
+		}
+		for _, item := range page {
+			if seen[item.ID] {
+				t.Fatalf("duplicate token %d", item.ID)
+			}
+			seen[item.ID] = true
+			collected = append(collected, item)
+		}
+		if next == nil {
+			break
+		}
+		beforeID = *next
+		if round > 10 {
+			t.Fatal("cursor did not terminate")
+		}
+	}
+	if len(seen) != 3 {
+		t.Fatalf("walked %d of 3 tokens", len(seen))
+	}
+	for _, item := range collected {
+		blob, marshalErr := json.Marshal(item)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		for _, secret := range plaintexts {
+			if strings.Contains(string(blob), secret) {
+				t.Fatal("token list exposed plaintext secret")
+			}
+		}
+	}
+	exact, exactCursor, err := f.st.ListServiceAccountTokens(ctx, f.owner.ID, f.svc.ID, 3, 0)
+	if err != nil || len(exact) != 3 || exactCursor != nil {
+		t.Fatalf("exact page = %d cursor=%v err=%v", len(exact), exactCursor, err)
 	}
 }
