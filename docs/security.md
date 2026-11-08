@@ -7,8 +7,8 @@ Vulnerability **disclosure** (how to report a bug privately) lives in the root `
 
 | Field                    | Value                                      |
 | ------------------------ | ------------------------------------------ |
-| **Last verified commit** | `92d3a9a921b72709a854bc93b065bbbefe78d235` |
-| **Last verified date**   | 2026-07-21                                 |
+| **Historical verification baseline** | Commit `92d3a9a921b72709a854bc93b065bbbefe78d235`, verified 2026-07-21 (documentation audit; preserved as history) |
+| **Current branch state**   | Reviewed locally against the working branch; no branch-level CI results were available, so no CI qualification is claimed |
 
 
 Security depends on correct deployment and configuration (HTTPS, secrets, IdP hardening, host access, backups). **No security document, badge, or clean scan guarantees the absence of vulnerabilities.** Scrumboy does not claim formal certification, an external penetration test, or compliance with a named regulatory framework unless separately evidenced outside this repository.

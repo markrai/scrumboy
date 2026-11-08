@@ -256,7 +256,7 @@ When there are no planned tools, **`plannedTools`** is omitted from JSON (`omite
 
 ## Available Tools
 
-Exact names match `internal/mcp/registry.go` / `implementedTools()` (59 tools).
+Exact names match `internal/mcp/registry.go` / `implementedTools()`. For the current inventory and count, consult the authoritative capability discovery mechanism (`system_getCapabilities` / `tools/list`).
 
 > **Deprecated dotted names (compatibility shim, kept indefinitely).** Tool names were
 > renamed from dot-separated (`todos.create`, `board.get`, ...) to

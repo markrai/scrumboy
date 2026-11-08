@@ -6,7 +6,7 @@
 
 Each statement below is marked:
 
-- **Implemented**: in the Slice 1 or Slice 2 code, covered by tests.
+- **Implemented**: in the Slice 1, Slice 2, or Slice 3 code, covered by tests.
 - **Existing**: behaviour that predates this work and is preserved.
 - **Accepted**: a maintainer decision. Where it concerns a later slice it is a design, not built code.
 - **Proposed**: a design detail for a later slice, not built.
