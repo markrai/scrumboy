@@ -59,6 +59,14 @@ func (d *webhookDispatcher) OnEvent(_ context.Context, e eventbus.Event) {
 		e.Type == eventbus.TodoCreatorNotificationRecipientAuthorizedEventType {
 		return
 	}
+	if e.Type != eventbus.TodoCreatedEventType {
+		go d.dispatchBestEffort(e)
+		return
+	}
+	d.dispatchTodoCreated(e)
+}
+
+func (d *webhookDispatcher) dispatchTodoCreated(e eventbus.Event) {
 	snapshotCtx, cancel := context.WithTimeout(context.Background(), defaultWebhookSnapshotTimeout)
 	hooks, err := d.store.ListWebhooksByProject(snapshotCtx, e.ProjectID)
 	cancel()
@@ -116,8 +124,41 @@ func (d *webhookDispatcher) OnEvent(_ context.Context, e eventbus.Event) {
 }
 
 func (d *webhookDispatcher) enqueueWork(e eventbus.Event) {
-	d.OnEvent(context.Background(), e)
+	if e.Type == eventbus.TodoCreatedEventType {
+		d.dispatchTodoCreated(e)
+	} else {
+		d.dispatchBestEffort(e)
+	}
 	d.wg.Wait()
+}
+
+func (d *webhookDispatcher) dispatchBestEffort(e eventbus.Event) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWebhookSnapshotTimeout)
+	hooks, err := d.store.ListWebhooksByProject(ctx, e.ProjectID)
+	cancel()
+	if err != nil {
+		d.logger.Printf("webhook dispatcher: list hooks for project %d: %v", e.ProjectID, err)
+		return
+	}
+	body, err := canonicalWebhookBody(e)
+	if err != nil {
+		d.logger.Printf("webhook dispatcher: marshal event %s: %v", e.ID, err)
+		return
+	}
+	for _, hook := range hooks {
+		if hook.DeliveryMode == store.WebhookDeliveryDurable || !matchesEventType(hook.Events, e.Type) {
+			continue
+		}
+		d.queue.Enqueue(webhookDelivery{
+			WebhookID: hook.ID,
+			URL:       hook.URL,
+			Secret:    hook.Secret,
+			EventID:   e.ID,
+			EventType: e.Type,
+			Timestamp: e.Time,
+			Body:      body,
+		})
+	}
 }
 
 func (d *webhookDispatcher) admitSnapshot(e eventbus.Event, body []byte, hooks []durableWebhookAdmissionSnapshot) {

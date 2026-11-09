@@ -109,6 +109,10 @@ func (*stopDurableSchedule) Notify()                   {}
 func (*stopDurableSchedule) Wait(context.Context) bool { return false }
 func (*stopDurableSchedule) Close()                    {}
 
+type eventConsumerFunc func(context.Context, eventbus.Event)
+
+func (f eventConsumerFunc) OnEvent(ctx context.Context, event eventbus.Event) { f(ctx, event) }
+
 func TestDurableWebhookWorkerRestartsPendingDeliveryThroughExistingSender(t *testing.T) {
 	const secret = "durable-signing-secret"
 	var (
@@ -387,6 +391,49 @@ func TestDurableWebhookTransientFailureSchedulesFutureRetry(t *testing.T) {
 	worker.drain(context.Background())
 	if hits.Load() != 2 {
 		t.Fatalf("due retry hits=%d", hits.Load())
+	}
+}
+
+type maintenanceErrorStore struct {
+	*store.Store
+	calls atomic.Int32
+}
+
+func (s *maintenanceErrorStore) MaintainDurableWebhookDeliveries(context.Context, time.Time, int) (store.DurableWebhookMaintenance, error) {
+	s.calls.Add(1)
+	return store.DurableWebhookMaintenance{}, errors.New("simulated maintenance failure")
+}
+
+func TestDurableWebhookMaintenanceFailureDoesNotBlockClaiming(t *testing.T) {
+	var hits atomic.Int32
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer receiver.Close()
+	client, destination := webhookClientToTestServer(t, receiver, "maintenance-isolation.example")
+	f := newDurableHTTPFixture(t, destination, nil)
+	now := time.Date(2026, 11, 9, 6, 0, 0, 0, time.UTC)
+	f.admit(t, "maintenance-isolation", now, []byte(`{}`))
+	failing := &maintenanceErrorStore{Store: f.store}
+	var logs bytes.Buffer
+	worker := newDurableWebhookWorkerWithClient(failing, log.New(&logs, "", 0), newManualDurableSchedule(), client)
+	worker.now = func() time.Time { return now }
+	worker.drain(context.Background())
+	if hits.Load() != 1 {
+		t.Fatalf("delivery hits=%d", hits.Load())
+	}
+	if failing.calls.Load() != 1 || !strings.Contains(logs.String(), "durable webhook maintenance failed") {
+		t.Fatalf("maintenance calls=%d logs=%q", failing.calls.Load(), logs.String())
+	}
+	worker.drain(context.Background())
+	if failing.calls.Load() != 1 {
+		t.Fatalf("maintenance retried before interval: calls=%d", failing.calls.Load())
+	}
+	now = now.Add(worker.maintenanceInterval)
+	worker.drain(context.Background())
+	if failing.calls.Load() != 2 {
+		t.Fatalf("maintenance calls after interval=%d", failing.calls.Load())
 	}
 }
 
@@ -739,6 +786,84 @@ type delayedWebhookSnapshotStore struct {
 	once     sync.Once
 }
 
+type blockedWebhookListStore struct {
+	hooks   []store.WebhookRow
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *blockedWebhookListStore) ListWebhooksByProject(ctx context.Context, _ int64) ([]store.WebhookRow, error) {
+	s.once.Do(func() { close(s.started) })
+	select {
+	case <-s.release:
+		return s.hooks, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (*blockedWebhookListStore) AdmitDurableWebhookDelivery(context.Context, store.AdmitDurableWebhookDeliveryInput) (string, error) {
+	return "", errors.New("unexpected durable admission")
+}
+
+func TestWebhookDispatcherNonDurableFanoutDoesNotWaitForSubscriptionLookup(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		hooks     []store.WebhookRow
+		wantQueue bool
+	}{
+		{name: "wildcard", hooks: []store.WebhookRow{{ID: 41, URL: "https://wall.example/hook", Events: []string{"*"}}}, wantQueue: true},
+		{name: "empty"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			blocked := &blockedWebhookListStore{hooks: testCase.hooks, started: make(chan struct{}), release: make(chan struct{})}
+			queue := newWebhookQueue(discardLogger())
+			dispatcher := newWebhookDispatcher(blocked, queue, discardLogger())
+			push := make(chan struct{}, 1)
+			email := make(chan struct{}, 1)
+			fanout := eventbus.NewFanout(
+				dispatcher,
+				eventConsumerFunc(func(context.Context, eventbus.Event) { push <- struct{}{} }),
+				eventConsumerFunc(func(context.Context, eventbus.Event) { email <- struct{}{} }),
+			)
+			published := make(chan struct{})
+			go func() {
+				_ = fanout.Publish(context.Background(), eventbus.Event{
+					ID: "wall-event", Type: "wall.transient", Time: time.Now().UTC(), ProjectID: 7, Payload: []byte(`{}`),
+				})
+				close(published)
+			}()
+			<-blocked.started
+			for name, signal := range map[string]<-chan struct{}{"push": push, "email": email, "publication": published} {
+				select {
+				case <-signal:
+				case <-time.After(time.Second):
+					t.Fatalf("%s waited for webhook lookup", name)
+				}
+			}
+			close(blocked.release)
+			if testCase.wantQueue {
+				select {
+				case <-queue.Wait():
+				case <-time.After(time.Second):
+					t.Fatal("wildcard best-effort delivery was not queued")
+				}
+				queued := queue.Drain()
+				if len(queued) != 1 || queued[0].EventID != "wall-event" {
+					t.Fatalf("queued=%+v", queued)
+				}
+			} else {
+				select {
+				case <-queue.Wait():
+					t.Fatalf("empty subscription list queued=%+v", queue.Drain())
+				default:
+				}
+			}
+		})
+	}
+}
+
 func (s *delayedWebhookSnapshotStore) ListWebhooksByProject(ctx context.Context, projectID int64) ([]store.WebhookRow, error) {
 	rows, err := s.Store.ListWebhooksByProject(ctx, projectID)
 	s.once.Do(func() { close(s.captured) })
@@ -794,9 +919,14 @@ func TestWebhookDispatcherSnapshotPreventsRevocationReadditionResurrection(t *te
 func TestWebhookDispatcherBoundsDurableAdmissionSaturation(t *testing.T) {
 	started := make(chan struct{}, defaultWebhookAdmissionSlots)
 	release := make(chan struct{})
+	unrelatedListed := make(chan struct{})
+	var unrelatedOnce sync.Once
 	var admissions atomic.Int32
 	dispatchStore := webhookDispatchStoreFunc{
-		list: func(context.Context, int64) ([]store.WebhookRow, error) {
+		list: func(_ context.Context, projectID int64) ([]store.WebhookRow, error) {
+			if projectID == 2 {
+				unrelatedOnce.Do(func() { close(unrelatedListed) })
+			}
 			return []store.WebhookRow{{
 				ID: 1, Events: []string{eventbus.TodoCreatedEventType},
 				DeliveryMode: store.WebhookDeliveryDurable, AuthorizationGeneration: 1,
@@ -830,6 +960,14 @@ func TestWebhookDispatcherBoundsDurableAdmissionSaturation(t *testing.T) {
 	})
 	if !strings.Contains(logs.String(), "admission saturated event=saturated-rejected") {
 		t.Fatalf("missing saturation signal: %s", logs.String())
+	}
+	dispatcher.OnEvent(context.Background(), eventbus.Event{
+		ID: "unrelated-while-saturated", Type: "wall.transient", Time: time.Now().UTC(), ProjectID: 2, Payload: []byte(`{}`),
+	})
+	select {
+	case <-unrelatedListed:
+	case <-time.After(time.Second):
+		t.Fatal("durable admission saturation blocked unrelated event lookup")
 	}
 	close(release)
 	closeCtx, cancel := context.WithTimeout(context.Background(), time.Second)

@@ -99,6 +99,95 @@ INSERT INTO webhook_deliveries(
 	}
 }
 
+func TestDurableWebhookGlobalCapacityExactBoundariesAndCleanupRecovery(t *testing.T) {
+	f, cleanup := newDurableWebhookFixture(t)
+	defer cleanup()
+	_, row := f.createDurableWebhook(t, nil)
+	now := time.Date(2026, 11, 9, 7, 0, 0, 0, time.UTC)
+	body := bytes.Repeat([]byte("x"), 32)
+	tests := []struct {
+		name        string
+		activeRows  int64
+		activeBytes int64
+		totalRows   int64
+		totalBytes  int64
+		retained    bool
+		atBoundary  func(DurableWebhookUsage) bool
+	}{
+		{
+			name: "active_rows", activeRows: DurableWebhookMaxActiveRows - 1,
+			atBoundary: func(usage DurableWebhookUsage) bool { return usage.ActiveRows == DurableWebhookMaxActiveRows },
+		},
+		{
+			name: "active_payload", activeBytes: DurableWebhookMaxActivePayloadBytes - int64(len(body)),
+			atBoundary: func(usage DurableWebhookUsage) bool {
+				return usage.ActivePayloadBytes == DurableWebhookMaxActivePayloadBytes
+			},
+		},
+		{
+			name: "retained_rows", totalRows: DurableWebhookMaxRetainedRows - 1, retained: true,
+			atBoundary: func(usage DurableWebhookUsage) bool { return usage.TotalRows == DurableWebhookMaxRetainedRows },
+		},
+		{
+			name: "retained_payload", totalBytes: DurableWebhookMaxRetainedPayloadBytes - int64(len(body)), retained: true,
+			atBoundary: func(usage DurableWebhookUsage) bool {
+				return usage.TotalPayloadBytes == DurableWebhookMaxRetainedPayloadBytes
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := f.db.ExecContext(f.ctx, `DELETE FROM webhook_deliveries`); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.db.ExecContext(f.ctx, `
+UPDATE webhook_delivery_usage
+SET active_rows = ?, active_payload_bytes = ?, total_rows = ?, total_payload_bytes = ?
+WHERE singleton = 1`, testCase.activeRows, testCase.activeBytes, testCase.totalRows, testCase.totalBytes); err != nil {
+				t.Fatal(err)
+			}
+			eventID := "boundary-" + testCase.name
+			result, err := f.store.AdmitDurableWebhookDelivery(f.ctx, durableAdmission(row, f.project.ID, eventID, now, body))
+			if err != nil || result != DurableWebhookAdmissionInserted {
+				t.Fatalf("boundary admission=%q err=%v", result, err)
+			}
+			usage, err := f.store.DurableWebhookDeliveryUsage(f.ctx)
+			if err != nil || !testCase.atBoundary(usage) {
+				t.Fatalf("boundary usage=%+v err=%v", usage, err)
+			}
+			if _, err := f.store.AdmitDurableWebhookDelivery(f.ctx, durableAdmission(row, f.project.ID, eventID+"-rejected", now, body)); !errors.Is(err, ErrDurableWebhookCapacity) {
+				t.Fatalf("over-boundary err=%v", err)
+			}
+			if testCase.retained {
+				claims, err := f.store.ClaimDueDurableWebhookDeliveries(f.ctx, now, 1, time.Minute)
+				if err != nil || len(claims) != 1 {
+					t.Fatalf("claims=%v err=%v", claims, err)
+				}
+				if updated, err := f.store.CompleteDurableWebhookDelivery(f.ctx, claims[0].ID, claims[0].LeaseToken, now); err != nil || !updated {
+					t.Fatalf("complete=%v err=%v", updated, err)
+				}
+			}
+			if _, err := f.db.ExecContext(f.ctx, `UPDATE webhook_deliveries SET expires_at = ? WHERE event_id = ?`, now.Add(-time.Millisecond).UnixMilli(), eventID); err != nil {
+				t.Fatal(err)
+			}
+			maintenance, err := f.store.MaintainDurableWebhookDeliveries(f.ctx, now, DurableWebhookJanitorBatch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if testCase.retained && maintenance.Deleted != 1 {
+				t.Fatalf("maintenance=%+v", maintenance)
+			}
+			if !testCase.retained && maintenance.Terminalized != 1 {
+				t.Fatalf("maintenance=%+v", maintenance)
+			}
+			result, err = f.store.AdmitDurableWebhookDelivery(f.ctx, durableAdmission(row, f.project.ID, eventID+"-recovered", now, body))
+			if err != nil || result != DurableWebhookAdmissionInserted {
+				t.Fatalf("recovered admission=%q err=%v", result, err)
+			}
+		})
+	}
+}
+
 func TestDurableWebhookFileBackedWALUsageSurvivesReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "durable-quota.db")
 	open := func() *sql.DB {

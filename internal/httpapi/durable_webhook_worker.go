@@ -131,7 +131,6 @@ func (w *durableWebhookWorker) drain(ctx context.Context) {
 				if ctx.Err() == nil {
 					w.logger.Printf("durable webhook maintenance failed: %v", err)
 				}
-				return
 			}
 			w.nextMaintenance = now.Add(w.maintenanceInterval)
 		}

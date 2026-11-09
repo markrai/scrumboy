@@ -250,6 +250,9 @@ func TestDurableWebhookPendingRowsCascadeWithWebhookAndProject(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT COUNT(*) FROM webhook_deliveries`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("after webhook delete count=%d err=%v", count, err)
 	}
+	if usage, err := f.store.DurableWebhookDeliveryUsage(f.ctx); err != nil || usage != (DurableWebhookUsage{}) {
+		t.Fatalf("after webhook delete usage=%+v err=%v", usage, err)
+	}
 	_, row = f.createDurableWebhook(t, nil)
 	if _, err := f.store.AdmitDurableWebhookDelivery(f.ctx, durableAdmission(row, f.project.ID, "cascade-project", now, []byte(`{"id":"cascade-project"}`))); err != nil {
 		t.Fatal(err)
@@ -259,6 +262,9 @@ func TestDurableWebhookPendingRowsCascadeWithWebhookAndProject(t *testing.T) {
 	}
 	if err := f.db.QueryRow(`SELECT COUNT(*) FROM webhook_deliveries`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("after project delete count=%d err=%v", count, err)
+	}
+	if usage, err := f.store.DurableWebhookDeliveryUsage(context.Background()); err != nil || usage != (DurableWebhookUsage{}) {
+		t.Fatalf("after project delete usage=%+v err=%v", usage, err)
 	}
 }
 
@@ -289,5 +295,8 @@ func TestDurableWebhookPendingRowsCascadeWithOwner(t *testing.T) {
 	}
 	if deliveries != 0 || hooks != 0 {
 		t.Fatalf("owner delete left hooks=%d deliveries=%d", hooks, deliveries)
+	}
+	if usage, err := f.store.DurableWebhookDeliveryUsage(context.Background()); err != nil || usage != (DurableWebhookUsage{}) {
+		t.Fatalf("after owner delete usage=%+v err=%v", usage, err)
 	}
 }

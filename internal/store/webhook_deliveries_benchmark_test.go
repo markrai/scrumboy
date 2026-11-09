@@ -79,7 +79,11 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 			for _, concurrency := range []int{1, 4, 16, 64} {
 				name := fmt.Sprintf("%s/subscriptions_%d/concurrency_%d", mode, subscriptions, concurrency)
 				b.Run(name, func(b *testing.B) {
-					if mode == WebhookDeliveryDurable && b.N*subscriptions >= DurableWebhookMaxActiveRows {
+					workload := b.N
+					if workload < concurrency {
+						workload = concurrency
+					}
+					if mode == WebhookDeliveryDurable && workload*subscriptions >= DurableWebhookMaxActiveRows {
 						b.Skip("run with -benchtime=20x so retained rows stay below the production quota")
 					}
 					path := filepath.Join(b.TempDir(), "concurrent-admission.db")
@@ -115,28 +119,39 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 					if err != nil || len(rows) != subscriptions {
 						b.Fatalf("rows=%d err=%v", len(rows), err)
 					}
-					jobs := make(chan int)
-					start := make(chan struct{})
-					admissionLatencies := make([]time.Duration, b.N)
-					todoLatencies := make([]time.Duration, b.N)
+					jobs := make(chan int, workload)
+					for i := 0; i < workload; i++ {
+						jobs <- i
+					}
+					close(jobs)
+					ready := make(chan struct{}, concurrency)
+					operationsStart := make(chan struct{})
+					admissionLatencies := make([]time.Duration, workload)
+					rowLatencies := make([]time.Duration, workload*subscriptions)
+					todoLatencies := make([]time.Duration, workload)
 					var admissionErrors, admissionTimeouts atomic.Int64
 					var nextTodo atomic.Int64
-					var peakGoroutines atomic.Int64
+					var peakGoroutines, inFlight, peakInFlight, insertedRows atomic.Int64
 					var workers sync.WaitGroup
 					workerCount := concurrency
-					if workerCount > b.N {
-						workerCount = b.N
-					}
 					for i := 0; i < workerCount; i++ {
 						workers.Add(1)
 						go func() {
 							defer workers.Done()
-							<-start
+							ready <- struct{}{}
+							<-operationsStart
 							for job := range jobs {
 								currentGoroutines := int64(runtime.NumGoroutine())
 								for {
 									previous := peakGoroutines.Load()
 									if currentGoroutines <= previous || peakGoroutines.CompareAndSwap(previous, currentGoroutines) {
+										break
+									}
+								}
+								currentInFlight := inFlight.Add(1)
+								for {
+									previous := peakInFlight.Load()
+									if currentInFlight <= previous || peakInFlight.CompareAndSwap(previous, currentInFlight) {
 										break
 									}
 								}
@@ -153,12 +168,14 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 									}
 								} else {
 									body := []byte(fmt.Sprintf(`{"id":%q,"type":"todo.created"}`, eventID))
-									for _, row := range rows {
+									for rowIndex, row := range rows {
+										rowStarted := time.Now()
 										_, operationErr := st.AdmitDurableWebhookDelivery(operationCtx, AdmitDurableWebhookDeliveryInput{
 											WebhookID: row.ID, ProjectID: project.ID, AuthorizationGeneration: row.AuthorizationGeneration,
 											EventID: eventID, EventType: TodoEventCreated, EventTimestamp: started,
 											Body: body, AdmittedAt: started,
 										})
+										rowLatencies[job*subscriptions+rowIndex] = time.Since(rowStarted)
 										if operationErr != nil {
 											admissionErrors.Add(1)
 											if errors.Is(operationErr, context.DeadlineExceeded) {
@@ -166,10 +183,12 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 											}
 											break
 										}
+										insertedRows.Add(1)
 									}
 								}
 								cancel()
 								admissionLatencies[job] = time.Since(started)
+								inFlight.Add(-1)
 							}
 						}()
 					}
@@ -177,10 +196,10 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 					todoWorker.Add(1)
 					go func() {
 						defer todoWorker.Done()
-						<-start
+						<-operationsStart
 						for {
 							index := int(nextTodo.Add(1) - 1)
-							if index >= b.N {
+							if index >= workload {
 								return
 							}
 							started := time.Now()
@@ -190,13 +209,12 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 							todoLatencies[index] = time.Since(started)
 						}
 					}()
+					for i := 0; i < workerCount; i++ {
+						<-ready
+					}
 					b.ResetTimer()
 					started := time.Now()
-					close(start)
-					for i := 0; i < b.N; i++ {
-						jobs <- i
-					}
-					close(jobs)
+					close(operationsStart)
 					workers.Wait()
 					todoWorker.Wait()
 					elapsed := time.Since(started)
@@ -216,10 +234,19 @@ func BenchmarkWebhookConcurrentAdmission(b *testing.B) {
 					if info, statErr := os.Stat(path); statErr == nil {
 						databaseBytes = info.Size()
 					}
-					b.ReportMetric(float64(b.N)/elapsed.Seconds(), "admissions/s")
-					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.50).Microseconds()), "admission_p50_us")
-					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.95).Microseconds()), "admission_p95_us")
-					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.99).Microseconds()), "admission_p99_us")
+					b.ReportMetric(0, "ns/op")
+					b.ReportMetric(float64(workload)/elapsed.Seconds(), "event_batches/s")
+					b.ReportMetric(float64(insertedRows.Load())/elapsed.Seconds(), "delivery_rows/s")
+					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.50).Microseconds()), "event_batch_p50_us")
+					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.95).Microseconds()), "event_batch_p95_us")
+					b.ReportMetric(float64(benchmarkPercentile(admissionLatencies, 0.99).Microseconds()), "event_batch_p99_us")
+					b.ReportMetric(float64(benchmarkPercentile(rowLatencies, 0.50).Microseconds()), "delivery_row_p50_us")
+					b.ReportMetric(float64(benchmarkPercentile(rowLatencies, 0.95).Microseconds()), "delivery_row_p95_us")
+					b.ReportMetric(float64(benchmarkPercentile(rowLatencies, 0.99).Microseconds()), "delivery_row_p99_us")
+					b.ReportMetric(float64(concurrency), "requested_concurrency")
+					b.ReportMetric(float64(peakInFlight.Load()), "actual_concurrency")
+					b.ReportMetric(float64(workload), "event_batches")
+					b.ReportMetric(float64(insertedRows.Load()), "delivery_rows")
 					b.ReportMetric(float64(admissionErrors.Load()), "admission_errors")
 					b.ReportMetric(float64(admissionTimeouts.Load()), "admission_timeouts")
 					b.ReportMetric(float64(peakGoroutines.Load()), "peak_goroutines")
